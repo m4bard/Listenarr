@@ -204,7 +204,7 @@ import { errorTracking } from '@/services/errorTracking'
 import type { SearchResult, AudibleBookMetadata, QualityScore, QualityProfile } from '@/types'
 import { useToast } from '@/services/toastService'
 import { getScoreBreakdownTooltip } from '@/composables/useScore'
-import ScorePopover from '@/components/ScorePopover.vue'
+import ScorePopover from '@/components/ui/ScorePopover.vue'
 import { safeText } from '@/utils/textUtils'
 
 const searchStore = useSearchStore()

@@ -621,11 +621,11 @@ import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useDownloadsStore } from '@/stores/downloads'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
-import BulkEditModal from '@/components/BulkEditModal.vue'
-import EditAudiobookModal from '@/components/EditAudiobookModal.vue'
-import CustomSelect from '@/components/CustomSelect.vue'
-import FiltersDropdown from '@/components/FiltersDropdown.vue'
-import CustomFilterModal from '@/components/CustomFilterModal.vue'
+import BulkEditModal from '@/components/collections/BulkEditModal.vue'
+import EditAudiobookModal from '@/components/audiobook/EditAudiobookModal.vue'
+import CustomSelect from '@/components/inputs/CustomSelect.vue'
+import FiltersDropdown from '@/components/ui/FiltersDropdown.vue'
+import CustomFilterModal from '@/components/collections/CustomFilterModal.vue'
 import { showConfirm } from '@/composables/useConfirm'
 import type { Audiobook, QualityProfile } from '@/types'
 import { evaluateRules } from '@/utils/customFilterEvaluator'
@@ -2949,109 +2949,9 @@ defineExpose({
   background-color: #005fa3;
 }
 
-/* Delete Dialog Styles */
-.dialog-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.dialog {
-  background-color: #2a2a2a;
-  border-radius: 6px;
-  border: 1px solid #444;
-  width: 90%;
-  max-width: 500px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.dialog-header {
-  padding: 20px;
-  border-bottom: 1px solid #444;
-}
-
-.dialog-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dialog-header i {
-  color: #f39c12;
-}
-
-.dialog-body {
-  padding: 20px;
-  color: #ccc;
-}
-
-.dialog-body p {
-  margin: 0 0 12px 0;
-  line-height: 1.5;
-}
-
-.dialog-body strong {
-  color: #fff;
-}
-
-.warning-text {
-  color: #f39c12;
-  font-size: 14px;
-}
-
-.dialog-actions {
-  padding: 20px;
-  border-top: 1px solid #444;
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.dialog-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.cancel-btn {
-  background-color: #3a3a3a;
-  color: #fff;
-}
-
-.cancel-btn:hover {
-  background-color: #4a4a4a;
-}
-
-.confirm-btn {
-  background-color: #e74c3c;
-  color: #fff;
-}
-
-.confirm-btn:hover:not(:disabled) {
-  background-color: #c0392b;
-}
-
-.confirm-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+/* Delete dialog styling is centralized in `src/assets/modals.css` */
+/* Legacy .dialog classes are still used in a few places (e.g., Audiobook detail delete), but visual styles are now centralized. */
+/* Modal action button colors are centralized in `src/assets/modals.css` */
 
 /* List view styles */
 .audiobooks-list {

@@ -922,8 +922,8 @@ import { signalRService } from '@/services/signalr'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useLibraryStore } from '@/stores/library'
-import AudiobookDetailsModal from '@/components/AudiobookDetailsModal.vue'
-import AddLibraryModal from '@/components/AddLibraryModal.vue'
+import AudiobookDetailsModal from '@/components/audiobook/AudiobookDetailsModal.vue'
+import AddLibraryModal from '@/components/audiobook/AddLibraryModal.vue'
 import { useToast } from '@/services/toastService'
 import { safeText } from '@/utils/textUtils'
 import { logger } from '@/utils/logger'
@@ -3286,14 +3286,7 @@ select.form-input:focus {
   transition: all 0.2s ease;
 }
 
-.btn-secondary {
-  background: rgba(255, 255, 255, 0.1);
-  color: white;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.15);
-}
+/* Button color variants centralized in `src/assets/modals.css` */
 
 .btn-primary {
   background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
@@ -3646,30 +3639,7 @@ select.form-input:focus {
   transform: translateY(0);
 }
 
-.btn-success {
-  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
-  color: white;
-  box-shadow: 0 2px 8px rgba(46, 204, 113, 0.3);
-}
-
-.btn-success:disabled {
-  opacity: 0.7;
-  cursor: not-allowed;
-}
-
-.btn-secondary {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #adb5bd;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: white;
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-1px);
-}
-
+/* Button color variants centralized in `src/assets/modals.css` */
 .btn-secondary:active:not(:disabled) {
   transform: translateY(0);
 }

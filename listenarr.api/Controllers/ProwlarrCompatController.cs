@@ -21,6 +21,56 @@ namespace Listenarr.Api.Controllers
         private readonly IHubContext<SettingsHub> _settingsHub;
         private readonly IToastService _toastService;
 
+        // Suppress update toasts for indexers that were created within this window (in seconds)
+        private const int NotificationSuppressionSeconds = 5;
+
+        // Track last toast timestamps per indexer id to avoid duplicate toasts when rapid updates/deletes occur
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, DateTime> _lastToastTimes = new System.Collections.Concurrent.ConcurrentDictionary<int, DateTime>();
+
+        // Track last global toast messages to deduplicate identical messages across indexers (message text -> last sent time)
+        private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _lastToastMessages = new System.Collections.Concurrent.ConcurrentDictionary<string, DateTime>();
+
+        private static bool ShouldSendToastForIndexer(int indexerId, string message)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                if (_lastToastTimes.TryGetValue(indexerId, out var last) && (now - last).TotalSeconds < NotificationSuppressionSeconds)
+                {
+                    return false;
+                }
+
+                // Update last time for this indexer
+                _lastToastTimes[indexerId] = now;
+                return true;
+            }
+            catch
+            {
+                // Fallback to sending toast if anything goes wrong with suppression logic
+                return true;
+            }
+        }
+
+        private static bool ShouldSendToastForMessage(string message)
+        {
+            try
+            {
+                var now = DateTime.UtcNow;
+                var key = message ?? string.Empty;
+                if (_lastToastMessages.TryGetValue(key, out var last) && (now - last).TotalSeconds < NotificationSuppressionSeconds)
+                {
+                    return false;
+                }
+
+                _lastToastMessages[key] = now;
+                return true;
+            }
+            catch
+            {
+                return true;
+            }
+        }
+
         public ProwlarrCompatController(ILogger<ProwlarrCompatController> logger, ListenArrDbContext dbContext, IHubContext<SettingsHub> settingsHub, IToastService toastService)
         {
             _logger = logger;
@@ -137,7 +187,7 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexers()
         {
-            Response.ContentType = "application/json";
+            if (HttpContext?.Response != null) HttpContext.Response.ContentType = "application/json";
             // Fetch persisted indexers so that remote applications (Prowlarr) receive a JSON array
             var indexers = _dbContext.Indexers
                 .OrderBy(i => i.Priority)
@@ -151,7 +201,24 @@ namespace Listenarr.Api.Controllers
                     implementation = i.Implementation,
                     baseUrl = i.Url,
                     apiKey = i.ApiKey,
-                    categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray()
+                    categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray(),
+                    // Provide nested settings for compatibility with clients expecting a Lidarr-style payload
+                    settings = new
+                    {
+                        baseUrl = i.Url,
+                        apiKey = i.ApiKey,
+                        apiPath = string.Empty,
+                        categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray()
+                    },
+                    // Provide a fields array similar to Lidarr's payload (name/value pairs)
+                    fields = new[]
+                    {
+                        new FieldDto("baseUrl", i.Url ?? string.Empty),
+                        new FieldDto("apiKey", i.ApiKey ?? string.Empty),
+                        new FieldDto("apiPath", string.Empty),
+                        new FieldDto("categories", string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray())
+                    },
+                    tags = System.Array.Empty<int>()
                 })
                 .ToArray();
 
@@ -185,8 +252,16 @@ namespace Listenarr.Api.Controllers
                         baseUrl = string.Empty,
                         apiKey = (string?)null,
                         apiPath = string.Empty,
-                        categories = (string[]?)null
-                    }
+                        categories = System.Array.Empty<string>()
+                    },
+                    fields = new[]
+                    {
+                        new FieldDto("baseUrl", string.Empty),
+                        new FieldDto("apiKey", null),
+                        new FieldDto("apiPath", string.Empty),
+                        new FieldDto("categories", System.Array.Empty<string>())
+                    },
+                    tags = System.Array.Empty<int>()
                 };
 
                 return Ok(fallback);
@@ -206,7 +281,15 @@ namespace Listenarr.Api.Controllers
                     apiKey = i.ApiKey,
                     apiPath = string.Empty,
                     categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray()
-                }
+                },
+                fields = new[]
+                {
+                    new FieldDto("baseUrl", i.Url ?? string.Empty),
+                    new FieldDto("apiKey", i.ApiKey ?? string.Empty),
+                    new FieldDto("apiPath", string.Empty),
+                    new FieldDto("categories", string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray())
+                },
+                tags = System.Array.Empty<int>()
             };
 
             return Ok(dto);
@@ -242,6 +325,431 @@ namespace Listenarr.Api.Controllers
             Response.ContentType = "application/json";
             // Return an empty array by default. Prowlarr/Sonarr will POST indexers to populate.
             return Ok(System.Array.Empty<object>());
+        }
+
+        /// <summary>
+        /// DELETE /api/v1/indexer/{id}
+        /// Removes a persisted indexer by id. Matches Lidarr semantics: id must be > 0 and the endpoint returns an empty JSON object on success.
+        /// Maintained for Prowlarr compatibility so remote apps can delete indexers.
+        /// </summary>
+        [HttpDelete("indexer/{id:int}")]
+        [AllowAnonymous]
+        [IgnoreAntiforgeryToken]
+        [Produces("application/json")]
+        public async Task<IActionResult> DeleteIndexer(int id)
+        {
+            Response.ContentType = "application/json";
+
+            try
+            {
+                // Validate id (Lidarr rejects id <= 0), but be tolerant for external clients that may send 0.
+                if (id <= 0)
+                {
+                    // Log a clear warning with caller IP so operators can trace the origin of bad delete requests.
+                    var remoteIp = HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
+                    _logger?.LogWarning("Prowlarr: Delete requested with invalid id {Id} from {RemoteIp}", id, remoteIp);
+
+                    // Tolerate id==0 as a no-op to improve compatibility with clients that send 0 (avoid polluting their logs).
+                    return Ok(new { });
+                }
+
+                var i = _dbContext.Indexers.FirstOrDefault(x => x.Id == id);
+
+                if (i != null)
+                {
+                    _dbContext.Indexers.Remove(i);
+                    await _dbContext.SaveChangesAsync();
+
+                    _logger?.LogInformation("Prowlarr: Deleted indexer {Id} (name={Name})", i.Id, i.Name);
+
+                    // Broadcast update so UIs can refresh and publish a notification
+                    try
+                    {
+                        await _settingsHub.Clients.All.SendAsync("IndexersUpdated", new { created = 0, skipped = 0, indexers = new[] { new { id = i.Id, name = i.Name, baseUrl = i.Url } } });
+
+                        // Suppress duplicate delete toasts if one was recently sent for this indexer or the same message was sent globally
+                        var deleteMessage = $"Removed indexer: {i.Name}";
+                        if (ShouldSendToastForIndexer(i.Id, deleteMessage) && ShouldSendToastForMessage(deleteMessage))
+                        {
+                            await _toastService.PublishNotificationAsync("Indexers", deleteMessage, icon: null, timeoutMs: 8000);
+                        }
+                        else
+                        {
+                            _logger?.LogDebug("Suppressing delete toast for indexer {Id} due to recent toast or duplicate message", i.Id);
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        _logger?.LogWarning(ex, "Failed to broadcast IndexersUpdated after delete");
+                    }
+                }
+                else
+                {
+                    _logger?.LogInformation("Prowlarr: Delete requested for non-existent indexer {Id}", id);
+                }
+
+                // Return empty JSON object like Lidarr's ProviderControllerBase.DeleteProvider
+                return Ok(new { });
+            }
+            catch (System.Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to delete indexer {Id}", id);
+                return StatusCode(500, new { error = "Failed to delete indexer" });
+            }
+        }
+
+        /// <summary>
+        /// PUT /api/v1/indexer/{id}
+        /// Update an existing indexer by id. Accepts same tolerant payload shapes as POST.
+        /// </summary>
+        [HttpPut("indexer/{id:int}")]
+        [AllowAnonymous]
+        [IgnoreAntiforgeryToken]
+        [Produces("application/json")]
+        public async Task<IActionResult> PutIndexer(int id, [FromBody] System.Text.Json.JsonElement payload)
+        {
+            if (HttpContext?.Response != null) HttpContext.Response.ContentType = "application/json";
+
+            try
+            {
+                try
+                {
+                    var raw = payload.GetRawText();
+                    var redacted = LogRedaction.RedactText(raw, LogRedaction.GetSensitiveValuesFromEnvironment());
+                    _logger?.LogInformation("Prowlarr indexer update payload body: {Payload}", redacted);
+                }
+                catch { }
+
+                var indexer = _dbContext.Indexers.FirstOrDefault(x => x.Id == id);
+                var created = false;
+                if (indexer == null)
+                {
+                    // Parse payload for upsert/create (tolerant to fields/settings shapes)
+                    var nameFromPayload = GetStringProperty(payload, "name", "title");
+                    var implementationFromPayload = GetStringProperty(payload, "implementation", "type");
+                    var baseUrlFromPayload = GetStringProperty(payload, "baseUrl", "url");
+                    var apiPathFromPayload = GetStringProperty(payload, "apiPath", null);
+                    var apiKeyFromPayload = GetStringProperty(payload, "apiKey", null);
+                    var categoriesFromPayload = ParseCategories(payload);
+
+                    // Try settings object
+                    if (string.IsNullOrEmpty(baseUrlFromPayload) && payload.TryGetProperty("settings", out var settingsPayload) && settingsPayload.ValueKind == System.Text.Json.JsonValueKind.Object)
+                    {
+                        baseUrlFromPayload = GetStringProperty(settingsPayload, "baseUrl", "url");
+                        if (string.IsNullOrEmpty(apiKeyFromPayload)) apiKeyFromPayload = GetStringProperty(settingsPayload, "apiKey", "apikey");
+                        if (string.IsNullOrEmpty(apiPathFromPayload)) apiPathFromPayload = GetStringProperty(settingsPayload, "apiPath", null);
+                    }
+
+                    // Try fields array
+                    if (payload.TryGetProperty("fields", out var fieldsArray) && fieldsArray.ValueKind == System.Text.Json.JsonValueKind.Array)
+                    {
+                        foreach (var f in fieldsArray.EnumerateArray())
+                        {
+                            if (f.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
+                            var fname = GetStringProperty(f, "name", null);
+                            if (string.IsNullOrEmpty(fname)) continue;
+
+                            if (fname.Equals("baseUrl", System.StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                                    baseUrlFromPayload = v.GetString() ?? baseUrlFromPayload;
+                            }
+
+                            if (fname.Equals("apiKey", System.StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                                    apiKeyFromPayload = v.GetString() ?? apiKeyFromPayload;
+                            }
+
+                            if (fname.Equals("apiPath", System.StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                                    apiPathFromPayload = v.GetString() ?? apiPathFromPayload;
+                            }
+
+                            if (fname.Equals("categories", System.StringComparison.InvariantCultureIgnoreCase))
+                            {
+                                if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Array)
+                                {
+                                    var parts = v.EnumerateArray().Select(x => x.ValueKind == System.Text.Json.JsonValueKind.Number ? x.GetInt32().ToString() : x.GetString() ?? string.Empty).Where(s => !string.IsNullOrEmpty(s));
+                                    categoriesFromPayload = string.Join(',', parts);
+                                }
+                                else if (f.TryGetProperty("value", out var vs) && vs.ValueKind == System.Text.Json.JsonValueKind.String)
+                                {
+                                    categoriesFromPayload = vs.GetString() ?? categoriesFromPayload;
+                                }
+                            }
+                        }
+                    }
+
+                    var urlFromPayload = (baseUrlFromPayload ?? string.Empty).Trim();
+                    if (!string.IsNullOrEmpty(apiPathFromPayload) && !string.IsNullOrEmpty(urlFromPayload))
+                    {
+                        urlFromPayload = urlFromPayload.TrimEnd('/') + "/" + apiPathFromPayload.Trim('/');
+                    }
+
+                    var normalized = NormalizeIndexerUrl(urlFromPayload);
+                    var existing = _dbContext.Indexers.AsNoTracking().ToList().FirstOrDefault(i => NormalizeIndexerUrl(i.Url) == normalized && (i.ApiKey ?? string.Empty) == (apiKeyFromPayload ?? string.Empty));
+                    if (existing != null)
+                    {
+                        // Load tracked entity for update
+                        indexer = _dbContext.Indexers.FirstOrDefault(x => x.Id == existing.Id);
+                    }
+                    else
+                    {
+                        // Not found: create new indexer entry from parsed payload (upsert behavior)
+                        indexer = new Listenarr.Domain.Models.Indexer
+                        {
+                            Name = string.IsNullOrEmpty(nameFromPayload) ? (string.IsNullOrEmpty(baseUrlFromPayload) ? "Prowlarr Indexer" : baseUrlFromPayload) : nameFromPayload,
+                            Implementation = string.IsNullOrEmpty(implementationFromPayload) ? "Custom" : implementationFromPayload,
+                            Url = urlFromPayload,
+                            ApiKey = string.IsNullOrEmpty(apiKeyFromPayload) ? null : apiKeyFromPayload,
+                            Categories = categoriesFromPayload ?? string.Empty,
+                            CreatedAt = DateTime.UtcNow,
+                            UpdatedAt = DateTime.UtcNow,
+                            IsEnabled = true,
+                            Tags = string.Empty,
+                            AdditionalSettings = string.Empty
+                        };
+
+                        var implLower = (indexer.Implementation ?? string.Empty).ToLowerInvariant();
+                        indexer.Type = implLower.Contains("newznab") ? "Usenet" : (implLower.Contains("torznab") ? "Torrent" : "Custom");
+
+                        _dbContext.Indexers.Add(indexer);
+                        created = true;
+                        await _dbContext.SaveChangesAsync();
+
+                        _logger?.LogInformation("Prowlarr: Created indexer (upsert from PUT) (name={Name}, url={Url}, apiKeyPresent={HasApiKey})", indexer.Name, indexer.Url, !string.IsNullOrEmpty(indexer.ApiKey));
+
+                        // NOTE: Do not broadcast notifications here. We will broadcast once at the end of the handler
+                        // after dedupe to avoid duplicate notifications when concurrent PUTs create duplicate entries.
+                    }
+                }
+
+                // Defensive: indexer should be non-null after upsert logic; if it is still null, return an error instead of throwing
+                if (indexer == null)
+                {
+                    _logger?.LogError("Prowlarr: Indexer was null after upsert logic for id={Id}", id);
+                    return StatusCode(500, new { error = "Failed to locate or create indexer" });
+                }
+
+                if (payload.ValueKind != System.Text.Json.JsonValueKind.Object)
+                {
+                    return BadRequest(new { message = "Expected JSON object for indexer update" });
+                }
+
+                // Extract tolerant fields from payload
+                var name = GetStringProperty(payload, "name", "title");
+                var implementation = GetStringProperty(payload, "implementation", "type");
+                var baseUrl = GetStringProperty(payload, "baseUrl", "url");
+                var apiPath = GetStringProperty(payload, "apiPath", null);
+                var apiKey = GetStringProperty(payload, "apiKey", null);
+
+                // Try settings object
+                if (string.IsNullOrEmpty(baseUrl) && payload.TryGetProperty("settings", out var settings) && settings.ValueKind == System.Text.Json.JsonValueKind.Object)
+                {
+                    baseUrl = GetStringProperty(settings, "baseUrl", "url");
+                    if (string.IsNullOrEmpty(apiKey)) apiKey = GetStringProperty(settings, "apiKey", "apikey");
+                    if (string.IsNullOrEmpty(apiPath)) apiPath = GetStringProperty(settings, "apiPath", null);
+                }
+
+                // Try fields array
+                var categories = ParseCategories(payload);
+
+                if (payload.TryGetProperty("fields", out var fieldsProp) && fieldsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    foreach (var f in fieldsProp.EnumerateArray())
+                    {
+                        if (f.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
+                        var fname = GetStringProperty(f, "name", null);
+                        if (string.IsNullOrEmpty(fname)) continue;
+
+                        if (fname.Equals("baseUrl", System.StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                                baseUrl = v.GetString() ?? baseUrl;
+                        }
+
+                        if (fname.Equals("apiKey", System.StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                                apiKey = v.GetString() ?? apiKey;
+                        }
+
+                        if (fname.Equals("apiPath", System.StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
+                                apiPath = v.GetString() ?? apiPath;
+                        }
+
+                        if (fname.Equals("categories", System.StringComparison.InvariantCultureIgnoreCase))
+                        {
+                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Array)
+                            {
+                                var parts = v.EnumerateArray().Select(x => x.ValueKind == System.Text.Json.JsonValueKind.Number ? x.GetInt32().ToString() : x.GetString() ?? string.Empty).Where(s => !string.IsNullOrEmpty(s));
+                                categories = string.Join(',', parts);
+                            }
+                            else if (f.TryGetProperty("value", out var vs) && vs.ValueKind == System.Text.Json.JsonValueKind.String)
+                            {
+                                categories = vs.GetString() ?? categories;
+                            }
+                        }
+                    }
+                }
+
+                // Apply updates
+                if (!string.IsNullOrEmpty(name)) indexer.Name = name;
+                if (!string.IsNullOrEmpty(implementation)) indexer.Implementation = implementation;
+
+                var url = (baseUrl ?? string.Empty).Trim();
+                if (!string.IsNullOrEmpty(apiPath) && !string.IsNullOrEmpty(url))
+                {
+                    url = url.TrimEnd('/') + "/" + apiPath.Trim('/');
+                }
+
+                if (!string.IsNullOrEmpty(url)) indexer.Url = url;
+                indexer.ApiKey = string.IsNullOrEmpty(apiKey) ? null : apiKey;
+                indexer.Categories = categories ?? indexer.Categories;
+                indexer.UpdatedAt = DateTime.UtcNow;
+
+                _dbContext.Indexers.Update(indexer);
+                await _dbContext.SaveChangesAsync();
+
+                // After saving, ensure we dedupe any other entries with same normalized URL + ApiKey (concurrent upsert safety)
+                try
+                {
+                    var normalizedUrl = NormalizeIndexerUrl(indexer.Url);
+                    var apiKeyCompare = indexer.ApiKey ?? string.Empty;
+                    await CleanupDuplicateIndexersAsync(normalizedUrl, apiKeyCompare);
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to dedupe indexers after update for {Id}", indexer.Id);
+                }
+
+                // Notify clients (compute whether the created indexer still exists after dedupe to avoid duplicate notifications)
+                try
+                {
+                    var stillExists = _dbContext.Indexers.Any(i => i.Id == indexer.Id);
+                    var createdForBroadcast = (created && stillExists) ? 1 : 0;
+                    await _settingsHub.Clients.All.SendAsync("IndexersUpdated", new { created = createdForBroadcast, skipped = 0, indexers = new[] { new { id = indexer.Id, name = indexer.Name, baseUrl = indexer.Url } } });
+
+                    // Determine toast message. If the indexer was created very recently (by a prior POST or PUT),
+                    // suppress an additional 'Updated' toast to avoid duplicate notifications for rapid import/update flows.
+                    var toastMessage = createdForBroadcast == 1 ? $"Imported indexer from PUT: {indexer.Name}" : $"Updated indexer: {indexer.Name}";
+                    var publishToast = true;
+                    try
+                    {
+                        if (createdForBroadcast == 0 && indexer.CreatedAt != default && (DateTime.UtcNow - indexer.CreatedAt).TotalSeconds < NotificationSuppressionSeconds)
+                        {
+                            publishToast = false;
+                            _logger?.LogDebug("Suppressing update toast for indexer {Id} since it was created recently", indexer.Id);
+                        }
+                    }
+                    catch { }
+
+                    if (publishToast)
+                    {
+                        // Further suppress toasts if a recent toast for this indexer was already sent OR the same message was recently sent globally
+                        bool sendByIndexer = false;
+                        bool sendByMessage = false;
+                        try
+                        {
+                            sendByIndexer = ShouldSendToastForIndexer(indexer.Id, toastMessage);
+                        }
+                        catch { sendByIndexer = true; }
+                        try
+                        {
+                            sendByMessage = ShouldSendToastForMessage(toastMessage);
+                        }
+                        catch { sendByMessage = true; }
+
+                        _logger?.LogDebug("Toast suppression check for indexer {Id}: byIndexer={ByIndexer}, byMessage={ByMessage}", indexer.Id, sendByIndexer, sendByMessage);
+
+                        if (sendByIndexer && sendByMessage)
+                        {
+                            await _toastService.PublishNotificationAsync("Indexers", toastMessage, icon: null, timeoutMs: 8000);
+                        }
+                        else
+                        {
+                            _logger?.LogDebug("Suppressing toast for indexer {Id} due to recent toast or duplicate message", indexer.Id);
+                        }
+                    }
+                }
+                catch (System.Exception ex)
+                {
+                    _logger?.LogWarning(ex, "Failed to broadcast IndexersUpdated after update");
+                }
+
+                // Return updated DTO (consistent with GetIndexerById shape)
+                var dto = new
+                {
+                    id = indexer.Id,
+                    name = indexer.Name,
+                    implementation = indexer.Implementation,
+                    baseUrl = indexer.Url,
+                    apiKey = indexer.ApiKey,
+                    categories = string.IsNullOrEmpty(indexer.Categories) ? System.Array.Empty<string>() : indexer.Categories.Split(',').Select(s => s.Trim()).ToArray(),
+                    settings = new
+                    {
+                        baseUrl = indexer.Url,
+                        apiKey = indexer.ApiKey,
+                        apiPath = string.Empty,
+                        categories = string.IsNullOrEmpty(indexer.Categories) ? System.Array.Empty<string>() : indexer.Categories.Split(',').Select(s => s.Trim()).ToArray()
+                    },
+                    fields = new[]
+                    {
+                        new FieldDto("baseUrl", indexer.Url ?? string.Empty),
+                        new FieldDto("apiKey", indexer.ApiKey ?? string.Empty),
+                        new FieldDto("apiPath", string.Empty),
+                        new FieldDto("categories", string.IsNullOrEmpty(indexer.Categories) ? System.Array.Empty<string>() : indexer.Categories.Split(',').Select(s => s.Trim()).ToArray())
+                    },
+                    tags = System.Array.Empty<int>()
+                };
+
+                if (created)
+                {
+                    return CreatedAtAction(nameof(GetIndexerById), new { id = indexer.Id }, dto);
+                }
+
+                return Ok(dto);
+            }
+            catch (System.Exception ex)
+            {
+                _logger?.LogError(ex, "Failed to update indexer {Id}", id);
+                return StatusCode(500, new { error = "Failed to update indexer" });
+            }
+        }
+
+        // Remove duplicate persisted indexers that share the same normalized URL + ApiKey.
+        // Keeps the earliest created (lowest Id) and removes the rest.
+        private async Task CleanupDuplicateIndexersAsync(string normalizedUrl, string apiKey)
+        {
+            try
+            {
+                // Pull into memory first so we can use NormalizeIndexerUrl without requiring an EF translation
+                var duplicates = _dbContext.Indexers
+                    .AsNoTracking()
+                    .ToList()
+                    .Where(i => NormalizeIndexerUrl(i.Url) == normalizedUrl && (i.ApiKey ?? string.Empty) == apiKey)
+                    .OrderBy(i => i.Id)
+                    .ToList();
+
+                if (duplicates.Count <= 1) return;
+
+                // Keep the first, remove the rest
+                var keep = duplicates.First();
+                var remove = duplicates.Skip(1).ToList();
+
+                _logger?.LogInformation("Dedupe: Removing {Count} duplicate indexer(s) for url={Url}", remove.Count, normalizedUrl);
+
+                _dbContext.Indexers.RemoveRange(remove);
+                await _dbContext.SaveChangesAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger?.LogWarning(ex, "Failed to cleanup duplicate indexers for {Url}", normalizedUrl);
+            }
         }
 
         /// <summary>
@@ -319,9 +827,9 @@ namespace Listenarr.Api.Controllers
                 // If baseUrl/apiKey/apiPath absent, try to look for a settings object with baseUrl/apiKey
                 if (string.IsNullOrEmpty(baseUrl) && item.TryGetProperty("settings", out var settings) && settings.ValueKind == System.Text.Json.JsonValueKind.Object)
                 {
-                    baseUrl = getString(settings, "baseUrl", "url");
-                    if (string.IsNullOrEmpty(apiKey)) apiKey = getString(settings, "apiKey", "apikey");
-                    if (string.IsNullOrEmpty(apiPath)) apiPath = getString(settings, "apiPath", null);
+                    baseUrl = GetStringProperty(settings, "baseUrl", "url");
+                    if (string.IsNullOrEmpty(apiKey)) apiKey = GetStringProperty(settings, "apiKey", "apikey");
+                    if (string.IsNullOrEmpty(apiPath)) apiPath = GetStringProperty(settings, "apiPath", null);
                 }
 
                 // If still missing, try to extract from a "fields" array (Prowlarr sends baseUrl/apiKey/categories within fields)
@@ -399,7 +907,9 @@ namespace Listenarr.Api.Controllers
                     Implementation = implementation,
                     Url = url,
                     ApiKey = string.IsNullOrEmpty(apiKey) ? null : apiKey,
-                    Categories = categories,
+                    Categories = categories ?? string.Empty,
+                    Tags = string.Empty,
+                    AdditionalSettings = string.Empty,
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow,
                     IsEnabled = true
@@ -418,34 +928,57 @@ namespace Listenarr.Api.Controllers
             if (created > 0)
             {
                 await _dbContext.SaveChangesAsync();
-                try
-                {
+
+                    // Cleanup any duplicates caused by concurrent upserts (dedupe by normalized URL + ApiKey)
+                    foreach (var ci in createdIndexers.ToList())
+                    {
+                        try
+                        {
+                            var normalizedUrl = NormalizeIndexerUrl(ci.Url);
+                            var apiKey = ci.ApiKey ?? string.Empty;
+                            await CleanupDuplicateIndexersAsync(normalizedUrl, apiKey);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogWarning(ex, "Failed to dedupe indexers for {Name}", ci.Name);
+                        }
+                    }
+
                     // Notify connected clients that indexers changed so the UI can refresh
-                    var createdInfo = createdIndexers.Select(i => new { id = i.Id, name = i.Name, baseUrl = i.Url }).ToArray();
-
-                    _logger?.LogInformation("Broadcasting IndexersUpdated to clients: created={Created}, skipped={Skipped}, indexerCount={Count}", created, skipped, createdInfo.Length);
-
-                    await _settingsHub.Clients.All.SendAsync("IndexersUpdated", new { created, skipped, indexers = createdInfo });
-
-                    _logger?.LogInformation("IndexersUpdated broadcast complete");
-
-                    // Publish a toast + dropdown notification so the activity bell receives the update
                     try
                     {
-                        var names = createdIndexers.Select(i => i.Name).ToArray();
+                        var createdInfo = createdIndexers.Select(i => new { id = i.Id, name = i.Name, baseUrl = i.Url }).ToArray();
+
+                        _logger?.LogInformation("Broadcasting IndexersUpdated to clients: created={Created}, skipped={Skipped}, indexerCount={Count}", created, skipped, createdInfo.Length);
+
+                        await _settingsHub.Clients.All.SendAsync("IndexersUpdated", new { created, skipped, indexers = createdInfo });
+
+                        _logger?.LogInformation("IndexersUpdated broadcast complete");
+
+                        // Publish a toast + dropdown notification so the activity bell receives the update
+                        try
+                        {
+                            var names = createdIndexers.Select(i => i.Name).ToArray();
                         var message = names.Length > 0 ? $"Imported {created} indexer(s): {string.Join(", ", names)}" : $"Imported {created} indexer(s) successfully";
-                        await _toastService.PublishNotificationAsync("Indexers", message, icon: null, timeoutMs: 8000);
+                        if (ShouldSendToastForMessage(message))
+                        {
+                            await _toastService.PublishNotificationAsync("Indexers", message, icon: null, timeoutMs: 8000);
+                        }
+                        else
+                        {
+                            _logger?.LogDebug("Suppressing batch import toast due to recent identical message");
+                        }
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger?.LogWarning(ex, "Failed to publish indexer import notification");
+                        }
                     }
-                    catch (Exception ex)
+                    catch (System.Exception ex)
                     {
-                        _logger?.LogWarning(ex, "Failed to publish indexer import notification");
+                        _logger?.LogWarning(ex, "Failed to broadcast IndexersUpdated via SignalR");
                     }
                 }
-                catch (System.Exception ex)
-                {
-                    _logger?.LogWarning(ex, "Failed to broadcast IndexersUpdated via SignalR");
-                }
-            }
 
             // Log a summary for diagnostics
             _logger?.LogInformation("Prowlarr: Indexers processed - created={Created}, skipped={Skipped}", created, skipped);
@@ -458,8 +991,24 @@ namespace Listenarr.Api.Controllers
                 implementation = i.Implementation,
                 baseUrl = i.Url,
                 apiKey = i.ApiKey,
-                categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray()
+                categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray(),
+                settings = new
+                {
+                    baseUrl = i.Url,
+                    apiKey = i.ApiKey,
+                    apiPath = string.Empty,
+                    categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray()
+                },
+                fields = new object[]
+                {
+                    new FieldDto("baseUrl", i.Url ?? string.Empty),
+                    new FieldDto("apiKey", i.ApiKey ?? string.Empty),
+                    new FieldDto("apiPath", string.Empty),
+                    new FieldDto("categories", string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray())
+                }
             }).ToArray();
+
+
 
             return Ok(new { accepted = true, created, skipped, indexers = createdDtos });
         }
@@ -570,10 +1119,11 @@ namespace Listenarr.Api.Controllers
 
             if (payload.ValueKind == System.Text.Json.JsonValueKind.Object)
             {
-                // Wrap single object into an array and delegate to existing handler
+                // Wrap single object into an array and delegate to existing handler (preserve original PostIndexers response shape)
                 var arrJson = "[" + payload.GetRawText() + "]";
                 using var doc = System.Text.Json.JsonDocument.Parse(arrJson);
-                return await PostIndexers(doc.RootElement);
+                var res = await PostIndexers(doc.RootElement);
+                return res;
             }
 
             if (payload.ValueKind == System.Text.Json.JsonValueKind.Array)
@@ -595,20 +1145,36 @@ namespace Listenarr.Api.Controllers
         {
             Response.ContentType = "application/json";
 
-            var schema = new IndexerSchemaDto
+            var fields = new[]
             {
-                Fields = new[]
-                {
-                    new IndexerFieldDto { Name = "name", Type = "string", Required = true, Description = "Indexer name" },
-                    new IndexerFieldDto { Name = "baseUrl", Type = "string", Required = true, Description = "Base URL of indexer" },
-                    new IndexerFieldDto { Name = "apiPath", Type = "string", Required = true, Description = "API path (e.g. /api or /torznab)" },
-                    new IndexerFieldDto { Name = "apiKey", Type = "string", Required = false, Description = "API key or token" },
-                    new IndexerFieldDto { Name = "categories", Type = "array", Required = false, Description = "Optional categories filter (array of integers or strings)" }
-                },
-                Implementations = new[] { "Newznab", "Torznab" }
+                new IndexerFieldDto { Name = "name", Type = "string", Required = true, Description = "Indexer name" },
+                new IndexerFieldDto { Name = "baseUrl", Type = "string", Required = true, Description = "Base URL of indexer" },
+                new IndexerFieldDto { Name = "apiPath", Type = "string", Required = true, Description = "API path (e.g. /api or /torznab)" },
+                new IndexerFieldDto { Name = "apiKey", Type = "string", Required = false, Description = "API key or token" },
+                new IndexerFieldDto { Name = "categories", Type = "array", Required = false, Description = "Optional categories filter (array of integers or strings)" }
             };
 
-            return Ok(schema);
+            // Return an array of schema entries, one per supported implementation (Prowlarr expects a JSON array here)
+            var schemaArray = new[]
+            {
+                new { fields = fields, implementation = "Newznab" },
+                new { fields = fields, implementation = "Torznab" }
+            };
+
+            return Ok(schemaArray);
+        }
+
+        /// <summary>
+        /// GET /api/v1/indexers/schema
+        /// Backwards-compatible plural route to return the same minimal schema array as /api/v1/indexer/schema.
+        /// </summary>
+        [HttpGet("indexers/schema")]
+        [AllowAnonymous]
+        [Produces("application/json")]
+        public IActionResult GetIndexersSchema()
+        {
+            // Delegate to singular route handler to avoid duplication and ensure consistent output
+            return GetIndexerSchema();
         }
 
         private static string NormalizeIndexerUrl(string url)
@@ -636,6 +1202,37 @@ namespace Listenarr.Api.Controllers
             {
                 return url?.TrimEnd('/') ?? string.Empty;
             }
+        }
+
+        // Helper to read tolerant string properties from a JSON element
+        private static string GetStringProperty(System.Text.Json.JsonElement el, string prop1, string? prop2 = null)
+        {
+            if (el.ValueKind != System.Text.Json.JsonValueKind.Object) return string.Empty;
+
+            if (el.TryGetProperty(prop1, out var p) && p.ValueKind == System.Text.Json.JsonValueKind.String)
+                return p.GetString() ?? string.Empty;
+            if (prop2 != null && el.TryGetProperty(prop2, out var p2) && p2.ValueKind == System.Text.Json.JsonValueKind.String)
+                return p2.GetString() ?? string.Empty;
+            return string.Empty;
+        }
+
+        // Helper to parse categories property (array or string) into a comma-separated string
+        private static string? ParseCategories(System.Text.Json.JsonElement el)
+        {
+            if (el.TryGetProperty("categories", out var cats))
+            {
+                if (cats.ValueKind == System.Text.Json.JsonValueKind.Array)
+                {
+                    var parts = cats.EnumerateArray().Select(x => x.ValueKind == System.Text.Json.JsonValueKind.Number ? x.GetInt32().ToString() : x.GetString() ?? string.Empty).Where(s => !string.IsNullOrEmpty(s));
+                    return string.Join(',', parts);
+                }
+                else if (cats.ValueKind == System.Text.Json.JsonValueKind.String)
+                {
+                    return cats.GetString();
+                }
+            }
+
+            return null;
         }
 
         // DTOs
@@ -669,5 +1266,8 @@ namespace Listenarr.Api.Controllers
             public bool Required { get; init; }
             public string Description { get; init; } = string.Empty;
         }
+
+        // Simple field DTO to match Listenarr/Prowlarr field shape (Name/Value)
+        private record FieldDto(string Name, object? Value);
     }
 }

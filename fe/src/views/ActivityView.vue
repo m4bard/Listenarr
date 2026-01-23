@@ -220,7 +220,7 @@ import { signalRService } from '@/services/signalr'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueItem, Download } from '@/types'
-import CustomSelect from '@/components/CustomSelect.vue'
+import CustomSelect from '@/components/inputs/CustomSelect.vue'
 
 const downloadsStore = useDownloadsStore()
 const configStore = useConfigurationStore()
@@ -754,18 +754,7 @@ onUnmounted(() => {
   font-size: 0.9rem;
 }
 
-.btn-secondary {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #adb5bd;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: white;
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-1px);
-}
+/* Button color variants centralized in `src/assets/modals.css` */
 
 .btn-secondary:disabled {
   opacity: 0.5;
@@ -1354,12 +1343,10 @@ onUnmounted(() => {
   margin-top: 0.1rem;
 }
 
+/* modal-footer styles are centralized in src/assets/modals.css; keep this view's alignment and spacing */
 .modal-footer {
-  display: flex;
   justify-content: flex-end;
   gap: 0.75rem;
-  padding: 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .btn-danger {

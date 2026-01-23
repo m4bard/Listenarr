@@ -177,9 +177,9 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { apiService } from '@/services/api'
 import { errorTracking } from '@/services/errorTracking'
 import { handleImageError } from '@/utils/imageFallback'
-import ManualSearchModal from '@/components/ManualSearchModal.vue'
-import ManualImportModal from '@/components/ManualImportModal.vue'
-import CustomSelect from '@/components/CustomSelect.vue'
+import ManualSearchModal from '@/components/search/ManualSearchModal.vue'
+import ManualImportModal from '@/components/download/ManualImportModal.vue'
+import CustomSelect from '@/components/inputs/CustomSelect.vue'
 import type { Audiobook, SearchResult, Download } from '@/types'
 import { safeText } from '@/utils/textUtils'
 import {
@@ -658,18 +658,7 @@ const markAsSkipped = async (item: Audiobook) => {
   transform: translateY(-1px);
 }
 
-.btn-secondary {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: #adb5bd;
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.12);
-  color: white;
-  border-color: rgba(255, 255, 255, 0.15);
-  transform: translateY(-1px);
-}
+/* Button color variants centralized in `src/assets/modals.css` */
 
 .btn svg {
   width: 18px;

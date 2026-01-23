@@ -1,100 +1,79 @@
 <template>
-  <div class="modal-overlay">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h3>{{ root?.id ? 'Edit Root Folder' : 'Add Root Folder' }}</h3>
-        <button @click="close" class="modal-close">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            stroke-width="2"
-          >
-            <line x1="18" y1="6" x2="6" y2="18"></line>
-            <line x1="6" y1="6" x2="18" y2="18"></line>
-          </svg>
-        </button>
+  <Modal :visible="true" size="md" @close="close">
+    <template #header>
+      <div class="modal-title">
+        <h3><PhFolder /> {{ root?.id ? 'Edit Root Folder' : 'Add Root Folder' }}</h3>
+      </div>
+      <button class="close-btn" @click="close">
+        <PhX />
+      </button>
+    </template>
+
+    <template #default>
+      <div class="form-row">
+        <label>Name</label>
+        <input v-model="form.name" placeholder="Enter a name for this root folder" />
       </div>
 
-      <div class="modal-body">
-        <div class="form-row">
-          <label>Name</label>
-          <input v-model="form.name" placeholder="Enter a name for this root folder" />
-        </div>
-
-        <div class="form-row">
-          <label>Path</label>
-          <FolderBrowser v-model="form.path" placeholder="Select or enter a path..." />
-        </div>
-
-        <div class="form-row">
-          <label class="checkbox-label">
-            <input type="checkbox" v-model="form.isDefault" />
-            <span>Set as default root folder</span>
-          </label>
-        </div>
+      <div class="form-row">
+        <label>Path</label>
+        <FolderBrowser v-model="form.path" placeholder="Select or enter a path..." />
       </div>
 
-      <div class="modal-actions">
-        <button class="btn" @click="close">Cancel</button>
-        <button class="btn primary" @click="save" :disabled="!form.name || !form.path">Save</button>
+      <div class="form-row">
+        <label class="checkbox-label">
+          <input type="checkbox" v-model="form.isDefault" />
+          <span>Set as default root folder</span>
+        </label>
       </div>
+    </template>
 
-      <!-- Rename confirmation modal -->
-      <div v-if="showConfirm" class="modal-overlay confirm-modal" @click.self="showConfirm = false">
-        <div class="modal-content">
-          <div class="modal-header">
-            <h3>Move audiobook files?</h3>
-            <button @click="showConfirm = false" class="modal-close">
-              <svg
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <line x1="18" y1="6" x2="6" y2="18"></line>
-                <line x1="6" y1="6" x2="18" y2="18"></line>
-              </svg>
-            </button>
-          </div>
-          <div class="modal-body">
-            <div class="confirm-body">
-              <p>You're changing the root path and may move all files from:</p>
-              <pre>{{ root?.path || '&lt;none&gt;' }}</pre>
-              <p>to:</p>
-              <pre>{{ form.path || '&lt;none&gt;' }}</pre>
-              <div class="checkbox-row">
-                <label>
-                  <input type="checkbox" v-model="modalMoveFiles" />
-                  <strong>Move files</strong> (recommended)
-                </label>
-              </div>
-              <div class="checkbox-row" v-if="modalMoveFiles">
-                <label>
-                  <input type="checkbox" v-model="modalDeleteEmpty" />
-                  Delete original folder if empty
-                </label>
-              </div>
+    <template #footer>
+      <button class="cancel-button" @click="close"><PhX /> Cancel</button>
+      <button class="btn btn-primary" @click="save" :disabled="!form.name || !form.path"><PhCheck /> Save</button>
+    </template>
+  </Modal> 
+
+      <!-- Rename confirmation modal (shared) -->
+      <Modal :visible="showConfirm" size="md" @close="showConfirm = false">
+        <template #header>
+          <h3>Move audiobook files?</h3>
+        </template>
+
+        <template #default>
+          <div class="confirm-body">
+            <p>You're changing the root path and may move all files from:</p>
+            <pre>{{ root?.path || '&lt;none&gt;' }}</pre>
+            <p>to:</p>
+            <pre>{{ form.path || '&lt;none&gt;' }}</pre>
+            <div class="checkbox-row">
+              <label>
+                <input type="checkbox" v-model="modalMoveFiles" />
+                <strong>Move files</strong> (recommended)
+              </label>
+            </div>
+            <div class="checkbox-row" v-if="modalMoveFiles">
+              <label>
+                <input type="checkbox" v-model="modalDeleteEmpty" />
+                Delete original folder if empty
+              </label>
             </div>
           </div>
-          <div class="modal-actions">
-            <button class="btn" @click="showConfirm = false">Cancel</button>
-            <button class="btn" @click="confirmChange(false)">Change without moving</button>
-            <button class="btn primary" @click="confirmChange(true)">Move Files</button>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
+        </template>
+
+        <template #footer>
+          <button class="cancel-button" @click="showConfirm = false"><PhX /> Cancel</button>
+          <button class="cancel-button" @click="confirmChange(false)">Change without moving</button>
+          <button class="btn btn-primary" @click="confirmChange(true)">Move Files</button>
+        </template>
+      </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import FolderBrowser from '@/components/FolderBrowser.vue'
+import FolderBrowser from '@/components/ui/FolderBrowser.vue'
+import { Modal } from '@/components/modal'
+import { PhFolder, PhX, PhCheck } from '@phosphor-icons/vue' 
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useToast } from '@/services/toastService'
 import type { RootFolder } from '@/types'
@@ -175,48 +154,7 @@ async function confirmChange(moveFiles: boolean) {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-  padding: 1rem;
-}
-
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 500px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  overflow: hidden;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid #444;
-}
-
-.modal-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.25rem;
-  font-weight: 600;
-}
+/* Modal-specific styling is now provided by shared `modals.css` */
 
 .modal-close {
   background: none;
@@ -324,25 +262,14 @@ async function confirmChange(moveFiles: boolean) {
   margin-left: 0.25rem;
 }
 
-.modal-actions {
-  display: flex;
+/* modal-footer base styles are centralized in src/assets/modals.css; keep modal-specific background and spacing */
+.modal-footer {
   justify-content: flex-end;
   gap: 0.75rem;
-  padding: 1.5rem 2rem;
-  border-top: 1px solid #444;
   background: #2a2a2a;
 }
 
-.btn {
-  padding: 0.75rem 1.25rem;
-  border-radius: 6px;
-  border: none;
-  background: #333;
-  color: #fff;
-  cursor: pointer;
-  font-weight: 500;
-  transition: all 0.2s ease;
-}
+/* Base `.btn` styles are centralized in src/assets/modals.css; avoid duplicating them here. */
 
 .btn:hover:not(:disabled) {
   background: #444;

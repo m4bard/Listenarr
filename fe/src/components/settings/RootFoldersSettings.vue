@@ -16,10 +16,6 @@
           Add a root folder to organize your audiobook library. You can create multiple named root
           folders for different storage locations.
         </p>
-        <button class="btn primary" @click="openAdd()">
-          <PhPlus />
-          Add Your First Root Folder
-        </button>
       </div>
 
       <div v-else class="folders-list">
@@ -82,35 +78,16 @@
       @saved="onSaved"
     />
 
-    <!-- Delete Root Folder Confirmation Modal -->
-    <div v-if="folderToDelete" class="modal-overlay" @click="folderToDelete = null">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>
-            <PhWarningCircle />
-            Delete Root Folder
-          </h3>
-          <button @click="folderToDelete = null" class="modal-close">
-            <PhX />
-          </button>
-        </div>
-        <div class="modal-body">
-          <p>
-            Are you sure you want to delete the root folder
-            <strong>{{ folderToDelete.name }}</strong
-            >?
-          </p>
-          <p>This will only remove the reference and will not delete files from disk.</p>
-        </div>
-        <div class="modal-actions">
-          <button @click="folderToDelete = null" class="cancel-button">Cancel</button>
-          <button @click="executeDeleteFolder()" class="delete-button">
-            <PhTrash />
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- Delete Root Folder Confirmation (shared) -->
+    <DeleteConfirmationModal :visible="!!folderToDelete" title="Delete Root Folder" @close="folderToDelete = null" @confirm="executeDeleteFolder">
+      <template v-slot>
+        <p>
+          Are you sure you want to delete the root folder
+          <strong>{{ folderToDelete?.name }}</strong>?
+        </p>
+        <p>This will only remove the reference and will not delete files from disk.</p>
+      </template>
+    </DeleteConfirmationModal>
   </div>
 </template>
 
@@ -118,6 +95,7 @@
 import { ref, onMounted } from 'vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import RootFolderFormModal from '@/components/settings/RootFolderFormModal.vue'
+import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import {
@@ -265,15 +243,27 @@ defineExpose({
 }
 
 .empty-state {
-  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
   padding: 4rem 2rem;
   color: #868e96;
+  min-height: 40vh; /* center within the tab when empty */
+  gap: 1rem;
+}
+
+.empty-state svg {
+  font-size: 2rem;
+  color: #4dabf7;
+  opacity: 0.9;
+  margin-bottom: 0.25rem;
 }
 
 .empty-state h4 {
-  margin: 1rem 0 0.5rem 0;
+  margin: 0;
   color: #fff;
-  font-size: 1.5rem;
+  font-size: 1.6rem;
   font-weight: 600;
 }
 
@@ -324,7 +314,7 @@ defineExpose({
 .folder-header {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center; /* align actions vertically with title */
   padding: 1.5rem;
   background-color: rgba(0, 0, 0, 0.2);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
@@ -339,7 +329,7 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 0.75rem;
-  margin-bottom: 0.5rem;
+  margin-bottom: 0; /* remove extra gap so title centers with actions */
 }
 
 .folder-badges {
@@ -459,56 +449,7 @@ defineExpose({
   transform: translateY(-1px);
 }
 
-/* Modal Styles (canonical) */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #444;
-}
-
-.modal-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.25rem;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  color: #b3b3b3;
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
+/* Modal styles are centralized in `modals.css` */
 
 .modal-close:hover {
   background: #333;
@@ -521,40 +462,8 @@ defineExpose({
   flex: 1;
 }
 
-.modal-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  padding: 1.5rem;
-  border-top: 1px solid #444;
-}
+/* modal-actions and modal delete-button styles are centralized in src/assets/modals.css */
+.modal-footer { } 
 
-/* Ensure modal context delete buttons are full-size */
-.modal-overlay .modal-content .modal-actions .delete-button,
-.modal-content .modal-actions .delete-button,
-.modal-overlay .modal-content .modal-actions .modal-delete-button,
-.modal-content .modal-actions .modal-delete-button {
-  padding: 0.75rem 1.25rem;
-  background-color: rgba(231, 76, 60, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  font-weight: 700;
-  font-size: 1rem;
-  min-width: 120px;
-  height: auto;
-  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.12);
-}
-
-.modal-overlay .modal-content .modal-actions .delete-button:hover,
-.modal-content .modal-actions .delete-button:hover {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  color: #fff;
-}
+/* If this modal needs special sizing for delete buttons in future, add a small override here. */
 </style>

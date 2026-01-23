@@ -7,16 +7,13 @@
 
       <div class="form-section">
         <div class="form-group checkbox-group">
-          <label>
-            <input v-model="settings.discordBotEnabled" type="checkbox" />
-            <span>
-              <strong>Enable Discord Bot Integration</strong>
-              <small
-                >Allow an external Discord bot to read these settings and register slash
-                commands.</small
-              >
-            </span>
-          </label>
+          <Checkbox v-model="settings.discordBotEnabled">
+            <strong>Enable Discord Bot Integration</strong>
+            <small
+              >Allow an external Discord bot to read these settings and register slash
+              commands.</small
+            >
+          </Checkbox>
         </div>
 
         <div class="form-group">
@@ -69,10 +66,12 @@
             </button>
             <button
               @click="registerCommands"
-              class="save-button"
+              class="btn btn-primary"
               :disabled="registeringCommands || !settings.discordBotToken"
             >
-              Register commands now
+              <PhSpinner v-if="registeringCommands" class="ph-spin" />
+              <PhCheck v-else />
+              {{ registeringCommands ? 'Registering...' : 'Register commands now' }}
             </button>
           </div>
           <div class="form-help">
@@ -264,6 +263,7 @@ import {
   PhPlay,
   PhStop,
 } from '@phosphor-icons/vue'
+import Checkbox from '@/components/inputs/Checkbox.vue'
 
 interface Props {
   settings: ApplicationSettings
@@ -554,6 +554,25 @@ const stopBot = async () => {
   font-size: 0.95rem;
 }
 
+/* Checkbox group specific: ensure label stacks heading and help text and aligns with checkbox */
+.form-group.checkbox-group label {
+  display: flex;
+  align-items: baseline; /* center checkbox vertically with stacked text */
+  gap: 0.75rem;
+}
+
+.form-group.checkbox-group label span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.form-group.checkbox-group label span small {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #b3b3b3;
+}
+
 .form-group input[type='text'],
 .form-group input[type='url'],
 .form-group input[type='password'],
@@ -716,8 +735,7 @@ const stopBot = async () => {
   font-weight: 600;
 }
 
-.add-button,
-.save-button {
+.add-button {
   padding: 0.75rem 1.5rem;
   background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
   color: white;
@@ -733,37 +751,10 @@ const stopBot = async () => {
   box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
 }
 
-.add-button:hover,
-.save-button:hover:not(:disabled) {
+.add-button:hover:not(:disabled) {
   background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
-}
-
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
 }
 
 .bot-status-section {

@@ -110,51 +110,30 @@
         </div>
       </div>
 
-      <!-- Webhook Configuration Modal -->
-      <div
-        v-if="showWebhookForm"
-        class="modal-overlay"
-        @click.self="closeWebhookForm"
-        @keydown.esc="closeWebhookForm"
-      >
-        <div class="modal-content" @click.stop>
-          <div class="modal-header">
-            <h2>{{ editingWebhook ? 'Edit' : 'Add' }} Webhook</h2>
-            <button @click="closeWebhookForm" class="close-btn" aria-label="Close modal">
-              <PhX />
-            </button>
+      <!-- Webhook Configuration Modal (shared Modal component) -->
+      <Modal class="webhook-modal" :visible="showWebhookForm" size="md" :title="editingWebhook ? 'Edit Webhook' : 'Add Webhook'" @close="closeWebhookForm">
+        <template #header>
+          <div class="modal-icon" aria-hidden>
+            <PhLink />
           </div>
-          <div class="modal-body">
-            <form @submit.prevent="saveWebhook">
-              <!-- Delete Webhook Confirmation Modal -->
-              <div v-if="webhookToDelete" class="modal-overlay" @click="webhookToDelete = null">
-                <div class="modal-content" @click.stop>
-                  <div class="modal-header">
-                    <h3>
-                      <PhWarningCircle />
-                      Delete Webhook
-                    </h3>
-                    <button @click="webhookToDelete = null" class="modal-close">
-                      <PhX />
-                    </button>
-                  </div>
-                  <div class="modal-body">
-                    <p>
-                      Are you sure you want to delete the webhook
-                      <strong>{{ webhookToDelete.name }}</strong
-                      >?
-                    </p>
-                    <p>This action cannot be undone.</p>
-                  </div>
-                  <div class="modal-actions">
-                    <button @click="webhookToDelete = null" class="cancel-button">Cancel</button>
-                    <button @click="executeDeleteWebhook()" class="delete-button">
-                      <PhTrash />
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              </div>
+          <div class="modal-title">
+            <h3>{{ editingWebhook ? 'Edit' : 'Add' }} Webhook</h3>
+          </div>
+          <button @click="closeWebhookForm" class="close-btn" aria-label="Close modal">
+            <PhX />
+          </button>
+        </template>
+
+        <form @submit.prevent="saveWebhook">
+          <!-- Delete Webhook Confirmation Modal (shared) -->
+          <DeleteConfirmationModal :visible="!!webhookToDelete" title="Delete Webhook" @close="webhookToDelete = null" @confirm="executeDeleteWebhook">
+            <template v-slot>
+              <p>
+                Are you sure you want to delete the webhook <strong>{{ webhookToDelete?.name }}</strong>?
+              </p>
+              <p>This action cannot be undone.</p>
+            </template>
+          </DeleteConfirmationModal>
               <!-- Basic Configuration Section -->
               <div class="form-section">
                 <h3>Basic</h3>
@@ -274,48 +253,41 @@
               <div class="form-section status-section">
                 <h3>Activation</h3>
                 <div class="checkbox-group">
-                  <label for="webhook-enabled">
-                    <input id="webhook-enabled" v-model="webhookForm.isEnabled" type="checkbox" />
-                    <span>
-                      <strong>Enable</strong>
-                      <small>Enable this webhook to start receiving notifications</small>
-                    </span>
-                  </label>
+                  <Checkbox v-model="webhookForm.isEnabled" id="webhook-enabled">
+                    <strong>Enable</strong>
+                    <small>Enable this webhook to start receiving notifications</small>
+                  </Checkbox>
                 </div>
               </div>
             </form>
-          </div>
-          <div class="modal-footer">
-            <button @click="closeWebhookForm" class="btn btn-secondary" type="button">
-              Cancel
-            </button>
-            <button
-              v-if="
-                webhookForm.url &&
-                webhookForm.type &&
-                webhookForm.triggers.length > 0 &&
-                !editingWebhook
-              "
-              @click="testWebhookConfig"
-              class="btn btn-info"
-              type="button"
-              :disabled="testingWebhookConfig"
-            >
-              <PhSpinner v-if="testingWebhookConfig" class="ph-spin" />
-              {{ testingWebhookConfig ? 'Testing...' : 'Test' }}
-            </button>
-            <button
-              @click="saveWebhook"
-              class="btn btn-primary"
-              type="button"
-              :disabled="!isWebhookFormValid || savingWebhook"
-            >
-              <PhSpinner v-if="savingWebhook" class="ph-spin" />
-              {{ savingWebhook ? 'Saving...' : editingWebhook ? 'Update' : 'Save' }}
-            </button>
-          </div>
-        </div>
-      </div>
+        <template #footer>
+          <button @click="closeWebhookForm" class="cancel-button" type="button"><PhX /> Cancel</button>
+          <button
+            v-if="
+              webhookForm.url &&
+              webhookForm.type &&
+              webhookForm.triggers.length > 0 &&
+              !editingWebhook
+            "
+            @click="testWebhookConfig"
+            class="btn btn-info"
+            type="button"
+            :disabled="testingWebhookConfig"
+          >
+            <PhSpinner v-if="testingWebhookConfig" class="ph-spin" />
+            {{ testingWebhookConfig ? 'Testing...' : 'Test' }}
+          </button>
+          <button
+            @click="saveWebhook"
+            class="btn btn-primary"
+            type="button"
+            :disabled="!isWebhookFormValid || savingWebhook"
+          >
+            <PhSpinner v-if="savingWebhook" class="ph-spin" />
+            {{ savingWebhook ? 'Saving...' : editingWebhook ? 'Update' : 'Save' }}
+          </button>
+        </template>
+      </Modal>
     </div>
   </div>
 </template>
@@ -339,6 +311,9 @@ import {
   PhWarningCircle,
   PhDownloadSimple,
 } from '@phosphor-icons/vue'
+import { Modal } from '@/components/modal'
+import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
+import Checkbox from '@/components/inputs/Checkbox.vue'
 import { errorTracking } from '@/services/errorTracking'
 import { useToast } from '@/services/toastService'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -832,8 +807,7 @@ defineExpose({ openWebhookForm })
   margin-bottom: 2rem;
 }
 
-.add-button,
-.save-button {
+.add-button {
   padding: 0.75rem 1.5rem;
   background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
   color: white;
@@ -849,8 +823,7 @@ defineExpose({ openWebhookForm })
   box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
 }
 
-.add-button:hover,
-.save-button:hover:not(:disabled) {
+.add-button:hover {
   background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
@@ -879,121 +852,124 @@ defineExpose({ openWebhookForm })
   box-shadow: 0 6px 16px rgba(30, 136, 229, 0.4);
 }
 
-/* Modal Styles (canonical) */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
+/* Form styles */
+.form-section {
+  margin-bottom: 2rem;
 }
 
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+.form-section:last-child {
+  margin-bottom: 0;
 }
 
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
+.form-section h3 {
+  color: #fff;
+  font-size: 1.1rem;
+  margin: 0 0 1rem 0;
+  padding-bottom: 0.5rem;
   border-bottom: 1px solid #444;
 }
 
-.modal-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.25rem;
+.form-group {
+  margin-bottom: 1.5rem;
 }
 
-.modal-close {
-  background: none;
-  border: none;
-  color: #b3b3b3;
-  cursor: pointer;
-  padding: 0.5rem;
+.form-group:last-child {
+  margin-bottom: 0;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  color: #fff;
+  font-weight: 500;
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   border-radius: 6px;
+  background-color: #1a1a1a;
+  color: #fff;
+  font-size: 0.95rem;
+  transition: border-color 0.2s;
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: #007acc;
+}
+
+.form-group small {
+  display: block;
+  margin-top: 0.25rem;
+  color: #b3b3b3;
+  font-size: 0.85rem;
+}
+
+.error-text {
+  color: #ff6b6b;
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
+  display: block;
+}
+
+/* Checkbox group styles for modal */
+.checkbox-group {
+  margin-bottom: 1rem;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background-color: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
   transition: all 0.2s;
 }
 
-.modal-close:hover {
-  background: #333;
-  color: #fff;
+.checkbox-group label:hover {
+  border-color: #007acc;
+  background-color: #222;
 }
 
-.modal-body {
-  padding: 2rem;
-  overflow-y: auto;
+.checkbox-group label span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
   flex: 1;
 }
 
-.modal-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  padding: 1.5rem;
-  border-top: 1px solid #444;
-}
-
-.cancel-button {
-  padding: 0.75rem 1.5rem;
-  background: var(--background-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
+.checkbox-group label strong {
+  color: #fff;
   font-size: 0.95rem;
 }
 
-.cancel-button:hover {
-  background: var(--background-hover);
+.checkbox-group label small {
+  color: #b3b3b3;
+  font-size: 0.85rem;
+  font-weight: normal;
 }
 
-.modal-overlay .modal-content .modal-actions .delete-button,
-.modal-content .modal-actions .delete-button {
-  padding: 0.75rem 1.25rem;
-  background-color: rgba(231, 76, 60, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  border-radius: 6px;
+.checkbox-group input[type='checkbox'] {
+  margin-top: 0.25rem;
+  width: auto;
   cursor: pointer;
-  transition: all 0.18s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  font-weight: 700;
-  font-size: 1rem;
-  min-width: 120px;
-  height: auto;
-  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.12);
 }
 
-.modal-overlay .modal-content .modal-actions .delete-button:hover,
-.modal-content .modal-actions .delete-button:hover {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(231, 76, 60, 0.2);
+.checkbox-group input[type='checkbox']:focus-visible {
+  outline: 2px solid #007acc;
+  outline-offset: 2px;
 }
+/* Modal footer styling moved to shared `modals.css` */
+
+/* Modal actions styling moved to shared `modals.css` */
+
 
 /* Webhooks Grid */
 .webhooks-grid {

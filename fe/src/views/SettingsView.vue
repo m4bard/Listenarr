@@ -146,7 +146,7 @@
             v-if="activeTab === 'general' || activeTab === 'bot'"
             @click="saveSettings"
             :disabled="configStore.isLoading"
-            class="save-button"
+            class="btn btn-primary"
             :title="!isFormValid ? 'Please fix invalid fields before saving' : ''"
           >
             <template v-if="configStore.isLoading">
@@ -216,15 +216,15 @@
     </div>
 
     <!-- Metadata Source Configuration Modal -->
-    <div v-if="showApiForm" class="modal-overlay" @click="closeApiForm">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>{{ editingApi ? 'Edit' : 'Add' }} Metadata Source</h3>
-          <button @click="closeApiForm" class="modal-close">
-            <PhX />
-          </button>
+    <Modal :visible="showApiForm" size="lg" :title="editingApi ? 'Edit Metadata Source' : 'Add Metadata Source'" @close="closeApiForm">
+      <template #header>
+        <div class="modal-title">
+          <h3><PhGlobe /> {{ editingApi ? 'Edit' : 'Add' }} Metadata Source</h3>
         </div>
-        <div class="modal-body">
+        <button class="close-btn" @click="closeApiForm">
+          <PhX />
+        </button>
+      </template>
           <form @submit.prevent="saveApiConfig" class="config-form">
             <div class="form-group">
               <label for="api-name">Name *</label>
@@ -250,10 +250,9 @@
 
             <div class="form-group">
               <label for="api-key">API Key</label>
-              <input
+              <PasswordInput
                 id="api-key"
                 v-model="apiForm.apiKey"
-                type="password"
                 placeholder="Optional API key"
               />
               <small>Leave empty if not required</small>
@@ -291,51 +290,27 @@
               </label>
             </div>
           </form>
-        </div>
-        <div class="modal-actions">
+        <template #footer>
           <button @click="closeApiForm" class="cancel-button" type="button">
             <PhX />
             Cancel
           </button>
-          <button @click="saveApiConfig" class="save-button" type="button">
+          <button @click="saveApiConfig" class="btn btn-primary" type="button">
             <PhCheck />
             Save
           </button>
-        </div>
-      </div>
-    </div>
+        </template>
+    </Modal>
 
     <!-- Webhook Configuration Modal -->
 
-    <!-- Delete Metadata Source Confirmation Modal -->
-    <div v-if="apiToDelete" class="modal-overlay" @click="apiToDelete = null">
-      <div class="modal-content" @click.stop>
-        <div class="modal-header">
-          <h3>
-            <PhWarningCircle />
-            Delete Metadata Source
-          </h3>
-          <button @click="apiToDelete = null" class="modal-close">
-            <PhX />
-          </button>
-        </div>
-        <div class="modal-body">
-          <p>
-            Are you sure you want to delete the metadata source
-            <strong>{{ apiToDelete.name }}</strong
-            >?
-          </p>
-          <p>This action cannot be undone.</p>
-        </div>
-        <div class="modal-actions">
-          <button @click="apiToDelete = null" class="cancel-button">Cancel</button>
-          <button @click="executeDeleteApi()" class="delete-button">
-            <PhTrash />
-            Delete
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- Delete Metadata Source Confirmation Modal (shared) -->
+    <DeleteConfirmationModal :visible="!!apiToDelete" title="Delete Metadata Source" @close="apiToDelete = null" @confirm="executeDeleteApi">
+      <template v-slot>
+        <p>Are you sure you want to delete the metadata source <strong>{{ apiToDelete?.name }}</strong>?</p>
+        <p>This action cannot be undone.</p>
+      </template>
+    </DeleteConfirmationModal>
   </div>
   <!-- .settings-page -->
 </template>
@@ -358,8 +333,11 @@ import QualityProfilesTab from '@/views/settings/QualityProfilesTab.vue'
 import DiscordBotTab from '@/views/settings/DiscordBotTab.vue'
 import NotificationsTab from '@/views/settings/NotificationsTab.vue'
 import IndexersTab from '@/views/settings/IndexersTab.vue'
+import { Modal } from '@/components/modal'
+import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue' 
 import GeneralSettingsTab from '@/views/settings/GeneralSettingsTab.vue'
-import CustomSelect from '@/components/CustomSelect.vue'
+import CustomSelect from '@/components/inputs/CustomSelect.vue'
+import PasswordInput from '@/components/inputs/PasswordInput.vue'
 import {
   PhFolder,
   PhListMagnifyingGlass,
@@ -1598,8 +1576,7 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-.add-button,
-.save-button {
+.add-button {
   padding: 0.75rem 1.5rem;
   background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
   color: white;
@@ -1615,8 +1592,7 @@ onMounted(async () => {
   box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
 }
 
-.add-button:hover,
-.save-button:hover:not(:disabled) {
+.add-button:hover {
   background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
@@ -1631,10 +1607,7 @@ onMounted(async () => {
   box-shadow: none !important;
 }
 
-.save-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* save-button disabled state handled by centralized button rules */
 
 .empty-state {
   text-align: center;
@@ -2319,7 +2292,7 @@ onMounted(async () => {
 
 .checkbox-group label {
   display: flex;
-  align-items: flex-start;
+  align-items: center; /* center the checkbox with the stacked text */
   gap: 0.75rem;
   padding: 1rem;
   background-color: #1a1a1a;
@@ -2327,6 +2300,19 @@ onMounted(async () => {
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s;
+}
+
+/* Stack title and descriptive text vertically inside the label for better readability */
+.checkbox-group label span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.checkbox-group label span small {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #b3b3b3;
 }
 
 .checkbox-group label:hover {
@@ -2412,7 +2398,7 @@ onMounted(async () => {
   font-size: 0.95rem;
 }
 
-.invite-controls .save-button {
+.invite-controls .btn.btn-primary {
   /* keep primary register action prominent but avoid forcing full-width */
   white-space: nowrap;
 }
@@ -2734,176 +2720,6 @@ onMounted(async () => {
   cursor: not-allowed;
 }
 
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid #444;
-}
-
-.modal-header h2 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.5rem;
-}
-
-.modal-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.3rem;
-  font-weight: 600;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #b3b3b3;
-  cursor: pointer;
-  padding: 0.5rem;
-  font-size: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.close-btn:hover {
-  background-color: #333;
-  color: #fff;
-}
-
-.close-btn:focus-visible {
-  outline: 2px solid #007acc;
-  outline-offset: 2px;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  color: #b3b3b3;
-  cursor: pointer;
-  padding: 0.5rem;
-  font-size: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background-color: #333;
-  color: #fff;
-}
-
-.modal-body {
-  padding: 2rem;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  padding: 1.5rem 2rem;
-  border-top: 1px solid #444;
-}
-
-/* Ensure modal context delete buttons are full-size, not the small icon-style
-   square buttons used elsewhere in the UI. This overrides the
-   generic .delete-button rules with a more suitable modal appearance. */
-.modal-overlay .modal-content .modal-actions .delete-button,
-.modal-content .modal-actions .delete-button,
-.modal-overlay .modal-content .modal-actions .modal-delete-button,
-.modal-content .modal-actions .modal-delete-button {
-  /* Stronger selector to guarantee modal buttons override list/icon buttons */
-  padding: 0.75rem 1.25rem;
-  background-color: rgba(231, 76, 60, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  font-weight: 700;
-  font-size: 1rem;
-  min-width: 120px; /* ensure modal delete button is clearly larger than icon buttons */
-  height: auto;
-  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.12);
-}
-
-/* Keep hover style consistent and prominent */
-.modal-overlay .modal-content .modal-actions .delete-button:hover,
-.modal-content .modal-actions .delete-button:hover {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  color: #fff;
-  transform: translateY(-1px);
-  box-shadow: 0 8px 20px rgba(231, 76, 60, 0.24);
-}
-
-.modal-actions .delete-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  color: #fff;
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.35);
-}
-
-.modal-actions .delete-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-.cancel-button {
-  padding: 0.75rem 1.5rem;
-  background-color: #555;
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.cancel-button:hover {
-  background-color: #666;
-  transform: translateY(-1px);
-}
 
 /* Indexer Styles */
 .indexers-grid {
@@ -3144,7 +2960,7 @@ onMounted(async () => {
   }
 
   .add-button,
-  .save-button {
+  .btn.btn-primary {
     width: 100%;
     justify-content: center;
   }
@@ -3547,7 +3363,7 @@ onMounted(async () => {
   }
 
   .add-button,
-  .save-button {
+  .btn.btn-primary {
     width: 100%;
     justify-content: center;
   }
@@ -3594,56 +3410,11 @@ onMounted(async () => {
 
 /* Webhook Modal Specific Styles */
 
-.modal-footer {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  padding: 1.5rem 2rem;
-  border-top: 1px solid #444;
-}
+/* modal-footer styles are centralized in src/assets/modals.css; webhook modal uses `.webhook-modal .modal-footer` for special padding */
+.modal-footer { }
 
-.btn {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn:focus-visible {
-  outline: 2px solid #007acc;
-  outline-offset: 2px;
-}
-
-.btn-secondary {
-  background-color: #555;
-  color: white;
-}
-
-.btn-secondary:hover:not(:disabled) {
-  background-color: #666;
-  transform: translateY(-1px);
-}
-
-.btn-info {
-  background-color: #2196f3;
-  color: white;
-}
-
-.btn-info:hover:not(:disabled) {
-  background-color: #1976d2;
-  transform: translateY(-1px);
-}
+/* Button color variants centralized in `src/assets/modals.css` */
+/* Only add webhook-modal scoped overrides when absolutely needed */
 
 .btn-primary {
   background-color: #007acc;
@@ -3697,7 +3468,7 @@ onMounted(async () => {
 
   .webhook-modal .modal-header,
   .webhook-modal .modal-body,
-  .webhook-modal .modal-actions {
+  .webhook-modal .modal-footer {
     padding: 1.25rem 1.5rem;
   }
 
@@ -3711,6 +3482,7 @@ onMounted(async () => {
     height: 24px;
   }
 
+  .webhook-modal h2,
   .webhook-modal .modal-title h3 {
     font-size: 1.3rem;
   }

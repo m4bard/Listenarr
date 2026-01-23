@@ -143,13 +143,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useDownloadsStore } from '@/stores/downloads'
-import CustomSelect from '@/components/CustomSelect.vue'
+import CustomSelect from '@/components/inputs/CustomSelect.vue'
 import type { Download } from '@/types'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import { logger } from '@/utils/logger'
 import { PhDownloadSimple, PhCheckCircle, PhXCircle } from '@phosphor-icons/vue'
-import InspectTorrentModal from '@/components/InspectTorrentModal.vue'
+import InspectTorrentModal from '@/components/download/InspectTorrentModal.vue'
 import { apiService } from '@/services/api'
 
 const downloadsStore = useDownloadsStore()

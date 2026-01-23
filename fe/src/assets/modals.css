@@ -1,0 +1,329 @@
+/* Centralized modal stylesheet - used across all modal components */
+
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.modal-content {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  width: 100%;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid #444;
+}
+
+.modal-header h2,
+.modal-header h3 {
+  margin: 0;
+  color: #fff;
+  font-size: 1.25rem;
+}
+
+.close-btn,
+.modal-close {
+  background: none;
+  border: none;
+  color: #b3b3b3;
+  cursor: pointer;
+  padding: 0.5rem;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.close-btn:hover,
+.modal-close:hover {
+  background-color: #333;
+  color: #fff;
+}
+
+.close-btn:focus-visible,
+.modal-close:focus-visible {
+  outline: 2px solid #007acc;
+  outline-offset: 2px;
+}
+
+.modal-body {
+  padding: 2rem;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.modal-actions,
+.modal-footer {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+  padding: 1.5rem 2rem;
+  border-top: 1px solid #444;
+}
+
+/* Modal action buttons (consistent with global .btn rules) */
+/* Unified button sizing + alignment for modal footers */
+.modal-actions .btn,
+.modal-footer .btn,
+.modal-actions .cancel-button,
+.modal-footer .cancel-button,
+.modal-actions .delete-button,
+.modal-footer .delete-button {
+  padding: 0.65rem 1.25rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  min-width: 110px;
+  min-height: 40px;
+  box-sizing: border-box;
+  transition: all 0.18s ease;
+}
+
+/* Icon sizing and alignment inside buttons */
+.modal-actions .btn svg,
+.modal-footer .btn svg {
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: middle;
+}
+
+/* Global button utilities (use semantic classes: cancel-button, btn-info, btn-primary, delete-button) */
+.btn {
+  padding: 0.65rem 1.25rem;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  font-size: 0.95rem;
+  border: none;
+  cursor: pointer;
+  min-width: 110px;
+  min-height: 40px;
+  box-sizing: border-box;
+  transition: all 0.18s ease;
+}
+
+.btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+/* Primary (blue) */
+.btn-primary {
+  background-color: #007acc;
+  color: white;
+}
+.btn-primary:hover:not(:disabled) {
+  background-color: #005fa3;
+}
+
+/* Info (also blue, lighter) */
+.btn-info {
+  background-color: #2196f3;
+  color: white;
+}
+.btn-info:hover:not(:disabled) {
+  background-color: #1976d2;
+}
+
+/* Success (green) - use sparingly */
+.btn-success {
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
+  color: white;
+}
+.btn-success:hover:not(:disabled) {
+  filter: brightness(0.95);
+}
+
+/* Secondary (muted) */
+.btn-secondary {
+  background-color: #444;
+  color: #fff;
+  border: 1px solid #333;
+}
+.btn-secondary:hover:not(:disabled) {
+  background-color: #555;
+}
+
+/* Focus & disabled states (consistent and accessible) */
+.modal-actions .btn:focus-visible,
+.modal-footer .btn:focus-visible {
+  outline: 2px solid rgba(0, 122, 204, 0.9);
+  outline-offset: 2px;
+}
+
+.modal-actions .btn:disabled,
+.modal-footer .btn:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+  filter: none;
+}
+
+.modal-actions .cancel-button,
+.modal-footer .cancel-button {
+  background-color: #555;
+  color: white;
+  border: 1px solid #444;
+}
+
+.modal-actions .cancel-button:hover:not(:disabled),
+.modal-footer .cancel-button:hover:not(:disabled) {
+  background-color: #666;
+}
+
+.modal-actions .btn-info,
+.modal-footer .btn-info,
+.modal-actions .info-button,
+.modal-footer .info-button {
+  background-color: #2196f3;
+  color: white;
+}
+
+.modal-actions .btn-info:hover:not(:disabled),
+.modal-footer .btn-info:hover:not(:disabled) {
+  background-color: #1976d2;
+}
+
+.modal-actions .delete-button,
+.modal-footer .delete-button,
+.modal-actions .modal-delete-button,
+.modal-footer .modal-delete-button {
+  padding: 0.65rem 1.25rem;
+  background-color: rgba(231, 76, 60, 0.12);
+  color: #ff6b6b;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  font-weight: 700;
+  font-size: 1rem;
+  min-width: 110px;
+  min-height: 40px;
+  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.08);
+}
+
+.modal-actions .delete-button:hover:not(:disabled),
+.modal-footer .delete-button:hover:not(:disabled),
+.modal-actions .modal-delete-button:hover:not(:disabled),
+.modal-footer .modal-delete-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 20px rgba(231, 76, 60, 0.18);
+}
+
+/* Small modal size variations */
+.modal-sm { max-width: 420px }
+.modal-md { max-width: 700px }
+.modal-lg { max-width: 1000px }
+
+/* Backwards-compatible dialog classes (legacy components) — standardized to the modal look & sizes */
+.dialog-overlay,
+.confirm-overlay,
+.match-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  backdrop-filter: blur(4px);
+}
+
+.dialog,
+.confirm-dialog,
+.match-dialog {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  width: 100%;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Default sizes for legacy dialog variants so they match the centralized modal sizes */
+.dialog,
+.match-dialog { max-width: 700px /* modal-md */; }
+.confirm-dialog { max-width: 520px /* smaller confirm dialogs */; }
+
+/* Align inner spacing with centralized modal body/footer/header */
+.dialog .dialog-header,
+.confirm-dialog .confirm-header,
+.match-dialog .match-header {
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid #444;
+}
+
+.dialog .dialog-body,
+.confirm-dialog .confirm-body,
+.match-dialog .match-body {
+  padding: 1.5rem 1.75rem;
+  overflow-y: auto;
+}
+
+.dialog .dialog-actions,
+.confirm-dialog .confirm-actions,
+.match-dialog .match-actions {
+  padding: 1rem 1.5rem;
+  border-top: 1px solid #444;
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
+
+/* Responsive modal footer behavior: stack buttons on smaller screens */
+@media (max-width: 768px) {
+  .modal-actions,
+  .modal-footer,
+  .dialog .dialog-actions,
+  .confirm-dialog .confirm-actions,
+  .match-dialog .match-actions {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+
+  .modal-actions .btn,
+  .modal-footer .btn,
+  .dialog .dialog-actions .btn,
+  .confirm-dialog .confirm-actions .btn,
+  .match-dialog .match-actions .btn {
+    flex: 1 1 auto;
+    min-width: 0;
+    justify-content: center;
+  }
+} 

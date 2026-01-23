@@ -5,6 +5,30 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.48] - 2026-01-14
+
+### Added
+- **Prowlarr compatibility improvements**: `POST /api/v1/indexers`, `POST /api/v1/indexer` and `PUT /api/v1/indexer/{id}` now accept varied payload shapes (nested `settings`, `fields` arrays and multiple property name variants) and return Lidarr-style DTOs with non-null `fields` and `tags` for better interoperability.
+- **Toast suppression**: Global message-level and per-indexer toast suppression to reduce notification noise during rapid indexer imports (default suppression window: 5 seconds).
+
+### Changed
+- **`ProwlarrCompatController` behavior**:
+  - `PUT /api/v1/indexer/{id}` implements upsert semantics (creates when missing) and **deduplicates** by normalized URL + API key. Deduplication runs client-side (pulls results with `AsNoTracking().ToList()` then normalizes) to avoid EF translation issues.
+  - Removed early create-time broadcast in `PUT` and compute `created` after dedupe so `IndexersUpdated` is broadcast once (prevents duplicate broadcasts/toasts).
+  - `DELETE /api/v1/indexer/{id}` tolerates `id == 0` from external clients and returns an empty JSON object with a warning log to avoid noisy caller errors.
+- **General Settings — API Key control**: Improved the API key input in the General Settings tab—input is full width with an inline visibility toggle and the regenerate/copy buttons placed inside the input (order: visibility, regenerate, copy). The regenerate button uses a red hue to indicate the key will be invalidated, and the copy button uses a blue hue. Functionality is unchanged and unit tests pass locally.
+- **PasswordInput component**: Added a named `append` slot to `PasswordInput.vue` so callers can inject inline controls (e.g., copy/regenerate buttons) without relying on deep CSS overrides. `ApiKeyControl` now uses the slot, improving layout robustness and accessibility. Unit tests updated and pass locally.
+
+### Fixed
+- **qBittorrent Test**: `qBittorrent` client test now attempts authentication when the unauthenticated `/api/v2/app/version` values.
+- **Duplicate notifications & race**: Added `NotificationSuppressionSeconds`, `_lastToastTimes`, `_lastToastMessages`, and helper methods `ShouldSendToastForIndexer`/`ShouldSendToastForMessage`. Fixed an edge-case race where the per-indexer check previously updated the global message timestamp causing unintended self-suppression.
+- **EF translation error**: Moved normalization/dedupe to in-memory evaluation to avoid EF Core InvalidOperationException when calling `NormalizeIndexerUrl` inside an EF expression.
+- **Tests**: Added and updated unit tests in `tests/Listenarr.Api.Tests` (e.g., `ProwlarrCompatControllerTests`, `ProwlarrEndpointsTests`) to validate broadcasting, idempotent PUT upsert, delete `id==0` tolerance, and toast/message-level dedupe. All API tests pass locally (253 tests).
+
+### Removed
+- Removed duplicate/early Broadcast/toast on the create path in the `PUT` flow to avoid double notifications.
+
+
 ## [0.2.47] - 2026-01-13
 
 ### Added

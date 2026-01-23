@@ -113,40 +113,13 @@
         @saved="loadIndexers()"
       />
 
-      <!-- Delete Indexer Confirmation Modal -->
-      <div v-if="indexerToDelete" class="modal-overlay" @click="indexerToDelete = null">
-        <div class="modal-content" @click.stop>
-          <div class="modal-header">
-            <h3>
-              <PhWarningCircle />
-              Delete Indexer
-            </h3>
-            <button @click="indexerToDelete = null" class="modal-close">
-              <PhX />
-            </button>
-          </div>
-          <div class="modal-body">
-            <p>
-              Are you sure you want to delete the indexer <strong>{{ indexerToDelete.name }}</strong
-              >?
-            </p>
-            <p>This action cannot be undone.</p>
-          </div>
-          <div class="modal-actions">
-            <button type="button" @click="indexerToDelete = null" class="cancel-button">
-              Cancel
-            </button>
-            <button
-              type="button"
-              @click="executeDeleteIndexer()"
-              class="delete-button modal-delete-button"
-            >
-              <PhTrash />
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- Delete Indexer Confirmation Modal (shared) -->
+      <DeleteConfirmationModal :visible="!!indexerToDelete" title="Delete Indexer" @close="indexerToDelete = null" @confirm="executeDeleteIndexer">
+        <template v-slot>
+          <p>Are you sure you want to delete the indexer <strong>{{ indexerToDelete?.name }}</strong>?</p>
+          <p>This action cannot be undone.</p>
+        </template>
+      </DeleteConfirmationModal>
     </div>
   </div>
 </template>
@@ -166,10 +139,12 @@ import {
   PhClock,
   PhWarning,
   PhWarningCircle,
+  PhPlus,
   PhX,
   PhSpinner,
 } from '@phosphor-icons/vue'
-import IndexerFormModal from '@/components/IndexerFormModal.vue'
+import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
+import IndexerFormModal from '@/components/settings/IndexerFormModal.vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import type { Indexer } from '@/types'
@@ -626,135 +601,7 @@ defineExpose({ openAddIndexer })
   border: 1px solid var(--error);
 }
 
-/* Modal Styles (canonical) */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
 
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #444;
-}
-
-.modal-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.25rem;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  color: #b3b3b3;
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background: #333;
-  color: #fff;
-}
-
-.modal-body {
-  padding: 2rem;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  padding: 1.5rem;
-  border-top: 1px solid #444;
-}
-
-/* Ensure modal context delete buttons are full-size */
-.modal-overlay .modal-content .modal-actions .delete-button,
-.modal-content .modal-actions .delete-button,
-.modal-overlay .modal-content .modal-actions .modal-delete-button,
-.modal-content .modal-actions .modal-delete-button {
-  padding: 0.75rem 1.25rem;
-  background-color: rgba(231, 76, 60, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  font-weight: 700;
-  font-size: 1rem;
-  min-width: 120px;
-  height: auto;
-  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.12);
-}
-
-.modal-overlay .modal-content .modal-actions .delete-button:hover,
-.modal-content .modal-actions .delete-button:hover {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  color: #fff;
-}
-
-.cancel-button,
-.delete-button {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: var(--border-radius);
-  cursor: pointer;
-  font-size: 0.9rem;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.cancel-button {
-  background: var(--background-secondary);
-  color: var(--text-primary);
-}
-
-.cancel-button:hover {
-  background: var(--background-hover);
-}
-
-.delete-button {
-  background: var(--error);
-  color: white;
-}
-
-.delete-button:hover {
-  background: #dc2626;
-}
 
 /* Section Header */
 .section-header {

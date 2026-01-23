@@ -2,7 +2,7 @@ import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, it, expect, vi, afterEach } from 'vitest'
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import ManualSearchModal from '@/components/ManualSearchModal.vue'
+import ManualSearchModal from '@/components/search/ManualSearchModal.vue'
 import * as apiModule from '@/services/api'
 const { apiService } = apiModule
 

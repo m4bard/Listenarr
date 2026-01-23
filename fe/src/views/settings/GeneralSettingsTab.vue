@@ -124,47 +124,35 @@
           <h4><PhToggleLeft /> Features</h4>
 
           <div class="form-group checkbox-group">
-            <label>
-              <input v-model="localSettings.enableMetadataProcessing" type="checkbox" />
-              <span>
-                <strong>Enable Metadata Processing</strong>
-                <small>Automatically fetch and embed audiobook metadata</small>
-              </span>
-            </label>
+            <Checkbox v-model="localSettings.enableMetadataProcessing">
+              <strong>Enable Metadata Processing</strong>
+              <small>Automatically fetch and embed audiobook metadata</small>
+            </Checkbox>
           </div>
 
           <div class="form-group checkbox-group">
-            <label>
-              <input v-model="localSettings.enableCoverArtDownload" type="checkbox" />
-              <span>
-                <strong>Enable Cover Art Download</strong>
-                <small>Download and embed cover art for audiobooks</small>
-              </span>
-            </label>
+            <Checkbox v-model="localSettings.enableCoverArtDownload">
+              <strong>Enable Cover Art Download</strong>
+              <small>Download and embed cover art for audiobooks</small>
+            </Checkbox>
           </div>
 
           <div class="form-group checkbox-group">
-            <label>
-              <input v-model="localSettings.enableNotifications" type="checkbox" />
-              <span>
-                <strong>Enable Notifications</strong>
-                <small>Receive notifications for downloads and events</small>
-              </span>
-            </label>
+            <Checkbox v-model="localSettings.enableNotifications">
+              <strong>Enable Notifications</strong>
+              <small>Receive notifications for downloads and events</small>
+            </Checkbox>
           </div>
 
           <div class="form-group checkbox-group">
-            <label>
-              <input v-model="localSettings.showCompletedExternalDownloads" type="checkbox" />
-              <span>
-                <strong>Show completed external downloads in Activity</strong>
-                <small
-                  >When enabled, completed torrents/NZBs from external clients will remain visible
-                  in the Activity view. When disabled, completed external items will be hidden to
-                  reduce clutter.</small
-                >
-              </span>
-            </label>
+            <Checkbox v-model="localSettings.showCompletedExternalDownloads">
+              <strong>Show completed external downloads in Activity</strong>
+              <small
+                >When enabled, completed torrents/NZBs from external clients will remain visible
+                in the Activity view. When disabled, completed external items will be hidden to
+                reduce clutter.</small
+              >
+            </Checkbox>
           </div>
         </div>
 
@@ -172,41 +160,32 @@
           <h4><PhMagnifyingGlass /> Search Settings</h4>
 
           <div class="form-group checkbox-group">
-            <label>
-              <input v-model="localSettings.enableAmazonSearch" type="checkbox" />
-              <span>
-                <strong>Enable Amazon Searching</strong>
-                <small
-                  >Include Amazon-based search providers when performing intelligent
-                  searches.</small
-                >
-              </span>
-            </label>
+            <Checkbox v-model="localSettings.enableAmazonSearch">
+              <strong>Enable Amazon Searching</strong>
+              <small
+                >Include Amazon-based search providers when performing intelligent
+                searches.</small
+              >
+            </Checkbox>
           </div>
 
           <div class="form-group checkbox-group">
-            <label>
-              <input v-model="localSettings.enableAudibleSearch" type="checkbox" />
-              <span>
-                <strong>Enable Audible Searching</strong>
-                <small
-                  >Include Audible provider lookups when performing intelligent searches.</small
-                >
-              </span>
-            </label>
+            <Checkbox v-model="localSettings.enableAudibleSearch">
+              <strong>Enable Audible Searching</strong>
+              <small
+                >Include Audible provider lookups when performing intelligent searches.</small
+              >
+            </Checkbox>
           </div>
 
           <div class="form-group checkbox-group">
-            <label>
-              <input v-model="localSettings.enableOpenLibrarySearch" type="checkbox" />
-              <span>
-                <strong>Enable OpenLibrary Searching</strong>
-                <small
-                  >Include OpenLibrary title augmentation and lookups when performing intelligent
-                  searches.</small
-                >
-              </span>
-            </label>
+            <Checkbox v-model="localSettings.enableOpenLibrarySearch">
+              <strong>Enable OpenLibrary Searching</strong>
+              <small
+                >Include OpenLibrary title augmentation and lookups when performing intelligent
+                searches.</small
+              >
+            </Checkbox>
           </div>
 
           <div class="form-row">
@@ -312,51 +291,8 @@
 
           <div class="form-group">
             <label>API Key (Server)</label>
-            <div class="input-group">
-              <input
-                type="text"
-                :value="startupConfig?.apiKey || ''"
-                disabled
-                class="input-group-input"
-              />
-              <div class="input-group-append">
-                <button
-                  type="button"
-                  class="icon-button input-group-btn"
-                  :class="{ copied: copiedApiKey }"
-                  @click="copyApiKey"
-                  :disabled="!startupConfig?.apiKey"
-                  title="Copy API key"
-                >
-                  <template v-if="copiedApiKey">
-                    <PhCheck />
-                  </template>
-                  <template v-else>
-                    <PhFiles />
-                  </template>
-                </button>
-                <button
-                  type="button"
-                  class="regenerate-button input-group-btn"
-                  @click="regenerateApiKey"
-                  :disabled="loadingApiKey"
-                  :title="startupConfig?.apiKey ? 'Regenerate API key' : 'Generate API key'"
-                >
-                  <template v-if="loadingApiKey">
-                    <PhSpinner class="ph-spin" />
-                  </template>
-                  <template v-else-if="startupConfig?.apiKey">
-                    <PhArrowCounterClockwise />
-                  </template>
-                  <template v-else>
-                    <PhPlus />
-                  </template>
-                  <span v-if="!loadingApiKey">{{
-                    startupConfig?.apiKey ? 'Regenerate' : 'Generate'
-                  }}</span>
-                </button>
-              </div>
-            </div>
+            <ApiKeyControl :apiKey="props.startupConfig?.apiKey" :disabled="false" @update:apiKey="onApiKeyUpdated" />
+
             <span class="form-help"
               >API key for authenticating external applications. Generate a new key if needed. Copy
               it to use with API clients.</span
@@ -487,46 +423,47 @@
         </div>
       </div>
 
-      <!-- Proxy Security Modal -->
-      <div v-if="showProxySecurityModal" class="modal-overlay" @click="closeProxySecurityModal()">
-        <div class="modal-content" @click.stop>
-          <div class="modal-header">
-            <h3>
-              <PhShieldCheck />
-              Proxy security recommendations
-            </h3>
-            <button @click="closeProxySecurityModal()" class="modal-close"><PhX /></button>
+      <!-- Proxy Security Modal (shared) -->
+      <Modal :visible="showProxySecurityModal" size="md" @close="closeProxySecurityModal">
+        <template #header>
+          <div class="modal-title">
+            <h3><PhShieldCheck /> Proxy security recommendations</h3>
           </div>
-          <div class="modal-body">
-            <p>
-              Storing proxy credentials in the application database is convenient but has security
-              implications. Consider the following:
-            </p>
-            <ul>
-              <li>
-                Use an OS-level secrets manager (Vault, Azure Key Vault, AWS Secrets Manager) when
-                possible.
-              </li>
-              <li>Restrict access to the application database and backups.</li>
-              <li>
-                Rotate credentials periodically and prefer short-lived credentials where supported.
-              </li>
-              <li>
-                If you must store secrets in the DB, ensure the server is deployed on trusted
-                infrastructure and consider application-level encryption.
-              </li>
-            </ul>
-            <p>
-              This modal only provides guidance; the current implementation persists the proxy
-              password in ApplicationSettings. For production use, consider integrating a secrets
-              store and referencing credentials instead of storing plaintext.
-            </p>
-          </div>
-          <div class="modal-actions">
-            <button @click="closeProxySecurityModal()" class="save-button">Close</button>
-          </div>
-        </div>
-      </div>
+          <button class="close-btn" @click="closeProxySecurityModal">
+            <PhX />
+          </button>
+        </template>
+
+        <template #default>
+          <p>
+            Storing proxy credentials in the application database is convenient but has security
+            implications. Consider the following:
+          </p>
+          <ul>
+            <li>
+              Use an OS-level secrets manager (Vault, Azure Key Vault, AWS Secrets Manager) when
+              possible.
+            </li>
+            <li>Restrict access to the application database and backups.</li>
+            <li>
+              Rotate credentials periodically and prefer short-lived credentials where supported.
+            </li>
+            <li>
+              If you must store secrets in the DB, ensure the server is deployed on trusted
+              infrastructure and consider application-level encryption.
+            </li>
+          </ul>
+          <p>
+            This modal only provides guidance; the current implementation persists the proxy
+            password in ApplicationSettings. For production use, consider integrating a secrets
+            store and referencing credentials instead of storing plaintext.
+          </p>
+        </template>
+
+        <template #footer>
+          <button @click="closeProxySecurityModal()" class="btn btn-primary"><PhX /> Close</button>
+        </template>
+      </Modal>
     </div>
   </div>
 </template>
@@ -558,6 +495,9 @@ import {
   PhX,
 } from '@phosphor-icons/vue'
 
+import ApiKeyControl from '@/components/ui/ApiKeyControl.vue'
+import Checkbox from '@/components/inputs/Checkbox.vue' 
+
 interface Props {
   settings: ApplicationSettings | null
   startupConfig: StartupConfig | null | undefined
@@ -574,12 +514,14 @@ const emit = defineEmits<{
 const toast = useToast()
 const showPassword = ref(false)
 const showProxySecurityModal = ref(false)
-const loadingApiKey = ref(false)
-const copiedApiKey = ref(false)
 
 // Local reactive copy of settings to avoid mutating incoming prop directly
 import { reactive, watch, nextTick } from 'vue'
 const localSettings = reactive<ApplicationSettings>({} as ApplicationSettings)
+
+function onApiKeyUpdated(newKey: string) {
+  emit('update:startupConfig', { ...(props.startupConfig || {}), apiKey: newKey })
+}
 
 // Prevent recursive update loops: when syncing from parent props we set this flag to
 // avoid emitting update:settings during the sync process.
@@ -672,81 +614,7 @@ const closeProxySecurityModal = () => {
   showProxySecurityModal.value = false
 }
 
-const copyApiKey = async () => {
-  const key = props.startupConfig?.apiKey
-  if (!key) return
-  try {
-    await navigator.clipboard.writeText(key)
-    copiedApiKey.value = true
-    setTimeout(() => {
-      copiedApiKey.value = false
-    }, 2000)
-  } catch (err) {
-    errorTracking.captureException(err as Error, {
-      component: 'GeneralSettingsTab',
-      operation: 'copyApiKey',
-    })
-  }
-}
 
-const regenerateApiKey = async () => {
-  const hasExistingKey = !!props.startupConfig?.apiKey
-
-  const confirmMessage = hasExistingKey
-    ? 'Regenerating the API key will immediately invalidate the existing key. Continue?'
-    : 'Generate a new API key for this server instance?'
-
-  const okRegenerate = await showConfirm(confirmMessage, 'API Key')
-  if (!okRegenerate) return
-
-  loadingApiKey.value = true
-  try {
-    let resp: { apiKey: string; message?: string }
-
-    if (!hasExistingKey) {
-      try {
-        resp = await apiService.generateInitialApiKey()
-        emit('update:startupConfig', { ...(props.startupConfig || {}), apiKey: resp.apiKey })
-        toast.info('API key', resp.message || 'API key generated - copied to clipboard')
-        try {
-          await navigator.clipboard.writeText(resp.apiKey)
-        } catch {}
-        return
-      } catch (initialErr) {
-        logger.debug(
-          'Initial API key generation failed, trying authenticated regeneration',
-          initialErr,
-        )
-      }
-    }
-
-    resp = await apiService.regenerateApiKey()
-    emit('update:startupConfig', { ...(props.startupConfig || {}), apiKey: resp.apiKey })
-    toast.info('API key', 'API key regenerated - copied to clipboard')
-    try {
-      await navigator.clipboard.writeText(resp.apiKey)
-    } catch {}
-  } catch (err) {
-    errorTracking.captureException(err as Error, {
-      component: 'GeneralSettingsTab',
-      operation: 'regenerateApiKey',
-    })
-    const status =
-      err && typeof err === 'object' && err !== null && 'status' in err
-        ? (err as { status: number }).status
-        : 0
-    if (status === 401 || status === 403) {
-      toast.error(
-        'Permission denied',
-        'You must be logged in as an administrator to regenerate the API key. Please login and try again.',
-      )
-    } else {
-      toast.error('API key failed', 'Failed to generate/regenerate API key')
-    }
-  } finally {
-    loadingApiKey.value = false
-  }
-}
 
 // Expose method for parent component
 defineExpose({
@@ -1105,122 +973,7 @@ defineExpose({
   }
 }
 
-/* Modal Styles (canonical) */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #444;
-}
-
-.modal-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.25rem;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  color: #b3b3b3;
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background: #333;
-  color: #fff;
-}
-
-.modal-body {
-  padding: 2rem;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  padding: 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-/* Ensure modal context delete buttons are full-size */
-.modal-overlay .modal-content .modal-actions .delete-button,
-.modal-content .modal-actions .delete-button {
-  padding: 0.75rem 1.25rem;
-  background-color: rgba(231, 76, 60, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  font-weight: 700;
-  font-size: 1rem;
-  min-width: 120px;
-  height: auto;
-  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.12);
-}
-
-.modal-overlay .modal-content .modal-actions .delete-button:hover,
-.modal-content .modal-actions .delete-button:hover {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  color: #fff;
-}
-
-.cancel-button {
-  padding: 0.75rem 1.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  color: #fff;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.cancel-button:hover {
-  background: rgba(77, 171, 247, 0.1);
-  border-color: #4dabf7;
-}
+/* Modal-specific styling moved to shared `modals.css` */
 
 .modal-body ul {
   padding-left: 1.5rem;
@@ -1232,39 +985,11 @@ defineExpose({
   line-height: 1.6;
 }
 
-.modal-actions {
-  display: flex;
+/* Keep spacing and alignment; padding and border handled by centralized modal stylesheet */
+.modal-footer {
   gap: 0.75rem;
-  padding: 1.5rem;
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
   justify-content: flex-end;
 }
 
-.save-button {
-  padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.95rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
-}
-
-.save-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
-}
-
-.save-button:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
+/* Modal primary action uses centralized modal styles (.btn.btn-primary) */
 </style>

@@ -1753,8 +1753,9 @@ export const scoreSearchResults = (profileId: number, searchResults: SearchResul
   apiService.scoreSearchResults(profileId, searchResults)
 
 // Download client helpers
-export const testDownloadClient = (config: DownloadClientConfiguration) =>
-  apiService.testDownloadClient(config)
+export const testDownloadClient = (config: Partial<DownloadClientConfiguration>) =>
+  // The backend test endpoint accepts partial client objects (no id) — cast to any for the lower-level call
+  apiService.testDownloadClient(config as any)
 
 // Audimeta helpers
 export const searchAudimeta = (

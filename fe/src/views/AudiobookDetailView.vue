@@ -477,35 +477,12 @@
       </div>
     </div>
 
-    <!-- Delete Confirmation Dialog -->
-    <div v-if="showDeleteDialog" class="dialog-overlay" @click="cancelDelete">
-      <div class="dialog" @click.stop>
-        <div class="dialog-header">
-          <h3>
-            <PhWarning />
-            Confirm Deletion
-          </h3>
-        </div>
-        <div class="dialog-body">
-          <p>
-            Are you sure you want to delete <strong>{{ audiobook.title }}</strong
-            >?
-          </p>
-          <p class="warning-text">
-            This action cannot be undone. The audiobook data and cached images will be permanently
-            removed.
-          </p>
-        </div>
-        <div class="dialog-actions">
-          <button class="dialog-btn cancel-btn" @click="cancelDelete">Cancel</button>
-          <button class="dialog-btn confirm-btn" @click="executeDelete" :disabled="deleting">
-            <PhSpinner v-if="deleting" class="ph-spin" />
-            <PhTrash v-else />
-            {{ deleting ? 'Deleting...' : 'Delete' }}
-          </button>
-        </div>
-      </div>
-    </div>
+    <DeleteConfirmationModal :visible="showDeleteDialog" title="Delete Audiobook" @close="cancelDelete" @confirm="executeDelete">
+      <template #default>
+        <p>Are you sure you want to delete <strong>{{ audiobook.title }}</strong>?</p>
+        <p class="warning-text">This action cannot be undone. The audiobook data and cached images will be permanently removed.</p>
+      </template>
+    </DeleteConfirmationModal>
   </div>
 
   <!-- Loading State -->
@@ -553,8 +530,9 @@ import type { Audiobook, History } from '@/types'
 import { safeText } from '@/utils/textUtils'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
-import EditAudiobookModal from '@/components/EditAudiobookModal.vue'
-import CustomSelect from '@/components/CustomSelect.vue'
+import EditAudiobookModal from '@/components/audiobook/EditAudiobookModal.vue'
+import CustomSelect from '@/components/inputs/CustomSelect.vue'
+import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
 import {
   PhArrowLeft,
   PhArrowClockwise,
@@ -2536,107 +2514,6 @@ function formatDate(dateString?: string): string {
   background-color: #005fa3;
 }
 
-/* Delete Dialog */
-.dialog-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-}
-
-.dialog {
-  background-color: #2a2a2a;
-  border-radius: 6px;
-  border: 1px solid #444;
-  width: 90%;
-  max-width: 500px;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.dialog-header {
-  padding: 20px;
-  border-bottom: 1px solid #444;
-}
-
-.dialog-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 18px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.dialog-header i {
-  color: #f39c12;
-}
-
-.dialog-body {
-  padding: 20px;
-  color: #ccc;
-}
-
-.dialog-body p {
-  margin: 0 0 12px 0;
-  line-height: 1.5;
-}
-
-.dialog-body strong {
-  color: #fff;
-}
-
-.warning-text {
-  color: #f39c12;
-  font-size: 14px;
-}
-
-.dialog-actions {
-  padding: 20px;
-  border-top: 1px solid #444;
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-}
-
-.dialog-btn {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 10px 20px;
-  border: none;
-  border-radius: 6px;
-  font-size: 14px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: background-color 0.2s;
-}
-
-.cancel-btn {
-  background-color: #3a3a3a;
-  color: #fff;
-}
-
-.cancel-btn:hover {
-  background-color: #4a4a4a;
-}
-
-.confirm-btn {
-  background-color: #e74c3c;
-  color: #fff;
-}
-
-.confirm-btn:hover:not(:disabled) {
-  background-color: #c0392b;
-}
-
-.confirm-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
+/* Delete dialog styling is centralized in `src/assets/modals.css` */
+/* Legacy .dialog classes are still used in a few places (e.g., Audiobook detail delete), but visual styles are now centralized. */
 </style>

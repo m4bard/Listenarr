@@ -187,7 +187,7 @@ describe('SettingsView', () => {
 
     // Click Save Settings button
     const saveBtn = wrapper
-      .findAll('button.save-button')
+      .findAll('button.btn.btn-primary')
       .find((b) => b.text().includes('Save Settings'))
     expect(saveBtn).toBeTruthy()
     await saveBtn!.trigger('click')
@@ -243,7 +243,7 @@ describe('SettingsView', () => {
 
     // Save settings and assert that the updated value from the child is included
     const saveBtn = wrapper
-      .findAll('button.save-button')
+      .findAll('button.btn.btn-primary')
       .find((b) => b.text().includes('Save Settings'))
     expect(saveBtn).toBeTruthy()
     await saveBtn!.trigger('click')

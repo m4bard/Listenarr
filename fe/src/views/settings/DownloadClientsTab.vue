@@ -160,116 +160,62 @@
         @delete="executeDeleteClient"
       />
 
-      <!-- Delete Client Confirmation Modal -->
-      <div v-if="clientToDelete" class="modal-overlay" @click="clientToDelete = null">
-        <div class="modal-content" @click.stop>
-          <div class="modal-header">
-            <h3>
-              <PhWarningCircle />
-              Delete Download Client
-            </h3>
-            <button @click="clientToDelete = null" class="modal-close">
-              <PhX />
-            </button>
-          </div>
-          <div class="modal-body">
-            <p>
-              Are you sure you want to delete the download client
-              <strong>{{ clientToDelete.name }}</strong
-              >?
-            </p>
-            <p>This action cannot be undone.</p>
-          </div>
-          <div class="modal-actions">
-            <button @click="clientToDelete = null" class="cancel-button">Cancel</button>
-            <button @click="executeDeleteClient()" class="delete-button">
-              <PhTrash />
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- Delete Client Confirmation Modal (shared) -->
+      <DeleteConfirmationModal :visible="!!clientToDelete" title="Delete Download Client" @close="clientToDelete = null" @confirm="executeDeleteClient">
+        <template v-slot>
+          <p>Are you sure you want to delete the download client <strong>{{ clientToDelete?.name }}</strong>?</p>
+          <p>This action cannot be undone.</p>
+        </template>
+      </DeleteConfirmationModal>
 
-      <!-- Remote Path Mapping Modal -->
-      <div v-if="showMappingForm" class="modal-overlay" @click="closeMappingForm()">
-        <div class="modal-content" @click.stop>
-          <div class="modal-header">
-            <h3>{{ mappingToEdit ? 'Edit' : 'Add' }} Remote Path Mapping</h3>
-            <button @click="closeMappingForm()" class="modal-close"><PhX /></button>
+      <!-- Remote Path Mapping Modal (uses shared Modal component) -->
+      <Modal :visible="showMappingForm" size="md" @close="closeMappingForm">
+        <template #header>
+          <div class="modal-title">
+            <h3><PhLink /> {{ mappingToEdit ? 'Edit' : 'Add' }} Remote Path Mapping</h3>
           </div>
-          <div class="modal-body">
-            <div class="form-group">
-              <label>Mapping Name (optional)</label>
-              <input
-                v-model="mappingToEditData.name"
-                type="text"
-                placeholder="Friendly name for this mapping"
-              />
-            </div>
-            <div class="form-group">
-              <label>Download Client</label>
-              <select v-model="mappingToEditData.downloadClientId">
-                <option
-                  v-for="c in configStore.downloadClientConfigurations"
-                  :key="c.id"
-                  :value="c.id"
-                >
-                  {{ c.name }} ({{ c.type }})
-                </option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Remote Path (from client)</label>
-              <input
-                v-model="mappingToEditData.remotePath"
-                type="text"
-                placeholder="/path/to/complete/downloads"
-              />
-            </div>
-            <div class="form-group">
-              <label>Local Path (server)</label>
-              <FolderBrowser
-                v-model="mappingToEditData.localPath"
-                placeholder="Select a local path..."
-              />
-            </div>
-          </div>
-          <div class="modal-actions">
-            <button @click="closeMappingForm()" class="cancel-button">Cancel</button>
-            <button @click="saveMapping()" class="save-button"><PhCheck /> Save</button>
-          </div>
-        </div>
-      </div>
+          <button class="close-btn" @click="closeMappingForm">
+            <PhX />
+          </button>
+        </template>
 
-      <!-- Delete Remote Path Mapping Confirmation Modal -->
-      <div v-if="mappingToDelete" class="modal-overlay" @click="mappingToDelete = null">
-        <div class="modal-content" @click.stop>
-          <div class="modal-header">
-            <h3>
-              <PhWarningCircle />
-              Delete Remote Path Mapping
-            </h3>
-            <button @click="mappingToDelete = null" class="modal-close">
-              <PhX />
-            </button>
+        <template #default>
+          <div class="form-group">
+            <label>Mapping Name (optional)</label>
+            <input v-model="mappingToEditData.name" type="text" placeholder="Friendly name for this mapping" />
           </div>
-          <div class="modal-body">
-            <p>
-              Are you sure you want to delete the remote path mapping
-              <strong>{{ mappingToDelete.name || mappingToDelete.remotePath }}</strong
-              >?
-            </p>
-            <p>This action cannot be undone.</p>
+          <div class="form-group">
+            <label>Download Client</label>
+            <select v-model="mappingToEditData.downloadClientId">
+              <option v-for="c in configStore.downloadClientConfigurations" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
           </div>
-          <div class="modal-actions">
-            <button @click="mappingToDelete = null" class="cancel-button">Cancel</button>
-            <button @click="executeDeleteMapping()" class="delete-button">
-              <PhTrash />
-              Delete
-            </button>
+          <div class="form-group">
+            <label>Remote Path (from client)</label>
+            <input v-model="mappingToEditData.remotePath" type="text" placeholder="/path/to/complete/downloads" />
           </div>
-        </div>
-      </div>
+          <div class="form-group">
+            <label>Local Path (server)</label>
+            <FolderBrowser v-model="mappingToEditData.localPath" placeholder="Select a local path..." />
+          </div>
+        </template>
+
+        <template #footer>
+          <button @click="closeMappingForm()" class="cancel-button"><PhX /> Cancel</button>
+          <button @click="saveMapping()" class="btn btn-primary"><PhCheck /> Save</button>
+        </template>
+      </Modal>
+
+      <!-- Delete Remote Path Mapping Confirmation (shared) -->
+      <DeleteConfirmationModal :visible="!!mappingToDelete" title="Delete Remote Path Mapping" @close="mappingToDelete = null" @confirm="executeDeleteMapping">
+        <template v-slot>
+          <p>
+            Are you sure you want to delete the remote path mapping
+            <strong>{{ mappingToDelete?.name || mappingToDelete?.remotePath }}</strong>?
+          </p>
+          <p>This action cannot be undone.</p>
+        </template>
+      </DeleteConfirmationModal>
     </div>
   </div>
 </template>
@@ -280,8 +226,10 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import type { DownloadClientConfiguration, RemotePathMapping } from '@/types'
-import FolderBrowser from '@/components/FolderBrowser.vue'
-import DownloadClientFormModal from '@/components/DownloadClientFormModal.vue'
+import FolderBrowser from '@/components/ui/FolderBrowser.vue'
+import DownloadClientFormModal from '@/components/download/DownloadClientFormModal.vue'
+import { Modal } from '@/components/modal'
+import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
 import {
   PhDownloadSimple,
   PhToggleRight,
@@ -636,8 +584,7 @@ defineExpose({
   font-weight: 600;
 }
 
-.add-button,
-.save-button {
+.add-button {
   padding: 0.75rem 1.5rem;
   background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
   color: white;
@@ -653,8 +600,7 @@ defineExpose({
   box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
 }
 
-.add-button:hover,
-.save-button:hover:not(:disabled) {
+.add-button:hover {
   background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
@@ -915,83 +861,7 @@ defineExpose({
   color: #ef4444;
 }
 
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-/* Ensure modal context delete buttons are full-size */
-.modal-overlay .modal-content .modal-actions .delete-button,
-.modal-content .modal-actions .delete-button,
-.modal-overlay .modal-content .modal-actions .modal-delete-button,
-.modal-content .modal-actions .modal-delete-button {
-  padding: 0.75rem 1.25rem;
-  background-color: rgba(231, 76, 60, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  font-weight: 700;
-  font-size: 1rem;
-  min-width: 120px;
-  height: auto;
-  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.12);
-}
-
-.modal-overlay .modal-content .modal-actions .delete-button:hover,
-.modal-content .modal-actions .delete-button:hover {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
-  color: #fff;
-}
-
-.modal-close {
-  background: transparent;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  color: var(--color-text-secondary);
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background: var(--color-background-tertiary);
-  color: var(--color-text);
-}
-
-.modal-body {
-  padding: 1.5rem;
-}
-
-.modal-body p {
-  margin: 0 0 1rem 0;
-  line-height: 1.6;
-}
+/* Modal-specific styling moved to shared `modals.css` */
 
 .form-group {
   margin-bottom: 1rem;
@@ -1022,55 +892,15 @@ defineExpose({
   border-color: var(--color-primary);
 }
 
-.modal-actions {
-  display: flex;
-  gap: 0.75rem;
-  padding: 1.5rem;
-  border-top: 1px solid var(--color-border);
-  justify-content: flex-end;
-}
 
-.cancel-button,
-.save-button,
-.delete-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 0.2s;
-}
 
-.cancel-button {
-  background: var(--color-background-secondary);
-  color: var(--color-text);
-  border: 1px solid var(--color-border);
-}
-
-.cancel-button:hover {
-  background: var(--color-background-tertiary);
-}
-
-.save-button {
-  background: var(--color-primary);
-  color: white;
-}
-
-.save-button:hover {
-  background: var(--color-primary-dark);
+.btn.btn-primary {
+  /* Use centralized primary button styles; per-component overrides removed */
 }
 
 .delete-button {
-  background: #ef4444;
-  color: white;
-}
-
-.delete-button:hover {
-  background: #dc2626;
+  /* Use centralized modal delete styles in src/assets/modals.css for full-size modal actions.
+     The small icon-style delete button (defined earlier) remains for list actions. */
 }
 
 .ph-spin {

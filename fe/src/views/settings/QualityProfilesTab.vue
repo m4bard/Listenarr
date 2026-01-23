@@ -219,44 +219,17 @@
         @save="saveQualityProfile"
       />
 
-      <!-- Delete Confirmation Modal -->
-      <div v-if="profileToDelete" class="modal-overlay" @click="profileToDelete = null">
-        <div class="modal-content" @click.stop>
-          <div class="modal-header">
-            <h3>
-              <PhWarningCircle />
-              Delete Quality Profile
-            </h3>
-            <button @click="profileToDelete = null" class="modal-close">
-              <PhX />
-            </button>
-          </div>
-          <div class="modal-body">
-            <p>
-              Are you sure you want to delete the quality profile
-              <strong>{{ profileToDelete.name }}</strong
-              >?
-            </p>
-            <p v-if="profileToDelete.isDefault" class="warning-text">
-              <PhWarning />
-              This is the default profile and cannot be deleted. Please set another profile as
-              default first.
-            </p>
-            <p>This action cannot be undone.</p>
-          </div>
-          <div class="modal-actions">
-            <button @click="profileToDelete = null" class="cancel-button">Cancel</button>
-            <button
-              @click="executeDeleteProfile"
-              class="delete-button"
-              :disabled="profileToDelete.isDefault"
-            >
-              <PhTrash />
-              Delete
-            </button>
-          </div>
-        </div>
-      </div>
+      <!-- Delete Confirmation Modal (shared) -->
+      <DeleteConfirmationModal :visible="!!profileToDelete" title="Delete Quality Profile" @close="profileToDelete = null" @confirm="executeDeleteProfile">
+        <template v-slot>
+          <p>Are you sure you want to delete the quality profile <strong>{{ profileToDelete?.name }}</strong>?</p>
+          <p v-if="profileToDelete?.isDefault" class="warning-text">
+            <PhWarning />
+            This is the default profile and cannot be deleted. Please set another profile as default first.
+          </p>
+          <p>This action cannot be undone.</p>
+        </template>
+      </DeleteConfirmationModal>
     </div>
   </div>
 </template>
@@ -272,7 +245,8 @@ import {
   updateQualityProfile,
 } from '@/services/api'
 import type { QualityProfile } from '@/types'
-import QualityProfileFormModal from '@/components/QualityProfileFormModal.vue'
+import QualityProfileFormModal from '@/components/settings/QualityProfileFormModal.vue'
+import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
 import {
   PhStar,
   PhCheckCircle,
@@ -440,6 +414,8 @@ defineExpose({
   justify-content: space-between;
   align-items: center;
   margin-bottom: 1.5rem;
+  padding-bottom: 1rem; /* match other tabs with a horizontal rule */
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .section-header h3 {
@@ -807,116 +783,4 @@ defineExpose({
   border: 1px solid rgba(244, 67, 54, 0.3);
 }
 
-/* Modal Styles */
-/* Modal Styles (canonical) */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.85);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  backdrop-filter: blur(4px);
-}
-
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  max-width: 700px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #444;
-}
-
-.modal-header h3 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.25rem;
-}
-
-.modal-close {
-  background: none;
-  border: none;
-  color: #b3b3b3;
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.modal-close:hover {
-  background: #333;
-  color: #fff;
-}
-
-.modal-body {
-  padding: 2rem;
-  overflow-y: auto;
-  flex: 1;
-}
-
-.modal-actions {
-  display: flex;
-  gap: 1rem;
-  justify-content: flex-end;
-  padding: 1.5rem;
-  border-top: 1px solid #444;
-}
-
-/* Ensure modal context delete buttons are full-size */
-.modal-overlay .modal-content .modal-actions .delete-button,
-.modal-content .modal-actions .delete-button,
-.modal-overlay .modal-content .modal-actions .modal-delete-button,
-.modal-content .modal-actions .modal-delete-button {
-  padding: 0.75rem 1.25rem;
-  background-color: rgba(231, 76, 60, 0.15);
-  color: #ff6b6b;
-  border: 1px solid rgba(231, 76, 60, 0.3);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.18s ease;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  font-weight: 700;
-  font-size: 1rem;
-  min-width: 120px;
-  height: auto;
-  box-shadow: 0 6px 16px rgba(231, 76, 60, 0.12);
-}
-
-.cancel-button {
-  padding: 0.75rem 1.5rem;
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.cancel-button:hover {
-  background: var(--bg-hover);
-}
 </style>
