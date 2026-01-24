@@ -138,4 +138,37 @@ describe('EditAudiobookModal relative path calculation', () => {
     expect(reopened.exists()).toBe(true)
     expect((reopened.element as HTMLInputElement).value).toBe('My Author\\My Title')
   })
+
+  it('prefills absolute path when switching to Custom path', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: {
+        isOpen: true,
+        audiobook,
+      },
+      attachTo: document.body,
+      global: {
+        plugins: [(await import('pinia')).createPinia()],
+      },
+    })
+
+    // allow async init
+    await new Promise((r) => setTimeout(r, 10))
+
+    // Enter edit mode
+    await wrapper.find('.btn-edit-destination').trigger('click')
+
+    // Switch the select to Custom path
+    const select = wrapper.find('.root-select select.form-select')
+    expect(select.exists()).toBe(true)
+    ;(select.element as HTMLSelectElement).value = '__custom__'
+    await select.trigger('change')
+    // allow DOM updates
+    await new Promise((r) => setTimeout(r, 0))
+
+    // Custom input should be visible with the full path
+    const customInput = wrapper.find('input.custom-input')
+    expect(customInput.exists()).toBe(true)
+    // Combined path uses a forward slash between root and relative part
+    expect((customInput.element as HTMLInputElement).value).toBe('C:\\root/Some Author\\Some Title')
+  })
 })

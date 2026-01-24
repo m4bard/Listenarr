@@ -1,3 +1,37 @@
+<template>
+  <div ref="root" class="filters-dropdown">
+    <button class="trigger" @click="toggle" :aria-expanded="open">
+      <span style="display:inline-flex; align-items:center; gap:8px">
+        <span class="icon">Filters</span>
+      </span>
+      <span class="caret">▾</span>
+    </button>
+
+    <div v-if="open" class="dropdown">
+      <div v-for="o in builtInOptions" :key="o.value" class="dropdown-item" @click="selectBuiltIn(o.value)">
+        <div class="dropdown-item-main">
+          <span>{{ o.label }}</span>
+        </div>
+        <div v-if="selectedBuiltIn === o.value" class="check">✓</div>
+      </div>
+
+      <div class="dropdown-divider"></div>
+
+      <div v-if="customFilters.length === 0" class="dropdown-item">No custom filters</div>
+      <div v-for="f in customFilters" :key="f.id" class="dropdown-item">
+        <div class="dropdown-item-main" @click="selectCustom(f.id)">{{ f.label }}</div>
+        <div class="dropdown-item-actions">
+          <button class="icon-btn" @click.stop="emitEdit(f)">Edit</button>
+          <button class="icon-btn delete" @click.stop="emitDelete(f)">Delete</button>
+        </div>
+      </div>
+
+      <div class="dropdown-divider"></div>
+      <div class="dropdown-item create" @click="emitCreate">Create filter</div>
+    </div>
+  </div>
+</template>
+
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 interface CustomFilterRule {
@@ -96,7 +130,6 @@ function handleClickOutside(e: MouseEvent) {
 onMounted(() => document.addEventListener('click', handleClickOutside))
 onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 </script>
-
 <style scoped>
 .filters-dropdown {
   position: relative;

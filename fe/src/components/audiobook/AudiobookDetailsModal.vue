@@ -1,14 +1,16 @@
 <template>
-  <div v-if="visible" class="modal-overlay" @click="closeModal">
-    <div class="modal-content" @click.stop>
-      <div class="modal-header">
+  <Modal :visible="visible" size="lg" @close="closeModal">
+    <template #header>
+      <div class="modal-title">
         <h2>Audiobook Details</h2>
-        <button class="close-btn" @click="closeModal">
-          <PhX />
-        </button>
       </div>
+      <button class="close-btn" @click="closeModal">
+        <PhX />
+      </button>
+    </template>
 
-      <div class="modal-body">
+    <template #default>
+      <ModalBody>
         <div class="book-layout">
           <!-- Book Image -->
           <div class="book-image">
@@ -142,24 +144,24 @@
             </div>
           </div>
         </div>
-      </div>
+      </ModalBody>
+    </template>
 
-      <div class="modal-footer">
-        <button class="btn btn-secondary" @click="closeModal">
-          <PhX />
-          Close
-        </button>
-        <button
-          :class="['btn', isAdded ? 'btn-success' : 'btn-primary']"
-          @click="addToLibrary"
-          :disabled="isAdded"
-        >
-          <component :is="isAdded ? PhCheck : PhPlus" />
-          {{ isAdded ? 'Added' : 'Add to Library' }}
-        </button>
-      </div>
-    </div>
-  </div>
+    <template #footer>
+      <button class="btn btn-secondary" @click="closeModal">
+        <PhX />
+        Close
+      </button>
+      <button
+        :class="['btn', isAdded ? 'btn-success' : 'btn-primary']"
+        @click="addToLibrary"
+        :disabled="isAdded"
+      >
+        <component :is="isAdded ? PhCheck : PhPlus" />
+        {{ isAdded ? 'Added' : 'Add to Library' }}
+      </button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
@@ -169,6 +171,7 @@ import { getQualityProfiles, apiService } from '@/services/api'
 import { handleImageError } from '@/utils/imageFallback'
 import { useLibraryStore } from '@/stores/library'
 import { PhX, PhImage, PhStar, PhCheck, PhPlus } from '@phosphor-icons/vue'
+import { Modal, ModalBody } from '@/components/modal'
 
 interface Props {
   visible: boolean
@@ -261,45 +264,7 @@ const capitalizeFirst = (str: string): string => {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-
-.modal-content {
-  background-color: #1a1a1a;
-  border-radius: 6px;
-  border: 1px solid #333;
-  max-width: 900px;
-  width: 100%;
-  max-height: 90vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #333;
-}
-
-.modal-header h2 {
-  margin: 0;
-  color: white;
-  font-size: 1.5rem;
-}
+/* Keep only layout and content-related styles; modal wrapper styles come from shared modal stylesheet */
 
 .close-btn {
   background: none;
@@ -317,12 +282,6 @@ const capitalizeFirst = (str: string): string => {
 .close-btn:hover {
   background-color: #333;
   color: white;
-}
-
-.modal-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: 1.5rem;
 }
 
 .book-layout {
@@ -356,6 +315,74 @@ const capitalizeFirst = (str: string): string => {
   color: #666;
   text-align: center;
   padding: 1rem;
+}
+
+/* Destination input styling */
+.destination-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.destination-readonly {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.destination-readonly .readonly-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.6rem 0.75rem;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #eef2f8;
+  font-size: 0.95rem;
+  box-shadow: none;
+}
+
+.destination-readonly .readonly-input:focus,
+.destination-readonly .readonly-input:active {
+  outline: none;
+  box-shadow: none;
+  border-color: #444;
+}
+
+.destination-edit .destination-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.destination-row .root-select {
+  min-width: 200px;
+  max-width: 260px;
+  width: 100%;
+}
+
+.destination-row .relative-input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 0.5rem 0.75rem;
+  background: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.destination-row .relative-input:focus {
+  outline: none;
+  border-color: #2196f3;
+  box-shadow: 0 0 0 3px rgba(33,150,243,0.06);
+}
+
+.destination-actions { display:flex; gap:0.5rem; }
+
+@media (max-width: 720px) {
+  .destination-row { flex-direction: column; align-items: stretch; }
+  .destination-row .root-select { max-width: 100%; }
 }
 
 .placeholder-cover i {

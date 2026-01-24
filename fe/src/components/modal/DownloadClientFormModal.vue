@@ -8,7 +8,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body">
+      <ModalBody>
         <form @submit.prevent="handleSubmit">
           <div class="form-section">
             <h3>Basic</h3>
@@ -288,7 +288,7 @@
             </div>
           </div>
         </form>
-      </div>
+      </ModalBody>
     </template>
 
     <template #footer>
@@ -313,7 +313,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import PasswordInput from '@/components/inputs/PasswordInput.vue'
-import { Modal } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import { PhX, PhTrash, PhSpinner, PhGear, PhFloppyDisk, PhDownload } from '@phosphor-icons/vue'
 import Checkbox from '@/components/inputs/Checkbox.vue'
 import type { DownloadClientConfiguration, DownloadClientSettings } from '@/types'

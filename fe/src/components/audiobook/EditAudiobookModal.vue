@@ -10,7 +10,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body">
+      <ModalBody>
         <div class="info-section">
           <i class="ph ph-info"></i>
           <p>
@@ -97,42 +97,52 @@
                 <div class="destination-row">
                   <div class="root-select">
                     <RootFolderSelect
+                      :hideLabel="true"
+                      :hideBrowse="!isUsingCustomPath"
+                      :autoFocusCustom="true"
+                      :inline="true"
                       v-model:rootId="selectedRootId"
                       v-model:customPath="customRootPath"
+                      @open-browser="openCustomBrowser"
                     />
                   </div>
+
                   <input
+                    v-if="!isUsingCustomPath"
                     type="text"
                     v-model="formData.relativePath"
                     class="form-input relative-input"
                     placeholder="e.g. Author/Title"
                   />
+
+                  <div class="destination-actions">
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      @click="editingDestination = false"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      @click="finishEditingDestination"
+                    >
+                      Done
+                    </button>
+                  </div>
                 </div>
-                <div class="destination-actions">
-                  <button
-                    type="button"
-                    class="btn btn-secondary btn-sm"
-                    @click="editingDestination = false"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    class="btn btn-primary btn-sm"
-                    @click="finishEditingDestination"
-                  >
-                    Done
-                  </button>
-                </div>
+
+                <!-- Custom path status removed for streamlined UI -->
               </div>
               <p class="help-text">
                 <span v-if="!editingDestination"
                   >Click the edit button to change the destination folder.</span
                 >
-                <span v-else
-                  >Select a named root (or custom path) and edit the path relative to it on the
-                  right.</span
-                >
+                <span v-else>
+                  <strong>Choose a root folder</strong> from the dropdown, or select <em>"Custom path"</em> to specify any location.
+                  The right field is for organizing within the selected root.
+                </span>
               </p>
             </div>
           </div>
@@ -212,7 +222,7 @@
 
 <button type="submit" style="display: none;" aria-hidden="true"></button>
         </form>
-      </div>
+      </ModalBody>
     </template>
 
     <template #footer>
@@ -231,6 +241,9 @@
       </button>
     </template>
   </Modal>
+
+  <!-- Folder browser for custom path selection -->
+  <FolderBrowser v-if="showCustomBrowser" v-model="customRootPath" :show-input="true" @browser-closed="closeCustomBrowser" />
 
   <Modal :visible="showMoveConfirm" size="md" @close="cancelMoveConfirm">
     <template #header>
@@ -312,17 +325,32 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useToast } from '@/services/toastService'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import type { Audiobook, QualityProfile } from '@/types'
-import { PhX, PhPencil, PhSpinner, PhCheck } from '@phosphor-icons/vue' 
+import { PhX, PhPencil, PhSpinner, PhCheck, PhFolder, PhInfo } from '@phosphor-icons/vue' 
 import { useConfigurationStore } from '@/stores/configuration'
 import RootFolderSelect from '@/components/inputs/RootFolderSelect.vue'
-import { Modal } from '@/components/modal'
+import FolderBrowser from '@/components/ui/FolderBrowser.vue'
+import { Modal, ModalBody } from '@/components/modal'
 import { useRootFoldersStore } from '@/stores/rootFolders'
+
+// Diagnostic: surface undefined imports that can cause `Invalid vnode type` warnings
+if (typeof window !== 'undefined') {
+  try {
+    console.debug('EditAudiobookModal imports', {
+      ModalExists: typeof Modal !== 'undefined',
+      ModalBodyExists: typeof ModalBody !== 'undefined',
+      RootFolderSelectExists: typeof RootFolderSelect !== 'undefined',
+      FolderBrowserExists: typeof FolderBrowser !== 'undefined',
+    })
+  } catch (e) {
+    /* noop */
+  }
+}
 
 interface Props {
   isOpen: boolean
@@ -350,11 +378,18 @@ const configStore = useConfigurationStore()
 const rootStore = useRootFoldersStore()
 const selectedRootId = ref<number | null>(null) // null/use default, 0 = custom
 const customRootPath = ref<string | null>(null)
+
+const isUsingCustomPath = computed(() => {
+  // True when user has selected an explicit custom base path (0) or supplied an absolute path
+  return selectedRootId.value === 0 || (customRootPath.value != null && customRootPath.value.length > 0)
+})
 const rootPath = ref<string | null>(null)
 const saving = ref(false)
 const newTag = ref('')
 const editingDestination = ref(false)
 const toast = useToast()
+
+// Minimal custom path behaviour: extra helpers removed to keep UI streamlined
 
 const formData = ref<FormData>({
   monitored: true,
@@ -378,6 +413,56 @@ const modalDeleteEmpty = ref(true)
 let moveConfirmResolver:
   | ((r: { proceed: boolean; moveFiles: boolean; deleteEmptySource: boolean }) => void)
   | null = null
+
+// Custom path browser & validation state
+const showCustomBrowser = ref(false)
+
+function openCustomBrowser() {
+  showCustomBrowser.value = true
+}
+function closeCustomBrowser() {
+  showCustomBrowser.value = false
+}
+
+const RECENT_KEY = 'listenarr.recentCustomPaths'
+
+onMounted(() => {
+  // Initialization code if needed
+})
+// When the select switches to 'Custom path' we need to prefill the input
+// using the *previous* chosen root (old) because the new selectedRootId is already
+// set to 0 by the time this runs and combinedBasePath() would return empty.
+watch(() => selectedRootId.value, (v, old) => {
+  if (v === 0 && (customRootPath.value == null || customRootPath.value === '')) {
+    // Determine previous selected root path
+    let prevRoot: string | null = null
+    if (old && old > 0) {
+      const found = rootStore.folders.find((f) => f.id === old)
+      prevRoot = found?.path ?? rootPath.value ?? null
+    } else if (old === null) {
+      prevRoot = rootPath.value || null
+    } else if (old === 0 && customRootPath.value) {
+      prevRoot = customRootPath.value
+    }
+
+    if (prevRoot) {
+      const rel = (formData.value.relativePath || '').trim()
+      const needsSep = !(prevRoot.endsWith('/') || prevRoot.endsWith('\\'))
+      const cb = rel ? prevRoot + (needsSep ? '/' : '') + rel : prevRoot
+      customRootPath.value = cb
+    }
+  }
+})
+
+// When the folder browser closes, the path is set
+watch(
+  () => showCustomBrowser.value,
+  (isOpen, wasOpen) => {
+    if (wasOpen && !isOpen && customRootPath.value) {
+      // Path is set from browser
+    }
+  },
+)
 
 function askMoveConfirmation(original: string, combined: string) {
   modalMoveFiles.value = true
@@ -512,9 +597,20 @@ async function initializeForm() {
       customRootPath.value = props.audiobook.basePath
     }
   } else if (props.audiobook.basePath) {
-    // No configured root folders, but there's a basePath - use custom
-    selectedRootId.value = 0
-    customRootPath.value = props.audiobook.basePath
+    // No configured named root folders. If the app has an outputPath and the audiobook's basePath
+    // sits under that outputPath, treat it as relative to the outputPath and show the relative
+    // input. Otherwise treat it as an explicit custom path.
+    const out = rootPath.value
+    const base = props.audiobook.basePath.replace(/\\/g, '/')
+    if (out && base.toLowerCase().startsWith(out.replace(/\\/g, '/').toLowerCase())) {
+      // Use configured output path as the chosen root and derive relative path later
+      selectedRootId.value = null
+      customRootPath.value = null
+    } else {
+      // No match: explicit custom path
+      selectedRootId.value = 0
+      customRootPath.value = props.audiobook.basePath
+    }
   } else {
     // No basePath - use default selection
     selectedRootId.value = null
@@ -1519,18 +1615,23 @@ function close() {
 .destination-edit {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
+  gap: 1rem; /* Increased gap for better separation */
+  padding: 1rem; /* Increased padding */
+  background-color: #1e1e1e;
+  border: 1px solid #333;
+  border-radius: 8px;
 }
 
 .destination-actions {
   display: flex;
-  gap: 0.5rem;
+  gap: 0.75rem;
   justify-content: flex-end;
+  margin-top: 0.5rem;
 }
 
 .btn-sm {
-  padding: 0.4rem 0.75rem;
-  font-size: 0.85rem;
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
   min-width: auto;
 }
 
@@ -1549,26 +1650,55 @@ function close() {
 .form-input:focus {
   outline: none;
   border-color: #007acc;
-  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.06);
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.2); /* More visible focus ring */
 }
 
-/* Row layout for destination: root left, input right */
+.form-input::placeholder {
+  color: #888; /* Subtle placeholder color */
+}
+
+/* Row layout for destination: browse + root + input + actions */
 .destination-row {
   display: flex;
-  gap: 0.75rem;
-  align-items: stretch;
+  gap: 0.75rem; /* Consistent gap */
+  align-items: center; /* vertically center controls */
   flex-wrap: wrap;
 }
 
 .root-select {
   flex: 1;
   min-width: 200px;
-  max-width: 300px;
+}
+
+/* Ensure select inside root-select matches the input */
+.root-select .form-select {
+  height: 42px; /* Slightly taller for better touch targets */
+  box-sizing: border-box;
+  background-color: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+}
+
+.root-select .form-select:focus {
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.2);
+}
+
+.root-select .form-label {
+  display: none; /* Hide redundant label in modal context */
 }
 
 .relative-input {
-  flex: 2;
-  min-width: 200px;
+  flex: 1;
+  min-width: 180px;
+  height: 42px; /* Match select height */
+  box-sizing: border-box;
+  padding: 0.75rem 1rem; /* Match select padding */
+}
+
+.destination-actions {
+  flex-shrink: 0;
 }
 
 /* Responsive design */
@@ -1587,9 +1717,147 @@ function close() {
     min-width: auto;
   }
 
+  .destination-actions {
+    justify-content: stretch; /* Full width buttons on mobile */
+    gap: 0.75rem;
+  }
+
+  .destination-actions .btn {
+    flex: 1; /* Equal width buttons */
+  }
+
   .move-status {
     order: -1;
     width: 100%;
   }
 }
+
+/* Enhanced custom path section */
+.custom-path-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  padding: 0.75rem;
+  background-color: #252525;
+  border-radius: 6px;
+  border: 1px solid #404040;
+}
+
+.path-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.preview-label {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: #ccc;
+}
+
+.preview-path {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 0.875rem;
+  color: #fff;
+  background-color: #1a1a1a;
+  padding: 0.5rem 0.75rem;
+  border-radius: 4px;
+  border: 1px solid #333;
+  word-break: break-all;
+}
+
+.validation-status {
+  display: flex;
+  align-items: center;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.status-badge.valid {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  border: 1px solid rgba(46, 204, 113, 0.3);
+}
+
+.status-badge.invalid {
+  background: rgba(231, 76, 60, 0.15);
+  color: #e74c3c;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.status-text {
+  font-weight: 500;
+}
+
+.path-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #888;
+  font-size: 0.875rem;
+  padding: 0.5rem 0.75rem;
+  background-color: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.path-hint svg {
+  color: #2196f3;
+  flex-shrink: 0;
+}
+
+/* Inline browse button - always visible and prominent */
+.inline-browse {
+  display: flex;
+  align-items: center;
+}
+
+.btn-inline-browse {
+  padding: 0.625rem;
+  background: #2196f3;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.btn-inline-browse:hover {
+  background: #1976d2;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.btn-inline-browse:active {
+  transform: translateY(0);
+}
+
+.btn-inline-browse:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.3);
+}
+
+.btn-inline-browse svg {
+  width: 20px;
+  height: 20px;
+}
+
+
+
+.muted-note { color: #999; font-size:0.95rem }
+
+
+
 </style>

@@ -2,16 +2,18 @@
   <Modal :visible="visible" size="lg" @close="closeModal">
     <template #header>
       <div class="modal-title">
-        <h3><PhStar /> {{ profile ? 'Edit Quality Profile' : 'Create Quality Profile' }}</h3>
+        <h3>
+          <PhStar /> {{ profile ? 'Edit Quality Profile' : 'Create Quality Profile' }}
+        </h3>
       </div>
       <button class="close-btn" @click="closeModal">
         <PhX />
       </button>
     </template>
 
-    <template #default> 
+    <template #default>
 
-      <div class="modal-body">
+      <ModalBody>
         <form @submit.prevent="handleSubmit">
           <!-- Basic Information -->
           <div class="form-section">
@@ -19,23 +21,14 @@
 
             <div class="form-group">
               <label for="name">Profile Name *</label>
-              <input
-                id="name"
-                v-model="formData.name"
-                type="text"
-                required
-                placeholder="e.g., High Quality, Any Quality, Space Saver"
-              />
+              <input id="name" v-model="formData.name" type="text" required
+                placeholder="e.g., High Quality, Any Quality, Space Saver" />
             </div>
 
             <div class="form-group">
               <label for="description">Description</label>
-              <textarea
-                id="description"
-                v-model="formData.description"
-                rows="2"
-                placeholder="Optional description of this quality profile"
-              />
+              <textarea id="description" v-model="formData.description" rows="2"
+                placeholder="Optional description of this quality profile" />
             </div>
 
             <div class="form-group">
@@ -60,34 +53,21 @@
             <div class="quality-list">
               <div v-for="quality in availableQualities" :key="quality" class="quality-item">
                 <label class="checkbox-label">
-                  <input
-                    type="checkbox"
-                    :checked="isQualityAllowed(quality)"
-                    @change="toggleQuality(quality, $event)"
-                  />
+                  <input type="checkbox" :checked="isQualityAllowed(quality)"
+                    @change="toggleQuality(quality, $event)" />
                   <span class="quality-name">{{ quality }}</span>
                 </label>
 
                 <div v-if="isQualityAllowed(quality)" class="quality-controls">
                   <label class="priority-label">
                     Priority:
-                    <input
-                      type="number"
-                      :value="getQualityPriority(quality)"
-                      @input="updateQualityPriority(quality, $event)"
-                      min="0"
-                      max="100"
-                      class="priority-input"
-                    />
+                    <input type="number" :value="getQualityPriority(quality)"
+                      @input="updateQualityPriority(quality, $event)" min="0" max="100" class="priority-input" />
                   </label>
 
                   <label class="radio-label">
-                    <input
-                      type="radio"
-                      :value="quality"
-                      v-model="formData.cutoffQuality"
-                      :disabled="!isQualityAllowed(quality)"
-                    />
+                    <input type="radio" :value="quality" v-model="formData.cutoffQuality"
+                      :disabled="!isQualityAllowed(quality)" />
                     <span class="cutoff-text">Cutoff</span>
                   </label>
                 </div>
@@ -109,11 +89,7 @@
 
             <div class="tag-input-group">
               <div class="tags-list">
-                <div
-                  v-for="(format, index) in formData.preferredFormats"
-                  :key="index"
-                  class="tag removable"
-                >
+                <div v-for="(format, index) in formData.preferredFormats" :key="index" class="tag removable">
                   {{ format }}
                   <button type="button" @click="removeFormat(index)" class="tag-remove">
                     <PhX />
@@ -121,12 +97,8 @@
                 </div>
               </div>
               <div class="tag-input">
-                <input
-                  v-model="newFormat"
-                  @keypress.enter.prevent="addFormat"
-                  type="text"
-                  placeholder="e.g., M4B, MP3, M4A"
-                />
+                <input v-model="newFormat" @keypress.enter.prevent="addFormat" type="text"
+                  placeholder="e.g., M4B, MP3, M4A" />
                 <button type="button" @click="addFormat" class="add-button">
                   <i class="ph ph-plus"></i>
                   Add
@@ -145,24 +117,14 @@
             <div class="form-row">
               <div class="form-group">
                 <label for="minimumSize">Minimum Size (MB)</label>
-                <input
-                  id="minimumSize"
-                  v-model.number="formData.minimumSize"
-                  type="number"
-                  min="0"
-                  placeholder="No minimum"
-                />
+                <input id="minimumSize" v-model.number="formData.minimumSize" type="number" min="0"
+                  placeholder="No minimum" />
               </div>
 
               <div class="form-group">
                 <label for="maximumSize">Maximum Size (MB)</label>
-                <input
-                  id="maximumSize"
-                  v-model.number="formData.maximumSize"
-                  type="number"
-                  min="0"
-                  placeholder="No maximum"
-                />
+                <input id="maximumSize" v-model.number="formData.maximumSize" type="number" min="0"
+                  placeholder="No maximum" />
               </div>
             </div>
           </div>
@@ -179,11 +141,7 @@
               </p>
               <div class="tag-input-group">
                 <div class="tags-list">
-                  <div
-                    v-for="(word, index) in formData.preferredWords"
-                    :key="index"
-                    class="tag positive removable"
-                  >
+                  <div v-for="(word, index) in formData.preferredWords" :key="index" class="tag positive removable">
                     {{ word }}
                     <button type="button" @click="removePreferredWord(index)" class="tag-remove">
                       <PhX />
@@ -191,12 +149,8 @@
                   </div>
                 </div>
                 <div class="tag-input">
-                  <input
-                    v-model="newPreferredWord"
-                    @keypress.enter.prevent="addPreferredWord"
-                    type="text"
-                    placeholder="e.g., unabridged, complete"
-                  />
+                  <input v-model="newPreferredWord" @keypress.enter.prevent="addPreferredWord" type="text"
+                    placeholder="e.g., unabridged, complete" />
                   <button type="button" @click="addPreferredWord" class="add-button">
                     <i class="ph ph-plus"></i>
                     Add
@@ -213,11 +167,7 @@
               </p>
               <div class="tag-input-group">
                 <div class="tags-list">
-                  <div
-                    v-for="(word, index) in formData.mustContain"
-                    :key="index"
-                    class="tag required removable"
-                  >
+                  <div v-for="(word, index) in formData.mustContain" :key="index" class="tag required removable">
                     {{ word }}
                     <button type="button" @click="removeMustContain(index)" class="tag-remove">
                       <PhX />
@@ -225,12 +175,8 @@
                   </div>
                 </div>
                 <div class="tag-input">
-                  <input
-                    v-model="newMustContain"
-                    @keypress.enter.prevent="addMustContain"
-                    type="text"
-                    placeholder="e.g., audiobook"
-                  />
+                  <input v-model="newMustContain" @keypress.enter.prevent="addMustContain" type="text"
+                    placeholder="e.g., audiobook" />
                   <button type="button" @click="addMustContain" class="add-button">
                     <i class="ph ph-plus"></i>
                     Add
@@ -247,11 +193,7 @@
               </p>
               <div class="tag-input-group">
                 <div class="tags-list">
-                  <div
-                    v-for="(word, index) in formData.mustNotContain"
-                    :key="index"
-                    class="tag forbidden removable"
-                  >
+                  <div v-for="(word, index) in formData.mustNotContain" :key="index" class="tag forbidden removable">
                     {{ word }}
                     <button type="button" @click="removeMustNotContain(index)" class="tag-remove">
                       <PhX />
@@ -259,12 +201,8 @@
                   </div>
                 </div>
                 <div class="tag-input">
-                  <input
-                    v-model="newMustNotContain"
-                    @keypress.enter.prevent="addMustNotContain"
-                    type="text"
-                    placeholder="e.g., abridged, radio"
-                  />
+                  <input v-model="newMustNotContain" @keypress.enter.prevent="addMustNotContain" type="text"
+                    placeholder="e.g., abridged, radio" />
                   <button type="button" @click="addMustNotContain" class="add-button">
                     <i class="ph ph-plus"></i>
                     Add
@@ -281,11 +219,7 @@
 
             <div class="tag-input-group">
               <div class="tags-list">
-                <div
-                  v-for="(lang, index) in formData.preferredLanguages"
-                  :key="index"
-                  class="tag removable"
-                >
+                <div v-for="(lang, index) in formData.preferredLanguages" :key="index" class="tag removable">
                   {{ lang }}
                   <button type="button" @click="removeLanguage(index)" class="tag-remove">
                     <PhX />
@@ -293,12 +227,8 @@
                 </div>
               </div>
               <div class="tag-input">
-                <input
-                  v-model="newLanguage"
-                  @keypress.enter.prevent="addLanguage"
-                  type="text"
-                  placeholder="e.g., English, Spanish"
-                />
+                <input v-model="newLanguage" @keypress.enter.prevent="addLanguage" type="text"
+                  placeholder="e.g., English, Spanish" />
                 <button type="button" @click="addLanguage" class="add-button">
                   <i class="ph ph-plus"></i>
                   Add
@@ -313,13 +243,8 @@
 
             <div class="form-group">
               <label for="minimumSeeders">Minimum Seeders (Torrents)</label>
-              <input
-                id="minimumSeeders"
-                v-model.number="formData.minimumSeeders"
-                type="number"
-                min="0"
-                placeholder="0 = no minimum"
-              />
+              <input id="minimumSeeders" v-model.number="formData.minimumSeeders" type="number" min="0"
+                placeholder="0 = no minimum" />
               <small class="info-text">
                 Reject torrent releases with fewer seeders than this
               </small>
@@ -327,14 +252,8 @@
 
             <div class="form-group">
               <label for="minimumScore">Minimum Score Threshold</label>
-              <input
-                id="minimumScore"
-                v-model.number="formData.minimumScore"
-                type="number"
-                min="0"
-                max="100"
-                placeholder="0 = allow any score"
-              />
+              <input id="minimumScore" v-model.number="formData.minimumScore" type="number" min="0" max="100"
+                placeholder="0 = allow any score" />
               <small class="info-text">
                 Reject releases with a score below this threshold (Sonarr-style MinFormatScore). 0 =
                 no minimum.
@@ -353,13 +272,8 @@
 
             <div v-if="formData.preferNewerReleases" class="form-group">
               <label for="maximumAge">Maximum Age (Days)</label>
-              <input
-                id="maximumAge"
-                v-model.number="formData.maximumAge"
-                type="number"
-                min="0"
-                placeholder="0 = no maximum"
-              />
+              <input id="maximumAge" v-model.number="formData.maximumAge" type="number" min="0"
+                placeholder="0 = no maximum" />
               <small class="info-text">
                 Reject releases older than this many days (0 = no limit)
               </small>
@@ -367,11 +281,13 @@
           </div>
 
         </form>
-      </div>
+      </ModalBody>
     </template>
 
     <template #footer>
-      <button type="button" @click="closeModal" class="cancel-button"><PhX /> Cancel</button>
+      <button type="button" @click="closeModal" class="cancel-button">
+        <PhX /> Cancel
+      </button>
       <button type="button" class="btn btn-primary submit-button" @click="handleSubmit">
         <PhCheck />
         {{ profile ? 'Update Profile' : 'Create Profile' }}
@@ -382,8 +298,8 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Modal } from '@/components/modal'
-import { PhX, PhStar, PhCheck } from '@phosphor-icons/vue'  
+import { Modal, ModalBody } from '@/components/modal'
+import { PhX, PhStar, PhCheck } from '@phosphor-icons/vue'
 import type { QualityProfile } from '@/types'
 
 const props = defineProps<{
@@ -1003,6 +919,7 @@ const handleSubmit = () => {
   padding-top: 1.5rem;
   border-top: 1px solid #444;
 }
+
 /* Button styles for cancel/submit are centralized in src/assets/modals.css */
 /* Modal-specific parts moved to shared modals.css */
 

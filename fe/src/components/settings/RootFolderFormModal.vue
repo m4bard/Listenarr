@@ -15,9 +15,17 @@
         <input v-model="form.name" placeholder="Enter a name for this root folder" />
       </div>
 
-      <div class="form-row">
-        <label>Path</label>
-        <FolderBrowser v-model="form.path" placeholder="Select or enter a path..." />
+      <div class="form-row path-row">
+        <label for="root-path">Path</label>
+        <div class="path-input-row">
+          <input id="root-path" v-model="form.path" placeholder="Select or enter a path..." />
+          <button type="button" class="browse-inline-btn" @click="openBrowser">Browse</button>
+        </div>
+
+        <!-- Folder browser overlay shown only when browsing -->
+        <div v-if="showBrowser" class="folder-browser-overlay">
+          <FolderBrowser v-model="form.path" :show-input="false" @browser-closed="closeBrowser" />
+        </div>
       </div>
 
       <div class="form-row">
@@ -90,6 +98,15 @@ const showConfirm = ref(false)
 const modalMoveFiles = ref(true)
 const modalDeleteEmpty = ref(true)
 
+// Local state for showing the inline folder browser
+const showBrowser = ref(false)
+
+function openBrowser() {
+  showBrowser.value = true
+}
+function closeBrowser() {
+  showBrowser.value = false
+}
 function close() {
   emit('close')
 }
@@ -155,6 +172,10 @@ async function confirmChange(moveFiles: boolean) {
 
 <style scoped>
 /* Modal-specific styling is now provided by shared `modals.css` */
+.path-row .path-input-row { display:flex; gap:0.5rem; align-items:center }
+.path-row input#root-path { flex:1 }
+.browse-inline-btn { padding:0.45rem 0.7rem; border-radius:6px; background:var(--accent, #2196f3); color:#fff; border:none }
+.folder-browser-overlay { margin-top:0.75rem }
 
 .modal-close {
   background: none;

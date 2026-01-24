@@ -10,7 +10,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body">
+      <ModalBody>
         <div v-if="loading">Loading…</div>
         <div v-else>
           <div v-if="announces && announces.length">
@@ -23,7 +23,7 @@
             <p>No cached announces available.</p>
           </div>
         </div>
-      </div>
+      </ModalBody>
     </template>
 
     <template #footer>
@@ -35,7 +35,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { Modal } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
 import { PhX, PhDownload } from '@phosphor-icons/vue' 

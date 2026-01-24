@@ -9,11 +9,11 @@
       </button>
     </template>
 
-    <div class="modal-body">
+    <ModalBody>
       <slot>
         <p>Are you sure?</p>
       </slot>
-    </div>
+    </ModalBody>
 
     <template #footer>
       <button @click="$emit('close')" class="cancel-button">Cancel</button>
@@ -23,8 +23,8 @@
 </template>
 
 <script setup lang="ts">
-import { Modal } from '@/components/modal'
-import { PhWarningCircle, PhTrash } from '@phosphor-icons/vue' 
+import { Modal, ModalBody } from '@/components/modal'
+import { PhWarningCircle, PhTrash, PhX } from '@phosphor-icons/vue' 
 const props = defineProps({
   visible: { type: Boolean, required: true },
   title: { type: String, default: 'Delete' },

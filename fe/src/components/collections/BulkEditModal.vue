@@ -10,7 +10,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body">
+      <ModalBody>
         <div class="info-section">
           <i class="ph ph-info"></i>
           <p>
@@ -114,7 +114,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </ModalBody>
     </template>
 
     <template #footer>
@@ -186,7 +186,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Modal } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import type { QualityProfile } from '@/types'
@@ -338,7 +338,7 @@ function confirmMove() {
 }
 
 import { logger } from '@/utils/logger'
-import { PhX, PhSpinner, PhCheck } from '@phosphor-icons/vue' 
+import { PhX, PhSpinner, PhCheck, PhPencil } from '@phosphor-icons/vue' 
 
 async function handleSave() {
   if (!hasChanges.value) return

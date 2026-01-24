@@ -10,7 +10,22 @@
     </template>
 
     <template #default>
-      <div class="modal-body" :class="{ 'browser-mode': browserMode }">
+      <ModalBody :class="{ 'browser-mode': browserMode }">
+        <!-- Recent folders (session storage) -->
+        <div v-if="!showPreview && recentFolders.length > 0" class="recent-folders">
+          <div class="recent-title">Recent folders</div>
+          <div class="recent-list">
+            <button
+              v-for="p in recentFolders"
+              :key="p"
+              class="recent-item"
+              @click="selectRecent(p)"
+            >
+              {{ p }}
+            </button>
+          </div>
+        </div>
+
         <!-- Top folder input (full width) - hidden when preview is active -->
         <div v-if="!showPreview" class="top-path">
           <FolderBrowser
@@ -18,6 +33,7 @@
             placeholder="Select a folder..."
             :inline="true"
             :show-files="true"
+            :auto-browse="false"
             @browser-opened="browserMode = true"
             @browser-closed="browserMode = false"
           />
@@ -41,21 +57,6 @@
             <PhUser />
             Interactive Import
           </button>
-        </div>
-
-        <!-- Recent folders (session storage) -->
-        <div v-if="!showPreview && recentFolders.length > 0" class="recent-folders">
-          <div class="recent-title">Recent folders</div>
-          <div class="recent-list">
-            <button
-              v-for="p in recentFolders"
-              :key="p"
-              class="recent-item"
-              @click="selectRecent(p)"
-            >
-              {{ p }}
-            </button>
-          </div>
         </div>
 
         <!-- Preview area (hidden until Interactive Import is clicked) -->
@@ -131,7 +132,7 @@
             <p>No files found in the selected folder.</p>
           </div>
         </div>
-      </div>
+      </ModalBody>
 
     </template>
 
@@ -285,6 +286,7 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { PhFolderOpen, PhX, PhRocket, PhUser, PhSpinner, PhInfo } from '@phosphor-icons/vue'
 import type { ManualImportRequest } from '@/types'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
+import { Modal, ModalBody } from '@/components/modal'
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -665,73 +667,7 @@ const getItemIssues = (item: PreviewItem): string[] => {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.8);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  overflow-y: auto;
-  padding: 2rem;
-}
-
-.modal-content {
-  background: #2a2a2a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  width: 100%;
-  max-height: 90vh;
-  display: flex;
-  flex-direction: column;
-  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-}
-
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem 2rem;
-  border-bottom: 1px solid #444;
-}
-
-.modal-header h2 {
-  margin: 0;
-  color: #fff;
-  font-size: 1.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: #999;
-  cursor: pointer;
-  padding: 0.5rem;
-  font-size: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.close-btn:hover {
-  background-color: #333;
-  color: #fff;
-}
-
-.modal-body {
-  padding: 2rem;
-  overflow-y: auto;
-  flex: 1;
-}
+/* Remove custom modal styles - use shared Modal component styles from modals.css */
 
 .top-path {
   width: 100%;
@@ -913,17 +849,22 @@ const getItemIssues = (item: PreviewItem): string[] => {
 .modal-footer {
   justify-content: space-between;
   align-items: center;
+  gap: 1rem;
 }
 
 .footer-left {
   display: flex;
   gap: 0.75rem;
   align-items: center;
+  justify-content: flex-start;
+  flex: 1 1 auto; /* occupy remaining space so select stays left */
 }
 
 .footer-right {
   display: flex;
   gap: 0.5rem;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .mode-select,
@@ -960,8 +901,6 @@ const getItemIssues = (item: PreviewItem): string[] => {
 .preview-empty p {
   margin: 0;
 }
-
-/* Match dialog overlay removed — replaced by shared `Modal` component (see docs/MODAL_GUIDELINES.md) */
 
 .match-content {
   background: #2a2a2a;
@@ -1004,19 +943,6 @@ const getItemIssues = (item: PreviewItem): string[] => {
 .modal-body.browser-mode .top-path {
   position: relative;
   z-index: 10;
-}
-
-.modal-body.browser-mode .browser-inline {
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  z-index: 20;
-  background: #2a2a2a;
-  border-radius: 6px;
-  padding: 0.75rem;
-  box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
 }
 
 :deep(.browser-body) {
@@ -1115,7 +1041,7 @@ const getItemIssues = (item: PreviewItem): string[] => {
 }
 
 .recent-folders {
-  margin-top: 0.8rem;
+  margin-bottom: 0.8rem;
   display: flex;
   flex-direction: column;
   gap: 0.45rem;

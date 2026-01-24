@@ -10,7 +10,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body">
+      <ModalBody>
         <div class="book-layout">
           <!-- Book Image -->
           <div class="book-image">
@@ -158,7 +158,7 @@
             </small>
           </div>
         </div>
-      </div>
+      </ModalBody>
 
     </template>
 
@@ -176,7 +176,7 @@ import { apiService } from '@/services/api'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
-import { Modal } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import RootFolderSelect from '@/components/inputs/RootFolderSelect.vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { PhX, PhSpinner, PhPlus } from '@phosphor-icons/vue' 

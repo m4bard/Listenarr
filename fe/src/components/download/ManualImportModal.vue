@@ -10,7 +10,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body" :class="{ 'browser-mode': browserMode }">
+      <ModalBody :class="{ 'browser-mode': browserMode }">
         <!-- Top folder input (full width) - hidden when preview is active -->
         <div v-if="!showPreview" class="top-path">
           <FolderBrowser
@@ -131,7 +131,7 @@
             <p>No files found in the selected folder.</p>
           </div>
         </div>
-      </div>
+      </ModalBody>
 
     </template>
 
@@ -285,6 +285,7 @@ import { ref, watch, computed, onMounted } from 'vue'
 import { PhFolderOpen, PhX, PhRocket, PhUser, PhSpinner, PhInfo } from '@phosphor-icons/vue'
 import type { ManualImportRequest } from '@/types'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
+import { ModalBody } from '@/components/modal'
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'

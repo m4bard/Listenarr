@@ -10,7 +10,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body">
+      <ModalBody>
         <p class="help-text">
           Enter multiple search criteria to find audiobooks. When both Title and Author are
           provided, searches using Audimeta's combined search for more accurate results.
@@ -124,7 +124,7 @@ import {
   PhWarningCircle,
   PhTrash,
 } from '@phosphor-icons/vue'
-import { Modal } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import { apiService } from '@/services/api'
 import type { SearchResult } from '@/types'
 

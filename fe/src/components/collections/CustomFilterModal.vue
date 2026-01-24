@@ -10,7 +10,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body">
+      <ModalBody>
         <form @submit.prevent="onSave" class="edit-form">
           <div class="form-row">
             <label class="form-label">Label</label>
@@ -169,7 +169,7 @@
           </div>
 
         </form>
-      </div>
+      </ModalBody>
     </template>
 
     <template #footer>
@@ -181,7 +181,7 @@
 
 <script setup lang="ts">
 import { ref, watch, toRaw } from 'vue'
-import { Modal } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import { PhFunnel, PhX, PhCheck } from '@phosphor-icons/vue' 
 
 // Types

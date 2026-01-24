@@ -10,7 +10,7 @@
     </template>
 
     <template #default>
-      <div class="modal-body">
+      <ModalBody>
         <!-- Search Status -->
         <div v-if="searching" class="search-status">
           <PhSpinner class="ph-spin" />
@@ -236,14 +236,14 @@
             </table>
           </div>
         </div>
-      </div>
+      </ModalBody>
     </template>
   </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Modal } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import {
   PhMagnifyingGlass,
   PhX,
