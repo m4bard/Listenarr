@@ -27,8 +27,7 @@
             <div class="indexer-actions">
               <button
                 @click="toggleIndexerFunc(indexer.id)"
-                class="icon-button action-secondary action-toggle"
-                :class="{ active: indexer.isEnabled }"
+                class="icon-button"
                 :title="indexer.isEnabled ? 'Disable' : 'Enable'"
               >
                 <template v-if="indexer.isEnabled">
@@ -40,40 +39,23 @@
               </button>
               <button
                 @click="testIndexerFunc(indexer.id)"
-                class="icon-button action-secondary"
-                :class="{
-                  'test-success': lastTestResults[indexer.id] === 'success',
-                  'test-fail': lastTestResults[indexer.id] === 'fail'
-                }"
+                class="icon-button"
                 title="Test"
                 :disabled="testingIndexer === indexer.id"
               >
                 <template v-if="testingIndexer === indexer.id">
                   <PhSpinner class="ph-spin" />
                 </template>
-                <template v-else-if="lastTestResults[indexer.id] === 'success'">
-                  <PhCheckCircle />
-                </template>
-                <template v-else-if="lastTestResults[indexer.id] === 'fail'">
-                  <PhXCircle />
-                </template>
-                <!-- Fall back to persisted indexer.lastTestSuccessful if available -->
-                <template v-else-if="indexer.lastTestSuccessful === true">
-                  <PhCheckCircle />
-                </template>
-                <template v-else-if="indexer.lastTestSuccessful === false">
-                  <PhXCircle />
-                </template>
                 <template v-else>
                   <PhCheckCircle />
                 </template>
               </button>
-              <button @click="editIndexer(indexer)" class="icon-button action-edit" title="Edit">
+              <button @click="editIndexer(indexer)" class="icon-button" title="Edit">
                 <PhPencil />
               </button>
               <button
                 @click="confirmDeleteIndexer(indexer)"
-                class="icon-button danger action-delete"
+                class="icon-button danger"
                 title="Delete"
               >
                 <PhTrash />
@@ -143,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted } from 'vue'
 import {
   PhListMagnifyingGlass,
   PhToggleRight,
@@ -181,8 +163,6 @@ const showIndexerForm = ref(false)
 const editingIndexer = ref<Indexer | null>(null)
 const indexerToDelete = ref<Indexer | null>(null)
 const testingIndexer = ref<number | null>(null)
-// Per-indexer ephemeral test results: 'success' | 'fail' | undefined
-const lastTestResults = reactive<Record<number, 'success' | 'fail' | undefined>>({})
 
 // Functions
 const formatApiError = (error: unknown): string => {
@@ -249,10 +229,6 @@ const testIndexerFunc = async (id: number) => {
       if (index !== -1) {
         indexers.value[index] = result.indexer
       }
-      // mark success (persist until next test)
-      lastTestResults[id] = 'success'
-      console.debug('IndexersTab: lastTestResults set', id, lastTestResults[id])
-      await nextTick()
     } else {
       const errorMessage = formatApiError({ response: { data: result.error || result.message } })
       toast.error('Indexer test failed', errorMessage)
@@ -260,10 +236,6 @@ const testIndexerFunc = async (id: number) => {
       if (index !== -1) {
         indexers.value[index] = result.indexer
       }
-      // mark failure (persist until next test)
-      lastTestResults[id] = 'fail'
-      console.debug('IndexersTab: lastTestResults set', id, lastTestResults[id])
-      await nextTick()
     }
   } catch (error) {
     errorTracking.captureException(error as Error, {
@@ -272,9 +244,6 @@ const testIndexerFunc = async (id: number) => {
     })
     const errorMessage = formatApiError(error)
     toast.error('Indexer test failed', errorMessage)
-    lastTestResults[id] = 'fail'
-    console.debug('IndexersTab: lastTestResults set', id, lastTestResults[id])
-    await nextTick()
   } finally {
     testingIndexer.value = null
   }
@@ -520,7 +489,34 @@ defineExpose({ openAddIndexer })
   gap: 0.5rem;
 }
 
-/* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
+.icon-button {
+  padding: 0.5rem;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
+  color: var(--text-secondary);
+}
+
+.icon-button:hover {
+  background: var(--background-hover);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.icon-button.danger:hover {
+  border-color: var(--error);
+  color: var(--error);
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .indexer-details {
   display: flex;
@@ -545,7 +541,8 @@ defineExpose({ openAddIndexer })
 }
 
 .indexer-header svg,
-.indexer-header .ph-icon {
+.indexer-header .ph-icon,
+.icon-button svg {
   width: 18px;
   height: 18px;
   flex-shrink: 0;
@@ -775,7 +772,46 @@ defineExpose({ openAddIndexer })
   margin-left: 1rem;
 }
 
-/* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
+.icon-button {
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  color: #adb5bd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: rgba(77, 171, 247, 0.15);
+  border-color: #4dabf7;
+  color: #4dabf7;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.3);
+}
+
+.icon-button.danger {
+  color: #ff6b6b;
+}
+
+.icon-button.danger:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
 
 .indexer-details {
   display: flex;

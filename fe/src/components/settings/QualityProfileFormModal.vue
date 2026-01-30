@@ -1,7 +1,14 @@
 <template>
   <Modal :visible="visible" size="lg" @close="closeModal">
     <template #header>
-      <ModalHeader :title="profile ? 'Edit Quality Profile' : 'Create Quality Profile'" :icon="PhStar" @close="closeModal" />
+      <div class="modal-title">
+        <h3>
+          <PhStar /> {{ profile ? 'Edit Quality Profile' : 'Create Quality Profile' }}
+        </h3>
+      </div>
+      <button class="close-btn" @click="closeModal">
+        <PhX />
+      </button>
     </template>
 
     <template #default>
@@ -9,23 +16,35 @@
       <ModalBody>
         <form @submit.prevent="handleSubmit">
           <!-- Basic Information -->
-          <FormSection title="Basic Information" :icon="PhInfo">
-            <FormRow label="Profile Name *" labelFor="name">
-              <input id="name" v-model="formData.name" type="text" required placeholder="e.g., High Quality, Any Quality, Space Saver" />
-            </FormRow>
+          <div class="form-section">
+            <h3><i class="ph ph-info"></i> Basic Information</h3>
 
-            <FormRow label="Description" labelFor="description">
-              <textarea id="description" v-model="formData.description" rows="2" placeholder="Optional description of this quality profile"></textarea>
-            </FormRow>
+            <div class="form-group">
+              <label for="name">Profile Name *</label>
+              <input id="name" v-model="formData.name" type="text" required
+                placeholder="e.g., High Quality, Any Quality, Space Saver" />
+            </div>
 
-            <CheckboxCard v-model="formData.isDefault" title="Set as default profile" />
-            <small class="info-text">
-              The default profile will be automatically assigned to new audiobooks
-            </small>
-          </FormSection>
+            <div class="form-group">
+              <label for="description">Description</label>
+              <textarea id="description" v-model="formData.description" rows="2"
+                placeholder="Optional description of this quality profile" />
+            </div>
+
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="formData.isDefault" />
+                <span>Set as default profile</span>
+              </label>
+              <small class="info-text">
+                The default profile will be automatically assigned to new audiobooks
+              </small>
+            </div>
+          </div>
 
           <!-- Quality Definitions -->
-          <FormSection title="Quality Definitions" :icon="PhCheckSquare">
+          <div class="form-section">
+            <h3><i class="ph ph-check-square"></i> Quality Definitions</h3>
             <p class="section-description">
               Select which qualities to allow and set their priority (higher priority = preferred).
               The cutoff quality determines when to stop upgrading.
@@ -33,9 +52,11 @@
 
             <div class="quality-list">
               <div v-for="quality in availableQualities" :key="quality" class="quality-item">
-                <Checkbox :modelValue="isQualityAllowed(quality)" @update:modelValue="(val: boolean) => toggleQuality(quality, val)">
+                <label class="checkbox-label">
+                  <input type="checkbox" :checked="isQualityAllowed(quality)"
+                    @change="toggleQuality(quality, $event)" />
                   <span class="quality-name">{{ quality }}</span>
-                </Checkbox> 
+                </label>
 
                 <div v-if="isQualityAllowed(quality)" class="quality-controls">
                   <label class="priority-label">
@@ -54,19 +75,20 @@
             </div>
 
             <small class="info-text">
-              <PhInfo />
+              <i class="ph ph-info"></i>
               Cutoff quality: Downloads will stop upgrading once this quality is reached
             </small>
-          </FormSection>
+          </div>
 
           <!-- Format Preferences -->
-          <FormSection title="Format Preferences" :icon="PhFileAudio">
+          <div class="form-section">
+            <h3><i class="ph ph-file-audio"></i> Format Preferences</h3>
             <p class="section-description">
               Preferred audio formats in order of preference (most preferred first).
             </p>
 
             <div class="tag-input-group">
-              <div :class="['tags-list', { 'tags-list-empty': (formData.preferredFormats?.length || 0) === 0 }]">
+              <div class="tags-list">
                 <div v-for="(format, index) in formData.preferredFormats" :key="index" class="tag removable">
                   {{ format }}
                   <button type="button" @click="removeFormat(index)" class="tag-remove">
@@ -77,40 +99,48 @@
               <div class="tag-input">
                 <input v-model="newFormat" @keypress.enter.prevent="addFormat" type="text"
                   placeholder="e.g., M4B, MP3, M4A" />
-                <button type="button" @click="addFormat" :disabled="!newFormat.trim()" :aria-disabled="!newFormat.trim()" class="btn icon-btn btn-primary btn-sm" title="Add format" aria-label="Add format">
-                  <PhPlus />
+                <button type="button" @click="addFormat" class="add-button">
+                  <i class="ph ph-plus"></i>
+                  Add
                 </button>
               </div>
             </div>
-          </FormSection>
+          </div>
 
           <!-- Size Limits -->
-          <FormSection title="Size Limits" :icon="PhRuler">
+          <div class="form-section">
+            <h3><i class="ph ph-ruler"></i> Size Limits</h3>
             <p class="section-description">
               Set minimum and maximum file sizes in megabytes (leave blank for no limit).
             </p>
 
             <div class="form-row">
-              <FormRow label="Minimum Size (MB)" labelFor="minimumSize">
-                <input id="minimumSize" v-model.number="formData.minimumSize" type="number" min="0" placeholder="No minimum" />
-              </FormRow>
+              <div class="form-group">
+                <label for="minimumSize">Minimum Size (MB)</label>
+                <input id="minimumSize" v-model.number="formData.minimumSize" type="number" min="0"
+                  placeholder="No minimum" />
+              </div>
 
-              <FormRow label="Maximum Size (MB)" labelFor="maximumSize">
-                <input id="maximumSize" v-model.number="formData.maximumSize" type="number" min="0" placeholder="No maximum" />
-              </FormRow>
+              <div class="form-group">
+                <label for="maximumSize">Maximum Size (MB)</label>
+                <input id="maximumSize" v-model.number="formData.maximumSize" type="number" min="0"
+                  placeholder="No maximum" />
+              </div>
             </div>
-          </FormSection>
+          </div>
 
           <!-- Word Filters -->
-          <FormSection title="Word Filters" :icon="PhTextAa">
+          <div class="form-section">
+            <h3><i class="ph ph-text-aa"></i> Word Filters</h3>
+
             <!-- Preferred Words -->
             <div class="filter-group">
-              <h4><PhSparkle /> Preferred Words (Bonus Points)</h4>
+              <h4><i class="ph ph-sparkle"></i> Preferred Words (Bonus Points)</h4>
               <p class="section-description">
                 Releases containing these words will receive bonus points in scoring.
               </p>
               <div class="tag-input-group">
-                <div :class="['tags-list', { 'tags-list-empty': (formData.preferredWords?.length || 0) === 0 }]">
+                <div class="tags-list">
                   <div v-for="(word, index) in formData.preferredWords" :key="index" class="tag positive removable">
                     {{ word }}
                     <button type="button" @click="removePreferredWord(index)" class="tag-remove">
@@ -121,8 +151,9 @@
                 <div class="tag-input">
                   <input v-model="newPreferredWord" @keypress.enter.prevent="addPreferredWord" type="text"
                     placeholder="e.g., unabridged, complete" />
-                  <button type="button" @click="addPreferredWord" :disabled="!newPreferredWord.trim()" :aria-disabled="!newPreferredWord.trim()" class="btn icon-btn btn-primary btn-sm" title="Add preferred word" aria-label="Add preferred word">
-                    <PhPlus />
+                  <button type="button" @click="addPreferredWord" class="add-button">
+                    <i class="ph ph-plus"></i>
+                    Add
                   </button>
                 </div>
               </div>
@@ -130,12 +161,12 @@
 
             <!-- Must Contain -->
             <div class="filter-group">
-              <h4><PhCheck /> Must Contain (Required)</h4>
+              <h4><i class="ph ph-check"></i> Must Contain (Required)</h4>
               <p class="section-description">
                 Releases MUST contain at least one of these words (case-insensitive).
               </p>
               <div class="tag-input-group">
-                <div :class="['tags-list', { 'tags-list-empty': (formData.mustContain?.length || 0) === 0 }]">
+                <div class="tags-list">
                   <div v-for="(word, index) in formData.mustContain" :key="index" class="tag required removable">
                     {{ word }}
                     <button type="button" @click="removeMustContain(index)" class="tag-remove">
@@ -146,8 +177,9 @@
                 <div class="tag-input">
                   <input v-model="newMustContain" @keypress.enter.prevent="addMustContain" type="text"
                     placeholder="e.g., audiobook" />
-                  <button type="button" @click="addMustContain" :disabled="!newMustContain.trim()" :aria-disabled="!newMustContain.trim()" class="btn icon-btn btn-primary btn-sm" title="Add required word" aria-label="Add required word">
-                    <PhPlus />
+                  <button type="button" @click="addMustContain" class="add-button">
+                    <i class="ph ph-plus"></i>
+                    Add
                   </button>
                 </div>
               </div>
@@ -155,12 +187,12 @@
 
             <!-- Must Not Contain -->
             <div class="filter-group">
-              <h4><PhX /> Must Not Contain (Forbidden)</h4>
+              <h4><i class="ph ph-x"></i> Must Not Contain (Forbidden)</h4>
               <p class="section-description">
                 Releases containing any of these words will be rejected (case-insensitive).
               </p>
               <div class="tag-input-group">
-                <div :class="['tags-list', { 'tags-list-empty': (formData.mustNotContain?.length || 0) === 0 }]">
+                <div class="tags-list">
                   <div v-for="(word, index) in formData.mustNotContain" :key="index" class="tag forbidden removable">
                     {{ word }}
                     <button type="button" @click="removeMustNotContain(index)" class="tag-remove">
@@ -171,20 +203,22 @@
                 <div class="tag-input">
                   <input v-model="newMustNotContain" @keypress.enter.prevent="addMustNotContain" type="text"
                     placeholder="e.g., abridged, radio" />
-                  <button type="button" @click="addMustNotContain" :disabled="!newMustNotContain.trim()" :aria-disabled="!newMustNotContain.trim()" class="btn icon-btn btn-primary btn-sm" title="Add forbidden word" aria-label="Add forbidden word">
-                    <PhPlus />
+                  <button type="button" @click="addMustNotContain" class="add-button">
+                    <i class="ph ph-plus"></i>
+                    Add
                   </button>
                 </div>
               </div>
             </div>
-          </FormSection>
+          </div>
 
           <!-- Language Preferences -->
-          <FormSection title="Language Preferences" :icon="PhTranslate">
+          <div class="form-section">
+            <h3><i class="ph ph-translate"></i> Language Preferences</h3>
             <p class="section-description">Preferred languages in order of preference.</p>
 
             <div class="tag-input-group">
-              <div :class="['tags-list', { 'tags-list-empty': (formData.preferredLanguages?.length || 0) === 0 }]">
+              <div class="tags-list">
                 <div v-for="(lang, index) in formData.preferredLanguages" :key="index" class="tag removable">
                   {{ lang }}
                   <button type="button" @click="removeLanguage(index)" class="tag-remove">
@@ -195,53 +229,77 @@
               <div class="tag-input">
                 <input v-model="newLanguage" @keypress.enter.prevent="addLanguage" type="text"
                   placeholder="e.g., English, Spanish" />
-                <button type="button" @click="addLanguage" :disabled="!newLanguage.trim()" :aria-disabled="!newLanguage.trim()" class="btn icon-btn btn-primary btn-sm" title="Add language" aria-label="Add language">
-                  <PhPlus />
+                <button type="button" @click="addLanguage" class="add-button">
+                  <i class="ph ph-plus"></i>
+                  Add
                 </button>
               </div>
             </div>
-          </FormSection>
+          </div>
 
           <!-- Release Preferences -->
-          <FormSection title="Release Preferences" :icon="PhClockCounterClockwise">
-            <FormRow label="Minimum Seeders (Torrents)" labelFor="minimumSeeders">
-              <input id="minimumSeeders" v-model.number="formData.minimumSeeders" type="number" min="0" placeholder="0 = no minimum" />
-            </FormRow>
+          <div class="form-section">
+            <h3><i class="ph ph-clock-counter-clockwise"></i> Release Preferences</h3>
 
-            <FormRow label="Minimum Score Threshold" labelFor="minimumScore">
-              <input id="minimumScore" v-model.number="formData.minimumScore" type="number" min="0" max="100" placeholder="0 = allow any score" />
-            </FormRow>
+            <div class="form-group">
+              <label for="minimumSeeders">Minimum Seeders (Torrents)</label>
+              <input id="minimumSeeders" v-model.number="formData.minimumSeeders" type="number" min="0"
+                placeholder="0 = no minimum" />
+              <small class="info-text">
+                Reject torrent releases with fewer seeders than this
+              </small>
+            </div>
 
-            <CheckboxCard v-model="formData.preferNewerReleases" title="Prefer newer releases" description="Give bonus points to more recent releases (torrent upload date)" />
+            <div class="form-group">
+              <label for="minimumScore">Minimum Score Threshold</label>
+              <input id="minimumScore" v-model.number="formData.minimumScore" type="number" min="0" max="100"
+                placeholder="0 = allow any score" />
+              <small class="info-text">
+                Reject releases with a score below this threshold (Sonarr-style MinFormatScore). 0 =
+                no minimum.
+              </small>
+            </div>
 
-            <FormRow v-if="formData.preferNewerReleases" label="Maximum Age (Days)" labelFor="maximumAge" help="Reject releases older than this many days (0 = no limit)">
-              <input id="maximumAge" v-model.number="formData.maximumAge" type="number" min="0" placeholder="0 = no maximum" />
-            </FormRow>
-          </FormSection>
+            <div class="form-group">
+              <label class="checkbox-label">
+                <input type="checkbox" v-model="formData.preferNewerReleases" />
+                <span>Prefer newer releases</span>
+              </label>
+              <small class="info-text">
+                Give bonus points to more recent releases (torrent upload date)
+              </small>
+            </div>
+
+            <div v-if="formData.preferNewerReleases" class="form-group">
+              <label for="maximumAge">Maximum Age (Days)</label>
+              <input id="maximumAge" v-model.number="formData.maximumAge" type="number" min="0"
+                placeholder="0 = no maximum" />
+              <small class="info-text">
+                Reject releases older than this many days (0 = no limit)
+              </small>
+            </div>
+          </div>
+
         </form>
       </ModalBody>
     </template>
 
     <template #footer>
-      <ModalFooter
-        :showCancel="true"
-        :showSave="true"
-        :saving="saving"
-        :saveLabel="profile ? 'Save' : 'Create Profile'"
-        @cancel="closeModal"
-        @save="handleSubmit"
-      />
+      <button type="button" @click="closeModal" class="cancel-button">
+        <PhX /> Cancel
+      </button>
+      <button type="button" class="btn btn-primary submit-button" @click="handleSubmit">
+        <PhCheck />
+        {{ profile ? 'Update Profile' : 'Create Profile' }}
+      </button>
     </template>
   </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/modal'
-import FormSection from './FormSection.vue'
-import FormRow from '@/components/settings/FormRow.vue'
-import CheckboxCard from '@/components/settings/CheckboxCard.vue'
-import { PhX, PhStar, PhCheck, PhPlus, PhInfo, PhCheckSquare, PhFileAudio, PhRuler, PhSparkle, PhTextAa, PhTranslate, PhClockCounterClockwise } from '@phosphor-icons/vue' 
+import { Modal, ModalBody } from '@/components/modal'
+import { PhX, PhStar, PhCheck } from '@phosphor-icons/vue'
 import type { QualityProfile } from '@/types'
 
 const props = defineProps<{
@@ -329,7 +387,10 @@ const getQualityPriority = (quality: string): number => {
   return qual?.priority ?? 0
 }
 
-const toggleQuality = (quality: string, allowed: boolean) => {
+const toggleQuality = (quality: string, event: Event) => {
+  const target = event.target as HTMLInputElement
+  const allowed = target.checked
+
   if (!formData.value.qualities) {
     formData.value.qualities = []
   }
@@ -452,23 +513,17 @@ const closeModal = () => {
 
 import { useToast } from '@/services/toastService'
 
-const saving = ref(false)
-
 const handleSubmit = () => {
   const toast = useToast()
-  saving.value = true
-
   // Validate at least one quality is selected
   if (!formData.value.qualities.some((q) => q.allowed)) {
     toast.error('Validation', 'Please select at least one quality')
-    saving.value = false
     return
   }
 
   // Validate cutoff quality is selected and allowed
   if (!formData.value.cutoffQuality) {
     toast.error('Validation', 'Please select a cutoff quality')
-    saving.value = false
     return
   }
 
@@ -476,12 +531,10 @@ const handleSubmit = () => {
     !formData.value.qualities.some((q) => q.quality === formData.value.cutoffQuality && q.allowed)
   ) {
     toast.error('Validation', 'Cutoff quality must be one of the allowed qualities')
-    saving.value = false
     return
   }
 
   emit('save', formData.value)
-  saving.value = false
 }
 </script>
 
@@ -532,10 +585,46 @@ const handleSubmit = () => {
   gap: 0.5rem;
 }
 
+.close-btn {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: #fff;
+}
+
 .modal-body {
   padding: 1.5rem;
   overflow-y: auto;
   flex: 1;
+}
+
+.form-section {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #444;
+}
+
+.form-section:last-of-type {
+  border-bottom: none;
+}
+
+.form-section h3 {
+  margin: 0 0 0.5rem 0;
+  color: #2196f3;
+  font-size: 1.2rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
 }
 
 .form-section h4 {
@@ -617,13 +706,13 @@ const handleSubmit = () => {
 }
 
 .checkbox-label input[type='checkbox']:hover {
-  border-color: var(--brand-focus);
+  border-color: #007acc;
 }
 
 .checkbox-label input[type='checkbox']:checked {
-  background-color: var(--brand-focus);
-  border-color: var(--brand-focus);
-} 
+  background-color: #007acc;
+  border-color: #007acc;
+}
 
 .checkbox-label input[type='checkbox']:checked::after {
   content: '';
@@ -638,7 +727,7 @@ const handleSubmit = () => {
 }
 
 .checkbox-label input[type='checkbox']:focus {
-  outline: 2px solid rgba(var(--brand-rgb), 0.3);
+  outline: 2px solid rgba(0, 122, 204, 0.3);
   outline-offset: 2px;
 }
 
@@ -657,7 +746,7 @@ const handleSubmit = () => {
 }
 
 .info-text i {
-  color: var(--brand-500);
+  color: #2196f3;
 }
 
 /* Quality List */
@@ -738,25 +827,14 @@ const handleSubmit = () => {
   min-height: 2rem;
 }
 
-/* Collapsed state when no tags are present */
-.tags-list.tags-list-empty {
-  min-height: 0;
-  height: 0;
-  padding: 0;
-  margin: 0;
-  overflow: hidden;
-  transition: height 0.12s ease, opacity 0.12s ease;
-  opacity: 0;
-}
-
 .tag {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
   padding: 0.4rem 0.8rem;
-  background-color: var(--brand-500);
+  background-color: #2196f3;
   color: #fff;
-  border-radius: var(--btn-radius);
+  border-radius: 6px;
   font-size: 0.9rem;
 }
 
@@ -809,10 +887,10 @@ const handleSubmit = () => {
 
 .add-button {
   padding: 0.6rem 1rem;
-  background-color: var(--brand-500);
+  background-color: #2196f3;
   color: #fff;
   border: none;
-  border-radius: var(--btn-radius);
+  border-radius: 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -821,7 +899,7 @@ const handleSubmit = () => {
 }
 
 .add-button:hover {
-  background-color: var(--brand-600);
+  background-color: #1976d2;
 }
 
 .filter-group {
@@ -856,6 +934,23 @@ const handleSubmit = () => {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: #999;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: #fff;
 }
 
 .modal-body {

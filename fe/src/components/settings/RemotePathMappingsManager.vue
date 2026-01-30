@@ -64,11 +64,11 @@
             </span>
           </div>
           <div class="mapping-actions">
-            <button class="btn btn-icon action-edit" title="Edit mapping" @click="handleEdit(mapping)">
+            <button class="btn btn-icon" title="Edit mapping" @click="handleEdit(mapping)">
               <i class="ph ph-pencil"></i>
             </button>
             <button
-              class="btn btn-icon btn-danger action-delete"
+              class="btn btn-icon btn-danger"
               title="Delete mapping"
               @click="handleDelete(mapping)"
             >
@@ -506,7 +506,7 @@ onMounted(() => {
 
 .path-arrow {
   text-align: center;
-  color: var(--brand-500);
+  color: #007acc;
   font-size: 1.5rem;
   margin: 0.5rem 0;
 }
@@ -559,7 +559,7 @@ onMounted(() => {
 
 .path-tester h4 i {
   font-size: 1.1rem;
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .tester-controls {
@@ -582,8 +582,8 @@ onMounted(() => {
 
 .test-input:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
 }
 
 .test-input::placeholder {
@@ -607,8 +607,8 @@ onMounted(() => {
 }
 
 .result-info {
-  background-color: rgba(var(--brand-rgb), 0.1);
-  border-color: rgba(var(--brand-rgb), 0.3);
+  background-color: rgba(0, 122, 204, 0.1);
+  border-color: rgba(0, 122, 204, 0.3);
 }
 
 .result-header {
@@ -627,7 +627,7 @@ onMounted(() => {
 }
 
 .result-info .result-header {
-  color: var(--brand-500);
+  color: #5dade2;
 }
 
 .result-header strong {
@@ -678,13 +678,34 @@ onMounted(() => {
   font-size: 0.9rem;
 }
 
-/* Buttons are centralized in `src/assets/buttons.css`. Use `.btn`, `.btn-primary` and `.btn-sm` for sizing needs.
-   Keep local layout helpers here if required (e.g., `.result-action` wrappers). */
+/* Buttons */
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: #007acc;
+  color: white;
+}
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--brand-700);
+  background-color: #005a9e;
   transform: translateY(-1px);
-} 
+}
 
 /* Button color variants centralized in `src/assets/modals.css` */
 
@@ -698,8 +719,8 @@ onMounted(() => {
 
 .btn-icon:hover {
   background-color: #333;
-  border-color: var(--brand-500);
-  color: var(--brand-500);
+  border-color: #007acc;
+  color: #007acc;
 }
 
 .btn-icon.btn-danger:hover {

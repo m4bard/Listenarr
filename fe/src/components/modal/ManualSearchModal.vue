@@ -1,7 +1,12 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
-      <ModalHeader :title="`Manual Search - ${audiobook?.title || ''}`" :icon="PhMagnifyingGlass" @close="close" />
+      <div class="modal-title">
+        <h3><PhMagnifyingGlass /> Manual Search - {{ audiobook?.title }}</h3>
+      </div>
+      <button class="close-btn" @click="close">
+        <PhX />
+      </button>
     </template>
 
     <template #default>
@@ -22,7 +27,7 @@
                 <input
                   v-model="searchQuery"
                   type="text"
-                  class="search-input form-input"
+                  class="search-input"
                   placeholder="Search for audiobooks..."
                   @keyup.enter="search"
                   :disabled="searching"
@@ -238,7 +243,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Modal, ModalHeader, ModalBody } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import {
   PhMagnifyingGlass,
   PhX,
@@ -905,7 +910,7 @@ function getScoreClass(score: number): string {
 .search-status {
   text-align: center;
   padding: 3rem 2rem;
-  color: var(--brand-500);
+  color: #007acc;
   font-size: 1.1rem;
   display: flex;
   flex-direction: column;
@@ -964,17 +969,44 @@ function getScoreClass(score: number): string {
   pointer-events: none; /* make icon non-interactive so clicks go to the input */
 }
 
-/* Prefer using the global .form-input for baseline appearance; keep only
-   search-specific enhancements here (icon padding, sizing tweaks). */
 .search-input {
   flex: 1;
-  padding-left: 2.5rem; /* leave other padding to .form-input */
+  padding: 0.5rem 1rem 0.5rem 2.5rem;
+  background-color: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-radius: 6px;
+  color: white;
+  font-size: 1rem;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+  height: 40px;
   box-sizing: border-box;
 }
 
 .search-input:focus {
-  /* keep subtle focus behavior for search inputs */
   outline: none;
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+}
+
+.search-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.search-btn {
+  padding: 0 1rem;
+  white-space: nowrap;
+  min-width: 96px;
+  background-color: #007acc;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
   justify-content: center;
   gap: 0.5rem;
   transition: all 0.2s;
@@ -983,8 +1015,8 @@ function getScoreClass(score: number): string {
 }
 
 .search-btn:hover:not(:disabled) {
-  background-color: var(--brand-700);
-} 
+  background-color: #0056b3;
+}
 
 .search-btn:disabled {
   opacity: 0.6;
@@ -996,10 +1028,33 @@ function getScoreClass(score: number): string {
   color: inherit;
 }
 
-/* Buttons are centralized in `src/assets/buttons.css` and modal color variants live in `src/assets/modals.css`.
-   Use `.btn`, `.btn-primary`, and `.btn-sm` from the centralized system to maintain consistency. */
+.btn-primary {
+  background-color: #007acc;
+  color: white;
+}
 
+.btn-primary:hover:not(:disabled) {
+  background-color: #0056b3;
+}
 
+.btn {
+  padding: 0.5rem 1rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s;
+}
+
+/* Button color variants centralized in `src/assets/modals.css` */
+
+.btn-sm {
+  padding: 0.4rem 0.8rem;
+  font-size: 0.875rem;
+}
 
 .no-results {
   text-align: center;
@@ -1083,7 +1138,7 @@ function getScoreClass(score: number): string {
 
 .sort-icon-active {
   opacity: 1;
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .results-table tbody tr {
@@ -1186,7 +1241,7 @@ function getScoreClass(score: number): string {
 }
 
 .indexer-name {
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .peers-cell {
@@ -1321,7 +1376,7 @@ function getScoreClass(score: number): string {
 }
 
 .btn-download:hover:not(:disabled) {
-  background-color: var(--brand-500);
+  background-color: #007acc;
   color: white;
 }
 

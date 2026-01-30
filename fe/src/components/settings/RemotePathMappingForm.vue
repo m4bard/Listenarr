@@ -13,23 +13,53 @@
         <span>{{ error }}</span>
       </div>
 
-      <FormRow label="Name (Optional)" help="Friendly name to identify this mapping">
-        <input id="name" v-model="formData.name" type="text" placeholder="e.g., Docker to Host Mapping" class="form-control" />
-      </FormRow>
+      <div class="form-group">
+        <label for="name">Name (Optional)</label>
+        <input
+          id="name"
+          v-model="formData.name"
+          type="text"
+          placeholder="e.g., Docker to Host Mapping"
+          class="form-control"
+        />
+        <small class="help-text">Friendly name to identify this mapping</small>
+      </div>
 
-      <FormRow label="Remote Path" help="Path as seen by the download client (in its Docker container or remote system)">
+      <div class="form-group">
+        <label for="remotePath" class="required">Remote Path</label>
         <div class="input-with-icon">
           <i class="ph ph-desktop"></i>
-          <input id="remotePath" v-model="formData.remotePath" type="text" placeholder="/path/to/downloads" class="form-control" required />
+          <input
+            id="remotePath"
+            v-model="formData.remotePath"
+            type="text"
+            placeholder="/path/to/downloads"
+            class="form-control"
+            required
+          />
         </div>
-      </FormRow>
+        <small class="help-text">
+          Path as seen by the download client (in its Docker container or remote system)
+        </small>
+      </div>
 
-      <FormRow label="Local Path" help="Path as seen by Listenarr (on this system where Listenarr is running)">
+      <div class="form-group">
+        <label for="localPath" class="required">Local Path</label>
         <div class="input-with-icon">
           <i class="ph ph-folder-open"></i>
-          <input id="localPath" v-model="formData.localPath" type="text" placeholder="/mnt/media/audiobooks" class="form-control" required />
+          <input
+            id="localPath"
+            v-model="formData.localPath"
+            type="text"
+            placeholder="/mnt/media/audiobooks"
+            class="form-control"
+            required
+          />
         </div>
-      </FormRow>
+        <small class="help-text">
+          Path as seen by Listenarr (on this system where Listenarr is running)
+        </small>
+      </div>
 
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" @click="handleCancel">
@@ -48,7 +78,6 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import FormRow from '@/components/settings/FormRow.vue'
 import type { RemotePathMapping } from '@/types'
 
 interface Props {
@@ -147,7 +176,7 @@ const handleCancel = () => {
 
 .form-header i {
   font-size: 1.1rem;
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .error-banner {
@@ -215,12 +244,13 @@ label.required::after {
   background-color: #1a1a1a;
   color: #fff;
   transition: all 0.2s;
+  font-family: 'Courier New', Courier, monospace;
 }
 
 .form-control:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
 }
 
 .form-control::placeholder {
@@ -244,7 +274,18 @@ label.required::after {
   border-top: 1px solid #444;
 }
 
-/* Use centralized `.btn` styles in `src/assets/buttons.css`. Local components may apply `.btn-primary` / `.cancel-button` as needed. */
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
 
 .btn:disabled {
   opacity: 0.5;
@@ -255,7 +296,17 @@ label.required::after {
   font-size: 1.1rem;
 }
 
-/* Button color variants centralized in `src/assets/modals.css` - use `.btn` / `.btn-primary` */
+.btn-primary {
+  background-color: #007acc;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #005a9e;
+  transform: translateY(-1px);
+}
+
+/* Button color variants centralized in `src/assets/modals.css` */
 
 .ph-spin {
   animation: spin 1s linear infinite;

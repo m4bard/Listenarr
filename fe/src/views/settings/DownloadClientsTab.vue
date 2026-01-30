@@ -30,8 +30,7 @@
             <div class="indexer-actions">
               <button
                 @click="toggleDownloadClientFunc(client)"
-                class="icon-button action-secondary action-toggle"
-                :class="{ active: client.isEnabled }"
+                class="icon-button"
                 :title="client.isEnabled ? 'Disable' : 'Enable'"
               >
                 <template v-if="client.isEnabled">
@@ -41,34 +40,19 @@
                   <PhToggleLeft />
                 </template>
               </button>
-              <button @click="editClientConfig(client)" class="icon-button action-edit" title="Edit">
+              <button @click="editClientConfig(client)" class="icon-button" title="Edit">
                 <PhPencil />
               </button>
               <button
                 @click="testClient(client)"
-                class="icon-button action-secondary"
-                :class="{
-                  'test-success': lastClientTestResults[client.id] === 'success',
-                  'test-fail': lastClientTestResults[client.id] === 'fail'
-                }"
+                class="icon-button"
                 title="Test"
                 :disabled="testingClient === client.id"
               >
                 <template v-if="testingClient === client.id">
                   <PhSpinner class="ph-spin" />
                 </template>
-                <template v-else-if="lastClientTestResults[client.id] === 'success'">
-                  <PhCheckCircle />
-                </template>
-                <template v-else-if="lastClientTestResults[client.id] === 'fail'">
-                  <PhXCircle />
-                </template>                <!-- Fall back to persisted client.lastTestSuccessful if available -->
-                <template v-else-if="client.lastTestSuccessful === true">
-                  <PhCheckCircle />
-                </template>
-                <template v-else-if="client.lastTestSuccessful === false">
-                  <PhXCircle />
-                </template>                <template v-else>
+                <template v-else>
                   <PhCheckCircle />
                 </template>
               </button>
@@ -184,14 +168,43 @@
         </template>
       </DeleteConfirmationModal>
 
-      <!-- Remote Path Mapping Modal -->
-      <RemotePathMappingModal
-        :visible="showMappingForm"
-        :editing-mapping="mappingToEdit"
-        :download-clients="configStore.downloadClientConfigurations"
-        @close="closeMappingForm"
-        @save="handleSaveMapping"
-      />
+      <!-- Remote Path Mapping Modal (uses shared Modal component) -->
+      <Modal :visible="showMappingForm" size="md" @close="closeMappingForm">
+        <template #header>
+          <div class="modal-title">
+            <h3><PhLink /> {{ mappingToEdit ? 'Edit' : 'Add' }} Remote Path Mapping</h3>
+          </div>
+          <button class="close-btn" @click="closeMappingForm">
+            <PhX />
+          </button>
+        </template>
+
+        <template #default>
+          <div class="form-group">
+            <label>Mapping Name (optional)</label>
+            <input v-model="mappingToEditData.name" type="text" placeholder="Friendly name for this mapping" />
+          </div>
+          <div class="form-group">
+            <label>Download Client</label>
+            <select v-model="mappingToEditData.downloadClientId">
+              <option v-for="c in configStore.downloadClientConfigurations" :key="c.id" :value="c.id">{{ c.name }}</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label>Remote Path (from client)</label>
+            <input v-model="mappingToEditData.remotePath" type="text" placeholder="/path/to/complete/downloads" />
+          </div>
+          <div class="form-group">
+            <label>Local Path (server)</label>
+            <FolderBrowser v-model="mappingToEditData.localPath" placeholder="Select a local path..." />
+          </div>
+        </template>
+
+        <template #footer>
+          <button @click="closeMappingForm()" class="cancel-button"><PhX /> Cancel</button>
+          <button @click="saveMapping()" class="btn btn-primary"><PhCheck /> Save</button>
+        </template>
+      </Modal>
 
       <!-- Delete Remote Path Mapping Confirmation (shared) -->
       <DeleteConfirmationModal :visible="!!mappingToDelete" title="Delete Remote Path Mapping" @close="mappingToDelete = null" @confirm="executeDeleteMapping">
@@ -208,24 +221,21 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, nextTick } from 'vue'
+import { ref, onMounted } from 'vue'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import type { DownloadClientConfiguration, RemotePathMapping } from '@/types'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
 import DownloadClientFormModal from '@/components/download/DownloadClientFormModal.vue'
-import { Modal, ModalHeader, ModalFooter, ModalForm, ModalBody } from '@/components/modal' 
+import { Modal } from '@/components/modal'
 import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
-import RemotePathMappingModal from '@/components/modal/RemotePathMappingModal.vue'
-import FormSection from '@/components/settings/FormSection.vue'
 import {
   PhDownloadSimple,
   PhToggleRight,
   PhToggleLeft,
   PhSpinner,
   PhCheckCircle,
-  PhXCircle,
   PhPencil,
   PhTrash,
   PhLink,
@@ -254,12 +264,21 @@ const showClientForm = ref(false)
 const editingClient = ref<DownloadClientConfiguration | null>(null)
 const clientToDelete = ref<DownloadClientConfiguration | null>(null)
 const testingClient = ref<string | null>(null)
-// Per-client ephemeral test results: 'success' | 'fail' | undefined
-const lastClientTestResults = reactive<Record<string, 'success' | 'fail' | undefined>>({})
 const remotePathMappings = ref<RemotePathMapping[]>([])
 const showMappingForm = ref(false)
 const mappingToEdit = ref<RemotePathMapping | null>(null)
 const mappingToDelete = ref<RemotePathMapping | null>(null)
+const mappingToEditData = ref<{
+  downloadClientId: string
+  remotePath: string
+  localPath: string
+  name?: string
+}>({
+  downloadClientId: '',
+  remotePath: '',
+  localPath: '',
+  name: '',
+})
 
 // Functions
 const formatApiError = (error: unknown): string => {
@@ -343,9 +362,6 @@ const testClient = async (client: DownloadClientConfiguration) => {
       if (index !== -1 && result.client) {
         configStore.downloadClientConfigurations[index] = result.client
       }
-      lastClientTestResults[client.id] = 'success'
-      console.debug('DownloadClientsTab: lastClientTestResults set', client.id, lastClientTestResults[client.id])
-      await nextTick()
     } else {
       const errorMessage = formatApiError({ response: { data: result.message } })
       toast.error('Download client test failed', errorMessage)
@@ -353,9 +369,6 @@ const testClient = async (client: DownloadClientConfiguration) => {
       if (index !== -1 && result.client) {
         configStore.downloadClientConfigurations[index] = result.client
       }
-      lastClientTestResults[client.id] = 'fail'
-      console.debug('DownloadClientsTab: lastClientTestResults set', client.id, lastClientTestResults[client.id])
-      await nextTick()
     }
   } catch (error) {
     errorTracking.captureException(error as Error, {
@@ -364,9 +377,6 @@ const testClient = async (client: DownloadClientConfiguration) => {
     })
     const errorMessage = formatApiError(error)
     toast.error('Download client test failed', errorMessage)
-    lastClientTestResults[client.id] = 'fail'
-    console.debug('DownloadClientsTab: lastClientTestResults set', client.id, lastClientTestResults[client.id])
-    await nextTick()
   } finally {
     testingClient.value = null
   }
@@ -414,29 +424,47 @@ const loadRemotePathMappings = async () => {
 
 const openMappingForm = (mapping?: RemotePathMapping) => {
   mappingToEdit.value = mapping || null
+  if (mapping) {
+    mappingToEditData.value = { ...mapping }
+  } else {
+    mappingToEditData.value = {
+      downloadClientId: configStore.downloadClientConfigurations[0]?.id || '',
+      remotePath: '',
+      localPath: '',
+      name: '',
+    }
+  }
   showMappingForm.value = true
 }
 
 const closeMappingForm = () => {
   showMappingForm.value = false
   mappingToEdit.value = null
+  mappingToEditData.value = { downloadClientId: '', remotePath: '', localPath: '', name: '' }
 }
 
-const handleSaveMapping = async (mappingData: Omit<RemotePathMapping, 'id' | 'createdAt' | 'updatedAt'>) => {
+const saveMapping = async () => {
   try {
+    const payload: Omit<RemotePathMapping, 'id' | 'createdAt' | 'updatedAt'> = {
+      downloadClientId: mappingToEditData.value.downloadClientId || '',
+      remotePath: mappingToEditData.value.remotePath || '',
+      localPath: mappingToEditData.value.localPath || '',
+      name: mappingToEditData.value.name || '',
+    }
+
     if (mappingToEdit.value && mappingToEdit.value.id) {
-      const updated = await updateRemotePathMapping(mappingToEdit.value.id, mappingData)
+      const updated = await updateRemotePathMapping(mappingToEdit.value.id, payload)
       const idx = remotePathMappings.value.findIndex((m) => m.id === updated.id)
       if (idx !== -1) remotePathMappings.value[idx] = updated
       toast.success('Remote path mapping', 'Remote path mapping updated')
     } else {
-      const created = await createRemotePathMapping(mappingData)
+      const created = await createRemotePathMapping(payload)
       remotePathMappings.value.push(created)
 
       // Automatically assign the new mapping to the selected download client
-      if (mappingData.downloadClientId) {
+      if (payload.downloadClientId) {
         const selectedClient = configStore.downloadClientConfigurations.find(
-          (c) => c.id === mappingData.downloadClientId,
+          (c) => c.id === payload.downloadClientId,
         )
         if (selectedClient) {
           const updatedClient = { ...selectedClient }
@@ -446,7 +474,7 @@ const handleSaveMapping = async (mappingData: Omit<RemotePathMapping, 'id' | 'cr
           if (!updatedClient.settings.remotePathMappingIds.includes(created.id)) {
             updatedClient.settings.remotePathMappingIds.push(created.id)
             const clientIndex = configStore.downloadClientConfigurations.findIndex(
-              (c) => c.id === mappingData.downloadClientId,
+              (c) => c.id === payload.downloadClientId,
             )
             if (clientIndex !== -1) {
               configStore.downloadClientConfigurations[clientIndex] = updatedClient
@@ -573,7 +601,7 @@ defineExpose({
 }
 
 .add-button:hover {
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }
@@ -671,7 +699,44 @@ defineExpose({
   gap: 0.5rem;
 }
 
-/* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
+.icon-button {
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  color: #adb5bd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: rgba(77, 171, 247, 0.15);
+  border-color: #4dabf7;
+  color: #4dabf7;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.3);
+}
+
+.icon-button.danger {
+  color: #ff6b6b;
+}
+
+.icon-button.danger:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+}
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 .indexer-details {
   display: flex;
@@ -769,9 +834,63 @@ defineExpose({
   display: flex;
   gap: 0.5rem;
 }
-/* `.edit-button` and `.delete-button` centralized in `src/assets/buttons.css` */
+
+.edit-button,
+.delete-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.edit-button:hover {
+  background: var(--color-background-tertiary);
+  border-color: var(--color-primary);
+}
+
+.delete-button:hover {
+  background: rgba(239, 68, 68, 0.1);
+  border-color: #ef4444;
+  color: #ef4444;
+}
 
 /* Modal-specific styling moved to shared `modals.css` */
+
+.form-group {
+  margin-bottom: 1rem;
+}
+
+.form-group label {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+}
+
+.form-group input,
+.form-group select {
+  width: 100%;
+  padding: 0.5rem;
+  background: var(--color-background-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  font-size: 0.875rem;
+  color: var(--color-text);
+}
+
+.form-group input:focus,
+.form-group select:focus {
+  outline: none;
+  border-color: var(--color-primary);
+}
 
 
 

@@ -319,7 +319,7 @@ onUnmounted(() => {
 }
 
 .tab.active {
-  background-color: var(--brand-500);
+  background-color: #007acc;
   color: white;
 }
 
@@ -351,8 +351,8 @@ onUnmounted(() => {
 }
 
 .activity-item.download {
-  border-left-color: var(--brand-500);
-} 
+  border-left-color: #007acc;
+}
 
 .activity-item.import {
   border-left-color: #27ae60;
@@ -423,7 +423,7 @@ onUnmounted(() => {
 }
 
 .status-badge.downloading {
-  background-color: var(--brand-500);
+  background-color: #007acc;
   color: white;
 }
 

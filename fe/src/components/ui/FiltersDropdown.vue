@@ -192,6 +192,21 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   gap: 6px;
   margin-left: 8px;
 }
+.icon-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  color: #ddd;
+  padding: 4px 6px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.icon-btn.delete {
+  background: rgba(231, 76, 60, 0.9);
+  border-color: rgba(192, 57, 43, 0.5);
+}
+.icon-btn.delete:hover {
+  background: rgba(192, 57, 43, 1);
+}
 
 /* Mobile-friendly toolbar: hide text, show only icons on screens 1024px and below */
 @media (max-width: 1024px) {
@@ -201,14 +216,8 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     justify-content: center;
     gap: unset;
   }
-  /* Hide the text/icon group but keep the caret visible for affordance */
-  .trigger > span:first-child {
+  .trigger span {
     display: none;
-  }
-  .trigger .caret {
-    display: inline-block;
-    font-size: 14px;
-    line-height: 1;
   }
 }
 </style>

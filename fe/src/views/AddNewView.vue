@@ -43,12 +43,12 @@
                 aria-describedby="unified-search-hint"
                 type="text"
                 :placeholder="searchPlaceholder"
-                class="form-input search-input"
+                class="search-input"
                 :class="{ error: searchError }"
                 @input="handleSearchInput"
               />
 
-              <select v-model="searchLanguage" class="language-select form-select" aria-label="Search region">
+              <select v-model="searchLanguage" class="language-select" aria-label="Search region">
                 <option value="english">United States (US)</option>
                 <option value="english-uk">United Kingdom (UK)</option>
                 <option value="english-ca">Canada (CA)</option>
@@ -1087,26 +1087,8 @@ watch(
   () => lastResults?.value,
   async (newVal) => {
     try {
-      if (newVal && Array.isArray(newVal)) {
-        if (newVal.length) {
-          await handleSimpleSearchResults(newVal)
-        } else {
-          // Show a friendly message when unified search returns no results
-          searchStatus.value = ''
-          searchError.value = ''
-          toast.info('No results found', 'Search')
-          try {
-            await nextTick()
-            // Scroll to the unified search input so the user can refine their query
-            const inputEl = document.querySelector('#unified-search-input') as HTMLElement | null
-            if (inputEl) {
-              const topNav = document.querySelector('.top-nav') as HTMLElement | null
-              const navOffset = topNav ? topNav.offsetHeight + 12 : 72
-              const top = window.scrollY + inputEl.getBoundingClientRect().top - navOffset
-              window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-            }
-          } catch {}
-        }
+      if (newVal && Array.isArray(newVal) && newVal.length) {
+        await handleSimpleSearchResults(newVal)
       }
     } catch (e) {
       logger.debug('Error handling lastResults change', e)
@@ -1600,39 +1582,7 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
   // Check library status
   await checkExistingInLibrary()
 
-  // Notify user and scroll results into view (account for fixed top nav and scrollable containers)
   toast.info(`Found ${results.length} results from advanced search`, 'Advanced Search')
-  try {
-    await nextTick()
-    const el = document.querySelector('.search-results') as HTMLElement | null
-    if (el) {
-      const topNav = document.querySelector('.top-nav') as HTMLElement | null
-      const navOffset = topNav ? topNav.offsetHeight + 12 : 72
-
-      function findScrollableAncestor(node: HTMLElement | null): HTMLElement | Window {
-        let current = node?.parentElement || null
-        while (current && current !== document.documentElement) {
-          const style = getComputedStyle(current)
-          const overflowY = style.overflowY
-          if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) return current
-          current = current.parentElement
-        }
-        return window
-      }
-
-      const ancestor = findScrollableAncestor(el)
-      if (ancestor === window) {
-        const top = window.scrollY + el.getBoundingClientRect().top - navOffset
-        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-      } else {
-        const anc = ancestor as HTMLElement
-        const top = anc.scrollTop + el.getBoundingClientRect().top - anc.getBoundingClientRect().top - navOffset
-        anc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-      }
-    }
-  } catch {
-    // ignore scroll failures
-  }
 }
 
 const performAdvancedSearch = async () => {
@@ -2177,7 +2127,7 @@ const isAudibleHost = (url?: string): boolean => {
     const parsed = new URL(url, window.location.origin)
     const host = parsed.hostname.toLowerCase()
     return host === 'audible.com' || host.endsWith('.audible.com')
-  } catch {
+  } catch (e) {
     // If parsing fails, treat as not audible
     return false
   }
@@ -2741,40 +2691,6 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
 
   totalTitleResultsCount.value = results.length
   searchStatus.value = ''
-
-  // Notify user and scroll results into view (match Advanced Search behavior)
-  toast.info(`Found ${results.length} results`, 'Search')
-  try {
-    await nextTick()
-    const el = document.querySelector('.search-results') as HTMLElement | null
-    if (el) {
-      const topNav = document.querySelector('.top-nav') as HTMLElement | null
-      const navOffset = topNav ? topNav.offsetHeight + 12 : 72
-
-      function findScrollableAncestor(node: HTMLElement | null): HTMLElement | Window {
-        let current = node?.parentElement || null
-        while (current && current !== document.documentElement) {
-          const style = getComputedStyle(current)
-          const overflowY = style.overflowY
-          if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) return current
-          current = current.parentElement
-        }
-        return window
-      }
-
-      const ancestor = findScrollableAncestor(el)
-      if (ancestor === window) {
-        const top = window.scrollY + el.getBoundingClientRect().top - navOffset
-        window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-      } else {
-        const anc = ancestor as HTMLElement
-        const top = anc.scrollTop + el.getBoundingClientRect().top - anc.getBoundingClientRect().top - navOffset
-        anc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
-      }
-    }
-  } catch {
-    // ignore scroll failures
-  }
 }
 
 // No external result listener required; performSearch returns results directly.
@@ -2940,7 +2856,7 @@ onMounted(async () => {
 }
 
 .settings-link {
-  color: var(--brand-500);
+  color: #2196f3;
   text-decoration: none;
   font-weight: 500;
 }
@@ -2977,8 +2893,8 @@ onMounted(async () => {
 }
 
 .tab-btn.active {
-  color: var(--brand-500);
-  border-bottom-color: var(--brand-500);
+  color: #007acc;
+  border-bottom-color: #007acc;
 }
 
 /* Search Section */
@@ -3064,22 +2980,32 @@ onMounted(async () => {
 }
 
 .unified-search-bar .search-input {
-  /* Layout only: let global .form-input provide visuals */
   flex: 1 1 420px;
   min-width: 220px;
-  height: var(--control-height);
-  padding: 0 0.75rem; /* keep small horizontal padding */
-  box-sizing: border-box;
+  padding: 0.7rem 1rem;
+  height: 48px;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.2) 100%);
+  color: white;
+  font-size: 0.98rem;
+  font-family: inherit;
+  transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
 .unified-search-bar .search-input:focus {
   outline: none;
+  border-color: #4dabf7;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.4) 0%, rgba(0, 0, 0, 0.3) 100%);
+  box-shadow:
+    0 0 0 4px rgba(77, 171, 247, 0.15),
+    0 4px 16px rgba(0, 0, 0, 0.2);
+  transform: translateY(-1px);
 }
 
 .unified-search-bar .search-input::placeholder {
-  /* no color override; use global placeholder color */
-  color: inherit;
-
+  color: #9ca3af;
   font-weight: 400;
 }
 
@@ -3091,13 +3017,12 @@ onMounted(async () => {
   color: #ffffff !important;
   font-size: 0.95rem;
   font-family: inherit;
-  font-weight: 600;
   cursor: pointer;
   transition: all 0.18s ease;
   min-width: 140px;
   box-shadow: none;
   padding-right: 2.25rem;
-  height: var(--control-height);
+  height: 48px;
   display: inline-flex;
   align-items: center;
   -webkit-appearance: none !important;
@@ -3107,7 +3032,7 @@ onMounted(async () => {
   background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e") !important;
   background-repeat: no-repeat !important;
   background-position: right 0.75rem center !important;
-  background-size: 1.125rem !important;
+  background-size: 1rem !important;
 }
 
 .unified-search-bar .language-select:focus-visible {
@@ -3134,11 +3059,11 @@ onMounted(async () => {
 
 .search-hint {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
   color: #9ca3af;
-  font-size: 0.80rem;
-  padding: 0.6rem 1rem;
+  font-size: 0.9rem;
+  padding: 1rem 1.25rem;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
@@ -3148,10 +3073,10 @@ onMounted(async () => {
 
 .search-hint svg {
   color: #4dabf7;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   flex-shrink: 0;
-  margin-top: 0;
+  margin-top: 0.125rem;
 }
 
 /* Advanced Search Inline Section */
@@ -3267,17 +3192,70 @@ onMounted(async () => {
   flex-shrink: 0;
 }
 
-/* Do NOT override the global `.form-input` baseline here. Keep Add New view non-invasive
-   so the app-wide form styles from `src/assets/components.css` remain authoritative.
-   Only add minimal, additive adjustments local to this view if necessary. */
 .form-input {
-  /* Use global baseline; ensure full width and proper box-sizing for layout in this view */
-  width: 100%;
-  box-sizing: border-box;
+  padding: 1rem 1.25rem;
+  border: 2px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.3) 0%, rgba(0, 0, 0, 0.2) 100%);
+  color: white;
+  font-size: 1rem;
+  font-family: inherit;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
 }
 
-/* Keep a distinct select appearance only if the select explicitly opts into it via .form-select */
+.form-input:focus {
+  outline: none;
+  border-color: #9b59b6;
+  background: linear-gradient(135deg, rgba(0, 0, 0, 0.44) 0%, rgba(0, 0, 0, 0.33) 100%);
+  box-shadow:
+    0 0 0 5px rgba(155, 89, 182, 0.18),
+    0 6px 20px rgba(0, 0, 0, 0.22);
+  transform: translateY(-1px);
+}
 
+.form-input:focus-visible {
+  outline: none;
+  border-color: #9b59b6;
+  box-shadow:
+    0 0 0 6px rgba(155, 89, 182, 0.22),
+    0 6px 20px rgba(0, 0, 0, 0.22);
+}
+
+.search-input:focus-visible {
+  outline: none;
+  border-color: #4dabf7;
+  box-shadow:
+    0 0 0 6px rgba(77, 171, 247, 0.14),
+    0 6px 20px rgba(0, 0, 0, 0.16);
+}
+
+.form-input::placeholder {
+  color: #b6bcc4;
+  font-weight: 400;
+}
+
+.form-input option {
+  background-color: #1a1a1a !important;
+  color: white !important;
+  padding: 0.5rem !important;
+}
+
+/* Select elements in form-input class should match SettingsView */
+select.form-input {
+  background-color: #1a1a1a !important;
+  border: 1px solid #444 !important;
+  border-radius: 6px !important;
+  -webkit-appearance: none !important;
+  -moz-appearance: none !important;
+  appearance: none !important;
+  background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6,9 12,15 18,9'%3e%3c/polyline%3e%3c/svg%3e") !important;
+  background-repeat: no-repeat !important;
+  background-position: right 0.75rem center !important;
+  background-size: 1rem !important;
+  padding-right: 2.5rem !important;
+  cursor: pointer;
+}
 
 select.form-input:focus {
   outline: none;
@@ -3308,7 +3286,19 @@ select.form-input:focus {
   transition: all 0.2s ease;
 }
 
-/* Button color variants are centralized in `src/assets/modals.css` and `src/assets/buttons.css` - use `.btn` / `.btn-primary` */
+/* Button color variants centralized in `src/assets/modals.css` */
+
+.btn-primary {
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
+}
 
 .btn-primary:disabled,
 .btn-secondary:disabled {
@@ -3402,18 +3392,25 @@ select.form-input:focus {
 }
 
 .search-input {
-  /* Layout only - visuals handled by global .form-input */
-  height: var(--control-height);
+  height: 48px;
   flex: 1;
-  padding: 0 0.75rem;
-  box-sizing: border-box;
+  padding: 0 0.9rem;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background-color: rgba(0, 0, 0, 0.18);
+  color: white;
+  font-size: 1rem;
+  text-transform: none;
+  font-family: inherit;
+  transition: all 0.2s ease;
 }
 
 .search-input.error {
-  /* Keep only the error border treatment, avoid changing background color */
   border-color: #fa5252;
+  background-color: rgba(250, 82, 82, 0.05);
   box-shadow: 0 0 0 3px rgba(250, 82, 82, 0.1);
 }
+
 .search-input:focus {
   outline: none;
   border-color: #4dabf7;
@@ -3449,20 +3446,26 @@ select.form-input:focus {
   margin-bottom: 0.5rem;
 }
 
-/* Keep inputs in this view layout-friendly but rely on global styles for visuals */
 .form-input {
+  height: 48px;
   width: 100%;
-  height: var(--control-height);
-  box-sizing: border-box;
+  padding: 6px 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  background-color: #2a2a2a;
+  color: white;
+  font-size: 1rem;
 }
 
 .form-input:focus {
   outline: none;
+  border-color: #4dabf7;
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.08);
 }
 
 /* Buttons */
 .search-btn {
-  padding: 0.6rem 1.4rem;
+  padding: 0.9rem 1.6rem;
   background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
   color: white;
   border: none;
@@ -3472,10 +3475,10 @@ select.form-input:focus {
   align-items: center;
   justify-content: center;
   gap: 0.75rem;
-  font-weight: 500;
-  font-size: 0.9rem;
+  font-weight: 700;
+  font-size: 1rem;
   min-width: 120px;
-  height: var(--control-height);
+  height: 48px;
   transition: all 0.22s cubic-bezier(0.4, 0, 0.2, 1);
   box-shadow: 0 6px 24px rgba(30, 136, 229, 0.32);
   position: relative;
@@ -3494,7 +3497,7 @@ select.form-input:focus {
   color: #f4ecff;
   box-shadow: 0 2px 8px rgba(155, 89, 182, 0.12);
   min-width: 110px;
-  height: var(--control-height);
+  height: 44px;
   position: absolute;
   top: 0;
   right: 0;
@@ -3588,8 +3591,8 @@ select.form-input:focus {
 }
 
 .search-btn svg {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
 }
 
 .search-btn:disabled {
@@ -3597,7 +3600,64 @@ select.form-input:focus {
   cursor: not-allowed;
 }
 
-/* Buttons are now centralized in `src/assets/buttons.css`. Use `.btn`, `.btn-primary`, `.btn-secondary`, etc. */
+.btn {
+  padding: 0.65rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  min-width: 100px;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+}
+
+.btn:has(svg) {
+  gap: 0.5rem;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
+  transform: translateY(-1px);
+}
+
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Button color variants centralized in `src/assets/modals.css` */
+.btn-secondary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+/* Error Messages */
+/* Error Messages */
+.error-message {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  color: #fff;
+  background-color: rgba(250, 82, 82, 0.15);
+  border: 1px solid rgba(250, 82, 82, 0.3);
+  border-radius: 6px;
+  padding: 0.875rem 1.125rem;
+  font-size: 0.9rem;
+  margin-top: 1rem;
+}
 
 .error-message svg {
   color: #fa5252;
@@ -4135,10 +4195,10 @@ select.form-input:focus {
   align-items: center;
   gap: 0.5rem;
   padding: 1rem;
-  background-color: rgba(var(--brand-rgb), 0.1);
-  border: 1px solid var(--brand-500);
+  background-color: rgba(0, 122, 204, 0.1);
+  border: 1px solid #007acc;
   border-radius: 6px;
-  color: var(--brand-500);
+  color: #007acc;
   margin-bottom: 1rem;
 }
 
@@ -4240,25 +4300,6 @@ select.form-input:focus {
   .title-results,
   .search-section {
     scrollbar-gutter: stable both-edges;
-  }
-
-  /* Make the results area scrollable on smaller viewports to keep the search bar visible and
-     allow users to quickly navigate long result sets without the page growing excessively tall. */
-  .search-results {
-    max-height: min(65vh, calc(100vh - 220px));
-    overflow-y: auto;
-    padding-right: 0.25rem; /* keep space for scrollbar */
-    scrollbar-width: thin;
-  }
-
-  .search-results::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
-  }
-
-  .search-results::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 6px;
   }
 
   /* Allow long metadata badges and names to wrap instead of overflowing */

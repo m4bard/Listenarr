@@ -11,7 +11,7 @@
         <p class="empty-help">
           Supported services include Slack, Discord, Telegram, Pushover, and more.
         </p>
-        <button @click="openWebhookForm" class="add-button-large btn btn-lg btn-primary">
+        <button @click="openWebhookForm" class="add-button-large">
           <PhPlus />
           Create Your First Webhook
         </button>
@@ -27,17 +27,9 @@
           <div class="webhook-header">
             <div class="webhook-title-row">
               <div class="webhook-info">
-                <h4 class="webhook-title">
-                  <component
-                    :is="getWebhookTypeIcon(webhook.type)"
-                    class="webhook-type-icon"
-                    :title="webhook.type"
-                    :aria-label="webhook.type"
-                    role="img"
-                  />
-                  <span class="webhook-name">{{ webhook.name }}</span>
-                </h4>
+                <h4>{{ webhook.name }}</h4>
                 <div class="webhook-meta">
+                  <span class="webhook-type-badge">{{ webhook.type }}</span>
                   <div class="triggers-preview">
                     <span
                       v-for="trigger in webhook.triggers"
@@ -53,8 +45,13 @@
               </div>
             </div>
             <div class="webhook-header-actions">
+              <div class="webhook-status-badge" :class="{ active: webhook.isEnabled }">
+                <component :is="webhook.isEnabled ? PhCheckCircle : PhXCircle" />
+                {{ webhook.isEnabled ? 'Active' : 'Inactive' }}
+              </div>
+
               <button
-                class="icon-button action-secondary action-toggle"
+                class="icon-button"
                 :class="{ active: webhook.isEnabled }"
                 :title="webhook.isEnabled ? 'Disable webhook' : 'Enable webhook'"
                 @click.stop="toggleWebhook(webhook)"
@@ -63,33 +60,21 @@
               </button>
 
               <button
-                class="icon-button action-secondary"
-                :class="{
-                  'test-success': lastWebhookTestResults[webhook.id] === 'success',
-                  'test-fail': lastWebhookTestResults[webhook.id] === 'fail'
-                }"
+                class="icon-button"
                 :title="!webhook.isEnabled ? 'Enable webhook to test' : 'Send test notification'"
                 @click.stop="testWebhook(webhook)"
                 :disabled="testingWebhook === webhook.id || !webhook.isEnabled"
               >
                 <PhSpinner v-if="testingWebhook === webhook.id" class="ph-spin" />
-                <template v-else-if="lastWebhookTestResults[webhook.id] === 'success'">
-                  <PhCheckCircle />
-                </template>
-                <template v-else-if="lastWebhookTestResults[webhook.id] === 'fail'">
-                  <PhXCircle />
-                </template>
-                <template v-else>
-                  <PhPaperPlaneTilt />
-                </template>
+                <PhPaperPlaneTilt v-else />
               </button>
 
-              <button class="icon-button action-edit" title="Edit webhook" @click.stop="editWebhook(webhook)">
+              <button class="icon-button" title="Edit webhook" @click.stop="editWebhook(webhook)">
                 <PhPencil />
               </button>
 
               <button
-                class="icon-button danger action-delete"
+                class="icon-button danger"
                 title="Delete webhook"
                 @click.stop="confirmDeleteWebhook(webhook)"
               >
@@ -104,7 +89,23 @@
               <span class="webhook-url">{{ webhook.url }}</span>
             </div>
 
-
+            <div class="webhook-triggers-section">
+              <div class="triggers-header">
+                <PhBell />
+                <span class="triggers-label">Active Triggers ({{ webhook.triggers.length }})</span>
+              </div>
+              <div class="triggers-list">
+                <span
+                  v-for="trigger in webhook.triggers"
+                  :key="trigger"
+                  class="trigger-badge"
+                  :class="getTriggerClass(trigger)"
+                >
+                  <component :is="getTriggerIcon(trigger)" />
+                  {{ formatTriggerName(trigger) }}
+                </span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -112,7 +113,15 @@
       <!-- Webhook Configuration Modal (shared Modal component) -->
       <Modal class="webhook-modal" :visible="showWebhookForm" size="md" :title="editingWebhook ? 'Edit Webhook' : 'Add Webhook'" @close="closeWebhookForm">
         <template #header>
-          <ModalHeader :title="(editingWebhook ? 'Edit' : 'Add') + ' Webhook'" :icon="PhLink" @close="closeWebhookForm" />
+          <div class="modal-icon" aria-hidden>
+            <PhLink />
+          </div>
+          <div class="modal-title">
+            <h3>{{ editingWebhook ? 'Edit' : 'Add' }} Webhook</h3>
+          </div>
+          <button @click="closeWebhookForm" class="close-btn" aria-label="Close modal">
+            <PhX />
+          </button>
         </template>
 
         <form @submit.prevent="saveWebhook">
@@ -125,15 +134,12 @@
               <p>This action cannot be undone.</p>
             </template>
           </DeleteConfirmationModal>
-
-              <!-- Activation -->
-              <FormSection title="Activation" :icon="PhToggleRight">
-                <CheckboxCard v-model="webhookForm.isEnabled" title="Enable" description="Enable this webhook to start receiving notifications" />
-              </FormSection>
-
               <!-- Basic Configuration Section -->
-              <FormSection title="Basic" :icon="PhInfo">
-                <FormRow label="Name *" labelFor="webhook-name">
+              <div class="form-section">
+                <h3>Basic</h3>
+
+                <div class="form-group">
+                  <label for="webhook-name">Name *</label>
                   <input
                     id="webhook-name"
                     v-model="webhookForm.name"
@@ -142,10 +148,13 @@
                     required
                     @blur="validateWebhookField('name')"
                   />
-                  <small v-if="webhookFormErrors.name" class="error-text">{{ webhookFormErrors.name }}</small>
-                </FormRow>
+                  <small v-if="webhookFormErrors.name" class="error-text">{{
+                    webhookFormErrors.name
+                  }}</small>
+                </div>
 
-                <FormRow label="Type *" labelFor="webhook-type">
+                <div class="form-group">
+                  <label for="webhook-type">Type *</label>
                   <select
                     id="webhook-type"
                     v-model="webhookForm.type"
@@ -162,11 +171,14 @@
                     <option value="NTFY">NTFY</option>
                     <option value="Zapier">Zapier / Generic</option>
                   </select>
-                  <small v-if="webhookFormErrors.type" class="error-text">{{ webhookFormErrors.type }}</small>
+                  <small v-if="webhookFormErrors.type" class="error-text">{{
+                    webhookFormErrors.type
+                  }}</small>
                   <small v-else-if="getServiceHelp()">{{ getServiceHelp() }}</small>
-                </FormRow>
+                </div>
 
-                <FormRow label="Webhook URL *" labelFor="webhook-url">
+                <div class="form-group">
+                  <label for="webhook-url">Webhook URL *</label>
                   <input
                     id="webhook-url"
                     v-model="webhookForm.url"
@@ -175,42 +187,105 @@
                     required
                     @blur="validateWebhookField('url')"
                   />
-                  <small v-if="webhookFormErrors.url" class="error-text">{{ webhookFormErrors.url }}</small>
-                </FormRow>
-              </FormSection>
+                  <small v-if="webhookFormErrors.url" class="error-text">{{
+                    webhookFormErrors.url
+                  }}</small>
+                </div>
+              </div>
 
+              <!-- Triggers Section -->
+              <div class="form-section triggers-section">
+                <h3>Notification Triggers</h3>
+
+                <div class="checkbox-group">
+                  <label for="trigger-book-added">
+                    <input
+                      id="trigger-book-added"
+                      v-model="webhookForm.triggers"
+                      value="book-added"
+                      type="checkbox"
+                      @change="validateWebhookField('triggers')"
+                    />
+                    <span>
+                      <strong>Book Added to Library</strong>
+                      <small>Notifies when a new audiobook is added to your library</small>
+                    </span>
+                  </label>
+                </div>
+
+                <div class="checkbox-group">
+                  <label for="trigger-book-downloading">
+                    <input
+                      id="trigger-book-downloading"
+                      v-model="webhookForm.triggers"
+                      value="book-downloading"
+                      type="checkbox"
+                      @change="validateWebhookField('triggers')"
+                    />
+                    <span>
+                      <strong>Download Started</strong>
+                      <small>Notifies when an audiobook download begins</small>
+                    </span>
+                  </label>
+                </div>
+
+                <div class="checkbox-group">
+                  <label for="trigger-book-available">
+                    <input
+                      id="trigger-book-available"
+                      v-model="webhookForm.triggers"
+                      value="book-available"
+                      type="checkbox"
+                      @change="validateWebhookField('triggers')"
+                    />
+                    <span>
+                      <strong>Download Complete</strong>
+                      <small>Notifies when an audiobook finishes downloading and is ready</small>
+                    </span>
+                  </label>
+                </div>
+                <small v-if="webhookFormErrors.triggers" class="error-text">{{
+                  webhookFormErrors.triggers
+                }}</small>
+              </div>
+
+              <!-- Status Section -->
+              <div class="form-section status-section">
+                <h3>Activation</h3>
+                <div class="checkbox-group">
+                  <Checkbox v-model="webhookForm.isEnabled" id="webhook-enabled">
+                    <strong>Enable</strong>
+                    <small>Enable this webhook to start receiving notifications</small>
+                  </Checkbox>
+                </div>
+              </div>
             </form>
         <template #footer>
-          <ModalFooter :showCancel="false">
-            <template #left>
-              <button @click="closeWebhookForm" class="cancel-button btn" type="button"><PhX /> Cancel</button>
-            </template>
-            <template #default>
-              <button
-                v-if="
-                  webhookForm.url &&
-                  webhookForm.type &&
-                  !editingWebhook
-                "
-                @click="testWebhookConfig"
-                class="btn btn-info"
-                type="button"
-                :disabled="testingWebhookConfig"
-              >
-                <PhSpinner v-if="testingWebhookConfig" class="ph-spin" />
-                {{ testingWebhookConfig ? 'Testing...' : 'Test' }}
-              </button>
-              <button
-                @click="saveWebhook"
-                class="btn btn-primary"
-                type="button"
-                :disabled="!isWebhookFormValid || savingWebhook"
-              >
-                <PhSpinner v-if="savingWebhook" class="ph-spin" />
-                {{ savingWebhook ? 'Saving...' : editingWebhook ? 'Update' : 'Save' }}
-              </button>
-            </template>
-          </ModalFooter>
+          <button @click="closeWebhookForm" class="cancel-button" type="button"><PhX /> Cancel</button>
+          <button
+            v-if="
+              webhookForm.url &&
+              webhookForm.type &&
+              webhookForm.triggers.length > 0 &&
+              !editingWebhook
+            "
+            @click="testWebhookConfig"
+            class="btn btn-info"
+            type="button"
+            :disabled="testingWebhookConfig"
+          >
+            <PhSpinner v-if="testingWebhookConfig" class="ph-spin" />
+            {{ testingWebhookConfig ? 'Testing...' : 'Test' }}
+          </button>
+          <button
+            @click="saveWebhook"
+            class="btn btn-primary"
+            type="button"
+            :disabled="!isWebhookFormValid || savingWebhook"
+          >
+            <PhSpinner v-if="savingWebhook" class="ph-spin" />
+            {{ savingWebhook ? 'Saving...' : editingWebhook ? 'Update' : 'Save' }}
+          </button>
         </template>
       </Modal>
     </div>
@@ -218,7 +293,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import {
   PhBell,
   PhBellSlash,
@@ -233,19 +308,12 @@ import {
   PhTrash,
   PhLink,
   PhX,
+  PhWarningCircle,
   PhDownloadSimple,
-  PhSlackLogo,
-  PhDiscordLogo,
-  PhTelegramLogo,
-  PhPushPinSimple,
-  PhInfo,
 } from '@phosphor-icons/vue'
-import { Modal, ModalHeader, ModalFooter } from '@/components/modal'
+import { Modal } from '@/components/modal'
 import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
-// Checkbox not used directly here; CheckboxCard wraps checkbox UI
-import FormSection from '@/components/settings/FormSection.vue'
-import FormRow from '@/components/settings/FormRow.vue'
-import CheckboxCard from '@/components/settings/CheckboxCard.vue'
+import Checkbox from '@/components/inputs/Checkbox.vue'
 import { errorTracking } from '@/services/errorTracking'
 import { useToast } from '@/services/toastService'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -278,8 +346,6 @@ const editingWebhook = ref<{
   isEnabled: boolean
 } | null>(null)
 const testingWebhook = ref<string | null>(null)
-// Per-webhook ephemeral test results
-const lastWebhookTestResults = reactive<Record<string, 'success' | 'fail' | undefined>>({})
 const webhooks = ref<
   Array<{
     id: string
@@ -316,9 +382,11 @@ const isWebhookFormValid = computed(() => {
     webhookForm.name.trim().length > 0 &&
     webhookForm.url.trim().length > 0 &&
     webhookForm.type !== '' &&
+    webhookForm.triggers.length > 0 &&
     !webhookFormErrors.name &&
     !webhookFormErrors.url &&
-    !webhookFormErrors.type
+    !webhookFormErrors.type &&
+    !webhookFormErrors.triggers
   )
 })
 
@@ -338,20 +406,6 @@ const getTriggerIcon = (trigger: string) => {
     'book-available': PhCheckCircle,
   }
   return iconMap[trigger] || PhBell
-}
-
-const getWebhookTypeIcon = (type: string) => {
-  const t = (type || '').toLowerCase()
-  const map: Record<string, unknown> = {
-    slack: PhSlackLogo,
-    discord: PhDiscordLogo,
-    telegram: PhTelegramLogo,
-    pushover: PhBell,
-    pushbullet: PhPushPinSimple,
-    ntfy: PhBell,
-    zapier: PhPaperPlaneTilt,
-  }
-  return map[t] || PhLink
 }
 
 const getTriggerClass = (trigger: string): string => {
@@ -589,9 +643,6 @@ const testWebhook = async (webhook: (typeof webhooks.value)[0]) => {
     // For now, just simulate success
     await new Promise((resolve) => setTimeout(resolve, 1000))
     toast.success('Test notification', `Test notification sent to ${webhook.name}`)
-    lastWebhookTestResults[webhook.id] = 'success'
-    console.debug('NotificationsTab: lastWebhookTestResults set', webhook.id, lastWebhookTestResults[webhook.id])
-    await nextTick()
   } catch (error) {
     errorTracking.captureException(error as Error, {
       component: 'NotificationsTab',
@@ -599,9 +650,6 @@ const testWebhook = async (webhook: (typeof webhooks.value)[0]) => {
     })
     const errorMessage = formatApiError(error)
     toast.error('Test failed', errorMessage)
-    lastWebhookTestResults[webhook.id] = 'fail'
-    console.debug('NotificationsTab: lastWebhookTestResults set', webhook.id, lastWebhookTestResults[webhook.id])
-    await nextTick()
   } finally {
     testingWebhook.value = null
   }
@@ -690,7 +738,40 @@ defineExpose({ openWebhookForm })
   font-weight: 600;
 }
 
-/* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
+.icon-button {
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  color: #adb5bd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: rgba(77, 171, 247, 0.15);
+  border-color: #4dabf7;
+  color: #4dabf7;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.3);
+}
+
+.icon-button.danger {
+  color: #ff6b6b;
+}
+
+.icon-button.danger:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+}
 /* Empty State */
 .empty-state {
   text-align: center;
@@ -743,18 +824,18 @@ defineExpose({ openWebhookForm })
 }
 
 .add-button:hover {
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.4);
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }
 
 .add-button-large {
   margin-top: 1.5rem;
   padding: 1rem 2rem;
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
   color: white;
   border: none;
-  border-radius: var(--btn-radius);
+  border-radius: 6px;
   cursor: pointer;
   transition: all 0.2s ease;
   display: inline-flex;
@@ -762,13 +843,13 @@ defineExpose({ openWebhookForm })
   gap: 0.75rem;
   font-weight: 600;
   font-size: 1rem;
-  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.3);
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.3);
 }
 
 .add-button-large:hover {
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(var(--brand-rgb), 0.4);
+  box-shadow: 0 6px 16px rgba(30, 136, 229, 0.4);
 }
 
 /* Form styles */
@@ -818,7 +899,7 @@ defineExpose({ openWebhookForm })
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: var(--brand-focus);
+  border-color: #007acc;
 }
 
 .form-group small {
@@ -835,14 +916,56 @@ defineExpose({ openWebhookForm })
   display: block;
 }
 
-/* Base checkbox-group styles are provided globally via `src/styles/global.css`.
-   Keep per-view small overrides below. */
+/* Checkbox group styles for modal */
+.checkbox-group {
+  margin-bottom: 1rem;
+}
 
-/* Notifications-specific overrides */
-.checkbox-group label:hover { border-color: var(--brand-500); }
-.checkbox-group label span { flex: 1; }
-.checkbox-group label small { color: #b3b3b3; }
-.checkbox-group input[type='checkbox']:focus-visible { outline: 2px solid rgba(var(--brand-rgb), 0.24); }
+.checkbox-group label {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 1rem;
+  background-color: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.checkbox-group label:hover {
+  border-color: #007acc;
+  background-color: #222;
+}
+
+.checkbox-group label span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.checkbox-group label strong {
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.checkbox-group label small {
+  color: #b3b3b3;
+  font-size: 0.85rem;
+  font-weight: normal;
+}
+
+.checkbox-group input[type='checkbox'] {
+  margin-top: 0.25rem;
+  width: auto;
+  cursor: pointer;
+}
+
+.checkbox-group input[type='checkbox']:focus-visible {
+  outline: 2px solid #007acc;
+  outline-offset: 2px;
+}
 /* Modal footer styling moved to shared `modals.css` */
 
 /* Modal actions styling moved to shared `modals.css` */
@@ -865,9 +988,9 @@ defineExpose({ openWebhookForm })
 }
 
 .webhook-card:hover {
-  border-color: rgba(var(--brand-rgb), 0.3);
+  border-color: rgba(77, 171, 247, 0.3);
   transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.15);
+  box-shadow: 0 4px 12px rgba(77, 171, 247, 0.15);
 }
 
 .webhook-card.disabled {
@@ -904,8 +1027,6 @@ defineExpose({ openWebhookForm })
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  display: flex;
-  align-items: initial;
 }
 
 .webhook-meta {
@@ -973,47 +1094,73 @@ defineExpose({ openWebhookForm })
   border-color: rgba(156, 39, 176, 0.3);
 }
 
-.webhook-title {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  margin: 0;
-  line-height: 1;
-}
-
-.webhook-type-icon {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 6px;
-  background: rgba(255,255,255,0.03);
-  color: var(--color-text-secondary);
-  font-size: 1rem;
-  flex-shrink: 0;
-}
-
-.webhook-name {
-  display: inline-block;
-  line-height: 1;
-}
-
-@media (max-width: 768px) {
-  .webhook-title {
-    width: 100%;
-  }
-}
-
-
 .webhook-header-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-left: 1rem;
-}   
+}
 
-/* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
+.webhook-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background-color: rgba(231, 76, 60, 0.15);
+  color: #ff6b6b;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.webhook-status-badge.active {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #51cf66;
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.icon-button {
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  color: #adb5bd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: rgba(77, 171, 247, 0.15);
+  border-color: #4dabf7;
+  color: #4dabf7;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.3);
+}
+
+.icon-button.danger {
+  color: #ff6b6b;
+}
+
+.icon-button.danger:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: #ff6b6b;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
 
 .webhook-body {
   padding: 1.5rem;
@@ -1047,7 +1194,65 @@ defineExpose({ openWebhookForm })
   white-space: nowrap;
 }
 
+.webhook-triggers-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
 
+.triggers-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #868e96;
+  font-size: 0.85rem;
+  font-weight: 600;
+  letter-spacing: 0.5px;
+}
+
+.triggers-label {
+  color: #adb5bd;
+}
+
+.triggers-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.trigger-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 0.85rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  border: 1px solid;
+}
+
+.trigger-badge svg {
+  width: 16px;
+  height: 16px;
+}
+
+.trigger-badge.trigger-added {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #51cf66;
+  border-color: rgba(76, 175, 80, 0.3);
+}
+
+.trigger-badge.trigger-downloading {
+  background-color: rgba(77, 171, 247, 0.15);
+  color: #4dabf7;
+  border-color: rgba(77, 171, 247, 0.3);
+}
+
+.trigger-badge.trigger-available {
+  background-color: rgba(156, 39, 176, 0.15);
+  color: #b197fc;
+  border-color: rgba(156, 39, 176, 0.3);
+}
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
@@ -1067,33 +1272,6 @@ defineExpose({ openWebhookForm })
     margin-left: 0;
   }
 }
-
-/* Override to ensure the checkbox uses our custom component styling inside teleported modal */
-.webhook-modal .input-checkbox {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  cursor: pointer !important;
-}
-.webhook-modal .input-checkbox input {
-  position: absolute;
-  opacity: 0;
-  width: 0;
-  height: 0;
-}
-.webhook-modal .checkbox-box {
-  width: 18px;
-  height: 18px;
-  border-radius: 3px;
-  margin-top: 0;
-  flex-shrink: 0;
-}
-.webhook-modal .checkbox-label > :first-child {
-  height: 18px;
-  display: flex;
-  align-items: center;
-}
-
 
 /* Spin animation for loading icons */
 .ph-spin {

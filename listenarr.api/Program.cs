@@ -502,7 +502,30 @@ builder.Services.AddHttpClient("us").ConfigurePrimaryHttpMessageHandler(() =>
         AutomaticDecompression = System.Net.DecompressionMethods.All
     };
 
-    // Proxy configuration removed; keep handler default (no explicit proxy configuration)
+    try
+    {
+        var section = builder.Configuration.GetSection("ExternalRequests");
+        var useProxy = section.GetValue<bool>("UseUsProxy");
+        if (useProxy)
+        {
+            var host = section.GetValue<string>("UsProxyHost");
+            var port = section.GetValue<int>("UsProxyPort");
+            if (!string.IsNullOrWhiteSpace(host) && port > 0)
+            {
+                var proxy = new WebProxy(host, port);
+                var user = section.GetValue<string>("UsProxyUsername");
+                var pass = section.GetValue<string>("UsProxyPassword");
+                if (!string.IsNullOrWhiteSpace(user))
+                    proxy.Credentials = new NetworkCredential(user, pass ?? string.Empty);
+                handler.Proxy = proxy;
+                handler.UseProxy = true;
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Logger.Warning("[WARNING] Failed to configure proxy settings: {Message}", ex.Message);
+    }
 
     return handler;
 });

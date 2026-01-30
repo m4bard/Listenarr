@@ -48,7 +48,7 @@ const importFromFolder = () => {
 
 .import-card:hover {
   background-color: #333;
-  border-color: var(--brand-500);
+  border-color: #007acc;
   transform: translateY(-4px);
 }
 

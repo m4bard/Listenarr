@@ -2,7 +2,7 @@
   <div data-modal-footer="true" class="modal-footer">
     <div class="modal-footer-left">
       <slot name="left">
-        <button v-if="showCancel" type="button" class="cancel-button btn" @click="$emit('cancel')">
+        <button v-if="showCancel" type="button" class="cancel-button" @click="$emit('cancel')">
           <PhX />
           {{ cancelLabel }}
         </button>
@@ -62,7 +62,7 @@ const emit = defineEmits(['cancel', 'test', 'save'])
 .modal-footer {
   display: flex;
   align-items: center;
-  justify-content: space-between; /* cancel on far left, actions on far right */
+  justify-content: space-between;
   gap: 1rem;
   padding: 1rem 2rem;
   border-top: 1px solid #444;
@@ -72,32 +72,21 @@ const emit = defineEmits(['cancel', 'test', 'save'])
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  flex: 0 0 auto;
 }
 
 .modal-footer-actions {
   display: flex;
   gap: 0.75rem;
   align-items: center;
-  margin-left: 0; /* actions sit at the right because of space-between */
 }
 
 @media (max-width: 480px) {
   .modal-footer {
-    flex-direction: column;
+    flex-direction: column-reverse;
     align-items: stretch;
   }
-  .modal-footer-left {
-    order: 0;
-    margin-bottom: 0.5rem;
-    align-items: flex-start;
-  }
   .modal-footer-actions {
-    order: 1;
-    display: flex;
-    gap: 0.5rem;
     justify-content: stretch;
   }
-  .modal-footer-actions .btn { width: 100%; }
 }
 </style>

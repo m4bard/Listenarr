@@ -1,7 +1,12 @@
 <template>
   <Modal :visible="visible" size="lg" @close="closeModal">
     <template #header>
-      <ModalHeader :title="'Audiobook Details'" @close="closeModal" />
+      <div class="modal-title">
+        <h2>Audiobook Details</h2>
+      </div>
+      <button class="close-btn" @click="closeModal">
+        <PhX />
+      </button>
     </template>
 
     <template #default>
@@ -261,6 +266,24 @@ const capitalizeFirst = (str: string): string => {
 <style scoped>
 /* Keep only layout and content-related styles; modal wrapper styles come from shared modal stylesheet */
 
+.close-btn {
+  background: none;
+  border: none;
+  color: #ccc;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 6px;
+  font-size: 1.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.close-btn:hover {
+  background-color: #333;
+  color: white;
+}
+
 .book-layout {
   display: grid;
   grid-template-columns: 200px 1fr;
@@ -385,7 +408,7 @@ const capitalizeFirst = (str: string): string => {
 }
 
 .authors {
-  color: var(--brand-500);
+  color: #007acc;
   font-size: 1.1rem;
   font-weight: 500;
   margin: 0 0 0.25rem 0;
@@ -461,17 +484,32 @@ const capitalizeFirst = (str: string): string => {
 }
 
 /* Base modal-footer styles are centralized in src/assets/modals.css. Keep only this modal's responsive/footer-specific overrides. */
-.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
+.modal-footer { }
 
-/* Buttons are centralized in `src/assets/buttons.css`. Use `.btn` and `.btn-primary` if needed. */
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  font-size: 0.95rem;
+  gap: 0.5rem;
+}
 
 .btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
 
+.btn-primary {
+  background-color: #007acc;
+  color: white;
+}
+
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--brand-700);
+  background-color: #005fa3;
 }
 
 /* Button color variants centralized in `src/assets/modals.css` */
@@ -547,13 +585,13 @@ const capitalizeFirst = (str: string): string => {
 }
 
 .profile-select:hover {
-  border-color: var(--brand-500);
+  border-color: #007acc;
 }
 
 .profile-select:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.2);
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
 }
 
 .profile-help {
@@ -567,16 +605,20 @@ const capitalizeFirst = (str: string): string => {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
-  background: linear-gradient(135deg, var(--brand-500) 0%, var(--brand-600) 100%);
+  background: linear-gradient(135deg, #2196f3 0%, #1976d2 100%);
   color: white;
   font-weight: 500;
   padding: 0.375rem 0.75rem;
   border-radius: 6px;
-  box-shadow: 0 2px 4px rgba(var(--brand-rgb), 0.2);
+  box-shadow: 0 2px 4px rgba(33, 150, 243, 0.2);
+}
+
+.metadata-source-item .metadata-source-badge i {
+  font-size: 14px;
 }
 
 .detail-section h4 i {
-  color: var(--brand-500);
+  color: #007acc;
   margin-right: 0.5rem;
 }
 </style>

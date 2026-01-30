@@ -5,7 +5,8 @@
       <div class="nav-title">
         <h1>
           <PhUser v-if="type === 'author'" />
-          <PhBooks v-else /> {{ name }}
+          <PhBooks v-else />
+          {{ type === 'author' ? 'Author' : 'Series' }}: {{ name }}
         </h1>
       </div>
     </div>
@@ -82,7 +83,7 @@
       </div>
       <h2>Error Loading Library</h2>
       <p>{{ error }}</p>
-      <button @click="refreshLibrary" class="retry-button btn">
+      <button @click="refreshLibrary" class="retry-button">
         <PhArrowClockwise />
         Retry
       </button>
@@ -861,7 +862,7 @@ defineExpose({
 
 .count-badge {
   padding: 6px 12px;
-  background-color: var(--brand-500);
+  background-color: #007acc;
   border-radius: 6px;
   color: #fff;
   font-size: 12px;
@@ -870,7 +871,7 @@ defineExpose({
 
 .count-badge:hover,
 .count-badge:focus {
-  background-color: var(--brand-700);
+  background-color: #005fa3;
 }
 
 .toolbar-left,
@@ -1349,7 +1350,7 @@ defineExpose({
 }
 
 .collection-card.selected .collection-cover {
-  outline: 3px solid var(--brand-focus);
+  outline: 3px solid #007acc;
   outline-offset: 2px;
 }
 
@@ -1668,7 +1669,7 @@ defineExpose({
 }
 
 .loading-state i {
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .error-icon {
@@ -1690,7 +1691,7 @@ defineExpose({
   align-items: center;
   gap: 0.5rem;
   padding: 12px 24px;
-  background-color: var(--brand-500);
+  background-color: #007acc;
   color: white;
   border: none;
   border-radius: 6px;
@@ -1700,8 +1701,8 @@ defineExpose({
 }
 
 .retry-button:hover {
-  background-color: var(--brand-700);
-} 
+  background-color: #005fa3;
+}
 
 .empty-state h2 {
   color: white;
@@ -1717,7 +1718,7 @@ defineExpose({
   align-items: center;
   gap: 0.5rem;
   padding: 12px 24px;
-  background-color: var(--brand-500);
+  background-color: #007acc;
   color: white;
   border-radius: 6px;
   text-decoration: none;
@@ -1726,7 +1727,7 @@ defineExpose({
 }
 
 .add-button:hover {
-  background-color: var(--brand-700);
+  background-color: #005fa3;
 }
 
 .collection-cover:hover .status-overlay {
@@ -1897,9 +1898,9 @@ defineExpose({
 /* When the item is selected, style the custom box and show the check */
 .collection-card.selected .selection-checkbox::before,
 .audiobook-list-item.selected .selection-checkbox::before {
-  background-color: var(--brand-500);
-  border-color: var(--brand-500);
-  box-shadow: 0 0 0 4px rgba(var(--brand-rgb), 0.12);
+  background-color: #007acc;
+  border-color: #007acc;
+  box-shadow: 0 0 0 4px rgba(0, 122, 204, 0.12);
 }
 
 .audiobook-item.selected .selection-checkbox::after,
@@ -1911,7 +1912,7 @@ defineExpose({
 
 /* Focus outlines for keyboard navigation */
 .selection-checkbox input[type='checkbox']:focus-visible {
-  outline: 2px solid rgba(var(--brand-rgb), 0.3);
+  outline: 2px solid rgba(0, 122, 204, 0.3);
   outline-offset: 2px;
 }
 
@@ -1919,7 +1920,7 @@ defineExpose({
 .audiobook-list-item:focus-within,
 .collection-card:focus,
 .collection-card:focus-within {
-  outline: 2px solid rgba(var(--brand-rgb), 0.18);
+  outline: 2px solid rgba(0, 122, 204, 0.18);
   outline-offset: 2px;
   background-color: rgba(255, 255, 255, 0.02);
 }

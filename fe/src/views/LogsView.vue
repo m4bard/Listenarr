@@ -6,7 +6,7 @@
         <p>View and search application log entries</p>
       </div>
       <div class="header-actions">
-        <button class="action-button btn" @click="refreshLogs" :disabled="loading">
+        <button class="action-button" @click="refreshLogs" :disabled="loading">
           <template v-if="loading">
             <PhSpinner class="ph-spin" />
           </template>
@@ -15,7 +15,7 @@
           </template>
           {{ loading ? 'Refreshing...' : 'Refresh' }}
         </button>
-        <button class="action-button primary btn btn-primary" @click="downloadLogs">
+        <button class="action-button primary" @click="downloadLogs">
           <PhDownloadSimple />
           Download Logs
         </button>
@@ -43,7 +43,6 @@
             v-model="searchQuery"
             @input="applyFilters"
             placeholder="Search log messages..."
-            class="form-input"
           />
           <button v-if="searchQuery" class="clear-button" @click="clearSearch" title="Clear search">
             <PhX />
@@ -338,7 +337,7 @@ onMounted(() => {
 
 .header-content h1 i {
   font-size: 2rem;
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .header-content p {
@@ -368,17 +367,17 @@ onMounted(() => {
 
 .action-button:hover:not(:disabled) {
   background: #333;
-  border-color: var(--brand-500);
+  border-color: #007acc;
   transform: translateY(-1px);
 }
 
 .action-button.primary {
-  background: var(--brand-500);
-  border-color: var(--brand-500);
+  background: #007acc;
+  border-color: #007acc;
 }
 
 .action-button.primary:hover:not(:disabled) {
-  background: var(--brand-700);
+  background: #005a9e;
 }
 
 .action-button:disabled {
@@ -430,7 +429,7 @@ onMounted(() => {
 .filter-group select:focus,
 .filter-group input:focus {
   outline: none;
-  border-color: var(--brand-focus);
+  border-color: #007acc;
   background: #2a2a2a;
 }
 
@@ -453,13 +452,20 @@ onMounted(() => {
 
 .search-input input {
   width: 100%;
-  padding-right: 2.75rem; /* room for clear button */
-  padding-left: 2.5rem; /* keep space for search icon */
+  padding: 0.65rem 2.75rem 0.65rem 2.5rem;
+  background: #252525;
+  color: #fff;
+  border: 1px solid #444;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  transition: all 0.2s;
   box-sizing: border-box;
 }
 
 .search-input input:focus {
   outline: none;
+  border-color: #007acc;
+  background: #2a2a2a;
 }
 
 .clear-button {
@@ -531,7 +537,7 @@ onMounted(() => {
 
 .loading-state i {
   font-size: 2.5rem;
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 /* Logs Container */
@@ -569,7 +575,7 @@ onMounted(() => {
 }
 
 .log-entry.info {
-  border-left: 3px solid var(--brand-500);
+  border-left: 3px solid #007acc;
 }
 
 .log-entry.warning {
@@ -590,7 +596,7 @@ onMounted(() => {
 }
 
 .log-entry.info .log-icon svg {
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .log-entry.warning .log-icon svg {
@@ -619,8 +625,8 @@ onMounted(() => {
 }
 
 .log-entry.info .log-level {
-  background: rgba(var(--brand-rgb), 0.15);
-  color: var(--brand-500);
+  background: rgba(0, 122, 204, 0.15);
+  color: #007acc;
 }
 
 .log-entry.warning .log-level {
@@ -699,13 +705,13 @@ onMounted(() => {
 .page-button:hover:not(:disabled) {
   background: #333;
   color: #fff;
-  border-color: var(--brand-500);
+  border-color: #007acc;
 }
 
 .page-button.active {
-  background: var(--brand-500);
+  background: #007acc;
   color: #fff;
-  border-color: var(--brand-500);
+  border-color: #007acc;
 }
 
 .page-button:disabled {
@@ -736,7 +742,7 @@ onMounted(() => {
 
 .pagination-size select:focus {
   outline: none;
-  border-color: var(--brand-focus);
+  border-color: #007acc;
 }
 
 /* Empty State */

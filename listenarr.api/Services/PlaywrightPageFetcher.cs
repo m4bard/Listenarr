@@ -135,7 +135,19 @@ namespace Listenarr.Api.Services
                     UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
                 };
 
-                // Proxy support removed; Playwright will launch contexts without a configured proxy
+                // Wire proxy settings from ExternalRequestOptions into Playwright context proxy
+                if (!string.IsNullOrWhiteSpace(_options.UsProxyHost) && _options.UseUsProxy && _options.UsProxyPort > 0)
+                {
+                    var server = _options.UsProxyHost!.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                        ? $"{_options.UsProxyHost}:{_options.UsProxyPort}"
+                        : $"http://{_options.UsProxyHost}:{_options.UsProxyPort}";
+                    contextOptions.Proxy = new Proxy
+                    {
+                        Server = server,
+                        Username = string.IsNullOrWhiteSpace(_options.UsProxyUsername) ? null : _options.UsProxyUsername,
+                        Password = string.IsNullOrWhiteSpace(_options.UsProxyPassword) ? null : _options.UsProxyPassword
+                    };
+                }
 
                 await using var context = await _browser.NewContextAsync(contextOptions);
 

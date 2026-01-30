@@ -606,8 +606,30 @@ namespace Listenarr.Api.Services
                             HttpClient? usClient = null;
                             try
                             {
-                                // Prefer a named "us" HttpClient when available; otherwise use the default client.
-                                usClient = _httpClientFactory != null ? _httpClientFactory.CreateClient("us") : _httpClient;
+                                // Prefer a client configured from runtime application settings so proxy can be changed by user
+                                var appSettings = await _configurationService.GetApplicationSettingsAsync();
+                                if (appSettings != null && appSettings.UseUsProxy && !string.IsNullOrWhiteSpace(appSettings.UsProxyHost) && appSettings.UsProxyPort > 0)
+                                {
+                                    var handler = new HttpClientHandler
+                                    {
+                                        AutomaticDecompression = DecompressionMethods.All
+                                    };
+                                    var proxy = new WebProxy(appSettings.UsProxyHost, appSettings.UsProxyPort);
+                                    if (!string.IsNullOrWhiteSpace(appSettings.UsProxyUsername))
+                                        proxy.Credentials = new NetworkCredential(appSettings.UsProxyUsername, appSettings.UsProxyPassword ?? string.Empty);
+                                    handler.Proxy = proxy;
+                                    handler.UseProxy = true;
+                                    usClient = new HttpClient(handler, disposeHandler: true);
+                                }
+                                else if (_httpClientFactory != null)
+                                {
+                                    usClient = _httpClientFactory.CreateClient("us");
+                                }
+                                else
+                                {
+                                    usClient = _httpClient;
+                                }
+
                                 var retryResp = await usClient.SendAsync(retryReq, ct);
                                 if (retryResp.IsSuccessStatusCode)
                                     return await retryResp.Content.ReadAsStringAsync();

@@ -30,61 +30,8 @@ class MockWebSocket {
 // Centralized apiService and signalR mocks used by unit tests.
 import { vi } from 'vitest'
 
-// Provide default component stubs for Modal teleporting components so unit tests
-// render modal content inline instead of using real teleport behavior.
-import { config as vtConfig } from '@vue/test-utils'
-vtConfig.global = vtConfig.global || {}
-vtConfig.global.components = {
-  ...(vtConfig.global.components || {}),
-  // Render modal content inline with accessible dialog attributes so tests
-  // can query for role="dialog" and aria-* attributes reliably.
-  Modal: {
-    template:
-      '<div role="dialog" aria-modal="true" aria-labelledby="modal-title"><header id="modal-title"><slot name="header" /></header><div class="modal-body"><slot /></div><footer class="modal-footer"><slot name="footer" /></footer></div>',
-  },
-  ModalHeader: { template: '<div class="modal-header"><slot /></div>' },
-  ModalBody: { template: '<div class="modal-body"><slot /></div>' },
-}
-
-// Some components import the modal pieces locally (via named imports). To ensure
-// tests always render the simplified accessible modal markup (and avoid teleport
-// behavior), partially mock the modal module so SFC-local imports receive the
-// inline stubs while preserving other named exports from the real module.
-vi.mock('@/components/modal', async (importOriginal) => {
-  const actual = await importOriginal()
-  return {
-    ...actual,
-    Modal: {
-      emits: ['close'],
-      props: ['visible', 'title', 'showClose', 'size'],
-      template:
-        '<div v-if="visible" v-bind="$attrs" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header id="modal-title"><slot name="header" /></header><div class="modal-body"><slot /></div><footer class="modal-footer"><slot name="footer" /></footer></div>',
-      mounted() {
-        this._onKey = (e: KeyboardEvent) => {
-          if (e.key === 'Escape') this.$emit('close')
-        }
-        document.addEventListener('keydown', this._onKey)
-      },
-      unmounted() {
-        if (this._onKey) document.removeEventListener('keydown', this._onKey)
-      },
-    },
-    ModalHeader: {
-      props: ['title', 'icon', 'iconLabel'],
-      emits: ['close'],
-      template:
-        '<div class="modal-header"><component v-if="icon" :is="icon" /><h2 v-if="title">{{title}}</h2><button @click="$emit(\'close\')" class="close-btn">x</button></div>',
-    },
-    ModalBody: { template: '<div class="modal-body"><slot /></div>' },
-    ModalFooter: { template: '<div class="modal-footer"><slot /></div>' },
-  }
-})
-
-// Provide both the `apiService` object and common named exports that components
-// import directly (e.g. `getRemotePathMappings`, `ensureImageCached`). Tests
-// expect these named exports to exist on the mocked module.
-vi.mock('@/services/api', () => {
-  const apiService = {
+vi.mock('@/services/api', () => ({
+  apiService: {
     searchAudimetaByTitleAndAuthor: vi.fn(async () => ({ totalResults: 0, results: [] })),
     advancedSearch: async (params: unknown) => {
       const p = params as { title?: string; author?: string } | undefined
@@ -112,31 +59,8 @@ vi.mock('@/services/api', () => {
     previewLibraryPath: vi.fn(async () => ({ path: '' })),
     getQualityProfiles: vi.fn(async () => []),
     getApiConfigurations: vi.fn(async () => []),
-  }
-
-  // Named exports commonly imported by components/tests
-  return {
-    apiService,
-    // Path/remote helpers
-    getRemotePathMappings: vi.fn(async () => []),
-    testDownloadClient: vi.fn(async () => ({ success: true })),
-
-    // Image helpers
-    ensureImageCached: vi.fn(async (url: string) => url || ''),
-
-    // Logs / files
-    getLogs: vi.fn(async () => []),
-    downloadLogs: vi.fn(async () => null),
-
-    // Root folders / profiles
-    getRootFolders: vi.fn(async () => []),
-    getQualityProfiles: vi.fn(async () => []),
-
-    // Keep the startup / app settings helpers available as named exports too
-    getStartupConfig: vi.fn(async () => ({})),
-    getApplicationSettings: vi.fn(async () => ({})),
-  }
-})
+  },
+}))
 
 vi.mock('@/services/signalr', () => ({
   signalRService: {

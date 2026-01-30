@@ -1,7 +1,12 @@
 <template>
   <Modal :visible="show" size="md" @close="closeModal">
     <template #header>
-      <ModalHeader :title="'Advanced Search'" :icon="PhFunnelSimple" @close="closeModal" />
+      <div class="modal-title">
+        <h3><PhFunnelSimple /> Advanced Search</h3>
+      </div>
+      <button class="close-btn" @click="closeModal">
+        <PhX />
+      </button>
     </template>
 
     <template #default>
@@ -119,7 +124,7 @@ import {
   PhWarningCircle,
   PhTrash,
 } from '@phosphor-icons/vue'
-import { Modal, ModalHeader, ModalBody } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import { apiService } from '@/services/api'
 import type { SearchResult } from '@/types'
 
@@ -307,9 +312,34 @@ select.form-input option {
 }
 
 /* modal-footer styles are centralized in src/assets/modals.css; no local overrides required */
-.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
+.modal-footer { }
 
-/* Buttons are centralized in `src/assets/buttons.css` and modal color variants are in `src/assets/modals.css`. Use `.btn` / `.btn-primary` here to avoid duplication. */
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 0.95rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+}
+
+/* Button color variants centralized in `src/assets/modals.css` */
+
+.btn-primary {
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  color: white;
+  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
+}
+
+.btn-primary:hover:not(:disabled) {
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
+}
 
 .btn:disabled {
   opacity: 0.5;

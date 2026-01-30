@@ -84,13 +84,9 @@ namespace Listenarr.Api.Controllers
                         {
                             r.ImageUrl = $"/api/images/{r.Asin}";
                         }
-                        else
-                        {
-                            // Let the client trigger an on-demand download by including the original URL as a query param
-                            r.ImageUrl = $"/api/images/{r.Asin}?url={Uri.EscapeDataString(r.ImageUrl)}";
-                        }
                     }
-                    // If no external URL was present, map to API endpoint if ASIN present
+                    // If no external URL or download failed, still map to API endpoint if ASIN present
+                    // This ensures consistent image serving and avoids external URL failures
                     else if (!string.IsNullOrWhiteSpace(r.Asin))
                     {
                         r.ImageUrl = $"/api/images/{r.Asin}";
@@ -152,14 +148,6 @@ namespace Listenarr.Api.Controllers
                                     {
                                         r.ImageUrl = $"/api/images/{r.Asin}";
                                     }
-                                    else
-                                    {
-                                        r.ImageUrl = $"/api/images/{r.Asin}?url={Uri.EscapeDataString(r.ImageUrl)}";
-                                    }
-                                }
-                                else if (!string.IsNullOrWhiteSpace(r.Asin))
-                                {
-                                    r.ImageUrl = $"/api/images/{r.Asin}";
                                 }
                             }
                             catch (Exception ex)
@@ -263,7 +251,6 @@ namespace Listenarr.Api.Controllers
                                         {
                                             var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(md.ImageUrl, md.Asin);
                                             if (!string.IsNullOrWhiteSpace(downloaded)) md.ImageUrl = $"/api/images/{md.Asin}";
-                                            else md.ImageUrl = $"/api/images/{md.Asin}?url={Uri.EscapeDataString(md.ImageUrl)}";
                                         }
                                     }
                                     catch (Exception ex)

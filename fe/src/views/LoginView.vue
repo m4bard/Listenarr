@@ -30,7 +30,7 @@
         </div>
 
         <div class="form-row form-remember">
-          <Checkbox v-model="rememberMe">Remember me</Checkbox>
+          <label> <input type="checkbox" v-model="rememberMe" /> Remember me </label>
         </div>
 
         <div class="form-row">
@@ -53,14 +53,13 @@
 <script lang="ts">
 import { defineComponent, ref } from 'vue'
 import PasswordInput from '@/components/inputs/PasswordInput.vue'
-import Checkbox from '@/components/inputs/Checkbox.vue'
 import { apiService } from '@/services/api'
 import { useRouter } from 'vue-router'
 import { useAuthStore } from '@/stores/auth'
 // Vite static import for the logo so bundler resolves the asset reliably
 
 export default defineComponent({
-  components: { PasswordInput, Checkbox },
+  components: { PasswordInput },
   name: 'LoginView',
   setup() {
     const username = ref<string>('')
@@ -168,7 +167,7 @@ export default defineComponent({
 .title {
   text-align: center;
   margin: 0 0 1.5rem;
-  color: var(--brand-500);
+  color: #2196f3;
   font-size: 1.5rem;
   font-weight: bold;
 }
@@ -219,7 +218,7 @@ export default defineComponent({
   margin: 0;
   padding: 0;
   appearance: auto; /* allow native look unless accent-color supported */
-  accent-color: var(--brand-500); /* modern browsers: sets the checked color */
+  accent-color: #2196f3; /* modern browsers: sets the checked color */
   border: 1px solid #3a3a3a;
   border-radius: 6px;
   background-color: #1a1a1a;
@@ -227,7 +226,7 @@ export default defineComponent({
 }
 
 .form-remember input[type='checkbox']:focus {
-  outline: 2px solid rgba(var(--brand-rgb), 0.18);
+  outline: 2px solid rgba(33, 150, 243, 0.18);
   outline-offset: 2px;
 }
 
@@ -239,7 +238,29 @@ export default defineComponent({
   gap: 0.5rem;
 }
 
-/* Use centralized `.btn` / `.btn-primary` in `src/assets/buttons.css` for primary button visuals */
+.btn-primary {
+  padding: 0.75rem;
+  background-color: #2196f3;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: background-color 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-primary[disabled] {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+.btn-primary:hover {
+  background-color: #1976d2;
+}
 
 .error {
   color: #ff6b6b;

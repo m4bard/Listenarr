@@ -2,7 +2,7 @@
   <div class="downloads-page">
     <div class="downloads-header">
       <h2>Downloads</h2>
-      <button @click="refreshDownloads" :disabled="downloadsStore.isLoading" class="refresh-button btn">
+      <button @click="refreshDownloads" :disabled="downloadsStore.isLoading" class="refresh-button">
         {{ downloadsStore.isLoading ? 'Refreshing...' : 'Refresh' }}
       </button>
     </div>
@@ -97,7 +97,7 @@
                 <button
                   v-if="['Queued', 'Downloading'].includes(download.status)"
                   @click="cancelDownload(download.id)"
-                  class="action-button cancel btn"
+                  class="action-button cancel"
                 >
                   Cancel
                 </button>
@@ -105,7 +105,7 @@
                 <button
                   v-if="download.status === 'Failed'"
                   @click="retryDownload(download)"
-                  class="action-button retry btn"
+                  class="action-button retry"
                 >
                   Retry
                 </button>
@@ -113,12 +113,12 @@
                 <button
                   v-if="download.finalPath"
                   @click="openFolder(download.finalPath)"
-                  class="action-button open btn"
+                  class="action-button open"
                 >
                   Open Folder
                 </button>
 
-                <button @click="openInspect(download)" class="action-button inspect btn">
+                <button @click="openInspect(download)" class="action-button inspect">
                   Inspect
                 </button>
               </div>

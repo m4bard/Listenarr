@@ -741,8 +741,52 @@ onUnmounted(() => {
   gap: 0.75rem;
 }
 
-/* Button visuals are centralized in `src/assets/buttons.css`.
-   Keep only activity-specific layout rules here. */
+.btn {
+  padding: 0.65rem 1.25rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all 0.2s ease;
+  font-size: 0.9rem;
+}
+
+/* Button color variants centralized in `src/assets/modals.css` */
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.btn-icon {
+  background: none;
+  border: none;
+  color: #adb5bd;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+  font-size: 1.25rem;
+}
+
+.btn-icon:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.btn-icon.btn-danger:hover {
+  background-color: rgba(250, 82, 82, 0.15);
+  color: #fa5252;
+}
+
+.activity-filters {
+  margin-bottom: 2rem;
+}
+
 .filter-tabs {
   display: flex;
   gap: 0.5rem;

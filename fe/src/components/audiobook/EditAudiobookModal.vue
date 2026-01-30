@@ -1,7 +1,12 @@
 <template>
   <Modal :visible="isOpen" size="md" @close="close">
     <template #header>
-      <ModalHeader :title="'Edit Audiobook'" @close="close" :icon="PhPencil" />
+      <div class="modal-title">
+        <h3><PhPencil /> Edit Audiobook</h3>
+      </div>
+      <button class="close-btn" @click="close">
+        <PhX />
+      </button>
     </template>
 
     <template #default>
@@ -70,43 +75,60 @@
             <div class="destination-display">
               <!-- Read-only display mode -->
               <div v-if="!editingDestination" class="destination-readonly">
-                <input type="text" :value="combinedBasePath() || 'No destination set'" class="form-input readonly-input"
-                  readonly disabled />
-                <button type="button" class="icon-btn btn-primary btn-edit-destination" @click="startEditingDestination"
-                  title="Edit destination" aria-label="Edit destination">
+                <input
+                  type="text"
+                  :value="combinedBasePath() || 'No destination set'"
+                  class="form-input readonly-input"
+                  readonly
+                  disabled
+                />
+                <button
+                  type="button"
+                  class="btn-edit-destination"
+                  @click="startEditingDestination"
+                  title="Edit destination"
+                >
                   <PhPencil :size="16" />
+                  <span class="btn-text">Edit</span>
                 </button>
               </div>
               <!-- Edit mode -->
               <div v-else class="destination-edit">
                 <div class="destination-row">
                   <div class="root-select">
-                    <RootFolderSelect :hideLabel="true" :hideBrowse="!isUsingCustomPath" :autoFocusCustom="true"
-                      :externalCustom="true" :inline="true" v-model:rootId="selectedRootId" v-model:customPath="customRootPath"
-                      @open-browser="openCustomBrowser" />
+                    <RootFolderSelect
+                      :hideLabel="true"
+                      :hideBrowse="!isUsingCustomPath"
+                      :autoFocusCustom="true"
+                      :inline="true"
+                      v-model:rootId="selectedRootId"
+                      v-model:customPath="customRootPath"
+                      @open-browser="openCustomBrowser"
+                    />
                   </div>
 
-                  <!-- External inline custom path moved outside of the root-select -->
-                  <div v-if="isUsingCustomPath" class="custom-path inline-mode">
-                    <div class="custom-path-row">
-                      <input ref="externalCustomInput" type="text" class="form-input custom-input" placeholder="Absolute path (e.g. C:\\Audiobooks)" v-model="customRootPath" @input="onExternalCustomInput" @keydown.enter.prevent="onExternalCustomEnter" />
-                      <button type="button" class="icon-btn btn-secondary btn-inline-browse" @click="openCustomBrowser" title="Browse for folder" aria-label="Browse for folder">
-                        <PhFolder />
-                      </button>
-                    </div>
-                  </div>
-
-                  <input v-if="!isUsingCustomPath && selectedRootId !== 0" type="text" v-model="formData.relativePath"
-                    class="form-input relative-input" placeholder="e.g. Author/Title" />
+                  <input
+                    v-if="!isUsingCustomPath"
+                    type="text"
+                    v-model="formData.relativePath"
+                    class="form-input relative-input"
+                    placeholder="e.g. Author/Title"
+                  />
 
                   <div class="destination-actions">
-                    <button type="button" class="btn icon-btn btn-secondary btn-sm" @click="editingDestination = false"
-                      aria-label="Cancel destination edit" title="Cancel">
-                      <PhX :size="16" />
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-sm"
+                      @click="editingDestination = false"
+                    >
+                      Cancel
                     </button>
-                    <button type="button" class="btn icon-btn btn-primary btn-sm" @click="finishEditingDestination"
-                      aria-label="Save destination" title="Done">
-                      <PhCheck :size="16" />
+                    <button
+                      type="button"
+                      class="btn btn-primary btn-sm"
+                      @click="finishEditingDestination"
+                    >
+                      Done
                     </button>
                   </div>
                 </div>
@@ -114,10 +136,11 @@
                 <!-- Custom path status removed for streamlined UI -->
               </div>
               <p class="help-text">
-                <span v-if="!editingDestination">Click the edit button to change the destination folder.</span>
+                <span v-if="!editingDestination"
+                  >Click the edit button to change the destination folder.</span
+                >
                 <span v-else>
-                  <strong>Choose a root folder</strong> from the dropdown, or select <em>"Custom path"</em> to specify
-                  any location.
+                  <strong>Choose a root folder</strong> from the dropdown, or select <em>"Custom path"</em> to specify any location.
                   The right field is for organizing within the selected root.
                 </span>
               </p>
@@ -134,7 +157,12 @@
               <div class="tags-list">
                 <span v-for="(tag, index) in formData.tags" :key="index" class="tag-item">
                   {{ tag }}
-                  <button type="button" class="tag-remove" @click="removeTag(index)" title="Remove tag">
+                  <button
+                    type="button"
+                    class="tag-remove"
+                    @click="removeTag(index)"
+                    title="Remove tag"
+                  >
                     <PhX :size="16" weight="bold" />
                   </button>
                 </span>
@@ -143,10 +171,21 @@
                 </span>
               </div>
               <div class="tag-input-group">
-                <input type="text" v-model="newTag" @keypress.enter.prevent="addTag" placeholder="Add a tag..."
-                  class="tag-input" />
-                <button type="button" @click="addTag" class="icon-btn btn-primary btn-add-tag" :disabled="!newTag.trim()" title="Add tag" aria-label="Add tag">
-                  <PhPlus :size="16" />
+                <input
+                  type="text"
+                  v-model="newTag"
+                  @keypress.enter.prevent="addTag"
+                  placeholder="Add a tag..."
+                  class="tag-input"
+                />
+                <button
+                  type="button"
+                  @click="addTag"
+                  class="btn-add-tag"
+                  :disabled="!newTag.trim()"
+                >
+                  <i class="ph ph-plus"></i>
+                  Add
                 </button>
               </div>
             </div>
@@ -160,26 +199,34 @@
               Content Information
             </label>
             <div class="checkbox-group">
-              <Checkbox v-model="formData.abridged">
-                <strong>Abridged</strong>
-                <small>This is an abridged (shortened) version</small>
-              </Checkbox>
-              <Checkbox v-model="formData.explicit">
-                <strong>Explicit Content</strong>
-                <small>Contains explicit language or mature content</small>
-              </Checkbox>
+              <label class="checkbox-label">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" v-model="formData.abridged" />
+                  <div class="checkbox-content">
+                    <span class="checkbox-title">Abridged</span>
+                    <small>This is an abridged (shortened) version</small>
+                  </div>
+                </div>
+              </label>
+              <label class="checkbox-label">
+                <div class="checkbox-wrapper">
+                  <input type="checkbox" v-model="formData.explicit" />
+                  <div class="checkbox-content">
+                    <span class="checkbox-title">Explicit Content</span>
+                    <small>Contains explicit language or mature content</small>
+                  </div>
+                </div>
+              </label>
             </div>
           </div>
 
-          <button type="submit" style="display: none;" aria-hidden="true"></button>
+<button type="submit" style="display: none;" aria-hidden="true"></button>
         </form>
       </ModalBody>
     </template>
 
     <template #footer>
-      <button type="button" class="btn btn-secondary cancel-button" @click="close" title="Close" aria-label="Close">
-        Close
-      </button>
+      <button type="button" class="cancel-button" @click="close"><PhX /> Cancel</button>
       <div v-if="moveJob" class="move-status">
         <small>
           <strong>Move Job</strong>: {{ moveJob.jobId }} — <em>{{ moveJob.status }}</em>
@@ -188,47 +235,107 @@
           <small>Target: {{ moveJob.target }}</small>
         </div>
       </div>
-      <button type="button" class="btn btn-primary" @click="handleSave" :disabled="saving || !hasChanges" :title="saving ? 'Saving...' : 'Save'" :aria-label="saving ? 'Saving' : 'Save'">
-        <span v-if="saving"><PhSpinner class="ph-spin" /> Saving...</span>
-        <span v-else>Save</span>
+      <button type="button" class="btn btn-primary" @click="handleSave" :disabled="saving || !hasChanges">
+        <PhSpinner v-if="saving" class="ph-spin" />
+        <PhCheck v-else /> {{ saving ? 'Saving...' : 'Save Changes' }}
       </button>
     </template>
   </Modal>
 
   <!-- Folder browser for custom path selection -->
-  <FolderBrowserModal
-    v-model:visible="showCustomBrowser"
-    v-model:modelValue="customRootPath"
-    :show-input="true"
-    @close="closeCustomBrowser"
-  />
+  <FolderBrowser v-if="showCustomBrowser" v-model="customRootPath" :show-input="true" @browser-closed="closeCustomBrowser" />
 
+  <Modal :visible="showMoveConfirm" size="md" @close="cancelMoveConfirm">
+    <template #header>
+      <div class="confirm-header">
+        <i class="ph ph-folder-open"></i>
+        <h3>Move Audiobook Files</h3>
+      </div>
+      <button class="close-btn" @click="cancelMoveConfirm"><i class="ph ph-x"></i></button>
+    </template>
 
-  <MoveAudiobookModal
-    :visible="showMoveConfirm"
-    :pendingMove="pendingMove"
-    v-model:moveFiles="modalMoveFiles"
-    v-model:deleteEmpty="modalDeleteEmpty"
-    @cancel="cancelMoveConfirm"
-    @confirm="(payload) => { if (payload?.moveFiles) confirmMove(); else confirmChangeWithoutMoving(); }"
-  />
+    <template #default>
+      <div class="confirm-dialog">
+        <div class="confirm-body">
+          <div class="confirm-description">
+            <p>You're changing the destination folder for this audiobook. This will move all associated files.</p>
+          </div>
+
+          <div class="path-comparison">
+            <div class="path-section">
+              <div class="path-label">
+                <i class="ph ph-arrow-right"></i>
+                <span>From:</span>
+              </div>
+              <div class="path-display">
+                <code>{{ pendingMove?.original || 'No current path' }}</code>
+              </div>
+            </div>
+
+            <div class="path-section">
+              <div class="path-label">
+                <i class="ph ph-arrow-down"></i>
+                <span>To:</span>
+              </div>
+              <div class="path-display">
+                <code>{{ pendingMove?.combined || 'No destination path' }}</code>
+              </div>
+            </div>
+          </div>
+
+          <div class="confirm-options">
+            <div class="checkbox-row">
+              <label>
+                <input type="checkbox" v-model="modalMoveFiles" />
+                <div class="checkbox-content">
+                  <span class="checkbox-title">Move files now</span>
+                  <small>Copy all audiobook files to the new location (recommended)</small>
+                </div>
+              </label>
+            </div>
+            <div class="checkbox-row" v-if="modalMoveFiles">
+              <label>
+                <input type="checkbox" v-model="modalDeleteEmpty" />
+                <div class="checkbox-content">
+                  <span class="checkbox-title">Clean up empty folders</span>
+                  <small>Delete the original folder if it becomes empty after moving</small>
+                </div>
+              </label>
+            </div>
+          </div>
+
+          <div class="confirm-actions">
+            <button class="btn btn-secondary" @click="cancelMoveConfirm">
+              <i class="ph ph-x"></i>
+              Cancel
+            </button>
+            <button class="btn btn-secondary" @click="confirmChangeWithoutMoving">
+              <i class="ph ph-database"></i>
+              Update Path Only
+            </button>
+            <button class="btn btn-primary" :disabled="!modalMoveFiles" @click="confirmMove">
+              <i class="ph ph-folder-open"></i>
+              Move Files
+            </button>
+          </div>
+        </div>
+      </div>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useToast } from '@/services/toastService'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import type { Audiobook, QualityProfile } from '@/types'
-import { PhX, PhPencil, PhSpinner, PhCheck, PhFolder, PhPlus } from '@phosphor-icons/vue'
+import { PhX, PhPencil, PhSpinner, PhCheck, PhFolder, PhInfo } from '@phosphor-icons/vue' 
 import { useConfigurationStore } from '@/stores/configuration'
 import RootFolderSelect from '@/components/inputs/RootFolderSelect.vue'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
-import Checkbox from '@/components/inputs/Checkbox.vue'
-import FolderBrowserModal from '@/components/modal/FolderBrowserModal.vue'
-import { Modal, ModalHeader, ModalBody, MoveAudiobookModal } from '@/components/modal'
-// FormRow and CheckboxCard not used in this component script; UI uses local markup
+import { Modal, ModalBody } from '@/components/modal'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 
 // Diagnostic: surface undefined imports that can cause `Invalid vnode type` warnings
@@ -240,7 +347,7 @@ if (typeof window !== 'undefined') {
       RootFolderSelectExists: typeof RootFolderSelect !== 'undefined',
       FolderBrowserExists: typeof FolderBrowser !== 'undefined',
     })
-  } catch {
+  } catch (e) {
     /* noop */
   }
 }
@@ -270,7 +377,7 @@ const qualityProfiles = ref<QualityProfile[]>([])
 const configStore = useConfigurationStore()
 const rootStore = useRootFoldersStore()
 const selectedRootId = ref<number | null>(null) // null/use default, 0 = custom
-const customRootPath = ref<string | undefined>(undefined)
+const customRootPath = ref<string | null>(null)
 
 const isUsingCustomPath = computed(() => {
   // True when user has selected an explicit custom base path (0) or supplied an absolute path
@@ -317,19 +424,7 @@ function closeCustomBrowser() {
   showCustomBrowser.value = false
 }
 
-// External custom input ref and helpers (used when we move the custom input outside the select)
-const externalCustomInput = ref<HTMLInputElement | null>(null)
-
-function onExternalCustomInput() {
-  // Ensure parent selection state indicates custom path
-  selectedRootId.value = 0
-}
-
-function onExternalCustomEnter() {
-  selectedRootId.value = 0
-}
-
-// const RECENT_KEY = 'listenarr.recentCustomPaths'
+const RECENT_KEY = 'listenarr.recentCustomPaths'
 
 onMounted(() => {
   // Initialization code if needed
@@ -351,12 +446,10 @@ watch(() => selectedRootId.value, (v, old) => {
     }
 
     if (prevRoot) {
-      // Prefill the custom input with the precise destination (basePath if available)
-      const base = (formData.value.basePath && formData.value.basePath.trim()) || props.audiobook?.basePath || prevRoot
-      customRootPath.value = base
-
-      // Focus external custom input if it's visible
-      focusExternalInput()
+      const rel = (formData.value.relativePath || '').trim()
+      const needsSep = !(prevRoot.endsWith('/') || prevRoot.endsWith('\\'))
+      const cb = rel ? prevRoot + (needsSep ? '/' : '') + rel : prevRoot
+      customRootPath.value = cb
     }
   }
 })
@@ -366,11 +459,7 @@ watch(
   () => showCustomBrowser.value,
   (isOpen, wasOpen) => {
     if (wasOpen && !isOpen && customRootPath.value) {
-      // Path is set from browser. For custom roots, the custom input is the exact
-      // destination — clear the relative so it isn't appended later.
-      formData.value.relativePath = ''
-      // ensure focus behavior is stable when browser closes
-      focusExternalInput()
+      // Path is set from browser
     }
   },
 )
@@ -410,7 +499,6 @@ function confirmMove() {
       moveFiles: Boolean(modalMoveFiles.value),
       deleteEmptySource: Boolean(modalDeleteEmpty.value),
     })
-          
   moveConfirmResolver = null
   showMoveConfirm.value = false
   pendingMove.value = null
@@ -493,8 +581,8 @@ async function initializeForm() {
   if (props.audiobook?.basePath && rootStore.folders.length > 0) {
     // Check if basePath starts with any configured root folder
     const matchingRoot = rootStore.folders.find((folder) => {
-      const normBase = toForward(props.audiobook!.basePath!)
-      const normRoot = toForward(folder.path)
+      const normBase = props.audiobook!.basePath!.replace(/\\/g, '/')
+      const normRoot = folder.path.replace(/\\/g, '/')
       const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
       return normBase.toLowerCase().startsWith(rootWithSlash.toLowerCase())
     })
@@ -502,7 +590,7 @@ async function initializeForm() {
     if (matchingRoot) {
       // Found a matching configured root folder
       selectedRootId.value = matchingRoot.id
-      customRootPath.value = undefined
+      customRootPath.value = null
     } else {
       // No matching configured root folder - use custom path
       selectedRootId.value = 0
@@ -512,12 +600,12 @@ async function initializeForm() {
     // No configured named root folders. If the app has an outputPath and the audiobook's basePath
     // sits under that outputPath, treat it as relative to the outputPath and show the relative
     // input. Otherwise treat it as an explicit custom path.
-    const out = rootPath.value ? toForward(rootPath.value) : undefined
-    const base = toForward(props.audiobook.basePath)
-    if (out && base.toLowerCase().startsWith(out.toLowerCase())) {
+    const out = rootPath.value
+    const base = props.audiobook.basePath.replace(/\\/g, '/')
+    if (out && base.toLowerCase().startsWith(out.replace(/\\/g, '/').toLowerCase())) {
       // Use configured output path as the chosen root and derive relative path later
       selectedRootId.value = null
-      customRootPath.value = undefined
+      customRootPath.value = null
     } else {
       // No match: explicit custom path
       selectedRootId.value = 0
@@ -526,11 +614,17 @@ async function initializeForm() {
   } else {
     // No basePath - use default selection
     selectedRootId.value = null
-    customRootPath.value = undefined
+    customRootPath.value = null
   }
 
   // helper functions have been moved to module scope above so they are callable from template
   // previewPath() and deriveRelativeFromBase() now live at module scope
+
+  function startEditingDestination() {
+    // Ensure we have the latest relative path derived before showing the edit controls
+    previewPath()
+    editingDestination.value = true
+  }
 
   // If there's an existing basePath that uses the configured root, derive the relative path
   try {
@@ -566,17 +660,8 @@ async function initializeForm() {
   }
 }
 
-import { toForward, trimTrailingSlash, normalizeForCompare, isAbsolutePath, stripRootPrefix } from '@/utils/path'
-
-function focusExternalInput() {
-  setTimeout(() => externalCustomInput.value?.focus(), 0)
-}
-function isCustomRootSelected() {
-  return selectedRootId.value === 0
-}
-
 function resolveSelectedRootPath(): string | null {
-  if (isCustomRootSelected()) {
+  if (selectedRootId.value === 0) {
     return customRootPath.value || null
   }
   if (selectedRootId.value && selectedRootId.value > 0) {
@@ -591,20 +676,9 @@ function combinedBasePath(): string | null {
   const rel = (formData.value.relativePath || '').trim()
   if (!r && !rel) return null
   if (!r) return rel
-
-  // If user selected a custom root (external custom path), treat the custom
-  // input as the exact destination where files should be stored. Do NOT
-  // append the relative or naming pattern — return the custom root exactly.
-  if (selectedRootId.value === 0) {
-    let out = toForward(r)
-    out = trimTrailingSlash(out)
-    return out
-  }
-
   if (!rel) return r
   const needsSep = !(r.endsWith('/') || r.endsWith('\\'))
-  const sep = r.includes('\\') ? '\\' : '/'
-  return r + (needsSep ? sep : '') + rel
+  return r + (needsSep ? '/' : '') + rel
 }
 
 // Helper: derive relative path from full base and configured root (moved to module scope so it can be reused)
@@ -615,12 +689,12 @@ function deriveRelativeFromBase(
   if (!base) return ''
   if (!root) return base
 
-  const normBase = toForward(base)
-  const normRoot = toForward(root)
+  const normBase = base.replace(/\\/g, '/')
+  const normRoot = root.replace(/\\/g, '/')
   const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
 
-  if (normalizeForCompare(normBase) === normalizeForCompare(normRoot)) return ''
-  if (normalizeForCompare(normBase).startsWith(normalizeForCompare(rootWithSlash))) {
+  if (normBase.toLowerCase() === normRoot.toLowerCase()) return ''
+  if (normBase.toLowerCase().startsWith(rootWithSlash.toLowerCase())) {
     const rel = normBase.slice(rootWithSlash.length).replace(/^\/+/, '')
     const useBackslash = root.includes('\\')
     return useBackslash ? rel.replace(/\//g, '\\') : rel
@@ -665,7 +739,7 @@ function startEditingDestination() {
 function finishEditingDestination() {
   try {
     const chosenRoot = resolveSelectedRootPath() || rootPath.value
-    const val = (formData.value.relativePath || '').trim()
+    let val = (formData.value.relativePath || '').trim()
 
     if (!chosenRoot) {
       // No root available — nothing to do
@@ -673,31 +747,14 @@ function finishEditingDestination() {
       return
     }
 
-    // If user is editing a Custom path, the custom input defines the exact destination
-    // so clear the relative and exit early (do not normalize or append anything).
-    if (selectedRootId.value === 0) {
-      formData.value.relativePath = ''
-      editingDestination.value = false
-      return
-    }
-
-    // If the relative contains the root segments, attempt to strip them
-    try {
-      const stripped = stripRootPrefix(chosenRoot, val)
-      if (stripped != null) formData.value.relativePath = stripped
-    } catch (err) {
-      logger.debug('Failed to strip root from relative input:', err)
-    }
-
-    const isAbsolute = isAbsolutePath((formData.value.relativePath || val) || '')
+    const isAbsolute = /^([a-zA-Z]:[\\/]|[\\/])/.test(val)
 
     // If user typed an absolute path or included the chosen root prefix, derive a relative path
-    const relOrVal = (formData.value.relativePath || val) || ''
-    if (isAbsolute || (relOrVal && normalizeForCompare(relOrVal).startsWith(normalizeForCompare(chosenRoot || '')))) {
-      formData.value.relativePath = deriveRelativeFromBase(relOrVal || formData.value.basePath || '', chosenRoot)
+    if (isAbsolute || (val && val.toLowerCase().startsWith((chosenRoot || '').toLowerCase()))) {
+      formData.value.relativePath = deriveRelativeFromBase(val || formData.value.basePath || '', chosenRoot)
     } else {
       // Keep the value as-is (user provided a relative path)
-      formData.value.relativePath = relOrVal
+      formData.value.relativePath = val
     }
   } catch (err) {
     console.debug('Failed to normalize relative path on Done:', err)
@@ -733,13 +790,13 @@ async function handleSave() {
     // If user changed destination/base path, include the combined root+relative value in updates
     const combined = combinedBasePath()
     if ((combined || '') !== (props.audiobook.basePath || '')) {
-      ; (updates as Partial<Audiobook>).basePath = combined ?? undefined
+      ;(updates as Partial<Audiobook>).basePath = combined ?? undefined
     }
 
     // If qualityProfileId is null, send -1 to signal "use default"
     // Otherwise send the actual ID
     if (formData.value.qualityProfileId === null) {
-      ; (updates as { qualityProfileId?: number }).qualityProfileId = -1 // -1 means "use default profile"
+      ;(updates as { qualityProfileId?: number }).qualityProfileId = -1 // -1 means "use default profile"
     } else {
       updates.qualityProfileId = formData.value.qualityProfileId
     }
@@ -783,13 +840,13 @@ async function handleSave() {
               toast.success('Move completed', `Files moved to ${job.target || combined}`)
               try {
                 if (moveUnsub.value) moveUnsub.value()
-              } catch { }
+              } catch {}
               moveUnsub.value = null
             } else if (job.status === 'Failed') {
               toast.error('Move failed', job.error || 'Move job failed. Check logs for details.')
               try {
                 if (moveUnsub.value) moveUnsub.value()
-              } catch { }
+              } catch {}
               moveUnsub.value = null
             } else if (job.status === 'Processing') {
               toast.info('Move in progress', `Moving files to ${job.target || combined}`)
@@ -830,10 +887,10 @@ function close() {
     if (moveUnsub.value) {
       try {
         moveUnsub.value()
-      } catch { }
+      } catch {}
       moveUnsub.value = null
     }
-  } catch { }
+  } catch {}
   moveJob.value = null
   emit('close')
 }
@@ -841,8 +898,6 @@ function close() {
 
 <style scoped>
 /* Modal layout is provided by shared `modals.css` - keep component-specific scrollbars and spacing tweaks */
-
-
 
 .modal-body {
   padding: 2rem;
@@ -920,7 +975,7 @@ function close() {
 
 .confirm-header i {
   font-size: 1.5rem;
-  color: var(--brand-focus);
+  color: #007acc;
 }
 
 .confirm-header h3 {
@@ -969,7 +1024,7 @@ function close() {
 }
 
 .path-label i {
-  color: var(--brand-focus);
+  color: #007acc;
   font-size: 1rem;
 }
 
@@ -1012,7 +1067,7 @@ function close() {
 
 .checkbox-row:hover {
   background: #2d2d30;
-  border-color: var(--brand-focus);
+  border-color: #007acc;
 }
 
 .checkbox-row label {
@@ -1028,7 +1083,7 @@ function close() {
   margin-top: 0.125rem;
   width: 1rem;
   height: 1rem;
-  accent-color: var(--brand-focus);
+  accent-color: #007acc;
   cursor: pointer;
 }
 
@@ -1039,9 +1094,13 @@ function close() {
   flex: 1;
 }
 
+.checkbox-title {
+  font-weight: 500;
+  color: #ffffff;
+  font-size: 0.95rem;
+}
 
-
-.checkbox-label {
+.checkbox-content small {
   color: #aaaaaa;
   font-size: 0.8rem;
   line-height: 1.3;
@@ -1062,7 +1121,7 @@ function close() {
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
   border-radius: 6px;
-  font-weight: 400; /* normal weight */
+  font-weight: 500;
   font-size: 0.9rem;
   transition: all 0.2s ease;
   border: 1px solid transparent;
@@ -1078,12 +1137,12 @@ function close() {
 /* Use centralized button color variants from `src/assets/modals.css` for confirm actions */
 
 .confirm-actions .btn-primary {
-  background: var(--brand-focus);
+  background: #007acc;
   color: #ffffff;
 }
 
 .confirm-actions .btn-primary:hover:not(:disabled) {
-  background: var(--brand-700);
+  background: #0056b3;
 }
 
 /* Mobile responsive adjustments */
@@ -1137,7 +1196,7 @@ function close() {
 }
 
 .form-label i {
-  color: var(--brand-focus);
+  color: #007acc;
 }
 
 .radio-group {
@@ -1164,15 +1223,15 @@ function close() {
 }
 
 .radio-label.active {
-  background-color: rgba(var(--brand-rgb), 0.15);
-  border-color: var(--brand-focus);
+  background-color: rgba(0, 122, 204, 0.15);
+  border-color: #007acc;
 }
 
 .radio-label input[type='radio'] {
   width: 20px;
   height: 20px;
   cursor: pointer;
-  accent-color: var(--brand-focus);
+  accent-color: #007acc;
   margin-top: 0.125rem;
   flex-shrink: 0;
 }
@@ -1218,8 +1277,8 @@ function close() {
 
 .form-select:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
 }
 
 .help-text {
@@ -1238,17 +1297,26 @@ function close() {
   flex-wrap: wrap;
 }
 
-.modal-footer>.btn {
+.modal-footer > .btn {
   flex-shrink: 0;
-}
+} 
 
 /* Base .btn moved to src/assets/modals.css; keep shrink behavior and any modal-specific overrides */
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+} 
+
+/* Button color variants centralized in `src/assets/modals.css` */
+
+.btn-primary {
+  background-color: #007acc;
+  color: white;
 }
 
-/* Button color variants are centralized in `src/assets/modals.css` */
+.btn-primary:hover:not(:disabled) {
+  background-color: #005fa3;
+}
 
 .move-status {
   display: flex;
@@ -1309,7 +1377,7 @@ function close() {
 
 .tag-item:hover {
   background-color: #333;
-  border-color: var(--brand-focus);
+  border-color: #007acc;
   color: white;
 }
 
@@ -1373,9 +1441,9 @@ function close() {
 
 .tag-input:focus {
   outline: none;
-  border-color: var(--brand-focus);
+  border-color: #007acc;
   background-color: #2d2d2d;
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
 }
 
 .tag-input::placeholder {
@@ -1383,30 +1451,27 @@ function close() {
 }
 
 .btn-add-tag {
-  /* icon-only variant: use compact square size */
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  padding: 0.5rem;
-  background-color: var(--brand-focus);
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: #007acc;
   color: white;
   border: none;
-  border-radius: var(--btn-radius);
+  border-radius: 6px;
   font-size: 0.95rem;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s ease;
-  width: var(--control-height);
-  height: var(--control-height);
+  white-space: nowrap;
 }
 
 .btn-add-tag:hover:not(:disabled) {
   background-color: #005fa3;
-  transform: translateY(-1px);
 }
 
 .btn-add-tag:active:not(:disabled) {
-  transform: translateY(0);
+  transform: translateY(1px);
 }
 
 .btn-add-tag:disabled {
@@ -1445,7 +1510,7 @@ function close() {
   width: 20px;
   height: 20px;
   cursor: pointer;
-  accent-color: var(--brand-focus);
+  accent-color: #007acc;
   margin-top: 0.125rem;
   flex-shrink: 0;
 }
@@ -1469,8 +1534,8 @@ function close() {
 }
 
 .checkbox-label:has(input[type='checkbox']:checked) {
-  background-color: rgba(var(--brand-rgb), 0.15);
-  border-color: var(--brand-focus);
+  background-color: rgba(0, 122, 204, 0.15);
+  border-color: #007acc;
 }
 
 .checkbox-content small {
@@ -1483,7 +1548,6 @@ function close() {
   from {
     transform: rotate(0deg);
   }
-
   to {
     transform: rotate(360deg);
   }
@@ -1519,53 +1583,27 @@ function close() {
 }
 
 .btn-edit-destination {
-  /* More compact so the icon reads clearly in compact contexts (folder browser, inline rows) */
-  padding: 0.35rem; /* reduce horizontal/vertical padding */
-  min-width: 40px;
-  min-height: 40px;
-  border-radius: 6px;
-  /* Default *fallback* styling for non-primary use (kept for backwards compatibility) */
-  background-color: #333;
+  padding: 0.6rem 1rem;
   border: 1px solid #555;
+  border-radius: 6px;
+  background-color: #333;
   color: #ccc;
   cursor: pointer;
   transition: all 0.2s;
-  display: inline-flex;
+  display: flex;
   align-items: center;
-  justify-content: center;
   gap: 0.5rem;
   font-size: 0.9rem;
   font-weight: 500;
   white-space: nowrap;
 }
 
-/* When combined with .btn-primary, use the shared primary visuals instead of the fallback */
-.btn-primary.btn-edit-destination {
-  background-color: var(--brand-500);
-  color: #fff;
-  border: none;
-}
-.btn-primary.btn-edit-destination:hover:not(:disabled) {
-  background-color: var(--brand-700);
-  transform: translateY(-1px);
-  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.22);
-}
-.btn-primary.btn-edit-destination:active:not(:disabled) {
-  background-color: var(--brand-800, #0056b3);
-  transform: translateY(0);
-}
-
-.btn-edit-destination svg {
-  width: 20px !important;
-  height: 20px !important;
-}
-
 .btn-edit-destination:hover {
-  border-color: var(--brand-focus);
-  background-color: var(--brand-focus);
+  border-color: #007acc;
+  background-color: #007acc;
   color: #fff;
   transform: translateY(-1px);
-  box-shadow: 0 2px 6px rgba(var(--brand-rgb), 0.3);
+  box-shadow: 0 2px 6px rgba(0, 122, 204, 0.3);
 }
 
 .btn-edit-destination:active {
@@ -1577,10 +1615,8 @@ function close() {
 .destination-edit {
   display: flex;
   flex-direction: column;
-  gap: 1rem;
-  /* Increased gap for better separation */
-  padding: 1rem;
-  /* Increased padding */
+  gap: 1rem; /* Increased gap for better separation */
+  padding: 1rem; /* Increased padding */
   background-color: #1e1e1e;
   border: 1px solid #333;
   border-radius: 8px;
@@ -1590,7 +1626,16 @@ function close() {
   display: flex;
   gap: 0.75rem;
   justify-content: flex-end;
+  margin-top: 0.5rem;
 }
+
+.btn-sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+  min-width: auto;
+}
+
+/* root-label is used instead of readonly-path */
 
 .form-input {
   width: 100%;
@@ -1604,57 +1649,52 @@ function close() {
 
 .form-input:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: var(--focus-ring);
-  /* More visible focus ring */
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.2); /* More visible focus ring */
 }
 
 .form-input::placeholder {
-  color: #888;
-  /* Subtle placeholder color */
+  color: #888; /* Subtle placeholder color */
 }
 
 /* Row layout for destination: browse + root + input + actions */
 .destination-row {
   display: flex;
-  gap: 0.5rem;
-  /* Consistent gap */
-  align-items: center;
-  /* vertically center controls */
+  gap: 0.75rem; /* Consistent gap */
+  align-items: center; /* vertically center controls */
   flex-wrap: wrap;
 }
 
+.root-select {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Ensure select inside root-select matches the input */
 .root-select .form-select {
-  height: 42px;
-  /* Slightly taller for better touch targets */
+  height: 42px; /* Slightly taller for better touch targets */
   box-sizing: border-box;
   background-color: #1a1a1a;
   border: 1px solid #333;
   border-radius: 6px;
   padding: 0.75rem 1rem;
-  min-width: 140px;
-  /* Keep select usable while allowing input to grow */
-  flex: 0 0 auto;
 }
 
 .root-select .form-select:focus {
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.2);
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.2);
 }
 
 .root-select .form-label {
-  display: none;
-  /* Hide redundant label in modal context */
+  display: none; /* Hide redundant label in modal context */
 }
 
 .relative-input {
   flex: 1;
   min-width: 180px;
-  height: 42px;
-  /* Match select height */
+  height: 42px; /* Match select height */
   box-sizing: border-box;
-  padding: 0.75rem 1rem;
-  /* Match select padding */
+  padding: 0.75rem 1rem; /* Match select padding */
 }
 
 .destination-actions {
@@ -1678,14 +1718,12 @@ function close() {
   }
 
   .destination-actions {
-    justify-content: stretch;
-    /* Full width buttons on mobile */
+    justify-content: stretch; /* Full width buttons on mobile */
     gap: 0.75rem;
   }
 
   .destination-actions .btn {
-    flex: 1;
-    /* Equal width buttons */
+    flex: 1; /* Equal width buttons */
   }
 
   .move-status {
@@ -1772,26 +1810,54 @@ function close() {
 }
 
 .path-hint svg {
-  color: var(--brand-500);
+  color: #2196f3;
   flex-shrink: 0;
 }
 
-.muted-note {
-  color: #999;
-  font-size: 0.95rem
-}
-
-.destination-actions {
+/* Inline browse button - always visible and prominent */
+.inline-browse {
   display: flex;
-  gap: 0.5rem;
-  align-items: center
+  align-items: center;
 }
 
-.custom-path-row { display:flex; gap:0.5rem; align-items:center }
-
-.custom-path {
-  flex: 1;
+.btn-inline-browse {
+  padding: 0.625rem;
+  background: #2196f3;
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.custom-input { min-width: 120px; flex: 1; width:100%; min-width:0 }
+.btn-inline-browse:hover {
+  background: #1976d2;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
+}
+
+.btn-inline-browse:active {
+  transform: translateY(0);
+}
+
+.btn-inline-browse:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.3);
+}
+
+.btn-inline-browse svg {
+  width: 20px;
+  height: 20px;
+}
+
+
+
+.muted-note { color: #999; font-size:0.95rem }
+
+
+
 </style>

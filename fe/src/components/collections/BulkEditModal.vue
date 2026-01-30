@@ -1,7 +1,12 @@
 <template>
   <Modal :visible="isOpen" size="md" @close="close">
     <template #header>
-      <ModalHeader :title="'Bulk Edit Audiobooks'" :icon="PhPencil" @close="close" />
+      <div class="modal-title">
+        <h3><PhPencil /> Bulk Edit Audiobooks</h3>
+      </div>
+      <button class="close-btn" @click="close">
+        <PhX />
+      </button>
     </template>
 
     <template #default>
@@ -67,7 +72,8 @@
             </label>
 
             <label class="radio-label">
-              <Checkbox v-model="formData.rootChangeEnabled">Change root folder</Checkbox>
+              <input type="checkbox" v-model="formData.rootChangeEnabled" />
+              <span style="margin-left: 0.5rem">Change root folder</span>
             </label>
 
             <div v-if="formData.rootChangeEnabled" style="margin-top: 0.75rem">
@@ -112,7 +118,7 @@
     </template>
 
     <template #footer>
-      <button type="button" class="cancel-button btn" @click="close"><PhX /> Cancel</button>
+      <button type="button" class="cancel-button" @click="close"><PhX /> Cancel</button>
       <button type="button" class="btn btn-primary" :disabled="saving || !hasChanges" @click="handleSave">
         <PhSpinner v-if="saving" class="ph-spin" />
         <PhCheck v-else /> {{ saving ? 'Saving...' : 'Save Changes' }}
@@ -120,20 +126,67 @@
     </template>
   </Modal>
 
-  <MoveAudiobookModal
-    :visible="showMoveConfirm"
-    :pendingRootPath="pendingRootPath"
-    v-model:moveFiles="modalMoveFiles"
-    v-model:deleteEmpty="modalDeleteEmpty"
-    @cancel="cancelMoveConfirm"
-    @confirm="(payload) => { if (payload?.moveFiles) confirmMove(); else confirmChangeWithoutMoving(); }"
-  />
+  <!-- Move confirmation modal (separate overlay) -->
+  <Modal :visible="showMoveConfirm" size="md" @close="cancelMoveConfirm">
+    <template #header>
+      <i class="ph ph-folder-open"></i>
+      <h3>Move Audiobook Files</h3>
+    </template>
+
+    <template #default>
+      <div class="confirm-body">
+        <div class="confirm-description">
+          <p>
+            You're changing the root folder for <strong>{{ selectedCount }}</strong> audiobook{{ selectedCount !== 1 ? 's' : '' }}. This will move all associated files to the new location.
+          </p>
+        </div>
+
+        <div class="path-comparison">
+          <div class="path-section">
+            <div class="path-label">
+              <i class="ph ph-arrow-down"></i>
+              <span>New Root Folder:</span>
+            </div>
+            <div class="path-display">
+              <code>{{ pendingRootPath || 'No destination path' }}</code>
+            </div>
+          </div>
+        </div>
+
+        <div class="confirm-options">
+          <div class="checkbox-row">
+            <label>
+              <input type="checkbox" v-model="modalMoveFiles" />
+              <div class="checkbox-content">
+                <span class="checkbox-title">Move files now</span>
+                <small>Copy all audiobook files to the new root folder (recommended)</small>
+              </div>
+            </label>
+          </div>
+          <div class="checkbox-row" v-if="modalMoveFiles">
+            <label>
+              <input type="checkbox" v-model="modalDeleteEmpty" />
+              <div class="checkbox-content">
+                <span class="checkbox-title">Clean up empty folders</span>
+                <small>Delete the original folders if they become empty after moving</small>
+              </div>
+            </label>
+          </div>
+        </div>
+      </div>
+    </template>
+
+    <template #footer>
+      <button class="cancel-button" @click="cancelMoveConfirm"><PhX /> Cancel</button>
+      <button class="cancel-button" @click="confirmChangeWithoutMoving">Update Path Only</button>
+      <button class="btn btn-primary" :disabled="!modalMoveFiles" @click="confirmMove">Move Files</button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import Checkbox from '@/components/inputs/Checkbox.vue'
-import { Modal, ModalBody, MoveAudiobookModal } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import { apiService } from '@/services/api'
 import { useToast } from '@/services/toastService'
 import type { QualityProfile } from '@/types'
@@ -664,7 +717,7 @@ function close() {
 }
 
 .form-label i {
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .radio-group {
@@ -688,14 +741,14 @@ function close() {
 
 .radio-label:hover {
   background-color: #333;
-  border-color: var(--brand-500);
+  border-color: #007acc;
 }
 
 .radio-label input[type='radio'] {
   width: 18px;
   height: 18px;
   cursor: pointer;
-  accent-color: var(--brand-500);
+  accent-color: #007acc;
 }
 
 .radio-label input[type='radio']:checked + span {
@@ -720,8 +773,8 @@ function close() {
 
 .form-select:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
 }
 
 .help-text {
@@ -742,7 +795,16 @@ function close() {
   cursor: not-allowed;
 } 
 
-/* Button color variants are centralized in `src/assets/modals.css` - use `.btn` / `.btn-primary`. */
+/* Button color variants centralized in `src/assets/modals.css` */
+
+.btn-primary {
+  background-color: #007acc;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #005fa3;
+}
 
 .btn i.ph-spin {
   animation: spin 1s linear infinite;
@@ -790,7 +852,7 @@ function close() {
 }
 .confirm-header i {
   font-size: 1.5rem;
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .confirm-header h3 {
@@ -839,7 +901,7 @@ function close() {
 }
 
 .path-label i {
-  color: var(--brand-500);
+  color: #007acc;
   font-size: 1rem;
 }
 
@@ -882,7 +944,7 @@ function close() {
 
 .checkbox-row:hover {
   background: #2d2d30;
-  border-color: var(--brand-500);
+  border-color: #007acc;
 }
 
 .checkbox-row label {
@@ -898,7 +960,7 @@ function close() {
   margin-top: 0.125rem;
   width: 1rem;
   height: 1rem;
-  accent-color: var(--brand-500);
+  accent-color: #007acc;
   cursor: pointer;
 }
 
@@ -949,8 +1011,16 @@ function close() {
   cursor: not-allowed;
 }
 
-/* Local confirm action button variants are centralized in `src/assets/modals.css`. Use `.btn-primary` for confirm actions. */
+/* Local confirm action button variants centralized — use `.btn-secondary` or `.cancel-button` with centralized styles */
 
+.confirm-actions .btn-primary {
+  background: #007acc;
+  color: #ffffff;
+}
+
+.confirm-actions .btn-primary:hover:not(:disabled) {
+  background: #0056b3;
+}
 
 /* Mobile responsive adjustments */
 @media (max-width: 640px) {

@@ -30,7 +30,7 @@
 import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/modal'
 import type { Component } from 'vue'
 
-withDefaults(
+const props = withDefaults(
   defineProps<{
     visible?: boolean
     title?: string
@@ -39,11 +39,12 @@ withDefaults(
     cancelLabel?: string
     size?: 'sm' | 'md' | 'lg'
     confirming?: boolean
-    icon?: Component | undefined
+    icon?: Component | null
     iconLabel?: string | undefined
   }>(),
   { visible: false, title: 'Confirm', message: '', confirmLabel: 'Confirm', cancelLabel: 'Cancel', size: 'sm', confirming: false },
 )
+
 
 const emit = defineEmits(['confirm','cancel'])
 

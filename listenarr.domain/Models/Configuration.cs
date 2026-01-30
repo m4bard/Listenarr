@@ -115,8 +115,13 @@ namespace Listenarr.Domain.Models
         public int MissingSourceRetryInitialDelaySeconds { get; set; } = 30;
         public int MissingSourceMaxRetries { get; set; } = 3;
 
-        // External request settings: control retry behavior for US-domain preference
+        // External request settings: control retry behavior for US-domain preference and optional HTTP proxy
         public bool PreferUsDomain { get; set; } = true;
+        public bool UseUsProxy { get; set; } = false;
+        public string? UsProxyHost { get; set; }
+        public int UsProxyPort { get; set; } = 0;
+        public string? UsProxyUsername { get; set; }
+        public string? UsProxyPassword { get; set; }
 
         // Action to take when a download completes: "Move" or "Copy"
         public string CompletedFileAction { get; set; } = "Move";

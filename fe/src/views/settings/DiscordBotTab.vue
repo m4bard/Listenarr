@@ -6,40 +6,60 @@
       </div>
 
       <div class="form-section">
-        <CheckboxCard v-model="settings.discordBotEnabled" title="Enable Discord Bot Integration" description="Allow an external Discord bot to read these settings and register slash commands." />
+        <div class="form-group checkbox-group">
+          <Checkbox v-model="settings.discordBotEnabled">
+            <strong>Enable Discord Bot Integration</strong>
+            <small
+              >Allow an external Discord bot to read these settings and register slash
+              commands.</small
+            >
+          </Checkbox>
+        </div>
 
-        <FormRow label="Discord Application ID">
+        <div class="form-group">
+          <label>Discord Application ID</label>
           <input
             v-model="settings.discordApplicationId"
             type="text"
             placeholder="Discord Application ID (client id)"
           />
-          <span class="form-help">Used to register application commands. For per-guild testing, set a Guild ID below.</span>
-        </FormRow>
+          <span class="form-help"
+            >Used to register application commands. For per-guild testing, set a Guild ID
+            below.</span
+          >
+        </div>
 
-        <FormRow label="Discord Guild ID (optional)">
+        <div class="form-group">
+          <label>Discord Guild ID (optional)</label>
           <input
             v-model="settings.discordGuildId"
             type="text"
             placeholder="Optional guild id for testing"
           />
-          <span class="form-help">If provided, commands will be registered to this guild for faster updates (useful for development).</span>
-        </FormRow>
+          <span class="form-help"
+            >If provided, commands will be registered to this guild for faster updates (useful for
+            development).</span
+          >
+        </div>
 
-        <FormRow label="Discord Channel ID (optional)">
+        <div class="form-group">
+          <label>Discord Channel ID (optional)</label>
           <input
             v-model="settings.discordChannelId"
             type="text"
             placeholder="Optional channel id to restrict commands"
           />
-          <span class="form-help">If provided, the bot will only accept request commands from this channel. You can also set this via the bot using the <code>/request-config set-channel</code> command.</span>
-        </FormRow>
+          <span class="form-help"
+            >If provided, the bot will only accept request commands from this channel. You can also
+            set this via the bot using the <code>/request-config set-channel</code> command.</span
+          >
+        </div>
 
         <!-- Invite / Register Controls -->
-        <FormRow v-if="settings.discordApplicationId" label="Invite Bot to Server">
-          <label style="display:none">Invite Bot to Server</label>
+        <div v-if="settings.discordApplicationId" class="form-group invite-row">
+          <label>Invite Bot to Server</label>
           <div class="invite-controls">
-            <button @click="openInviteLink" class="invite-button btn btn-primary">Open Invite</button>
+            <button @click="openInviteLink" class="invite-button">Open Invite</button>
             <button @click="copyInviteLink" class="icon-button">Copy Invite Link</button>
             <button @click="checkDiscordStatus" class="icon-button" :disabled="checkingDiscord">
               Check Install
@@ -81,9 +101,10 @@
               <span class="status-pill unknown">Token validated</span>
             </template>
           </div>
-        </FormRow>
+        </div>
 
-        <FormRow label="Bot Token">
+        <div class="form-group">
+          <label>Bot Token</label>
           <div class="password-field">
             <input
               :type="showPassword ? 'text' : 'password'"
@@ -106,40 +127,55 @@
               </template>
             </button>
           </div>
-          <span class="form-help">The bot process will use this token to login. Be careful with this value.</span>
-        </FormRow>
+          <span class="form-help"
+            >The bot process will use this token to login. Be careful with this value.</span
+          >
+        </div>
 
-        <FormRow label="Command Group Name">
+        <div class="form-group">
+          <label>Command Group Name</label>
           <input v-model="settings.discordCommandGroupName" type="text" placeholder="request" />
           <span class="form-help">Primary command group (e.g. <code>request</code>)</span>
-        </FormRow>
+        </div>
 
-        <FormRow label="Subcommand Name">
+        <div class="form-group">
+          <label>Subcommand Name</label>
           <input
             v-model="settings.discordCommandSubcommandName"
             type="text"
             placeholder="audiobook"
           />
-          <span class="form-help">Subcommand for audiobooks (e.g. <code>audiobook</code>) — results in <code>/request audiobook &lt;title&gt;</code></span>
-        </FormRow>
+          <span class="form-help"
+            >Subcommand for audiobooks (e.g. <code>audiobook</code>) — results in
+            <code>/request audiobook &lt;title&gt;</code></span
+          >
+        </div>
 
-        <FormRow label="Bot Username (optional)">
+        <div class="form-group">
+          <label>Bot Username (optional)</label>
           <input
             v-model="settings.discordBotUsername"
             type="text"
             placeholder="Custom bot username"
           />
-          <span class="form-help">Optional custom username for the bot. Leave empty to use the default username from Discord.</span>
-        </FormRow>
+          <span class="form-help"
+            >Optional custom username for the bot. Leave empty to use the default username from
+            Discord.</span
+          >
+        </div>
 
-        <FormRow label="Bot Avatar URL (optional)">
+        <div class="form-group">
+          <label>Bot Avatar URL (optional)</label>
           <input
             v-model="settings.discordBotAvatar"
             type="url"
             placeholder="https://example.com/avatar.png"
           />
-          <span class="form-help">Optional avatar image URL for the bot. Leave empty to use the default avatar from Discord.</span>
-        </FormRow>
+          <span class="form-help"
+            >Optional avatar image URL for the bot. Leave empty to use the default avatar from
+            Discord.</span
+          >
+        </div>
       </div>
 
       <!-- Discord Bot Process Controls -->
@@ -159,7 +195,7 @@
           </div>
 
           <div class="bot-controls">
-            <button @click="checkBotStatus" class="status-button btn" :disabled="checkingBotStatus">
+            <button @click="checkBotStatus" class="status-button" :disabled="checkingBotStatus">
               <template v-if="checkingBotStatus">
                 <PhSpinner class="ph-spin" />
               </template>
@@ -228,8 +264,6 @@ import {
   PhStop,
 } from '@phosphor-icons/vue'
 import Checkbox from '@/components/inputs/Checkbox.vue'
-import FormRow from '@/components/settings/FormRow.vue'
-import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 
 interface Props {
   settings: ApplicationSettings
@@ -718,7 +752,7 @@ const stopBot = async () => {
 }
 
 .add-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }

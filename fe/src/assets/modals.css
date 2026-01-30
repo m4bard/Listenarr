@@ -10,7 +10,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 3000; /* ensure modals appear above other float/overlay components */
+  z-index: 1000;
   backdrop-filter: blur(4px);
 }
 
@@ -45,7 +45,7 @@
 .modal-close {
   background: none;
   border: none;
-  color: #999;
+  color: #b3b3b3;
   cursor: pointer;
   padding: 0.5rem;
   font-size: 1.25rem;
@@ -78,7 +78,7 @@
 .modal-footer {
   display: flex;
   gap: 1rem;
-  justify-content: space-between;
+  justify-content: flex-end;
   padding: 1.5rem 2rem;
   border-top: 1px solid #444;
 }
@@ -95,22 +95,22 @@
   border-radius: 6px;
   display: inline-flex;
   align-items: center;
-  justify-content: center; /* center text horizontally */
   gap: 0.5rem;
-  /* Use normal weight in modal footers (no bold) */
-  font-weight: 400;
+  font-weight: 600;
   font-size: 0.95rem;
   min-width: 110px;
-  min-height: var(--control-height);
+  min-height: 40px;
   box-sizing: border-box;
   transition: all 0.18s ease;
-  text-align: center; /* ensure multi-line text centers */
 }
 
-/* Icon sizing and alignment inside buttons - hidden for modal footer buttons (text-only) */
+/* Icon sizing and alignment inside buttons */
 .modal-actions .btn svg,
 .modal-footer .btn svg {
-  display: none;
+  width: 1em;
+  height: 1em;
+  flex-shrink: 0;
+  vertical-align: middle;
 }
 
 /* Global button utilities (use semantic classes: cancel-button, btn-info, btn-primary, delete-button) */
@@ -125,6 +125,7 @@
   border: none;
   cursor: pointer;
   min-width: 110px;
+  min-height: 40px;
   box-sizing: border-box;
   transition: all 0.18s ease;
 }
@@ -136,25 +137,25 @@
 
 /* Primary (blue) */
 .btn-primary {
-  background-color: var(--brand-focus);
+  background-color: #007acc;
   color: white;
 }
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--brand-700);
+  background-color: #005fa3;
 }
 
 /* Info (also blue, lighter) */
 .btn-info {
-  background-color: var(--brand-500);
+  background-color: #2196f3;
   color: white;
 }
 .btn-info:hover:not(:disabled) {
-  background-color: var(--brand-600);
+  background-color: #1976d2;
 }
 
-/* Success (green) - use a flat success color */
+/* Success (green) - use sparingly */
 .btn-success {
-  background-color: #27ae60;
+  background: linear-gradient(135deg, #2ecc71 0%, #27ae60 100%);
   color: white;
 }
 .btn-success:hover:not(:disabled) {
@@ -174,7 +175,7 @@
 /* Focus & disabled states (consistent and accessible) */
 .modal-actions .btn:focus-visible,
 .modal-footer .btn:focus-visible {
-  outline: 2px solid rgba(var(--brand-rgb), 0.9);
+  outline: 2px solid rgba(0, 122, 204, 0.9);
   outline-offset: 2px;
 }
 
@@ -201,13 +202,13 @@
 .modal-footer .btn-info,
 .modal-actions .info-button,
 .modal-footer .info-button {
-  background-color: var(--brand-500);
+  background-color: #2196f3;
   color: white;
 }
 
 .modal-actions .btn-info:hover:not(:disabled),
 .modal-footer .btn-info:hover:not(:disabled) {
-  background-color: var(--brand-600);
+  background-color: #1976d2;
 }
 
 .modal-actions .delete-button,
@@ -226,7 +227,7 @@
   font-weight: 700;
   font-size: 1rem;
   min-width: 110px;
-  min-height: var(--control-height);
+  min-height: 40px;
   box-shadow: 0 6px 16px rgba(231, 76, 60, 0.08);
 }
 
@@ -234,63 +235,10 @@
 .modal-footer .delete-button:hover:not(:disabled),
 .modal-actions .modal-delete-button:hover:not(:disabled),
 .modal-footer .modal-delete-button:hover:not(:disabled) {
-  background-color: #e74c3c;
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 8px 20px rgba(231, 76, 60, 0.18);
-}
-
-/* Custom checkbox & radio styles scoped to modals */
-/* Uses markup pattern: .checkbox-wrapper > input + .checkbox-content, .radio-label > input + .radio-content */
-.modal-content .checkbox-wrapper { position: relative; display: flex; align-items: flex-start; gap: 0.75rem; }
-.modal-content .checkbox-wrapper input[type="checkbox"] {
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; opacity: 0; margin: 0; cursor: pointer; z-index: 3;
-}
-.modal-content .checkbox-content { position: relative; padding-left: 26px; display: flex; flex-direction: column; gap: 0.25rem; }
-/* Match the app's standard .checkbox-box visuals: 16px box, subtle border, small radius */
-.modal-content .checkbox-content::before {
-  content: '';
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-  width: 16px; height: 16px; border-radius: 3px;
-  background: transparent; border: 1px solid rgba(255,255,255,0.12); box-sizing: border-box;
-  transition: all 0.12s ease; z-index: 1;
-}
-/* Checked state uses brand color like the app */
-.modal-content .checkbox-wrapper input[type="checkbox"]:checked + .checkbox-content::before {
-  background: var(--brand-500); border-color: var(--brand-500); box-shadow: none;
-}
-/* Checkmark - subtle, centered */
-.modal-content .checkbox-wrapper input[type="checkbox"]:checked + .checkbox-content::after {
-  content: '';
-  position: absolute; left: 5px; top: 50%; transform: translateY(-50%) rotate(45deg);
-  width: 5px; height: 8px; border: solid white; border-width: 0 2px 2px 0; z-index: 4;
-}
-
-
-/* Radios */
-.modal-content .radio-label { position: relative; }
-.modal-content .radio-label input[type="radio"] {
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; opacity: 0; margin: 0; cursor: pointer; z-index: 3;
-}
-.modal-content .radio-label .radio-content { position: relative; padding-left: 28px; }
-.modal-content .radio-label .radio-content::before {
-  content: '';
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-  width: 18px; height: 18px; border-radius: 50%; background: #1e1e1e; border: 1px solid #444; transition: all 0.12s ease; z-index: 1;
-}
-.modal-content .radio-label input[type="radio"]:checked + .radio-content::before {
-  background: var(--brand-focus); border-color: var(--brand-focus); box-shadow: 0 0 0 4px rgba(var(--brand-rgb), 0.08);
-}
-.modal-content .radio-label input[type="radio"]:checked + .radio-content::after {
-  content: '';
-  position: absolute; left: 5px; top: 50%; transform: translateY(-50%);
-  width: 8px; height: 8px; border-radius: 50%; background: white; z-index: 4;
-}
-
-/* Focus styling */
-.modal-content .checkbox-wrapper input[type="checkbox"]:focus-visible + .checkbox-content::before,
-.modal-content .radio-label input[type="radio"]:focus-visible + .radio-content::before {
-  outline: 3px solid rgba(var(--brand-rgb), 0.12); outline-offset: 2px;
 }
 
 /* Small modal size variations */
@@ -379,197 +327,3 @@
     justify-content: center;
   }
 } 
-
-/* Shared modal form control styles */
-.modal-content .form-group {
-  margin-bottom: 1.5rem;
-}
-.modal-content .form-group:last-of-type {
-  margin-bottom: 0;
-}
-.modal-content .form-group label {
-  display: flex;
-  margin-bottom: 0.5rem;
-  font-weight: 600;
-  color: #fff;
-  font-size: 0.95rem;
-}
-.modal-content .form-group label.required::after {
-  content: ' *';
-  color: #dc3545;
-}
-
-.modal-content .input-with-icon {
-  position: relative;
-  display: flex;
-  align-items: center;
-}
-
-.modal-content .input-with-icon i {
-  position: absolute;
-  left: 0.75rem;
-  color: #999;
-  font-size: 1.1rem;
-  pointer-events: none;
-}
-
-.modal-content input.form-control,
-.modal-content select.form-control,
-.modal-content textarea.form-control {
-  width: 100%;
-  padding: 0.75rem;
-  font-size: 0.95rem;
-  border: 1px solid #444;
-  border-radius: 6px;
-  background-color: #1a1a1a;
-  color: #fff;
-  transition: all 0.2s;
-} 
-
-.modal-content input.form-control:focus,
-.modal-content select.form-control:focus,
-.modal-content textarea.form-control:focus {
-  outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
-}
-
-.modal-content .form-control::placeholder {
-  color: #666;
-}
-
-.modal-content .help-text {
-  display: block;
-  margin-top: 0.5rem;
-  font-size: 0.85rem;
-  color: #999;
-  line-height: 1.4;
-}
-
-/* Compact inline browse button sizing for modals (matches RootFolder modal styling) */
-.modal-content .btn-inline-browse {
-  width: 40px;
-  height: 40px;
-  min-width: 40px;
-  min-height: 40px;
-  padding: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  align-self: center;
-}
-.modal-content .btn-inline-browse svg {
-  width: 18px;
-  height: 18px;
-}
-.modal-content .btn-inline-browse:focus {
-  outline: none;
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.12);
-}
-
-/* When the FolderBrowser is rendered with `useInnerCard=false` (e.g., embedded in a modal),
-   remove the inner browser card so the content visually matches the surrounding modal body */
-.modal-content .folder-browser.no-inner-card .browser-content,
-.folder-browser.no-inner-card .browser-content {
-  background: transparent;
-  border: none;
-  box-shadow: none;
-  margin: 0;
-}
-.modal-content .folder-browser.no-inner-card .browser-body,
-.folder-browser.no-inner-card .browser-body {
-  padding: 0;
-  max-height: calc(70vh - 300px);
-  overflow-y: auto;
-}
-
-/* Modal-specific validation appearance (match modal's alerts) */
-.modal-content .folder-browser .validation-message {
-  display:block;
-  width:100%;
-  padding:0.85rem 1rem;
-  border-radius:6px;
-  margin-bottom:1rem;
-  font-weight:600;
-}
-.modal-content .folder-browser .validation-message.success {
-  background: rgba(46, 204, 113, 0.08);
-  color: #22a35a;
-  border: 1px solid rgba(46, 204, 113, 0.12);
-}
-.modal-content .folder-browser .validation-message.error {
-  background: rgba(231, 76, 60, 0.06);
-  color: #e74c3c;
-  border: 1px solid rgba(231, 76, 60, 0.08);
-}
-
-/* Make browser path chips match form labels / inputs */
-.modal-content .folder-browser .breadcrumbs {
-  margin-bottom: 0.75rem;
-}
-.modal-content .folder-browser .breadcrumb-item.current {
-  background: rgba(var(--brand-rgb), 0.08);
-  color: var(--brand-600);
-  border-color: rgba(var(--brand-rgb), 0.12);
-}
-
-/* Slightly reduce directory list visual weight inside modal */
-.modal-content .folder-browser .directory-list {
-  margin-top: 0.5rem;
-}
-
-/* Make the inline browser input visually match modal inputs */
-.modal-content .folder-browser .browser-input {
-  background-color: #1a1a1a;
-  border: 1px solid #444;
-  color: #fff;
-  padding: 0.75rem;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.modal-content .folder-browser .browser-input:focus {
-  outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
-}
-
-.modal-content .folder-browser .browser-input::placeholder {
-  color: #666;
-}
-
-.modal-content .folder-browser .current-path .path-text {
-  background: transparent;
-  padding: 0;
-}
-
-/* Modal-specific modal body sections (non-card fields) */
-.modal-content .modal-section-title {
-  margin: 0 0 0.75rem 0;
-  color: #fff;
-  font-size: 1.1rem;
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-  font-weight: 600;
-}
-.modal-content .modal-section-body {
-  background: transparent; /* no inner card */
-  border: none;
-  padding: 0 0 1rem 0;
-  margin-bottom: 1rem;
-}
-
-/* Reusable section-card inside modals (matches FormSection .section-card visuals) */
-.modal-content .section-card {
-  background-color: #232323;
-  border: 1px solid #333;
-  border-radius: 8px;
-  padding: 1rem;
-  margin-top: 0.75rem;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
-}
-.modal-content .section-card.section-card--no-top { margin-top: 0 }
-.modal-content .section-card > *:first-child { margin-top: 0; }
-.modal-content .section-card > *:last-child { margin-bottom: 0; }

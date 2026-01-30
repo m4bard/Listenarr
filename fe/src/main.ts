@@ -17,10 +17,6 @@
  */
 
 import './assets/main.css'
-// Global toast styles (reusable)
-import './assets/toasts.css'
-// Global app styles (shared utilities and component fragments)
-import '@/styles/global.css'
 // Restore legacy Phosphor CSS classes (e.g. <i class="ph ph-grid-four">)
 // This provides the `.ph` + `.ph-<name>` mappings that many templates use.
 // We keep component-based `@phosphor-icons/vue` for new code, but
@@ -34,7 +30,6 @@ import App from './App.vue'
 import router from './router'
 import { useToast } from './services/toastService'
 import { errorTracking } from './services/errorTracking'
-import { apiService } from '@/services/api'
 
 const app = createApp(App)
 
@@ -79,20 +74,6 @@ window.addEventListener('unhandledrejection', (event) => {
 
 app.use(createPinia())
 app.use(router)
-
-// Prefetch startup configuration, then non-blocking prefetch antiforgery token so
-// subsequent unsafe requests have a token bound to the correct principal (API key / session).
-// We intentionally do not fail the app startup if these requests fail.
-import { getStartupConfigCached } from '@/services/startupConfigCache'
-
-getStartupConfigCached(2000)
-  .catch(() => null)
-  .then(() => {
-    apiService.ensureAntiforgeryForCurrentAuth().catch((e) => {
-      if (import.meta.env.DEV) console.debug('[ApiService] ensureAntiforgery failed', e)
-    })
-  })
-  .catch(() => {})
 
 app.mount('#app')
 

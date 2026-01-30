@@ -21,9 +21,8 @@ describe('IndexerFormModal', () => {
     })
     await wrapper.vm.$nextTick()
 
-    // PasswordInput is a child component; assert it exists and its `modelValue` is populated
-    const pwdComp = wrapper.findComponent({ name: 'PasswordInput' })
-    expect(pwdComp.exists()).toBe(true)
-    expect(pwdComp.props('modelValue')).toBe('secret')
+    const apiKeyInput = wrapper.find('input[id="apiKey"]')
+    expect(apiKeyInput.exists()).toBe(true)
+    expect((apiKeyInput.element as HTMLInputElement).value).toBe('secret')
   })
 })

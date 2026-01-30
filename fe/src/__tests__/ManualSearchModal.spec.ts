@@ -45,19 +45,6 @@ describe('ManualSearchModal.vue', () => {
     PhArrowsDownUp: true,
     // Ensure ScorePopover renders its default slot in tests so the inner badge is present
     ScorePopover: { template: '<div><slot /></div>' },
-    Modal: { template: '<div><slot name="header" /><slot /></div>' },
-    ModalHeader: { template: '<div><slot /></div>' },
-    ModalBody: { template: '<div><slot /></div>' },
-  }
-
-  // Helper to set `results` on the component instance in a way that works
-  // whether the component exposes a ref (`.value`) or an unwrapped array.
-  const setResultsOnVm = (vm: any, r: unknown) => {
-    if (vm && vm.results && typeof vm.results === 'object' && 'value' in vm.results) {
-      vm.results.value = r
-    } else if (vm) {
-      vm.results = r
-    }
   }
 
   it('uses details page for Usenet title links instead of direct NZB', async () => {
@@ -71,16 +58,7 @@ describe('ManualSearchModal.vue', () => {
     }
 
     // Set a usenet-style result where id is an informational URL that should be used for the title link
-    // Support both raw arrays and refs (test runner may expose refs differently)
-    const setResults = (r: unknown) => {
-      if (vm && (vm as any).results && typeof (vm as any).results === 'object' && 'value' in (vm as any).results) {
-        ;(vm as any).results.value = r
-      } else if (vm) {
-        ;(vm as any).results = r
-      }
-    }
-
-    setResultsOnVm(vm, [
+    vm.results = [
       {
         id: 'https://indexer/info/123',
         title: 'Test Usenet',
@@ -91,13 +69,10 @@ describe('ManualSearchModal.vue', () => {
         source: 'altHUB',
         size: 123,
       },
-    ])
+    ]
 
     await nextTick()
 
-    // Debug: show rendered HTML to investigate missing anchor
-    // eslint-disable-next-line no-console
-    console.log(wrapper.html())
     const anchor = wrapper.find('a.title-text')
     expect(anchor.exists()).toBe(true)
     expect(anchor.attributes('href')).toBe('https://indexer/info/123')
@@ -113,7 +88,7 @@ describe('ManualSearchModal.vue', () => {
       qualityScores?: QualityScoresMap
     }
 
-    setResultsOnVm(vm, [
+    vm.results = [
       {
         id: 'u2',
         title: 'Lang Test',
@@ -123,7 +98,7 @@ describe('ManualSearchModal.vue', () => {
         source: 'alt',
         size: 0,
       },
-    ])
+    ]
 
     await nextTick()
 
@@ -141,7 +116,7 @@ describe('ManualSearchModal.vue', () => {
       qualityScores?: QualityScoresMap
     }
 
-    setResultsOnVm(vm, [
+    vm.results = [
       {
         id: 'q1',
         title: 'Format Fallback Test',
@@ -152,7 +127,7 @@ describe('ManualSearchModal.vue', () => {
         source: 'test',
         size: 0,
       },
-    ])
+    ]
 
     await nextTick()
 
@@ -182,7 +157,7 @@ describe('ManualSearchModal.vue', () => {
       size: 0,
     }
 
-    setResultsOnVm(vm, [fake])
+    vm.results = [fake]
 
     const scoreObj: QualityScore = {
       searchResult: fake,
@@ -254,7 +229,7 @@ describe('ManualSearchModal.vue', () => {
       qualityScores?: QualityScoresMap
     }
 
-    setResultsOnVm(vm, [
+    vm.results = [
       {
         id: 'r1',
         title: 'Smart Score Test',
@@ -263,7 +238,7 @@ describe('ManualSearchModal.vue', () => {
         source: 'test',
         size: 0,
       },
-    ])
+    ]
 
     // Provide a quality score with a smartScore. Ensure both ref.value and unwrapped Map get the entry
     const scoreObj: QualityScore = {

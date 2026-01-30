@@ -97,19 +97,19 @@
           <button
             v-if="activeTab === 'rootfolders'"
             @click="openAddRootFolder()"
-            class="add-button btn btn-primary"
+            class="add-button"
           >
             <PhPlus />
             Add Root Folder
           </button>
-          <button v-if="activeTab === 'clients'" @click="openAddClient()" class="add-button btn btn-primary">
+          <button v-if="activeTab === 'clients'" @click="openAddClient()" class="add-button">
             <PhPlus />
             Add Download Client
           </button>
           <button
             v-if="activeTab === 'clients'"
             @click="downloadClientsRef?.openAddMapping()"
-            class="add-button btn btn-primary"
+            class="add-button"
           >
             <PhPlus />
             Add Mapping
@@ -117,7 +117,7 @@
           <button
             v-if="activeTab === 'quality-profiles'"
             @click="qualityProfilesRef?.openAddProfile()"
-            class="add-button btn btn-primary"
+            class="add-button"
           >
             <PhPlus />
             Add Quality Profile
@@ -126,7 +126,7 @@
           <button
             v-if="activeTab === 'indexers'"
             @click="indexersRef?.openAddIndexer()"
-            class="add-button btn btn-primary"
+            class="add-button"
           >
             <PhPlus />
             Add Indexer
@@ -135,7 +135,7 @@
           <button
             v-if="activeTab === 'notifications'"
             @click="notificationsRef?.openWebhookForm()"
-            class="add-button btn btn-primary"
+            class="add-button"
           >
             <PhPlus />
             Add Webhook
@@ -165,7 +165,7 @@
             :disabled="testingDiscord || !canTestDiscord"
             :aria-disabled="!canTestDiscord"
             :class="{ 'is-disabled': testingDiscord || !canTestDiscord }"
-            class="add-button btn btn-primary"
+            class="add-button"
             :title="canTestDiscord ? 'Test Discord integration' : `Bot status: ${discordBotStatus}. Fill Application ID and Bot Token, and start the bot to enable`"
           >
             <template v-if="testingDiscord">
@@ -218,7 +218,12 @@
     <!-- Metadata Source Configuration Modal -->
     <Modal :visible="showApiForm" size="lg" :title="editingApi ? 'Edit Metadata Source' : 'Add Metadata Source'" @close="closeApiForm">
       <template #header>
-        <ModalHeader :title="editingApi ? 'Edit Metadata Source' : 'Add Metadata Source'" :icon="PhGlobe" @close="closeApiForm" />
+        <div class="modal-title">
+          <h3><PhGlobe /> {{ editingApi ? 'Edit' : 'Add' }} Metadata Source</h3>
+        </div>
+        <button class="close-btn" @click="closeApiForm">
+          <PhX />
+        </button>
       </template>
           <form @submit.prevent="saveApiConfig" class="config-form">
             <div class="form-group">
@@ -286,14 +291,14 @@
             </div>
           </form>
         <template #footer>
-          <ModalFooter :showCancel="false">
-            <template #left>
-              <button class="cancel-button btn" @click="closeApiForm" type="button"><PhX /> Cancel</button>
-            </template>
-            <template #default>
-              <button @click="saveApiConfig" class="btn btn-primary" type="button"><PhCheck /> Save</button>
-            </template>
-          </ModalFooter>
+          <button @click="closeApiForm" class="cancel-button" type="button">
+            <PhX />
+            Cancel
+          </button>
+          <button @click="saveApiConfig" class="btn btn-primary" type="button">
+            <PhCheck />
+            Save
+          </button>
         </template>
     </Modal>
 
@@ -328,7 +333,7 @@ import QualityProfilesTab from '@/views/settings/QualityProfilesTab.vue'
 import DiscordBotTab from '@/views/settings/DiscordBotTab.vue'
 import NotificationsTab from '@/views/settings/NotificationsTab.vue'
 import IndexersTab from '@/views/settings/IndexersTab.vue'
-import { Modal, ModalHeader, ModalFooter } from '@/components/modal' 
+import { Modal } from '@/components/modal'
 import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue' 
 import GeneralSettingsTab from '@/views/settings/GeneralSettingsTab.vue'
 import CustomSelect from '@/components/inputs/CustomSelect.vue'
@@ -346,6 +351,8 @@ import {
   PhFloppyDisk,
   PhX,
   PhCheck,
+  PhWarningCircle,
+  PhTrash,
 } from '@phosphor-icons/vue'
 import { useToast } from '@/services/toastService'
 
@@ -560,7 +567,12 @@ const isFormValid = computed(() => {
   const vitestEnv = (import.meta as unknown as { env?: Record<string, unknown> }).env?.VITEST
   if (vitestEnv) return true
 
-  // No form-level validation required for this view; allow save
+  // Delegate validation to GeneralSettingsTab if it's active
+  if (activeTab.value === 'general' && generalSettingsRef.value) {
+    return generalSettingsRef.value.isProxyConfigValid
+  }
+
+  // No longer require output path since we use root folders now
   return true
 })
 
@@ -767,7 +779,16 @@ const saveApiConfig = async () => {
 const saveSettings = async () => {
   if (!settings.value) return
 
-  // Proxy settings removed; no proxy validation required
+  // Validate proxy fields if proxy usage is enabled (delegate to GeneralSettingsTab if active)
+  if (activeTab.value === 'general' && generalSettingsRef.value) {
+    if (settings.value.useUsProxy && !generalSettingsRef.value.isProxyConfigValid) {
+      toast.error(
+        'Invalid proxy',
+        'Please provide a valid proxy host and port (1-65535) when using a proxy.',
+      )
+      return
+    }
+  }
 
   try {
     // Create a copy of settings, excluding empty admin fields
@@ -783,7 +804,10 @@ const saveSettings = async () => {
       delete settingsToSave.adminPassword
     }
 
-    // US proxy settings removed from payload
+    // Only include proxy password if non-empty (we allow empty to clear)
+    if (settingsToSave.usProxyPassword === undefined || settingsToSave.usProxyPassword === null) {
+      delete settingsToSave.usProxyPassword
+    }
 
     // No PascalCase keys are produced anymore; we only send camelCase properties.
 
@@ -1422,12 +1446,6 @@ onMounted(async () => {
   margin-top: 60px; /* Add margin to account for fixed toolbar */
 }
 
-/* Ensure consistent ordering for settings card actions: edit -> secondary -> delete */
-.settings-content .action-edit { order: 1 }
-.settings-content .action-secondary { order: 2 }
-.settings-content .action-delete { order: 3 }
-.settings-content .folder-actions, .settings-content .mapping-actions, .settings-content .indexer-actions, .settings-content .config-actions { display:flex; gap:0.5rem; align-items:center }
-
 /* Desktop tabs carousel styles */
 .settings-tabs-desktop-wrapper {
   position: relative;
@@ -1546,6 +1564,7 @@ onMounted(async () => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  margin-bottom: 2rem;
   padding-bottom: 1rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
@@ -1557,10 +1576,36 @@ onMounted(async () => {
   font-weight: 600;
 }
 
-/* `.add-button` visuals are centralized in `src/assets/buttons.css`.
-    Local duplication removed; use `.add-button` or `.btn.btn-primary` as needed. */
+.add-button {
+  padding: 0.75rem 1.5rem;
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 500;
+  font-size: 0.95rem;
+  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
+}
 
-/* Disabled visual state is handled by the centralized button rules */
+.add-button:hover {
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
+}
+
+/* Disabled visual state for add buttons */
+.add-button.is-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+  transform: none !important;
+  box-shadow: none !important;
+}
 
 /* save-button disabled state handled by centralized button rules */
 
@@ -1598,8 +1643,28 @@ onMounted(async () => {
   margin-bottom: 2rem;
 }
 
-/* `.add-button-large` visuals are centralized in `src/assets/buttons.css`.
-    Local duplication removed; use `.add-button-large` or `.btn-lg` as needed. */
+.add-button-large {
+  margin-top: 1.5rem;
+  padding: 1rem 2rem;
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-weight: 600;
+  font-size: 1rem;
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.3);
+}
+
+.add-button-large:hover {
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(30, 136, 229, 0.4);
+}
 
 .section-title-wrapper {
   flex: 1;
@@ -1786,7 +1851,29 @@ onMounted(async () => {
   letter-spacing: 0.5px;
 }
 
+.webhook-status-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.7rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
 
+.webhook-status-badge {
+  background-color: rgba(231, 76, 60, 0.15);
+  color: #ff6b6b;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.webhook-status-badge.active {
+  background-color: rgba(76, 175, 80, 0.15);
+  color: #51cf66;
+  border-color: rgba(76, 175, 80, 0.3);
+}
 
 .expand-toggle {
   display: flex;
@@ -2036,7 +2123,47 @@ onMounted(async () => {
   gap: 0.5rem;
   flex-shrink: 0;
 }
-/* Using centralized `.edit-button` / `.delete-button` from `src/assets/buttons.css` */
+
+.edit-button,
+.delete-button {
+  padding: 0.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  font-size: 1.1rem;
+}
+
+.edit-button {
+  background-color: rgba(77, 171, 247, 0.15);
+  color: #4dabf7;
+  border: 1px solid rgba(77, 171, 247, 0.3);
+}
+
+.edit-button:hover {
+  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
+}
+
+.delete-button {
+  background-color: rgba(231, 76, 60, 0.15);
+  color: #ff6b6b;
+  border: 1px solid rgba(231, 76, 60, 0.3);
+}
+
+.delete-button:hover {
+  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  color: #fff;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(231, 76, 60, 0.4);
+}
 
 .settings-form {
   display: flex;
@@ -2142,19 +2269,85 @@ onMounted(async () => {
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
 }
 
 .form-group input:focus-visible,
 .form-group select:focus-visible {
-  outline: 2px solid rgba(var(--brand-rgb), 0.9);
+  outline: 2px solid #007acc;
   outline-offset: 2px;
 }
 
+.form-group small {
+  display: block;
+  margin-top: 0.5rem;
+  color: #b3b3b3;
+  font-size: 0.85rem;
+}
 
-/* Base checkbox-group styles are provided globally via `src/styles/global.css`.
-   Per-view overrides below customize layout/colours where needed. */
+.checkbox-group {
+  margin-bottom: 1rem;
+}
+
+.checkbox-group label {
+  display: flex;
+  align-items: center; /* center the checkbox with the stacked text */
+  gap: 0.75rem;
+  padding: 1rem;
+  background-color: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+/* Stack title and descriptive text vertically inside the label for better readability */
+.checkbox-group label span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.checkbox-group label span small {
+  margin: 0;
+  font-size: 0.95rem;
+  color: #b3b3b3;
+}
+
+.checkbox-group label:hover {
+  border-color: #007acc;
+  background-color: #222;
+}
+
+.checkbox-group input[type='checkbox'] {
+  margin-top: 0.25rem;
+  width: auto;
+  cursor: pointer;
+}
+
+.checkbox-group input[type='checkbox']:focus-visible {
+  outline: 2px solid #007acc;
+  outline-offset: 2px;
+}
+
+.checkbox-group label span {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
+
+.checkbox-group label strong {
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.checkbox-group label small {
+  color: #b3b3b3;
+  font-size: 0.85rem;
+  font-weight: normal;
+}
 
 .form-help {
   font-size: 0.85rem;
@@ -2172,7 +2365,19 @@ onMounted(async () => {
   gap: 0.5rem;
   flex-wrap: wrap;
   margin-bottom: 0.5rem;
-}/* Use centralized `.invite-button` / `.btn-primary` styles from `src/assets/buttons.css` */
+}
+.invite-button {
+  padding: 0.6rem 1rem;
+  background: linear-gradient(135deg, #20c997 0%, #198754 100%);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 600;
+}
+.invite-button:hover {
+  transform: translateY(-1px);
+}
 .invite-link-preview small a {
   color: #74c0fc;
   text-decoration: underline;
@@ -2506,8 +2711,8 @@ onMounted(async () => {
 }
 
 .test-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
-  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.4);
+  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }
 
 .test-button:disabled {
@@ -2597,7 +2802,46 @@ onMounted(async () => {
   gap: 0.5rem;
 }
 
-/* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
+.icon-button {
+  padding: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  color: #adb5bd;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s ease;
+  font-size: 1.1rem;
+  width: 36px;
+  height: 36px;
+}
+
+.icon-button:hover:not(:disabled) {
+  background: rgba(77, 171, 247, 0.15);
+  border-color: #4dabf7;
+  color: #4dabf7;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.3);
+}
+
+.icon-button.danger {
+  color: #ff6b6b;
+}
+
+.icon-button.danger:hover:not(:disabled) {
+  background: rgba(255, 107, 107, 0.15);
+  border-color: #ff6b6b;
+  color: #ff6b6b;
+  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
+}
+
+.icon-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
 
 .indexer-details {
   display: flex;
@@ -2694,7 +2938,7 @@ onMounted(async () => {
   }
 
   .tab-button.active {
-    border-left-color: var(--brand-500);
+    border-left-color: #007acc;
     border-bottom-color: transparent;
   }
 
@@ -3167,11 +3411,20 @@ onMounted(async () => {
 /* Webhook Modal Specific Styles */
 
 /* modal-footer styles are centralized in src/assets/modals.css; webhook modal uses `.webhook-modal .modal-footer` for special padding */
-
+.modal-footer { }
 
 /* Button color variants centralized in `src/assets/modals.css` */
 /* Only add webhook-modal scoped overrides when absolutely needed */
-/* `.btn-primary` is centralized in `src/assets/buttons.css` */
+
+.btn-primary {
+  background-color: #007acc;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #005a9e;
+  transform: translateY(-1px);
+}
 
 /* Webhook Modal Responsive Styles */
 @media (max-width: 768px) {
@@ -3338,12 +3591,12 @@ onMounted(async () => {
 }
 
 .status-button {
-  background-color: var(--brand-500);
+  background-color: #2196f3;
   color: white;
 }
 
 .status-button:hover:not(:disabled) {
-  background-color: var(--brand-600);
+  background-color: #1976d2;
 }
 
 .start-button {

@@ -1,7 +1,12 @@
 <template>
   <Modal :visible="visible" size="lg" @close="closeModal">
     <template #header>
-      <ModalHeader :title="'Add to Library'" @close="closeModal" />
+      <div class="modal-title">
+        <h3 id="add-library-title">Add to Library</h3>
+      </div>
+      <button class="close-btn" @click="closeModal" aria-label="Close add to library dialog">
+        <i class="ph ph-x"></i>
+      </button>
     </template>
 
     <template #default>
@@ -94,17 +99,25 @@
           <h4>Library Options</h4>
 
           <div class="option-group">
-            <Checkbox v-model="options.monitored">
-              <strong>Monitor for new releases</strong>
-              <small>Automatically search for better quality versions of this audiobook</small>
-            </Checkbox>
+            <label class="option-label">
+              <input type="checkbox" v-model="options.monitored" class="option-checkbox" />
+              <span class="option-text">
+                <strong>Monitor for new releases</strong>
+                <br />
+                <small>Automatically search for better quality versions of this audiobook</small>
+              </span>
+            </label>
           </div>
 
           <div class="option-group">
-            <Checkbox v-model="options.autoSearch">
-              <strong>Search for downloads immediately</strong>
-              <small>Start searching for available downloads right after adding to library</small>
-            </Checkbox>
+            <label class="option-label">
+              <input type="checkbox" v-model="options.autoSearch" class="option-checkbox" />
+              <span class="option-text">
+                <strong>Search for downloads immediately</strong>
+                <br />
+                <small>Start searching for available downloads right after adding to library</small>
+              </span>
+            </label>
           </div>
 
           <div class="option-group">
@@ -163,11 +176,10 @@ import { apiService } from '@/services/api'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
-import { Modal, ModalHeader, ModalBody } from '@/components/modal'
+import { Modal, ModalBody } from '@/components/modal'
 import RootFolderSelect from '@/components/inputs/RootFolderSelect.vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { PhX, PhSpinner, PhPlus } from '@phosphor-icons/vue' 
-import { toForward, normalizeForCompare } from '@/utils/path' 
 
 interface Props {
   visible: boolean
@@ -405,14 +417,14 @@ function deriveRelative(
   if (!serverFull) return ''
 
   // Normalize separators to forward slash for comparison
-  const normRoot = toForward(rootVal)
-  const normFull = toForward(serverFull)
+  const normRoot = rootVal.replace(/\\/g, '/')
+  const normFull = serverFull.replace(/\\/g, '/')
 
   // Ensure trailing slash on root for slicing
   const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
 
-  if (normalizeForCompare(normFull) === normalizeForCompare(normRoot)) return ''
-  if (normalizeForCompare(normFull).startsWith(normalizeForCompare(rootWithSlash))) {
+  if (normFull.toLowerCase() === normRoot.toLowerCase()) return ''
+  if (normFull.toLowerCase().startsWith(rootWithSlash.toLowerCase())) {
     const rel = normFull.slice(rootWithSlash.length).replace(/^\/+/, '')
     // Preserve user's original separator preference from configured root
     const useBackslash = rootVal.includes('\\')
@@ -668,6 +680,22 @@ const capitalizeFirst = (str: string): string => {
   font-size: 1.5rem;
 }
 
+.close-btn {
+  background: none;
+  border: none;
+  color: #ccc;
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.close-btn:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
 .modal-body {
   padding: 1.5rem;
   flex: 1;
@@ -675,7 +703,7 @@ const capitalizeFirst = (str: string): string => {
 }
 
 /* modal-footer styles are centralized in src/assets/modals.css */
-.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
+.modal-footer { }
 
 .book-layout {
   display: flex;
@@ -736,7 +764,7 @@ const capitalizeFirst = (str: string): string => {
 
 .authors,
 .narrators {
-  color: var(--brand-500);
+  color: #007acc;
   margin: 0.25rem 0;
   font-weight: 500;
 }
@@ -804,7 +832,7 @@ const capitalizeFirst = (str: string): string => {
   margin-top: 0.25rem;
   width: 1rem;
   height: 1rem;
-  accent-color: var(--brand-500);
+  accent-color: #007acc;
 }
 
 .option-text {
@@ -837,8 +865,8 @@ const capitalizeFirst = (str: string): string => {
 
 .form-select:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.2);
+  border-color: #007acc;
+  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
 }
 
 .form-help {
@@ -870,8 +898,8 @@ const capitalizeFirst = (str: string): string => {
 
 .form-input:focus {
   outline: none;
-  border-color: var(--brand-focus);
-  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.06);
+  border-color: #007acc;
+  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.06);
 }
 
 /* Row layout for destination: root left, input right */
@@ -895,7 +923,33 @@ const capitalizeFirst = (str: string): string => {
   flex: 1 1 auto;
 }
 
-/* Buttons are centralized in `src/assets/buttons.css` and `src/assets/modals.css`. Use `.btn` / `.btn-primary` here. */
+.btn {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 120px;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+.btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.btn-primary {
+  background-color: #007acc;
+  color: white;
+}
+
+.btn-primary:hover:not(:disabled) {
+  background-color: #005fa3;
+}
 
 /* Button color variants centralized in `src/assets/modals.css` */
 

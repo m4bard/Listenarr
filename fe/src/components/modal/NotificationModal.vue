@@ -87,7 +87,7 @@ function onClose() {
 }
 
 .notification-info .notification-icon i {
-  color: var(--brand-500);
+  color: #2196f3;
 }
 
 .notification-content {

@@ -9,7 +9,7 @@
         <p>Monitor system health, resources, and service status</p>
       </div>
       <div class="page-actions">
-        <button class="add-button btn btn-primary" @click="refreshStatus" :disabled="loading">
+        <button class="add-button" @click="refreshStatus" :disabled="loading">
           <component :is="loading ? PhSpinner : PhArrowClockwise" />
           {{ loading ? 'Refreshing...' : 'Refresh' }}
         </button>
@@ -465,7 +465,7 @@ onMounted(() => {
 
 .settings-header h1 i {
   font-size: 2rem;
-  color: var(--brand-focus);
+  color: #007acc;
 }
 
 .settings-header p {
@@ -484,7 +484,7 @@ onMounted(() => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.6rem 1.2rem;
-  background: var(--brand-focus);
+  background: #007acc;
   color: white;
   border: none;
   border-radius: 6px;
@@ -495,7 +495,7 @@ onMounted(() => {
 }
 
 .add-button:hover:not(:disabled) {
-  background: var(--brand-700);
+  background: #005a9e;
   transform: translateY(-1px);
 }
 
@@ -538,7 +538,7 @@ onMounted(() => {
 
 .loading-state i {
   font-size: 2.5rem;
-  color: var(--brand-focus);
+  color: #007acc;
 }
 
 /* Status Grid */
@@ -582,7 +582,7 @@ onMounted(() => {
 
 .card-title i {
   font-size: 1.5rem;
-  color: var(--brand-focus);
+  color: #007acc;
 }
 
 .card-title h3 {
@@ -640,9 +640,9 @@ onMounted(() => {
 
 .detail-row i {
   font-size: 1.1rem;
-  color: var(--brand-focus);
+  color: #007acc;
   flex-shrink: 0;
-} 
+}
 
 .detail-row .label {
   color: #999;
@@ -739,7 +739,7 @@ onMounted(() => {
 
 .storage-fill {
   height: 100%;
-  background: linear-gradient(90deg, var(--brand-focus), var(--brand-500));
+  background: linear-gradient(90deg, #007acc, #0098ff);
   transition:
     width 0.5s ease,
     background 0.3s;
@@ -789,8 +789,8 @@ onMounted(() => {
 
 .section-header h2 i {
   font-size: 1.5rem;
-  color: var(--brand-focus);
-} 
+  color: #007acc;
+}
 
 .section-title-with-status {
   display: flex;
@@ -845,7 +845,29 @@ onMounted(() => {
   gap: 0.5rem;
 }
 
-/* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
+.icon-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+  color: #999;
+}
+
+.icon-button:hover {
+  background: #333;
+  border-color: #007acc;
+  color: #007acc;
+}
+
+.icon-button i {
+  font-size: 1.1rem;
+}
 
 /* Info Grid */
 .info-grid {
@@ -872,7 +894,7 @@ onMounted(() => {
 
 .info-card > i {
   font-size: 2rem;
-  color: var(--brand-focus);
+  color: #007acc;
   flex-shrink: 0;
 }
 
@@ -898,10 +920,10 @@ onMounted(() => {
 }
 
 .info-content .percentage {
-  color: var(--brand-focus);
+  color: #007acc;
   font-size: 0.9rem;
   font-weight: 400;
-} 
+}
 
 /* Logs Container */
 .logs-container {
@@ -935,7 +957,7 @@ onMounted(() => {
 }
 
 .log-entry.info {
-  border-left: 3px solid var(--brand-focus);
+  border-left: 3px solid #007acc;
 }
 
 .log-entry.warning {
@@ -961,11 +983,11 @@ onMounted(() => {
 }
 
 .log-entry.info > i {
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .log-entry.info .log-icon svg {
-  color: var(--brand-500);
+  color: #007acc;
 }
 
 .log-entry.warning > i {
@@ -1006,8 +1028,8 @@ onMounted(() => {
 }
 
 .log-entry.info .log-level {
-  background: rgba(var(--brand-rgb), 0.15);
-  color: var(--brand-500);
+  background: rgba(0, 122, 204, 0.15);
+  color: #007acc;
 }
 
 .log-entry.warning .log-level {
