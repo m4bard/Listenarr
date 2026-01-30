@@ -26,30 +26,27 @@
             <div class="profile-title-section">
               <div class="profile-name-row">
                 <h4>{{ profile.name }}</h4>
-                <span v-if="profile.isDefault" class="status-badge default">
-                  <PhCheckCircle />
-                  Default
-                </span>
+
               </div>
               <p v-if="profile.description" class="profile-description">
                 {{ profile.description }}
               </p>
             </div>
             <div class="profile-actions">
-              <button @click="editProfile(profile)" class="icon-button" title="Edit Profile">
+              <button @click="editProfile(profile)" class="icon-button action-edit" title="Edit Profile">
                 <PhPencil />
               </button>
               <button
                 v-if="!profile.isDefault"
                 @click="setDefaultProfile(profile)"
-                class="icon-button"
+                class="icon-button action-secondary"
                 title="Set as Default"
               >
                 <PhStar />
               </button>
               <button
                 @click="confirmDeleteProfile(profile)"
-                class="icon-button danger"
+                class="icon-button danger action-delete"
                 :disabled="profile.isDefault"
                 :title="profile.isDefault ? 'Cannot delete default profile' : 'Delete Profile'"
               >
@@ -589,34 +586,7 @@ defineExpose({
   flex-shrink: 0;
 }
 
-.icon-button {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  padding: 0.5rem;
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s;
-  font-size: 1.1rem;
-}
-
-.icon-button:hover:not(:disabled) {
-  background: var(--bg-hover);
-  border-color: var(--primary-color);
-  color: var(--primary-color);
-}
-
-.icon-button.danger:hover:not(:disabled) {
-  border-color: #f44336;
-  color: #f44336;
-}
-
-.icon-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
+/* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
 
 .profile-content {
   display: flex;

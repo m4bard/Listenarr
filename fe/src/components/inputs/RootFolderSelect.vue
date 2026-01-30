@@ -16,15 +16,6 @@
           </option>
           <option :value="CUSTOM_VALUE">Custom path</option>
         </select>
-
-        <div v-if="isCustom" class="custom-path" :class="{ 'inline-mode': props.inline }">
-          <div class="custom-path-row">
-            <input ref="localInput" type="text" class="form-input custom-input" placeholder="Absolute path (e.g. C:\Audiobooks)" v-model="localCustomPath" @input="onCustomInput" @keydown.enter.prevent="onEnterSave" />
-            <button v-if="!hideBrowse" type="button" class="btn-browse" @click="$emit('open-browser')" title="Browse for folder" aria-label="Browse for folder">
-              <PhFolder />
-            </button>
-          </div>
-        </div>
       </div>
     </div>
   </div>
@@ -33,42 +24,26 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
-import { PhSpinner, PhFolder, PhInfo } from '@phosphor-icons/vue'
+import { PhSpinner, PhInfo } from '@phosphor-icons/vue'
 
 const NULL_VALUE = '__null__'
 const CUSTOM_VALUE = '__custom__'
 
 const props = withDefaults(
-  defineProps<{ rootId?: number | null; customPath?: string | null; hideLabel?: boolean; hideBrowse?: boolean; autoFocusCustom?: boolean; inline?: boolean }>(),
-  { rootId: null, customPath: null, hideLabel: false, hideBrowse: false, autoFocusCustom: false, inline: false },
+  defineProps<{ rootId?: number | null; customPath?: string | null; hideLabel?: boolean; hideBrowse?: boolean; autoFocusCustom?: boolean; inline?: boolean; externalCustom?: boolean }>(),
+  { rootId: null, customPath: null, hideLabel: false, hideBrowse: false, autoFocusCustom: false, inline: false, externalCustom: false },
 )
 
 
 
-const emit = defineEmits(['update:rootId', 'update:customPath'])
+const emit = defineEmits(['update:rootId', 'update:customPath', 'open-browser', 'custom-selected'])
 
 const store = useRootFoldersStore()
-const localCustomPath = ref(props.customPath ?? '')
-const localInput = ref<HTMLInputElement | null>(null)
-
-function onEnterSave() {
-  if (localCustomPath.value && localCustomPath.value.trim().length) {
-    emit('update:customPath', localCustomPath.value.trim())
-  }
-}
 
 onMounted(() => {
   // Ensure root folders are loaded for selection
   void store.load()
 })
-
-watch(
-  () => props.customPath,
-  (v) => {
-    localCustomPath.value = v ?? ''
-  },
-)
-
 const isCustom = computed(() => {
   return (props.customPath && props.customPath.length > 0) || selectValueComputed.value === CUSTOM_VALUE
 })
@@ -85,14 +60,13 @@ const selectValueComputed = computed(() => {
 watch(
   () => selectValueComputed.value,
   (v) => {
-    if (v === CUSTOM_VALUE && props.autoFocusCustom) {
-      // focus after DOM updates
-      setTimeout(() => {
-        localInput.value?.focus()
-      }, 0)
+    if (v === CUSTOM_VALUE) {
+      // Notify parent that custom selection was chosen (useful when the parent
+      // renders the custom input externally) so it can autofocus the external input.
+      emit('custom-selected')
     }
   },
-)
+) 
 
 const selectValue = selectValueComputed
 
@@ -101,7 +75,9 @@ function onChange(e: Event) {
   if (v === CUSTOM_VALUE) {
     // Switch to custom path mode. Use 0 to explicitly denote 'custom' in parent.
     emit('update:rootId', 0)
-    emit('update:customPath', localCustomPath.value || '')
+    emit('update:customPath', props.customPath || '')
+    // Notify parent so it can take any action (e.g., autofocus an external input)
+    emit('custom-selected')
   } else if (v === NULL_VALUE) {
     emit('update:rootId', null)
     emit('update:customPath', null)
@@ -113,12 +89,6 @@ function onChange(e: Event) {
     }
   }
 }
-
-function onCustomInput() {
-  // ensure parent knows we're in custom mode when typing
-  emit('update:rootId', 0)
-  emit('update:customPath', localCustomPath.value || null)
-}
 </script>
 
 <style scoped>
@@ -127,23 +97,13 @@ function onCustomInput() {
   flex-direction: column;
   gap: 0.5rem;
 }
-.root-select-content.inline { display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap }
+.root-select-content.inline { display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; width:100% }
 
-.custom-path { 
-  margin-top: 0.5rem;
-}
 
-.custom-path.inline-mode { margin-top: 0 }
-.custom-path.inline-mode .custom-path-row { width:100%; display:flex; gap:0.5rem; align-items:center }
-.custom-path-row { display:flex; gap:0.5rem; align-items:center }
-.btn-browse { padding:0.45rem 0.8rem; background:#2196f3; color:#fff; border:none; border-radius:6px; display:inline-flex; align-items:center; justify-content:center; border: 1px solid rgba(0,0,0,0.15) }
-.btn-browse:hover { background:#1976d2 }
-.btn-browse svg { width:18px; height:18px }
 
-.custom-input { min-width: 160px; flex: 1 }
+.recent-paths { width:100% }
 
-/* Auto-focus visual hint */
-.custom-path-row .form-input:focus { border-color: #007acc; box-shadow: 0 0 0 3px rgba(0,122,204,0.12) }
+
 
 .form-select {
   padding: 0.75rem 1rem;
@@ -160,9 +120,9 @@ function onCustomInput() {
 
 .form-select:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.2);
-} 
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.2);
+}  
 
 .form-input {
   padding: 0.6rem 0.75rem;

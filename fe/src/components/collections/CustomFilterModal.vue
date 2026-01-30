@@ -1,12 +1,7 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="onClose">
     <template #header>
-      <div class="modal-title">
-        <h3><PhFunnel /> Custom Filter</h3>
-      </div>
-      <button class="close-btn" @click="onClose">
-        <PhX />
-      </button>
+      <ModalHeader :title="'Custom Filter'" :icon="PhFunnel" @close="onClose" />
     </template>
 
     <template #default>
@@ -173,7 +168,7 @@
     </template>
 
     <template #footer>
-      <button type="button" class="cancel-button" @click="onClose"><PhX /> Cancel</button>
+      <button type="button" class="cancel-button btn" @click="onClose"><PhX /> Cancel</button>
       <button type="button" class="btn btn-primary" @click="onSave"><PhCheck /> Save</button>
     </template>
   </Modal>
@@ -181,7 +176,7 @@
 
 <script setup lang="ts">
 import { ref, watch, toRaw } from 'vue'
-import { Modal, ModalBody } from '@/components/modal'
+import { Modal, ModalHeader, ModalBody } from '@/components/modal'
 import { PhFunnel, PhX, PhCheck } from '@phosphor-icons/vue' 
 
 // Types

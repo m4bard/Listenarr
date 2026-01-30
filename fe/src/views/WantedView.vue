@@ -117,18 +117,18 @@
             </div>
             <div class="wanted-actions-cell">
               <button
-                class="btn-icon"
+                class="icon-button"
                 @click="searchAudiobook(item)"
                 :disabled="searching[item.id]"
                 title="Automatic Search"
               >
                 <PhRobot />
               </button>
-              <button class="btn-icon" @click="openManualSearch(item)" title="Manual Search">
+              <button class="icon-button" @click="openManualSearch(item)" title="Manual Search">
                 <PhMagnifyingGlass />
               </button>
               <button
-                class="btn-icon"
+                class="icon-button danger"
                 @click="markAsSkipped(item)"
                 :disabled="searching[item.id]"
                 title="Unmonitor Audiobook"
@@ -627,86 +627,9 @@ const markAsSkipped = async (item: Audiobook) => {
   gap: 0.75rem;
 }
 
-.btn {
-  padding: 0.65rem 1.25rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s ease;
-  font-size: 0.9rem;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btn-primary {
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
-  color: white;
-  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
-  box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
-  transform: translateY(-1px);
-}
-
-/* Button color variants centralized in `src/assets/modals.css` */
-
-.btn svg {
-  width: 18px;
-  height: 18px;
-}
-
-.btn-icon {
-  background: none;
-  border: none;
-  color: #adb5bd;
-  cursor: pointer;
-  padding: 0.5rem;
-  border-radius: 6px;
-  transition: all 0.2s ease;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.2rem;
-}
-
-.btn-icon:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.08);
-  color: white;
-}
-
-.btn-icon:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-/* Robot icon for automatic search */
-.btn-icon .ph-robot {
-  color: #51cf66;
-}
-
-.btn-icon:hover:not(:disabled) .ph-robot {
-  color: #69db7c;
-}
-
-.wanted-filters {
-  margin-bottom: 2rem;
-}
-
+/* Button visuals are centralized in `src/assets/buttons.css`.
+   Component-local duplication removed to ensure a single source of truth.
+   Use `.btn`, `.btn-primary`, `.icon-button`, etc. */
 .filter-tabs {
   display: flex;
   gap: 0.5rem;
@@ -1068,13 +991,13 @@ const markAsSkipped = async (item: Audiobook) => {
     gap: 0.75rem;
   }
 
-  .wanted-actions-cell .btn-icon {
+  .wanted-actions-cell .icon-button {
     padding: 0.75rem;
     min-width: 44px;
     min-height: 44px;
   }
 
-  .wanted-actions-cell .btn-icon svg {
+  .wanted-actions-cell .icon-button svg {
     width: 24px;
     height: 24px;
   }

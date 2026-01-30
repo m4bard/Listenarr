@@ -99,19 +99,19 @@
         <div class="section-card">
           <h2>Quick Actions</h2>
           <div class="quick-actions">
-            <RouterLink to="/add-new" class="action-button primary">
+            <RouterLink to="/add-new" class="action-button primary btn btn-primary">
               <PhPlus />
               Add New Audiobook
             </RouterLink>
-            <RouterLink to="/add-new" class="action-button">
+            <RouterLink to="/add-new" class="action-button btn">
               <PhMagnifyingGlass />
               <span>Search</span>
             </RouterLink>
-            <RouterLink to="/library-import" class="action-button">
+            <RouterLink to="/library-import" class="action-button btn">
               <PhFolder />
               Import Library
             </RouterLink>
-            <RouterLink to="/wanted" class="action-button">
+            <RouterLink to="/wanted" class="action-button btn">
               <PhWarning />
               Manual Search
             </RouterLink>
@@ -316,9 +316,9 @@ const formatTime = (timestamp: Date): string => {
 .stat-number {
   font-size: 1.8rem;
   font-weight: bold;
-  color: #007acc;
+  color: var(--brand-500);
   margin-bottom: 0.25rem;
-}
+} 
 
 .stat-content p {
   margin: 0;
@@ -412,9 +412,9 @@ const formatTime = (timestamp: Date): string => {
 }
 
 .status-badge.downloading {
-  background-color: #007acc;
+  background-color: var(--brand-500);
   color: white;
-}
+} 
 
 .episodes-list {
   display: flex;
@@ -489,12 +489,12 @@ const formatTime = (timestamp: Date): string => {
 }
 
 .action-button.primary {
-  background-color: #007acc;
+  background-color: var(--brand-500);
 }
 
 .action-button.primary:hover {
-  background-color: #005fa3;
-}
+  background-color: var(--brand-700);
+} 
 
 .health-items {
   display: flex;
@@ -540,7 +540,7 @@ const formatTime = (timestamp: Date): string => {
 }
 
 .view-all-link {
-  color: #007acc;
+  color: var(--brand-500);
   text-decoration: none;
   font-size: 0.9rem;
   font-weight: 500;

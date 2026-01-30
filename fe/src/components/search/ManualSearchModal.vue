@@ -1,12 +1,7 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
-      <div class="modal-title">
-        <h3><PhMagnifyingGlass /> Manual Search - {{ audiobook?.title }}</h3>
-      </div>
-      <button class="close-btn" @click="close">
-        <PhX />
-      </button>
+      <ModalHeader :title="`Manual Search - ${audiobook?.title || ''}`" :icon="PhMagnifyingGlass" @close="close" />
     </template>
 
     <template #default>
@@ -27,7 +22,7 @@
                 <input
                   v-model="searchQuery"
                   type="text"
-                  class="search-input"
+                  class="search-input form-input"
                   placeholder="Search for audiobooks..."
                   @keyup.enter="search"
                   :disabled="searching"
@@ -243,7 +238,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
-import { Modal, ModalBody } from '@/components/modal'
+import { Modal, ModalHeader, ModalBody } from '@/components/modal'
 import {
   PhMagnifyingGlass,
   PhX,
@@ -910,7 +905,7 @@ function getScoreClass(score: number): string {
 .search-status {
   text-align: center;
   padding: 3rem 2rem;
-  color: #007acc;
+  color: var(--brand-500);
   font-size: 1.1rem;
   display: flex;
   flex-direction: column;
@@ -986,8 +981,8 @@ function getScoreClass(score: number): string {
 
 .search-input:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 2px rgba(0, 122, 204, 0.2);
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.2);
 }
 
 .search-input:disabled {
@@ -999,7 +994,7 @@ function getScoreClass(score: number): string {
   padding: 0 1rem;
   white-space: nowrap;
   min-width: 96px;
-  background-color: #007acc;
+  background-color: var(--brand-500);
   color: white;
   border: none;
   border-radius: 6px;
@@ -1015,8 +1010,8 @@ function getScoreClass(score: number): string {
 }
 
 .search-btn:hover:not(:disabled) {
-  background-color: #0056b3;
-}
+  background-color: var(--brand-700);
+} 
 
 .search-btn:disabled {
   opacity: 0.6;
@@ -1028,26 +1023,7 @@ function getScoreClass(score: number): string {
   color: inherit;
 }
 
-.btn-primary {
-  background-color: #007acc;
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background-color: #0056b3;
-}
-
-.btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  transition: all 0.2s;
-}
+/* Primary visuals are centralized in `src/assets/buttons.css` and `src/assets/modals.css` — use `.btn` / `.btn-primary` here. */
 
 /* Button color variants centralized in `src/assets/modals.css` */
 
@@ -1138,7 +1114,7 @@ function getScoreClass(score: number): string {
 
 .sort-icon-active {
   opacity: 1;
-  color: #007acc;
+  color: var(--brand-500);
 }
 
 .results-table tbody tr {
@@ -1241,7 +1217,7 @@ function getScoreClass(score: number): string {
 }
 
 .indexer-name {
-  color: #007acc;
+  color: var(--brand-500);
 }
 
 .peers-cell {
@@ -1376,7 +1352,7 @@ function getScoreClass(score: number): string {
 }
 
 .btn-download:hover:not(:disabled) {
-  background-color: #007acc;
+  background-color: var(--brand-500);
   color: white;
 }
 

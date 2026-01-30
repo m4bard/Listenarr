@@ -7,21 +7,18 @@
     <template #default>
       <ModalForm :submitting="saving" @submit="handleSubmit">
         <ModalBody>
-          <!-- Basic Information -->
-          <div class="form-section">
-            <div class="form-group">
-              <label for="name">Name *</label>
-              <input
-                id="name"
-                v-model="formData.name"
-                type="text"
-                required
-                placeholder="e.g., My Indexer"
-              />
-            </div>
+          <!-- Activation -->
+          <FormSection title="Activation" :icon="PhToggleRight">
+            <CheckboxCard v-model="formData.isEnabled" title="Enable" description="Enable this indexer" />
+          </FormSection>
 
-            <div class="form-group">
-              <label for="implementation">Implementation *</label>
+          <!-- Basic Information -->
+          <FormSection title="Basic Information" :icon="PhGlobe">
+            <FormRow label="Name *" labelFor="name">
+              <input id="name" v-model="formData.name" type="text" required placeholder="e.g., My Indexer" />
+            </FormRow>
+
+            <FormRow label="Implementation *" labelFor="implementation">
               <select id="implementation" v-model="formData.implementation" required>
                 <option value="Newznab">Newznab</option>
                 <option value="Torznab">Torznab</option>
@@ -29,10 +26,9 @@
                 <option value="InternetArchive">Internet Archive</option>
                 <option value="Custom">Custom</option>
               </select>
-            </div>
+            </FormRow>
 
-            <div v-if="formData.implementation !== 'InternetArchive'" class="form-group">
-              <label for="url">URL *</label>
+            <FormRow v-if="formData.implementation !== 'InternetArchive'" label="URL *" labelFor="url">
               <input
                 id="url"
                 v-model="formData.url"
@@ -44,13 +40,12 @@
                     : 'https://indexer.example.com'
                 "
               />
-            </div>
+            </FormRow>
 
             <!-- MyAnonamouse Authentication & Options -->
             <div v-if="formData.implementation === 'MyAnonamouse'" class="form-section">
               <h4>MyAnonamouse Settings</h4>
-              <div class="form-group">
-                <label for="mam-id">MAM ID *</label>
+              <FormRow label="MAM ID *" labelFor="mam-id">
                 <input
                   id="mam-id"
                   v-model="mamId"
@@ -58,7 +53,7 @@
                   :required="formData.implementation === 'MyAnonamouse'"
                   placeholder="Your MyAnonamouse MAM ID"
                 />
-              </div>
+              </FormRow>
               <small class="info-text">
                 <i class="ph ph-info"></i>
                 MyAnonamouse requires your MAM ID for authentication. This is a unique identifier
@@ -66,8 +61,7 @@
               </small>
 
               <div class="form-row mam-options">
-                <label class="form-group">
-                  <span>Filter</span>
+                <FormRow label="Filter">
                   <select v-model="mamFilter">
                     <option value="">Search everything</option>
                     <option value="Active">Active</option>
@@ -76,46 +70,39 @@
                     <option value="Vip">VIP only</option>
                     <option value="NotVip">Not VIP</option>
                   </select>
-                </label>
+                </FormRow>
 
-                <label class="form-group">
-                  <input type="checkbox" v-model="mamSearchInDescription" />
-                  <span>Search in description</span>
-                </label>
+                <FormRow>
+                  <Checkbox v-model="mamSearchInDescription">Search in description</Checkbox>
+                </FormRow>
 
-                <label class="form-group">
-                  <input type="checkbox" v-model="mamSearchInSeries" />
-                  <span>Search in series</span>
-                </label>
+                <FormRow>
+                  <Checkbox v-model="mamSearchInSeries">Search in series</Checkbox>
+                </FormRow>
 
-                <label class="form-group">
-                  <input type="checkbox" v-model="mamSearchInFilenames" />
-                  <span>Search in filenames</span>
-                </label>
+                <FormRow>
+                  <Checkbox v-model="mamSearchInFilenames">Search in filenames</Checkbox>
+                </FormRow>
 
-                <label class="form-group">
-                  <span>Language (numeric id)</span>
+                <FormRow label="Language (numeric id)">
                   <input type="text" v-model="mamLanguage" placeholder="e.g., 1" />
-                </label>
+                </FormRow>
 
-                <label class="form-group">
-                  <span>Freeleech wedge</span>
+                <FormRow label="Freeleech wedge">
                   <select v-model="mamFreeleechWedge">
                     <option value="">Never</option>
                     <option value="Preferred">Preferred</option>
                     <option value="Required">Required</option>
                   </select>
-                </label>
+                </FormRow>
 
-                <label class="form-group">
-                  <input type="checkbox" v-model="mamEnrichResults" />
-                  <span>Enrich results (fetch item page for missing fields)</span>
-                </label>
+                <FormRow>
+                  <Checkbox v-model="mamEnrichResults">Enrich results (fetch item page for missing fields)</Checkbox>
+                </FormRow>
 
-                <label class="form-group">
-                  <span>Enrich top results</span>
+                <FormRow label="Enrich top results">
                   <input type="number" v-model.number="mamEnrichTopResults" min="1" max="20" />
-                </label>
+                </FormRow>
               </div>
             </div>
 
@@ -141,102 +128,60 @@
             </div>
 
             <!-- API Key for other implementations -->
-            <div
+            <FormRow
               v-if="
                 formData.implementation !== 'MyAnonamouse' &&
                 formData.implementation !== 'InternetArchive'
               "
-              class="form-group"
+              label="API Key"
+              labelFor="apiKey"
             >
-              <label for="apiKey">API Key</label>
               <PasswordInput id="apiKey" v-model="formData.apiKey" placeholder="Your API key" class="admin-input" />
-            </div>
+            </FormRow>
 
-            <div v-if="formData.implementation !== 'InternetArchive'" class="form-group">
-              <label for="categories">Categories</label>
+            <FormRow v-if="formData.implementation !== 'InternetArchive'" label="Categories" labelFor="categories" help="Leave empty to search all categories">
               <input
                 id="categories"
                 v-model="formData.categories"
                 type="text"
                 placeholder="Comma-separated category IDs (e.g., 3030,3040)"
               />
-              <small>Leave empty to search all categories</small>
-            </div>
-          </div>
+            </FormRow>
+          </FormSection>
 
           <!-- Features -->
-          <div class="form-section">
-            <h3>Features</h3>
-
-            <div v-if="formData.implementation !== 'InternetArchive'" class="checkbox-group">
-              <label>
-                <input type="checkbox" v-model="formData.enableRss" />
-                <span>
-                  <strong>Enable RSS</strong>
-                  <small>Use RSS feeds to monitor for new releases</small>
-                </span>
-              </label>
+          <FormSection title="Features" :icon="PhGear">
+            <div v-if="formData.implementation !== 'InternetArchive'">
+              <CheckboxCard v-model="formData.enableRss" title="Enable RSS" description="Use RSS feeds to monitor for new releases" />
             </div>
 
-            <div class="checkbox-group">
-              <label>
-                <input type="checkbox" v-model="formData.enableAutomaticSearch" />
-                <span>
-                  <strong>Enable Automatic Search</strong>
-                  <small>Use this indexer for automatic searches</small>
-                </span>
-              </label>
-            </div>
+            <CheckboxCard v-model="formData.enableAutomaticSearch" title="Enable Automatic Search" description="Use this indexer for automatic searches" />
 
-            <div class="checkbox-group">
-              <label>
-                <input type="checkbox" v-model="formData.enableInteractiveSearch" />
-                <span>
-                  <strong>Enable Interactive Search</strong>
-                  <small>Use this indexer for manual searches</small>
-                </span>
-              </label>
-            </div>
-          </div>
+            <CheckboxCard v-model="formData.enableInteractiveSearch" title="Enable Interactive Search" description="Use this indexer for manual searches" />
+          </FormSection>
 
           <!-- Advanced Settings -->
-          <div class="form-section">
-            <h3>Advanced Settings</h3>
-
+          <FormSection title="Advanced Settings" :icon="PhGear">
             <div class="form-row">
-              <div class="form-group">
-                <label for="priority">Priority</label>
-                <input
-                  id="priority"
-                  v-model.number="formData.priority"
-                  type="number"
-                  min="1"
-                  max="100"
-                />
-                <small>Higher priority indexers are searched first (1-100)</small>
-              </div>
+              <FormRow label="Priority" labelFor="priority" help="Higher priority indexers are searched first (1-100)">
+                <input id="priority" v-model.number="formData.priority" type="number" min="1" max="100" />
+              </FormRow>
 
-              <div v-if="formData.implementation !== 'InternetArchive'" class="form-group">
-                <label for="minimumAge">Minimum Age (minutes)</label>
+              <FormRow v-if="formData.implementation !== 'InternetArchive'" label="Minimum Age (minutes)" labelFor="minimumAge" help="Wait time before grabbing new releases (0 = disabled)">
                 <input id="minimumAge" v-model.number="formData.minimumAge" type="number" min="0" />
-                <small>Wait time before grabbing new releases (0 = disabled)</small>
-              </div>
+              </FormRow>
             </div>
 
             <div class="form-row" v-if="formData.implementation === 'Newznab'">
-              <div class="form-group">
-                <label for="retention">Retention (days)</label>
+              <FormRow label="Retention (days)" labelFor="retention" help="Usenet retention in days (0 = unlimited)">
                 <input id="retention" v-model.number="formData.retention" type="number" min="0" />
-                <small>Usenet retention in days (0 = unlimited)</small>
-              </div>
+              </FormRow>
             </div>
 
-            <div class="form-group">
-              <label for="maximumSize">Maximum Size (MB)</label>
+            <FormRow label="Maximum Size (MB)" labelFor="maximumSize" help="Maximum allowed size in megabytes (0 = unlimited)">
               <input id="maximumSize" v-model.number="formData.maximumSize" type="number" min="0" />
-              <small>Maximum allowed size in megabytes (0 = unlimited)</small>
-            </div>
-          </div>
+            </FormRow>
+          </FormSection>
         </ModalBody>
       </ModalForm>
 
@@ -261,7 +206,11 @@
 import { ref, watch } from 'vue'
 import { Modal, ModalHeader, ModalFooter, ModalBody, ModalForm } from '@/components/modal'
 import PasswordInput from '@/components/inputs/PasswordInput.vue'
-import { PhX, PhGlobe, PhSpinner, PhGear, PhCheck } from '@phosphor-icons/vue' 
+import Checkbox from '@/components/inputs/Checkbox.vue'
+import FormRow from '@/components/settings/FormRow.vue'
+import CheckboxCard from '@/components/settings/CheckboxCard.vue'
+import FormSection from '@/components/settings/FormSection.vue'
+import { PhX, PhGlobe, PhSpinner, PhGear, PhCheck, PhToggleRight } from '@phosphor-icons/vue' 
 import type { Indexer } from '@/types' 
 import {
   createIndexer,
@@ -572,45 +521,10 @@ const handleSubmit = async () => {
   font-size: 1.5rem;
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  color: #999;
-  cursor: pointer;
-  padding: 0.5rem;
-  font-size: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.close-btn:hover {
-  background-color: #333;
-  color: #fff;
-}
-
 .modal-body {
   padding: 2rem;
   overflow-y: auto;
   flex: 1;
-}
-
-.form-section {
-  margin-bottom: 2rem;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.form-section h3 {
-  color: #fff;
-  font-size: 1.1rem;
-  margin: 0 0 1rem 0;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid #444;
 }
 
 .form-group {
@@ -645,8 +559,8 @@ const handleSubmit = async () => {
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
 }
 
 .form-group small {
@@ -661,42 +575,12 @@ const handleSubmit = async () => {
   gap: 1rem;
 }
 
-.checkbox-group {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
 
-.checkbox-group label {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
-  background-color: #1a1a1a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
 
-.checkbox-group label:hover {
-  border-color: #007acc;
-  background-color: #222;
-}
-
-.checkbox-group input[type='checkbox'] {
-  margin-top: 0.25rem;
-  width: auto;
-  cursor: pointer;
-}
-
-.checkbox-group label span {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  flex: 1;
-}
+/* Settings indexer-specific overrides */
+.checkbox-group { display: flex; flex-direction: column; gap: 1rem; }
+.checkbox-group label:hover { border-color: var(--brand-500); background-color: #222 }
+.checkbox-group label span { flex: 1 }
 
 .checkbox-group label strong {
   color: #fff;
@@ -711,33 +595,11 @@ const handleSubmit = async () => {
 
 /* modal-footer styles are centralized in src/assets/modals.css */
 
-.btn {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Button color variants centralized in `src/assets/modals.css` */
-
-.btn-primary {
-  background-color: #007acc;
-  color: white;
-}
+/* Button visuals are centralized in `src/assets/buttons.css`; modal-specific color variants remain in `src/assets/modals.css`.
+   Use `.btn`, `.btn-primary`, `.btn-info`, etc., instead of duplicating styles locally. */
 
 .btn-primary:hover:not(:disabled) {
-  background-color: #005a9e;
+  background-color: var(--brand-700);
   transform: translateY(-1px);
 }
 

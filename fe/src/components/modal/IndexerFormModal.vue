@@ -8,7 +8,7 @@
       <ModalForm :submitting="saving" @submit="handleSubmit">
         <ModalBody>
           <!-- Basic Information -->
-          <div class="form-section">
+          <FormSection title="Basic Information" :icon="PhGlobe">
             <div class="form-group">
               <label for="name">Name *</label>
               <input
@@ -79,18 +79,15 @@
                 </label>
 
                 <label class="form-group">
-                  <input type="checkbox" v-model="mamSearchInDescription" />
-                  <span>Search in description</span>
+                  <Checkbox v-model="mamSearchInDescription">Search in description</Checkbox>
                 </label>
 
                 <label class="form-group">
-                  <input type="checkbox" v-model="mamSearchInSeries" />
-                  <span>Search in series</span>
+                  <Checkbox v-model="mamSearchInSeries">Search in series</Checkbox>
                 </label>
 
                 <label class="form-group">
-                  <input type="checkbox" v-model="mamSearchInFilenames" />
-                  <span>Search in filenames</span>
+                  <Checkbox v-model="mamSearchInFilenames">Search in filenames</Checkbox>
                 </label>
 
                 <label class="form-group">
@@ -108,8 +105,7 @@
                 </label>
 
                 <label class="form-group">
-                  <input type="checkbox" v-model="mamEnrichResults" />
-                  <span>Enrich results (fetch item page for missing fields)</span>
+                  <Checkbox v-model="mamEnrichResults">Enrich results (fetch item page for missing fields)</Checkbox>
                 </label>
 
                 <label class="form-group">
@@ -162,47 +158,34 @@
               />
               <small>Leave empty to search all categories</small>
             </div>
-          </div>
+          </FormSection>
 
           <!-- Features -->
-          <div class="form-section">
-            <h3>Features</h3>
-
+          <FormSection title="Features" :icon="PhGear">
             <div v-if="formData.implementation !== 'InternetArchive'" class="checkbox-group">
-              <label>
-                <input type="checkbox" v-model="formData.enableRss" />
-                <span>
-                  <strong>Enable RSS</strong>
-                  <small>Use RSS feeds to monitor for new releases</small>
-                </span>
-              </label>
+              <Checkbox v-model="formData.enableRss">
+                <strong>Enable RSS</strong>
+                <small>Use RSS feeds to monitor for new releases</small>
+              </Checkbox>
             </div>
 
             <div class="checkbox-group">
-              <label>
-                <input type="checkbox" v-model="formData.enableAutomaticSearch" />
-                <span>
-                  <strong>Enable Automatic Search</strong>
-                  <small>Use this indexer for automatic searches</small>
-                </span>
-              </label>
+              <Checkbox v-model="formData.enableAutomaticSearch">
+                <strong>Enable Automatic Search</strong>
+                <small>Use this indexer for automatic searches</small>
+              </Checkbox>
             </div>
 
             <div class="checkbox-group">
-              <label>
-                <input type="checkbox" v-model="formData.enableInteractiveSearch" />
-                <span>
-                  <strong>Enable Interactive Search</strong>
-                  <small>Use this indexer for manual searches</small>
-                </span>
-              </label>
+              <Checkbox v-model="formData.enableInteractiveSearch">
+                <strong>Enable Interactive Search</strong>
+                <small>Use this indexer for manual searches</small>
+              </Checkbox>
             </div>
-          </div>
+          </FormSection>
 
           <!-- Advanced Settings -->
-          <div class="form-section">
-            <h3>Advanced Settings</h3>
-
+          <FormSection title="Advanced Settings" :icon="PhGear">
             <div class="form-row">
               <div class="form-group">
                 <label for="priority">Priority</label>
@@ -236,7 +219,7 @@
               <input id="maximumSize" v-model.number="formData.maximumSize" type="number" min="0" />
               <small>Maximum allowed size in megabytes (0 = unlimited)</small>
             </div>
-          </div>
+          </FormSection>
         </ModalBody>
       </ModalForm>
 
@@ -261,6 +244,8 @@
 import { ref, watch } from 'vue'
 import { Modal, ModalHeader, ModalFooter, ModalBody, ModalForm } from '@/components/modal'
 import PasswordInput from '@/components/inputs/PasswordInput.vue'
+import Checkbox from '@/components/inputs/Checkbox.vue'
+import FormSection from '@/components/settings/FormSection.vue'
 import { PhX, PhGlobe, PhSpinner, PhGear, PhCheck } from '@phosphor-icons/vue' 
 import type { Indexer } from '@/types' 
 import {
@@ -572,45 +557,10 @@ const handleSubmit = async () => {
   font-size: 1.5rem;
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  color: #999;
-  cursor: pointer;
-  padding: 0.5rem;
-  font-size: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.close-btn:hover {
-  background-color: #333;
-  color: #fff;
-}
-
 .modal-body {
   padding: 2rem;
   overflow-y: auto;
   flex: 1;
-}
-
-.form-section {
-  margin-bottom: 2rem;
-}
-
-.form-section:last-child {
-  margin-bottom: 0;
-}
-
-.form-section h3 {
-  color: #fff;
-  font-size: 1.1rem;
-  margin: 0 0 1rem 0;
-  padding-bottom: 0.5rem;
-  border-bottom: 1px solid #444;
 }
 
 .form-group {
@@ -645,8 +595,8 @@ const handleSubmit = async () => {
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
 }
 
 .form-group small {
@@ -661,85 +611,16 @@ const handleSubmit = async () => {
   gap: 1rem;
 }
 
-.checkbox-group {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
 
-.checkbox-group label {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
-  background-color: #1a1a1a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
 
-.checkbox-group label:hover {
-  border-color: #007acc;
-  background-color: #222;
-}
-
-.checkbox-group input[type='checkbox'] {
-  margin-top: 0.25rem;
-  width: auto;
-  cursor: pointer;
-}
-
-.checkbox-group label span {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  flex: 1;
-}
-
-.checkbox-group label strong {
-  color: #fff;
-  font-size: 0.95rem;
-}
-
-.checkbox-group label small {
-  color: #999;
-  font-size: 0.85rem;
-  font-weight: normal;
-}
+/* Indexer modal-specific overrides */
+.checkbox-group { display: flex; flex-direction: column; gap: 1rem; }
+.checkbox-group label:hover { border-color: var(--brand-500); background-color: #222 }
+.checkbox-group label span { flex: 1 }
 
 /* modal-footer styles are centralized in src/assets/modals.css */
 
-.btn {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
-
-.btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Button color variants centralized in `src/assets/modals.css` */
-
-.btn-primary {
-  background-color: #007acc;
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background-color: #005a9e;
-  transform: translateY(-1px);
-}
+/* Button visuals and color variants are centralized in `src/assets/buttons.css` and `src/assets/modals.css`. Use `.btn` / `.btn-primary` here. */
 
 .ph-spin {
   animation: spin 1s linear infinite;
