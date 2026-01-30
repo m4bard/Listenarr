@@ -38,15 +38,18 @@ describe('ManualSearchModal - grabs sorting', () => {
     vi.restoreAllMocks()
   })
 
-  const triggerSearchAndWait = async (wrapper, selector: string, timeout = 1000) => {
-    // Manually trigger search then wait for a selector to appear
+  const triggerSearchAndWait = async (wrapper, selector: string, timeout = 3000) => {
+    // Manually trigger search then wait for a selector to appear. Increased
+    // default timeout and ensure a nextTick after starting search so DOM
+    // updates have a moment to apply in jsdom.
     try {
       await (wrapper.vm as unknown as { search?: () => Promise<void> }).search?.()
     } catch {}
+    await nextTick()
     const start = Date.now()
     while (Date.now() - start < timeout) {
       if (wrapper.find(selector).exists()) return
-      await new Promise((r) => setTimeout(r, 10))
+      await new Promise((r) => setTimeout(r, 20))
     }
     throw new Error('timeout waiting for selector')
   }

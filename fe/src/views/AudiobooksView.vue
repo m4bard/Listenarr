@@ -46,15 +46,15 @@
         </span>
         <div class="group-dropdown" v-if="audiobooks.length > 0">
           <button class="toolbar-btn group-btn" @click="showGroupMenu = !showGroupMenu">
-            <PhBookOpen v-if="groupBy === 'books'" />
+            <PhBook v-if="groupBy === 'books'" />
             <PhUser v-else-if="groupBy === 'authors'" />
-            <PhStack v-else />
+            <PhBooks v-else />
             {{ groupBy === 'books' ? 'Books' : groupBy === 'authors' ? 'Authors' : 'Series' }}
             <PhCaretDown />
           </button>
           <div v-if="showGroupMenu" class="group-menu">
             <button class="menu-item" @click="setGroupBy('books')">
-              <PhBookOpen />
+              <PhBook />
               Books
             </button>
             <button class="menu-item" @click="setGroupBy('authors')">
@@ -62,7 +62,7 @@
               Authors
             </button>
             <button class="menu-item" @click="setGroupBy('series')">
-              <PhStack />
+              <PhBooks />
               Series
             </button>
           </div>
@@ -125,7 +125,7 @@
       </div>
       <h2>Error Loading Library</h2>
       <p>{{ error }}</p>
-      <button @click="refreshLibrary" class="retry-button">
+      <button @click="refreshLibrary" class="retry-button btn">
         <PhArrowClockwise />
         Retry
       </button>
@@ -141,7 +141,7 @@
           Please configure a root folder for your audiobook library in settings before adding
           audiobooks.
         </p>
-        <router-link to="/settings" class="add-button">
+        <router-link to="/settings" class="add-button btn btn-primary">
           <PhGear />
           Go to Settings
         </router-link>
@@ -149,7 +149,7 @@
       <template v-else>
         <h2>No Audiobooks Yet</h2>
         <p>Your library is empty. Add audiobooks to get started!</p>
-        <router-link to="/add-new" class="add-button">
+        <router-link to="/add-new" class="add-button btn btn-primary">
           <PhPlus />
           Add Audiobooks
         </router-link>
@@ -164,8 +164,8 @@
       <h2>No audiobooks match your filters</h2>
       <p>Try clearing your search or filters to see results.</p>
       <div style="display: flex; gap: 8px; margin-top: 16px">
-        <button class="add-button" @click="clearFilters">Clear Filters</button>
-        <button class="add-button" @click="refreshLibrary">Refresh Library</button>
+        <button class="add-button btn btn-primary" @click="clearFilters">Clear Filters</button>
+        <button class="add-button btn btn-primary" @click="refreshLibrary">Refresh Library</button>
       </div>
     </div>
 
@@ -281,7 +281,7 @@
                 </div>
               </div>
               <div v-else class="no-cover">
-                <PhStack />
+                <PhBooks />
               </div>
             </template>
           </div>
@@ -599,7 +599,7 @@ import {
   PhPencil,
   PhTrash,
   PhCheckSquare,
-  PhBookOpen,
+  PhBook,
   PhGear,
   PhPlus,
   PhStar,
@@ -612,7 +612,7 @@ import {
   PhCaretDown,
   PhX,
   PhUser,
-  PhStack,
+  PhBooks,
 } from '@phosphor-icons/vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
@@ -1956,8 +1956,8 @@ defineExpose({
 }
 
 .toolbar-btn.active {
-  background-color: #2196f3;
-  border-color: #2196f3;
+  background-color: var(--brand-500);
+  border-color: var(--brand-500);
   color: #fff;
 }
 
@@ -2068,7 +2068,7 @@ defineExpose({
 
 .count-badge {
   padding: 6px 12px;
-  background-color: #007acc;
+  background-color: var(--brand-500);
   border-radius: 6px;
   color: #fff;
   font-size: 12px;
@@ -2077,7 +2077,7 @@ defineExpose({
 
 .count-badge:hover,
 .count-badge:focus {
-  background-color: #005fa3;
+  background-color: var(--brand-700);
 }
 
 .group-dropdown {
@@ -2190,7 +2190,7 @@ defineExpose({
   position: absolute;
   top: 0.375em;
   right: 0.375em;
-  background-color: #007acc;
+  background-color: var(--brand-500);
   color: white;
   padding: 0.1em 0.25em;
   border-radius: 0.5rem; /* rounded-lg like sample */
@@ -2202,17 +2202,16 @@ defineExpose({
   transition:
     background-color 0.12s ease,
     box-shadow 0.12s ease;
-  z-index: 100;
 }
 
 .series-count-badge:hover,
 .series-count-badge:focus {
   background-color: #005fa3;
-  box-shadow: 0 4px 12px rgba(0, 122, 204, 0.15);
+  box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.15);
 }
 
 .series-count-badge:focus {
-  outline: 2px solid rgba(0, 122, 204, 0.2);
+  outline: 2px solid rgba(var(--brand-rgb), 0.2);
   outline-offset: 2px;
 }
 
@@ -2381,7 +2380,7 @@ defineExpose({
 }
 
 .audiobook-item.selected .audiobook-poster-container {
-  outline: 3px solid #007acc;
+  outline: 3px solid var(--brand-focus);
   outline-offset: 2px;
 }
 
@@ -2512,9 +2511,9 @@ defineExpose({
 /* When the item is selected, style the custom box and show the check */
 .audiobook-item.selected .selection-checkbox::before,
 .audiobook-list-item.selected .selection-checkbox::before {
-  background-color: #007acc;
-  border-color: #007acc;
-  box-shadow: 0 0 0 4px rgba(0, 122, 204, 0.12);
+  background-color: var(--brand-500);
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 4px rgba(var(--brand-rgb), 0.12);
 }
 
 .audiobook-item.selected .selection-checkbox::after,
@@ -2533,7 +2532,7 @@ defineExpose({
 
 /* Focus outlines for keyboard navigation */
 .selection-checkbox input[type='checkbox']:focus-visible {
-  outline: 2px solid rgba(0, 122, 204, 0.3);
+  outline: 2px solid rgba(var(--brand-rgb), 0.3);
   outline-offset: 2px;
 }
 
@@ -2541,7 +2540,7 @@ defineExpose({
 .audiobook-list-item:focus-within,
 .audiobook-item:focus,
 .audiobook-item:focus-within {
-  outline: 2px solid rgba(0, 122, 204, 0.18);
+  outline: 2px solid rgba(var(--brand-rgb), 0.18);
   outline-offset: 2px;
   background-color: rgba(255, 255, 255, 0.02);
 }
@@ -2888,7 +2887,7 @@ defineExpose({
 }
 
 .loading-state i {
-  color: #007acc;
+  color: var(--brand-500);
 }
 
 .error-icon {
@@ -2910,7 +2909,7 @@ defineExpose({
   align-items: center;
   gap: 0.5rem;
   padding: 12px 24px;
-  background-color: #007acc;
+  background-color: var(--brand-500);
   color: white;
   border: none;
   border-radius: 6px;
@@ -2920,7 +2919,7 @@ defineExpose({
 }
 
 .retry-button:hover {
-  background-color: #005fa3;
+  background-color: var(--brand-700);
 }
 
 .empty-state h2 {
@@ -2937,7 +2936,7 @@ defineExpose({
   align-items: center;
   gap: 0.5rem;
   padding: 12px 24px;
-  background-color: #007acc;
+  background-color: var(--brand-500);
   color: white;
   border-radius: 6px;
   text-decoration: none;
@@ -2946,7 +2945,7 @@ defineExpose({
 }
 
 .add-button:hover {
-  background-color: #005fa3;
+  background-color: var(--brand-700);
 }
 
 /* Delete dialog styling is centralized in `src/assets/modals.css` */

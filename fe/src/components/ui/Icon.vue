@@ -17,7 +17,7 @@ const props = defineProps<{
 }>()
 
 const hasComponent = computed(() => !!props.component)
-
+</script>
 
 <template>
   <component

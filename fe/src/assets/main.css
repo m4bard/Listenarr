@@ -1,5 +1,8 @@
 @import './base.css';
+@import './components.css';
+@import './views.css';
 @import './modals.css';
+@import './buttons.css';
 
 /* Global spinner animation for Phosphor Icons */
 .ph-spin {

@@ -5,11 +5,13 @@ import { ConfirmModal } from '@/components/modal'
 describe('ConfirmModal', () => {
   it('renders message and emits confirm', async () => {
     const wrapper = mount(ConfirmModal, { props: { visible: true, message: 'Are you sure?', confirmLabel: 'Yes' } })
-    expect(wrapper.text()).toContain('Are you sure?')
-    // find save/confirm button
-    const btn = wrapper.find('button.btn-primary')
-    expect(btn.exists()).toBe(true)
-    await btn.trigger('click')
+    // Modal content is teleported to document.body; assert message there
+    expect(document.body.textContent).toContain('Are you sure?')
+    // find save/confirm button rendered by teleport (in document.body)
+    const btn = document.querySelector('button.btn-primary') as HTMLButtonElement | null
+    expect(btn).not.toBeNull()
+    btn!.click()
+    // Modal emits 'confirm' on save
     expect(wrapper.emitted()).toHaveProperty('confirm')
   })
 })

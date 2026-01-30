@@ -1441,7 +1441,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 }
 
 .nav-item.router-link-active {
-  background-color: #007acc;
+  background-color: var(--brand-500);
   color: white;
 }
 
@@ -1452,7 +1452,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   top: 0;
   bottom: 0;
   width: 3px;
-  background-color: #007acc;
+  background-color: var(--brand-500);
 }
 
 /* Icons */
@@ -1522,7 +1522,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 
 /* Sidebar-specific badge: branded blue */
 .sidebar .badge {
-  background-color: #007acc;
+  background-color: var(--brand-500);
   transition:
     background-color 0.12s ease,
     box-shadow 0.12s ease;
@@ -1530,8 +1530,8 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 
 .sidebar .badge:hover,
 .sidebar .badge:focus {
-  background-color: #005fa3;
-  box-shadow: 0 6px 18px rgba(0, 122, 204, 0.12);
+  background-color: var(--brand-700);
+  box-shadow: 0 6px 18px rgba(var(--brand-rgb), 0.12);
 }
 
 /* Main Content */

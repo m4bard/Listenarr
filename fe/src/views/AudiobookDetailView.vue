@@ -8,102 +8,81 @@
       </button>
       <div class="nav-actions">
         <div class="primary-actions">
-          <button class="nav-btn" @click="refresh">
+          <button class="nav-btn icon-button" @click="refresh" title="Refresh" aria-label="Refresh">
             <PhArrowClockwise />
-            Refresh
-          </button>
-          <button class="nav-btn" @click="toggleMonitored">
-            <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
-            {{ audiobook.monitored ? 'Monitored' : 'Monitor' }}
           </button>
 
-          <!-- Scan button moved to primary actions for better grouping -->
-          <button class="nav-btn" :disabled="scanning || scanQueued" @click="scanFiles">
+          <!-- Scan button now placed between Refresh and Monitor; neutral filled grey by default -->
+          <button class="nav-btn icon-button" :disabled="scanning || scanQueued" @click="scanFiles"
+            :title="scanning ? 'Scanning...' : (scanQueued ? 'Scan queued' : 'Scan Folder')" aria-label="Scan Folder">
             <PhSpinner v-if="scanning" class="ph-spin" />
             <PhClock v-else-if="scanQueued" />
             <PhMagnifyingGlass v-else />
-            <span v-if="scanning">Scanning...</span>
-            <span v-else-if="scanQueued">Scan queued</span>
-            <span v-else>Scan Folder</span>
+          </button>
+
+          <button class="nav-btn icon-button primary" @click="toggleMonitored"
+            :title="audiobook.monitored ? 'Unmonitor' : 'Monitor'" :aria-pressed="audiobook.monitored"
+            aria-label="Toggle Monitor">
+            <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
           </button>
         </div>
 
         <!-- Desktop: show all actions inline -->
         <div class="secondary-actions tabs-desktop">
-          <button class="nav-btn" @click="openEditModal">
+          <button class="nav-btn icon-button primary" @click="openEditModal" title="Edit" aria-label="Edit">
             <PhPencil />
-            Edit
           </button>
-          <button class="nav-btn delete-btn" @click="confirmDelete">
+
+          <button class="nav-btn icon-button danger delete-btn" @click="confirmDelete" title="Delete"
+            aria-label="Delete">
             <PhTrash />
-            Delete
           </button>
-        </div> 
+        </div>
 
         <!-- Mobile: collapse remaining actions into a More dropdown -->
         <div class="more-wrapper tabs-mobile">
-          <button
-            class="nav-btn more-btn"
-            @click.stop="showMoreActions = !showMoreActions"
-            :aria-expanded="showMoreActions"
-            title="More actions"
-          >
+          <button class="nav-btn more-btn" @click.stop="showMoreActions = !showMoreActions"
+            :aria-expanded="showMoreActions" title="More actions">
             <PhCaretDown />
             More
           </button>
           <div v-if="showMoreActions" class="more-dropdown" @click.stop>
-            <button
-              class="dropdown-item"
-              @click="
-                refresh();
-                showMoreActions = false
-              "
-            >
+            <button class="dropdown-item" @click="
+              refresh();
+            showMoreActions = false
+              ">
               <PhArrowClockwise />
               <span>Refresh</span>
             </button>
-            <button
-              class="dropdown-item"
-              @click="
-                toggleMonitored();
-                showMoreActions = false
-              "
-            >
+            <button class="dropdown-item" @click="
+              toggleMonitored();
+            showMoreActions = false
+              ">
               <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
               <span>{{ audiobook.monitored ? 'Monitored' : 'Monitor' }}</span>
             </button>
-            <button
-              class="dropdown-item"
-              :disabled="scanning || scanQueued"
-              @click="
-                scanFiles();
-                showMoreActions = false
-              "
-            >
+            <button class="dropdown-item" :disabled="scanning || scanQueued" @click="
+              scanFiles();
+            showMoreActions = false
+              ">
               <PhMagnifyingGlass />
               <span>Scan Folder</span>
             </button>
 
 
 
-            <button
-              class="dropdown-item"
-              @click="
-                openEditModal();
-                showMoreActions = false
-              "
-            >
+            <button class="dropdown-item" @click="
+              openEditModal();
+            showMoreActions = false
+              ">
               <PhPencil />
               <span>Edit</span>
             </button>
 
-            <button
-              class="dropdown-item delete"
-              @click="
-                confirmDelete();
-                showMoreActions = false
-              "
-            >
+            <button class="dropdown-item delete" @click="
+              confirmDelete();
+            showMoreActions = false
+              ">
               <PhTrash />
               <span>Delete</span>
             </button>
@@ -117,14 +96,8 @@
       <div class="backdrop" :style="{ backgroundImage: `url(${coverImageUrl})` }"></div>
       <div class="hero-content">
         <div class="poster-container">
-          <img
-            :src="coverImageUrl"
-            :alt="audiobook.title"
-            class="poster"
-            loading="lazy"
-            decoding="async"
-            @error="handleImageError"
-          />
+          <img :src="coverImageUrl" :alt="audiobook.title" class="poster" loading="lazy" decoding="async"
+            @error="handleImageError" />
         </div>
         <div class="info-section">
           <h1 class="title">{{ safeText(audiobook.title) }}</h1>
@@ -182,16 +155,9 @@
           </div>
 
           <div class="description" v-if="audiobook.description">
-            <div
-              class="description-content"
-              :class="{ expanded: showFullDescription }"
-              v-html="audiobook.description"
-            ></div>
-            <button
-              v-if="!showFullDescription"
-              class="show-more-btn"
-              @click="showFullDescription = true"
-            >
+            <div class="description-content" :class="{ expanded: showFullDescription }" v-html="audiobook.description">
+            </div>
+            <button v-if="!showFullDescription" class="show-more-btn" @click="showFullDescription = true">
               Show More
             </button>
             <button v-else class="show-more-btn" @click="showFullDescription = false">
@@ -212,27 +178,15 @@
       <!-- Desktop tabs -->
       <div class="tabs-desktop">
         <div class="tabs">
-          <button
-            class="tab"
-            :class="{ active: activeTab === 'details' }"
-            @click="activeTab = 'details'"
-          >
+          <button class="tab" :class="{ active: activeTab === 'details' }" @click="activeTab = 'details'">
             <PhInfo />
             Details
           </button>
-          <button
-            class="tab"
-            :class="{ active: activeTab === 'files' }"
-            @click="activeTab = 'files'"
-          >
+          <button class="tab" :class="{ active: activeTab === 'files' }" @click="activeTab = 'files'">
             <PhFile />
             Files
           </button>
-          <button
-            class="tab"
-            :class="{ active: activeTab === 'history' }"
-            @click="activeTab = 'history'"
-          >
+          <button class="tab" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
             <PhClockCounterClockwise />
             History
           </button>
@@ -337,28 +291,19 @@
           </div>
         </div>
         <div v-if="audiobook.files && audiobook.files.length" class="file-list">
-          <div
-            v-for="f in audiobook.files"
-            :key="f.id"
-            class="file-item"
-            :class="{ expanded: isFileAccordionExpanded(f.id) }"
-          >
+          <div v-for="f in audiobook.files" :key="f.id" class="file-item"
+            :class="{ expanded: isFileAccordionExpanded(f.id) }">
             <div class="file-header" @click="toggleFileAccordion(f.id)">
               <div class="file-info">
                 <PhFileAudio />
                 <span class="file-name">{{ getFileName(f.path) }}</span>
-                <small class="file-meta"
-                  >• {{ f.format ? f.format.toUpperCase() : '' }}
-                  {{ f.durationSeconds ? '• ' + formatDuration(f.durationSeconds) : '' }}</small
-                >
+                <small class="file-meta">• {{ f.format ? f.format.toUpperCase() : '' }}
+                  {{ f.durationSeconds ? '• ' + formatDuration(f.durationSeconds) : '' }}</small>
               </div>
               <div class="file-actions">
                 <span class="file-size" v-if="f.size">{{ formatFileSize(f.size) }}</span>
                 <span class="file-size" v-else>Unknown size</span>
-                <PhCaretDown
-                  class="accordion-toggle"
-                  :class="{ rotated: isFileAccordionExpanded(f.id) }"
-                />
+                <PhCaretDown class="accordion-toggle" :class="{ rotated: isFileAccordionExpanded(f.id) }" />
               </div>
             </div>
             <div v-if="isFileAccordionExpanded(f.id)" class="file-accordion">
@@ -424,12 +369,7 @@
       <div id="history" v-if="activeTab === 'history'" class="history-content">
         <div class="history-header">
           <h3>History</h3>
-          <button
-            v-if="historyEntries.length > 0"
-            class="refresh-btn"
-            @click="loadHistory"
-            :disabled="historyLoading"
-          >
+          <button v-if="historyEntries.length > 0" class="refresh-btn" @click="loadHistory" :disabled="historyLoading">
             <PhArrowClockwise :class="{ 'ph-spin': historyLoading }" />
             Refresh
           </button>
@@ -477,10 +417,12 @@
       </div>
     </div>
 
-    <DeleteConfirmationModal :visible="showDeleteDialog" title="Delete Audiobook" @close="cancelDelete" @confirm="executeDelete">
+    <DeleteConfirmationModal :visible="showDeleteDialog" title="Delete Audiobook" @close="cancelDelete"
+      @confirm="executeDelete">
       <template #default>
         <p>Are you sure you want to delete <strong>{{ audiobook.title }}</strong>?</p>
-        <p class="warning-text">This action cannot be undone. The audiobook data and cached images will be permanently removed.</p>
+        <p class="warning-text">This action cannot be undone. The audiobook data and cached images will be permanently
+          removed.</p>
       </template>
     </DeleteConfirmationModal>
   </div>
@@ -503,12 +445,8 @@
   </div>
 
   <!-- Edit Audiobook Modal -->
-  <EditAudiobookModal
-    :is-open="showEditModal"
-    :audiobook="audiobook"
-    @close="closeEditModal"
-    @saved="handleEditSaved"
-  />
+  <EditAudiobookModal :is-open="showEditModal" :audiobook="audiobook" @close="closeEditModal"
+    @saved="handleEditSaved" />
 
 
 </template>
@@ -521,9 +459,10 @@ import { useRoute, useRouter } from 'vue-router'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
-import { apiService } from '@/services/api'
+import { apiService, ensureImageCached } from '@/services/api'
 import { handleImageError } from '@/utils/imageFallback'
 import { getPlaceholderUrl } from '@/utils/placeholder'
+import { joinPaths, isAbsolutePath } from '@/utils/path'
 import { observeLazyImages, ensureVisibleImagesLoad } from '@/utils/lazyLoad'
 import { signalRService } from '@/services/signalr'
 import type { Audiobook, History } from '@/types'
@@ -592,7 +531,7 @@ const scanQueued = ref(false)
 const scanJobId = ref<string | null>(null)
 const sendingNotification = ref(false)
 const showEditModal = ref(false)
-const showMoreActions = ref(false) 
+const showMoreActions = ref(false)
 
 // History state
 const historyEntries = ref<History[]>([])
@@ -670,8 +609,7 @@ const displayBasePath = computed(() => {
   // Normalize repeated slashes and trim
   relative = relative.replace(/[\\/]{2,}/g, '/').replace(/^\/+|\/+$/g, '')
 
-  const combined =
-    root.endsWith('/') || root.endsWith('\\') ? root + relative : root + '/' + relative
+  const combined = joinPaths(root, relative)
   // Base path should be the directory containing the files -> strip the last segment
   const parts = combined.split(/[/\\]+/).filter(Boolean)
   if (parts.length <= 1) return combined
@@ -731,8 +669,7 @@ onMounted(async () => {
     if (!updated || String((updated as any).id) !== String(audiobook.value.id)) return
 
     // Merge server-provided audiobook fields into local detail object to update instantly without reloading
-    try
-    {
+    try {
       const upd = updated as unknown as import('@/types').Audiobook
       const prev = audiobook.value
       if (!prev) return
@@ -755,7 +692,7 @@ onMounted(async () => {
     }
     catch (e) {
       // Fallback: if merge fails, try a full reload
-      setTimeout(async () => { try { await loadAudiobook() } catch {} }, 250)
+      setTimeout(async () => { try { await loadAudiobook() } catch { } }, 250)
     }
   })
 })
@@ -777,13 +714,13 @@ function handleClickOutside() {
   if (showMoreActions.value) {
     showMoreActions.value = false
   }
-} 
+}
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
   try {
     if (audiobookUpdateUnsub) audiobookUpdateUnsub()
-  } catch {}
+  } catch { }
 })
 
 // When the active tab changes update the hash and scroll
@@ -791,7 +728,7 @@ watch(activeTab, (newTab) => {
   if (!newTab) return
   try {
     history.replaceState(null, '', `#${newTab}`)
-  } catch {}
+  } catch { }
   // Scroll to anchored section
   // setTimeout(() => scrollToAnchor(newTab), 120)
 })
@@ -840,6 +777,16 @@ async function loadAudiobook() {
 // After loading audiobook, also fetch quality profiles so we can display the assigned profile
 async function afterLoad() {
   await loadQualityProfilesForDetail()
+  try {
+    const img = audiobook.value?.imageUrl
+    if (img) {
+      const url = apiService.getImageUrl(img)
+      if (url && url.includes('/api/images/')) {
+        // fire-and-forget: ensure backend cached copy exists for this image
+        void ensureImageCached(url).catch(() => { })
+      }
+    }
+  } catch { }
 }
 
 
@@ -1136,17 +1083,10 @@ function toggleFileAccordion(fileId: number): void {
 function getFullPath(relativePath?: string): string {
   if (!relativePath) return 'Unknown'
 
-  // Check if path is already absolute (starts with drive letter or root slash)
-  const isAbsolute = /^([a-zA-Z]:[\\/]|[\\/])/.test(relativePath)
+  const isAbsolute = isAbsolutePath(relativePath)
   if (isAbsolute) return relativePath
-
   if (!audiobook.value?.basePath) return relativePath
-  // Combine base path with relative path
-  return (
-    audiobook.value.basePath +
-    (audiobook.value.basePath.endsWith('/') || audiobook.value.basePath.endsWith('\\') ? '' : '/') +
-    relativePath
-  )
+  return joinPaths(audiobook.value.basePath, relativePath)
 }
 
 function formatDate(dateString?: string): string {
@@ -1168,15 +1108,19 @@ function formatDate(dateString?: string): string {
 .audiobook-detail {
   min-height: 100vh;
   background-color: #1a1a1a;
-  padding-top: 60px; /* Add padding to account for fixed local nav */
+  padding-top: 60px;
+  /* Add padding to account for fixed local nav */
 }
 
 .top-nav {
   position: fixed;
-  top: 60px; /* Account for global header nav */
-  left: 200px; /* Account for sidebar width */
+  top: 60px;
+  /* Account for global header nav */
+  left: 200px;
+  /* Account for sidebar width */
   right: 0;
-  z-index: 99; /* Below global nav (1000) but above content */
+  z-index: 99;
+  /* Below global nav (1000) but above content */
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1187,7 +1131,8 @@ function formatDate(dateString?: string): string {
 
 @media (max-width: 768px) {
   .top-nav {
-    left: 0; /* Full width on mobile */
+    left: 0;
+    /* Full width on mobile */
   }
 }
 
@@ -1215,13 +1160,8 @@ function formatDate(dateString?: string): string {
 
   .secondary-actions {
     display: flex;
-    gap: 8px;
+    gap: 12px;
     align-items: center;
-  }
-
-  /* small spacing between primary and secondary groups */
-  .primary-actions + .secondary-actions {
-    margin-left: 12px;
   }
 
   .more-wrapper {
@@ -1255,10 +1195,20 @@ function formatDate(dateString?: string): string {
     white-space: nowrap;
   }
 
+  /* Icon-only nav buttons (use .icon-button) */
+  .nav-actions .nav-btn.icon-button {
+    padding: 0;
+    width: 36px;
+    height: 36px;
+    gap: 0;
+    justify-content: center;
+  }
+
   /* Remove extra margins */
   .primary-actions {
     margin-right: 0;
   }
+
   .secondary-actions {
     margin-left: 0;
   }
@@ -1562,7 +1512,7 @@ function formatDate(dateString?: string): string {
 
 .runtime i,
 .rating i {
-  color: #007acc;
+  color: var(--brand-500);
 }
 
 @media (max-width: 768px) {
@@ -1601,7 +1551,7 @@ function formatDate(dateString?: string): string {
 }
 
 .detail-item i {
-  color: #007acc;
+  color: var(--brand-500);
 }
 
 .status-badges {
@@ -1701,17 +1651,17 @@ function formatDate(dateString?: string): string {
 .show-more-btn {
   margin-top: 12px;
   padding: 8px 16px;
-  background-color: rgba(0, 122, 204, 0.1);
-  border: 1px solid #007acc;
+  background-color: rgba(var(--brand-rgb), 0.1);
+  border: 1px solid var(--brand-500);
   border-radius: 6px;
-  color: #007acc;
+  color: var(--brand-500);
   font-size: 13px;
   cursor: pointer;
   transition: all 0.2s;
 }
 
 .show-more-btn:hover {
-  background-color: rgba(0, 122, 204, 0.2);
+  background-color: rgba(var(--brand-rgb), 0.2);
   transform: translateY(-1px);
 }
 
@@ -1736,8 +1686,7 @@ function formatDate(dateString?: string): string {
 }
 
 .description :deep(a) {
-  color: #007acc;
-  text-decoration: none;
+  color: var(--brand-500);
 }
 
 .description :deep(a:hover) {
@@ -1770,6 +1719,7 @@ function formatDate(dateString?: string): string {
 .tabs-mobile {
   display: none;
 }
+
 .tabs-desktop {
   display: block;
 }
@@ -1816,7 +1766,7 @@ function formatDate(dateString?: string): string {
   }
 
   /* Keep the back button prominent but inline with actions on mobile */
-  .top-nav > .nav-btn:first-of-type {
+  .top-nav>.nav-btn:first-of-type {
     width: auto;
     justify-content: flex-start;
     gap: 10px;
@@ -1859,7 +1809,7 @@ function formatDate(dateString?: string): string {
 
   /* Make icon slightly larger to improve affordance */
   .nav-actions .nav-btn svg,
-  .top-nav > .nav-btn svg {
+  .top-nav>.nav-btn svg {
     width: 20px;
     height: 20px;
   }
@@ -1897,8 +1847,8 @@ function formatDate(dateString?: string): string {
 }
 
 .tab.active {
-  color: #007acc;
-  border-bottom-color: #007acc;
+  color: var(--brand-500);
+  border-bottom-color: var(--brand-500);
 }
 
 .tab-content {
@@ -2004,7 +1954,7 @@ function formatDate(dateString?: string): string {
 
 .tag-badge:hover {
   background-color: #333;
-  border-color: #007acc;
+  border-color: var(--brand-500);
   color: white;
 }
 
@@ -2087,7 +2037,7 @@ function formatDate(dateString?: string): string {
 
 .file-info i {
   font-size: 24px;
-  color: #007acc;
+  color: var(--brand-500);
 }
 
 .file-name {
@@ -2126,6 +2076,7 @@ function formatDate(dateString?: string): string {
     opacity: 0;
     max-height: 0;
   }
+
   to {
     opacity: 1;
     max-height: 500px;
@@ -2169,7 +2120,7 @@ function formatDate(dateString?: string): string {
 
 .file-info i {
   font-size: 24px;
-  color: #007acc;
+  color: var(--brand-500);
 }
 
 .file-size {
@@ -2219,6 +2170,7 @@ function formatDate(dateString?: string): string {
 
 /* Mobile-specific refinements to improve layout and prevent overflow */
 @media (max-width: 768px) {
+
   /* Make poster a bit smaller and centered for narrow viewports */
   .poster {
     width: 200px;
@@ -2334,7 +2286,7 @@ function formatDate(dateString?: string): string {
 .refresh-btn {
   margin-top: 12px;
   padding: 8px 16px;
-  background-color: #007acc;
+  background-color: var(--brand-500);
   border: none;
   border-radius: 6px;
   color: #fff;
@@ -2483,7 +2435,7 @@ function formatDate(dateString?: string): string {
 }
 
 .loading-container i {
-  color: #007acc;
+  color: var(--brand-500);
 }
 
 .error-container i {
@@ -2501,7 +2453,7 @@ function formatDate(dateString?: string): string {
   gap: 8px;
   margin-top: 20px;
   padding: 12px 24px;
-  background-color: #007acc;
+  background-color: var(--brand-500);
   border: none;
   border-radius: 6px;
   color: #fff;
@@ -2516,4 +2468,16 @@ function formatDate(dateString?: string): string {
 
 /* Delete dialog styling is centralized in `src/assets/modals.css` */
 /* Legacy .dialog classes are still used in a few places (e.g., Audiobook detail delete), but visual styles are now centralized. */
+
+/* Ensure visible spacing between secondary action buttons across breakpoints */
+.secondary-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+/* Keep delete button padding consistent */
+.secondary-actions .delete-btn {
+  padding-left: 10px;
+  padding-right: 10px;
+}
 </style>

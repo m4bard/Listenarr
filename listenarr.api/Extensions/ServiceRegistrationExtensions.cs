@@ -180,30 +180,7 @@ namespace Listenarr.Api.Extensions
                 UseProxy = false
             };
 
-            try
-            {
-                var section = config.GetSection("ExternalRequests");
-                var useProxy = section.GetValue<bool>("UseUsProxy");
-                if (useProxy)
-                {
-                    var host = section.GetValue<string>("UsProxyHost");
-                    var port = section.GetValue<int>("UsProxyPort");
-                    if (!string.IsNullOrWhiteSpace(host) && port > 0)
-                    {
-                        var proxy = new WebProxy(host, port);
-                        var user = section.GetValue<string>("UsProxyUsername");
-                        var pass = section.GetValue<string>("UsProxyPassword");
-                        if (!string.IsNullOrWhiteSpace(user))
-                            proxy.Credentials = new NetworkCredential(user, pass ?? string.Empty);
-                        handler.Proxy = proxy;
-                        handler.UseProxy = true;
-                    }
-                }
-            }
-            catch
-            {
-                // Swallow here; caller services can detect proxy misconfigurations via failing requests.
-            }
+            // Proxy support removed; always use direct handler without custom proxy
 
             return handler;
         }

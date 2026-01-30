@@ -37,7 +37,7 @@
               </div>
               <div class="folder-actions">
                 <button
-                  class="icon-button"
+                  class="icon-button action-edit"
                   @click="edit(folder)"
                   title="Edit"
                   data-cy="edit-root-folder"
@@ -46,14 +46,14 @@
                 </button>
                 <button
                   v-if="!folder.isDefault"
-                  class="icon-button"
+                  class="icon-button action-secondary"
                   @click="setDefaultFolder(folder)"
                   title="Set as Default"
                 >
                   <PhStar />
                 </button>
                 <button
-                  class="icon-button danger"
+                  class="icon-button danger action-delete"
                   @click="confirmDelete(folder)"
                   title="Delete"
                   data-cy="delete-root-folder"
@@ -387,67 +387,16 @@ defineExpose({
   margin-left: 1rem;
 }
 
-.icon-button {
-  padding: 0.5rem;
-  background: rgba(255, 255, 255, 0.05);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 6px;
-  cursor: pointer;
-  color: #adb5bd;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  font-size: 1.1rem;
-  width: 36px;
-  height: 36px;
-}
+/* Override global action ordering for folder cards so Edit sits next to Delete */
+.folder-actions .action-secondary { order: 1 }
+.folder-actions .action-edit { order: 2 }
+.folder-actions .action-delete { order: 3 }
 
-.icon-button:hover:not(:disabled) {
-  background: rgba(77, 171, 247, 0.15);
-  border-color: #4dabf7;
-  color: #4dabf7;
-  transform: translateY(-1px);
-  box-shadow: 0 2px 8px rgba(77, 171, 247, 0.3);
-}
+/* Use shared .icon-button in src/assets/buttons.css to avoid duplication */
 
-.icon-button.danger {
-  color: #ff6b6b;
-}
-
-.icon-button.danger:hover:not(:disabled) {
-  background: rgba(255, 107, 107, 0.15);
-  border-color: #ff6b6b;
-  color: #ff6b6b;
-  box-shadow: 0 2px 8px rgba(255, 107, 107, 0.3);
-}
-
-.icon-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.btn {
-  padding: 0.5rem 1rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.btn.primary {
-  background-color: #007acc;
-  color: white;
-}
-
-.btn.primary:hover {
-  background-color: #005a9e;
-  transform: translateY(-1px);
-}
+/* Button visuals are centralized in `src/assets/buttons.css`. Use `.btn` and `.btn-primary`.
+   If a component needs a small override, use a component-scoped helper class like `.folder-btn`. */
+.folder-btn { padding: 0.5rem 1rem; } 
 
 /* Modal styles are centralized in `modals.css` */
 
@@ -463,7 +412,7 @@ defineExpose({
 }
 
 /* modal-actions and modal delete-button styles are centralized in src/assets/modals.css */
-.modal-footer { } 
+.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
 
 /* If this modal needs special sizing for delete buttons in future, add a small override here. */
 </style>

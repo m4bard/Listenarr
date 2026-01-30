@@ -1,18 +1,23 @@
 <template>
   <Modal :visible="visible" :title="editingClient ? 'Edit Download Client' : 'Add Download Client'" :showClose="false" size="lg" @close="closeModal">
     <template #header>
-      <div class="modal-title">
-        <h3><PhDownload /> {{ editingClient ? 'Edit Download Client' : 'Add Download Client' }} - {{ formData.type.toUpperCase() }}</h3>
-      </div>
-      <button class="close-btn" @click="closeModal"><PhX /></button>
+      <ModalHeader :title="(editingClient ? 'Edit Download Client' : 'Add Download Client') + ' - ' + formData.type.toUpperCase()" :icon="PhDownload" @close="closeModal" />
     </template>
 
     <template #default>
       <ModalBody>
         <form @submit.prevent="handleSubmit">
-          <div class="form-section">
-            <h3>Basic</h3>
+          <!-- Activation -->
+          <FormSection title="Activation" :icon="PhToggleRight">
+            <div class="checkbox-group">
+              <Checkbox v-model="formData.isEnabled">
+                <strong>Enable</strong>
+                <small>Enable this download client</small>
+              </Checkbox>
+            </div>
+          </FormSection>
 
+          <FormSection title="Basic" :icon="PhInfo">
             <div class="form-group">
               <label for="name">Name *</label>
               <input
@@ -22,13 +27,6 @@
                 required
                 placeholder="e.g., SABnzbd, qBittorrent"
               />
-            </div>
-
-            <div class="checkbox-group">
-              <Checkbox v-model="formData.isEnabled">
-                <strong>Enable</strong>
-                <small>Enable this download client</small>
-              </Checkbox>
             </div>
 
             <div class="form-group">
@@ -85,12 +83,10 @@
                 <small>{{ `Use secure connection when connecting to ${formData.type}` }}</small>
               </Checkbox>
             </div>
-          </div>
+          </FormSection>
 
           <!-- Authentication -->
-          <div class="form-section" v-if="requiresAuth">
-            <h3>Authentication</h3>
-
+          <FormSection title="Authentication" :icon="PhLock" v-if="requiresAuth">
             <div class="form-group" v-if="requiresApiKey">
               <label for="apiKey">API Key *</label>
               <PasswordInput
@@ -131,12 +127,10 @@
                 >
               </div>
             </div>
-          </div>
+          </FormSection>
 
           <!-- Category & Tags -->
-          <div class="form-section">
-            <h3>{{ isUsenet ? 'Category' : 'Category & Tags' }}</h3>
-
+          <FormSection :title="isUsenet ? 'Category' : 'Category & Tags'" :icon="PhTag">
             <div class="form-group">
               <label for="category">Category</label>
               <input
@@ -161,12 +155,10 @@
                 blank to use with all series.</small
               >
             </div>
-          </div>
+          </FormSection>
 
           <!-- Priority -->
-          <div class="form-section">
-            <h3>Priority</h3>
-
+          <FormSection title="Priority" :icon="PhSortAscending">
             <div class="form-group">
               <label for="recentPriority">Recent Priority</label>
               <select id="recentPriority" v-model="formData.recentPriority">
@@ -188,12 +180,10 @@
               </select>
               <small>Priority to use when grabbing episodes that aired over 14 days ago</small>
             </div>
-          </div>
+          </FormSection>
 
           <!-- Client Specific Settings -->
-          <div class="form-section">
-            <h3>Completed Download Handling</h3>
-
+          <FormSection title="Completed Download Handling" :icon="PhCheckSquare">
             <div class="form-group">
               <label for="removeCompletedDownloads">Completed Download Action</label>
               <select id="removeCompletedDownloads" v-model="formData.removeCompletedDownloads">
@@ -222,11 +212,9 @@
                 <small>Remove failed downloads from download client history</small>
               </Checkbox>
             </div>
-          </div>
+          </FormSection>
 
-          <div class="form-section" v-if="formData.type === 'qbittorrent'">
-            <h3>Advanced Settings</h3>
-
+          <FormSection title="Advanced Settings" :icon="PhWrench" v-if="formData.type === 'qbittorrent'">
             <div class="form-group">
               <label for="initialState">Initial State</label>
               <select id="initialState" v-model="formData.initialState">
@@ -269,11 +257,10 @@
                 layout)</small
               >
             </div>
-          </div>
+          </FormSection>
 
           <!-- Remote Path Mappings (only for existing clients) -->
-          <div class="form-section" v-if="editingClient?.id">
-            <h3>Remote Path Mappings</h3>
+          <FormSection title="Remote Path Mappings" :icon="PhFolder" v-if="editingClient?.id">
             <div class="form-group">
               <label for="remoteMappings">Select Remote Path Mappings</label>
               <select id="remoteMappings" v-model="formData.remotePathMappingIds" multiple size="5">
@@ -286,26 +273,28 @@
                 Click to select multiple). If none selected, no mapping will be applied.</small
               >
             </div>
-          </div>
+          </FormSection>
         </form>
       </ModalBody>
     </template>
 
     <template #footer>
-      <button type="button" class="btn btn-danger" @click="handleDelete" v-if="editingClient">
-        <PhTrash /> Delete
-      </button>
-      <button type="button" class="cancel-button" @click="closeModal">
-        <PhX /> Cancel
-      </button>
-      <button type="button" class="btn btn-info" @click="testConnection" :disabled="testing">
-        <PhSpinner v-if="testing" class="ph-spin" />
-        <PhGear v-else /> {{ testing ? 'Testing...' : 'Test' }}
-      </button>
-      <button type="button" class="btn btn-primary" @click="handleSubmit" :disabled="saving">
-        <PhSpinner v-if="saving" class="ph-spin" />
-        <PhFloppyDisk v-else /> {{ saving ? 'Saving...' : 'Save' }}
-      </button>
+      <ModalFooter :showCancel="false">
+        <template #left>
+          <button type="button" class="btn btn-danger" @click="handleDelete" v-if="editingClient"><PhTrash /> Delete</button>
+          <button type="button" class="cancel-button" @click="closeModal"><PhX /> Cancel</button>
+        </template>
+        <template #default>
+          <button type="button" class="btn btn-info" @click="testConnection" :disabled="testing">
+            <PhSpinner v-if="testing" class="ph-spin" />
+            <PhGear v-else /> {{ testing ? 'Testing...' : 'Test' }}
+          </button>
+          <button type="button" class="btn btn-primary" @click="handleSubmit" :disabled="saving">
+            <PhSpinner v-if="saving" class="ph-spin" />
+            <PhFloppyDisk v-else /> {{ saving ? 'Saving...' : 'Save' }}
+          </button>
+        </template>
+      </ModalFooter>
     </template>
   </Modal>
 </template>
@@ -313,9 +302,10 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import PasswordInput from '@/components/inputs/PasswordInput.vue'
-import { Modal, ModalBody } from '@/components/modal'
-import { PhX, PhTrash, PhSpinner, PhGear, PhFloppyDisk, PhDownload } from '@phosphor-icons/vue'
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/modal'
+import { PhX, PhTrash, PhSpinner, PhGear, PhFloppyDisk, PhDownload, PhInfo, PhLock, PhTag, PhSortAscending, PhCheckSquare, PhWrench, PhFolder, PhToggleRight } from '@phosphor-icons/vue'
 import Checkbox from '@/components/inputs/Checkbox.vue'
+import FormSection from '@/components/settings/FormSection.vue'
 import type { DownloadClientConfiguration, DownloadClientSettings } from '@/types'
 import { useToast } from '@/services/toastService'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -634,8 +624,8 @@ const handleDelete = () => {
 .form-group input:focus,
 .form-group select:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
 }
 
 .form-group small {
@@ -645,78 +635,22 @@ const handleDelete = () => {
   font-size: 0.85rem;
 }
 
-.checkbox-group {
-  margin-bottom: 1rem;
-}
 
-.checkbox-group label {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 1rem;
-  background-color: #1a1a1a;
-  border: 1px solid #444;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-}
 
-.checkbox-group label:hover {
-  border-color: #007acc;
-  background-color: #222;
-}
-
-.checkbox-group input[type='checkbox'] {
-  margin-top: 0.25rem;
-  width: auto;
-  cursor: pointer;
-}
-
-.checkbox-group label span {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-  flex: 1;
-}
-
-.checkbox-group label strong {
-  color: #fff;
-  font-size: 0.95rem;
-}
-
-.checkbox-group label small {
-  color: #999;
-  font-size: 0.85rem;
-  font-weight: normal;
-}
+/* Download client modal overrides */
+.checkbox-group label:hover { border-color: var(--brand-500); background-color: #222 }
+.checkbox-group label span { flex: 1 }
 
 /* modal-footer styles are centralized in src/assets/modals.css; this modal prefers space-between layout */
 .modal-footer {
   justify-content: space-between;
 }
 
-.btn {
-  padding: 0.75rem 1.5rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  font-size: 0.95rem;
-}
+/* Buttons are centralized in `src/assets/buttons.css`. Use `.btn`, `.btn-danger` and layout helpers here when necessary. */
 
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-.btn-danger {
-  background-color: #f44336;
-  color: white;
-  margin-right: auto;
 }
 
 .btn-danger:hover:not(:disabled) {
@@ -724,17 +658,7 @@ const handleDelete = () => {
   transform: translateY(-1px);
 }
 
-/* Button color variants centralized in `src/assets/modals.css` */
-
-.btn-primary {
-  background-color: #007acc;
-  color: white;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background-color: #005a9e;
-  transform: translateY(-1px);
-}
+/* Button color variants centralized in `src/assets/modals.css` - use `.btn` / `.btn-primary` */
 
 .ph-spin {
   animation: spin 1s linear infinite;

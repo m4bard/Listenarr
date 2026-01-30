@@ -1,12 +1,7 @@
 <template>
   <Modal :visible="true" size="sm" @close="close">
     <template #header>
-      <div class="modal-title">
-        <h3>Inspect Cached Torrent</h3>
-      </div>
-      <button class="close-btn" @click="close">
-        <PhX />
-      </button>
+      <ModalHeader :title="'Inspect Cached Torrent'" @close="close" />
     </template>
 
     <template #default>
@@ -28,14 +23,14 @@
 
     <template #footer>
       <button @click="downloadTorrent" :disabled="loading || !hasStoredTorrent" class="btn btn-primary"><PhDownload /> Download Torrent</button>
-      <button @click="close" class="cancel-button"><PhX /> Close</button>
+      <button @click="close" class="cancel-button btn"><PhX /> Close</button>
     </template>
   </Modal>
 </template> 
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
-import { Modal, ModalBody } from '@/components/modal'
+import { Modal, ModalHeader, ModalBody } from '@/components/modal'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
 import { PhX, PhDownload } from '@phosphor-icons/vue' 

@@ -1,46 +1,51 @@
 <template>
-  <div v-if="visible" class="modal-overlay" @click.self="onClose">
-    <div
-      ref="contentRef"
-      class="modal-content"
-      :class="sizeClass"
-      @click.stop
-      role="dialog"
-      aria-modal="true"
-      :aria-labelledby="ariaLabelledBy"
-    >
-      <div class="modal-header">
-        <slot name="header">
-          <h3 v-if="title">{{ title }}</h3>
-          <button v-if="showClose" @click="onClose" class="close-btn" aria-label="Close modal">
-            <slot name="close-icon">✕</slot>
-          </button>
-        </slot>
-      </div>
+  <teleport to="body">
+    <div v-if="visible" class="modal-overlay" @click.self="onClose">
+      <div
+        ref="contentRef"
+        class="modal-content"
+        v-bind="$attrs"
+        :class="sizeClass"
+        @click.stop
+        role="dialog"
+        aria-modal="true"
+        :aria-labelledby="ariaLabelledBy"
+      >
+        <div class="modal-header">
+          <slot name="header">
+            <h3 v-if="title">{{ title }}</h3>
+            <button v-if="showClose" @click="onClose" class="close-btn" aria-label="Close modal">
+              <slot name="close-icon">✕</slot>
+            </button>
+          </slot>
+        </div>
 
-      <template v-if="!hasCustomBody">
-        <div class="modal-body">
+        <template v-if="!hasCustomBody">
+          <div class="modal-body">
+            <slot />
+          </div>
+        </template>
+        <template v-else>
           <slot />
-        </div>
-      </template>
-      <template v-else>
-        <slot />
-      </template>
+        </template>
 
-      <template v-if="!hasCustomFooter">
-        <div class="modal-footer">
+        <template v-if="!hasCustomFooter">
+          <div class="modal-footer">
+            <slot name="footer" />
+          </div>
+        </template>
+        <template v-else>
           <slot name="footer" />
-        </div>
-      </template>
-      <template v-else>
-        <slot name="footer" />
-      </template>
+        </template>
+      </div>
     </div>
-  </div>
+  </teleport>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch, nextTick, useSlots } from 'vue'
+
+defineOptions({ inheritAttrs: false })
 
 const props = defineProps({
   visible: { type: Boolean, required: true },

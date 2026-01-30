@@ -54,27 +54,27 @@
           v-model="searchQuery"
           type="text"
           placeholder="Enter search query..."
-          class="search-input"
+          class="search-input form-input"
           @keyup.enter="performSearch"
         />
         <button
           @click="performSearch"
           :disabled="!searchQuery.trim() || searchStore.isSearching"
-          class="search-button"
+          class="search-button btn"
         >
           {{ searchStore.isSearching ? 'Searching...' : 'Search' }}
         </button>
         <button
           v-if="searchStore.isSearching"
           @click="cancelSearch"
-          class="search-button cancel-button"
+          class="search-button cancel-button btn"
         >
           Cancel
         </button>
       </div>
 
       <div class="search-filters">
-        <select v-model="selectedCategory" class="filter-select">
+        <select v-model="selectedCategory" class="filter-select form-select">
           <option value="">All Categories</option>
           <option value="audiobook">Audiobooks</option>
           <option value="music">Music</option>
@@ -171,7 +171,7 @@
           <div class="result-actions">
             <button
               @click="addToLibrary(result)"
-              :class="['add-button', { added: addedResults.has(result.id) }]"
+              :class="['add-button','btn', { added: addedResults.has(result.id), 'btn-primary': !addedResults.has(result.id) }]"
               :disabled="isAddingToLibrary || addedResults.has(result.id)"
             >
               <template v-if="addedResults.has(result.id)">
@@ -256,6 +256,11 @@ const capitalizeLanguage = (language: string | undefined): string => {
 
 const fetchRawDebugWindow = async (q: string) => {
   try {
+    // Attempt to ensure antiforgery token before manual window.fetch debug POSTs.
+    try {
+      await apiService.ensureAntiforgeryForCurrentAuth()
+    } catch {}
+
     const body = JSON.stringify({ mode: 'Simple', query: q })
     const resp = await window.fetch('/api/search', {
       method: 'POST',
@@ -317,6 +322,82 @@ const performSearch = async () => {
 
   // Check which results are already in library
   checkExistingInLibrary()
+
+  // UX: show toast and scroll to results (or show info if none)
+  try {
+    if (searchStore.searchResults.length > 0) {
+      toast.success('Search complete', `${searchStore.searchResults.length} results found`)
+      await nextTick()
+      try {
+        const el = document.querySelector('.search-results') as HTMLElement | null
+        if (el) {
+          await nextTick()
+
+          // Compute nav offset
+          const topNav = document.querySelector('.top-nav') as HTMLElement | null
+          const navOffset = topNav ? topNav.offsetHeight + 12 : 72
+
+          // Find nearest scrollable ancestor; fallback to window
+          function findScrollableAncestor(node: HTMLElement | null): HTMLElement | Window {
+            let current = node?.parentElement || null
+            while (current && current !== document.documentElement) {
+              const style = getComputedStyle(current)
+              const overflowY = style.overflowY
+              if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) return current
+              current = current.parentElement
+            }
+            return window
+          }
+
+          const ancestor = findScrollableAncestor(el)
+          if (ancestor === window) {
+            const top = window.scrollY + el.getBoundingClientRect().top - navOffset
+            window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+          } else {
+            const anc = ancestor as HTMLElement
+            const top = anc.scrollTop + el.getBoundingClientRect().top - anc.getBoundingClientRect().top - navOffset
+            anc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+          }
+        }
+      } catch {}
+    } else {
+      toast.info('No results', `No results found for "${searchQuery.value}"`)
+      await nextTick()
+      try {
+        const elNo = document.querySelector('.no-results') as HTMLElement | null
+        if (elNo) {
+          await nextTick()
+
+          const topNav = document.querySelector('.top-nav') as HTMLElement | null
+          const navOffset = topNav ? topNav.offsetHeight + 12 : 72
+
+          function findScrollableAncestor(node: HTMLElement | null): HTMLElement | Window {
+            let current = node?.parentElement || null
+            while (current && current !== document.documentElement) {
+              const style = getComputedStyle(current)
+              const overflowY = style.overflowY
+              if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) return current
+              current = current.parentElement
+            }
+            return window
+          }
+
+          const ancestor = findScrollableAncestor(elNo)
+          if (ancestor === window) {
+            const top = window.scrollY + elNo.getBoundingClientRect().top - navOffset
+            window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+          } else {
+            const anc = ancestor as HTMLElement
+            const top = anc.scrollTop + elNo.getBoundingClientRect().top - anc.getBoundingClientRect().top - navOffset
+            anc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
+          }
+        }
+      } catch {}
+    }
+  } catch (e) {
+    // Non-fatal: don't let toast/scroll errors break search flow
+    logger.debug('[SearchView] toast/scroll after search failed', e)
+  }
 }
 
 const cancelSearch = () => {

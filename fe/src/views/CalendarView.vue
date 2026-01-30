@@ -163,14 +163,9 @@ const formatDate = (date: Date): string => {
   text-align: center;
 }
 
-.btn {
-  padding: 0.5rem;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  background-color: #555;
-  color: white;
-}
+/* Buttons visuals are centralized in `src/assets/buttons.css`. Use `.btn` or semantic variants like `.btn-secondary`.
+   Keep small calendar-specific helper to preserve spacing and local color choices. */
+.calendar-btn { padding: 0.5rem; min-width: 40px; border-radius: var(--btn-radius); }
 
 .calendar-grid {
   background-color: #2a2a2a;
@@ -212,7 +207,7 @@ const formatDate = (date: Date): string => {
 }
 
 .calendar-day.today {
-  background-color: #007acc;
+  background-color: var(--brand-500);
 }
 
 .day-number {

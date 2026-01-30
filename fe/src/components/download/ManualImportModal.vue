@@ -15,7 +15,6 @@
         <div v-if="!showPreview" class="top-path">
           <FolderBrowser
             v-model="selectedPath"
-            placeholder="Select a folder..."
             :inline="true"
             :show-files="true"
             @browser-opened="browserMode = true"
@@ -69,7 +68,7 @@
             <div class="preview-table">
               <div class="preview-header">
                 <div class="col col-check">
-                  <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
+                  <Checkbox :modelValue="allSelected" @update:modelValue="setAllSelected" />
                 </div>
                 <div class="col col-path">Relative Path</div>
                 <div class="col col-audiobook">Audiobook</div>
@@ -82,7 +81,7 @@
 
               <div class="preview-body">
                 <div v-for="(it, idx) in previewItems" :key="idx" class="preview-row">
-                  <div class="col col-check"><input type="checkbox" v-model="it.selected" /></div>
+                  <div class="col col-check"><Checkbox v-model="it.selected" /></div>
                   <div class="col col-path relative">{{ it.relativePath }}</div>
                   <div class="col col-audiobook">
                     <div class="clickable-cell" @click="openCellEditor(it, 'audiobook')">
@@ -637,10 +636,11 @@ const allSelected = computed(
   () => previewItems.value.length > 0 && previewItems.value.every((i) => i.selected),
 )
 
-const toggleSelectAll = (ev: Event) => {
-  const checked = (ev.target as HTMLInputElement).checked
-  previewItems.value.forEach((i) => (i.selected = checked))
+const setAllSelected = (value: boolean) => {
+  previewItems.value.forEach((i) => (i.selected = Boolean(value)))
 }
+
+const toggleSelectAll = (ev: Event) => setAllSelected((ev.target as HTMLInputElement).checked) 
 
 const getItemIssues = (item: PreviewItem): string[] => {
   const issues: string[] = []
@@ -709,24 +709,6 @@ const getItemIssues = (item: PreviewItem): string[] => {
   gap: 0.75rem;
 }
 
-.close-btn {
-  background: none;
-  border: none;
-  color: #999;
-  cursor: pointer;
-  padding: 0.5rem;
-  font-size: 1.5rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  transition: all 0.2s;
-}
-
-.close-btn:hover {
-  background-color: #333;
-  color: #fff;
-}
 
 .modal-body {
   padding: 2rem;
@@ -881,7 +863,7 @@ const getItemIssues = (item: PreviewItem): string[] => {
 }
 
 .clickable-cell:focus-within .placeholder {
-  border-color: #2196f3;
+  border-color: var(--brand-500);
 }
 
 /* Form elements */
@@ -900,8 +882,8 @@ const getItemIssues = (item: PreviewItem): string[] => {
 .form-select:focus,
 .form-input:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
 }
 
 .relative {

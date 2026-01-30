@@ -1,12 +1,7 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
-      <div class="modal-title">
-        <h3><PhFolderOpen /> Manual Import - Select Folder</h3>
-      </div>
-      <button class="close-btn" @click="close">
-        <PhX />
-      </button>
+      <ModalHeader :title="'Manual Import - Select Folder'" :icon="PhFolderOpen" @close="close" />
     </template>
 
     <template #default>
@@ -28,15 +23,20 @@
 
         <!-- Top folder input (full width) - hidden when preview is active -->
         <div v-if="!showPreview" class="top-path">
-          <FolderBrowser
-            v-model="selectedPath"
-            placeholder="Select a folder..."
-            :inline="true"
-            :show-files="true"
-            :auto-browse="false"
-            @browser-opened="browserMode = true"
-            @browser-closed="browserMode = false"
-          />
+          <div class="top-path-row">
+            <FolderBrowser
+              v-model="selectedPath"
+              :inline="true"
+              :show-files="true"
+              :auto-browse="false"
+              @browser-opened="browserMode = true"
+              @browser-closed="browserMode = false"
+            />
+            <button type="button" class="btn btn-secondary browse-btn" @click="showBrowserModal = true" title="Browse for folder">
+              <PhFolder />
+              Browse
+            </button>
+          </div>
         </div>
 
         <!-- Centered action buttons - shown when valid path exists -->
@@ -70,7 +70,7 @@
             <div class="preview-table">
               <div class="preview-header">
                 <div class="col col-check">
-                  <input type="checkbox" :checked="allSelected" @change="toggleSelectAll" />
+                  <Checkbox :modelValue="allSelected" @update:modelValue="setAllSelected" />
                 </div>
                 <div class="col col-path">Relative Path</div>
                 <div class="col col-audiobook">Audiobook</div>
@@ -83,7 +83,7 @@
 
               <div class="preview-body">
                 <div v-for="(it, idx) in previewItems" :key="idx" class="preview-row">
-                  <div class="col col-check"><input type="checkbox" v-model="it.selected" /></div>
+                  <div class="col col-check"><Checkbox v-model="it.selected" /></div>
                   <div class="col col-path relative">{{ it.relativePath }}</div>
                   <div class="col col-audiobook">
                     <div class="clickable-cell" @click="openCellEditor(it, 'audiobook')">
@@ -137,46 +137,53 @@
     </template>
 
     <template #footer>
-      <div class="footer-left">
-        <select v-if="showPreview" class="extra-select" v-model="inputMode">
-          <option value="">Select Import Mode</option>
-          <option value="move">Move</option>
-          <option value="copy">Copy</option>
-        </select>
-      </div>
-      <div class="footer-right">
-        <button class="cancel-button" @click="close"><PhX /> Cancel</button>
-        <!-- Show Interactive/Automatic Import when browser is open and not in preview mode -->
-        <template v-if="!showPreview && browserMode">
+      <ModalFooter :showCancel="false">
+        <template #left>
+          <button class="cancel-button btn" @click="close"><PhX /> Cancel</button>
+        </template>
+
+        <template #default>
+          <select v-if="showPreview" class="extra-select" v-model="inputMode">
+            <option value="">Select Import Mode</option>
+            <option value="move">Move</option>
+            <option value="copy">Copy</option>
+          </select>
+
+          <!-- Show Interactive/Automatic Import when browser is open and not in preview mode -->
+          <template v-if="!showPreview && browserMode">
+            <button
+              class="btn btn-info"
+              @click="startAutomaticImport"
+              :disabled="!isPathValid || loading"
+            >
+              <PhRocket />
+              Automatic Import
+            </button>
+            <button
+              class="btn btn-primary"
+              @click="startInteractiveImport"
+              :disabled="!isPathValid || loading"
+            >
+              <PhUser />
+              Interactive Import
+            </button>
+          </template>
+
+          <!-- Show Import button in preview mode -->
           <button
-            class="btn btn-info"
-            @click="startAutomaticImport"
-            :disabled="!isPathValid || loading"
-          >
-            <PhRocket />
-            Automatic Import
-          </button>
-          <button
+            v-else-if="showPreview"
             class="btn btn-primary"
-            @click="startInteractiveImport"
-            :disabled="!isPathValid || loading"
+            @click="importSelected"
+            :disabled="selectedCount === 0 || loading"
           >
-            <PhUser />
-            Interactive Import
+            Import
           </button>
         </template>
-        <!-- Show Import button in preview mode -->
-        <button
-          v-else-if="showPreview"
-          class="btn btn-primary"
-          @click="importSelected"
-          :disabled="selectedCount === 0 || loading"
-        >
-          Import
-        </button> 
-      </div>
+      </ModalFooter>
     </template>
   </Modal>
+
+  <FolderBrowserModal v-model:visible="showBrowserModal" v-model:modelValue="selectedPath" :show-input="true" :show-files="true" @close="showBrowserModal = false" />
 
     <Modal :visible="showMatch" size="lg" @close="closeMatch">
       <template #header>
@@ -190,14 +197,20 @@
       </template>
 
       <template #footer>
-        <button class="cancel-button" @click="closeMatch"><PhX /> Cancel</button>
-        <button class="btn btn-primary" @click="confirmMatch">Match</button>
-      </template>
+      <ModalFooter :showCancel="false">
+        <template #left>
+          <button class="cancel-button btn" @click="closeMatch"><PhX /> Cancel</button>
+        </template>
+        <template #default>
+          <button class="btn btn-primary" @click="confirmMatch">Match</button>
+        </template>
+      </ModalFooter>
+    </template>
     </Modal>
 
   <Modal :visible="showCellEditor" size="lg" @close="closeCellEditor">
     <template #header>
-      <h3>Edit</h3>
+      <ModalHeader :title="'Edit'" @close="closeCellEditor" />
     </template>
 
     <template #default>
@@ -275,7 +288,7 @@
     </template>
 
     <template #footer>
-      <button class="cancel-button" @click="closeCellEditor">Cancel</button>
+      <button class="cancel-button btn" @click="closeCellEditor">Cancel</button>
       <button v-if="cellEditorField === 'releaseGroup'" class="btn btn-primary" @click="saveCellEditor">Save</button>
     </template>
   </Modal> 
@@ -283,10 +296,12 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue'
-import { PhFolderOpen, PhX, PhRocket, PhUser, PhSpinner, PhInfo } from '@phosphor-icons/vue'
+import { PhFolderOpen, PhFolder, PhX, PhRocket, PhUser, PhSpinner, PhInfo } from '@phosphor-icons/vue'
 import type { ManualImportRequest } from '@/types'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
-import { Modal, ModalBody } from '@/components/modal'
+import Checkbox from '@/components/inputs/Checkbox.vue'
+import FolderBrowserModal from '@/components/modal/FolderBrowserModal.vue' 
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/modal' /* keep ModalFooter for footer layout */
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -360,6 +375,9 @@ const showCellEditor = ref(false)
 const cellEditorItem = ref<PreviewItem | null>(null)
 const cellEditorField = ref<string | null>(null)
 const cellEditorValue = ref<number | string | null>(null)
+
+// Folder browser modal state for explicit Browse button
+const showBrowserModal = ref(false)
 
 // Helper display names
 const getLibraryTitle = (id?: number | null) => {
@@ -638,10 +656,12 @@ const allSelected = computed(
   () => previewItems.value.length > 0 && previewItems.value.every((i) => i.selected),
 )
 
-const toggleSelectAll = (ev: Event) => {
-  const checked = (ev.target as HTMLInputElement).checked
-  previewItems.value.forEach((i) => (i.selected = checked))
+const setAllSelected = (value: boolean) => {
+  previewItems.value.forEach((i) => (i.selected = Boolean(value)))
 }
+
+// backwards-compatible alias (if other code referenced toggleSelectAll)
+const toggleSelectAll = (ev: Event) => setAllSelected((ev.target as HTMLInputElement).checked) 
 
 const getItemIssues = (item: PreviewItem): string[] => {
   const issues: string[] = []
@@ -816,7 +836,7 @@ const getItemIssues = (item: PreviewItem): string[] => {
 }
 
 .clickable-cell:focus-within .placeholder {
-  border-color: #2196f3;
+  border-color: var(--brand-500);
 }
 
 /* Form elements */
@@ -835,8 +855,8 @@ const getItemIssues = (item: PreviewItem): string[] => {
 .form-select:focus,
 .form-input:focus {
   outline: none;
-  border-color: #007acc;
-  box-shadow: 0 0 0 3px rgba(0, 122, 204, 0.1);
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.1);
 }
 
 .relative {
@@ -987,7 +1007,7 @@ const getItemIssues = (item: PreviewItem): string[] => {
 
 .table-row.active {
   background: linear-gradient(90deg, rgba(33, 150, 243, 0.06), rgba(33, 150, 243, 0.02));
-  border-left: 4px solid #2196f3;
+  border-left: 4px solid var(--brand-500);
 }
 
 .table-col {

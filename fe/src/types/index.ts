@@ -166,6 +166,8 @@ export interface DownloadClientConfiguration {
   removeCompletedDownloads?: string // "none", "remove", "remove_and_delete"
   // Client-specific settings. Use `DownloadClientSettings` for typed access
   settings: DownloadClientSettings
+  // Optional persisted last test result (true = success, false = failure)
+  lastTestSuccessful?: boolean
 }
 
 export interface DownloadClientSettings {
@@ -241,11 +243,6 @@ export interface ApplicationSettings {
 
   // External requests / proxy settings
   preferUsDomain?: boolean
-  useUsProxy?: boolean
-  usProxyHost?: string
-  usProxyPort?: number
-  usProxyUsername?: string
-  usProxyPassword?: string
 
   // Notification settings
   webhookUrl?: string
