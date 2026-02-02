@@ -17,8 +17,7 @@
  */
 
 import './assets/main.css'
-// Global toast styles (reusable)
-import './assets/toasts.css'
+// Global toast styles are now included in main.css
 // Global app styles (shared utilities and component fragments)
 import '@/styles/global.css'
 // Restore legacy Phosphor CSS classes (e.g. <i class="ph ph-grid-four">)

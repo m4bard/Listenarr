@@ -10,25 +10,25 @@
 
     <!-- Error State -->
     <div v-if="error" class="error-banner">
-      <i class="ph ph-warning-circle"></i>
+      <PhWarningCircle />
       <span>{{ error }}</span>
       <button class="close-btn" @click="error = null">
-        <i class="ph ph-x"></i>
+        <PhX />
       </button>
     </div>
 
     <!-- Success Message -->
     <div v-if="successMessage" class="success-banner">
-      <i class="ph ph-check-circle"></i>
+      <PhCheckCircle />
       <span>{{ successMessage }}</span>
       <button class="close-btn" @click="successMessage = null">
-        <i class="ph ph-x"></i>
+        <PhX />
       </button>
     </div>
 
     <!-- Loading State -->
     <div v-if="loading && !showForm" class="loading-state">
-      <i class="ph ph-spinner ph-spin"></i>
+      <PhSpinner class="ph-spin" />
       <p>Loading path mappings...</p>
     </div>
 
@@ -45,7 +45,7 @@
     <!-- Add Button -->
     <div v-if="!showForm && !loading" class="add-button-section">
       <button class="btn btn-primary" @click="handleAdd">
-        <i class="ph ph-plus"></i>
+        <PhPlus />
         Add Path Mapping
       </button>
     </div>
@@ -65,14 +65,14 @@
           </div>
           <div class="mapping-actions">
             <button class="btn btn-icon action-edit" title="Edit mapping" @click="handleEdit(mapping)">
-              <i class="ph ph-pencil"></i>
+              <PhPencil />
             </button>
             <button
               class="btn btn-icon btn-danger action-delete"
               title="Delete mapping"
               @click="handleDelete(mapping)"
             >
-              <i class="ph ph-trash"></i>
+              <PhTrash />
             </button>
           </div>
         </div>
@@ -80,17 +80,17 @@
         <div class="mapping-paths">
           <div class="path-item">
             <div class="path-label">
-              <i class="ph ph-desktop"></i>
+              <PhDesktop />
               <span>Remote Path</span>
             </div>
             <code class="path-value">{{ mapping.remotePath }}</code>
           </div>
           <div class="path-arrow">
-            <i class="ph ph-arrow-down"></i>
+            <PhArrowDown />
           </div>
           <div class="path-item">
             <div class="path-label">
-              <i class="ph ph-folder-open"></i>
+              <PhFolderOpen />
               <span>Local Path</span>
             </div>
             <code class="path-value">{{ mapping.localPath }}</code>
@@ -101,7 +101,7 @@
 
     <!-- Empty State -->
     <div v-if="!loading && !showForm && mappings.length === 0" class="empty-state">
-      <i class="ph ph-folder-open empty-icon"></i>
+      <PhFolderOpen class="empty-icon" />
       <h4>No Path Mappings</h4>
       <p>
         No remote path mappings configured for this download client yet. Add one to enable path
@@ -112,7 +112,7 @@
     <!-- Path Translation Tester -->
     <div v-if="mappings.length > 0 && !showForm && !loading" class="path-tester">
       <h4>
-        <i class="ph ph-flask"></i>
+        <PhFlask />
         Test Path Translation
       </h4>
       <div class="tester-controls">
@@ -128,7 +128,8 @@
           @click="handleTestPath"
           :disabled="!testPath.trim() || testing"
         >
-          <i :class="testing ? 'ph ph-spinner ph-spin' : 'ph ph-play'"></i>
+          <PhSpinner v-if="testing" class="ph-spin" />
+          <PhPlay v-else />
           {{ testing ? 'Testing...' : 'Translate' }}
         </button>
       </div>
@@ -136,7 +137,7 @@
       <div v-if="testResult" class="test-result">
         <div v-if="testResult.translated" class="result-success">
           <div class="result-header">
-            <i class="ph ph-check-circle"></i>
+            <PhCheckCircle />
             <strong>Translation Applied</strong>
           </div>
           <div class="result-paths">
@@ -145,7 +146,7 @@
               <code>{{ testResult.remotePath }}</code>
             </div>
             <div class="result-arrow">
-              <i class="ph ph-arrow-right"></i>
+              <PhArrowRight />
             </div>
             <div class="result-path">
               <span class="result-label">Local:</span>
@@ -155,7 +156,7 @@
         </div>
         <div v-else class="result-info">
           <div class="result-header">
-            <i class="ph ph-info"></i>
+            <PhInfo />
             <strong>No Translation</strong>
           </div>
           <p>No mapping matches this path. The path will be used as-is.</p>
@@ -170,6 +171,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { PhWarningCircle, PhX, PhCheckCircle, PhSpinner, PhPlus, PhPencil, PhTrash, PhDesktop, PhArrowDown, PhFolderOpen, PhFlask, PhPlay, PhArrowRight, PhInfo } from '@phosphor-icons/vue'
 import RemotePathMappingForm from './RemotePathMappingForm.vue'
 import { showConfirm } from '@/composables/useConfirm'
 import type { RemotePathMapping, TranslatePathResponse } from '@/types'
@@ -362,14 +364,7 @@ onMounted(() => {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin is centralized in src/assets/main.css */
 
 /* Error and Success Banners */
 .error-banner,
@@ -453,7 +448,7 @@ onMounted(() => {
   margin: 0 0 0.25rem 0;
   color: #fff;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .mapping-meta {
@@ -486,7 +481,7 @@ onMounted(() => {
   gap: 0.5rem;
   color: #999;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .path-label i {
@@ -551,7 +546,7 @@ onMounted(() => {
   margin: 0 0 1rem 0;
   color: #fff;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -650,7 +645,7 @@ onMounted(() => {
 .result-label {
   font-size: 0.8rem;
   color: #999;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .result-path code,

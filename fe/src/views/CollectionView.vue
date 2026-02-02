@@ -71,10 +71,7 @@
     </div>
 
     <!-- Audiobooks Grid -->
-    <div v-if="loading" class="loading-state">
-      <PhSpinner class="ph-spin" />
-      <p>Loading audiobooks...</p>
-    </div>
+    <LoadingState v-if="loading" message="Loading audiobooks..." />
 
     <div v-else-if="error" class="error-state">
       <div class="error-icon">
@@ -88,13 +85,15 @@
       </button>
     </div>
 
-    <div v-else-if="audiobooks.length === 0" class="empty-state">
-      <div class="empty-icon">
-        <PhBookOpen />
-      </div>
-      <h2>No audiobooks found</h2>
-      <p>No audiobooks found for this {{ type }}.</p>
-    </div>
+    <EmptyState
+      v-else-if="audiobooks.length === 0"
+      title="No audiobooks found"
+      :message="`No audiobooks found for this ${type}.`"
+    >
+      <template #icon>
+        <PhBookOpen :size="48" />
+      </template>
+    </EmptyState>
 
     <div v-else class="audiobooks-container">
       <!-- List View (match AudiobooksView styling) -->
@@ -370,7 +369,6 @@ import {
   PhArrowClockwise,
   PhInfo,
   PhBookOpen,
-  PhSpinner,
   PhWarningCircle,
   PhPencil,
   PhTrash,
@@ -385,11 +383,12 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useDownloadsStore } from '@/stores/downloads'
 import { apiService } from '@/services/api'
 import { errorTracking } from '@/services/errorTracking'
-import EditAudiobookModal from '@/components/audiobook/EditAudiobookModal.vue'
-import BulkEditModal from '@/components/collections/BulkEditModal.vue'
+import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
+import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import { showConfirm } from '@/composables/useConfirm'
 import { getPlaceholderUrl } from '@/utils/placeholder'
-import CustomSelect from '@/components/inputs/CustomSelect.vue' 
+import CustomSelect from '@/components/inputs/CustomSelect.vue'
+import { EmptyState, LoadingState } from '@/components/base'
 import type { Audiobook } from '@/types'
 import { safeText } from '@/utils/textUtils'
 

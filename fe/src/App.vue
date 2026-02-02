@@ -175,6 +175,7 @@
             <RouterLink
               :to="{ path: '/audiobooks', query: { group: 'books' } }"
               class="nav-item"
+              :class="{ 'router-link-active': route.name === 'home' || route.name === 'audiobooks' }"
               @mouseenter="preload('home'); onNavMouseEnter('audiobooks')"
               @mouseleave="onNavMouseLeave('audiobooks')"
               @focus="preload('home'); onNavFocus('audiobooks')"
@@ -264,7 +265,7 @@
             >
               <PhActivity />
               <span>Activity</span>
-              <span class="badge" v-if="activityCount > 0">{{ activityCount }}</span>
+              <Pill variant="count" v-if="activityCount > 0">{{ activityCount }}</Pill>
             </RouterLink>
             <RouterLink
               to="/wanted"
@@ -276,7 +277,7 @@
             >
               <PhHeart />
               <span>Wanted</span>
-              <span class="badge" v-if="wantedCount > 0">{{ wantedCount }}</span>
+              <Pill variant="count" v-if="wantedCount > 0">{{ wantedCount }}</Pill>
             </RouterLink>
           </div>
 
@@ -380,7 +381,7 @@
             >
               <PhMonitor />
               <span>System</span>
-              <span class="badge error" v-if="systemIssues > 0">{{ systemIssues }}</span>
+              <Pill variant="error" v-if="systemIssues > 0">{{ systemIssues }}</Pill>
             </RouterLink>
           </div>
         </nav>
@@ -445,14 +446,15 @@ import { useEventListener } from '@vueuse/core'
 import { preloadRoute } from '@/router'
 // SignalR indicator moved to System view; session token handled where needed
 import { useRoute, useRouter } from 'vue-router'
-import NotificationModal from '@/components/modal/NotificationModal.vue'
-import ConfirmDialog from '@/components/modal/ConfirmDialog.vue'
+import NotificationModal from '@/components/feedback/NotificationModal.vue'
+import ConfirmDialog from '@/components/feedback/ConfirmDialog.vue'
 import { useConfirmService } from '@/composables/confirmService'
 import { useNotification } from '@/composables/useNotification'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useAuthStore } from '@/stores/auth'
 import { apiService } from '@/services/api'
 import { handleImageError } from '@/utils/imageFallback'
+import { Pill } from '@/components/base'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
@@ -1257,7 +1259,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 .nav-brand h1 {
   margin: 0;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
   /* Use Figtree for the brand heading when available */
   font-family:
@@ -1326,7 +1328,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 }
 
 .user-menu-item.username {
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
 }
 
@@ -1445,6 +1447,11 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   color: white;
 }
 
+.sidebar .nav-item.router-link-active svg,
+.sidebar .nav-item.router-link-active .ph {
+  color: white;
+}
+
 .nav-item.router-link-active::before {
   content: '';
   position: absolute;
@@ -1487,24 +1494,15 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   content: '🔔';
 }
 
-/* Badges */
-.badge {
-  background-color: #f39c12;
-  color: white;
-  border-radius: 6px;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: bold;
-  margin-left: auto;
-}
-
+/* Badges - Now using Pill component from @/components/base */
+/* Legacy badge styles kept only for notification-badge positioning */
 .notification-badge {
   background-color: #f39c12;
   color: white;
   border-radius: 6px;
   padding: 0.1rem 0.3rem;
   font-size: 0.65rem;
-  font-weight: bold;
+  font-weight: 500;
   position: absolute;
   top: -2px;
   right: -2px;
@@ -1514,24 +1512,6 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   align-items: center;
   justify-content: center;
   z-index: 10;
-}
-
-.badge.error {
-  background-color: #e74c3c;
-}
-
-/* Sidebar-specific badge: branded blue */
-.sidebar .badge {
-  background-color: var(--brand-500);
-  transition:
-    background-color 0.12s ease,
-    box-shadow 0.12s ease;
-}
-
-.sidebar .badge:hover,
-.sidebar .badge:focus {
-  background-color: var(--brand-700);
-  box-shadow: 0 6px 18px rgba(var(--brand-rgb), 0.12);
 }
 
 /* Main Content */
@@ -1799,7 +1779,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 
 .sidebar .nav-subitem.active {
   color: #ffffff;
-  font-weight: 600;
+  font-weight: 500;
   border-left: 3px solid #2196f3; /* Highlighted border for active */
 }
 
@@ -1892,11 +1872,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   animation: spin 800ms linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin is centralized in src/assets/animations.css */
 
 .search-result {
   display: flex;
@@ -1913,7 +1889,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 }
 
 .result-title {
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
   font-size: 0.95rem;
 }
@@ -2069,7 +2045,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 .dropdown-header strong {
   color: #fff;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .clear-btn {
@@ -2131,7 +2107,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 
 .notif-title {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
   margin-bottom: 2px;
   overflow: hidden;

@@ -92,8 +92,14 @@
               <PhShieldCheck />
               <span class="detail-label">Security:</span>
               <div class="feature-badges">
-                <span class="badge" v-if="client.useSSL"> <PhLock /> SSL </span>
-                <span class="badge" v-else> <PhLockOpen /> No SSL </span>
+                <Pill variant="info" v-if="client.useSSL">
+                  <PhLock />
+                  SSL
+                </Pill>
+                <Pill variant="subtle" v-else>
+                  <PhLockOpen />
+                  No SSL
+                </Pill>
               </div>
             </div>
             <div class="detail-row">
@@ -105,10 +111,14 @@
               <PhLinkSimple />
               <span class="detail-label">Mappings:</span>
               <div class="feature-badges">
-                <span v-for="m in getMappingsForClient(client)" :key="m.id" class="badge">
+                <Pill
+                  variant="primary"
+                  v-for="m in getMappingsForClient(client)"
+                  :key="m.id"
+                >
                   <PhLink />
                   {{ m.name || m.remotePath }}
-                </span>
+                </Pill>
                 <span v-if="getMappingsForClient(client).length === 0" class="detail-value"
                   >(none)</span
                 >
@@ -214,11 +224,12 @@ import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import type { DownloadClientConfiguration, RemotePathMapping } from '@/types'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
-import DownloadClientFormModal from '@/components/download/DownloadClientFormModal.vue'
-import { Modal, ModalHeader, ModalFooter, ModalForm, ModalBody } from '@/components/modal' 
-import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
-import RemotePathMappingModal from '@/components/modal/RemotePathMappingModal.vue'
+import DownloadClientFormModal from '@/components/domain/download/DownloadClientFormModal.vue'
+import { Modal, ModalHeader, ModalFooter, ModalForm, ModalBody } from '@/components/feedback' 
+import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
+import RemotePathMappingModal from '@/components/feedback/RemotePathMappingModal.vue'
 import FormSection from '@/components/settings/FormSection.vue'
+import { Pill } from '@/components/base'
 import {
   PhDownloadSimple,
   PhToggleRight,
@@ -522,16 +533,7 @@ defineExpose({
   animation: fadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* @keyframes fadeIn is centralized in src/assets/animations.css */
 
 .download-clients-tab {
   width: 100%;
@@ -553,7 +555,7 @@ defineExpose({
   margin: 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .add-button {
@@ -636,7 +638,7 @@ defineExpose({
   margin: 0 0 0.5rem 0;
   font-size: 1.1rem;
   color: #fff;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .indexer-type {
@@ -644,7 +646,7 @@ defineExpose({
   padding: 0.3rem 0.75rem;
   border-radius: 6px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -717,20 +719,7 @@ defineExpose({
   gap: 0.5rem;
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  background: var(--color-background-tertiary);
-  border-radius: 4px;
-  font-size: 0.75rem;
-}
-
-.badge svg {
-  width: 12px;
-  height: 12px;
-}
+/* Badge styles - Now using Pill component from @/components/base */
 
 .config-list {
   display: flex;
@@ -762,7 +751,7 @@ defineExpose({
 .config-info h4 {
   margin: 0 0 0.75rem 0;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .config-actions {
@@ -788,12 +777,5 @@ defineExpose({
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin is centralized in src/assets/animations.css */
 </style>

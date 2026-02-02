@@ -1,0 +1,931 @@
+<template>
+  <Modal :visible="visible" size="lg" @close="closeModal">
+    <template #header>
+      <ModalHeader :title="'Add to Library'" @close="closeModal" />
+    </template>
+
+    <template #default>
+      <ModalBody>
+        <div class="book-layout">
+          <!-- Book Image -->
+          <div class="book-image">
+            <div class="image-viewport">
+              <img
+                v-if="resolvedImageUrl || enriched?.imageUrl || book.imageUrl"
+                :src="imageSrc"
+                :alt="book.title"
+                loading="lazy"
+                @error="onImageError"
+                @load="onImageLoad"
+                :aria-hidden="!book.title"
+              />
+              <div v-else class="placeholder-cover">
+                <PhImage />
+                <span>No Cover</span>
+              </div>
+              <div v-if="imageLoading" class="image-loading-overlay">
+                <PhSpinner class="ph-spin" />
+              </div>
+              <div v-if="imageError" class="image-error-overlay">
+                <div class="error-inner">
+                  <PhImage />
+                  <div>Image unavailable</div>
+                  <button class="btn btn-secondary small" @click.stop="retryImage">
+                    Retry Image
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Book Details -->
+          <div class="book-details">
+            <div class="detail-section">
+              <h3>{{ book.title }}</h3>
+              <p v-if="book.authors?.length" class="authors">by {{ book.authors.join(', ') }}</p>
+              <p v-if="book.narrators?.length" class="narrators">
+                Narrated by {{ book.narrators.join(', ') }}
+              </p>
+            </div>
+
+            <div v-if="book.description" class="detail-section">
+              <h4>Description</h4>
+              <div class="description" v-html="book.description"></div>
+            </div>
+
+            <div class="detail-section" id="add-library-desc">
+              <h4>Publication Information</h4>
+              <div class="meta-source-row">
+                <small v-if="metadataLoading">Loading metadata...</small>
+                <small v-else-if="metadataSource">Metadata: {{ metadataSource }}</small>
+              </div>
+              <div class="detail-grid">
+                <div v-if="book.publisher" class="detail-item">
+                  <span class="label">Publisher:</span>
+                  <span class="value">{{ book.publisher }}</span>
+                </div>
+                <div v-if="book.publishYear" class="detail-item">
+                  <span class="label">Published:</span>
+                  <span class="value">{{ book.publishYear }}</span>
+                </div>
+                <div v-if="book.language" class="detail-item">
+                  <span class="label">Language:</span>
+                  <span class="value">{{ capitalizeFirst(book.language) }}</span>
+                </div>
+                <div v-if="book.runtime" class="detail-item">
+                  <span class="label">Runtime:</span>
+                  <span class="value">{{ formatRuntime(book.runtime) }}</span>
+                </div>
+                <div v-if="book.asin" class="detail-item">
+                  <span class="label">ASIN:</span>
+                  <span class="value">{{ book.asin }}</span>
+                </div>
+                <div v-if="book.isbn" class="detail-item">
+                  <span class="label">ISBN:</span>
+                  <span class="value">{{ book.isbn }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Customization Options -->
+        <div class="customization-section">
+          <h4>Library Options</h4>
+
+          <div class="option-group">
+            <Checkbox v-model="options.monitored">
+              <strong>Monitor for new releases</strong>
+              <small>Automatically search for better quality versions of this audiobook</small>
+            </Checkbox>
+          </div>
+
+          <div class="option-group">
+            <Checkbox v-model="options.autoSearch">
+              <strong>Search for downloads immediately</strong>
+              <small>Start searching for available downloads right after adding to library</small>
+            </Checkbox>
+          </div>
+
+          <div class="option-group">
+            <label class="form-label">Destination</label>
+            <div class="form-control-card">
+              <div class="destination-display">
+                <div class="destination-row">
+                  <div class="root-select">
+                    <RootFolderSelect
+                      v-model:rootId="selectedRootId"
+                      v-model:customPath="customRootPath"
+                    />
+                  </div>
+                  <input
+                    type="text"
+                    v-model="options.relativePath"
+                    class="form-input relative-input"
+                    placeholder="e.g. Author/Title"
+                  />
+                </div>
+                <small class="form-help"
+                  >Select a named root (or custom path) and edit the path relative to it on the
+                  right.</small
+                >
+              </div>
+            </div>
+          </div>
+
+          <div class="option-group">
+            <label class="form-label">Quality Profile</label>
+            <select v-model="options.qualityProfileId" class="form-select">
+              <option :value="null">Use Default Profile</option>
+              <option v-for="profile in qualityProfiles" :key="profile.id" :value="profile.id">
+                {{ profile.name }}{{ profile.isDefault ? ' (Default)' : '' }}
+              </option>
+            </select>
+            <small class="form-help">
+              Choose which quality profile to use for automatic downloads. Leave as "Use Default
+              Profile" to automatically use the default profile.
+            </small>
+          </div>
+        </div>
+      </ModalBody>
+
+    </template>
+
+    <template #footer>
+      <button class="cancel-button" @click="closeModal"><PhX /> Cancel</button>
+      <button class="btn btn-primary" @click="addToLibrary" :disabled="isAdding || metadataLoading"><PhSpinner v-if="isAdding" class="ph-spin" /><PhPlus v-else /> {{ isAdding ? 'Adding...' : 'Add to Library' }}</button>
+    </template>
+  </Modal>
+</template>
+
+<script setup lang="ts">
+import { ref, onMounted, watch, computed, onBeforeUnmount, nextTick } from 'vue'
+import type { AudibleBookMetadata, QualityProfile, Audiobook } from '@/types'
+import { apiService } from '@/services/api'
+import { useConfigurationStore } from '@/stores/configuration'
+import { useToast } from '@/services/toastService'
+import { logger } from '@/utils/logger'
+import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
+import RootFolderSelect from '@/components/form/RootFolderSelect.vue'
+import { useRootFoldersStore } from '@/stores/rootFolders'
+import { PhX, PhSpinner, PhPlus, PhImage } from '@phosphor-icons/vue' 
+import { toForward, normalizeForCompare } from '@/utils/path' 
+
+interface Props {
+  visible: boolean
+  book: AudibleBookMetadata
+  resolvedImageUrl?: string
+}
+
+interface Emits {
+  (e: 'close'): void
+  (e: 'added', audiobook: Audiobook): void
+}
+
+const props = defineProps<Props>()
+const emit = defineEmits<Emits>()
+
+const configStore = useConfigurationStore()
+const toast = useToast()
+
+const isAdding = ref(false)
+const qualityProfiles = ref<QualityProfile[]>([])
+
+const options = ref({
+  monitored: true,
+  qualityProfileId: null as number | null,
+  autoSearch: false,
+  // editable relative path portion (relative to rootPath)
+  relativePath: '' as string | null,
+})
+
+const rootStore = useRootFoldersStore()
+const selectedRootId = ref<number | null>(null)
+const customRootPath = ref<string | null>(null)
+
+const rootPath = ref<string>('')
+const previewFull = ref<string>('')
+const previewRelative = ref<string>('')
+
+// Hold an enriched metadata object (populate if metadata sources available)
+const enriched = ref<AudibleBookMetadata | null>(null)
+// Image and metadata UI state
+const imageError = ref(false)
+const imageLoading = ref(false)
+const imageRetryCount = ref(0)
+const metadataLoading = ref(false)
+const metadataSource = ref<string | null>(null)
+
+const imageSrc = computed(() => {
+  // prefer resolvedImageUrl passed from parent
+  const base = props.resolvedImageUrl || enriched.value?.imageUrl || props.book?.imageUrl || ''
+  if (!base) return ''
+  // If we retried, append cache-buster to force reload
+  if (imageRetryCount.value > 0) {
+    const sep = base.includes('?') ? '&' : '?'
+    return `${base}${sep}r=${Date.now()}`
+  }
+  return base
+})
+
+// Local types for audimeta response to avoid `any`
+interface AudimetaPerson {
+  name?: string
+}
+interface AudimetaSeries {
+  name?: string
+  position?: string | number
+}
+interface AudimetaGenre {
+  name?: string
+}
+interface Audimeta {
+  asin?: string
+  title?: string
+  subtitle?: string
+  authors?: AudimetaPerson[]
+  narrators?: AudimetaPerson[]
+  publisher?: string
+  publishDate?: string
+  releaseDate?: string
+  description?: string
+  imageUrl?: string
+  lengthMinutes?: number
+  language?: string
+  genres?: AudimetaGenre[]
+  series?: AudimetaSeries[]
+  bookFormat?: string
+  isbn?: string
+}
+
+// Helper to map audimeta response to AudibleBookMetadata
+const mapAudimetaToAudible = (
+  audimeta: Partial<Audimeta> | undefined,
+  source?: string,
+): AudibleBookMetadata => {
+  let publishYear: string | undefined
+  const dateStr = audimeta?.publishDate || audimeta?.releaseDate
+  if (dateStr && typeof dateStr === 'string') {
+    const yearMatch = dateStr.match(/\d{4}/)
+    publishYear = yearMatch ? yearMatch[0] : undefined
+  }
+
+  const authors = (audimeta?.authors || []).map((a) => a?.name).filter(Boolean) as string[]
+  const narrators = (audimeta?.narrators || []).map((n) => n?.name).filter(Boolean) as string[]
+  const genres = (audimeta?.genres || []).map((g) => g?.name).filter(Boolean) as string[]
+
+  const firstSeries =
+    audimeta?.series && audimeta.series.length > 0 ? audimeta.series[0] : undefined
+
+  return {
+    asin: audimeta?.asin || props.book?.asin || '',
+    title: audimeta?.title || props.book?.title || 'Unknown Title',
+    subtitle: audimeta?.subtitle,
+    authors: authors.length ? authors : props.book?.authors || [],
+    narrators: narrators.length ? narrators : props.book?.narrators || [],
+    publisher: audimeta?.publisher || props.book?.publisher,
+    publishYear: publishYear || props.book?.publishYear,
+    description: audimeta?.description || props.book?.description,
+    imageUrl: audimeta?.imageUrl || props.book?.imageUrl,
+    runtime:
+      typeof audimeta?.lengthMinutes === 'number'
+        ? audimeta.lengthMinutes * 60
+        : props.book?.runtime,
+    language: audimeta?.language || props.book?.language,
+    genres: genres.length ? genres : props.book?.genres || [],
+    series: firstSeries?.name || props.book?.series,
+    seriesNumber:
+      firstSeries?.position !== undefined ? String(firstSeries.position) : props.book?.seriesNumber,
+    abridged:
+      typeof audimeta?.bookFormat === 'string'
+        ? audimeta.bookFormat.toLowerCase().includes('abridged')
+        : Boolean(props.book?.abridged),
+    isbn: audimeta?.isbn || props.book?.isbn,
+    source: source || props.book?.source,
+  }
+}
+
+// helper to load profiles/settings and seed preview
+const seedPreview = async () => {
+  await configStore.loadQualityProfiles()
+  qualityProfiles.value = configStore.qualityProfiles
+
+  // Load application settings to get default root
+  await configStore.loadApplicationSettings()
+  // Load named root folders if available
+  await rootStore.load()
+  if (rootStore.folders.length > 0) {
+    const def = rootStore.folders.find((f) => f.isDefault) || rootStore.folders[0]
+    selectedRootId.value = def?.id ?? null
+    // override rootPath for preview
+    rootPath.value = def?.path || configStore.applicationSettings?.outputPath || ''
+  } else {
+    // Fallback to legacy outputPath if no root folders
+    rootPath.value = configStore.applicationSettings?.outputPath || ''
+  }
+
+  // Attempt to fetch enriched metadata for the ASIN (if present) so preview/add use metadata sources
+  try {
+    if (props.book?.asin) {
+      metadataLoading.value = true
+      try {
+        const resp = await apiService.getMetadata(props.book.asin, 'us', true)
+        if (resp && resp.metadata) {
+          enriched.value = mapAudimetaToAudible(resp.metadata, resp.source)
+          metadataSource.value = resp.source || null
+        }
+      } catch (metaErr) {
+        // ignore metadata fetch errors - we'll fall back to provided book
+        logger.debug('Metadata fetch failed in AddLibraryModal:', metaErr)
+      } finally {
+        metadataLoading.value = false
+      }
+    }
+
+    const metadataForPreview = (enriched.value || props.book) as AudibleBookMetadata
+    // Compute a preview path using server logic
+    const resp2 = await apiService.previewLibraryPath(
+      metadataForPreview,
+      rootPath.value || undefined,
+    )
+    previewFull.value = resp2?.fullPath || ''
+    previewRelative.value = resp2?.relativePath || ''
+    // Seed editable relative path — prefer server-relative, otherwise derive from full preview and configured root
+    options.value.relativePath = deriveRelative(
+      previewRelative.value,
+      previewFull.value,
+      rootPath.value,
+    )
+  } catch (e) {
+    console.error('Failed to preview path:', e)
+  }
+}
+
+// Load when mounted
+onMounted(() => {
+  seedPreview()
+})
+
+// Watch for resolvedImageUrl changes to reset image error state
+watch(
+  () => props.resolvedImageUrl,
+  () => {
+    imageError.value = false
+    imageRetryCount.value = 0
+  },
+)
+
+function onImageError() {
+  imageLoading.value = false
+  imageError.value = true
+}
+
+function onImageLoad() {
+  imageLoading.value = false
+  imageError.value = false
+}
+
+function retryImage() {
+  imageError.value = false
+  imageRetryCount.value++
+  imageLoading.value = true
+  // The computed imageSrc will include a cache-buster when retryCount>0
+}
+
+// Helper to derive a relative path from server preview/paths
+function deriveRelative(
+  serverRelative: string | undefined | null,
+  serverFull: string | undefined | null,
+  root: string | undefined | null,
+): string {
+  const rootVal = root || ''
+  // Prefer explicit server-provided relative
+  if (serverRelative && String(serverRelative).trim().length > 0) return serverRelative
+
+  // If no root configured, fall back to showing the full path
+  if (!rootVal) return serverFull || ''
+  if (!serverFull) return ''
+
+  // Normalize separators to forward slash for comparison
+  const normRoot = toForward(rootVal)
+  const normFull = toForward(serverFull)
+
+  // Ensure trailing slash on root for slicing
+  const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
+
+  if (normalizeForCompare(normFull) === normalizeForCompare(normRoot)) return ''
+  if (normalizeForCompare(normFull).startsWith(normalizeForCompare(rootWithSlash))) {
+    const rel = normFull.slice(rootWithSlash.length).replace(/^\/+/, '')
+    // Preserve user's original separator preference from configured root
+    const useBackslash = rootVal.includes('\\')
+    return useBackslash ? rel.replace(/\//g, '\\') : rel
+  }
+
+  // Not under root: show full path so user can edit it
+  return serverFull
+}
+
+// Re-seed preview if the passed book changes after mount (parent may update props)
+watch(
+  () => props.book,
+  (newVal) => {
+    if (!newVal) return
+    seedPreview()
+  },
+)
+
+const modalRef = ref<HTMLElement | null>(null)
+
+const closeModal = () => {
+  emit('close')
+}
+
+// Focus management for accessibility: trap focus inside modal and restore on close
+let previousActiveElement: HTMLElement | null = null
+
+const getFocusable = (container: HTMLElement | null): HTMLElement[] => {
+  if (!container) return []
+  const selectors = [
+    'a[href]',
+    'button:not([disabled])',
+    'textarea:not([disabled])',
+    'input:not([disabled])',
+    'select:not([disabled])',
+    '[tabindex]:not([tabindex="-1"])',
+  ].join(',')
+  return Array.from(container.querySelectorAll<HTMLElement>(selectors))
+}
+
+function onKeyDown(e: KeyboardEvent) {
+  if (!modalRef.value) return
+  if (e.key === 'Escape') {
+    e.stopPropagation()
+    closeModal()
+    return
+  }
+
+  if (e.key === 'Tab') {
+    const focusable = getFocusable(modalRef.value)
+    if (focusable.length === 0) {
+      e.preventDefault()
+      return
+    }
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    const active = document.activeElement as HTMLElement | null
+    if (e.shiftKey) {
+      if (!active || active === first) {
+        e.preventDefault()
+        last?.focus()
+      }
+    } else {
+      if (!active || active === last) {
+        e.preventDefault()
+        first?.focus()
+      }
+    }
+  }
+}
+
+watch(
+  () => props.visible,
+  async (val) => {
+    if (val) {
+      previousActiveElement = document.activeElement as HTMLElement | null
+      await nextTick()
+      if (modalRef.value) {
+        modalRef.value.focus()
+      }
+      document.addEventListener('keydown', onKeyDown, { capture: true })
+    } else {
+      document.removeEventListener('keydown', onKeyDown, { capture: true })
+      if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
+        previousActiveElement.focus()
+      }
+    }
+  },
+)
+
+onBeforeUnmount(() => {
+  document.removeEventListener('keydown', onKeyDown, { capture: true })
+})
+
+const addToLibrary = async () => {
+  if (!props.book) return
+
+  isAdding.value = true
+  // Combine rootPath + relativePath into full destination path
+  let destination: string | undefined = undefined
+  try {
+    const rel = (options.value.relativePath || '').trim()
+    // Resolve selected root (custom, named, or default)
+    let root = null
+    if (selectedRootId.value === 0) root = customRootPath.value || ''
+    else if (selectedRootId.value && selectedRootId.value > 0) {
+      const found = rootStore.folders.find((f) => f.id === selectedRootId.value)
+      root = found?.path || ''
+    } else {
+      // Use default root folder, fallback to legacy outputPath for compatibility
+      const defaultRoot = rootStore.folders.find((f) => f.isDefault)
+      root = defaultRoot?.path || configStore.applicationSettings?.outputPath || ''
+    }
+
+    if (root && rel) {
+      const sep = root.includes('\\') ? '\\' : '/'
+      const cleanedRel = rel.replace(/\\|\//g, sep)
+      destination = root.endsWith(sep) ? root + cleanedRel : root + sep + cleanedRel
+    } else if (root && !rel) {
+      destination = root
+    }
+
+    const metadataToSend = (enriched.value || props.book) as AudibleBookMetadata
+    const result = await apiService.addToLibrary(metadataToSend, {
+      monitored: options.value.monitored,
+      qualityProfileId: options.value.qualityProfileId || undefined,
+      autoSearch: options.value.autoSearch,
+      destinationPath: destination || undefined,
+    })
+    toast.success('Added', `"${metadataToSend.title}" has been added to your library!`)
+    emit('added', result.audiobook)
+    closeModal()
+  } catch (err: unknown) {
+    console.error('Failed to add audiobook:', err)
+    const errorMessage =
+      err instanceof Error ? err.message : 'Failed to add audiobook. Please try again.'
+    toast.error('Add failed', errorMessage)
+  } finally {
+    isAdding.value = false
+  }
+}
+
+const formatRuntime = (minutes: number): string => {
+  if (!minutes) return 'Unknown'
+  const hours = Math.floor(minutes / 60)
+  const mins = minutes % 60
+  return `${hours}h ${mins}m`
+}
+
+const capitalizeFirst = (str: string): string => {
+  if (!str) return ''
+  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
+}
+</script>
+
+<style scoped>
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+.modal-content {
+  background-color: #2a2a2a;
+  border-radius: 6px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+  max-width: 900px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.book-image {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-viewport {
+  width: 100%;
+  aspect-ratio: 1/1;
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.06));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.image-viewport img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.placeholder-cover {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-muted);
+}
+.image-loading-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.25);
+  color: white;
+}
+.image-error-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.6);
+  color: white;
+}
+.image-error-overlay .error-inner {
+  text-align: center;
+}
+.image-error-overlay .error-inner .btn.small {
+  margin-top: 0.5rem;
+}
+
+.meta-source-row {
+  margin-bottom: 0.5rem;
+}
+
+.modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.5rem;
+  border-bottom: 1px solid #444;
+}
+
+.modal-header h2 {
+  margin: 0;
+  color: white;
+  font-size: 1.5rem;
+}
+
+.modal-body {
+  padding: 1.5rem;
+  flex: 1;
+  overflow-y: auto;
+}
+
+/* modal-footer styles are centralized in src/assets/modals.css */
+.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
+
+.book-layout {
+  display: flex;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.book-image {
+  width: 160px;
+  height: 160px;
+  flex-shrink: 0;
+  background-color: #555;
+  border-radius: 6px;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.book-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.placeholder-cover {
+  color: #888;
+  text-align: center;
+}
+
+.placeholder-cover i {
+  font-size: 2rem;
+  display: block;
+  margin-bottom: 0.5rem;
+}
+
+.book-details {
+  flex: 1;
+}
+
+.detail-section {
+  margin-bottom: 1.5rem;
+}
+
+.detail-section h3 {
+  margin: 0 0 0.5rem 0;
+  color: white;
+  font-size: 1.4rem;
+}
+
+.detail-section h4 {
+  margin: 0 0 1rem 0;
+  color: white;
+  font-size: 1.1rem;
+  border-bottom: 1px solid #444;
+  padding-bottom: 0.5rem;
+}
+
+.authors,
+.narrators {
+  color: var(--brand-500);
+  margin: 0.25rem 0;
+  font-weight: 500;
+}
+
+.description {
+  color: #ccc;
+  line-height: 1.6;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.detail-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.75rem;
+}
+
+.detail-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.detail-item .label {
+  color: #999;
+  font-size: 0.9rem;
+  font-weight: 500;
+}
+
+.detail-item .value {
+  color: white;
+  font-size: 0.95rem;
+}
+
+.customization-section {
+  border-top: 1px solid #444;
+  padding-top: 1.5rem;
+}
+
+.customization-section h4 {
+  margin: 0 0 1rem 0;
+  color: white;
+  font-size: 1.1rem;
+}
+
+.option-group {
+  margin-bottom: 1.5rem;
+}
+
+.option-label {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  cursor: pointer;
+  padding: 0.75rem;
+  border-radius: 6px;
+  transition: background-color 0.2s;
+}
+
+.option-label:hover {
+  background-color: rgba(255, 255, 255, 0.05);
+}
+
+.option-checkbox {
+  margin-top: 0.25rem;
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--brand-500);
+}
+
+.option-text {
+  flex: 1;
+  color: white;
+}
+
+.option-text small {
+  color: #ccc;
+  display: block;
+  margin-top: 0.25rem;
+}
+
+.form-label {
+  display: block;
+  color: white;
+  font-weight: 500;
+  margin-bottom: 0.5rem;
+}
+
+.form-select {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid #555;
+  border-radius: 6px;
+  background-color: #333;
+  color: white;
+  font-size: 1rem;
+}
+
+.form-select:focus {
+  outline: none;
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 2px rgba(var(--brand-rgb), 0.2);
+}
+
+.form-help {
+  display: block;
+  color: #ccc;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
+
+/* Destination display styles */
+.destination-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.5rem 0;
+}
+
+/* root-label is used instead of readonly-path */
+
+.form-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border-radius: 6px;
+  border: 1px solid #3a3a3a;
+  background-color: #2a2a2a;
+  color: #fff;
+  font-size: 0.95rem;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.06);
+}
+
+/* Row layout for destination: root left, input right */
+.destination-row {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+}
+
+.root-label {
+  padding: 0.45rem 0 0.45rem 0.6rem;
+  color: #ccc;
+  font-family:
+    ui-monospace, SFMono-Regular, Menlo, Monaco, 'Roboto Mono', 'Segoe UI Mono', monospace;
+  font-size: 0.9rem;
+  width: fit-content;
+  white-space: nowrap;
+}
+
+.relative-input {
+  flex: 1 1 auto;
+}
+
+/* Buttons are centralized in `src/assets/buttons.css` and `src/assets/modals.css`. Use `.btn` / `.btn-primary` here. */
+
+/* Button color variants centralized in `src/assets/modals.css` */
+
+/* Responsive design */
+@media (max-width: 768px) {
+  .book-layout {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .book-image {
+    width: 120px;
+    height: 120px;
+  }
+
+  .modal-content {
+    max-width: 95vw;
+    margin: 1rem;
+  }
+
+  .modal-header,
+  .modal-body,
+  .modal-footer {
+    padding: 1rem;
+  }
+
+  .detail-grid {
+    grid-template-columns: 1fr;
+  }
+}
+</style>

@@ -2,14 +2,14 @@
   <div class="remote-path-mapping-form">
     <div class="form-header">
       <h4>
-        <i :class="isEdit ? 'ph ph-pencil' : 'ph ph-plus'"></i>
+        <component :is="isEdit ? PhPencil : PhPlus" />
         {{ isEdit ? 'Edit' : 'Add' }} Path Mapping
       </h4>
     </div>
 
     <form @submit.prevent="handleSubmit">
       <div v-if="error" class="error-banner">
-        <i class="ph ph-warning-circle"></i>
+        <PhWarningCircle />
         <span>{{ error }}</span>
       </div>
 
@@ -19,25 +19,26 @@
 
       <FormRow label="Remote Path" help="Path as seen by the download client (in its Docker container or remote system)">
         <div class="input-with-icon">
-          <i class="ph ph-desktop"></i>
+          <PhDesktop />
           <input id="remotePath" v-model="formData.remotePath" type="text" placeholder="/path/to/downloads" class="form-control" required />
         </div>
       </FormRow>
 
       <FormRow label="Local Path" help="Path as seen by Listenarr (on this system where Listenarr is running)">
         <div class="input-with-icon">
-          <i class="ph ph-folder-open"></i>
+          <PhFolderOpen />
           <input id="localPath" v-model="formData.localPath" type="text" placeholder="/mnt/media/audiobooks" class="form-control" required />
         </div>
       </FormRow>
 
       <div class="form-actions">
         <button type="button" class="btn btn-secondary" @click="handleCancel">
-          <i class="ph ph-x"></i>
+          <PhX />
           Cancel
         </button>
         <button type="submit" class="btn btn-primary" :disabled="!isValid || loading">
-          <i :class="loading ? 'ph ph-spinner ph-spin' : 'ph ph-check'"></i>
+          <PhSpinner v-if="loading" class="ph-spin" />
+          <PhCheck v-else />
           <span v-if="loading">Saving...</span>
           <span v-else>{{ isEdit ? 'Update' : 'Save' }}</span>
         </button>
@@ -50,6 +51,7 @@
 import { ref, computed, watch } from 'vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import type { RemotePathMapping } from '@/types'
+import { PhPencil, PhPlus, PhWarningCircle, PhDesktop, PhFolderOpen, PhX, PhSpinner, PhCheck } from '@phosphor-icons/vue' 
 
 interface Props {
   downloadClientId: string
@@ -139,7 +141,7 @@ const handleCancel = () => {
   margin: 0;
   color: #fff;
   font-size: 1rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -178,7 +180,7 @@ const handleCancel = () => {
 label {
   display: block;
   margin-bottom: 0.5rem;
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
   font-size: 0.95rem;
 }
@@ -261,14 +263,7 @@ label.required::after {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin is centralized in src/assets/main.css */
 
 @media (max-width: 768px) {
   .form-actions {

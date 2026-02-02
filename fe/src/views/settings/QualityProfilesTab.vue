@@ -243,7 +243,7 @@ import {
 } from '@/services/api'
 import type { QualityProfile } from '@/types'
 import QualityProfileFormModal from '@/components/settings/QualityProfileFormModal.vue'
-import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
+import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import {
   PhStar,
   PhCheckCircle,
@@ -395,16 +395,7 @@ defineExpose({
   animation: fadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* @keyframes fadeIn is centralized in src/assets/animations.css */
 
 .section-header {
   display: flex;
@@ -417,7 +408,7 @@ defineExpose({
 
 .section-header h3 {
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
   margin: 0;
 }
 
@@ -491,7 +482,7 @@ defineExpose({
   padding: 0.3rem 0.7rem;
   border-radius: 6px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -532,7 +523,7 @@ defineExpose({
   margin: 0;
   color: #4dabf7;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   display: flex;
@@ -555,7 +546,7 @@ defineExpose({
 .profile-name-row h4 {
   margin: 0;
   font-size: 1.25rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .status-badge {
@@ -565,7 +556,7 @@ defineExpose({
   padding: 0.25rem 0.75rem;
   border-radius: 12px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
 }
 
@@ -603,7 +594,7 @@ defineExpose({
 .profile-section h5 {
   margin: 0 0 0.75rem 0;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   color: var(--text-secondary);
   display: flex;
@@ -634,7 +625,7 @@ defineExpose({
   background: rgba(76, 175, 80, 0.15);
   color: #4caf50;
   border-color: rgba(76, 175, 80, 0.3);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* Icon sizing & color consistency inside profile cards */
@@ -715,7 +706,7 @@ defineExpose({
 
 .filter-type {
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.5rem;

@@ -1,9 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 
-import Checkbox from '@/components/inputs/Checkbox.vue'
-import PasswordInput from '@/components/inputs/PasswordInput.vue'
-import { Modal, ModalHeader, ModalFooter } from '@/components/modal'
+import Checkbox from '@/components/form/Checkbox.vue'
+import PasswordInput from '@/components/form/PasswordInput.vue'
+import { Modal, ModalHeader, ModalFooter } from '@/components/feedback'
 
 describe('ExternalRequestsSection', () => {
   beforeEach(() => {

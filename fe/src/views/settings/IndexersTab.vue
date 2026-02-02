@@ -91,9 +91,9 @@
               <PhListChecks />
               <span class="detail-label">Features:</span>
               <div class="feature-badges">
-                <span v-if="indexer.enableRss" class="badge">RSS</span>
-                <span v-if="indexer.enableAutomaticSearch" class="badge">Automatic Search</span>
-                <span v-if="indexer.enableInteractiveSearch" class="badge">Interactive Search</span>
+                <Pill variant="success" v-if="indexer.enableRss">RSS</Pill>
+                <Pill variant="primary" v-if="indexer.enableAutomaticSearch">Automatic Search</Pill>
+                <Pill variant="info" v-if="indexer.enableInteractiveSearch">Interactive Search</Pill>
               </div>
             </div>
             <div class="detail-row" v-if="indexer.lastTestedAt">
@@ -161,10 +161,11 @@ import {
   PhX,
   PhSpinner,
 } from '@phosphor-icons/vue'
-import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
+import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import IndexerFormModal from '@/components/settings/IndexerFormModal.vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
+import { Pill } from '@/components/base'
 import type { Indexer } from '@/types'
 import {
   getIndexers,
@@ -362,16 +363,7 @@ defineExpose({ openAddIndexer })
   animation: fadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* @keyframes fadeIn is centralized in src/assets/animations.css */
 
 .indexers-tab {
   width: 100%;
@@ -390,7 +382,7 @@ defineExpose({ openAddIndexer })
   margin: 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .add-button {
@@ -496,7 +488,7 @@ defineExpose({ openAddIndexer })
   padding: 0.25rem 0.5rem;
   border-radius: 4px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
 }
 
@@ -553,7 +545,7 @@ defineExpose({ openAddIndexer })
 }
 
 .detail-label {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-secondary);
   min-width: 90px;
 }
@@ -588,14 +580,7 @@ defineExpose({ openAddIndexer })
   gap: 0.5rem;
 }
 
-.badge {
-  padding: 0.25rem 0.5rem;
-  background: var(--primary);
-  color: white;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 500;
-}
+/* Badge styles - Now using Pill component from @/components/base */
 
 .error-row {
   background: rgba(239, 68, 68, 0.1);
@@ -620,7 +605,7 @@ defineExpose({ openAddIndexer })
   margin: 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* Add Button */
@@ -665,7 +650,7 @@ defineExpose({ openAddIndexer })
   margin: 1rem 0 0.5rem 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .empty-state p {
@@ -687,7 +672,7 @@ defineExpose({ openAddIndexer })
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 1rem;
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.3);
 }
@@ -738,7 +723,7 @@ defineExpose({ openAddIndexer })
   margin: 0 0 0.5rem 0;
   color: #fff;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .indexer-type {
@@ -746,7 +731,7 @@ defineExpose({ openAddIndexer })
   padding: 0.3rem 0.75rem;
   border-radius: 6px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -821,18 +806,7 @@ defineExpose({ openAddIndexer })
   gap: 0.5rem;
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.6rem;
-  background-color: rgba(77, 171, 247, 0.15);
-  color: #4dabf7;
-  border: 1px solid rgba(77, 171, 247, 0.3);
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
+/* Badge styles - Now using Pill component from @/components/base */
 
 /* Mobile Responsive */
 @media (max-width: 768px) {

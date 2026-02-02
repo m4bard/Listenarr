@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import AudiobooksView from '@/views/AudiobooksView.vue'
+import AudiobooksView from '@/views/library/AudiobooksView.vue'
 import { useLibraryStore } from '@/stores/library'
 // apiService stubbed in vi.mock below if needed
 
@@ -14,6 +14,14 @@ vi.mock('@/services/api', () => ({
     getApplicationSettings: vi.fn(async () => ({})),
   },
 }))
+
+type AudiobooksVm = {
+  setGroupBy?: (value: string) => Promise<void> | void
+  groupedCollections?: Array<{ name: string; count: number; coverUrl?: string }>
+  showItemDetails?: boolean
+}
+
+const getVm = (wrapper: ReturnType<typeof mount>) => wrapper.vm as unknown as AudiobooksVm
 
 describe('AudiobooksView', () => {
   beforeEach(() => {
@@ -169,10 +177,11 @@ describe('AudiobooksView Grouping', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     // Set groupBy to authors
-    await wrapper.vm.setGroupBy('authors')
+    const vm = getVm(wrapper)
+    await vm.setGroupBy?.('authors')
     await wrapper.vm.$nextTick()
 
-    const groupedCollections = wrapper.vm.groupedCollections
+    const groupedCollections = vm.groupedCollections ?? []
     expect(groupedCollections).toHaveLength(2)
     expect(groupedCollections.find((g) => g.name === 'Author A')).toEqual({
       name: 'Author A',
@@ -257,10 +266,11 @@ describe('AudiobooksView Grouping', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     // Set groupBy to series
-    await wrapper.vm.setGroupBy('series')
+    const vm = getVm(wrapper)
+    await vm.setGroupBy?.('series')
     await wrapper.vm.$nextTick()
 
-    const groupedCollections = wrapper.vm.groupedCollections
+    const groupedCollections = vm.groupedCollections ?? []
     expect(groupedCollections).toHaveLength(2)
     expect(groupedCollections.find((g) => g.name === 'Series 1')).toEqual({
       name: 'Series 1',
@@ -331,7 +341,8 @@ describe('AudiobooksView Grouping', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     // groupBy defaults to 'books'
-    const groupedCollections = wrapper.vm.groupedCollections
+    const vm = getVm(wrapper)
+    const groupedCollections = vm.groupedCollections ?? []
     expect(groupedCollections).toHaveLength(0)
   })
 
@@ -463,7 +474,8 @@ describe('AudiobooksView Grouping', () => {
     expect(store.selectedIds.size).toBeGreaterThan(0)
 
     // Switch group and expect selection cleared
-    await wrapper.vm.setGroupBy('authors')
+    const vm = getVm(wrapper)
+    await vm.setGroupBy?.('authors')
     await wrapper.vm.$nextTick()
     expect(store.selectedIds.size).toBe(0)
   })
@@ -534,15 +546,18 @@ describe('AudiobooksView Grouping', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     // Set groupBy to series
-    await wrapper.vm.setGroupBy('series')
+    const vm = getVm(wrapper)
+    await vm.setGroupBy?.('series')
     await wrapper.vm.$nextTick()
 
     // By default, details should be hidden and placard not present
-    expect(wrapper.vm.showItemDetails).toBe(false)
+    expect(vm.showItemDetails).toBe(false)
     expect(wrapper.find('.series-bottom-placard').exists()).toBe(false)
 
     // Enable details and confirm placard is shown
-    wrapper.vm.showItemDetails = true
+    if (vm) {
+      vm.showItemDetails = true
+    }
     await wrapper.vm.$nextTick()
     expect(wrapper.find('.series-bottom-placard').exists()).toBe(true)
   })

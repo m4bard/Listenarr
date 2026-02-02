@@ -240,8 +240,8 @@ import {
   PhPushPinSimple,
   PhInfo,
 } from '@phosphor-icons/vue'
-import { Modal, ModalHeader, ModalFooter } from '@/components/modal'
-import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
+import { Modal, ModalHeader, ModalFooter } from '@/components/feedback'
+import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 // Checkbox not used directly here; CheckboxCard wraps checkbox UI
 import FormSection from '@/components/settings/FormSection.vue'
 import FormRow from '@/components/settings/FormRow.vue'
@@ -662,16 +662,7 @@ defineExpose({ openWebhookForm })
   animation: fadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* @keyframes fadeIn is centralized in src/assets/animations.css */
 
 /* Section Header */
 .section-header {
@@ -687,7 +678,7 @@ defineExpose({ openWebhookForm })
   margin: 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
@@ -710,7 +701,7 @@ defineExpose({ openWebhookForm })
   margin: 1rem 0 0.5rem 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .empty-state p {
@@ -760,7 +751,7 @@ defineExpose({ openWebhookForm })
   display: inline-flex;
   align-items: center;
   gap: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 1rem;
   box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.3);
 }
@@ -900,7 +891,7 @@ defineExpose({ openWebhookForm })
   margin: 0 0 0.5rem 0;
   color: #fff;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -923,7 +914,7 @@ defineExpose({ openWebhookForm })
   border: 1px solid rgba(77, 171, 247, 0.3);
   border-radius: 6px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.5px;
 }
 
@@ -1100,12 +1091,5 @@ defineExpose({ openWebhookForm })
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin is centralized in src/assets/animations.css */
 </style>

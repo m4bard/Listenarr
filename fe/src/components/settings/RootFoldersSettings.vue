@@ -31,7 +31,7 @@
                 <div class="folder-name-row">
                   <h4>{{ folder.name }}</h4>
                   <div class="folder-badges">
-                    <span v-if="folder.isDefault" class="badge default">Default</span>
+                    <Pill variant="success" v-if="folder.isDefault">Default</Pill>
                   </div>
                 </div>
               </div>
@@ -95,9 +95,10 @@
 import { ref, onMounted } from 'vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import RootFolderFormModal from '@/components/settings/RootFolderFormModal.vue'
-import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
+import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
+import { Pill } from '@/components/base'
 import {
   PhPlus,
   PhFolder,
@@ -207,7 +208,7 @@ defineExpose({
   margin: 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .add-button {
@@ -264,7 +265,7 @@ defineExpose({
   margin: 0;
   color: #fff;
   font-size: 1.6rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .empty-state p {
@@ -332,27 +333,10 @@ defineExpose({
   margin-bottom: 0; /* remove extra gap so title centers with actions */
 }
 
+/* Badge styles - Now using Pill component from @/components/base */
 .folder-badges {
   display: flex;
   gap: 0.5rem;
-}
-
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.7rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.badge.default {
-  background-color: rgba(76, 175, 80, 0.15);
-  color: #51cf66;
-  border: 1px solid rgba(76, 175, 80, 0.3);
 }
 
 .folder-info h4,
@@ -360,7 +344,7 @@ defineExpose({
   margin: 0;
   color: #fff;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .folder-path {

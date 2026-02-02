@@ -227,7 +227,7 @@ import {
   PhPlay,
   PhStop,
 } from '@phosphor-icons/vue'
-import Checkbox from '@/components/inputs/Checkbox.vue'
+import Checkbox from '@/components/form/Checkbox.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 
@@ -475,16 +475,7 @@ const stopBot = async () => {
   animation: fadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* @keyframes fadeIn is centralized in src/assets/animations.css */
 
 .form-section {
   background: rgba(255, 255, 255, 0.02);
@@ -497,7 +488,7 @@ const stopBot = async () => {
 .form-section h4 {
   margin: 0 0 1.5rem 0;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -664,7 +655,7 @@ const stopBot = async () => {
   padding: 0.5rem 0.85rem;
   border-radius: 999px;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .status-pill.installed {
@@ -698,7 +689,7 @@ const stopBot = async () => {
   margin: 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .add-button {

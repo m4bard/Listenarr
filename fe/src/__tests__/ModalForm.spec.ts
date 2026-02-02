@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect } from 'vitest'
-import { ModalForm } from '@/components/modal' 
+import { ModalForm } from '@/components/feedback' 
 
 describe('ModalForm', () => {
   it('emits submit when form is submitted', async () => {

@@ -128,17 +128,7 @@ const validationErrors = computed(() => {
   animation: fadeIn 0.2s ease;
 }
 
-@keyframes fadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(10px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
+/* @keyframes fadeIn is centralized in src/assets/animations.css */
 
 .general-settings-tab {
   width: 100%;
@@ -159,7 +149,7 @@ const validationErrors = computed(() => {
   margin: 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .error-summary {
@@ -209,7 +199,7 @@ const validationErrors = computed(() => {
   margin: 0;
   padding: 0 0 1rem;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -234,7 +224,7 @@ const validationErrors = computed(() => {
 .form-section h4 {
   margin: 0 0 1.5rem 0;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.5rem;
@@ -333,15 +323,7 @@ const validationErrors = computed(() => {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin is centralized in src/assets/animations.css */
 
 /* Modal-specific styling moved to shared `modals.css` */
 

@@ -111,7 +111,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
     }))
 
     console.log('[TEST] importing ActivityView')
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     console.log('[TEST] imported ActivityView, now mounting')
 
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
@@ -230,7 +230,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       }),
     }))
 
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
 
     // Wait for mounted hooks and reactivity
@@ -305,7 +305,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       }),
     }))
 
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
 
     // Wait for mounted hooks (getQueue) to finish
@@ -398,7 +398,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       }),
     }))
 
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
 
     // Wait for mounted hooks
@@ -492,7 +492,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       }),
     }))
 
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
 
     const vm = wrapper.vm as unknown as {
@@ -575,7 +575,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       }),
     }))
 
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
 
     const vm = wrapper.vm as unknown as {
@@ -664,7 +664,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       }),
     }))
 
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
 
     // Wait for mounted hooks
@@ -732,7 +732,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       }),
     }))
 
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
 
     // Wait for mounted hooks
@@ -817,7 +817,7 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       }),
     }))
 
-    const { default: ActivityViewComponent } = await import('@/views/ActivityView.vue')
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
     const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
 
     // Wait for mounted hooks and queue load

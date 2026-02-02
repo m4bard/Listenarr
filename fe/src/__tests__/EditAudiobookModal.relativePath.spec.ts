@@ -12,7 +12,7 @@ vi.mock('@/services/api', () => ({
   },
 }))
 
-import EditAudiobookModal from '@/components/audiobook/EditAudiobookModal.vue'
+import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 
 const audiobook = {
   id: 1,

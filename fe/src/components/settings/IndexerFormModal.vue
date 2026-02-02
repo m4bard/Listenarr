@@ -55,7 +55,7 @@
                 />
               </FormRow>
               <small class="info-text">
-                <i class="ph ph-info"></i>
+                <PhInfo />
                 MyAnonamouse requires your MAM ID for authentication. This is a unique identifier
                 for your account. These are stored securely and only used to search the indexer.
               </small>
@@ -121,7 +121,7 @@
                 </select>
               </div>
               <small class="info-text">
-                <i class="ph ph-info"></i>
+                <PhInfo />
                 Choose which Internet Archive collection to search. Librivox contains public domain
                 audiobooks read by volunteers.
               </small>
@@ -151,9 +151,7 @@
 
           <!-- Features -->
           <FormSection title="Features" :icon="PhGear">
-            <div v-if="formData.implementation !== 'InternetArchive'">
-              <CheckboxCard v-model="formData.enableRss" title="Enable RSS" description="Use RSS feeds to monitor for new releases" />
-            </div>
+            <CheckboxCard v-if="formData.implementation !== 'InternetArchive'" v-model="formData.enableRss" title="Enable RSS" description="Use RSS feeds to monitor for new releases" />
 
             <CheckboxCard v-model="formData.enableAutomaticSearch" title="Enable Automatic Search" description="Use this indexer for automatic searches" />
 
@@ -204,13 +202,13 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Modal, ModalHeader, ModalFooter, ModalBody, ModalForm } from '@/components/modal'
-import PasswordInput from '@/components/inputs/PasswordInput.vue'
-import Checkbox from '@/components/inputs/Checkbox.vue'
+import { Modal, ModalHeader, ModalFooter, ModalBody, ModalForm } from '@/components/feedback'
+import PasswordInput from '@/components/form/PasswordInput.vue'
+import Checkbox from '@/components/form/Checkbox.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 import FormSection from '@/components/settings/FormSection.vue'
-import { PhX, PhGlobe, PhSpinner, PhGear, PhCheck, PhToggleRight } from '@phosphor-icons/vue' 
+import { PhX, PhGlobe, PhSpinner, PhGear, PhCheck, PhToggleRight, PhInfo } from '@phosphor-icons/vue' 
 import type { Indexer } from '@/types' 
 import {
   createIndexer,
@@ -540,7 +538,7 @@ const handleSubmit = async () => {
   display: block;
   margin-bottom: 0.5rem;
   color: #fff;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.95rem;
 }
 
@@ -578,7 +576,7 @@ const handleSubmit = async () => {
 
 
 /* Settings indexer-specific overrides */
-.checkbox-group { display: flex; flex-direction: column; gap: 1rem; }
+.checkbox-group { display: flex; flex-direction: column; gap: 0.75rem; }
 .checkbox-group label:hover { border-color: var(--brand-500); background-color: #222 }
 .checkbox-group label span { flex: 1 }
 
@@ -607,14 +605,7 @@ const handleSubmit = async () => {
   animation: spin 1s linear infinite;
 }
 
-@keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin is centralized in src/assets/main.css */
 
 @media (max-width: 768px) {
   .modal-overlay {

@@ -2,7 +2,7 @@ import { describe, it, expect, vi } from 'vitest'
 import { nextTick } from 'vue'
 import { mount } from '@vue/test-utils'
 import { createPinia } from 'pinia'
-import DownloadClientFormModal from '@/components/download/DownloadClientFormModal.vue'
+import DownloadClientFormModal from '@/components/domain/download/DownloadClientFormModal.vue'
 
 describe('DownloadClientFormModal', () => {
   it('renders password input for qbittorrent', async () => {

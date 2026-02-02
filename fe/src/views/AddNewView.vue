@@ -787,18 +787,15 @@
     </div>
 
     <!-- No Results -->
-    <div
+    <EmptyState
       v-if="searchType === 'asin' && !audibleResult && !isSearching && !isCancelled && searchQuery"
-      class="empty-state"
+      title="No Audiobook Found"
+      :message="emptyStateAsinMessage"
     >
-      <div class="empty-icon">
-        <PhMagnifyingGlass />
-      </div>
-      <h2>No Audiobook Found</h2>
-      <p>
-        No audiobook was found with ASIN "{{ asinQuery }}". Please check the ASIN and try again.
-      </p>
-      <div class="quick-actions">
+      <template #icon>
+        <PhMagnifyingGlass :size="48" />
+      </template>
+      <template #action>
         <button
           class="btn btn-primary"
           @click="searchQuery = ''; searchType = 'title'"
@@ -806,10 +803,10 @@
           <PhMagnifyingGlass />
           Try Title Search
         </button>
-      </div>
-    </div>
+      </template>
+    </EmptyState>
 
-    <div
+    <EmptyState
       v-if="
         searchType === 'title' &&
         titleResults.length === 0 &&
@@ -817,20 +814,13 @@
         !isCancelled &&
         searchQuery
       "
-      class="empty-state"
+      :title="!asinFilteringApplied ? 'No Books Found' : 'No Audiobook Matches'"
+      :message="emptyStateTitleMessage"
     >
-      <div class="empty-icon">
-        <PhBook />
-      </div>
-      <h2 v-if="!asinFilteringApplied">No Books Found</h2>
-      <h2 v-else>No Audiobook Matches</h2>
-      <p v-if="!asinFilteringApplied">
-        No books were found matching "{{ titleQuery }}"{{
-          authorQuery ? ' by ' + authorQuery : ''
-        }}. Try different search terms.
-      </p>
-      <p v-else>No audiobooks found. Try refining your search terms.</p>
-    </div>
+      <template #icon>
+        <PhBook :size="48" />
+      </template>
+    </EmptyState>
 
     <!-- Error States -->
     <div v-if="hasError" class="error-state">
@@ -922,14 +912,15 @@ import { signalRService } from '@/services/signalr'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useLibraryStore } from '@/stores/library'
-import AudiobookDetailsModal from '@/components/audiobook/AudiobookDetailsModal.vue'
-import AddLibraryModal from '@/components/audiobook/AddLibraryModal.vue'
+import AudiobookDetailsModal from '@/components/domain/audiobook/AudiobookDetailsModal.vue'
+import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import { useToast } from '@/services/toastService'
 import { safeText } from '@/utils/textUtils'
 import { logger } from '@/utils/logger'
 import { buildAmazonProductUrl, buildAudibleProductUrl } from '@/utils/marketDomains'
 import { useSearch } from '@/composables/useSearch'
 import { useLibraryCheck } from '@/composables/useLibraryCheck'
+import { EmptyState } from '@/components/base'
 
 // Extended type for title search results that includes search metadata
 type TitleSearchResult = OpenLibraryBook & {
@@ -1135,6 +1126,19 @@ const isLoadingMore = ref(false)
 const asinQuery = ref('')
 const titleQuery = ref('')
 const authorQuery = ref('')
+
+// Empty state messages (computed to avoid template string escaping issues)
+const emptyStateAsinMessage = computed(() => {
+  return `No audiobook was found with ASIN "${asinQuery.value}". Please check the ASIN and try again.`
+})
+
+const emptyStateTitleMessage = computed(() => {
+  if (!asinFilteringApplied.value) {
+    const authorPart = authorQuery.value ? ` by ${authorQuery.value}` : ''
+    return `No books were found matching "${titleQuery.value}"${authorPart}. Try different search terms.`
+  }
+  return 'No audiobooks found. Try refining your search terms.'
+})
 
 // Pagination / candidate limits for advanced results
 const resultsPerPage = ref<number>(50)

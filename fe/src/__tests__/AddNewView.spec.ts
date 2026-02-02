@@ -4,7 +4,7 @@ import type { Mock } from 'vitest'
 import { mount } from '@vue/test-utils' 
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
-import AddNewView from '@/views/AddNewView.vue'
+import AddNewView from '@/views/content/AddNewView.vue'
 import { useLibraryStore } from '@/stores/library'
 
 // apiService and signalR are mocked centrally in test-setup.ts

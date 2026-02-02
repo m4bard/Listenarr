@@ -237,7 +237,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/modal'
+import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/feedback'
 import FormSection from './FormSection.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
@@ -598,6 +598,7 @@ const handleSubmit = () => {
   cursor: pointer;
   user-select: none;
   padding: 0.5rem 0;
+  text-align: left;
 }
 
 .checkbox-label input[type='checkbox'] {

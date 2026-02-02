@@ -33,9 +33,9 @@ import { vi } from 'vitest'
 // Provide default component stubs for Modal teleporting components so unit tests
 // render modal content inline instead of using real teleport behavior.
 import { config as vtConfig } from '@vue/test-utils'
-vtConfig.global = vtConfig.global || {}
-vtConfig.global.components = {
-  ...(vtConfig.global.components || {}),
+const globalConfig = ((vtConfig.global ??= {} as any) as any)
+globalConfig.components = {
+  ...(globalConfig.components || {}),
   // Render modal content inline with accessible dialog attributes so tests
   // can query for role="dialog" and aria-* attributes reliably.
   Modal: {
@@ -48,27 +48,28 @@ vtConfig.global.components = {
 
 // Some components import the modal pieces locally (via named imports). To ensure
 // tests always render the simplified accessible modal markup (and avoid teleport
-// behavior), partially mock the modal module so SFC-local imports receive the
+// behavior), partially mock the feedback module so SFC-local imports receive the
 // inline stubs while preserving other named exports from the real module.
-vi.mock('@/components/modal', async (importOriginal) => {
-  const actual = await importOriginal()
+vi.mock('@/components/feedback', async (importOriginal) => {
+  const actual = (await importOriginal()) as Record<string, unknown>
+  const modalStub: any = {
+    emits: ['close'],
+    props: ['visible', 'title', 'showClose', 'size'],
+    template:
+      '<div v-if="visible" v-bind="$attrs" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header id="modal-title"><slot name="header" /></header><div class="modal-body"><slot /></div><footer class="modal-footer"><slot name="footer" /></footer></div>',
+    mounted() {
+      this._onKey = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') this.$emit?.('close')
+      }
+      document.addEventListener('keydown', this._onKey)
+    },
+    unmounted() {
+      if (this._onKey) document.removeEventListener('keydown', this._onKey)
+    },
+  }
   return {
     ...actual,
-    Modal: {
-      emits: ['close'],
-      props: ['visible', 'title', 'showClose', 'size'],
-      template:
-        '<div v-if="visible" v-bind="$attrs" role="dialog" aria-modal="true" aria-labelledby="modal-title"><header id="modal-title"><slot name="header" /></header><div class="modal-body"><slot /></div><footer class="modal-footer"><slot name="footer" /></footer></div>',
-      mounted() {
-        this._onKey = (e: KeyboardEvent) => {
-          if (e.key === 'Escape') this.$emit('close')
-        }
-        document.addEventListener('keydown', this._onKey)
-      },
-      unmounted() {
-        if (this._onKey) document.removeEventListener('keydown', this._onKey)
-      },
-    },
+    Modal: modalStub,
     ModalHeader: {
       props: ['title', 'icon', 'iconLabel'],
       emits: ['close'],

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import PasswordInput from '@/components/inputs/PasswordInput.vue'
+import PasswordInput from '@/components/form/PasswordInput.vue'
 
 import { apiService } from '@/services/api'
 import * as useConfirmModule from '@/composables/useConfirm'

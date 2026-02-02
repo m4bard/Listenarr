@@ -31,7 +31,7 @@ vi.mock('@/services/signalr', () => ({
   },
 }))
 
-import AudiobookDetailView from '@/views/AudiobookDetailView.vue'
+import AudiobookDetailView from '@/views/library/AudiobookDetailView.vue'
 import { useLibraryStore } from '@/stores/library'
 
 describe('AudiobookDetailView image recache behavior', () => {
@@ -59,7 +59,7 @@ describe('AudiobookDetailView image recache behavior', () => {
     store.fetchLibrary = vi.fn(async () => undefined)
 
     // Re-import the component after resetting modules so it picks up the module mocks
-    const { default: AudiobookDetailViewCmp } = await import('@/views/AudiobookDetailView.vue')
+    const { default: AudiobookDetailViewCmp } = await import('@/views/library/AudiobookDetailView.vue')
     const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
 
     await new Promise((r) => setTimeout(r, 10))

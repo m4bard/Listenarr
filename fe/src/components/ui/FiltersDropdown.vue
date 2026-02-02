@@ -175,7 +175,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   margin: 6px 0;
 }
 .dropdown-item.create {
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
 }
 .check {

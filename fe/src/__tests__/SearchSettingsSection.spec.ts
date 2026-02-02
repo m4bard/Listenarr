@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
-import Checkbox from '@/components/inputs/Checkbox.vue'
+import Checkbox from '@/components/form/Checkbox.vue'
 
 describe('SearchSettingsSection', () => {
   beforeEach(() => {

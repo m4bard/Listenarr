@@ -27,8 +27,8 @@ import { computed } from 'vue'
 import type { ApplicationSettings, StartupConfig } from '@/types'
 import { PhUserCircle } from '@phosphor-icons/vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
-import PasswordInput from '@/components/inputs/PasswordInput.vue'
-import ApiKeyControl from '@/components/ui/ApiKeyControl.vue'
+import PasswordInput from '@/components/form/PasswordInput.vue'
+import ApiKeyControl from '@/components/form/ApiKeyControl.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 
 const props = defineProps<{

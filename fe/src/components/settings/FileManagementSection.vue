@@ -6,7 +6,7 @@
     <div class="form-body">
       <FormRow label="File Naming Pattern" help="Pattern for organizing audiobook files. Available variables: {Author}, {Series}, {Title}, {SeriesNumber}, {DiskNumber}, {ChapterNumber}, {Year}, {Quality}">
         <input :value="settings.fileNamingPattern" @input="e => updateField('fileNamingPattern', (e.target as HTMLInputElement).value)" type="text" placeholder="{Author}/{Series}/{Title}" />
-        <div class="form-help" style="margin-top:0.5rem">Pattern for organizing audiobook files. Available variables:<br />
+        <div class="form-help mt-sm">Pattern for organizing audiobook files. Available variables:<br />
           <code>{Author}</code> - Author/narrator name<br />
           <code>{Series}</code> - Series name<br />
           <code>{Title}</code> - Book title<br />

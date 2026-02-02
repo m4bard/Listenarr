@@ -7,12 +7,12 @@
     <template #default>
       <FormSection title="Basic Configuration" :icon="PhFolder">
         <FormRow label="Name">
-          <input v-model="form.name" placeholder="Enter a name for this root folder" />
+          <input v-model="form.name" class="form-input" placeholder="Enter a name for this root folder" />
         </FormRow>
 
         <FormRow label="Path" labelFor="root-path">
           <div class="path-input-row">
-            <input id="root-path" v-model="form.path" placeholder="Select or enter a path..." />
+            <input id="root-path" v-model="form.path" class="form-input" placeholder="Select or enter a path..." />
             <button
               type="button"
               class="icon-btn btn-secondary btn-inline-browse"
@@ -50,8 +50,9 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import FolderBrowserModal from '@/components/modal/FolderBrowserModal.vue'
-import { Modal, ModalHeader, ModalFooter, MoveAudiobookModal } from '@/components/modal'
+import FolderBrowserModal from '@/components/feedback/FolderBrowserModal.vue'
+import { Modal, ModalHeader, ModalFooter } from '@/components/feedback'
+import MoveAudiobookModal from '@/components/feedback/MoveAudiobookModal.vue'
 // Checkbox not used directly; use CheckboxCard for checkbox UI
 import FormSection from './FormSection.vue'
 import FormRow from '@/components/settings/FormRow.vue'
@@ -219,6 +220,7 @@ async function confirmChange(moveFiles: boolean) {
   cursor: pointer;
   user-select: none;
   padding: 0.5rem 0;
+  text-align: left;
 }
 
 .checkbox-label input[type='checkbox'] {
@@ -412,5 +414,33 @@ async function confirmChange(moveFiles: boolean) {
 .checkbox-row label input[type='checkbox']:focus {
   outline: 2px solid rgba(var(--brand-rgb), 0.3);
   outline-offset: 2px;
+}
+
+/* Form input styling to match login and other forms */
+.form-input {
+  padding: 0.75rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background-color: #1a1a1a;
+  color: white;
+  font-size: 1rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.form-input:focus {
+  outline: none;
+  border-color: #2196f3;
+  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.1);
+}
+
+.path-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.path-input-row .form-input {
+  flex: 1;
 }
 </style>

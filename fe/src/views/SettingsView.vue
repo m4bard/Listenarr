@@ -328,11 +328,11 @@ import QualityProfilesTab from '@/views/settings/QualityProfilesTab.vue'
 import DiscordBotTab from '@/views/settings/DiscordBotTab.vue'
 import NotificationsTab from '@/views/settings/NotificationsTab.vue'
 import IndexersTab from '@/views/settings/IndexersTab.vue'
-import { Modal, ModalHeader, ModalFooter } from '@/components/modal' 
-import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue' 
+import { Modal, ModalHeader, ModalFooter } from '@/components/feedback' 
+import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue' 
 import GeneralSettingsTab from '@/views/settings/GeneralSettingsTab.vue'
-import CustomSelect from '@/components/inputs/CustomSelect.vue'
-import PasswordInput from '@/components/inputs/PasswordInput.vue'
+import CustomSelect from '@/components/form/CustomSelect.vue'
+import PasswordInput from '@/components/form/PasswordInput.vue'
 import {
   PhFolder,
   PhListMagnifyingGlass,
@@ -1353,7 +1353,7 @@ onMounted(async () => {
   margin: 0 0 0.5rem 0;
   color: #fff;
   font-size: 2rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.75rem;
@@ -1554,7 +1554,7 @@ onMounted(async () => {
   margin: 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 /* `.add-button` visuals are centralized in `src/assets/buttons.css`.
@@ -1582,7 +1582,7 @@ onMounted(async () => {
   margin: 1rem 0 0.5rem 0;
   color: #fff;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .empty-state p {
@@ -1717,7 +1717,7 @@ onMounted(async () => {
   margin: 0 0 0.25rem 0;
   color: #fff;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .webhook-meta {
@@ -1782,7 +1782,7 @@ onMounted(async () => {
   border: 1px solid rgba(77, 171, 247, 0.3);
   border-radius: 6px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.5px;
 }
 
@@ -1885,7 +1885,7 @@ onMounted(async () => {
   gap: 0.5rem;
   color: #868e96;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.5px;
 }
 
@@ -1906,7 +1906,7 @@ onMounted(async () => {
   padding: 0.5rem 0.85rem;
   border-radius: 6px;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
   border: 1px solid;
 }
 
@@ -1967,7 +1967,7 @@ onMounted(async () => {
   margin: 0 0 0.5rem 0;
   color: #fff;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .config-url {
@@ -1989,7 +1989,7 @@ onMounted(async () => {
   padding: 0.4rem 0.8rem;
   border-radius: 6px;
   font-size: 0.8rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.35rem;
@@ -2064,7 +2064,7 @@ onMounted(async () => {
   margin: 0 0 1.5rem 0;
   color: #fff;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
   display: flex;
   align-items: center;
   gap: 0.65rem;
@@ -2095,7 +2095,7 @@ onMounted(async () => {
   display: block;
   margin-bottom: 0.5rem;
   color: #fff;
-  font-weight: 600;
+  font-weight: 500;
   font-size: 0.95rem;
 }
 
@@ -2205,7 +2205,7 @@ onMounted(async () => {
   padding: 0.35rem 0.6rem;
   border-radius: 6px;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 .status-pill.installed {
   background-color: rgba(46, 204, 113, 0.12);
@@ -2269,7 +2269,7 @@ onMounted(async () => {
 .checkbox-group label strong {
   color: #fff;
   font-size: 0.95rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .checkbox-group label small {
@@ -2555,7 +2555,7 @@ onMounted(async () => {
   margin: 0 0 0.5rem 0;
   color: #fff;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .indexer-actions {
@@ -2569,7 +2569,7 @@ onMounted(async () => {
   padding: 0.3rem 0.75rem;
   border-radius: 6px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -2647,18 +2647,7 @@ onMounted(async () => {
   gap: 0.5rem;
 }
 
-.badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.3rem 0.6rem;
-  background-color: rgba(77, 171, 247, 0.15);
-  color: #4dabf7;
-  border: 1px solid rgba(77, 171, 247, 0.3);
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
+/* Badge styles - Now using Pill component from @/components/base */
 
 .error-message {
   margin-top: 0.5rem;
@@ -2810,7 +2799,7 @@ onMounted(async () => {
   margin: 0;
   color: #fff;
   font-size: 1.1rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .status-badge {
@@ -2820,7 +2809,7 @@ onMounted(async () => {
   padding: 0.3rem 0.7rem;
   border-radius: 6px;
   font-size: 0.75rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
 }
@@ -2861,7 +2850,7 @@ onMounted(async () => {
   margin: 0;
   color: #4dabf7;
   font-size: 0.9rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.5px;
   display: flex;
@@ -2890,7 +2879,7 @@ onMounted(async () => {
   border: 1px solid rgba(77, 171, 247, 0.3);
   border-radius: 6px;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .quality-badge.is-cutoff {
@@ -2921,7 +2910,7 @@ onMounted(async () => {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .preference-value {
@@ -2984,7 +2973,7 @@ onMounted(async () => {
   font-size: 0.8rem;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .filter-type i {
@@ -3001,7 +2990,7 @@ onMounted(async () => {
   padding: 0.35rem 0.65rem;
   border-radius: 6px;
   font-size: 0.85rem;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .word-tag.positive {

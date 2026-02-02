@@ -11,7 +11,7 @@
 </template>
 
 <script setup lang="ts">
-import Checkbox from '@/components/inputs/Checkbox.vue'
+import Checkbox from '@/components/form/Checkbox.vue'
 
 const props = defineProps<{ modelValue?: boolean; title: string; description?: string }>()
 const emit = defineEmits(['update:modelValue'])

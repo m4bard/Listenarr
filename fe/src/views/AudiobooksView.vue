@@ -131,43 +131,42 @@
       </button>
     </div>
 
-    <div v-else-if="rawAudiobooksLength === 0" class="empty-state">
-      <div class="empty-icon">
-        <PhBookOpen />
-      </div>
-      <template v-if="!hasRootFolderConfigured">
-        <h2>Root Folder Not Configured</h2>
-        <p>
-          Please configure a root folder for your audiobook library in settings before adding
-          audiobooks.
-        </p>
-        <router-link to="/settings" class="add-button btn btn-primary">
-          <PhGear />
-          Go to Settings
+    <EmptyState
+      v-else-if="rawAudiobooksLength === 0"
+      :title="!hasRootFolderConfigured ? 'Root Folder Not Configured' : 'No Audiobooks Yet'"
+      :message="!hasRootFolderConfigured ? 'Please configure a root folder for your audiobook library in settings before adding audiobooks.' : 'Your library is empty. Add audiobooks to get started!'"
+    >
+      <template #icon>
+        <PhBookOpen :size="48" />
+      </template>
+      <template #action>
+        <router-link
+          :to="!hasRootFolderConfigured ? '/settings' : '/add-new'"
+          class="btn btn-primary"
+        >
+          <PhGear v-if="!hasRootFolderConfigured" />
+          <PhPlus v-else />
+          {{ !hasRootFolderConfigured ? 'Go to Settings' : 'Add Audiobooks' }}
         </router-link>
       </template>
-      <template v-else>
-        <h2>No Audiobooks Yet</h2>
-        <p>Your library is empty. Add audiobooks to get started!</p>
-        <router-link to="/add-new" class="add-button btn btn-primary">
-          <PhPlus />
-          Add Audiobooks
-        </router-link>
-      </template>
-    </div>
+    </EmptyState>
 
     <!-- No results after applying filters/search -->
-    <div v-else-if="audiobooks.length === 0" class="empty-state">
-      <div class="empty-icon">
-        <PhBookOpen />
-      </div>
-      <h2>No audiobooks match your filters</h2>
-      <p>Try clearing your search or filters to see results.</p>
-      <div style="display: flex; gap: 8px; margin-top: 16px">
-        <button class="add-button btn btn-primary" @click="clearFilters">Clear Filters</button>
-        <button class="add-button btn btn-primary" @click="refreshLibrary">Refresh Library</button>
-      </div>
-    </div>
+    <EmptyState
+      v-else-if="audiobooks.length === 0"
+      title="No audiobooks match your filters"
+      message="Try clearing your search or filters to see results."
+    >
+      <template #icon>
+        <PhBookOpen :size="48" />
+      </template>
+      <template #action>
+        <div class="flex gap-sm">
+          <button class="btn btn-primary" @click="clearFilters">Clear Filters</button>
+          <button class="btn btn-primary" @click="refreshLibrary">Refresh Library</button>
+        </div>
+      </template>
+    </EmptyState>
 
     <!-- Grouped View -->
     <div v-else-if="groupBy !== 'books'" class="grouped-view">
@@ -621,11 +620,12 @@ import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useDownloadsStore } from '@/stores/downloads'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
-import BulkEditModal from '@/components/collections/BulkEditModal.vue'
-import EditAudiobookModal from '@/components/audiobook/EditAudiobookModal.vue'
+import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
+import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import CustomSelect from '@/components/inputs/CustomSelect.vue'
 import FiltersDropdown from '@/components/ui/FiltersDropdown.vue'
-import CustomFilterModal from '@/components/collections/CustomFilterModal.vue'
+import CustomFilterModal from '@/components/domain/collection/CustomFilterModal.vue'
+import { EmptyState } from '@/components/base'
 import { showConfirm } from '@/composables/useConfirm'
 import type { Audiobook, QualityProfile } from '@/types'
 import { evaluateRules } from '@/utils/customFilterEvaluator'

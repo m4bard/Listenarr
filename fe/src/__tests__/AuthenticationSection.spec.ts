@@ -2,8 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { ComponentPublicInstance } from 'vue'
 import { mount } from '@vue/test-utils'
 
-import PasswordInput from '@/components/inputs/PasswordInput.vue'
-import Checkbox from '@/components/inputs/Checkbox.vue'
+import PasswordInput from '@/components/form/PasswordInput.vue'
+import Checkbox from '@/components/form/Checkbox.vue'
 
 describe('AuthenticationSection', () => {
   beforeEach(() => {

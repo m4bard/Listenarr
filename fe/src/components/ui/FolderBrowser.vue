@@ -407,7 +407,7 @@ watch(() => props.modelValue, (v) => {
 .browser-header {
   display:flex; justify-content:space-between; align-items:center; padding:0.8rem 1rem; border-bottom:1px solid #444;
 }
-.browser-header .title { display:flex; align-items:center; gap:0.5rem; color:#fff; font-weight:600 }
+.browser-header .title { display:flex; align-items:center; gap:0.5rem; color:#fff; font-weight: 500 }
 .header-actions { display:flex; gap:0.5rem }
 
 
@@ -415,7 +415,7 @@ watch(() => props.modelValue, (v) => {
 .breadcrumbs { display:flex; align-items:center; gap:0.5rem; margin-bottom:0; flex-wrap:wrap; padding:0; background:transparent; border-radius:6px; }
 .breadcrumb-item { background: transparent; border: 1px solid rgba(255,255,255,0.03); color:#aaa; cursor:pointer; padding:0.2rem 0.45rem; border-radius:6px; font-size:0.9rem; transition: all 0.12s ease; font-weight:500 }
 .breadcrumb-item:hover { background: rgba(255,255,255,0.02); color:#fff }
-.breadcrumb-item.current { color:var(--brand-600); font-weight:600; cursor:default; background: rgba(var(--brand-rgb),0.08); border-color: rgba(var(--brand-rgb),0.12) }
+.breadcrumb-item.current { color:var(--brand-600); font-weight: 500; cursor:default; background: rgba(var(--brand-rgb),0.08); border-color: rgba(var(--brand-rgb),0.12) }
 .breadcrumb-home { padding:0.25rem; display:flex; align-items:center; justify-content:center; background:transparent; border-radius:6px; border: 1px solid rgba(255,255,255,0.02) }
 .breadcrumb-home:hover { background: rgba(255,255,255,0.02) }
 .breadcrumb-icon { width:16px; height:16px; color:#ccc }
@@ -435,8 +435,7 @@ watch(() => props.modelValue, (v) => {
 @keyframes spin { 0% { transform:rotate(0deg) } 100% { transform:rotate(360deg) } }
 @keyframes pulse { 0%, 100% { opacity:1 } 50% { opacity:0.5 } }
 @keyframes fadeInOut { 0%, 100% { opacity:0.7 } 50% { opacity:1 } }
-@keyframes modalSlideIn { 0% { opacity:0; transform:translateX(-50%) translateY(-20px) } 100% { opacity:1; transform:translateX(-50%) translateY(0) } }
-@keyframes backdropFadeIn { 0% { opacity:0 } 100% { opacity:1 } }
+/* @keyframes modalSlideIn and backdropFadeIn are centralized in src/assets/animations.css */
 
 .list-enter-active, .list-leave-active { transition: all 0.3s ease }
 .list-enter-from { opacity:0; transform:translateY(10px) }
@@ -493,7 +492,7 @@ watch(() => props.modelValue, (v) => {
 .directory-item:focus { outline: none; box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.06); border-color: rgba(var(--brand-rgb), 0.1) }
 .directory-item:active { transform:translateY(0); transition-duration: 0.08s }
 .directory-item .item-icon { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(255,255,255,0.03); color:#fff; font-size:16px; flex-shrink:0 }
-.directory-item .item-name { font-weight:600; font-size:0.95rem }
+.directory-item .item-name { font-weight: 500; font-size:0.95rem }
 .directory-item .item-meta { color:#9aa0a6; display:block; margin-top:2px; font-size:0.8rem; font-weight:400 }
 .directory-item.selected { background: rgba(var(--brand-rgb), 0.06); border-color: rgba(var(--brand-rgb), 0.12); box-shadow: none; border-left: 4px solid var(--brand-600); padding-left: calc(0.75rem - 2px) }
 

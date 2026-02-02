@@ -1,7 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, beforeEach, expect, vi } from 'vitest'
-import WantedView from '@/views/WantedView.vue'
+import WantedView from '@/views/content/WantedView.vue'
 import { useLibraryStore } from '@/stores/library'
 
 // Mock api service ensureImageCached and getImageUrl (and other helpers used by stores)

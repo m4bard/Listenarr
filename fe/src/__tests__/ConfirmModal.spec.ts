@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect } from 'vitest'
-import { ConfirmModal } from '@/components/modal' 
+import { ConfirmModal } from '@/components/feedback' 
 
 describe('ConfirmModal', () => {
   it('renders message and emits confirm', async () => {

@@ -1,6 +1,6 @@
 import { mount } from '@vue/test-utils'
 import { describe, it, expect } from 'vitest'
-import { ModalHeader } from '@/components/modal'
+import { ModalHeader } from '@/components/feedback'
 import { PhGlobe } from '@phosphor-icons/vue' 
 
 describe('ModalHeader', () => {

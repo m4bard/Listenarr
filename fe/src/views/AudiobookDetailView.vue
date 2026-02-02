@@ -136,22 +136,22 @@
           </div>
 
           <div class="status-badges">
-            <span class="badge monitored" v-if="audiobook.monitored">
+            <Pill variant="primary" v-if="audiobook.monitored">
               <PhBookmark weight="fill" />
               Monitored
-            </span>
-            <span class="badge quality-profile" v-if="assignedProfileName">
+            </Pill>
+            <Pill variant="success" v-if="assignedProfileName">
               <PhStar />
               Quality: {{ assignedProfileName }}
-            </span>
-            <span class="badge language">
+            </Pill>
+            <Pill variant="info">
               <PhChatCircle />
               {{ capitalizeFirst(audiobook.language) || 'English' }}
-            </span>
-            <span class="badge tlc" v-if="audiobook.version">
+            </Pill>
+            <Pill variant="default" v-if="audiobook.version">
               <PhMusicNotes />
               {{ audiobook.version }}
-            </span>
+            </Pill>
           </div>
 
           <div class="description" v-if="audiobook.description">
@@ -469,9 +469,10 @@ import type { Audiobook, History } from '@/types'
 import { safeText } from '@/utils/textUtils'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
-import EditAudiobookModal from '@/components/audiobook/EditAudiobookModal.vue'
+import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import CustomSelect from '@/components/inputs/CustomSelect.vue'
 import DeleteConfirmationModal from '@/components/modal/DeleteConfirmationModal.vue'
+import { Pill } from '@/components/base'
 import {
   PhArrowLeft,
   PhArrowClockwise,
@@ -1554,59 +1555,12 @@ function formatDate(dateString?: string): string {
   color: var(--brand-500);
 }
 
+/* Status badges - Now using Pill component from @/components/base */
 .status-badges {
   display: flex;
   gap: 8px;
   margin-bottom: 20px;
   flex-wrap: wrap;
-}
-
-.badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-size: 13px;
-  font-weight: 500;
-}
-
-.badge.monitored {
-  background-color: rgba(46, 204, 113, 0.2);
-  color: #2ecc71;
-  border: 1px solid #2ecc71;
-}
-
-.badge.quality-profile {
-  background-color: rgba(46, 204, 113, 0.15);
-  color: #2ecc71;
-  border: 1px solid rgba(46, 204, 113, 0.3);
-  font-weight: 600;
-  font-size: 14px;
-}
-
-.badge.profile {
-  background-color: rgba(52, 152, 219, 0.12);
-  color: #3498db;
-  border: 1px solid rgba(52, 152, 219, 0.25);
-}
-
-.badge.continuing {
-  background-color: rgba(52, 152, 219, 0.2);
-  color: #3498db;
-  border: 1px solid #3498db;
-}
-
-.badge.language {
-  background-color: rgba(155, 89, 182, 0.2);
-  color: #9b59b6;
-  border: 1px solid #9b59b6;
-}
-
-.badge.tlc {
-  background-color: rgba(241, 196, 15, 0.2);
-  color: #f1c40f;
-  border: 1px solid #f1c40f;
 }
 
 .description {
