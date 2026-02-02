@@ -184,6 +184,14 @@ export default defineComponent({
   flex-direction: column;
 }
 
+.form-row .btn-primary {
+  width: 100%;
+  padding: 1rem;
+  font-size: 1rem;
+  font-weight: 600;
+  border-radius: 8px;
+}
+
 .form-label {
   margin-bottom: 0.5rem;
   color: #ccc;

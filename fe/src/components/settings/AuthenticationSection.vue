@@ -8,10 +8,10 @@
         <CheckboxCard v-model="authEnabledComputed" title="Enable login screen" description="Toggle to enable the login screen. This setting reflects the server's AuthenticationRequired value from config.json. Changes here are local and will not modify server files — edit config/config.json on the host to persist." />
       </div>
 
-      <FormRow v-if="authEnabledComputed" label="Admin Account Management" help="Manage the admin account. Enter a new password to update the admin user's password when you save settings. The username field shows the current admin username. This section is only available when authentication is enabled.">
+      <FormRow v-if="authEnabledComputed" label="Admin Account Management" help="To set or change the admin password, enter a new password and save settings. The username and password are configured in config/config.json.">
         <div class="admin-credentials">
           <input :value="settings.adminUsername" @input="e => updateField('adminUsername', (e.target as HTMLInputElement).value)" type="text" placeholder="Admin username" class="admin-input" />
-          <PasswordInput :modelValue="settings.adminPassword" @update:modelValue="v => updateField('adminPassword', v)" placeholder="New admin password" class="admin-input" />
+          <PasswordInput :modelValue="settings.adminPassword" @update:modelValue="v => updateField('adminPassword', v)" placeholder="New admin password (to update)" class="admin-input" />
         </div>
       </FormRow>
 

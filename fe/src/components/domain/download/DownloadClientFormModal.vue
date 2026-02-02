@@ -118,7 +118,7 @@
                 <PasswordInput
                   id="password"
                   v-model="formData.password"
-                  placeholder="********"
+                  :placeholder="props.editingClient && !formData.password ? '(Saved password)' : '********'"
                   :required="formData.type === 'nzbget'"
                   class="admin-input"
                 />
@@ -478,11 +478,13 @@ const closeModal = () => {
 const testConnection = async () => {
   testing.value = true
   try {
-    // For modal tests, use only the current form input values and do NOT include the stored client id.
-    // Including an id causes the server to merge missing fields from the DB (e.g., password),
-    // which we want to avoid when testing unsaved edits.
+    // Build config for testing:
+    // - If user entered a password, use it
+    // - If editing an existing client with no password entered, include the ID so server merges the saved password
+    // - If creating new client, don't include ID (test only the submitted values)
     const configToTest: Partial<DownloadClientConfiguration> = {
       ...formData.value,
+      ...(props.editingClient?.id && !formData.value.password && { id: props.editingClient.id }),
     }
 
     const result = await testDownloadClient(configToTest)

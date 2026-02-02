@@ -389,7 +389,7 @@
 
 /* Base button */
 .btn {
-  padding: var(--control-padding);
+  padding: 1rem 1.5rem;
   height: var(--control-height);
   border-radius: var(--btn-radius);
   border: none;
@@ -423,6 +423,7 @@
   border-color: var(--brand-700);
   box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.14);
   transform: translateY(-1px);
+  cursor: pointer;
 }
 .btn-primary:active:not(:disabled) { transform: translateY(0); }
 

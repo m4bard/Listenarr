@@ -4,7 +4,7 @@
 
 :root {
   --toast-top-offset: 72px; /* default: top-nav height (60px) + 12px */
-  --toast-z: 1400;
+  --toast-z: 3100;
 }
 
 .global-toast {

@@ -140,7 +140,7 @@
   /* layout & control sizing */
   --control-height: 40px;
   --control-padding: 0.75rem 1rem;
-  --btn-radius: 6px;
+  --btn-radius: 8px;
   --focus-ring: 0 0 0 3px rgba(var(--brand-rgb), 0.12);
 
   /* Material 3 (M3) color system tokens (light theme) */
