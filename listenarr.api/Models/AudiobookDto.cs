@@ -33,6 +33,7 @@ namespace Listenarr.Api.Models
         public string[]? Tags { get; set; }
         public string? Description { get; set; }
         public string? PublishYear { get; set; }
+        public string? PublishedDate { get; set; }
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public bool? Monitored { get; set; }

@@ -201,15 +201,14 @@ describe('SearchResultCard', () => {
   })
 
   describe('action buttons', () => {
-    it('renders add and details buttons', () => {
+    it('renders add button', () => {
       const wrapper = mount(SearchResultCard, {
         props: { book: mockBook },
       })
 
       const buttons = wrapper.findAll('.btn')
-      expect(buttons.length).toBeGreaterThanOrEqual(2)
+      expect(buttons.length).toBeGreaterThanOrEqual(1)
       expect(buttons[0].text()).toContain('Add to Library')
-      expect(buttons[1].text()).toContain('View Details')
     })
 
     it('shows Add button as primary when not added', () => {
@@ -246,15 +245,6 @@ describe('SearchResultCard', () => {
 
       await wrapper.findAll('.btn')[0].trigger('click')
       expect(wrapper.emitted('add')).toBeTruthy()
-    })
-
-    it('emits view-details event when details button clicked', async () => {
-      const wrapper = mount(SearchResultCard, {
-        props: { book: mockBook },
-      })
-
-      await wrapper.findAll('.btn')[1].trigger('click')
-      expect(wrapper.emitted('view-details')).toBeTruthy()
     })
 
     it('disables add button when isAdded is true', () => {

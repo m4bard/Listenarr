@@ -740,7 +740,7 @@ namespace Listenarr.Api.Controllers
                 lengthMinutes = md?.Runtime,
                 whisperSync = false,
                 publisher = md?.Publisher,
-                isbn = (string?)null,
+                isbn = md?.Isbn,
                 language = md?.Language,
                 rating = (double?)null,
                 releaseDate = md?.PublishedDate,

@@ -146,7 +146,8 @@ public class AsinCandidateCollector
                             Publisher = (book.Publisher?.Count > 1) ? "Multiple" : book.Publisher?.FirstOrDefault(),
                             PublishYear = book.FirstPublishYear?.ToString(),
                             Description = null,
-                            ImageUrl = coverUrl
+                            ImageUrl = coverUrl,
+                            OpenLibraryId = book.Key
                         };
 
                         ct.ThrowIfCancellationRequested();
@@ -157,6 +158,9 @@ public class AsinCandidateCollector
                         // If OpenLibrary provides a canonical key (work or edition), expose it
                         if (!string.IsNullOrWhiteSpace(book.Key))
                         {
+                            // Use OpenLibrary Key as the Id instead of random GUID
+                            searchResult.Id = book.Key;
+                            
                             if (book.Key.StartsWith("/works", StringComparison.OrdinalIgnoreCase))
                             {
                                 searchResult.ProductUrl = $"https://openlibrary.org{book.Key}";
@@ -170,7 +174,13 @@ public class AsinCandidateCollector
                         }
 
                         collection.OpenLibraryDerivedResults.Add(searchResult);
-                        collection.AsinToOpenLibrary[book.Key ?? Guid.NewGuid().ToString()] = book;
+                        
+                        // Only store in dictionary if we have a valid OpenLibrary Key
+                        // Don't use GUID fallback as it creates invalid openLibraryId values
+                        if (!string.IsNullOrWhiteSpace(book.Key))
+                        {
+                            collection.AsinToOpenLibrary[book.Key] = book;
+                        }
                     }
                     catch (Exception exConvert)
                     {

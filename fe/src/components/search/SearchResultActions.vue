@@ -9,19 +9,11 @@
       <component :is="isAdded ? PhCheck : PhPlus" />
       {{ isAdded ? 'Added' : 'Add to Library' }}
     </button>
-    <button
-      class="btn btn-secondary"
-      @click="$emit('view-details')"
-      title="View detailed information"
-    >
-      <PhEye />
-      View Details
-    </button>
   </div>
 </template>
 
 <script setup lang="ts">
-import { PhCheck, PhPlus, PhEye } from '@phosphor-icons/vue'
+import { PhCheck, PhPlus } from '@phosphor-icons/vue'
 
 interface Props {
   isAdded: boolean
@@ -33,7 +25,6 @@ withDefaults(defineProps<Props>(), {
 
 defineEmits<{
   add: []
-  viewDetails: []
 }>()
 </script>
 

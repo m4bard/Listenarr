@@ -77,28 +77,44 @@
               <div class="detail-grid">
                 <div v-if="book.source" class="detail-item">
                   <span class="label">Metadata Source:</span>
-                  <span class="value">{{ book.source }}</span>
+                  <span class="value">
+                    <a
+                      v-if="audimetaSourceUrl"
+                      :href="audimetaSourceUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ normalizedSourceName }}
+                    </a>
+                    <span v-else>{{ normalizedSourceName }}</span>
+                  </span>
                 </div>
                 <div v-if="book.asin" class="detail-item">
                   <span class="label">ASIN:</span>
-                  <span class="value">{{ book.asin }}</span>
+                  <span class="value">
+                    <a
+                      :href="audibleProductUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ book.asin }}
+                    </a>
+                  </span>
                 </div>
                 <div v-if="book.isbn || book.searchResult?.isbn" class="detail-item">
                   <span class="label">ISBN:</span>
                   <span class="value">{{ book.isbn || book.searchResult?.isbn }}</span>
                 </div>
-                <div v-if="book.openLibraryId" class="detail-item">
+                <div v-if="book.openLibraryId && openLibraryUrl" class="detail-item">
                   <span class="label">OpenLibrary ID:</span>
                   <span class="value">
                     <a
-                      v-if="book.source === 'OpenLibrary'"
-                      :href="`https://openlibrary.org/books/${book.openLibraryId}`"
+                      :href="openLibraryUrl"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
                       {{ book.openLibraryId }}
                     </a>
-                    <span v-else>{{ book.openLibraryId }}</span>
                   </span>
                 </div>
               </div>
@@ -150,14 +166,6 @@
       <button class="btn btn-secondary" @click="closeModal">
         <PhX />
         Close
-      </button>
-      <button
-        :class="['btn', isAdded ? 'btn-success' : 'btn-primary']"
-        @click="addToLibrary"
-        :disabled="isAdded"
-      >
-        <component :is="isAdded ? PhCheck : PhPlus" />
-        {{ isAdded ? 'Added' : 'Add to Library' }}
       </button>
     </template>
   </Modal>
@@ -215,6 +223,51 @@ const assignedProfileName = computed(() => {
   if (!id) return null
   const p = qualityProfiles.value.find((q) => q.id === id)
   return p ? p.name : 'Unknown'
+})
+
+const normalizedSourceName = computed(() => {
+  const source = props.book?.source?.trim()
+  if (!source) return ''
+  if (source.toLowerCase() === 'audimeta') return 'Audimeta'
+  return source
+})
+
+const audimetaSourceUrl = computed(() => {
+  const source = props.book?.source?.toLowerCase()
+  const asin = props.book?.asin
+  if (source !== 'audimeta' || !asin) return null
+  return `https://audimeta.de/book/${encodeURIComponent(asin)}`
+})
+
+const audibleProductUrl = computed(() => {
+  const asin = props.book?.asin
+  return asin ? `https://www.audible.com/pd/${asin}` : '#'
+})
+
+const openLibraryUrl = computed(() => {
+  const olid = props.book?.openLibraryId
+  if (!olid) return null
+  
+  // Don't show GUIDs - they're invalid OpenLibrary IDs from legacy data
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(olid)) {
+    return null
+  }
+  
+  // Handle different OpenLibrary ID formats
+  // Format 1: /works/OL123W or /books/OL123M (full path)
+  if (olid.startsWith('/works/') || olid.startsWith('/books/')) {
+    return `https://openlibrary.org${olid}`
+  }
+  
+  // Format 2: OL123W or OL123M (standard OpenLibrary ID)
+  if (/^OL\w+[WM]$/i.test(olid)) {
+    // Work IDs end with W, Edition IDs end with M
+    const type = olid.toUpperCase().endsWith('W') ? 'works' : 'books'
+    return `https://openlibrary.org/${type}/${olid}`
+  }
+  
+  // Fallback: assume it's a book edition ID
+  return `https://openlibrary.org/books/${olid}`
 })
 
 const publishDate = computed((): string | null => {

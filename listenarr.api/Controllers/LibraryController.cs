@@ -196,9 +196,9 @@ namespace Listenarr.Api.Controllers
                           (!string.IsNullOrWhiteSpace(metadata.Author) ? new List<string> { metadata.Author! } : new List<string>()),
                 ImageUrl = imageUrl,
                 // Persist OpenLibrary ID when present (enables OL-only matching in the UI)
-                OpenLibraryId = metadata.OpenLibraryId ?? request.SearchResult?.Id,
+                OpenLibraryId = metadata.OpenLibraryId,
                 PublishYear = metadata.PublishYear,
-                PublishedDate = request.SearchResult?.PublishedDate, // Store full date for calendar/timeline features
+                PublishedDate = metadata.PublishedDate, // Store full date from metadata for calendar/timeline features
                 Series = metadata.Series,
                 SeriesNumber = metadata.SeriesNumber,
                 Description = metadata.Description,
@@ -518,6 +518,7 @@ namespace Listenarr.Api.Controllers
                 subtitle = a.Subtitle,
                 authors = a.Authors,
                 publishYear = a.PublishYear,
+                publishedDate = a.PublishedDate,
                 series = a.Series,
                 seriesNumber = a.SeriesNumber,
                 description = a.Description,
@@ -608,6 +609,7 @@ namespace Listenarr.Api.Controllers
                 quality = updated.Quality,
                 series = updated.Series,
                 seriesNumber = updated.SeriesNumber,
+                publishedDate = updated.PublishedDate,
                 tags = updated.Tags,
                 files = updated.Files?.Select(f => new
                 {

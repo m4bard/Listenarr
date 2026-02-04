@@ -36,6 +36,7 @@ export interface MetadataSearchResult extends BaseSearchResult {
   series?: string
   seriesNumber?: string
   seriesList?: string[]
+  genres?: string[] // Genres from metadata sources (e.g., Audimeta)
   productUrl?: string // Direct link to Amazon/Audible product page
   isEnriched?: boolean
   metadataSource?: string // Which metadata API enriched this result
@@ -79,6 +80,7 @@ export interface SearchResult extends BaseSearchResult {
   series?: string
   seriesNumber?: string
   seriesList?: string[]
+  genres?: string[] // Genres from metadata sources (e.g., Audimeta)
   productUrl?: string // Direct link to Amazon/Audible product page
   isEnriched?: boolean
   metadataSource?: string // Which metadata API enriched this result

@@ -94,6 +94,7 @@ namespace Listenarr.Domain.Models
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string? ProductUrl { get; set; } // Direct link to Amazon/Audible product page
+        public List<string>? Genres { get; set; } // Genres from metadata sources (e.g., Audimeta)
         // Indicates this result had a successful full metadata enrichment pass
         public bool IsEnriched { get; set; }
         // Tracks which metadata API was used to enrich this result
@@ -146,9 +147,11 @@ namespace Listenarr.Domain.Models
         public string? Narrator { get; set; }
         public string? ImageUrl { get; set; }
         public string? Asin { get; set; }
+        public string? Isbn { get; set; }
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string? ProductUrl { get; set; } // Direct link to Amazon/Audible product page
+        public List<string>? Genres { get; set; } // Genres from metadata sources (e.g., Audimeta)
         // Indicates this result had a successful full metadata enrichment pass (Audible product scrape)
         public bool IsEnriched { get; set; }
         // Tracks which metadata API was used to enrich this result (e.g., "Audimeta", "Audnexus", "Audible (Scraped)")
@@ -271,6 +274,7 @@ namespace Listenarr.Domain.Models
                 Narrator = result.Narrator,
                 ImageUrl = result.ImageUrl,
                 Asin = result.Asin,
+                Isbn = result.Isbn,
                 Series = result.Series,
                 SeriesNumber = result.SeriesNumber,
                 ProductUrl = result.ProductUrl,
@@ -414,6 +418,7 @@ namespace Listenarr.Domain.Models
                 Narrator = result.Narrator,
                 ImageUrl = result.ImageUrl,
                 Asin = result.Asin,
+                Isbn = result.Isbn,
                 Series = result.Series,
                 SeriesNumber = result.SeriesNumber,
                 ProductUrl = result.ProductUrl,

@@ -23,18 +23,6 @@
                 <PhImage />
                 <span>No Cover</span>
               </div>
-              <div v-if="imageLoading" class="image-loading-overlay">
-                <PhSpinner class="ph-spin" />
-              </div>
-              <div v-if="imageError" class="image-error-overlay">
-                <div class="error-inner">
-                  <PhImage />
-                  <div>Image unavailable</div>
-                  <button class="btn btn-secondary small" @click.stop="retryImage">
-                    Retry Image
-                  </button>
-                </div>
-              </div>
             </div>
           </div>
 
@@ -55,57 +43,125 @@
 
             <div class="detail-section" id="add-library-desc">
               <h4>Publication Information</h4>
-              <div class="meta-source-row">
-                <small v-if="metadataLoading">Loading metadata...</small>
-                <small v-else-if="metadataSource">Metadata: {{ metadataSource }}</small>
-              </div>
               <div class="detail-grid">
                 <div v-if="book.publisher" class="detail-item">
                   <span class="label">Publisher:</span>
                   <span class="value">{{ book.publisher }}</span>
                 </div>
-                <div v-if="book.publishYear" class="detail-item">
-                  <span class="label">Published:</span>
-                  <span class="value">{{ book.publishYear }}</span>
+                <div v-if="publishDate" class="detail-item">
+                  <span class="label">Release Date:</span>
+                  <span class="value">{{ formatDate(publishDate) }}</span>
+                </div>
+                <div v-else-if="publishYear" class="detail-item">
+                  <span class="label">Release Date:</span>
+                  <span class="value">{{ publishYear }}</span>
                 </div>
                 <div v-if="book.language" class="detail-item">
                   <span class="label">Language:</span>
                   <span class="value">{{ capitalizeFirst(book.language) }}</span>
                 </div>
                 <div v-if="book.runtime" class="detail-item">
-                  <span class="label">Runtime:</span>
+                  <span class="label">Listening Length:</span>
                   <span class="value">{{ formatRuntime(book.runtime) }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="detail-section">
+              <h4>Identifiers</h4>
+              <div class="detail-grid">
+                <div v-if="normalizedSourceName" class="detail-item">
+                  <span class="label">Metadata Source:</span>
+                  <span class="value">
+                    <a
+                      v-if="audimetaSourceUrl"
+                      :href="audimetaSourceUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ normalizedSourceName }}
+                    </a>
+                    <span v-else>{{ normalizedSourceName }}</span>
+                  </span>
                 </div>
                 <div v-if="book.asin" class="detail-item">
                   <span class="label">ASIN:</span>
-                  <span class="value">{{ book.asin }}</span>
+                  <span class="value">
+                    <a
+                      :href="audibleProductUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ book.asin }}
+                    </a>
+                  </span>
                 </div>
                 <div v-if="book.isbn" class="detail-item">
                   <span class="label">ISBN:</span>
                   <span class="value">{{ book.isbn }}</span>
                 </div>
+                <div v-if="book.openLibraryId && openLibraryUrl" class="detail-item">
+                  <span class="label">OpenLibrary ID:</span>
+                  <span class="value">
+                    <a
+                      :href="openLibraryUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      {{ book.openLibraryId }}
+                    </a>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="book.series || displayGenres.length" class="detail-section">
+              <h4>Series & Genre Information</h4>
+              <div class="detail-grid">
+                <div v-if="book.series" class="detail-item">
+                  <span class="label">Series:</span>
+                  <span class="value">
+                    {{ book.series }}<span v-if="book.seriesNumber"> #{{ book.seriesNumber }}</span>
+                  </span>
+                </div>
+                <div v-if="displayGenres.length" class="detail-item">
+                  <span class="label">Genres:</span>
+                  <span class="value">{{ displayGenres.join(', ') }}</span>
+                </div>
+              </div>
+            </div>
+
+            <div v-if="hasFlags" class="detail-section">
+              <h4>Content Flags</h4>
+              <div class="flags">
+                <span v-if="book.explicit" class="flag explicit">Explicit</span>
+                <span v-if="book.abridged" class="flag abridged">Abridged</span>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Customization Options -->
-        <div class="customization-section">
+        <div class="detail-section library-options">
           <h4>Library Options</h4>
 
-          <div class="option-group">
-            <Checkbox v-model="options.monitored">
-              <strong>Monitor for new releases</strong>
-              <small>Automatically search for better quality versions of this audiobook</small>
-            </Checkbox>
-          </div>
+          <FormRow>
+            <div class="checkbox-group">
+              <Checkbox v-model="options.monitored">
+                <strong>Monitor for new releases</strong>
+                <small>Automatically search for better quality versions of this audiobook</small>
+              </Checkbox>
+            </div>
+          </FormRow>
 
-          <div class="option-group">
-            <Checkbox v-model="options.autoSearch">
-              <strong>Search for downloads immediately</strong>
-              <small>Start searching for available downloads right after adding to library</small>
-            </Checkbox>
-          </div>
+          <FormRow>
+            <div class="checkbox-group">
+              <Checkbox v-model="options.autoSearch">
+                <strong>Search for downloads immediately</strong>
+                <small>Start searching for available downloads right after adding to library</small>
+              </Checkbox>
+            </div>
+          </FormRow>
 
           <div class="option-group">
             <label class="form-label">Destination</label>
@@ -116,6 +172,7 @@
                     <RootFolderSelect
                       v-model:rootId="selectedRootId"
                       v-model:customPath="customRootPath"
+                      hideLabel
                     />
                   </div>
                   <input
@@ -152,8 +209,15 @@
     </template>
 
     <template #footer>
-      <button class="cancel-button" @click="closeModal"><PhX /> Cancel</button>
-      <button class="btn btn-primary" @click="addToLibrary" :disabled="isAdding || metadataLoading"><PhSpinner v-if="isAdding" class="ph-spin" /><PhPlus v-else /> {{ isAdding ? 'Adding...' : 'Add to Library' }}</button>
+      <button class="btn btn-secondary" @click="closeModal">
+        <PhX />
+        Cancel
+      </button>
+      <button class="btn btn-primary" @click="addToLibrary" :disabled="isAdding || metadataLoading">
+        <PhSpinner v-if="isAdding" class="ph-spin" />
+        <PhPlus v-else />
+        {{ isAdding ? 'Adding...' : 'Add to Library' }}
+      </button>
     </template>
   </Modal>
 </template>
@@ -167,9 +231,12 @@ import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
 import RootFolderSelect from '@/components/form/RootFolderSelect.vue'
+import Checkbox from '@/components/form/Checkbox.vue'
+import FormRow from '@/components/settings/FormRow.vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { PhX, PhSpinner, PhPlus, PhImage } from '@phosphor-icons/vue' 
 import { toForward, normalizeForCompare } from '@/utils/path' 
+import { formatDate } from '@/utils/searchResultFormatting'
 
 interface Props {
   visible: boolean
@@ -197,6 +264,62 @@ const options = ref({
   autoSearch: false,
   // editable relative path portion (relative to rootPath)
   relativePath: '' as string | null,
+})
+
+const publishDate = computed(() => props.book?.publishedDate || undefined)
+const publishYear = computed(() => {
+  if (props.book?.publishedDate) {
+    const match = props.book.publishedDate.match(/\d{4}/)
+    return match ? match[0] : undefined
+  }
+  const legacy = (props.book as unknown as { publishYear?: string }).publishYear
+  return legacy || undefined
+})
+
+const normalizedSourceName = computed(() => {
+  const source = (metadataSource.value || props.book?.source || '').trim()
+  if (!source) return ''
+  if (source.toLowerCase() === 'audimeta') return 'Audimeta'
+  return source
+})
+
+const audimetaSourceUrl = computed(() => {
+  const source = (metadataSource.value || props.book?.source || '').toLowerCase()
+  const asin = props.book?.asin
+  if (source !== 'audimeta' || !asin) return null
+  return `https://audimeta.de/book/${encodeURIComponent(asin)}`
+})
+
+const audibleProductUrl = computed(() => {
+  const asin = props.book?.asin
+  return asin ? `https://www.audible.com/pd/${asin}` : '#'
+})
+
+const openLibraryUrl = computed(() => {
+  const olid = props.book?.openLibraryId
+  if (!olid) return null
+
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(olid)) {
+    return null
+  }
+
+  if (olid.startsWith('/works/') || olid.startsWith('/books/')) {
+    return `https://openlibrary.org${olid}`
+  }
+
+  if (/^OL\w+[WM]$/i.test(olid)) {
+    const type = olid.toUpperCase().endsWith('W') ? 'works' : 'books'
+    return `https://openlibrary.org/${type}/${olid}`
+  }
+
+  return `https://openlibrary.org/books/${olid}`
+})
+
+const hasFlags = computed(() => Boolean(props.book?.explicit || props.book?.abridged))
+
+const displayGenres = computed(() => {
+  if (enriched.value?.genres && enriched.value.genres.length) return enriched.value.genres
+  return props.book?.genres || []
 })
 
 const rootStore = useRootFoldersStore()
@@ -264,8 +387,10 @@ const mapAudimetaToAudible = (
   source?: string,
 ): AudibleBookMetadata => {
   let publishYear: string | undefined
+  let publishedDate: string | undefined
   const dateStr = audimeta?.publishDate || audimeta?.releaseDate
   if (dateStr && typeof dateStr === 'string') {
+    publishedDate = dateStr
     const yearMatch = dateStr.match(/\d{4}/)
     publishYear = yearMatch ? yearMatch[0] : undefined
   }
@@ -285,6 +410,7 @@ const mapAudimetaToAudible = (
     narrators: narrators.length ? narrators : props.book?.narrators || [],
     publisher: audimeta?.publisher || props.book?.publisher,
     publishYear: publishYear || props.book?.publishYear,
+    publishedDate: publishedDate || props.book?.publishedDate,
     description: audimeta?.description || props.book?.description,
     imageUrl: audimeta?.imageUrl || props.book?.imageUrl,
     runtime:
@@ -295,7 +421,7 @@ const mapAudimetaToAudible = (
     genres: genres.length ? genres : props.book?.genres || [],
     series: firstSeries?.name || props.book?.series,
     seriesNumber:
-      firstSeries?.position !== undefined ? String(firstSeries.position) : props.book?.seriesNumber,
+      firstSeries?.position !== undefined ? String(firstSeries.position) : (props.book?.seriesNumber && props.book.seriesNumber !== 'null' ? props.book.seriesNumber : undefined),
     abridged:
       typeof audimeta?.bookFormat === 'string'
         ? audimeta.bookFormat.toLowerCase().includes('abridged')
@@ -331,7 +457,12 @@ const seedPreview = async () => {
       try {
         const resp = await apiService.getMetadata(props.book.asin, 'us', true)
         if (resp && resp.metadata) {
-          enriched.value = mapAudimetaToAudible(resp.metadata, resp.source)
+          const enrichedMeta = mapAudimetaToAudible(resp.metadata, resp.source)
+          // Sanitize seriesNumber to filter out the string "null"
+          if (enrichedMeta.seriesNumber === 'null') {
+            enrichedMeta.seriesNumber = undefined
+          }
+          enriched.value = enrichedMeta
           metadataSource.value = resp.source || null
         }
       } catch (metaErr) {
@@ -572,47 +703,18 @@ const capitalizeFirst = (str: string): string => {
 </script>
 
 <style scoped>
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background-color: rgba(0, 0, 0, 0.7);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 1000;
-  padding: 1rem;
-}
-
-.modal-content {
-  background-color: #2a2a2a;
-  border-radius: 6px;
-  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
-  max-width: 900px;
-  width: 100%;
-  max-height: 90vh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-.book-image {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
+/* Keep only layout and content-related styles; modal wrapper styles come from shared modal stylesheet */
 .image-viewport {
   width: 100%;
   aspect-ratio: 1/1;
   position: relative;
   border-radius: 6px;
   overflow: hidden;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.02), rgba(0, 0, 0, 0.06));
+  background: #333;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
 }
 .image-viewport img {
   width: 100%;
@@ -656,104 +758,63 @@ const capitalizeFirst = (str: string): string => {
   margin-bottom: 0.5rem;
 }
 
-.modal-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 1.5rem;
-  border-bottom: 1px solid #444;
-}
-
-.modal-header h2 {
-  margin: 0;
-  color: white;
-  font-size: 1.5rem;
-}
-
-.modal-body {
-  padding: 1.5rem;
-  flex: 1;
-  overflow-y: auto;
-}
-
-/* modal-footer styles are centralized in src/assets/modals.css */
-.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
-
 .book-layout {
-  display: flex;
+  display: grid;
+  grid-template-columns: 200px 1fr;
   gap: 2rem;
-  margin-bottom: 2rem;
+  align-items: start;
 }
 
 .book-image {
-  width: 160px;
-  height: 160px;
-  flex-shrink: 0;
-  background-color: #555;
-  border-radius: 6px;
-  overflow: hidden;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.book-image img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.placeholder-cover {
-  color: #888;
-  text-align: center;
-}
-
-.placeholder-cover i {
-  font-size: 2rem;
-  display: block;
-  margin-bottom: 0.5rem;
+  position: sticky;
+  top: 0;
 }
 
 .book-details {
-  flex: 1;
-}
-
-.detail-section {
-  margin-bottom: 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
 .detail-section h3 {
   margin: 0 0 0.5rem 0;
   color: white;
-  font-size: 1.4rem;
+  font-size: 1.75rem;
+  line-height: 1.2;
 }
 
 .detail-section h4 {
   margin: 0 0 1rem 0;
   color: white;
   font-size: 1.1rem;
-  border-bottom: 1px solid #444;
+  font-weight: 500;
+  border-bottom: 1px solid #333;
   padding-bottom: 0.5rem;
 }
 
-.authors,
-.narrators {
+.authors {
   color: var(--brand-500);
-  margin: 0.25rem 0;
+  font-size: 1.1rem;
   font-weight: 500;
+  margin: 0 0 0.25rem 0;
+}
+
+.narrators {
+  color: #ccc;
+  font-style: italic;
+  margin: 0;
 }
 
 .description {
   color: #ccc;
   line-height: 1.6;
-  max-height: 150px;
-  overflow-y: auto;
+  margin: 0;
 }
 
 .detail-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 0.75rem;
+  gap: 1rem;
 }
 
 .detail-item {
@@ -770,54 +831,36 @@ const capitalizeFirst = (str: string): string => {
 
 .detail-item .value {
   color: white;
-  font-size: 0.95rem;
+  font-weight: 400;
 }
 
-.customization-section {
-  border-top: 1px solid #444;
-  padding-top: 1.5rem;
-}
-
-.customization-section h4 {
-  margin: 0 0 1rem 0;
-  color: white;
-  font-size: 1.1rem;
-}
-
-.option-group {
-  margin-bottom: 1.5rem;
-}
-
-.option-label {
+.flags {
   display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  cursor: pointer;
-  padding: 0.75rem;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.flag {
+  padding: 0.25rem 0.75rem;
   border-radius: 6px;
-  transition: background-color 0.2s;
+  font-size: 0.8rem;
+  font-weight: 500;
 }
 
-.option-label:hover {
-  background-color: rgba(255, 255, 255, 0.05);
+.flag.explicit {
+  background-color: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+  border: 1px solid #e74c3c;
 }
 
-.option-checkbox {
-  margin-top: 0.25rem;
-  width: 1rem;
-  height: 1rem;
-  accent-color: var(--brand-500);
+.flag.abridged {
+  background-color: rgba(243, 156, 18, 0.2);
+  color: #f39c12;
+  border: 1px solid #f39c12;
 }
 
-.option-text {
-  flex: 1;
-  color: white;
-}
-
-.option-text small {
-  color: #ccc;
-  display: block;
-  margin-top: 0.25rem;
+.library-options {
+  margin-top: 2rem;
 }
 
 .form-label {
@@ -850,6 +893,13 @@ const capitalizeFirst = (str: string): string => {
   margin-top: 0.5rem;
 }
 
+.option-group {
+  margin: 2rem 0;
+}
+
+.modal-content .form-group {
+  margin-bottom: 0.25rem;
+}
 /* Destination display styles */
 .destination-display {
   display: flex;
@@ -904,28 +954,26 @@ const capitalizeFirst = (str: string): string => {
 /* Responsive design */
 @media (max-width: 768px) {
   .book-layout {
-    flex-direction: column;
-    align-items: center;
+    grid-template-columns: 1fr;
+    gap: 1.5rem;
   }
 
   .book-image {
-    width: 120px;
-    height: 120px;
-  }
-
-  .modal-content {
-    max-width: 95vw;
-    margin: 1rem;
-  }
-
-  .modal-header,
-  .modal-body,
-  .modal-footer {
-    padding: 1rem;
+    position: static;
+    max-width: 200px;
+    margin: 0 auto;
   }
 
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .modal-footer {
+    flex-direction: column-reverse;
+  }
+
+  .btn {
+    justify-content: center;
   }
 }
 </style>

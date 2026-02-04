@@ -492,10 +492,6 @@
                     : 'Add to Library'
                 }}
               </button>
-              <button class="btn btn-secondary" @click="viewDetails(audibleResult)">
-                <PhEye />
-                View Details
-              </button>
             </div>
           </div>
         </div>
@@ -757,10 +753,6 @@
                     : 'Add to Library'
                 }}
               </button>
-              <button class="btn btn-secondary" @click="viewTitleResultDetails(book)">
-                <PhEye />
-                View Details
-              </button>
             </div>
           </div>
         </div>
@@ -832,14 +824,6 @@
     </div>
   </div>
 
-  <!-- Audiobook Details Modal -->
-  <AudiobookDetailsModal
-    :visible="showDetailsModal"
-    :book="selectedBook"
-    @close="closeDetailsModal"
-    @add-to-library="handleAddToLibrary"
-  />
-
   <!-- Add to Library Modal -->
   <AddLibraryModal
     :visible="showAddLibraryModal"
@@ -864,7 +848,6 @@ import {
   PhGlobe,
   PhCheck,
   PhPlus,
-  PhEye,
   PhBook,
   PhArrowDown,
   PhArrowClockwise,
@@ -906,7 +889,6 @@ import { signalRService } from '@/services/signalr'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useLibraryStore } from '@/stores/library'
-import AudiobookDetailsModal from '@/components/domain/audiobook/AudiobookDetailsModal.vue'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import { useToast } from '@/services/toastService'
 import { safeText } from '@/utils/textUtils'
@@ -1132,8 +1114,6 @@ const coverSelection = ref<Record<string, string>>({})
 const errorMessage = ref('')
 
 // Modal state
-const showDetailsModal = ref(false)
-const selectedBook = ref<AudibleBookMetadata>({} as AudibleBookMetadata)
 const showAddLibraryModal = ref(false)
 const selectedBookForLibrary = ref<AudibleBookMetadata>({} as AudibleBookMetadata)
 
@@ -2164,120 +2144,6 @@ const selectTitleResult = async (book: TitleSearchResult) => {
   }
 }
 
-const viewTitleResultDetails = async (book: TitleSearchResult) => {
-  const asin = resolvedAsins.value[book.key] || book.searchResult?.asin
-
-  try {
-    // If we have an enriched search result, use it directly even if no ASIN is present
-    if (book.searchResult && book.searchResult.isEnriched) {
-      const result = book.searchResult
-      logger.debug('Using enriched metadata from intelligent search for details view:', result)
-
-      // If metadata source is OpenLibrary or a resultUrl points to OL JSON, try to fetch description from the canonical JSON
-      let olDescription: string | undefined = undefined
-      try {
-        const jsonUrl =
-          result.resultUrl ||
-          openLibraryService.getBookJsonUrlFromBook(book as OpenLibraryBook) ||
-          openLibraryService.getWorkJsonUrlFromBook(book as OpenLibraryBook)
-        if (jsonUrl) {
-          const resp = await fetch(jsonUrl)
-          if (resp && resp.ok) {
-            const j = await resp.json()
-            if (j) {
-              if (typeof j.description === 'string') olDescription = j.description
-              else if (j.description && typeof j.description.value === 'string')
-                olDescription = j.description.value
-            }
-          }
-        }
-      } catch (e) {
-        logger.debug('Failed to fetch OpenLibrary JSON for description:', e)
-      }
-
-      selectedBook.value = {
-        asin: result.asin || asin || '',
-        title: result.title || 'Unknown Title',
-        subtitle: undefined,
-        authors: result.artist ? [result.artist] : [],
-        narrators: result.narrator ? [result.narrator] : [],
-        publisher: result.publisher,
-        publishedDate: result.publishedDate,
-        description: result.description || olDescription,
-        imageUrl: result.imageUrl,
-        runtime: result.runtime,
-        language: result.language,
-        genres: [],
-        series: result.series,
-        seriesNumber: result.seriesNumber,
-        abridged: false,
-        isbn: undefined,
-        source: book.metadataSource || result.source,
-        openLibraryId: result.id || undefined,
-      }
-
-      showDetailsModal.value = true
-      return
-    }
-
-    // If we don't have an enriched result but an ASIN exists, fetch metadata from configured sources
-    if (asin) {
-      const response = await apiService.getMetadata(asin, 'us', true)
-      const audimetaData = response.metadata
-      book.metadataSource = response.source
-
-      const publishedDate = audimetaData.publishDate || audimetaData.releaseDate
-
-      selectedBook.value = {
-        asin: audimetaData.asin || asin || '',
-        title: audimetaData.title || 'Unknown Title',
-        subtitle: audimetaData.subtitle,
-        authors:
-          (audimetaData.authors
-            ?.map((a: AudimetaAuthor) => a.name)
-            .filter((n: string | undefined) => n) as string[]) || [],
-        narrators:
-          (audimetaData.narrators
-            ?.map((n: AudimetaNarrator) => n.name)
-            .filter((n: string | undefined) => n) as string[]) || [],
-        publisher: audimetaData.publisher,
-        publishedDate: publishedDate,
-        description: audimetaData.description,
-        imageUrl: audimetaData.imageUrl,
-        // Audimeta returns length in minutes; keep runtime in minutes for UI helpers
-        runtime: audimetaData.runtime || audimetaData.lengthMinutes || undefined,
-        language: audimetaData.language,
-        genres:
-          (audimetaData.genres
-            ?.map((g: AudimetaGenre) => g.name)
-            .filter((n: string | undefined) => n) as string[]) || [],
-        series: audimetaData.series?.length
-          ? audimetaData.series
-              .map((s) => `${s.name}${s.position ? ` #${s.position}` : ''}`)
-              .join(', ')
-          : undefined,
-        seriesList:
-          audimetaData.series?.map((s) => `${s.name}${s.position ? ` #${s.position}` : ''}`) || [],
-        seriesNumber: audimetaData.series?.[0]?.position || undefined, // Extract position from primary series
-        abridged: audimetaData.bookFormat?.toLowerCase().includes('abridged') || false,
-        isbn: audimetaData.isbn,
-        source: response.source,
-        openLibraryId: book.searchResult?.id || undefined,
-      }
-
-      showDetailsModal.value = true
-      return
-    }
-
-    // If neither enriched metadata nor ASIN is available, show an informative message
-    logger.error('No ASIN or enriched metadata available for selected book')
-    toast.warning('No details', 'No ASIN or metadata available to show details for this book')
-  } catch (error) {
-    logger.error('Failed to fetch detailed metadata:', error)
-    toast.error('Fetch failed', 'Failed to fetch audiobook details. Please try again.')
-  }
-}
-
 // Common methods for both search types
 const addToLibrary = async (book: AudibleBookMetadata) => {
   // Check if root folder is configured
@@ -2291,21 +2157,23 @@ const addToLibrary = async (book: AudibleBookMetadata) => {
   }
 
   // Show the add to library modal instead of directly adding
-  selectedBookForLibrary.value = book
+  const categoryGenres = (book.searchResult?.category || '')
+    .split(',')
+    .map((g) => g.trim())
+    .filter((g) => g.length > 0)
+
+  selectedBookForLibrary.value = {
+    ...book,
+    // Sanitize seriesNumber to filter out the string "null"
+    seriesNumber: book.seriesNumber && book.seriesNumber !== 'null' ? book.seriesNumber : undefined,
+    genres:
+      (book.genres && book.genres.length
+        ? book.genres
+        : book.searchResult?.genres && book.searchResult.genres.length
+          ? book.searchResult.genres
+          : categoryGenres) || [],
+  }
   showAddLibraryModal.value = true
-}
-
-const viewDetails = (book: AudibleBookMetadata) => {
-  selectedBook.value = book
-  showDetailsModal.value = true
-}
-
-const closeDetailsModal = () => {
-  showDetailsModal.value = false
-}
-
-const handleAddToLibrary = (book: AudibleBookMetadata) => {
-  addToLibrary(book)
 }
 
 const closeAddLibraryModal = () => {

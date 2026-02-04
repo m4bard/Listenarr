@@ -43,6 +43,7 @@ namespace Listenarr.Api.Services
                 Tags = audiobook.Tags?.ToArray(),
                 Description = audiobook.Description,
                 PublishYear = audiobook.PublishYear,
+                PublishedDate = audiobook.PublishedDate,
                 Series = audiobook.Series,
                 SeriesNumber = audiobook.SeriesNumber,
                 Monitored = audiobook.Monitored,

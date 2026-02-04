@@ -656,7 +656,6 @@
 .modal-content .folder-browser.no-inner-card .browser-body,
 .folder-browser.no-inner-card .browser-body {
   padding: 0;
-  max-height: calc(70vh - 300px);
   overflow-y: auto;
 }
 

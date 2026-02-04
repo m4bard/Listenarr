@@ -677,7 +677,7 @@ namespace Listenarr.Api.Services
                                     Publisher = book.Publisher,
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate,
-                                    Isbn = book.Asin // fallback (audimeta search by isbn may not populate)
+                                    Isbn = book.Isbn
                                 };
                                 var meta = _metadataConverters.ConvertAudimetaToMetadata(bookResp, book.Asin ?? string.Empty, "Audimeta");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);

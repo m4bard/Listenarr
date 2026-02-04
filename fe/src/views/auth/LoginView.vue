@@ -188,13 +188,18 @@ export default defineComponent({
   align-items: center;
 }
 
-.form-row .btn-primary {
+.login-form .form-row .btn-primary {
   width: auto;
   min-width: 200px;
   padding: 1rem 2rem;
   font-size: 1rem;
   font-weight: 600;
   border-radius: 8px;
+  text-align: center;
+}
+
+.login-form .form-row .btn-primary span {
+  width: 100%;
 }
 
 .form-label {

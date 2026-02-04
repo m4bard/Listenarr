@@ -151,10 +151,6 @@
           <component :is="isAdded ? PhCheck : PhPlus" />
           {{ isAdded ? 'Added' : 'Add to Library' }}
         </button>
-        <button class="btn btn-secondary" @click="$emit('view-details')">
-          <PhEye />
-          View Details
-        </button>
       </slot>
     </div>
   </div>
@@ -172,7 +168,6 @@ import {
   PhCloud,
   PhPlus,
   PhCheck,
-  PhEye,
 } from '@phosphor-icons/vue'
 import type { SearchResult } from '@/types'
 import type { OpenLibraryBook } from '@/services/openlibrary'
@@ -206,7 +201,6 @@ const props = withDefaults(defineProps<SearchResultCardProps>(), {
 
 defineEmits<{
   'add': []
-  'view-details': []
   'image-error': []
 }>()
 

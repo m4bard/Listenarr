@@ -243,6 +243,17 @@
               <PhPlus />
               <span>Add New</span>
             </RouterLink>
+                        <RouterLink
+              to="/calendar"
+              class="nav-item"
+              @mouseenter="preload('calendar')"
+              @focus="preload('calendar')"
+              @touchstart.passive="preload('calendar')"
+              @click="closeMobileMenu"
+            >
+              <PhCalendar />
+              <span>Calendar</span>
+            </RouterLink>
             <!-- <RouterLink to="/library-import" class="nav-item">
               <PhFolderOpen />
               <span>Library Import</span>
@@ -250,11 +261,6 @@
           </div>
 
           <div class="nav-section">
-            <!-- Calendar temporarily hidden -->
-            <!-- <RouterLink to="/calendar" class="nav-item">
-              <PhCalendar />
-              <span>Calendar</span>
-            </RouterLink> -->
             <RouterLink
               to="/activity"
               class="nav-item"
@@ -433,6 +439,7 @@ import {
   PhBooks,
   PhPlus,
   PhActivity,
+  PhCalendar,
   PhHeart,
   PhGear,
   PhMonitor,

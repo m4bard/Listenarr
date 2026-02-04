@@ -35,19 +35,6 @@ describe('SearchResultActions', () => {
     expect(addBtn.attributes('disabled')).toBeDefined()
   })
 
-  it('renders view details button', () => {
-    const wrapper = mount(SearchResultActions, {
-      props: {
-        isAdded: false,
-      },
-    })
-    const btns = wrapper.findAll('.btn')
-    expect(btns.length).toBe(2)
-    const detailsBtn = btns[1]
-    expect(detailsBtn.text()).toContain('View Details')
-    expect(detailsBtn.classes()).toContain('btn-secondary')
-  })
-
   it('emits add event when add button clicked', async () => {
     const wrapper = mount(SearchResultActions, {
       props: {
@@ -57,17 +44,6 @@ describe('SearchResultActions', () => {
     const addBtn = wrapper.findAll('.btn')[0]
     await addBtn.trigger('click')
     expect(wrapper.emitted('add')).toHaveLength(1)
-  })
-
-  it('emits view-details event when details button clicked', async () => {
-    const wrapper = mount(SearchResultActions, {
-      props: {
-        isAdded: false,
-      },
-    })
-    const detailsBtn = wrapper.findAll('.btn')[1]
-    await detailsBtn.trigger('click')
-    expect(wrapper.emitted('view-details')).toHaveLength(1)
   })
 
   it('does not emit add event when already added', async () => {

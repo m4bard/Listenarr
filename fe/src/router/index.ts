@@ -58,6 +58,12 @@ const routes = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/calendar',
+    name: 'calendar',
+    component: () => import('../views/content/CalendarView.vue'),
+    meta: { requiresAuth: true },
+  },
+  {
     path: '/downloads',
     name: 'downloads',
     component: () => import('../views/activity/DownloadsView.vue'),

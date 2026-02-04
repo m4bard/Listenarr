@@ -108,8 +108,6 @@
               <PhClock />
               {{ formatRuntime(audiobook.runtime) }}
             </span>
-            <span class="genre">{{ audiobook.genres?.join(', ') || 'Audiobook' }}</span>
-            <span class="year" v-if="audiobook.publishYear">{{ audiobook.publishYear }}</span>
           </div>
 
           <div class="key-details">
@@ -217,9 +215,9 @@
               <span class="label">Publisher:</span>
               <span class="value">{{ safeText(audiobook.publisher) }}</span>
             </div>
-            <div class="detail-row" v-if="audiobook.publishYear">
-              <span class="label">Year:</span>
-              <span class="value">{{ audiobook.publishYear }}</span>
+            <div class="detail-row" v-if="audiobook.publishedDate || audiobook.publishYear">
+              <span class="label">Release Date:</span>
+              <span class="value">{{ audiobook.publishedDate ? formatDate(audiobook.publishedDate) : audiobook.publishYear }}</span>
             </div>
             <div class="detail-row" v-if="audiobook.language">
               <span class="label">Language:</span>
@@ -233,7 +231,7 @@
               <span class="label">Series:</span>
               <span class="value">{{ safeText(audiobook.series) }}</span>
             </div>
-            <div class="detail-row" v-if="audiobook.seriesNumber">
+            <div class="detail-row" v-if="audiobook.seriesNumber && audiobook.seriesNumber.trim()">
               <span class="label">Book #:</span>
               <span class="value">{{ audiobook.seriesNumber }}</span>
             </div>
@@ -241,9 +239,20 @@
 
           <div class="detail-card">
             <h3>Identifiers</h3>
+            <div class="detail-row" v-if="audimetaSourceUrl">
+              <span class="label">Metadata Source:</span>
+              <span class="value">
+                <a :href="audimetaSourceUrl" target="_blank" rel="noopener noreferrer">Audimeta</a>
+              </span>
+            </div>
             <div class="detail-row" v-if="audiobook.asin">
               <span class="label">ASIN:</span>
-              <span class="value">{{ audiobook.asin }}</span>
+              <span class="value">
+                <a v-if="audibleProductUrl" :href="audibleProductUrl" target="_blank" rel="noopener noreferrer">
+                  {{ audiobook.asin }}
+                </a>
+                <span v-else>{{ audiobook.asin }}</span>
+              </span>
             </div>
             <div class="detail-row" v-if="audiobook.isbn">
               <span class="label">ISBN:</span>
@@ -549,6 +558,18 @@ const assignedProfileName = computed(() => {
   if (!id) return null
   const p = qualityProfiles.value.find((q) => q.id === id)
   return p ? p.name : null
+})
+
+const audimetaSourceUrl = computed(() => {
+  const asin = audiobook.value?.asin
+  if (!asin) return null
+  return `https://audimeta.de/book/${encodeURIComponent(asin)}`
+})
+
+const audibleProductUrl = computed(() => {
+  const asin = audiobook.value?.asin
+  if (!asin) return null
+  return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
 })
 
 // Utility function to capitalize first letter
@@ -951,9 +972,10 @@ async function handleEditSaved() {
 
 
 
-function formatRuntime(minutes: number): string {
-  const hours = Math.floor(minutes / 60)
-  const mins = minutes % 60
+function formatRuntime(seconds: number): string {
+  const totalMinutes = Math.floor(seconds / 60)
+  const hours = Math.floor(totalMinutes / 60)
+  const mins = totalMinutes % 60
   return `${hours}h ${mins}m`
 }
 
@@ -1086,15 +1108,15 @@ function getFullPath(relativePath?: string): string {
 
 function formatDate(dateString?: string): string {
   if (!dateString) return 'Unknown'
-  // Ensure the date is treated as UTC by appending 'Z' if not present
-  const utcDateString = dateString.endsWith('Z') ? dateString : dateString + 'Z'
-  const date = new Date(utcDateString)
+  // If the string already includes a timezone (Z or ±HH:MM), parse as-is
+  const hasTimezone = /[zZ]|[+-]\d{2}:?\d{2}$/.test(dateString)
+  const date = new Date(hasTimezone ? dateString : `${dateString}Z`)
+  if (Number.isNaN(date.getTime())) return 'Unknown'
   return date.toLocaleDateString('en-US', {
     year: 'numeric',
     month: 'short',
     day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    timeZone: 'UTC',
   })
 }
 </script>

@@ -64,12 +64,8 @@ function onInput(e: Event) {
   border-color: var(--brand-500);
 }
 
-/* When consumers pass the shared .form-input class it will style the input.
-   Ensure the right-side corner is squared so the toggle can share the same border. */
+/* When consumers pass the shared .form-input class it will style the input. */
 .password-field.form-input {
-  border-top-right-radius: 0;
-  border-bottom-right-radius: 0;
-  border-right: none;
   padding-right: 3rem; /* Make room for the eye icon */
 }
 
