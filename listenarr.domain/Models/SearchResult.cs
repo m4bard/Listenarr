@@ -90,6 +90,7 @@ namespace Listenarr.Domain.Models
         public string? Narrator { get; set; }
         public string? ImageUrl { get; set; }
         public string? Asin { get; set; }
+        public string? Isbn { get; set; }
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string? ProductUrl { get; set; } // Direct link to Amazon/Audible product page

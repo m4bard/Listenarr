@@ -378,13 +378,9 @@
                   <PhBuilding />
                   {{ safeText(audibleResult.publisher) }}
                 </span>
-                <span v-if="audibleResult.publishYear" class="metadata-badge">
+                <span v-if="audibleResult.publishedDate" class="metadata-badge">
                   <PhCalendar />
-                  {{ audibleResult.publishYear }}
-                </span>
-                <span v-else-if="audibleResult.publishedDate" class="metadata-badge">
-                  <PhCalendar />
-                  {{ new Date(audibleResult.publishedDate).getFullYear() }}
+                  {{ formatDate(audibleResult.publishedDate) }}
                 </span>
                 <span v-if="audibleResult.asin" class="metadata-badge">
                   <PhBarcode />
@@ -663,7 +659,11 @@
                   <PhBuilding />
                   {{ safeText(book.publisher[0]) }}
                 </span>
-                <span v-if="book.first_publish_year" class="metadata-badge">
+                <span v-if="book.searchResult?.publishedDate" class="metadata-badge">
+                  <PhCalendar />
+                  {{ formatDate(book.searchResult.publishedDate) }}
+                </span>
+                <span v-else-if="book.first_publish_year" class="metadata-badge">
                   <PhCalendar />
                   {{ book.first_publish_year }}
                 </span>
@@ -2277,13 +2277,6 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       const result = book.searchResult
       logger.debug('Using enriched metadata from intelligent search:', result)
 
-      // Extract publish year from date string if available
-      let publishYear: string | undefined
-      if (result.publishedDate) {
-        const yearMatch = result.publishedDate.match(/\d{4}/)
-        publishYear = yearMatch ? yearMatch[0] : undefined
-      }
-
       const metadata: AudibleBookMetadata = {
         asin: result.asin || '',
         title: result.title || 'Unknown Title',
@@ -2291,7 +2284,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
         authors: result.artist ? [result.artist] : [],
         narrators: result.narrator ? [result.narrator] : [],
         publisher: result.publisher,
-        publishYear: publishYear,
+        publishedDate: result.publishedDate,
         description: result.description,
         imageUrl: result.imageUrl,
         runtime: result.runtime,
@@ -2322,13 +2315,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       // Store the metadata source in the book object so it shows in the UI
       book.metadataSource = response.source
 
-      // Convert audimeta response to AudibleBookMetadata format
-      let publishYear: string | undefined
-      if (audimetaData.publishDate || audimetaData.releaseDate) {
-        const dateStr = audimetaData.publishDate || audimetaData.releaseDate
-        const yearMatch = dateStr?.match(/\d{4}/)
-        publishYear = yearMatch ? yearMatch[0] : undefined
-      }
+      const publishedDate = audimetaData.publishDate || audimetaData.releaseDate
 
       const metadata: AudibleBookMetadata = {
         asin: audimetaData.asin || asin || '',
@@ -2343,7 +2330,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
             ?.map((n: AudimetaNarrator) => n.name)
             .filter((n: string | undefined) => n) as string[]) || [],
         publisher: audimetaData.publisher,
-        publishYear: publishYear,
+        publishedDate: publishedDate,
         description: audimetaData.description,
         imageUrl: audimetaData.imageUrl,
         // Audimeta returns length in minutes; keep runtime in minutes for UI helpers
@@ -2389,13 +2376,8 @@ const viewTitleResultDetails = async (book: TitleSearchResult) => {
     if (book.searchResult && book.searchResult.isEnriched) {
       const result = book.searchResult
       logger.debug('Using enriched metadata from intelligent search for details view:', result)
-
-      // Extract publish year from date string if available
-      let publishYear: string | undefined
-      if (result.publishedDate) {
-        const yearMatch = result.publishedDate.match(/\d{4}/)
-        publishYear = yearMatch ? yearMatch[0] : undefined
-      }
+      logger.debug('publishedDate from result:', result.publishedDate)
+      logger.debug('publishedDate from book.searchResult:', book.searchResult.publishedDate)
 
       // If metadata source is OpenLibrary or a resultUrl points to OL JSON, try to fetch description from the canonical JSON
       let olDescription: string | undefined = undefined
@@ -2426,7 +2408,7 @@ const viewTitleResultDetails = async (book: TitleSearchResult) => {
         authors: result.artist ? [result.artist] : [],
         narrators: result.narrator ? [result.narrator] : [],
         publisher: result.publisher,
-        publishYear: publishYear,
+        publishedDate: result.publishedDate,
         description: result.description || olDescription,
         imageUrl: result.imageUrl,
         runtime: result.runtime,
@@ -2438,7 +2420,7 @@ const viewTitleResultDetails = async (book: TitleSearchResult) => {
         isbn: undefined,
         source: book.metadataSource || result.source,
         openLibraryId: result.id || undefined,
-      }
+      } as AudibleBookMetadata
 
       showDetailsModal.value = true
       return
@@ -2450,12 +2432,7 @@ const viewTitleResultDetails = async (book: TitleSearchResult) => {
       const audimetaData = response.metadata
       book.metadataSource = response.source
 
-      let publishYear: string | undefined
-      if (audimetaData.publishDate || audimetaData.releaseDate) {
-        const dateStr = audimetaData.publishDate || audimetaData.releaseDate
-        const yearMatch = dateStr?.match(/\d{4}/)
-        publishYear = yearMatch ? yearMatch[0] : undefined
-      }
+      const publishedDate = audimetaData.publishDate || audimetaData.releaseDate
 
       selectedBook.value = {
         asin: audimetaData.asin || asin || '',
@@ -2470,7 +2447,7 @@ const viewTitleResultDetails = async (book: TitleSearchResult) => {
             ?.map((n: AudimetaNarrator) => n.name)
             .filter((n: string | undefined) => n) as string[]) || [],
         publisher: audimetaData.publisher,
-        publishYear: publishYear,
+        publishedDate: publishedDate,
         description: audimetaData.description,
         imageUrl: audimetaData.imageUrl,
         // Audimeta returns length in minutes; keep runtime in minutes for UI helpers
@@ -2492,7 +2469,7 @@ const viewTitleResultDetails = async (book: TitleSearchResult) => {
         isbn: audimetaData.isbn,
         source: response.source,
         openLibraryId: book.searchResult?.id || undefined,
-      }
+      } as AudibleBookMetadata
 
       showDetailsModal.value = true
       return
@@ -3293,9 +3270,9 @@ select.form-input:focus {
   display: flex;
   justify-content: end;
   align-items: center;
-  margin-bottom: 2rem;
-  padding-bottom: 1.5rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 
 .btn-secondary,
@@ -3347,7 +3324,7 @@ select.form-input:focus {
     min-width: auto;
   }
 
-  .search-btn.advanced-btn {
+  .advanced-btn {
     width: 100%;
   }
 
@@ -3493,8 +3470,7 @@ select.form-input:focus {
     0 6px 24px rgba(30, 136, 229, 0.28);
 }
 
-.search-btn.advanced-btn {
-  background: linear-gradient(135deg, rgba(155, 89, 182, 0.14) 0%, rgba(142, 68, 173, 0.12) 100%);
+.advanced-btn {
   color: #f4ecff;
   box-shadow: 0 2px 8px rgba(155, 89, 182, 0.12);
   min-width: 110px;
@@ -3510,11 +3486,9 @@ select.form-input:focus {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-.search-btn.advanced-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(155, 89, 182, 0.18) 0%, rgba(142, 68, 173, 0.14) 100%);
+.advanced-btn:hover:not(:disabled) {
   box-shadow: 0 4px 12px rgba(155, 89, 182, 0.16);
 }
 
@@ -3525,7 +3499,6 @@ select.form-input:focus {
   left: -100%;
   width: 100%;
   height: 100%;
-  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.2), transparent);
   transition: left 0.5s;
 }
 
@@ -3534,7 +3507,6 @@ select.form-input:focus {
 }
 
 .search-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
   box-shadow: 0 6px 24px rgba(30, 136, 229, 0.4);
   transform: translateY(-2px);
 }
@@ -3551,13 +3523,11 @@ select.form-input:focus {
   box-shadow: 0 2px 8px rgba(30, 136, 229, 0.2);
 }
 
-.search-btn.advanced-btn {
-  background: linear-gradient(135deg, #9b59b6 0%, #8e44ad 100%);
+.advanced-btn {
   box-shadow: 0 4px 16px rgba(155, 89, 182, 0.3);
 }
 
-.search-btn.advanced-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #8e44ad 0%, #7d3c98 100%);
+.advanced-btn:hover:not(:disabled) {
   box-shadow: 0 6px 24px rgba(155, 89, 182, 0.4);
 }
 
@@ -4186,6 +4156,7 @@ select.form-input:focus {
     width: 100%;
   }
 
+  .metadata-badges,
   .result-stats,
   .result-meta {
     margin: 0 auto;

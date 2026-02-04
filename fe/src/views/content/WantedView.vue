@@ -960,7 +960,7 @@ const markAsSkipped = async (item: Audiobook) => {
 .empty-icon {
   font-size: 4rem;
   margin-bottom: 1.5rem;
-  color: #51cf66;
+  color: #868e96;
 }
 
 .empty-icon svg {

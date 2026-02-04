@@ -23,8 +23,6 @@
 
               <AuthenticationSection :settings="localSettings" :startupConfig="props.startupConfig" v-model:authEnabled="authEnabled" @update:settings="val => Object.assign(localSettings, val)" @update:startupConfig="val => emit('update:startupConfig', val)"></AuthenticationSection>
 
-
-                <ExternalRequestsSection :settings="localSettings" @update:settings="val => Object.assign(localSettings, val)"></ExternalRequestsSection>
           </div> <!-- settings-form -->
     </div> <!-- general-settings-tab -->
   </div> <!-- tab-content -->
@@ -40,7 +38,6 @@ import DownloadSettingsSection from '@/components/settings/DownloadSettingsSecti
 import FeaturesSection from '@/components/settings/FeaturesSection.vue'
 import SearchSettingsSection from '@/components/settings/SearchSettingsSection.vue'
 import AuthenticationSection from '@/components/settings/AuthenticationSection.vue'
-import ExternalRequestsSection from '@/components/settings/ExternalRequestsSection.vue' 
 
 interface Props {
   settings: ApplicationSettings | null
@@ -195,9 +192,9 @@ const validationErrors = computed(() => {
   box-shadow: none;
 }
 
-.form-section>h3 {
-  margin: 0;
-  padding: 0 0 1rem;
+.form-section > :deep(h3) {
+  margin: 0 0 .75rem 0 !important;
+  padding: 0;
   font-size: 1.1rem;
   font-weight: 500;
   display: flex;

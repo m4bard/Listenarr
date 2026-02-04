@@ -100,6 +100,21 @@ public class MetadataConverters
             {
                 metadata.PublishYear = yearMatch.Value;
             }
+            // Also store the full date for calendar/timeline features
+            // Try to parse as ISO 8601 datetime
+            if (DateTime.TryParse(dateStr, out var parsedDate))
+            {
+                metadata.PublishedDate = parsedDate.ToString("yyyy-MM-dd");
+            }
+            else
+            {
+                // If parsing fails, try just the year
+                var datePart = Regex.Match(dateStr, @"^(\d{4})-\d{2}-\d{2}");
+                if (datePart.Success)
+                {
+                    metadata.PublishedDate = datePart.Value;
+                }
+            }
         }
 
         _logger.LogInformation("Converted audimeta data for {Asin}: Title={Title}, Runtime={Runtime}min, Year={Year}, Series={Series}, ImageUrl={ImageUrl}",
@@ -136,11 +151,19 @@ public class MetadataConverters
         {
             metadata.Series = audnexusData.SeriesPrimary.Name;
             metadata.SeriesNumber = audnexusData.SeriesPrimary.Position;
+            _logger.LogInformation("Extracted primary series from Audnexus: {Series}, Position={Position}", 
+                metadata.Series, metadata.SeriesNumber);
         }
         else if (audnexusData.SeriesSecondary != null)
         {
             metadata.Series = audnexusData.SeriesSecondary.Name;
             metadata.SeriesNumber = audnexusData.SeriesSecondary.Position;
+            _logger.LogInformation("Extracted secondary series from Audnexus: {Series}, Position={Position}", 
+                metadata.Series, metadata.SeriesNumber);
+        }
+        else
+        {
+            _logger.LogDebug("No series information from Audnexus for ASIN {Asin}", asin);
         }
 
         // Convert runtime from minutes
@@ -275,7 +298,7 @@ public class MetadataConverters
             Source = metadata.Source ?? "Amazon/Audible", // Use the metadata source (Audible or Amazon) if available
             MetadataSource = metadata.Source, // Set the metadata source for display
             SourceLink = productUrl, // Link to the product page
-            PublishedDate = !string.IsNullOrEmpty(metadata.PublishYear) && int.TryParse(metadata.PublishYear, out var year) ? $"{year}-01-01" : "1970-01-01",
+            PublishedDate = !string.IsNullOrEmpty(metadata.PublishedDate) ? metadata.PublishedDate : (!string.IsNullOrEmpty(metadata.PublishYear) && int.TryParse(metadata.PublishYear, out var year) ? $"{year}-01-01" : "1970-01-01"),
             PublishYear = metadata.PublishYear,
             Subtitle = metadata.Subtitle,
             Quality = metadata.Version ?? "Unknown",
@@ -289,6 +312,7 @@ public class MetadataConverters
             SeriesNumber = metadata.SeriesNumber,
             ImageUrl = imageUrl,
             Asin = asin,
+            Isbn = metadata.Isbn,
             ProductUrl = productUrl
         };
         
@@ -391,7 +415,7 @@ public class MetadataConverters
             Category = string.Join(", ", metadata.Genres ?? new List<string> { "Audiobook" }),
             Source = metadata.Source ?? "Amazon/Audible",
             SourceLink = productUrl,
-            PublishedDate = !string.IsNullOrEmpty(metadata.PublishYear) && int.TryParse(metadata.PublishYear, out var year) ? $"{year}-01-01" : "1970-01-01",
+            PublishedDate = !string.IsNullOrEmpty(metadata.PublishedDate) ? metadata.PublishedDate : (!string.IsNullOrEmpty(metadata.PublishYear) && int.TryParse(metadata.PublishYear, out var year) ? $"{year}-01-01" : "1970-01-01"),
             Format = "Audiobook",
             Score = 0,
             Description = metadata.Description,
@@ -404,6 +428,7 @@ public class MetadataConverters
             SeriesNumber = metadata.SeriesNumber,
             ImageUrl = imageUrl,
             Asin = asin,
+            Isbn = metadata.Isbn,
             ProductUrl = productUrl,
             IsEnriched = true,
             MetadataSource = metadata.Source

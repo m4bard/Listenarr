@@ -11,7 +11,7 @@
       <FormRow v-if="authEnabledComputed" label="Admin Account Management" help="To set or change the admin password, enter a new password and save settings. The username and password are configured in config/config.json.">
         <div class="admin-credentials">
           <input :value="settings.adminUsername" @input="e => updateField('adminUsername', (e.target as HTMLInputElement).value)" type="text" placeholder="Admin username" class="admin-input" />
-          <PasswordInput :modelValue="settings.adminPassword" @update:modelValue="v => updateField('adminPassword', v)" placeholder="New admin password (to update)" class="admin-input" />
+          <PasswordInput :modelValue="settings.adminPassword" @update:modelValue="v => updateField('adminPassword', v)" placeholder="New admin password (to update)" />
         </div>
       </FormRow>
 
@@ -58,6 +58,17 @@ function onApiKeyUpdated(newKey: string) {
 </script>
 
 <style scoped>
+h3 {
+  margin: 0 0 1.5rem 0;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fff;
+}
+
 .form-body { padding: 1.25rem; border-radius: 6px; border: 1px solid #333; box-shadow: 0 4px 14px rgba(0,0,0,0.6); background-color: #232323; }
 .admin-credentials {
   display: flex;
@@ -73,6 +84,10 @@ function onApiKeyUpdated(newKey: string) {
   background-color: #1a1a1a;
   color: #fff;
   font-size: 0.95rem;
+}
+
+:deep(.password-input) {
+  width: 100%;
 }
 
 </style>

@@ -446,7 +446,7 @@ watch(() => props.modelValue, (v) => {
 .fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease }
 .fade-enter-from, .fade-leave-to { opacity:0 }
 .empty-state { display:flex; flex-direction:column; gap:0.75rem; align-items:center; justify-content:center; color:#999; padding:2rem 0 }
-.empty-icon { color:#ffc857; width:48px; height:48px }
+.empty-icon { color:#868e96; width:48px; height:48px }
 .empty-state div { font-size:1.1rem; font-weight:500 }
 
 .search-group { margin-bottom:1rem }

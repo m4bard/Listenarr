@@ -43,7 +43,6 @@ describe('SettingsView', () => {
   type SetupState = { showPassword?: { value: boolean } | boolean }
   type Settings = {
     adminPassword?: string
-    preferUsDomain?: boolean
     useUsProxy?: boolean
     usProxyHost?: string
     usProxyPort?: number
@@ -152,7 +151,6 @@ describe('SettingsView', () => {
 
     const vm = wrapper.vm as unknown as { settings?: Settings }
     vm.settings = {
-      preferUsDomain: false,
       fileNamingPattern: '{Author}/{Title}',
     } as unknown as Settings
 

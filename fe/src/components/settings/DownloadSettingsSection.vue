@@ -44,6 +44,17 @@ function updateField(field: keyof ApplicationSettings, value: unknown) {
 </script>
 
 <style scoped>
+h3 {
+  margin: 0 0 1.5rem 0;
+  padding: 0;
+  font-size: 1.1rem;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fff;
+}
+
 /* Modal-like card and local form styles for Download Settings */
 .form-body { padding: 1.25rem; border-radius: 6px; border: 1px solid #333; box-shadow: 0 4px 14px rgba(0,0,0,0.6); background-color: #232323; }
 

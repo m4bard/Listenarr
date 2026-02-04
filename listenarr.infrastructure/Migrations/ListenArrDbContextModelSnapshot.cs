@@ -15,7 +15,7 @@ namespace Listenarr.Infrastructure.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "8.0.22");
+            modelBuilder.HasAnnotation("ProductVersion", "8.0.23");
 
             modelBuilder.Entity("Listenarr.Domain.Models.ApiConfiguration", b =>
                 {
@@ -161,9 +161,6 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Property<int>("PollingIntervalSeconds")
                         .HasColumnType("INTEGER");
 
-                    b.Property<bool>("PreferUsDomain")
-                        .HasColumnType("INTEGER");
-
                     b.Property<int>("SearchCandidateCap")
                         .HasColumnType("INTEGER");
 
@@ -174,21 +171,6 @@ namespace Listenarr.Infrastructure.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("ShowCompletedExternalDownloads")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("UsProxyHost")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("UsProxyPassword")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("UsProxyPort")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("UsProxyUsername")
-                        .HasColumnType("TEXT");
-
-                    b.Property<bool>("UseUsProxy")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("WebhookUrl")
@@ -261,6 +243,9 @@ namespace Listenarr.Infrastructure.Migrations
                         .HasColumnType("TEXT");
 
                     b.Property<string>("PublishYear")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("PublishedDate")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Publisher")
@@ -777,6 +762,10 @@ namespace Listenarr.Infrastructure.Migrations
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("TEXT");
+
+                    b.Property<string>("CustomGroupNames")
+                        .HasColumnType("TEXT")
+                        .HasColumnName("CustomGroupNames");
 
                     b.Property<string>("CutoffQuality")
                         .HasColumnType("TEXT");

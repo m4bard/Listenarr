@@ -421,6 +421,7 @@ namespace Listenarr.Api.Controllers
                                                 Subtitle = book.Subtitle,
                                                 Authors = book.Authors,
                                                 ImageUrl = book.ImageUrl,
+                                                LengthMinutes = book.RuntimeLengthMin ?? book.LengthMinutes ?? book.RuntimeMinutes,
                                                 Language = book.Language,
                                                 BookFormat = book.BookFormat,
                                                 Genres = book.Genres,

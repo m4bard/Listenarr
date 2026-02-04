@@ -49,9 +49,13 @@
                   <span class="label">Publisher:</span>
                   <span class="value">{{ book.publisher }}</span>
                 </div>
-                <div v-if="book.publishYear" class="detail-item">
-                  <span class="label">Published:</span>
-                  <span class="value">{{ book.publishYear }}</span>
+                <div v-if="publishDate" class="detail-item">
+                  <span class="label">Release Date:</span>
+                  <span class="value">{{ formatDate(publishDate) }}</span>
+                </div>
+                <div v-else-if="publishYear" class="detail-item">
+                  <span class="label">Release Date:</span>
+                  <span class="value">{{ publishYear }}</span>
                 </div>
                 <div v-if="book.language" class="detail-item">
                   <span class="label">Language:</span>
@@ -79,9 +83,9 @@
                   <span class="label">ASIN:</span>
                   <span class="value">{{ book.asin }}</span>
                 </div>
-                <div v-if="book.isbn" class="detail-item">
+                <div v-if="book.isbn || book.searchResult?.isbn" class="detail-item">
                   <span class="label">ISBN:</span>
-                  <span class="value">{{ book.isbn }}</span>
+                  <span class="value">{{ book.isbn || book.searchResult?.isbn }}</span>
                 </div>
                 <div v-if="book.openLibraryId" class="detail-item">
                   <span class="label">OpenLibrary ID:</span>
@@ -105,7 +109,7 @@
               <div class="detail-grid">
                 <div v-if="book.series" class="detail-item">
                   <span class="label">Series:</span>
-                  <span class="value">{{ book.series }}</span>
+                  <span class="value">{{ book.series }}<span v-if="book.seriesNumber"> #{{ book.seriesNumber }}</span></span>
                 </div>
                 <div v-if="book.genres?.length" class="detail-item">
                   <span class="label">Genres:</span>
@@ -166,7 +170,12 @@ import { getQualityProfiles, apiService } from '@/services/api'
 import { handleImageError } from '@/utils/imageFallback'
 import { useLibraryStore } from '@/stores/library'
 import { PhX, PhImage, PhStar, PhCheck, PhPlus } from '@phosphor-icons/vue'
-import { Modal, ModalBody } from '@/components/feedback'
+import { Modal, ModalBody, ModalHeader } from '@/components/feedback'
+import {
+  formatDate,
+  formatRuntime,
+  capitalizeFirst,
+} from '@/utils/searchResultFormatting'
 
 interface Props {
   visible: boolean
@@ -208,6 +217,81 @@ const assignedProfileName = computed(() => {
   return p ? p.name : 'Unknown'
 })
 
+const publishDate = computed((): string | null => {
+  const book = props.book
+  
+  // Debug logging
+  console.log('AudiobookDetailsModal - book object:', book)
+  console.log('AudiobookDetailsModal - book.publishedDate:', book.publishedDate)
+  console.log('AudiobookDetailsModal - book.searchResult:', book.searchResult)
+  if (book.searchResult) {
+    console.log('AudiobookDetailsModal - book.searchResult.publishedDate:', book.searchResult.publishedDate)
+  }
+  
+  // Check standard typed field first
+  if (book.publishedDate) {
+    console.log('Found publishedDate:', book.publishedDate)
+    return book.publishedDate
+  }
+  
+  // Use type assertion to check alternative field names
+  type BookWithDateVariants = typeof book & {
+    releaseDate?: string
+    ReleaseDate?: string
+    publishedDate?: string
+  }
+  const bookWithVariants = book as BookWithDateVariants
+  
+  if (bookWithVariants.releaseDate) {
+    console.log('Found releaseDate:', bookWithVariants.releaseDate)
+    return bookWithVariants.releaseDate
+  }
+  if (bookWithVariants.ReleaseDate) {
+    console.log('Found ReleaseDate:', bookWithVariants.ReleaseDate)
+    return bookWithVariants.ReleaseDate
+  }
+  if (bookWithVariants.publishedDate) {
+    console.log('Found publishedDate from variants:', bookWithVariants.publishedDate)
+    return bookWithVariants.publishedDate
+  }
+  
+  // Check searchResult for date fields
+  if (book.searchResult) {
+    type SearchResultWithDateVariants = typeof book.searchResult & {
+      publishedDate?: string
+      releaseDate?: string
+      ReleaseDate?: string
+    }
+    const sr = book.searchResult as SearchResultWithDateVariants
+    
+    if (sr.publishedDate) {
+      console.log('Found publishedDate in searchResult:', sr.publishedDate)
+      return sr.publishedDate
+    }
+    if (sr.releaseDate) {
+      console.log('Found releaseDate in searchResult:', sr.releaseDate)
+      return sr.releaseDate
+    }
+    if (sr.ReleaseDate) {
+      console.log('Found ReleaseDate in searchResult:', sr.ReleaseDate)
+      return sr.ReleaseDate
+    }
+  }
+  
+  console.log('No publishedDate found anywhere')
+  return null
+})
+
+const publishYear = computed((): string | null => {
+  // If we have a full date, extract year from it
+  const date = publishDate.value
+  if (date) {
+    const yearMatch = date.match(/\d{4}/)
+    if (yearMatch) return yearMatch[0]
+  }
+  return null
+})
+
 const hasFlags = computed(() => {
   return props.book.explicit || props.book.abridged
 })
@@ -244,18 +328,6 @@ watch(
     }
   },
 )
-
-const formatRuntime = (minutes: number): string => {
-  if (!minutes) return 'Unknown'
-  const hours = Math.floor(minutes / 60)
-  const mins = minutes % 60
-  return `${hours}h ${mins}m`
-}
-
-const capitalizeFirst = (str: string): string => {
-  if (!str) return ''
-  return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase()
-}
 </script>
 
 <style scoped>

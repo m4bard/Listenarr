@@ -198,6 +198,7 @@ namespace Listenarr.Api.Controllers
                 // Persist OpenLibrary ID when present (enables OL-only matching in the UI)
                 OpenLibraryId = metadata.OpenLibraryId ?? request.SearchResult?.Id,
                 PublishYear = metadata.PublishYear,
+                PublishedDate = request.SearchResult?.PublishedDate, // Store full date for calendar/timeline features
                 Series = metadata.Series,
                 SeriesNumber = metadata.SeriesNumber,
                 Description = metadata.Description,

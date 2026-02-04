@@ -184,9 +184,14 @@ export default defineComponent({
   flex-direction: column;
 }
 
+.form-row:has(.btn-primary) {
+  align-items: center;
+}
+
 .form-row .btn-primary {
-  width: 100%;
-  padding: 1rem;
+  width: auto;
+  min-width: 200px;
+  padding: 1rem 2rem;
   font-size: 1rem;
   font-weight: 600;
   border-radius: 8px;

@@ -62,20 +62,29 @@
               class="profile-section"
             >
               <h5><PhCheckSquare /> Allowed Qualities</h5>
-              <div class="quality-badges">
-                <span
-                  v-for="quality in profile.qualities
-                    .filter((q) => q.allowed)
-                    .sort((a, b) => b.priority - a.priority)"
-                  :key="quality.quality"
-                  class="quality-badge"
-                  :class="{ 'is-cutoff': quality.quality === profile.cutoffQuality }"
-                >
-                  {{ quality.quality }}
-                  <template v-if="quality.quality === profile.cutoffQuality">
-                    <PhScissors title="Cutoff Quality" />
-                  </template>
-                </span>
+              <div v-if="profile.cutoffQuality" class="quality-subtitle">
+                <PhScissors />
+                Upgrade until {{ profile.cutoffQuality }}
+              </div>
+              <div class="quality-groups">
+                <div v-for="group in getQualityGroups(profile)" :key="group.key" class="quality-group">
+                  <div class="quality-group-header">
+                    <span class="quality-group-title">{{ group.label }}</span>
+                  </div>
+                  <div class="quality-badges">
+                    <span
+                      v-for="quality in group.qualities"
+                      :key="quality.id"
+                      class="quality-badge"
+                      :class="{ 'is-cutoff': quality.id === profile.cutoffQuality }"
+                    >
+                      {{ quality.label }}
+                      <template v-if="quality.id === profile.cutoffQuality">
+                        <PhScissors title="Cutoff Quality" />
+                      </template>
+                    </span>
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -246,7 +255,6 @@ import QualityProfileFormModal from '@/components/settings/QualityProfileFormMod
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import {
   PhStar,
-  PhCheckCircle,
   PhPencil,
   PhTrash,
   PhCheckSquare,
@@ -260,7 +268,6 @@ import {
   PhSparkle,
   PhCheck,
   PhX,
-  PhWarningCircle,
   PhWarning,
 } from '@phosphor-icons/vue'
 
@@ -269,6 +276,131 @@ const qualityProfiles = ref<QualityProfile[]>([])
 const showQualityProfileForm = ref(false)
 const editingQualityProfile = ref<QualityProfile | null>(null)
 const profileToDelete = ref<QualityProfile | null>(null)
+
+type DisplayQuality = {
+  id: string
+  label: string
+  codec: string
+  isLossless: boolean
+  priority: number
+}
+
+type QualityGroupDisplay = {
+  key: string
+  label: string
+  qualities: DisplayQuality[]
+}
+
+const parseQualityString = (qualityStr: string): Omit<DisplayQuality, 'priority'> | null => {
+  if (qualityStr === 'FLAC') {
+    return { id: 'FLAC', codec: 'FLAC', label: 'FLAC', isLossless: true }
+  }
+
+  const mp3Match = qualityStr.match(/MP3 (\d+)kbps/)
+  if (mp3Match) {
+    const bitrate = parseInt(mp3Match[1])
+    return { id: qualityStr, codec: 'MP3', label: `MP3 ${bitrate} kbps`, isLossless: false }
+  }
+
+  if (qualityStr === 'MP3 VBR') {
+    return { id: 'MP3 VBR', codec: 'MP3', label: 'MP3 Variable Bitrate', isLossless: false }
+  }
+
+  const aacMatch = qualityStr.match(/AAC (\d+)kbps/)
+  if (aacMatch) {
+    const bitrate = parseInt(aacMatch[1])
+    return { id: qualityStr, codec: 'AAC', label: `AAC ${bitrate} kbps`, isLossless: false }
+  }
+
+  if (qualityStr === 'AAC') {
+    return { id: 'AAC', codec: 'AAC', label: 'AAC', isLossless: false }
+  }
+
+  const m4bMatch = qualityStr.match(/M4B (\d+)kbps/)
+  if (m4bMatch) {
+    const bitrate = parseInt(m4bMatch[1])
+    return { id: qualityStr, codec: 'M4B', label: `M4B ${bitrate} kbps`, isLossless: false }
+  }
+
+  if (qualityStr === 'M4B') {
+    return { id: 'M4B', codec: 'M4B', label: 'M4B (AAC)', isLossless: false }
+  }
+
+  const opusMatch = qualityStr.match(/OPUS (\d+)kbps/)
+  if (opusMatch) {
+    const bitrate = parseInt(opusMatch[1])
+    return { id: qualityStr, codec: 'OPUS', label: `OPUS ${bitrate} kbps`, isLossless: false }
+  }
+
+  if (qualityStr === 'OPUS') {
+    return { id: 'OPUS', codec: 'OPUS', label: 'OPUS', isLossless: false }
+  }
+
+  const oggMatch = qualityStr.match(/OGG Vorbis (\d+)kbps/)
+  if (oggMatch) {
+    const bitrate = parseInt(oggMatch[1])
+    return { id: qualityStr, codec: 'OGG Vorbis', label: `OGG Vorbis ${bitrate} kbps`, isLossless: false }
+  }
+
+  if (qualityStr === 'OGG Vorbis') {
+    return { id: 'OGG Vorbis', codec: 'OGG Vorbis', label: 'OGG Vorbis', isLossless: false }
+  }
+
+  return null
+}
+
+const toDisplayQuality = (quality: QualityProfile['qualities'][number]): DisplayQuality => {
+  const parsed = parseQualityString(quality.quality)
+  const codec =
+    parsed?.codec ||
+    (quality as QualityProfile['qualities'][number] & { codec?: string }).codec ||
+    'Other'
+  const isLossless =
+    parsed?.isLossless ||
+    (quality as QualityProfile['qualities'][number] & { isLossless?: boolean }).isLossless ||
+    false
+  const label =
+    parsed?.label ||
+    (() => {
+      const bitrate = (quality as QualityProfile['qualities'][number] & { bitrate?: number }).bitrate
+      if (bitrate) return `${codec} ${bitrate} kbps`
+      return quality.quality || codec
+    })()
+
+  return {
+    id: quality.quality,
+    label,
+    codec,
+    isLossless,
+    priority: quality.priority,
+  }
+}
+
+const getQualityGroups = (profile: QualityProfile): QualityGroupDisplay[] => {
+  const allowed = (profile.qualities || [])
+    .filter((q) => q.allowed)
+    .map(toDisplayQuality)
+    .sort((a, b) => a.priority - b.priority)
+
+  const groups = new Map<string, QualityGroupDisplay>()
+
+  allowed.forEach((quality) => {
+    const groupKey = quality.isLossless ? 'lossless' : `codec:${quality.codec}`
+    if (!groups.has(groupKey)) {
+      const label = quality.isLossless
+        ? profile.customGroupNames?.[quality.codec] || profile.customGroupNames?.FLAC || 'Lossless'
+        : profile.customGroupNames?.[quality.codec] || quality.codec
+      groups.set(groupKey, {
+        key: groupKey,
+        label,
+        qualities: [],
+      })
+    }
+    groups.get(groupKey)?.qualities.push(quality)
+  })
+
+  return Array.from(groups.values())
+}
 
 const formatApiError = (error: unknown): string => {
   if (typeof error === 'object' && error !== null) {
@@ -600,6 +732,41 @@ defineExpose({
   display: flex;
   align-items: center;
   gap: 0.5rem;
+}
+
+.quality-subtitle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.75rem;
+}
+
+.quality-groups {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.quality-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.quality-group-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.quality-group-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-secondary);
 }
 
 .quality-badges {

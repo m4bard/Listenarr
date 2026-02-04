@@ -20,6 +20,8 @@ import './assets/main.css'
 // Global toast styles are now included in main.css
 // Global app styles (shared utilities and component fragments)
 import '@/styles/global.css'
+// Consolidated view styles (buttons, badges, forms, layout utilities)
+import '@/styles/views/addnew-consolidated.css'
 // Restore legacy Phosphor CSS classes (e.g. <i class="ph ph-grid-four">)
 // This provides the `.ph` + `.ph-<name>` mappings that many templates use.
 // We keep component-based `@phosphor-icons/vue` for new code, but

@@ -24,63 +24,170 @@
             </small>
           </FormSection>
 
-          <!-- Quality Definitions -->
+          <!-- Quality Definitions (Hierarchical Codec/Bitrate Selection) -->
           <FormSection title="Quality Definitions" :icon="PhCheckSquare">
             <p class="section-description">
-              Select which qualities to allow and set their priority (higher priority = preferred).
-              The cutoff quality determines when to stop upgrading.
+              Select which codecs you want, then choose specific bitrates for lossy formats. 
+              Qualities higher in the list are preferred. Drag to reorder.
             </p>
 
-            <div class="quality-list">
-              <div v-for="quality in availableQualities" :key="quality" class="quality-item">
-                <Checkbox :modelValue="isQualityAllowed(quality)" @update:modelValue="(val: boolean) => toggleQuality(quality, val)">
-                  <span class="quality-name">{{ quality }}</span>
-                </Checkbox> 
+            <!-- Codec Selection -->
+            <div class="codec-selection">
+              <h4 class="subsection-title">Select Codecs</h4>
+              <div class="codec-grid">
+                <label v-for="codec in availableCodecs" :key="codec.codec" class="codec-checkbox">
+                  <input 
+                    type="checkbox" 
+                    :checked="isCodecEnabled(codec.codec)"
+                    @change="toggleCodec(codec.codec, $event.target.checked)"
+                  />
+                  <span class="codec-label">
+                    {{ codec.label }}
+                    <span v-if="codec.isLossless" class="lossless-badge">Lossless</span>
+                  </span>
+                </label>
+              </div>
+            </div>
 
-                <div v-if="isQualityAllowed(quality)" class="quality-controls">
-                  <label class="priority-label">
-                    Priority:
-                    <input type="number" :value="getQualityPriority(quality)"
-                      @input="updateQualityPriority(quality, $event)" min="0" max="100" class="priority-input" />
-                  </label>
+            <CheckboxCard
+              v-if="showPreferM4b"
+              v-model="preferM4b"
+              title="Prefer M4B container"
+              description="Prefer .m4b when multiple containers match (useful for chapters)."
+            />
 
-                  <label class="radio-label">
-                    <input type="radio" :value="quality" v-model="formData.cutoffQuality"
-                      :disabled="!isQualityAllowed(quality)" />
-                    <span class="cutoff-text">Cutoff</span>
-                  </label>
+            <!-- Quality Groups (Draggable) -->
+            <div class="quality-groups-container">
+              <h4 class="subsection-title">Quality Priority Order</h4>
+              <p class="info-text-small">
+                <PhInfo />
+                Qualities higher in the list are more preferred. Only checked qualities will be downloaded.
+              </p>
+
+              <div class="quality-groups">
+                <!-- Lossless Qualities -->
+                <div v-if="losslessQualities.length > 0" class="quality-group">
+                  <div class="quality-group-header">
+                    <PhMusicNotesSimple class="group-icon" />
+                    <input
+                      v-if="editingGroupName === 'FLAC'"
+                      v-model="tempGroupName"
+                      @blur="saveGroupName('FLAC')"
+                      @keyup.enter="saveGroupName('FLAC')"
+                      class="group-name-input"
+                      type="text"
+                      ref="groupNameInput"
+                    />
+                    <span v-else class="group-title">{{ customGroupNames.get('FLAC') || 'Lossless' }}</span>
+                    <button 
+                      v-if="editingGroupName !== 'FLAC'"
+                      type="button" 
+                      @click="startEditingGroupName('FLAC', customGroupNames.get('FLAC') || 'Lossless')"
+                      class="edit-group-btn"
+                      title="Rename group"
+                    >
+                      <PhPencilSimple />
+                    </button>
+                  </div>
+                  <div class="quality-items">
+                    <div
+                      v-for="quality in losslessQualities"
+                      :key="quality.id"
+                      class="quality-item"
+                      draggable="true"
+                      @dragstart="handleDragStart($event, quality)"
+                      @dragover.prevent
+                      @drop="handleDrop($event, quality)"
+                    >
+                      <PhDotsSixVertical class="drag-handle" />
+                      <Checkbox 
+                        :modelValue="quality.enabled" 
+                        @update:modelValue="(val: boolean) => toggleQualityItem(quality.id, val)"
+                      >
+                        <span class="quality-label">{{ quality.label }}</span>
+                      </Checkbox>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Lossy Codecs with Bitrates -->
+                <div
+                  v-for="codecGroup in lossyCodecGroups"
+                  :key="codecGroup.codec"
+                  v-show="codecGroup.qualities.length > 0"
+                  class="quality-group"
+                >
+                  <div class="quality-group-header">
+                    <PhMusicNotesSimple class="group-icon" />
+                    <input
+                      v-if="editingGroupName === codecGroup.codec"
+                      v-model="tempGroupName"
+                      @blur="saveGroupName(codecGroup.codec)"
+                      @keyup.enter="saveGroupName(codecGroup.codec)"
+                      class="group-name-input"
+                      type="text"
+                    />
+                    <span v-else class="group-title">{{ customGroupNames.get(codecGroup.codec) || codecGroup.label }}</span>
+                    <button 
+                      v-if="editingGroupName !== codecGroup.codec"
+                      type="button" 
+                      @click="startEditingGroupName(codecGroup.codec, customGroupNames.get(codecGroup.codec) || codecGroup.label)"
+                      class="edit-group-btn"
+                      title="Rename group"
+                    >
+                      <PhPencilSimple />
+                    </button>
+                  </div>
+                  <div class="quality-items">
+                    <div
+                      v-for="quality in codecGroup.qualities"
+                      :key="quality.id"
+                      class="quality-item"
+                      draggable="true"
+                      @dragstart="handleDragStart($event, quality)"
+                      @dragover.prevent
+                      @drop="handleDrop($event, quality)"
+                    >
+                      <PhDotsSixVertical class="drag-handle" />
+                      <Checkbox 
+                        :modelValue="quality.enabled" 
+                        @update:modelValue="(val: boolean) => toggleQualityItem(quality.id, val)"
+                      >
+                        <span class="quality-label">
+                          {{ quality.label }}
+                          <span v-if="quality.bitrate" class="bitrate-badge">{{ quality.bitrate }} kbps</span>
+                        </span>
+                      </Checkbox>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
 
-            <small class="info-text">
-              <PhInfo />
-              Cutoff quality: Downloads will stop upgrading once this quality is reached
-            </small>
-          </FormSection>
-
-          <!-- Format Preferences -->
-          <FormSection title="Format Preferences" :icon="PhFileAudio">
-            <p class="section-description">
-              Preferred audio formats in order of preference (most preferred first).
-            </p>
-
-            <div class="tag-input-group">
-              <div :class="['tags-list', { 'tags-list-empty': (formData.preferredFormats?.length || 0) === 0 }]">
-                <div v-for="(format, index) in formData.preferredFormats" :key="index" class="tag removable">
-                  {{ format }}
-                  <button type="button" @click="removeFormat(index)" class="tag-remove">
-                    <PhX />
-                  </button>
-                </div>
-              </div>
-              <div class="tag-input">
-                <input v-model="newFormat" @keypress.enter.prevent="addFormat" type="text"
-                  placeholder="e.g., M4B, MP3, M4A" />
-                <button type="button" @click="addFormat" :disabled="!newFormat.trim()" :aria-disabled="!newFormat.trim()" class="btn icon-btn btn-primary btn-sm" title="Add format" aria-label="Add format">
-                  <PhPlus />
-                </button>
-              </div>
+            <!-- Cutoff Selection -->
+            <div class="cutoff-selection">
+              <h4 class="subsection-title">Upgrade Until</h4>
+              <CheckboxCard 
+                v-model="upgradesEnabled" 
+                title="Enable Quality Upgrades"
+                description="If disabled, qualities will not be upgraded"
+              />
+              <FormRow v-if="upgradesEnabled" label="Upgrade Until" labelFor="cutoff-quality">
+                <select id="cutoff-quality" v-model="formData.cutoffQuality">
+                  <option value="">No Cutoff (Always Upgrade)</option>
+                  <option 
+                    v-for="quality in enabledQualities" 
+                    :key="quality.id" 
+                    :value="quality.id"
+                  >
+                    {{ quality.label }}
+                  </option>
+                </select>
+              </FormRow>
+              <small v-if="upgradesEnabled" class="info-text">
+                <PhInfo />
+                Listenarr will stop upgrading once this quality is reached
+              </small>
             </div>
           </FormSection>
 
@@ -236,13 +343,18 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, watch, computed, nextTick } from 'vue'
 import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/feedback'
 import FormSection from './FormSection.vue'
 import FormRow from '@/components/settings/FormRow.vue'
+import Checkbox from '@/components/form/Checkbox.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
-import { PhX, PhStar, PhCheck, PhPlus, PhInfo, PhCheckSquare, PhFileAudio, PhRuler, PhSparkle, PhTextAa, PhTranslate, PhClockCounterClockwise } from '@phosphor-icons/vue' 
-import type { QualityProfile } from '@/types'
+import {
+  PhX, PhStar, PhCheck, PhPlus, PhInfo, PhCheckSquare, PhRuler, PhPencilSimple,
+  PhSparkle, PhTextAa, PhTranslate, PhClockCounterClockwise, PhDotsSixVertical, PhMusicNotesSimple 
+} from '@phosphor-icons/vue' 
+import type { QualityProfile, CodecDefinition, QualityItem, QualityDefinition } from '@/types'
+import { useToast } from '@/services/toastService'
 
 const props = defineProps<{
   visible: boolean
@@ -254,14 +366,236 @@ const emit = defineEmits<{
   save: [profile: QualityProfile]
 }>()
 
-// Available quality options
-const availableQualities = [
-  'Unknown',
-  'Low (64 kbps)',
-  'Medium (128 kbps)',
-  'High (192-256 kbps)',
-  'Lossless (FLAC)',
+const toast = useToast()
+
+/**
+ * Available codec definitions with bitrate options
+ */
+const availableCodecs: CodecDefinition[] = [
+  { codec: 'FLAC', label: 'FLAC', isLossless: true },
+  { codec: 'MP3', label: 'MP3', isLossless: false, bitrates: [320, 256, 192, 128, 64], supportsVBR: true },
+  { codec: 'AAC', label: 'AAC', isLossless: false, bitrates: [320, 256, 192, 128, 96, 64] },
+  { codec: 'OPUS', label: 'OPUS', isLossless: false, bitrates: [192, 128, 96, 64] },
+  { codec: 'OGG Vorbis', label: 'OGG Vorbis', isLossless: false, bitrates: [320, 256, 192, 128] },
 ]
+
+// Quality items for drag-and-drop
+const qualityItems = ref<QualityItem[]>([])
+
+// Track which codecs are enabled
+const enabledCodecs = ref<Set<string>>(new Set())
+
+// Track upgrades enabled
+const upgradesEnabled = ref(true)
+
+// Drag state
+const draggedQuality = ref<QualityItem | null>(null)
+
+// Custom group names
+const customGroupNames = ref<Map<string, string>>(new Map())
+const editingGroupName = ref<string | null>(null)
+const tempGroupName = ref('')
+
+const showPreferM4b = computed(() => enabledCodecs.value.has('AAC'))
+
+/**
+ * Check if a codec is enabled
+ */
+const isCodecEnabled = (codec: string): boolean => {
+  return enabledCodecs.value.has(codec)
+}
+
+/**
+ * Toggle a codec on/off
+ */
+const toggleCodec = (codec: string, enabled: boolean) => {
+  if (enabled) {
+    enabledCodecs.value.add(codec)
+    // Add qualities for this codec
+    addQualitiesForCodec(codec)
+  } else {
+    enabledCodecs.value.delete(codec)
+    // Remove qualities for this codec
+    qualityItems.value = qualityItems.value.filter(q => q.codec !== codec)
+    if (codec === 'AAC') {
+      preferM4b.value = false
+    }
+  }
+}
+
+/**
+ * Add quality items for a newly enabled codec
+ */
+const addQualitiesForCodec = (codecName: string) => {
+  const codec = availableCodecs.find(c => c.codec === codecName)
+  if (!codec) return
+
+  const maxPriority = qualityItems.value.length > 0 
+    ? Math.max(...qualityItems.value.map(q => q.priority))
+    : -1
+
+  if (codec.isLossless) {
+    // Add single lossless quality
+    qualityItems.value.push({
+      id: codec.codec,
+      codec: codec.codec,
+      label: codec.label,
+      isLossless: true,
+      enabled: true,
+      priority: maxPriority + 1
+    })
+  } else {
+    // Add bitrate variants
+    codec.bitrates?.forEach((bitrate, index) => {
+      qualityItems.value.push({
+        id: `${codec.codec} ${bitrate}kbps`,
+        codec: codec.codec,
+        bitrate,
+        label: `${codec.label} ${bitrate} kbps`,
+        isLossless: false,
+        enabled: true,
+        priority: maxPriority + 1 + index
+      })
+    })
+
+    // Add VBR if supported
+    if (codec.supportsVBR) {
+      qualityItems.value.push({
+        id: `${codec.codec} VBR`,
+        codec: codec.codec,
+        label: `${codec.label} Variable Bitrate`,
+        isLossless: false,
+        enabled: true,
+        priority: maxPriority + 1 + (codec.bitrates?.length || 0)
+      })
+    }
+  }
+
+  // Sort by priority
+  qualityItems.value.sort((a, b) => a.priority - b.priority)
+}
+
+/**
+ * Start editing a group name
+ */
+const startEditingGroupName = (codec: string, currentName: string) => {
+  editingGroupName.value = codec
+  tempGroupName.value = currentName
+  // Focus input on next tick
+  nextTick(() => {
+    const input = document.querySelector('.group-name-input') as HTMLInputElement
+    if (input) {
+      input.focus()
+      input.select()
+    }
+  })
+}
+
+/**
+ * Save edited group name
+ */
+const saveGroupName = (codec: string) => {
+  if (tempGroupName.value.trim()) {
+    customGroupNames.value.set(codec, tempGroupName.value.trim())
+  } else {
+    customGroupNames.value.delete(codec)
+  }
+  editingGroupName.value = null
+  tempGroupName.value = ''
+}
+
+/**
+ * Toggle individual quality item
+ */
+const toggleQualityItem = (qualityId: string, enabled: boolean) => {
+  const quality = qualityItems.value.find(q => q.id === qualityId)
+  if (quality) {
+    quality.enabled = enabled
+  }
+}
+
+/**
+ * Get lossless qualities
+ */
+const losslessQualities = computed(() => {
+  return qualityItems.value
+    .filter(q => q.isLossless && enabledCodecs.value.has(q.codec))
+    .sort((a, b) => a.priority - b.priority)
+})
+
+/**
+ * Get lossy codec groups
+ */
+const lossyCodecGroups = computed(() => {
+  const groups = new Map<string, { codec: string; label: string; qualities: QualityItem[] }>()
+  
+  qualityItems.value
+    .filter(q => !q.isLossless && enabledCodecs.value.has(q.codec) && (q.codec !== 'M4B' || enabledCodecs.value.has('AAC')))
+    .forEach(quality => {
+      if (!groups.has(quality.codec)) {
+        const codec = availableCodecs.find(c => c.codec === quality.codec)
+        groups.set(quality.codec, {
+          codec: quality.codec,
+          label: codec?.label || quality.codec,
+          qualities: []
+        })
+      }
+      groups.get(quality.codec)!.qualities.push(quality)
+    })
+  
+  // Sort qualities within each group by priority
+  groups.forEach(group => {
+    group.qualities.sort((a, b) => a.priority - b.priority)
+  })
+  
+  return Array.from(groups.values())
+})
+
+/**
+ * Get enabled qualities for cutoff dropdown
+ */
+const enabledQualities = computed(() => {
+  return qualityItems.value
+    .filter(q => q.enabled)
+    .sort((a, b) => a.priority - b.priority)
+})
+
+/**
+ * Drag and drop handlers
+ */
+const handleDragStart = (event: DragEvent, quality: QualityItem) => {
+  draggedQuality.value = quality
+  if (event.dataTransfer) {
+    event.dataTransfer.effectAllowed = 'move'
+  }
+}
+
+const handleDrop = (event: DragEvent, targetQuality: QualityItem) => {
+  event.preventDefault()
+  
+  if (!draggedQuality.value || draggedQuality.value.id === targetQuality.id) {
+    return
+  }
+  
+  // Get current indices
+  const draggedIndex = qualityItems.value.findIndex(q => q.id === draggedQuality.value!.id)
+  const targetIndex = qualityItems.value.findIndex(q => q.id === targetQuality.id)
+  
+  if (draggedIndex === -1 || targetIndex === -1) return
+  
+  // Reorder array
+  const items = [...qualityItems.value]
+  const [draggedItem] = items.splice(draggedIndex, 1)
+  items.splice(targetIndex, 0, draggedItem)
+  
+  // Reassign priorities based on new order
+  items.forEach((item, index) => {
+    item.priority = index
+  })
+  
+  qualityItems.value = items
+  draggedQuality.value = null
+}
 
 // Form data
 const formData = ref<QualityProfile>({
@@ -277,13 +611,14 @@ const formData = ref<QualityProfile>({
   mustContain: [],
   preferredLanguages: [],
   minimumSeeders: 0,
+  minimumScore: 0,
   isDefault: false,
   preferNewerReleases: false,
   maximumAge: 0,
 })
 
+const preferM4b = ref(false)
 // Tag input refs
-const newFormat = ref('')
 const newPreferredWord = ref('')
 const newMustContain = ref('')
 const newMustNotContain = ref('')
@@ -294,7 +629,41 @@ watch(
   () => props.profile,
   (newProfile) => {
     if (newProfile) {
-      formData.value = JSON.parse(JSON.stringify(newProfile))
+      // Assign properties directly to maintain reactivity
+      formData.value.id = newProfile.id // CRITICAL: Preserve ID for update operations
+      formData.value.name = newProfile.name
+      formData.value.description = newProfile.description
+      formData.value.cutoffQuality = newProfile.cutoffQuality || ''
+      formData.value.minimumSize = newProfile.minimumSize
+      formData.value.maximumSize = newProfile.maximumSize
+      formData.value.preferredFormats = newProfile.preferredFormats ? [...newProfile.preferredFormats] : []
+      formData.value.preferredWords = newProfile.preferredWords ? [...newProfile.preferredWords] : []
+      formData.value.mustNotContain = newProfile.mustNotContain ? [...newProfile.mustNotContain] : []
+      formData.value.mustContain = newProfile.mustContain ? [...newProfile.mustContain] : []
+      formData.value.preferredLanguages = newProfile.preferredLanguages ? [...newProfile.preferredLanguages] : []
+      formData.value.minimumSeeders = newProfile.minimumSeeders
+      formData.value.minimumScore = newProfile.minimumScore || 0
+      formData.value.isDefault = newProfile.isDefault
+      formData.value.preferNewerReleases = newProfile.preferNewerReleases
+      formData.value.maximumAge = newProfile.maximumAge
+
+      preferM4b.value = (formData.value.preferredFormats || []).some(
+        (format) => (format || '').toLowerCase().trim() === 'm4b',
+      )
+
+      // Load custom group names if present
+      customGroupNames.value.clear()
+      if (newProfile.customGroupNames) {
+        Object.entries(newProfile.customGroupNames).forEach(([codec, name]) => {
+          customGroupNames.value.set(codec, name as string)
+        })
+      }
+      
+      // Initialize quality items from saved qualities
+      initializeQualitiesFromProfile(newProfile)
+      
+      // Check if upgrades are disabled
+      upgradesEnabled.value = !!newProfile.cutoffQuality
     } else {
       // Reset to defaults
       formData.value = {
@@ -310,75 +679,162 @@ watch(
         mustContain: [],
         preferredLanguages: [],
         minimumSeeders: 0,
+        minimumScore: 0,
         isDefault: false,
         preferNewerReleases: false,
         maximumAge: 0,
       }
+
+      preferM4b.value = false
+      customGroupNames.value.clear()
+      
+      // Reset quality items
+      qualityItems.value = []
+      enabledCodecs.value = new Set()
+      upgradesEnabled.value = true
     }
   },
   { immediate: true },
 )
 
-// Quality management
-const isQualityAllowed = (quality: string): boolean => {
-  return formData.value.qualities.some((q) => q.quality === quality && q.allowed)
-}
-
-const getQualityPriority = (quality: string): number => {
-  const qual = formData.value.qualities.find((q) => q.quality === quality)
-  return qual?.priority ?? 0
-}
-
-const toggleQuality = (quality: string, allowed: boolean) => {
-  if (!formData.value.qualities) {
-    formData.value.qualities = []
+/**
+ * Initialize quality items from profile
+ */
+const initializeQualitiesFromProfile = (profile: QualityProfile) => {
+  // Clear existing
+  qualityItems.value = []
+  enabledCodecs.value = new Set()
+  
+  if (!profile.qualities || profile.qualities.length === 0) {
+    return
   }
-
-  const existingIndex = formData.value.qualities.findIndex((q) => q.quality === quality)
-
-  if (existingIndex !== -1) {
-    const qualityDef = formData.value.qualities[existingIndex]
-    if (qualityDef) {
-      qualityDef.allowed = allowed
+  
+  // Build quality items from profile
+  profile.qualities.forEach((qualityDef) => {
+    const typedQualityDef = qualityDef as QualityDefinition & {
+      codec?: string
+      bitrate?: number
+      isLossless?: boolean
     }
-  } else {
-    formData.value.qualities.push({
-      quality,
-      allowed,
-      priority: 50,
+
+    const parsed = parseQualityString(qualityDef.quality)
+    const codec = typedQualityDef.codec || parsed?.codec
+    const bitrate = typedQualityDef.bitrate ?? parsed?.bitrate
+    const isLossless = typedQualityDef.isLossless ?? parsed?.isLossless
+
+    if (!codec || isLossless === undefined) return
+
+    const label =
+      parsed?.label ||
+      (bitrate ? `${codec} ${bitrate} kbps` : codec)
+
+    const id = qualityDef.quality || (bitrate ? `${codec} ${bitrate}kbps` : codec)
+
+    // Track enabled codec
+    if (qualityDef.allowed) {
+      enabledCodecs.value.add(codec)
+    }
+
+    // Add to quality items
+    qualityItems.value.push({
+      id,
+      codec,
+      bitrate,
+      label,
+      isLossless,
+      enabled: qualityDef.allowed,
+      priority: qualityDef.priority,
     })
-  }
-
-  // Clear cutoff if quality is disabled
-  if (!allowed && formData.value.cutoffQuality === quality) {
-    formData.value.cutoffQuality = ''
-  }
+  })
+  
+  // Sort by priority
+  qualityItems.value.sort((a, b) => a.priority - b.priority)
 }
 
-const updateQualityPriority = (quality: string, event: Event) => {
-  const target = event.target as HTMLInputElement
-  const priority = parseInt(target.value)
-
-  const qual = formData.value.qualities.find((q) => q.quality === quality)
-  if (qual) {
-    qual.priority = priority
+/**
+ * Parse a quality string into structured data
+ */
+const parseQualityString = (qualityStr: string): QualityItem | null => {
+  // FLAC
+  if (qualityStr === 'FLAC') {
+    return { id: 'FLAC', codec: 'FLAC', label: 'FLAC', isLossless: true, enabled: false, priority: 0 }
   }
+  
+  // MP3 with bitrate
+  const mp3Match = qualityStr.match(/MP3\s+(\d+)\s?kbps/i)
+  if (mp3Match) {
+    const bitrate = parseInt(mp3Match[1])
+    return { id: qualityStr, codec: 'MP3', bitrate, label: `MP3 ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // MP3 VBR
+  if (qualityStr === 'MP3 VBR') {
+    return { id: 'MP3 VBR', codec: 'MP3', label: 'MP3 Variable Bitrate', isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // AAC with bitrate
+  const aacMatch = qualityStr.match(/AAC\s+(\d+)\s?kbps/i)
+  if (aacMatch) {
+    const bitrate = parseInt(aacMatch[1])
+    return { id: qualityStr, codec: 'AAC', bitrate, label: `AAC ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // AAC without bitrate
+  if (qualityStr === 'AAC') {
+    return { id: 'AAC', codec: 'AAC', label: 'AAC', isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // M4B with bitrate
+  const m4bMatch = qualityStr.match(/M4B\s+(\d+)\s?kbps/i)
+  if (m4bMatch) {
+    const bitrate = parseInt(m4bMatch[1])
+    return { id: qualityStr, codec: 'M4B', bitrate, label: `M4B ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // M4B without bitrate
+  if (qualityStr === 'M4B') {
+    return { id: 'M4B', codec: 'M4B', label: 'M4B (AAC)', isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // OPUS with bitrate
+  const opusMatch = qualityStr.match(/OPUS\s+(\d+)\s?kbps/i)
+  if (opusMatch) {
+    const bitrate = parseInt(opusMatch[1])
+    return { id: qualityStr, codec: 'OPUS', bitrate, label: `OPUS ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // OPUS without bitrate
+  if (qualityStr === 'OPUS') {
+    return { id: 'OPUS', codec: 'OPUS', label: 'OPUS', isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // OGG Vorbis with bitrate
+  const oggMatch = qualityStr.match(/OGG Vorbis\s+(\d+)\s?kbps/i)
+  if (oggMatch) {
+    const bitrate = parseInt(oggMatch[1])
+    return { id: qualityStr, codec: 'OGG Vorbis', bitrate, label: `OGG Vorbis ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  // OGG Vorbis without bitrate
+  if (qualityStr === 'OGG Vorbis') {
+    return { id: 'OGG Vorbis', codec: 'OGG Vorbis', label: 'OGG Vorbis', isLossless: false, enabled: false, priority: 0 }
+  }
+  
+  return null
 }
 
-// Format management
-const addFormat = () => {
-  const format = newFormat.value.trim()
-  if (format && !formData.value.preferredFormats?.includes(format)) {
-    if (!formData.value.preferredFormats) {
-      formData.value.preferredFormats = []
-    }
-    formData.value.preferredFormats.push(format)
-    newFormat.value = ''
-  }
-}
-
-const removeFormat = (index: number) => {
-  formData.value.preferredFormats?.splice(index, 1)
+/**
+ * Build quality definitions array for saving
+ */
+const buildQualityDefinitions = () => {
+  return qualityItems.value.map((quality, index) => ({
+    quality: quality.id,
+    allowed: quality.enabled,
+    priority: index, // Use array index as priority after drag-drop reordering
+    codec: quality.codec,
+    bitrate: quality.bitrate,
+    isLossless: quality.isLossless
+  }))
 }
 
 // Preferred words management
@@ -455,29 +911,39 @@ import { useToast } from '@/services/toastService'
 const saving = ref(false)
 
 const handleSubmit = () => {
-  const toast = useToast()
   saving.value = true
 
+  // Build quality definitions from current quality items
+  formData.value.qualities = buildQualityDefinitions()
+
+  formData.value.preferredFormats = showPreferM4b.value && preferM4b.value ? ['m4b'] : []
+
+  // Save custom group names
+  formData.value.customGroupNames = Object.fromEntries(customGroupNames.value)
+
   // Validate at least one quality is selected
-  if (!formData.value.qualities.some((q) => q.allowed)) {
+  if (!qualityItems.value.some(q => q.enabled)) {
     toast.error('Validation', 'Please select at least one quality')
     saving.value = false
     return
   }
 
-  // Validate cutoff quality is selected and allowed
-  if (!formData.value.cutoffQuality) {
-    toast.error('Validation', 'Please select a cutoff quality')
-    saving.value = false
-    return
-  }
+  // Validate cutoff quality if upgrades are enabled
+  if (upgradesEnabled.value) {
+    if (!formData.value.cutoffQuality) {
+      toast.error('Validation', 'Please select an upgrade cutoff quality')
+      saving.value = false
+      return
+    }
 
-  if (
-    !formData.value.qualities.some((q) => q.quality === formData.value.cutoffQuality && q.allowed)
-  ) {
-    toast.error('Validation', 'Cutoff quality must be one of the allowed qualities')
-    saving.value = false
-    return
+    if (!qualityItems.value.some(q => q.id === formData.value.cutoffQuality && q.enabled)) {
+      toast.error('Validation', 'Cutoff quality must be one of the enabled qualities')
+      saving.value = false
+      return
+    }
+  } else {
+    // Clear cutoff if upgrades disabled
+    formData.value.cutoffQuality = ''
   }
 
   emit('save', formData.value)
@@ -661,28 +1127,262 @@ const handleSubmit = () => {
   color: var(--brand-500);
 }
 
-/* Quality List */
-.quality-list {
+.info-text-small {
+  font-size: 0.85rem;
+  color: #999;
+  margin: 0.5rem 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+/* Subsection Titles */
+.subsection-title {
+  margin: 1.5rem 0 1rem 0;
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+/* Codec Selection */
+.codec-selection {
+  margin-bottom: 2rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid #333;
+}
+
+.codec-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 0.75rem;
+  margin-top: 1rem;
+}
+
+.codec-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background-color: #1a1a1a;
+  border: 2px solid #444;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.codec-checkbox:hover {
+  border-color: var(--brand-500);
+  background-color: #222;
+}
+
+.codec-checkbox input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: var(--brand-500);
+}
+
+.codec-label {
+  flex: 1;
+  color: #fff;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.lossless-badge {
+  font-size: 0.75rem;
+  padding: 0.15rem 0.5rem;
+  background-color: rgba(52, 211, 153, 0.2);
+  color: #34d399;
+  border-radius: 4px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+/* Quality Groups Container */
+.quality-groups-container {
+  margin-bottom: 2rem;
+  padding-bottom: 2rem;
+  border-bottom: 1px solid #333;
+}
+
+.quality-groups {
   display: flex;
   flex-direction: column;
+  gap: 1.5rem;
+  margin-top: 1rem;
+}
+
+.quality-group {
+  background-color: #1a1a1a;
+  border: 1px solid #444;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.quality-group-header {
+  display: flex;
+  align-items: center;
   gap: 0.75rem;
-  margin-bottom: 1rem;
+  padding: 0.75rem 1rem;
+  background-color: #252525;
+  border-bottom: 1px solid #333;
+}
+
+.group-icon {
+  width: 20px;
+  height: 20px;
+  color: var(--brand-500);
+}
+
+.group-title {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.group-name-input {
+  flex: 1;
+  font-size: 0.95rem;
+  font-weight: 600;
+  padding: 0.25rem 0.5rem;
+  background-color: #1a1a1a;
+  border: 1px solid var(--brand-500);
+  border-radius: 4px;
+  color: #fff;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.group-name-input:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 2px rgba(33, 150, 243, 0.2);
+}
+
+.edit-group-btn {
+  background: none;
+  border: none;
+  color: #666;
+  cursor: pointer;
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+  margin-left: 0.5rem;
+}
+
+.edit-group-btn:hover {
+  color: var(--brand-500);
+}
+
+.edit-group-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.quality-items {
+  display: flex;
+  flex-direction: column;
 }
 
 .quality-item {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid #2a2a2a;
+  cursor: move;
+  transition: all 0.2s;
+  background-color: #1a1a1a;
+}
+
+.quality-item:last-child {
+  border-bottom: none;
+}
+
+.quality-item:hover {
+  background-color: #222;
+}
+
+.quality-item:active {
+  cursor: grabbing;
+}
+
+.drag-handle {
+  width: 20px;
+  height: 20px;
+  color: #666;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.drag-handle:hover {
+  color: var(--brand-500);
+}
+
+.quality-label {
+  flex: 1;
+  color: #fff;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.bitrate-badge {
+  font-size: 0.8rem;
+  padding: 0.15rem 0.4rem;
+  background-color: rgba(59, 130, 246, 0.2);
+  color: #3b82f6;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+/* Cutoff Selection */
+.cutoff-selection {
+  margin-top: 1rem;
+}
+
+.cutoff-selection select {
+  width: 100%;
   padding: 0.75rem;
   background-color: #1a1a1a;
   border: 1px solid #444;
   border-radius: 6px;
+  color: #fff;
+  font-size: 0.95rem;
+  cursor: pointer;
 }
 
-.quality-name {
-  flex: 1;
-  color: #fff;
-  font-weight: 500;
+.cutoff-selection select:focus {
+  outline: none;
+  border-color: var(--brand-500);
+}
+
+/* OLD QUALITY STYLES (FOR REFERENCE - REMOVE ONCE VERIFIED) */
+.quality-list-OLD {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  margin-bottom: 1rem;
+}
+
+.quality-group-title-OLD {
+  margin: 0;
+  color: #999;
+  font-size: 0.85rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 0 0.75rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid #333;
 }
 
 .quality-controls {
@@ -715,10 +1415,29 @@ const handleSubmit = () => {
   color: #ddd;
   font-size: 0.9rem;
   cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.radio-label:hover {
+  background-color: rgba(255, 152, 0, 0.1);
+}
+
+.radio-label:has(input[type='radio']:checked) {
+  background-color: rgba(255, 152, 0, 0.2);
+  border: 1px solid #ff9800;
 }
 
 .radio-label input[type='radio'] {
   cursor: pointer;
+  width: 18px;
+  height: 18px;
+  accent-color: #ff9800;
+}
+
+.radio-label input[type='radio']:checked {
+  accent-color: #ff9800;
 }
 
 .cutoff-text {

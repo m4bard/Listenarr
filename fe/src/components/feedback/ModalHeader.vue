@@ -2,7 +2,7 @@
   <div class="modal-title-wrap">
     <div class="modal-title">
       <h3 :id="headingId">
-        <span class="modal-icon" :aria-hidden="!iconLabel">
+        <span v-if="$slots.icon || icon" class="modal-icon" :aria-hidden="!iconLabel">
           <slot name="icon" v-if="$slots.icon" />
           <component v-else-if="icon" :is="icon" />
         </span>

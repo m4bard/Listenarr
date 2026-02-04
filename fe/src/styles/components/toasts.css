@@ -39,7 +39,9 @@
 /* Strong, visible variants using semantic variables (falls back to hard-coded colors) */
 .global-toast .toast-info { background-color: var(--toast-info-bg, #1976d2) !important; border-left: 4px solid var(--toast-info-accent, #125ea8) !important; color: var(--toast-info-color, #ffffff) !important; box-shadow: 0 10px 30px rgba(25,118,210,0.12); }
 .global-toast .toast-success { background-color: var(--toast-success-bg, #28a745) !important; border-left: 4px solid var(--toast-success-accent, #1e7e34) !important; color: var(--toast-success-color, #ffffff) !important; box-shadow: 0 10px 30px rgba(40,167,69,0.15); }
-.global-toast .toast-warning { background-color: var(--toast-warning-bg, #f1c40f) !important; border-left: 4px solid var(--toast-warning-accent, #c89c00) !important; color: var(--toast-warning-color, #312700) !important; }
+.global-toast .toast-warning { background-color: var(--toast-warning-bg, #856404) !important; border-left: 4px solid var(--toast-warning-accent, #6d5103) !important; color: var(--toast-warning-color, #ffffff) !important; box-shadow: 0 10px 30px rgba(133,100,4,0.28); }
+.global-toast .toast-warning .toast-message { color: rgba(255,255,255,0.95); }
+.global-toast .toast-warning .toast-close { color: rgba(255,255,255,0.85); }
 .global-toast .toast-error { background-color: var(--toast-error-bg, #e74c3c) !important; border-left: 4px solid var(--toast-error-accent, #c0392b) !important; color: var(--toast-error-color, #fff1f0) !important; }
 
 /* simple transition */

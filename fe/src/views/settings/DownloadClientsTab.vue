@@ -23,9 +23,34 @@
           <div class="indexer-header">
             <div class="indexer-info">
               <h4>{{ client.name }}</h4>
-              <span class="indexer-type" :class="getClientTypeClass(client.type)">
-                {{ client.type }}
-              </span>
+              <img 
+                v-if="client.type === 'qbittorrent'"
+                src="@/assets/icons/clients/qbittorrent.svg" 
+                alt="qBittorrent" 
+                class="client-type-icon" 
+                title="qBittorrent"
+              />
+              <img 
+                v-else-if="client.type === 'transmission'"
+                src="@/assets/icons/clients/transmission.svg" 
+                alt="Transmission" 
+                class="client-type-icon" 
+                title="Transmission"
+              />
+              <img 
+                v-else-if="client.type === 'sabnzbd'"
+                src="@/assets/icons/clients/sabnzbd.svg" 
+                alt="SABnzbd" 
+                class="client-type-icon" 
+                title="SABnzbd"
+              />
+              <img 
+                v-else-if="client.type === 'nzbget'"
+                src="@/assets/icons/clients/nzbget.svg" 
+                alt="NZBGet" 
+                class="client-type-icon" 
+                title="NZBGet"
+              />
             </div>
             <div class="indexer-actions">
               <button
@@ -40,9 +65,6 @@
                 <template v-else>
                   <PhToggleLeft />
                 </template>
-              </button>
-              <button @click="editClientConfig(client)" class="icon-button action-edit" title="Edit">
-                <PhPencil />
               </button>
               <button
                 @click="testClient(client)"
@@ -71,6 +93,9 @@
                 </template>                <template v-else>
                   <PhCheckCircle />
                 </template>
+              </button>
+              <button @click="editClientConfig(client)" class="icon-button action-edit" title="Edit">
+                <PhPencil />
               </button>
               <button
                 @click="confirmDeleteClient(client)"
@@ -638,11 +663,24 @@ defineExpose({
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
+.indexer-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  min-width: 0;
+}
+
 .indexer-info h4 {
-  margin: 0 0 0.5rem 0;
+  margin: 0;
   font-size: 1.1rem;
   color: #fff;
   font-weight: 500;
+}
+
+.client-type-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
 }
 
 .indexer-type {

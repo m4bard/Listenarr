@@ -114,7 +114,7 @@ Log.Logger = new Serilog.LoggerConfiguration()
     .WriteTo.File(
         logFilePath,
         rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 30,
+        retainedFileCountLimit: 5,
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.Sink(signalRSink)
     .CreateLogger();

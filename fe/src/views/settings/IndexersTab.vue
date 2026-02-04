@@ -20,7 +20,21 @@
           <div class="indexer-header">
             <div class="indexer-info">
               <h4>{{ indexer.name }}</h4>
-              <span class="indexer-type" :class="indexer.type.toLowerCase()">
+              <img
+                v-if="indexer.type === 'Torrent'"
+                src="@/assets/icons/indexers/torrent.svg"
+                alt="Torrent"
+                class="indexer-type-icon"
+                title="Torrent"
+              />
+              <img
+                v-else-if="indexer.type === 'Usenet'"
+                src="@/assets/icons/indexers/usenet.svg"
+                alt="Usenet"
+                class="indexer-type-icon"
+                title="Usenet"
+              />
+              <span v-else class="indexer-type" :class="indexer.type.toLowerCase()">
                 {{ indexer.implementation === 'InternetArchive' ? 'DDL' : indexer.type }}
               </span>
             </div>
@@ -492,6 +506,12 @@ defineExpose({ openAddIndexer })
   text-transform: uppercase;
 }
 
+.indexer-type-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
 .indexer-type.torrent {
   background: #10b981;
   color: white;
@@ -640,7 +660,7 @@ defineExpose({ openAddIndexer })
 
 .empty-state .empty-icon {
   font-size: 4rem;
-  color: #495057;
+  color: #868e96;
   margin-bottom: 1rem;
   width: 4rem;
   height: 4rem;

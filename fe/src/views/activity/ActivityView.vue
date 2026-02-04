@@ -1022,7 +1022,7 @@ onUnmounted(() => {
 .empty-icon {
   font-size: 4rem;
   margin-bottom: 1.5rem;
-  color: #495057;
+  color: #868e96;
 }
 
 .empty-icon svg {

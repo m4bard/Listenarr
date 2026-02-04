@@ -161,6 +161,8 @@ public class AsinSearchHandler
         {
             await _searchProgressReporter.BroadcastAsync($"Found audiobook: {metadata.Title}", null);
             var result = await _metadataConverters.ConvertMetadataToSearchResultAsync(metadata, asin, null, null, null);
+            _logger.LogInformation("Converted metadata to SearchResult: Title={Title}, Series={Series}, SeriesNumber={SeriesNumber}", 
+                result.Title, result.Series, result.SeriesNumber);
             result.IsEnriched = true;
             result.MetadataSource = metadataSourceName;
 

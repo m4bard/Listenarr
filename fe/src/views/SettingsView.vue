@@ -1572,7 +1572,7 @@ onMounted(async () => {
 
 .empty-state .empty-icon {
   font-size: 4rem;
-  color: #495057;
+  color: #868e96;
   margin-bottom: 1rem;
   width: 4rem;
   height: 4rem;

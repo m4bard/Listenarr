@@ -605,7 +605,6 @@ const handleDelete = () => {
 
 .form-group label {
   display: block;
-  margin-bottom: 0.5rem;
   color: #fff;
   font-weight: 500;
   font-size: 0.95rem;

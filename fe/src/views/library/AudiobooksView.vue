@@ -2886,7 +2886,7 @@ defineExpose({
 .empty-icon,
 .error-icon {
   font-size: 4rem;
-  color: #555;
+  color: #868e96;
   margin-bottom: 1rem;
 }
 

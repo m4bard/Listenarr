@@ -32,6 +32,7 @@ export interface MetadataSearchResult extends BaseSearchResult {
   narrator?: string
   imageUrl?: string
   asin?: string
+  isbn?: string
   series?: string
   seriesNumber?: string
   seriesList?: string[]
@@ -243,9 +244,6 @@ export interface ApplicationSettings {
   adminUsername?: string
   adminPassword?: string
 
-  // External requests / proxy settings
-  preferUsDomain?: boolean
-
   // Notification settings
   webhookUrl?: string
   enabledNotificationTriggers?: string[]
@@ -313,7 +311,6 @@ export interface AudibleBookMetadata {
   title: string
   subtitle?: string
   authors: string[]
-  publishYear?: string
   publishedDate?: string
   series?: string
   seriesNumber?: string
@@ -345,7 +342,7 @@ export interface Audiobook {
   title: string
   subtitle?: string
   authors?: string[]
-  publishYear?: string
+  publishedDate?: string
   series?: string
   seriesNumber?: string
   description?: string
@@ -523,6 +520,7 @@ export interface QualityProfile {
   isDefault?: boolean
   preferNewerReleases?: boolean
   maximumAge?: number // days (0 = no limit)
+  customGroupNames?: Record<string, string> // Custom names for quality groups by codec
   createdAt?: string
   updatedAt?: string
 }
@@ -531,6 +529,55 @@ export interface QualityDefinition {
   quality: string // e.g., "320kbps", "192kbps", "lossless"
   allowed: boolean
   priority: number // Lower = higher priority
+  codec?: string
+  bitrate?: number
+  isLossless?: boolean
+}
+
+/**
+ * Extended quality information for better organization
+ * Maps the string identifiers to structured codec/bitrate data
+ */
+export interface QualityInfo {
+  id: string // Unique identifier matching QualityDefinition.quality
+  label: string // Display label (e.g., "MP3 320 kbps")
+  codec: string // Codec type (MP3, AAC, M4B, OPUS, OGG Vorbis, FLAC)
+  bitrate?: number // Bitrate in kbps (optional for lossless)
+  isLossless: boolean // Whether codec is lossless
+  category: 'lossy' | 'lossless' | 'unknown' // Category for grouping
+}
+
+/**
+ * Quality group for organizing qualities by category
+ */
+export interface QualityGroup {
+  category: 'lossy' | 'lossless' | 'unknown'
+  label: string
+  qualities: QualityInfo[]
+}
+
+/**
+ * Codec definition - represents a codec family (MP3, AAC, FLAC, etc.)
+ */
+export interface CodecDefinition {
+  codec: string // Codec identifier (MP3, AAC, FLAC, etc.)
+  label: string // Display label
+  isLossless: boolean
+  bitrates?: number[] // Available bitrates for lossy codecs
+  supportsVBR?: boolean // Whether codec supports variable bitrate
+}
+
+/**
+ * Quality item for the drag-and-drop UI
+ */
+export interface QualityItem {
+  id: string // Full quality ID (e.g., "MP3 320kbps")
+  codec: string // Codec name
+  bitrate?: number // Bitrate in kbps
+  label: string // Display label
+  isLossless: boolean
+  enabled: boolean // Whether quality is selected
+  priority: number // Position in list (lower = higher priority)
 }
 
 export interface QualityScore {

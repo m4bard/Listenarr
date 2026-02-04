@@ -670,7 +670,7 @@ onMounted(() => {
 
 .empty-message i {
   font-size: 1.2rem;
-  color: #666;
+  color: #868e96;
 }
 
 /* Storage Bar styling is now in ProgressBar.vue component */

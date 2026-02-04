@@ -416,7 +416,7 @@ const testConnection = async () => {
     const payload = buildIndexerPayload()
     // If API key is empty and editing an existing indexer, include the ID so server merges the saved API key
     if (!payload.apiKey && props.editingIndexer?.id) {
-      payload.id = props.editingIndexer.id
+      (payload as unknown as { id?: number }).id = props.editingIndexer.id
     }
     const result = await apiTestIndexerDraft(payload)
     if (result.success) {
