@@ -120,28 +120,10 @@ namespace Listenarr.Api.Services
 
                 var metadataForNaming = namingMetadata ?? metadata;
 
-                // Base path and filename pattern selection
-                string basePathForFile = settings.OutputPath; // default
-                string filenamePattern = settings.FileNamingPattern;
-                if (audiobookId != null && namingMetadata != null)
-                {
-                    try
-                    {
-                        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-                        var ab = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
-                        if (ab != null && !string.IsNullOrWhiteSpace(ab.BasePath))
-                        {
-                            basePathForFile = ab.BasePath; // will be combined with filename-only pattern
-                            _logger.LogDebug("ImportSingleFile: using audiobook base path for download {DownloadId}: {BasePath}", downloadId, basePathForFile);
-                            // For audiobook base path we keep the filename-only pattern
-                            filenamePattern = "{Title}";
-                        }
-                    }
-                    catch { /* ignore */ }
-                }
-
-                if (string.IsNullOrWhiteSpace(basePathForFile)) basePathForFile = "./completed";
-                if (string.IsNullOrWhiteSpace(filenamePattern)) filenamePattern = "{Author}/{Series}/{Title}";
+                // Folder/file naming patterns
+                var folderPattern = settings.FolderNamingPattern;
+                var isMultiFile = metadataForNaming.DiscNumber.HasValue || metadataForNaming.TrackNumber.HasValue;
+                var filePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
 
                 // build variables
                 var variables = new Dictionary<string, object>
@@ -155,6 +137,54 @@ namespace Listenarr.Api.Services
                     { "DiskNumber", metadataForNaming.DiscNumber?.ToString() ?? string.Empty },
                     { "ChapterNumber", metadataForNaming.TrackNumber?.ToString() ?? string.Empty }
                 };
+
+                string basePathForFile = settings.OutputPath; // default
+                string filenamePattern = filePattern;
+
+                if (audiobookId != null && namingMetadata != null)
+                {
+                    try
+                    {
+                        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+                        var ab = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
+                        if (ab != null && !string.IsNullOrWhiteSpace(ab.BasePath))
+                        {
+                            basePathForFile = ab.BasePath; // custom/base path
+                            _logger.LogDebug("ImportSingleFile: using audiobook base path for download {DownloadId}: {BasePath}", downloadId, basePathForFile);
+                            // For audiobook base path, default to filename-only unless the user explicitly configures a file pattern
+                            filenamePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
+                        }
+                        else if (!string.IsNullOrWhiteSpace(folderPattern))
+                        {
+                            var folderRelative = _fileNamingService.ApplyNamingPattern(folderPattern, variables, treatAsFilename: false);
+                            if (!string.IsNullOrWhiteSpace(folderRelative))
+                            {
+                                basePathForFile = Path.Combine(basePathForFile ?? string.Empty, folderRelative);
+                            }
+                        }
+                    }
+                    catch { /* ignore */ }
+                }
+                else if (!string.IsNullOrWhiteSpace(folderPattern))
+                {
+                    var folderRelative = _fileNamingService.ApplyNamingPattern(folderPattern, variables, treatAsFilename: false);
+                    if (!string.IsNullOrWhiteSpace(folderRelative))
+                    {
+                        basePathForFile = Path.Combine(basePathForFile ?? string.Empty, folderRelative);
+                    }
+                }
+
+                if (string.IsNullOrWhiteSpace(basePathForFile)) basePathForFile = "./completed";
+
+                if (string.IsNullOrWhiteSpace(folderPattern) && string.IsNullOrWhiteSpace(filenamePattern))
+                {
+                    // Legacy fallback
+                    filenamePattern = "{Author}/{Series}/{Title}";
+                }
+                else if (string.IsNullOrWhiteSpace(filenamePattern))
+                {
+                    filenamePattern = "{Title}";
+                }
 
                 var patternAllowsSubfolders = filenamePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
                     || filenamePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
@@ -252,6 +282,8 @@ namespace Listenarr.Api.Services
         public async Task<List<ImportResult>> ImportFilesFromDirectoryAsync(string downloadId, int? audiobookId, IEnumerable<string> files, ApplicationSettings settings, CancellationToken ct = default)
         {
             var results = new List<ImportResult>();
+            var folderPattern = settings.FolderNamingPattern;
+            var filePattern = settings.FileNamingPattern;
 
             try
             {
@@ -357,6 +389,46 @@ namespace Listenarr.Api.Services
                         }
                         if (string.IsNullOrWhiteSpace(destDirForFile)) destDirForFile = settings.OutputPath ?? "./completed";
 
+                        // Build naming metadata: prefer audiobook metadata when available, otherwise use extracted candidate metadata
+                        var namingMetadata = new AudioMetadata();
+                        if (abForNaming != null)
+                        {
+                            namingMetadata.Title = abForNaming.Title ?? Path.GetFileNameWithoutExtension(file);
+                            namingMetadata.Artist = (abForNaming.Authors != null && abForNaming.Authors.Any()) ? string.Join(", ", abForNaming.Authors) : string.Empty;
+                            namingMetadata.AlbumArtist = namingMetadata.Artist;
+                            namingMetadata.Series = abForNaming.Series;
+                        }
+                        else if (candidateMetadata != null)
+                        {
+                            namingMetadata = candidateMetadata;
+                        }
+                        else
+                        {
+                            namingMetadata.Title = Path.GetFileNameWithoutExtension(file);
+                        }
+
+                        // Build variables for naming patterns (used for both folder and file patterns)
+                        var variablesForFile = new Dictionary<string, object>
+                        {
+                            { "Author", namingMetadata.Artist ?? "Unknown Author" },
+                            { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
+                            { "Title", namingMetadata.Title ?? Path.GetFileNameWithoutExtension(file) },
+                            { "SeriesNumber", namingMetadata.SeriesPosition?.ToString() ?? namingMetadata.TrackNumber?.ToString() ?? string.Empty },
+                            { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
+                            { "Quality", (namingMetadata.Bitrate.HasValue ? namingMetadata.Bitrate.ToString() + "kbps" : null) ?? namingMetadata.Format ?? string.Empty },
+                            { "DiskNumber", namingMetadata.DiscNumber?.ToString() ?? string.Empty },
+                            { "ChapterNumber", namingMetadata.TrackNumber?.ToString() ?? string.Empty }
+                        };
+
+                        if ((abForNaming == null || string.IsNullOrWhiteSpace(abForNaming.BasePath)) && !string.IsNullOrWhiteSpace(folderPattern))
+                        {
+                            var folderRelative = _fileNamingService.ApplyNamingPattern(folderPattern, variablesForFile, treatAsFilename: false);
+                            if (!string.IsNullOrWhiteSpace(folderRelative))
+                            {
+                                destDirForFile = Path.Combine(destDirForFile ?? string.Empty, folderRelative);
+                            }
+                        }
+
                         // Ensure destination directory exists (create if missing)
                         // For directory imports we create the destination directory when possible so multi-file releases
                         // can be imported into a new library folder. If creation fails, skip this file and record a warning.
@@ -385,41 +457,17 @@ namespace Listenarr.Api.Services
                             continue;
                         }
 
-                        // Build naming metadata: prefer audiobook metadata when available, otherwise use extracted candidate metadata
-                        var namingMetadata = new AudioMetadata();
-                        if (abForNaming != null)
-                        {
-                            namingMetadata.Title = abForNaming.Title ?? Path.GetFileNameWithoutExtension(file);
-                            namingMetadata.Artist = (abForNaming.Authors != null && abForNaming.Authors.Any()) ? string.Join(", ", abForNaming.Authors) : string.Empty;
-                            namingMetadata.AlbumArtist = namingMetadata.Artist;
-                            namingMetadata.Series = abForNaming.Series;
-                        }
-                        else if (candidateMetadata != null)
-                        {
-                            namingMetadata = candidateMetadata;
-                        }
-                        else
-                        {
-                            namingMetadata.Title = Path.GetFileNameWithoutExtension(file);
-                        }
-
-                        var filenamePattern = abForNaming != null ? "{Title}" : settings.FileNamingPattern;
-                        if (string.IsNullOrWhiteSpace(filenamePattern))
+                        var isMultiFile = namingMetadata.DiscNumber.HasValue || namingMetadata.TrackNumber.HasValue;
+                        var baseFilePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
+                        var filenamePattern = abForNaming != null
+                            ? (string.IsNullOrWhiteSpace(baseFilePattern) ? "{Title}" : baseFilePattern)
+                            : baseFilePattern;
+                        if (string.IsNullOrWhiteSpace(folderPattern) && string.IsNullOrWhiteSpace(filenamePattern))
                             filenamePattern = "{Author}/{Series}/{Title}";
+                        else if (string.IsNullOrWhiteSpace(filenamePattern))
+                            filenamePattern = "{Title}";
 
                         var ext = Path.GetExtension(file);
-
-                        var variablesForFile = new Dictionary<string, object>
-                        {
-                            { "Author", namingMetadata.Artist ?? "Unknown Author" },
-                            { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
-                            { "Title", namingMetadata.Title ?? Path.GetFileNameWithoutExtension(file) },
-                            { "SeriesNumber", namingMetadata.SeriesPosition?.ToString() ?? namingMetadata.TrackNumber?.ToString() ?? string.Empty },
-                            { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
-                            { "Quality", (namingMetadata.Bitrate.HasValue ? namingMetadata.Bitrate.ToString() + "kbps" : null) ?? namingMetadata.Format ?? string.Empty },
-                            { "DiskNumber", namingMetadata.DiscNumber?.ToString() ?? string.Empty },
-                            { "ChapterNumber", namingMetadata.TrackNumber?.ToString() ?? string.Empty }
-                        };
 
                         var patternAllowsSubfolders = filenamePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
                             || filenamePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0

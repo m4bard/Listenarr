@@ -85,7 +85,27 @@ namespace Listenarr.Domain.Models
     {
         public int Id { get; set; } = 1; // Singleton pattern - only one settings record
         public string OutputPath { get; set; } = string.Empty;
-        // Updated for audiobook-oriented naming: {Author}/{Series}/{Title}
+        // Folder naming pattern (base directory structure)
+        // Available variables:
+        // {Author} - Audiobook author/narrator
+        // {Series} - Series name (if applicable)
+        // {SeriesNumber} - Position in series (e.g., "1", "2")
+        // {Title} - Book/audiobook title
+        // {Year} - Publication year
+        public string FolderNamingPattern { get; set; } = "{Author}/{Series}/{Title}";
+
+        // File naming pattern for SINGLE-FILE imports (one audio file per audiobook)
+        // Available variables:
+        // {Author} - Audiobook author/narrator
+        // {Series} - Series name (if applicable)
+        // {SeriesNumber} - Position in series (e.g., "1", "2")
+        // {Title} - Book/audiobook title
+        // {Year} - Publication year
+        // {Quality} - Audio quality (e.g., "64kbps mp3")
+        public string FileNamingPattern { get; set; } = "{Title}";
+
+        // File naming pattern for MULTI-FILE imports (multiple audio files per audiobook)
+        // Use {DiskNumber} or {DiskNumber:00}, {ChapterNumber} or {ChapterNumber:00} to differentiate files
         // Available variables:
         // {Author} - Audiobook author/narrator
         // {Series} - Series name (if applicable)
@@ -95,7 +115,8 @@ namespace Listenarr.Domain.Models
         // {ChapterNumber} or {ChapterNumber:00} - Chapter number (00 = zero-padded)
         // {Year} - Publication year
         // {Quality} - Audio quality (e.g., "64kbps mp3")
-        public string FileNamingPattern { get; set; } = "{Author}/{Series}/{Title}";
+        public string MultiFileNamingPattern { get; set; } = "{Title}-{DiskNumber:00}";
+
         public bool EnableMetadataProcessing { get; set; } = true;
         public bool EnableCoverArtDownload { get; set; } = true;
         public string AudnexusApiUrl { get; set; } = "https://api.audnex.us";

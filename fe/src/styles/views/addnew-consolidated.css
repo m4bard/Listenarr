@@ -84,7 +84,7 @@ button:disabled {
 /* Primary button variant */
 .btn-primary {
   padding: var(--btn-padding-y) var(--btn-padding-x);
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: var(--brand-600);
   color: white;
   border-radius: var(--border-radius-md);
   font-weight: 500;
@@ -95,7 +95,7 @@ button:disabled {
 }
 
 .btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--brand-700) 0%, var(--brand-700) 100%);
+  background: var(--brand-700);
   transform: translateY(-1px);
   box-shadow: var(--shadow-md);
 }
@@ -115,7 +115,7 @@ button:disabled {
 /* Secondary button variant */
 .btn-secondary {
   padding: var(--btn-padding-y) var(--btn-padding-x);
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12) 0%, rgba(255, 255, 255, 0.08) 100%);
+  background: rgba(255, 255, 255, 0.12);
   color: #e0e0e0;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: var(--border-radius-md);
@@ -127,7 +127,7 @@ button:disabled {
 }
 
 .btn-secondary:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.16) 0%, rgba(255, 255, 255, 0.12) 100%);
+  background: rgba(255, 255, 255, 0.16);
   border-color: rgba(255, 255, 255, 0.3);
   color: white;
   transform: translateY(-1px);
@@ -169,7 +169,7 @@ button:disabled {
 /* Accent button for important actions */
 .btn-accent {
   padding: var(--btn-padding-y) var(--btn-padding-x);
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   border: none;
   border-radius: var(--border-radius-md);
@@ -203,7 +203,7 @@ button:disabled {
 /* Success button variant */
 .btn-success {
   padding: var(--btn-padding-y) var(--btn-padding-x);
-  background: linear-gradient(135deg, #43a047 0%, #2e7d32 100%);
+  background: #43a047;
   color: white;
   border: none;
   border-radius: var(--border-radius-md);
@@ -215,7 +215,7 @@ button:disabled {
 }
 
 .btn-success:hover:not(:disabled) {
-  background: linear-gradient(135deg, #2e7d32 0%, #1b5e20 100%);
+  background: #2e7d32;
   box-shadow: var(--shadow-md);
   transform: translateY(-1px);
 }
@@ -227,7 +227,7 @@ button:disabled {
 /* Search button - specialized for search forms */
 .search-btn {
   padding: 0.6rem 1.4rem;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   border: none;
   border-radius: var(--border-radius-md);
@@ -262,7 +262,7 @@ button:disabled {
 }
 
 .search-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  background: #1976d2;
   box-shadow: 0 6px 24px rgba(30, 136, 229, 0.4);
   transform: translateY(-2px);
 }
@@ -288,7 +288,7 @@ button:disabled {
 
 /* Advanced search button variant */
 .advanced-btn {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.1) 100%);
+  background: rgba(255, 255, 255, 0.15);
   color: white;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: var(--border-radius-md);
@@ -307,7 +307,7 @@ button:disabled {
 }
 
 .advanced-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.15) 100%);
+  background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.3);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
   transform: translateY(-1px);
@@ -315,12 +315,12 @@ button:disabled {
 
 /* Audible search button variant */
 .search-btn.audible-btn {
-  background: linear-gradient(135deg, #ff9900 0%, #ff7700 100%);
+  background: #ff9900;
   box-shadow: 0 2px 8px rgba(255, 153, 0, 0.3);
 }
 
 .search-btn.audible-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #ff7700 0%, #ff5500 100%);
+  background: #ff7700;
   box-shadow: 0 4px 12px rgba(255, 153, 0, 0.4);
 }
 

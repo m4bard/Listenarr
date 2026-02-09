@@ -845,7 +845,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   border-radius: 6px;
   color: white;
   font-size: 1.5rem;
@@ -1248,7 +1248,7 @@ onUnmounted(() => {
 }
 
 .btn-danger {
-  background: linear-gradient(135deg, #fa5252 0%, #e03131 100%);
+  background: #fa5252;
   color: white;
   border: none;
   padding: 0.65rem 1.25rem;
@@ -1264,7 +1264,7 @@ onUnmounted(() => {
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: linear-gradient(135deg, #ff6b6b 0%, #fa5252 100%);
+  background: #e03131;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(250, 82, 82, 0.4);
 }

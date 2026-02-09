@@ -31,11 +31,8 @@
               :auto-browse="false"
               @browser-opened="browserMode = true"
               @browser-closed="browserMode = false"
+              @open-modal="showBrowserModal = true"
             />
-            <button type="button" class="btn btn-secondary browse-btn" @click="showBrowserModal = true" title="Browse for folder">
-              <PhFolder />
-              Browse
-            </button>
           </div>
         </div>
 
@@ -296,7 +293,7 @@
 
 <script setup lang="ts">
 import { ref, watch, computed, onMounted } from 'vue'
-import { PhFolderOpen, PhFolder, PhX, PhRocket, PhUser, PhSpinner, PhInfo } from '@phosphor-icons/vue'
+import { PhFolderOpen, PhX, PhRocket, PhUser, PhSpinner, PhInfo } from '@phosphor-icons/vue'
 import type { ManualImportRequest } from '@/types'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
 import Checkbox from '@/components/form/Checkbox.vue'

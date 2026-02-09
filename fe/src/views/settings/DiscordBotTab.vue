@@ -582,7 +582,7 @@ const stopBot = async () => {
 .invite-button {
   padding: 0.75rem 1.25rem;
   border-radius: 6px;
-  background: linear-gradient(135deg, #51cf66 0%, #37b24d 100%);
+  background: #51cf66;
   color: #fff;
   border: none;
   cursor: pointer;
@@ -592,7 +592,7 @@ const stopBot = async () => {
 }
 
 .invite-button:hover {
-  background: linear-gradient(135deg, #37b24d 0%, #2b8a3e 100%);
+  background: #37b24d;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(81, 207, 102, 0.4);
 }
@@ -694,7 +694,7 @@ const stopBot = async () => {
 
 .add-button {
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   border: none;
   border-radius: 6px;
@@ -709,7 +709,7 @@ const stopBot = async () => {
 }
 
 .add-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: var(--brand-600);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }
@@ -802,13 +802,13 @@ const stopBot = async () => {
 }
 
 .start-button {
-  background: linear-gradient(135deg, #51cf66 0%, #37b24d 100%);
+  background: #51cf66;
   color: white;
   box-shadow: 0 2px 8px rgba(81, 207, 102, 0.3);
 }
 
 .start-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #37b24d 0%, #2b8a3e 100%);
+  background: #37b24d;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(81, 207, 102, 0.4);
 }
@@ -843,7 +843,7 @@ const stopBot = async () => {
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.25rem;
-  background: linear-gradient(135deg, #5865f2 0%, #4752c4 100%);
+  background: #5865f2;
   color: white;
   border: none;
   border-radius: 6px;
@@ -853,7 +853,7 @@ const stopBot = async () => {
 }
 
 .invite-button:hover {
-  background: linear-gradient(135deg, #4752c4 0%, #3c45a5 100%);
+  background: #4752c4;
   transform: translateY(-1px);
 }
 

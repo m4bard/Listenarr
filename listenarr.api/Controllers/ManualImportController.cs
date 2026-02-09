@@ -105,9 +105,16 @@ public class ManualImportController : ControllerBase
                 var results = new List<ManualImportResult>();
                 // Track destination paths used within this batch so we avoid collisions between items
                 var usedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                
+                // Count files per audiobook to determine if multi-file import
+                var filesPerAudiobook = request.Items
+                    .GroupBy(i => i.MatchedAudiobookId)
+                    .ToDictionary(g => g.Key, g => g.Count());
+                
                 foreach (var item in request.Items)
                 {
-                    var result = await ImportFileAsync(item, request.InputMode ?? "copy", usedDestinations);
+                    var isMultiFile = filesPerAudiobook.TryGetValue(item.MatchedAudiobookId, out var count) && count > 1;
+                    var result = await ImportFileAsync(item, request.InputMode ?? "copy", usedDestinations, isMultiFile);
                     results.Add(result);
                 }
 
@@ -129,7 +136,7 @@ public class ManualImportController : ControllerBase
         }
     }
 
-    private async Task<ManualImportResult> ImportFileAsync(ManualImportItem item, string inputMode, HashSet<string>? usedDestinations = null)
+    private async Task<ManualImportResult> ImportFileAsync(ManualImportItem item, string inputMode, HashSet<string>? usedDestinations = null, bool isMultiFile = false)
     {
         try
         {
@@ -199,8 +206,8 @@ public class ManualImportController : ControllerBase
                 };
             }
 
-            // Generate destination path using only disc/chapter components
-            var destinationPath = await GenerateManualImportPathAsync(audiobook, metadata, item.FullPath);
+            // Generate destination path using appropriate naming pattern
+            var destinationPath = await GenerateManualImportPathAsync(audiobook, metadata, item.FullPath, isMultiFile);
 
             // Ensure destination directory exists
             var destinationDir = Path.GetDirectoryName(destinationPath);
@@ -279,11 +286,31 @@ public class ManualImportController : ControllerBase
         }
     }
 
-    private async Task<string> GenerateManualImportPathAsync(Audiobook audiobook, AudioMetadata metadata, string sourceFilePath)
+    private async Task<string> GenerateManualImportPathAsync(Audiobook audiobook, AudioMetadata metadata, string sourceFilePath, bool isMultiFile = false)
     {
-        // Get the configured file naming pattern from settings
+        // Get the configured folder/file naming patterns from settings
         var settings = await _configService.GetApplicationSettingsAsync();
-        var pattern = settings.FileNamingPattern ?? "{Author}/{Title}/{Title}";
+        var folderPattern = settings.FolderNamingPattern;
+        var filePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
+
+        // If a custom BasePath is set (different from configured OutputPath), store directly under that path
+        var basePath = audiobook.BasePath ?? string.Empty;
+        var configuredOutput = settings.OutputPath ?? string.Empty;
+        var isCustomBasePath = false;
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(basePath))
+            {
+                var baseFull = Path.GetFullPath(basePath);
+                var configuredFull = string.IsNullOrWhiteSpace(configuredOutput) ? string.Empty : Path.GetFullPath(configuredOutput);
+                isCustomBasePath = !string.Equals(baseFull, configuredFull, StringComparison.OrdinalIgnoreCase);
+            }
+        }
+        catch
+        {
+            isCustomBasePath = !string.IsNullOrWhiteSpace(basePath) && !string.IsNullOrWhiteSpace(configuredOutput)
+                && !string.Equals(basePath, configuredOutput, StringComparison.OrdinalIgnoreCase);
+        }
 
         // Get the file extension from the source file (preserve original extension)
         var extension = Path.GetExtension(sourceFilePath).ToLowerInvariant();
@@ -317,8 +344,48 @@ public class ManualImportController : ControllerBase
         if (metadata.TrackNumber.HasValue && metadata.TrackNumber.Value > 0)
             variables["ChapterNumber"] = metadata.TrackNumber.Value.ToString();
 
-        // Apply the pattern to get relative path (don't treat as filename to allow subfolders)
-        var relativePath = _fileNamingService.ApplyNamingPattern(pattern, variables, treatAsFilename: false);
+        string relativePath;
+
+        if (string.IsNullOrWhiteSpace(folderPattern))
+        {
+            // Legacy behavior: use FileNamingPattern as the full relative path pattern
+            var legacyPattern = string.IsNullOrWhiteSpace(filePattern)
+                ? "{Author}/{Title}/{Title}"
+                : filePattern;
+
+            relativePath = _fileNamingService.ApplyNamingPattern(legacyPattern, variables, treatAsFilename: false);
+        }
+        else if (isCustomBasePath)
+        {
+            // Custom base path: only apply file naming pattern, not folder pattern
+            // (the BasePath already represents the folder location)
+            var effectiveFilePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
+
+            var patternAllowsSubfolders = effectiveFilePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                || effectiveFilePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                || effectiveFilePattern.IndexOf('/') >= 0
+                || effectiveFilePattern.IndexOf('\\') >= 0;
+
+            relativePath = _fileNamingService.ApplyNamingPattern(effectiveFilePattern, variables, treatAsFilename: !patternAllowsSubfolders);
+        }
+        else
+        {
+            // New behavior: separate folder and file patterns
+            var effectiveFilePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
+
+            var folderRelative = _fileNamingService.ApplyNamingPattern(folderPattern, variables, treatAsFilename: false);
+
+            var patternAllowsSubfolders = effectiveFilePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                || effectiveFilePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                || effectiveFilePattern.IndexOf('/') >= 0
+                || effectiveFilePattern.IndexOf('\\') >= 0;
+
+            var fileRelative = _fileNamingService.ApplyNamingPattern(effectiveFilePattern, variables, treatAsFilename: !patternAllowsSubfolders);
+
+            relativePath = string.IsNullOrWhiteSpace(folderRelative)
+                ? fileRelative
+                : Path.Combine(folderRelative, fileRelative);
+        }
 
         // Ensure it has the correct extension
         if (!relativePath.EndsWith(extension, StringComparison.OrdinalIgnoreCase))
@@ -326,13 +393,9 @@ public class ManualImportController : ControllerBase
             relativePath += extension;
         }
 
-        // Combine with audiobook's base path
-        var basePath = audiobook.BasePath ?? string.Empty;
-        var fullPath = string.IsNullOrWhiteSpace(basePath)
+        return string.IsNullOrWhiteSpace(basePath)
             ? relativePath
             : Path.Combine(basePath, relativePath);
-
-        return fullPath;
     }
 
     private static string FormatSize(long bytes)

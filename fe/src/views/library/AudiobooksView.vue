@@ -1526,7 +1526,7 @@ function statusText(
     case 'no-file':
       return 'Missing'
     case 'quality-mismatch':
-      return 'Mismatch'
+      return 'Below Cutoff'
     case 'quality-match':
       return 'Downloaded'
     default:

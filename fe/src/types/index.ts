@@ -11,6 +11,26 @@ export interface BaseSearchResult {
   score?: number
 }
 
+export interface OpenLibraryBook {
+  key: string
+  title: string
+  author_name?: string[]
+  author_key?: string[]
+  first_publish_year?: number
+  isbn?: string[]
+  edition_key?: string[]
+  cover_edition_key?: string
+  publisher?: string[]
+  cover_i?: number
+  edition_count?: number
+  language?: string[]
+  subject?: string[]
+  ebook_access?: 'public' | 'borrowable' | 'printdisabled' | 'no_ebook'
+  has_fulltext?: boolean
+  public_scan_b?: boolean
+  seriesList?: string[]
+}
+
 export interface IndexerSearchResult extends BaseSearchResult {
   size: number
   seeders?: number
@@ -225,7 +245,9 @@ export interface TranslatePathResponse {
 
 export interface ApplicationSettings {
   outputPath: string
+  folderNamingPattern: string
   fileNamingPattern: string
+  multiFileNamingPattern: string
   enableMetadataProcessing: boolean
   enableCoverArtDownload: boolean
   audnexusApiUrl: string
@@ -314,6 +336,7 @@ export interface AudibleBookMetadata {
   subtitle?: string
   authors: string[]
   publishedDate?: string
+  publishYear?: string
   series?: string
   seriesNumber?: string
   seriesList?: string[]
@@ -345,6 +368,7 @@ export interface Audiobook {
   subtitle?: string
   authors?: string[]
   publishedDate?: string
+  publishYear?: string
   series?: string
   seriesNumber?: string
   description?: string
@@ -660,6 +684,7 @@ export interface AudimetaBookResponse {
   description?: string
   imageUrl?: string
   lengthMinutes?: number
+  runtime?: number
   language?: string
   genres?: AudimetaGenre[]
   series?: AudimetaSeries[]

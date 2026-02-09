@@ -151,16 +151,17 @@ describe('SettingsView', () => {
 
     const vm = wrapper.vm as unknown as { settings?: Settings }
     vm.settings = {
-      fileNamingPattern: '{Author}/{Title}',
+      folderNamingPattern: '{Author}/{Series}/{Title}',
+      fileNamingPattern: '{Title}',
     } as unknown as Settings
 
     await wrapper.vm.$nextTick()
     await new Promise((r) => setTimeout(r, 0))
 
     // Find the File Naming Pattern input inside the child and change it
-    const fileNamingInput = wrapper.find('input[placeholder="{Author}/{Series}/{Title}"]')
+    const fileNamingInput = wrapper.find('input[placeholder="{Title}"]')
     expect(fileNamingInput.exists()).toBe(true)
-    await fileNamingInput.setValue('{Author}/{Series}/{Title}/{DiskNumber}')
+    await fileNamingInput.setValue('{Title}-{DiskNumber}')
     await new Promise((r) => setTimeout(r, 0))
 
     // Spy on the configuration store save method
@@ -177,7 +178,7 @@ describe('SettingsView', () => {
 
     expect(cfgStore.saveApplicationSettings).toHaveBeenCalled()
     const calledWith = (cfgStore.saveApplicationSettings as Mock).mock.calls[0][0]
-    expect(calledWith.fileNamingPattern).toBe('{Author}/{Series}/{Title}/{DiskNumber}')
+    expect(calledWith.fileNamingPattern).toBe('{Title}-{DiskNumber}')
   })
 
   it('toggles download client enabled state', async () => {

@@ -216,7 +216,7 @@ defineExpose({
   align-items: center;
   gap: 0.5rem;
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   border: none;
   border-radius: 6px;
@@ -228,7 +228,7 @@ defineExpose({
 }
 
 .add-button:hover {
-  background: linear-gradient(135deg, #1565c0 0%, #0d47a1 100%);
+  background: #1565c0;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }

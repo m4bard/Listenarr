@@ -316,12 +316,12 @@ async function confirmChange(moveFiles: boolean) {
 }
 
 .btn.primary {
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
 }
 
 .btn.primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: var(--brand-600);
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }

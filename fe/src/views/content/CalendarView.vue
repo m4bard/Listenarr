@@ -50,7 +50,7 @@
           v-for="mode in viewModes"
           :key="mode.value"
           :class="['tab', { active: viewMode === mode.value }]"
-          @click="viewMode = mode.value"
+          @click="viewMode = mode.value as 'month' | 'week' | 'forecast' | 'day' | 'agenda'"
         >
           {{ mode.label }}
         </button>
@@ -139,7 +139,7 @@
             >
               <div class="forecast-date-badge">
                 <div class="forecast-day">{{ new Date(item.date).getUTCDate() }}</div>
-                <div class="forecast-month">{{ monthNames[new Date(item.date).getUTCMonth()].slice(0, 3) }}</div>
+                <div class="forecast-month">{{ monthNames[new Date(item.date).getUTCMonth()]?.slice(0, 3) }}</div>
               </div>
               <div class="forecast-content">
                 <h3>{{ item.title }}</h3>
@@ -382,9 +382,9 @@ const calendarItems = computed<CalendarItem[]>(() => {
         author: book.authors?.length ? book.authors.join(', ') : undefined,
         dateKey: key,
         date: new Date(`${key}T00:00:00Z`),
-      }
+      } as CalendarItem
     })
-    .filter((b): b is CalendarItem => Boolean(b))
+    .filter((b): b is CalendarItem => b !== null)
 })
 
 const itemsByDate = computed(() => {
@@ -750,7 +750,7 @@ const allItemsSorted = computed(() => {
 }
 
 .btn-primary {
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   border: none;
   border-radius: 6px;
@@ -761,7 +761,7 @@ const allItemsSorted = computed(() => {
 }
 
 .btn-primary:hover {
-  background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
+  background: #1565c0;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }
@@ -862,7 +862,7 @@ const allItemsSorted = computed(() => {
   display: block;
   font-size: 0.75rem;
   color: white;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   border-radius: 4px;
   padding: 0.25rem 0.5rem;
   cursor: pointer;
@@ -880,7 +880,7 @@ const allItemsSorted = computed(() => {
 .calendar-item:hover {
   transform: translateY(-1px);
   box-shadow: 0 2px 6px rgba(30, 136, 229, 0.4);
-  background: linear-gradient(135deg, #42a5f5 0%, #1e88e5 100%);
+  background: #1565c0;
 }
 
 .item-title {
@@ -1061,7 +1061,7 @@ const allItemsSorted = computed(() => {
   min-width: 0;
   box-sizing: border-box;
   overflow: hidden;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   padding: 0.75rem;
   border-radius: 6px;
@@ -1134,7 +1134,7 @@ const allItemsSorted = computed(() => {
   align-items: center;
   justify-content: center;
   min-width: 60px;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   border-radius: 6px;
   padding: 0.75rem;
   color: white;
@@ -1216,7 +1216,7 @@ const allItemsSorted = computed(() => {
   justify-content: center;
   min-width: 48px;
   height: 48px;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   border-radius: 6px;
   color: white;
   box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);

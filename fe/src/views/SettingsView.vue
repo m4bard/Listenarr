@@ -1410,7 +1410,7 @@ onMounted(async () => {
   left: 0;
   right: 0;
   height: 3px;
-  background: linear-gradient(90deg, #4dabf7 0%, #339af0 100%);
+  background: #339af0;
   border-radius: 6px;
 }
 
@@ -1679,37 +1679,37 @@ onMounted(async () => {
 }
 
 .webhook-icon.service-slack {
-  background: linear-gradient(135deg, #4a154b 0%, #611f69 100%);
+  background: #4a154b;
   color: #fff;
 }
 
 .webhook-icon.service-discord {
-  background: linear-gradient(135deg, #5865f2 0%, #404eed 100%);
+  background: #5865f2;
   color: #fff;
 }
 
 .webhook-icon.service-telegram {
-  background: linear-gradient(135deg, #0088cc 0%, #006699 100%);
+  background: #0088cc;
   color: #fff;
 }
 
 .webhook-icon.service-pushover {
-  background: linear-gradient(135deg, #249df1 0%, #1a7dc4 100%);
+  background: #249df1;
   color: #fff;
 }
 
 .webhook-icon.service-pushbullet {
-  background: linear-gradient(135deg, #4ab367 0%, #3a9053 100%);
+  background: #4ab367;
   color: #fff;
 }
 
 .webhook-icon.service-ntfy {
-  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%);
+  background: #ff6b6b;
   color: #fff;
 }
 
 .webhook-icon.service-zapier {
-  background: linear-gradient(135deg, #ff4a00 0%, #e04200 100%);
+  background: #ff4a00;
   color: #fff;
 }
 
@@ -2396,7 +2396,7 @@ onMounted(async () => {
 }
 
 .input-group-btn.regenerate-button {
-  background: linear-gradient(135deg, #e74c3c 0%, #c0392b 100%);
+  background: #e74c3c;
   color: white;
   border: none;
   padding: 0.75rem 1rem;
@@ -2408,7 +2408,7 @@ onMounted(async () => {
 }
 
 .input-group-btn.regenerate-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, #c0392b 0%, #a93226 100%);
+  background: #c0392b;
 }
 
 .input-group-btn.regenerate-button:disabled {
@@ -2489,7 +2489,7 @@ onMounted(async () => {
 }
 
 .test-button {
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   display: inline-flex;
   align-items: center;
@@ -2506,7 +2506,7 @@ onMounted(async () => {
 }
 
 .test-button:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--brand-600) 0%, var(--brand-700) 100%);
+  background: var(--brand-600);
   box-shadow: 0 4px 12px rgba(var(--brand-rgb), 0.4);
 }
 

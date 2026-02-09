@@ -176,16 +176,27 @@
                     />
                   </div>
                   <input
+                    v-if="selectedRootId === 0"
+                    type="text"
+                    v-model="customRootPath"
+                    class="form-input custom-path-input"
+                    placeholder="e.g. C:\\Audiobooks or /mnt/audiobooks"
+                  />
+                  <input
+                    v-else
                     type="text"
                     v-model="options.relativePath"
                     class="form-input relative-input"
                     placeholder="e.g. Author/Title"
                   />
                 </div>
-                <small class="form-help"
-                  >Select a named root (or custom path) and edit the path relative to it on the
-                  right.</small
-                >
+                <small class="form-help" v-if="selectedRootId === 0">
+                  Enter an absolute path where files will be stored
+                </small>
+                <small class="form-help" v-else>
+                  Select a named root (or custom path) and edit the path relative to it on the
+                  right.
+                </small>
               </div>
             </div>
           </div>
@@ -661,7 +672,11 @@ const addToLibrary = async () => {
       root = defaultRoot?.path || configStore.applicationSettings?.outputPath || ''
     }
 
-    if (root && rel) {
+    if (selectedRootId.value === 0) {
+      // Custom path: use exactly what the user entered (no pattern/relative path)
+      const cleaned = (root || '').trim()
+      destination = cleaned.length ? cleaned : undefined
+    } else if (root && rel) {
       const sep = root.includes('\\') ? '\\' : '/'
       const cleanedRel = rel.replace(/\\|\//g, sep)
       destination = root.endsWith(sep) ? root + cleanedRel : root + sep + cleanedRel

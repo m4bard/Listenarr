@@ -341,11 +341,11 @@
               <div class="result-stats">
                 <span v-if="audibleResult.runtime || audibleResult.searchResult?.runtime" class="stat-item">
                   <PhClock />
-                  {{ formatRuntime(audibleResult.runtime || audibleResult.searchResult?.runtime) }}
+                  {{ formatRuntime((audibleResult.runtime || audibleResult.searchResult?.runtime)!) }}
                 </span>
                 <span v-if="audibleResult.language || audibleResult.searchResult?.language" class="stat-item">
                   <PhGlobe />
-                  {{ capitalizeLanguage(audibleResult.language || audibleResult.searchResult?.language) }}
+                  {{ capitalizeLanguage((audibleResult.language || audibleResult.searchResult?.language)!) }}
                 </span>
               </div>
 
@@ -2794,7 +2794,7 @@ onMounted(async () => {
   top: 0;
   right: 0;
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.15) 0%, rgba(255, 255, 255, 0.1) 100%);
+  background: rgba(255, 255, 255, 0.15);
   color: white;
   border: 1px solid rgba(255, 255, 255, 0.2);
   border-radius: 6px;
@@ -2809,7 +2809,7 @@ onMounted(async () => {
 }
 
 .simple-search-button:hover {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(255, 255, 255, 0.15) 100%);
+  background: rgba(255, 255, 255, 0.2);
   border-color: rgba(255, 255, 255, 0.3);
   transform: translateY(-1px);
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
@@ -3114,12 +3114,12 @@ select.form-input:focus {
 }
 
 .search-btn.audible-catalog-btn {
-  background: linear-gradient(135deg, #ff6b35 0%, #f7931e 100%);
+  background: #ff6b35;
   box-shadow: 0 2px 8px rgba(255, 107, 53, 0.3);
 }
 
 .search-btn.audible-catalog-btn:hover:not(:disabled) {
-  background: linear-gradient(135deg, #f7931e 0%, #ff6b35 100%);
+  background: #f7931e;
   box-shadow: 0 4px 12px rgba(255, 107, 53, 0.4);
 }
 

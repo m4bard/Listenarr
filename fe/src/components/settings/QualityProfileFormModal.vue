@@ -39,7 +39,7 @@
                   <input 
                     type="checkbox" 
                     :checked="isCodecEnabled(codec.codec)"
-                    @change="toggleCodec(codec.codec, $event.target.checked)"
+                    @change="toggleCodec(codec.codec, ($event.target as HTMLInputElement).checked)"
                   />
                   <span class="codec-label">
                     {{ codec.label }}
@@ -585,7 +585,9 @@ const handleDrop = (event: DragEvent, targetQuality: QualityItem) => {
   
   // Reorder array
   const items = [...qualityItems.value]
-  const [draggedItem] = items.splice(draggedIndex, 1)
+  const removed = items.splice(draggedIndex, 1)
+  if (removed.length === 0) return
+  const draggedItem = removed[0]!
   items.splice(targetIndex, 0, draggedItem)
   
   // Reassign priorities based on new order
@@ -763,7 +765,7 @@ const parseQualityString = (qualityStr: string): QualityItem | null => {
   // MP3 with bitrate
   const mp3Match = qualityStr.match(/MP3\s+(\d+)\s?kbps/i)
   if (mp3Match) {
-    const bitrate = parseInt(mp3Match[1])
+    const bitrate = parseInt(mp3Match[1]!)
     return { id: qualityStr, codec: 'MP3', bitrate, label: `MP3 ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
   }
   
@@ -775,7 +777,7 @@ const parseQualityString = (qualityStr: string): QualityItem | null => {
   // AAC with bitrate
   const aacMatch = qualityStr.match(/AAC\s+(\d+)\s?kbps/i)
   if (aacMatch) {
-    const bitrate = parseInt(aacMatch[1])
+    const bitrate = parseInt(aacMatch[1]!)
     return { id: qualityStr, codec: 'AAC', bitrate, label: `AAC ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
   }
   
@@ -787,7 +789,7 @@ const parseQualityString = (qualityStr: string): QualityItem | null => {
   // M4B with bitrate
   const m4bMatch = qualityStr.match(/M4B\s+(\d+)\s?kbps/i)
   if (m4bMatch) {
-    const bitrate = parseInt(m4bMatch[1])
+    const bitrate = parseInt(m4bMatch[1]!)
     return { id: qualityStr, codec: 'M4B', bitrate, label: `M4B ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
   }
   
@@ -799,7 +801,7 @@ const parseQualityString = (qualityStr: string): QualityItem | null => {
   // OPUS with bitrate
   const opusMatch = qualityStr.match(/OPUS\s+(\d+)\s?kbps/i)
   if (opusMatch) {
-    const bitrate = parseInt(opusMatch[1])
+    const bitrate = parseInt(opusMatch[1]!)
     return { id: qualityStr, codec: 'OPUS', bitrate, label: `OPUS ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
   }
   
@@ -811,7 +813,7 @@ const parseQualityString = (qualityStr: string): QualityItem | null => {
   // OGG Vorbis with bitrate
   const oggMatch = qualityStr.match(/OGG Vorbis\s+(\d+)\s?kbps/i)
   if (oggMatch) {
-    const bitrate = parseInt(oggMatch[1])
+    const bitrate = parseInt(oggMatch[1]!)
     return { id: qualityStr, codec: 'OGG Vorbis', bitrate, label: `OGG Vorbis ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
   }
   
@@ -905,8 +907,6 @@ const removeLanguage = (index: number) => {
 const closeModal = () => {
   emit('close')
 }
-
-import { useToast } from '@/services/toastService'
 
 const saving = ref(false)
 

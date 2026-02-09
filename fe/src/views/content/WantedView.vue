@@ -604,10 +604,10 @@ const markAsSkipped = async (item: Audiobook) => {
 
 /* Virtual scrolling container */
 .wanted-list-container {
-  height: calc(100vh - 291px);
+  height: calc(100vh - 225px);
   overflow-y: auto;
   position: relative;
-  padding: 0 0.5em 0 0;
+  padding: 1rem 0.5em 1rem 0;
   scrollbar-gutter: stable; /* Reserve space for scrollbar to prevent layout shifts */
   width: calc(100% + 0.5em); /* Leaves space for scrollbar without cutting off content */
 }

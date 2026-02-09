@@ -289,7 +289,7 @@ namespace Listenarr.Api.Tests
             using var stream = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(body ?? ""));
             var doc = await JsonDocument.ParseAsync(stream);
             Assert.True(doc.RootElement.ValueKind == JsonValueKind.Object);
-            Assert.Equal(0, doc.RootElement.EnumerateObject().Count()); // empty object
+            Assert.Empty(doc.RootElement.EnumerateObject()); // empty object
         }
     }
 }

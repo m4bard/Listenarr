@@ -214,7 +214,8 @@ namespace Listenarr.Api.Controllers
                 Version = metadata.Version,
                 Explicit = metadata.Explicit,
                 Abridged = metadata.Abridged,
-                Monitored = request.Monitored  // Use custom monitored setting
+                Monitored = request.Monitored,  // Use custom monitored setting
+                BasePath = null  // Will be computed or set from custom destination below
             };
 
             _logger.LogInformation("Created Audiobook entity: Title={Title}, Asin={Asin}, PublishYear={PublishYear}",
@@ -246,6 +247,18 @@ namespace Listenarr.Api.Controllers
                     }
                 }
             }
+
+            // Compute or use custom BasePath (but don't create the directory yet - that happens during import)
+            if (!string.IsNullOrWhiteSpace(request.DestinationPath))
+            {
+                // User provided a custom destination path - store it as BasePath
+                // ImportService will recognize BasePath as set and use filename-only pattern
+                audiobook.BasePath = request.DestinationPath;
+                _logger.LogInformation("Using custom destination path for audiobook '{Title}': {BasePath}",
+                    audiobook.Title, audiobook.BasePath);
+            }
+            // If no custom path provided, leave BasePath null
+            // ImportService will use the default naming pattern from settings
 
             await _repo.AddAsync(audiobook);
 
@@ -331,102 +344,11 @@ namespace Listenarr.Api.Controllers
             }
 
 
-            // Create the expected directory structure for the audiobook (but don't set FilePath)
-            // FilePath should only be set when actual files are found during scanning
-            try
-            {
-                using (var scope = _scopeFactory.CreateScope())
-                {
-                    var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
-                    var settings = await configService.GetApplicationSettingsAsync();
-
-                    // Determine root for base directory: prefer explicit DestinationPath if provided, otherwise use configured OutputPath
-                    var rootForBasePath = !string.IsNullOrEmpty(request.DestinationPath) ? request.DestinationPath : settings.OutputPath;
-
-                    if (!string.IsNullOrEmpty(rootForBasePath))
-                    {
-                        // If caller supplied an explicit DestinationPath that looks like a full path, respect it as the final BasePath.
-                        // The frontend will send the fully-composed destination when the user edits the relative path, so honor that exact value.
-                        if (!string.IsNullOrEmpty(request.DestinationPath) && Path.IsPathRooted(request.DestinationPath))
-                        {
-                            try
-                            {
-                                if (!Directory.Exists(request.DestinationPath))
-                                {
-                                    Directory.CreateDirectory(request.DestinationPath);
-                                    _logger.LogInformation("Created directory for new audiobook '{Title}' (explicit DestinationPath): {Path}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeFilePath(request.DestinationPath));
-                                }
-                                else
-                                {
-                                    _logger.LogInformation("Directory already exists for new audiobook '{Title}' (explicit DestinationPath): {Path}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeFilePath(request.DestinationPath));
-                                }
-
-                                audiobook.BasePath = request.DestinationPath;
-                                _dbContext.Audiobooks.Update(audiobook);
-                                await _dbContext.SaveChangesAsync();
-                                _logger.LogInformation("Set BasePath for new audiobook '{Title}' to explicit DestinationPath: {BasePath}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeFilePath(request.DestinationPath));
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "Failed to persist explicit DestinationPath for new audiobook '{Title}'", LogRedaction.SanitizeText(audiobook.Title));
-                            }
-                        }
-                        else
-                        {
-                            // Compute expected base directory from root + file naming pattern using the request-supplied metadata
-                            // (use a temporary Audiobook built from the incoming metadata to ensure enriched fields are applied)
-                            var tempForNaming = new Audiobook
-                            {
-                                Title = request.Metadata?.Title,
-                                Authors = (request.Metadata?.Authors != null && request.Metadata.Authors.Any())
-                                            ? request.Metadata.Authors
-                                            : (!string.IsNullOrWhiteSpace(request.Metadata?.Author)
-                                                ? new List<string> { request.Metadata.Author! }
-                                                : null),
-                                Series = request.Metadata?.Series,
-                                SeriesNumber = request.Metadata?.SeriesNumber,
-                                PublishYear = request.Metadata?.PublishYear
-                            };
-
-                            var directoryPath = ComputeAudiobookBaseDirectoryFromPattern(tempForNaming, rootForBasePath, settings.FileNamingPattern);
-
-                            // Create the directory if it doesn't exist
-                            if (!Directory.Exists(directoryPath))
-                            {
-                                Directory.CreateDirectory(directoryPath);
-                                _logger.LogInformation("Created directory for new audiobook '{Title}': {Path}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeFilePath(directoryPath));
-                            }
-                            else
-                            {
-                                _logger.LogInformation("Directory already exists for new audiobook '{Title}': {Path}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeFilePath(directoryPath));
-                            }
-
-                            // Persist a sensible BasePath for this audiobook so the UI can display
-                            // the intended library root right away (even before any files exist).
-                            try
-                            {
-                                audiobook.BasePath = directoryPath;
-                                _dbContext.Audiobooks.Update(audiobook);
-                                await _dbContext.SaveChangesAsync();
-                                _logger.LogInformation("Set BasePath for new audiobook '{Title}' using naming pattern: {BasePath}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeFilePath(directoryPath));
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "Failed to persist BasePath for new audiobook '{Title}'", LogRedaction.SanitizeText(audiobook.Title));
-                            }
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogWarning("No output path configured, skipping directory creation for new audiobook '{Title}'", audiobook.Title);
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Failed to create directory for new audiobook '{Title}'", audiobook.Title);
-                // Continue with the rest of the process even if directory creation fails
-            }
+            // Directory creation has been deferred to file import time to avoid creating empty directories
+            // for audiobooks that may never be downloaded. If a custom destination path was specified when
+            // adding the audiobook, it will be stored in BasePath and used when ImportService processes
+            // the downloaded files. If no custom path was specified, ImportService will use the configured
+            // naming pattern and output path to determine the directory structure.
 
             // Log history entry for the added audiobook
             var historyEntry = new History
@@ -469,7 +391,10 @@ namespace Listenarr.Api.Controllers
                     PublishYear = request.Metadata.PublishYear
                 };
 
-                var full = ComputeAudiobookBaseDirectoryFromPattern(temp, root ?? string.Empty, settings.FileNamingPattern);
+                var namingPattern = !string.IsNullOrWhiteSpace(settings.FolderNamingPattern)
+                    ? settings.FolderNamingPattern
+                    : settings.FileNamingPattern;
+                var full = ComputeAudiobookBaseDirectoryFromPattern(temp, root ?? string.Empty, namingPattern);
 
                 var relative = full;
                 if (!string.IsNullOrEmpty(root) && full.StartsWith(root, StringComparison.OrdinalIgnoreCase))
@@ -548,6 +473,8 @@ namespace Listenarr.Api.Controllers
                     size = f.Size,
                     durationSeconds = f.DurationSeconds,
                     format = f.Format,
+                    container = f.Container,
+                    codec = f.Codec,
                     bitrate = f.Bitrate,
                     sampleRate = f.SampleRate,
                     channels = f.Channels,
@@ -618,6 +545,8 @@ namespace Listenarr.Api.Controllers
                     size = f.Size,
                     durationSeconds = f.DurationSeconds,
                     format = f.Format,
+                    container = f.Container,
+                    codec = f.Codec,
                     bitrate = f.Bitrate,
                     sampleRate = f.SampleRate,
                     channels = f.Channels,
@@ -1185,7 +1114,9 @@ namespace Listenarr.Api.Controllers
                             if (!string.IsNullOrWhiteSpace(rootPath))
                             {
                                 // Use configured naming pattern to compute full base directory for this audiobook
-                                var fileNamingPattern = settings?.FileNamingPattern ?? string.Empty;
+                                var fileNamingPattern = !string.IsNullOrWhiteSpace(settings?.FolderNamingPattern)
+                                    ? settings!.FolderNamingPattern
+                                    : settings?.FileNamingPattern ?? string.Empty;
                                 var newBase = ComputeAudiobookBaseDirectoryFromPattern(audiobook, rootPath, fileNamingPattern);
 
                                 try

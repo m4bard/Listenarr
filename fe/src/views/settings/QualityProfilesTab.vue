@@ -298,7 +298,7 @@ const parseQualityString = (qualityStr: string): Omit<DisplayQuality, 'priority'
 
   const mp3Match = qualityStr.match(/MP3 (\d+)kbps/)
   if (mp3Match) {
-    const bitrate = parseInt(mp3Match[1])
+    const bitrate = parseInt(mp3Match[1]!)
     return { id: qualityStr, codec: 'MP3', label: `MP3 ${bitrate} kbps`, isLossless: false }
   }
 
@@ -308,7 +308,7 @@ const parseQualityString = (qualityStr: string): Omit<DisplayQuality, 'priority'
 
   const aacMatch = qualityStr.match(/AAC (\d+)kbps/)
   if (aacMatch) {
-    const bitrate = parseInt(aacMatch[1])
+    const bitrate = parseInt(aacMatch[1]!)
     return { id: qualityStr, codec: 'AAC', label: `AAC ${bitrate} kbps`, isLossless: false }
   }
 
@@ -318,7 +318,7 @@ const parseQualityString = (qualityStr: string): Omit<DisplayQuality, 'priority'
 
   const m4bMatch = qualityStr.match(/M4B (\d+)kbps/)
   if (m4bMatch) {
-    const bitrate = parseInt(m4bMatch[1])
+    const bitrate = parseInt(m4bMatch[1]!)
     return { id: qualityStr, codec: 'M4B', label: `M4B ${bitrate} kbps`, isLossless: false }
   }
 
@@ -328,7 +328,7 @@ const parseQualityString = (qualityStr: string): Omit<DisplayQuality, 'priority'
 
   const opusMatch = qualityStr.match(/OPUS (\d+)kbps/)
   if (opusMatch) {
-    const bitrate = parseInt(opusMatch[1])
+    const bitrate = parseInt(opusMatch[1]!)
     return { id: qualityStr, codec: 'OPUS', label: `OPUS ${bitrate} kbps`, isLossless: false }
   }
 
@@ -338,7 +338,7 @@ const parseQualityString = (qualityStr: string): Omit<DisplayQuality, 'priority'
 
   const oggMatch = qualityStr.match(/OGG Vorbis (\d+)kbps/)
   if (oggMatch) {
-    const bitrate = parseInt(oggMatch[1])
+    const bitrate = parseInt(oggMatch[1]!)
     return { id: qualityStr, codec: 'OGG Vorbis', label: `OGG Vorbis ${bitrate} kbps`, isLossless: false }
   }
 

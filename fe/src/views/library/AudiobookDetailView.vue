@@ -595,7 +595,7 @@ const displayBasePath = computed(() => {
   // Use default root folder path, fallback to legacy outputPath
   const defaultRoot = rootFoldersStore.defaultFolder
   const root = (defaultRoot?.path || settings.outputPath || '').trim()
-  const pattern = (settings.fileNamingPattern || '').trim()
+  const pattern = (settings.folderNamingPattern || settings.fileNamingPattern || '').trim()
   if (!root || !pattern) return root || ''
 
   const author =

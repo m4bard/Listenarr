@@ -141,6 +141,10 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Property<bool>("ExtractArchives")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("FolderNamingPattern")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("FileNamingPattern")
                         .IsRequired()
                         .HasColumnType("TEXT");

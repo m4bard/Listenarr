@@ -631,7 +631,7 @@ defineExpose({ openAddIndexer })
 /* Add Button */
 .add-button {
   padding: 0.75rem 1.5rem;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   border: none;
   border-radius: 6px;
@@ -646,7 +646,7 @@ defineExpose({ openAddIndexer })
 }
 
 .add-button:hover {
-  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  background: #1976d2;
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(30, 136, 229, 0.4);
 }
@@ -683,7 +683,7 @@ defineExpose({ openAddIndexer })
 .add-button-large {
   margin-top: 1.5rem;
   padding: 1rem 2rem;
-  background: linear-gradient(135deg, #1e88e5 0%, #1565c0 100%);
+  background: #1e88e5;
   color: white;
   border: none;
   border-radius: 6px;
@@ -698,7 +698,7 @@ defineExpose({ openAddIndexer })
 }
 
 .add-button-large:hover {
-  background: linear-gradient(135deg, #1976d2 0%, #0d47a1 100%);
+  background: #1976d2;
   transform: translateY(-2px);
   box-shadow: 0 6px 16px rgba(30, 136, 229, 0.4);
 }

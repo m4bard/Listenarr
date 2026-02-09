@@ -17,7 +17,7 @@ export const formatDate = (dateString: string): string => {
   try {
     // For ISO date strings, we need to handle timezone offset issues
     // Parse manually to ensure we use the date as-is without timezone conversion
-    const parts = dateString.split('T')[0].split('-')
+    const parts = (dateString.split('T')[0] || dateString).split('-')
     if (parts.length !== 3) {
       // Try parsing as-is if not ISO format
       const date = new Date(dateString)
@@ -30,9 +30,9 @@ export const formatDate = (dateString: string): string => {
     }
 
     // For valid ISO dates, use the components directly
-    const year = parseInt(parts[0], 10)
-    const month = parseInt(parts[1], 10) - 1 // JS months are 0-indexed
-    const day = parseInt(parts[2], 10)
+    const year = parseInt(parts[0]!, 10)
+    const month = parseInt(parts[1]!, 10) - 1 // JS months are 0-indexed
+    const day = parseInt(parts[2]!, 10)
 
     const date = new Date(year, month, day)
     if (isNaN(date.getTime())) return dateString
@@ -81,7 +81,9 @@ export const capitalizeLanguage = (language: string | undefined): string => {
 
   // Handle language codes like "english-uk" -> "English (UK)"
   if (language.includes('-')) {
-    const [lang, region] = language.split('-')
+    const parts = language.split('-')
+    const lang = parts[0]!
+    const region = parts[1]!
     const capitalizedLang = lang.charAt(0).toUpperCase() + lang.slice(1).toLowerCase()
     const upperRegion = region.toUpperCase()
     return `${capitalizedLang} (${upperRegion})`
