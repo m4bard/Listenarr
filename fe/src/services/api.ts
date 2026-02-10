@@ -1146,6 +1146,18 @@ class ApiService {
     return this.request(`/filesystem/validate?path=${encodeURIComponent(path)}`)
   }
 
+  async checkVolume(sourcePath: string, destPath: string): Promise<{
+    sameVolume: boolean
+    willBreakHardlinks: boolean
+    sourceVolume?: string
+    destVolume?: string
+    message?: string
+  }> {
+    return this.request(
+      `/filesystem/check-volume?sourcePath=${encodeURIComponent(sourcePath)}&destPath=${encodeURIComponent(destPath)}`,
+    )
+  }
+
   // Manual import preview / start
   async previewManualImport(path: string): Promise<ManualImportPreviewResponse> {
     const params = path ? `?path=${encodeURIComponent(path)}` : ''

@@ -239,21 +239,6 @@ namespace Listenarr.Domain.Models
         /// </summary>
         public bool EnableOpenLibrarySearch { get; set; } = true;
 
-        /// <summary>
-        /// Maximum number of unified candidate ASINs to consider when performing intelligent search.
-        /// </summary>
-        public int SearchCandidateCap { get; set; } = 100;
-
-        /// <summary>
-        /// Maximum number of results to return from intelligent search.
-        /// </summary>
-        public int SearchResultCap { get; set; } = 100;
-
-        /// <summary>
-        /// Fuzzy similarity threshold used in relaxed containment mode (0.0 - 1.0).
-        /// </summary>
-        public double SearchFuzzyThreshold { get; set; } = 0.2;
-
-
+        
     }
 }

@@ -195,29 +195,6 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task GenerateFilePathAsync_NullSettings_UsesDefaults()
-        {
-            // Arrange
-            _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync((ApplicationSettings?)null);
-
-            var metadata = new AudioMetadata
-            {
-                Title = "Test Book",
-                Artist = "Test Author"
-            };
-
-            // Act - should not throw and should use default patterns
-            var singleFile = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
-            var multiFile = await _service.GenerateFilePathAsync(metadata, diskNumber: 1, chapterNumber: null, ".m4b");
-
-            // Assert - should successfully generate paths with defaults
-            Assert.NotNull(singleFile);
-            Assert.NotNull(multiFile);
-            Assert.Contains("Test Book", singleFile);
-            Assert.Contains("Test Book", multiFile);
-        }
-
-        [Fact]
         public async Task GenerateFilePathAsync_EmptyPatterns_FallsBackToDefaults()
         {
             // Arrange

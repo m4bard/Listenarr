@@ -27,6 +27,15 @@
               </div>
               <div class="path-display"><code>{{ pendingMove?.combined || pendingRootPath || 'No destination path' }}</code></div>
             </div>
+
+            <!-- Hardlink warning -->
+            <div class="hardlink-warning" v-if="showHardlinkWarning && volumeCheckResult?.willBreakHardlinks">
+              <PhWarning :size="20" />
+              <div class="warning-content">
+                <strong>Hardlink Warning</strong>
+                <p>Moving files across volumes ({{ volumeCheckResult.sourceVolume }} → {{ volumeCheckResult.destVolume }}) will break hardlinks and create independent copies. The original download will no longer share disk space with the library file.</p>
+              </div>
+            </div>
           </div>
 
           <div class="confirm-options">
@@ -83,8 +92,10 @@
 
 <script setup lang="ts">
 import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/feedback'
-import { PhX, PhArrowRight, PhArrowDown } from '@phosphor-icons/vue'
+import { PhX, PhArrowRight, PhArrowDown, PhWarning } from '@phosphor-icons/vue'
 import type { Component } from 'vue'
+import { computed, watch, ref } from 'vue'
+import { apiService } from '@/services/api'
 
 const props = withDefaults(
   defineProps<{
@@ -101,7 +112,40 @@ const props = withDefaults(
 
 const emit = defineEmits(['cancel', 'confirm', 'update:moveFiles', 'update:deleteEmpty'])
 
-import { computed } from 'vue'
+const volumeCheckResult = ref<{
+  sameVolume: boolean
+  willBreakHardlinks: boolean
+  sourceVolume?: string
+  destVolume?: string
+  message?: string
+} | null>(null)
+const showHardlinkWarning = ref(false)
+
+// Check volumes when paths change
+watch(
+  () => [props.pendingMove?.original, props.pendingMove?.combined, props.visible],
+  async () => {
+    if (!props.visible || !props.moveFiles) {
+      showHardlinkWarning.value = false
+      return
+    }
+
+    const source = props.pendingMove?.original
+    const dest = props.pendingMove?.combined
+
+    if (source && dest) {
+      try {
+        const result = await apiService.checkVolume(source, dest)
+        volumeCheckResult.value = result
+        showHardlinkWarning.value = result.willBreakHardlinks
+      } catch (error) {
+        console.error('Failed to check volume:', error)
+        showHardlinkWarning.value = false
+      }
+    }
+  },
+  { immediate: true }
+)
 
 function onToggleMoveFiles(e: Event) {
   const t = e.target as HTMLInputElement | null
@@ -134,6 +178,23 @@ function onSubmit() {
 .checkbox-content small { color:#bfc8cc; margin-top:4px }
 .checkbox-content .checkbox-title { font-weight: 500; color:#e6eef8 }
 .confirm-note { color:#bfc8cc; font-size:0.9rem; margin-top:0.75rem }
+
+/* Hardlink warning */
+.hardlink-warning { 
+  display: flex; 
+  gap: 0.75rem; 
+  align-items: flex-start; 
+  background: rgba(255, 152, 0, 0.1); 
+  border: 1px solid rgba(255, 152, 0, 0.3); 
+  border-radius: 6px; 
+  padding: 0.75rem; 
+  color: #ffb74d;
+  margin-top: 0.5rem;
+}
+.hardlink-warning svg { flex-shrink: 0; color: #ffb74d; }
+.warning-content { display: flex; flex-direction: column; gap: 0.25rem; }
+.warning-content strong { color: #fff; font-size: 0.95rem; }
+.warning-content p { margin: 0; color: #ddd; font-size: 0.9rem; line-height: 1.4; }
 
 /* Ensure footer spacing and button emphasis match the app styles */
 .modal-footer .cancel-button { min-width: 120px }

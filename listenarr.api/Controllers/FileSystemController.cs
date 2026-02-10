@@ -228,6 +228,49 @@ public class FileSystemController : ControllerBase
             Items = items
         };
     }
+
+    [HttpGet("check-volume")]
+    public ActionResult<VolumeCheckResponse> CheckVolume([FromQuery] string? sourcePath, [FromQuery] string? destPath)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(sourcePath) || string.IsNullOrWhiteSpace(destPath))
+            {
+                return Ok(new VolumeCheckResponse
+                {
+                    SameVolume = false,
+                    WillBreakHardlinks = true,
+                    Message = "Source or destination path not provided"
+                });
+            }
+
+            var sourceRoot = Path.GetPathRoot(Path.GetFullPath(sourcePath));
+            var destRoot = Path.GetPathRoot(Path.GetFullPath(destPath));
+
+            var sameVolume = string.Equals(sourceRoot, destRoot, StringComparison.OrdinalIgnoreCase);
+
+            return Ok(new VolumeCheckResponse
+            {
+                SameVolume = sameVolume,
+                WillBreakHardlinks = !sameVolume,
+                SourceVolume = sourceRoot,
+                DestVolume = destRoot,
+                Message = sameVolume 
+                    ? "Paths are on the same volume" 
+                    : "⚠️ Moving across volumes will break hardlinks and create independent copies"
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Error checking volume for paths: {Source} -> {Dest}", sourcePath, destPath);
+            return Ok(new VolumeCheckResponse
+            {
+                SameVolume = false,
+                WillBreakHardlinks = true,
+                Message = "Unable to determine volume information"
+            });
+        }
+    }
 }
 
 public class FileSystemBrowseResponse
@@ -251,4 +294,13 @@ public class FileSystemValidateResponse
     public bool Exists { get; set; }
     public bool IsWritable { get; set; }
     public string Message { get; set; } = string.Empty;
+}
+
+public class VolumeCheckResponse
+{
+    public bool SameVolume { get; set; }
+    public bool WillBreakHardlinks { get; set; }
+    public string? SourceVolume { get; set; }
+    public string? DestVolume { get; set; }
+    public string? Message { get; set; }
 }

@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Runtime.InteropServices;
 using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Linq;
@@ -728,6 +729,69 @@ namespace Listenarr.Api.Services
                                     if (msg.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 || ioex.HResult == unchecked((int)0x80070020))
                                     {
                                         job.AddLogEntry($"Copy failed due to sharing violation (file locked): {ioex.Message}");
+                                        try { _metrics?.Increment("processing.move_file_locked"); } catch { }
+                                        job.ErrorMessage = ioex.Message;
+                                        job.ScheduleRetry();
+                                        return;
+                                    }
+                                    throw;
+                                }
+                            }
+                            else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
+                            {
+                                try
+                                {
+                                    if (fileMover != null)
+                                    {
+                                        var ok = await fileMover.HardlinkFileAsync(sourcePath, uniqueDest);
+                                        if (ok) job.AddLogEntry($"Hardlinked file: {sourcePath} -> {uniqueDest}");
+                                        else throw new IOException("HardlinkFileAsync failed");
+                                    }
+                                    else
+                                    {
+                                        // Fallback without IFileMover
+                                        try
+                                        {
+                                            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                                            {
+                                                if (!NativeFileMethods.CreateHardLinkWindows(uniqueDest, sourcePath))
+                                                    throw new IOException("Hardlink failed");
+                                            }
+                                            else
+                                            {
+                                                if (NativeFileMethods.CreateHardLinkUnix(sourcePath, uniqueDest) != 0)
+                                                    throw new IOException("Hardlink failed");
+                                            }
+                                            job.AddLogEntry($"Hardlinked file: {sourcePath} -> {uniqueDest}");
+                                        }
+                                        catch
+                                        {
+                                            File.Copy(sourcePath, uniqueDest, true);
+                                            job.AddLogEntry($"Hardlink failed, copied file: {sourcePath} -> {uniqueDest}");
+                                        }
+                                    }
+                                }
+                                catch (FileNotFoundException fnf)
+                                {
+                                    job.AddLogEntry($"Hardlink failed - source not found: {fnf.Message}");
+                                    _metrics?.Increment("processing.copy_source_not_found");
+                                    job.ScheduleRetry();
+                                    job.ErrorMessage = fnf.Message;
+                                    return;
+                                }
+                                catch (UnauthorizedAccessException uae)
+                                {
+                                    job.AddLogEntry($"Hardlink failed - unauthorized access: {uae.Message}");
+                                    job.ErrorMessage = uae.Message;
+                                    job.ScheduleRetry();
+                                    return;
+                                }
+                                catch (IOException ioex)
+                                {
+                                    var msg = ioex.Message ?? string.Empty;
+                                    if (msg.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 || ioex.HResult == unchecked((int)0x80070020))
+                                    {
+                                        job.AddLogEntry($"Hardlink failed due to sharing violation (file locked): {ioex.Message}");
                                         try { _metrics?.Increment("processing.move_file_locked"); } catch { }
                                         job.ErrorMessage = ioex.Message;
                                         job.ScheduleRetry();

@@ -135,30 +135,7 @@ namespace Listenarr.Api.Extensions
             services.AddHttpClient("us")
                 .ConfigurePrimaryHttpMessageHandler(() => CreateExternalHandler(config));
 
-            // Typed clients used by scraping/search services. Add consistent handlers + policies.
-            services.AddHttpClient<Listenarr.Api.Services.IAmazonSearchService, Listenarr.Api.Services.AmazonSearchService>()
-                .ConfigurePrimaryHttpMessageHandler(() => CreateExternalHandler(config))
-                .AddPolicyHandler(HttpPolicyExtensions
-                    .HandleTransientHttpError()
-                    .OrResult((HttpResponseMessage r) => r.StatusCode == HttpStatusCode.Forbidden
-                                                         || r.StatusCode == (HttpStatusCode)429
-                                                         || r.StatusCode == HttpStatusCode.ServiceUnavailable)
-                    .WaitAndRetryAsync(3, retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt))))
-                .AddPolicyHandler(HttpPolicyExtensions
-                    .HandleTransientHttpError()
-                    .OrResult((HttpResponseMessage r) => r.StatusCode == HttpStatusCode.Forbidden
-                                                         || r.StatusCode == (HttpStatusCode)429
-                                                         || r.StatusCode == HttpStatusCode.ServiceUnavailable)
-                    .CircuitBreakerAsync(6, TimeSpan.FromMinutes(2)));
-
-            services.AddHttpClient<Listenarr.Api.Services.IAudibleSearchService, Listenarr.Api.Services.AudibleSearchService>()
-                .ConfigurePrimaryHttpMessageHandler(() => CreateExternalHandler(config))
-                .AddPolicyHandler(retryPolicy);
-
-            // Misc scraping/metadata clients (Audible metadata, Audimeta, Audnexus)
-            services.AddHttpClient<Listenarr.Api.Services.IAudibleMetadataService, Listenarr.Api.Services.AudibleMetadataService>()
-                .ConfigurePrimaryHttpMessageHandler(() => CreateExternalHandler(config))
-                .AddPolicyHandler(retryPolicy);
+            // Typed clients used by metadata services. Add consistent handlers + policies.
 
             services.AddHttpClient<Listenarr.Api.Services.AudimetaService>()
                 .ConfigurePrimaryHttpMessageHandler(() => CreateExternalHandler(config))

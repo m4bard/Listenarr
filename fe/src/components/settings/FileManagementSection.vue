@@ -45,8 +45,8 @@
 
       <FormRow label="Completed File Action" help="Choose whether completed downloads should be moved into the library output path or copied and left in the client's folder.">
         <select :value="settings.completedFileAction" @change="e => updateField('completedFileAction', (e.target as HTMLSelectElement).value)">
-          <option value="Move">Move (default)</option>
-          <option value="Copy">Copy</option>
+          <option value="Move">Move</option>
+          <option value="Hardlink/Copy">Hardlink/Copy</option>
         </select>
       </FormRow>
     </div>

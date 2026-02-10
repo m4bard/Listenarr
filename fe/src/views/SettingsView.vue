@@ -1154,7 +1154,7 @@ async function loadTabContents(tab: string) {
             : null
           if (raw) {
             // Normalize values coming from the backend which may use PascalCase
-            // property names (e.g., EnableAmazonSearch) instead of camelCase.
+            // property names (e.g., EnableOpenLibrarySearch) instead of camelCase.
             const rawObj = raw as Record<string, unknown>
             const normalized: Record<string, unknown> = { ...rawObj }
 
@@ -1167,35 +1167,10 @@ async function loadTabContents(tab: string) {
               return fallback
             }
 
-            const pickNumber = (camel: string, pascal: string, fallback: number) => {
-              const c = rawObj[camel]
-              const p = rawObj[pascal]
-              const val =
-                c !== undefined && c !== null
-                  ? Number(c)
-                  : p !== undefined && p !== null
-                    ? Number(p)
-                    : fallback
-              // Treat zero as missing and use fallback
-              if (!val || Number.isNaN(val)) return fallback
-              return val
-            }
-
-            const amazon = pickBool('enableAmazonSearch', 'EnableAmazonSearch', true)
-            const audible = pickBool('enableAudibleSearch', 'EnableAudibleSearch', true)
             const openlib = pickBool('enableOpenLibrarySearch', 'EnableOpenLibrarySearch', true)
 
-            const candidateCap = pickNumber('searchCandidateCap', 'SearchCandidateCap', 100)
-            const resultCap = pickNumber('searchResultCap', 'SearchResultCap', 100)
-            const fuzzy = pickNumber('searchFuzzyThreshold', 'SearchFuzzyThreshold', 0.2)
-
             // Assign normalized camelCase properties for the UI binding
-            normalized.enableAmazonSearch = amazon
-            normalized.enableAudibleSearch = audible
             normalized.enableOpenLibrarySearch = openlib
-            normalized.searchCandidateCap = candidateCap
-            normalized.searchResultCap = resultCap
-            normalized.searchFuzzyThreshold = fuzzy
 
             // Set camelCase properties for the UI binding and saving
             settings.value = normalized as unknown as ApplicationSettings
@@ -1238,43 +1213,10 @@ async function loadTabContents(tab: string) {
               if (p !== undefined && p !== null) return Boolean(p)
               return fallback
             }
-            const pickNumberReq = (camel: string, pascal: string, fallback: number) => {
-              const c = rawReqObj[camel]
-              const p = rawReqObj[pascal]
-              const val =
-                c !== undefined && c !== null
-                  ? Number(c)
-                  : p !== undefined && p !== null
-                    ? Number(p)
-                    : fallback
-              if (!val || Number.isNaN(val)) return fallback
-              return val
-            }
-            normalizedReq.enableAmazonSearch = pickBoolReq(
-              'enableAmazonSearch',
-              'EnableAmazonSearch',
-              true,
-            )
-            normalizedReq.enableAudibleSearch = pickBoolReq(
-              'enableAudibleSearch',
-              'EnableAudibleSearch',
-              true,
-            )
             normalizedReq.enableOpenLibrarySearch = pickBoolReq(
               'enableOpenLibrarySearch',
               'EnableOpenLibrarySearch',
               true,
-            )
-            normalizedReq.searchCandidateCap = pickNumberReq(
-              'searchCandidateCap',
-              'SearchCandidateCap',
-              100,
-            )
-            normalizedReq.searchResultCap = pickNumberReq('searchResultCap', 'SearchResultCap', 100)
-            normalizedReq.searchFuzzyThreshold = pickNumberReq(
-              'searchFuzzyThreshold',
-              'SearchFuzzyThreshold',
-              0.2,
             )
             settings.value = normalizedReq as unknown as ApplicationSettings
             configStore.applicationSettings = settings.value

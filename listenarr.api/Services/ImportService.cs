@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -220,6 +221,11 @@ namespace Listenarr.Api.Services
                     if (string.Equals(action, "Copy", StringComparison.OrdinalIgnoreCase))
                     {
                         var ok = await _fileMover.CopyFileAsync(sourcePath, uniqueInitial);
+                        if (ok) result.WasCopied = true;
+                    }
+                    else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var ok = await _fileMover.HardlinkFileAsync(sourcePath, uniqueInitial);
                         if (ok) result.WasCopied = true;
                     }
                     else
@@ -516,6 +522,15 @@ namespace Listenarr.Api.Services
                                 res.WasCopied = true;
                             }
                         }
+                        else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var ok = await _fileMover.HardlinkFileAsync(file, uniqueInitial);
+                            if (ok)
+                            {
+                                _logger.LogInformation("ImportFilesFromDirectory: Hardlinked file {Source} -> {Dest}", file, uniqueInitial);
+                                res.WasCopied = true;
+                            }
+                        }
                         else
                         {
                             var ok = await _fileMover.MoveFileAsync(file, uniqueInitial);
@@ -651,6 +666,12 @@ namespace Listenarr.Api.Services
 // Simple no-op/fallback file mover used for compatibility in tests when DI IFileMover isn't provided.
 internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
 {
+    [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateHardLinkWin(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+
+    [System.Runtime.InteropServices.DllImport("libc", SetLastError = true)]
+    private static extern int link(string oldpath, string newpath);
+
     public Task<bool> CopyDirectoryAsync(string sourceDir, string destDir)
     {
         try
@@ -680,6 +701,41 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
             if (!string.IsNullOrEmpty(d) && !Directory.Exists(d)) Directory.CreateDirectory(d);
             File.Copy(sourceFile, destFile, true);
             return Task.FromResult(true);
+        }
+        catch
+        {
+            return Task.FromResult(false);
+        }
+    }
+
+    public Task<bool> HardlinkFileAsync(string sourceFile, string destFile)
+    {
+        try
+        {
+            var d = Path.GetDirectoryName(destFile);
+            if (!string.IsNullOrEmpty(d) && !Directory.Exists(d)) Directory.CreateDirectory(d);
+            if (File.Exists(destFile)) File.Delete(destFile);
+            try
+            {
+                // Try P/Invoke hardlink
+                if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
+                {
+                    if (!CreateHardLinkWin(destFile, sourceFile, IntPtr.Zero))
+                        throw new IOException("Hardlink failed");
+                }
+                else
+                {
+                    if (link(sourceFile, destFile) != 0)
+                        throw new IOException("Hardlink failed");
+                }
+                return Task.FromResult(true);
+            }
+            catch
+            {
+                // Fallback to copy
+                File.Copy(sourceFile, destFile, true);
+                return Task.FromResult(true);
+            }
         }
         catch
         {

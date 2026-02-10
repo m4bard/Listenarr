@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Infrastructure.Models;
 
@@ -129,6 +130,35 @@ namespace Listenarr.Api.Services
                         File.Copy(sourcePath, uniqueDest, true);
                     }
                     job.AddLogEntry($"Copied file: {sourcePath} -> {uniqueDest}");
+                }
+                else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
+                {
+                    if (fileMover != null)
+                    {
+                        var ok = await fileMover.HardlinkFileAsync(sourcePath, uniqueDest);
+                        if (!ok) throw new IOException("HardlinkFileAsync failed");
+                    }
+                    else
+                    {
+                        try
+                        {
+                            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                            {
+                                if (!NativeFileMethods.CreateHardLinkWindows(uniqueDest, sourcePath))
+                                    throw new IOException("Hardlink failed");
+                            }
+                            else
+                            {
+                                if (NativeFileMethods.CreateHardLinkUnix(sourcePath, uniqueDest) != 0)
+                                    throw new IOException("Hardlink failed");
+                            }
+                        }
+                        catch
+                        {
+                            File.Copy(sourcePath, uniqueDest, true);
+                        }
+                    }
+                    job.AddLogEntry($"Hardlinked file: {sourcePath} -> {uniqueDest}");
                 }
                 else
                 {

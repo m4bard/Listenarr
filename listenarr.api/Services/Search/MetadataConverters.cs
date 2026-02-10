@@ -19,42 +19,6 @@ public class MetadataConverters
     }
 
     /// <summary>
-    /// Converts Amazon search result to SearchResult.
-    /// </summary>
-    public SearchResult ConvertAmazonSearchToResult(AmazonSearchResult amazonResult)
-    {
-        return new SearchResult
-        {
-            Title = amazonResult.Title ?? "Unknown Title",
-            Artist = amazonResult.Author ?? "Unknown Author",
-            Source = "Amazon",
-            Asin = amazonResult.Asin ?? "",
-            ImageUrl = amazonResult.ImageUrl ?? ""
-        };
-    }
-
-    /// <summary>
-    /// Converts Amazon search result to MetadataSearchResult.
-    /// </summary>
-    public MetadataSearchResult ConvertAmazonSearchToMetadataResult(AmazonSearchResult amazonResult)
-    {
-        return new MetadataSearchResult
-        {
-            Id = Guid.NewGuid().ToString(),
-            Title = amazonResult.Title ?? "Unknown Title",
-            Artist = amazonResult.Author ?? "Unknown Author",
-            Album = amazonResult.Title ?? "Unknown Title",
-            Category = "Audiobook",
-            Source = "Amazon",
-            Asin = amazonResult.Asin ?? "",
-            ImageUrl = amazonResult.ImageUrl ?? "",
-            ProductUrl = amazonResult.Asin != null ? $"https://www.amazon.com/dp/{amazonResult.Asin}" : null,
-            IsEnriched = false,
-            MetadataSource = "Amazon"
-        };
-    }
-
-    /// <summary>
     /// Converts Audimeta API response to AudibleBookMetadata.
     /// </summary>
     public AudibleBookMetadata ConvertAudimetaToMetadata(AudimetaBookResponse audimetaData, string asin, string source = "Audible")

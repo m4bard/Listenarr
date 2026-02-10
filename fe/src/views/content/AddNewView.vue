@@ -339,9 +339,9 @@
               </p>
 
               <div class="result-stats">
-                <span v-if="audibleResult.runtime || audibleResult.searchResult?.runtime" class="stat-item">
+                <span v-if="audibleResult.runtime || audibleResult.searchResult?.runtime || audibleResult.searchResult?.lengthMinutes" class="stat-item">
                   <PhClock />
-                  {{ formatRuntime((audibleResult.runtime || audibleResult.searchResult?.runtime)!) }}
+                  {{ formatRuntime((audibleResult.runtime || audibleResult.searchResult?.runtime || audibleResult.searchResult?.lengthMinutes)!) }}
                 </span>
                 <span v-if="audibleResult.language || audibleResult.searchResult?.language" class="stat-item">
                   <PhGlobe />
@@ -617,9 +617,9 @@
               </p>
 
               <div class="result-stats">
-                <span v-if="book.searchResult?.runtime" class="stat-item">
+                <span v-if="book.searchResult?.runtime || book.searchResult?.lengthMinutes" class="stat-item">
                   <PhClock />
-                  {{ formatRuntime(book.searchResult.runtime) }}
+                  {{ formatRuntime(book.searchResult?.runtime || book.searchResult?.lengthMinutes) }}
                 </span>
                 <span v-if="book.searchResult?.language" class="stat-item">
                   <PhGlobe />
@@ -1335,6 +1335,10 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       tr['subtitle'] = extractSubtitle(r)
       tr['narrator'] = extractNarrators(r)
       tr['runtime'] = normalizeRuntime(r.runtimeLengthMin ?? r.runtime)
+      // Also set runtime on searchResult for template display
+      if (tr['runtime']) {
+        ;(titleResult.searchResult as Record<string, unknown>)['runtime'] = tr['runtime']
+      }
 
       tr['publishedDate'] = extractPublishedDate(r)
       tr['description'] = extractDescription(r)
@@ -2348,12 +2352,15 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
         if (Number.isNaN(num)) return undefined
         return num > 1000 ? Math.round(num / 60) : num
       })()
+      // Also set runtime on searchResult for template display
+      if (tr['runtime']) {
+        ;(tr['searchResult'] as Record<string, unknown>)['runtime'] = tr['runtime']
+      }
       tr['publishedDate'] = rrRes['releaseDate'] ?? rrRes['ReleaseDate'] ?? rrRes['publishedDate'] ?? rrRes['PublishedDate'] ?? undefined
       tr['description'] = rrRes['description'] ?? rrRes['Description'] ?? undefined
       tr['asin'] = rrRes['asin'] ?? rrRes['Asin'] ?? undefined
       tr['id'] = rrRes['asin'] ?? rrRes['sku'] ?? rrRes['id'] ?? rrRes['title']
       tr['productUrl'] = rrRes['productUrl'] ?? rrRes['link'] ?? rrRes['Link'] ?? undefined
-      tr['series'] = rr['series']
       // preserve seriesList for tooltip display when provided as an array
       try {
         const rawSeries = rr['series'] ?? rr['Series']
@@ -2374,8 +2381,27 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
           ;(tr['searchResult'] as Record<string, unknown>)['seriesList'] = list
           // and choose first element as visible series string
           tr['series'] = list[0]
+          ;(tr['searchResult'] as Record<string, unknown>)['series'] = list[0]
+        } else if (rawSeries && typeof rawSeries === 'object' && !Array.isArray(rawSeries)) {
+          // Handle single series object: convert to string by getting name property
+          const seriesObj = rawSeries as Record<string, unknown>
+          const seriesName = (seriesObj['name'] ?? seriesObj['Name'] ?? String(rawSeries)) as string
+          const seriesPosition = seriesObj['position'] ?? seriesObj['Position']
+          const displaySeries = seriesPosition ? `${seriesName} #${seriesPosition}` : seriesName
+          tr['series'] = displaySeries
+          ;(tr['searchResult'] as Record<string, unknown>)['series'] = displaySeries
+        } else {
+          // Handle string or other primitive types
+          const displaySeries = String(rawSeries ?? '')
+          tr['series'] = displaySeries
+          ;(tr['searchResult'] as Record<string, unknown>)['series'] = displaySeries
         }
-      } catch {}
+      } catch {
+        // Fallback if processing fails
+        const fallbackSeries = String(rr['series'] ?? '')
+        tr['series'] = fallbackSeries
+        ;(tr['searchResult'] as Record<string, unknown>)['series'] = fallbackSeries
+      }
       tr['seriesNumber'] = rrRes['seriesNumber'] ?? rrRes['seriesPosition'] ?? undefined
       if (!tr['imageUrl'] && rrRes['imageUrl']) tr['imageUrl'] = rrRes['imageUrl']
     }

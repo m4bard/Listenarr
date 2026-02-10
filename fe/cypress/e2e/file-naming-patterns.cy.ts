@@ -113,8 +113,10 @@ describe('File Naming Patterns - Import E2E', () => {
         .parent()
         .find('input')
         .clear()
+      cy.contains('Single File Naming Pattern')
+        .parent()
+        .find('input')
         .type('{Author} - {Title}')
-        .blur()
 
       // Save settings
       cy.contains('button', 'Save').click()
@@ -136,8 +138,10 @@ describe('File Naming Patterns - Import E2E', () => {
         .parent()
         .find('input')
         .clear()
+      cy.contains('Multi-File Naming Pattern')
+        .parent()
+        .find('input')
         .type('{Title} Part {DiskNumber}')
-        .blur()
 
       // Save settings
       cy.contains('button', 'Save').click()
@@ -323,6 +327,9 @@ describe('File Naming Patterns - Import E2E', () => {
         .parent()
         .find('input')
         .clear()
+      cy.contains('Multi-File Naming Pattern')
+        .parent()
+        .find('input')
         .type('{Title}') // Same as single-file pattern - problematic!
 
       // Preview should show warning
@@ -360,8 +367,10 @@ describe('File Naming Patterns - Import E2E', () => {
         .parent()
         .find('input')
         .clear()
+      cy.contains('Multi-File Naming Pattern')
+        .parent()
+        .find('input')
         .type('{Title}-Ch{ChapterNumber:00}')
-        .blur()
 
       // Should show proper preview without warning
       cy.contains('Multi-File Naming Pattern')
@@ -400,7 +409,7 @@ describe('File Naming Patterns - Import E2E', () => {
       cy.intercept('POST', '/api/manualimport/start', (req) => {
         const item = req.body.items[0]
         // Single file - no disk number
-        expect(item.diskNumber).to.be.undefined
+        void expect(item.diskNumber).to.be.undefined
         
         req.reply({
           statusCode: 200,
@@ -451,7 +460,7 @@ describe('File Naming Patterns - Import E2E', () => {
       cy.intercept('POST', '/api/manualimport/start', (req) => {
         // Multi-file import should include disk numbers
         expect(req.body.items).to.have.length.greaterThan(1)
-        req.body.items.forEach((item: any, index: number) => {
+        req.body.items.forEach((item: { diskNumber?: number }, index: number) => {
           expect(item.diskNumber).to.equal(index + 1)
         })
         

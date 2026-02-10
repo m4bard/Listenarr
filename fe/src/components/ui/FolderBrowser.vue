@@ -478,7 +478,7 @@ watch(() => props.modelValue, (v) => {
 
 /* Inline usage: cap height when not in a modal so it doesn't grow too tall */
 .folder-browser.browser-inline .directory-list {
-  max-height: calc(70vh - 300px);
+  max-height: calc(70vh - 355px);
   overflow-y: auto;
 }
 

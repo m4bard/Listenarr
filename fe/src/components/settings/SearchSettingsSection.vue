@@ -4,25 +4,8 @@
       <PhMagnifyingGlass /> Search Settings
     </h3>
     <div class="form-body">
-      <CheckboxCard :modelValue="settings.enableAmazonSearch" @update:modelValue="v => updateField('enableAmazonSearch', v)" title="Enable Amazon Searching" description="Include Amazon-based search providers when performing intelligent searches." />
-
-      <CheckboxCard :modelValue="settings.enableAudibleSearch" @update:modelValue="v => updateField('enableAudibleSearch', v)" title="Enable Audible Searching" description="Include Audible provider lookups when performing intelligent searches." />
-
       <CheckboxCard :modelValue="settings.enableOpenLibrarySearch" @update:modelValue="v => updateField('enableOpenLibrarySearch', v)" title="Enable OpenLibrary Searching" description="Include OpenLibrary title augmentation and lookups when performing intelligent searches." />
 
-      <div class="form-row">
-        <FormRow label="Candidate Cap (max candidates)" help="Maximum number of candidate ASINs/entries to consider when searching (candidateLimit).">
-          <input :value="settings.searchCandidateCap" @input="e => updateField('searchCandidateCap', Number((e.target as HTMLInputElement).value || 1))" type="number" min="1" max="200" />
-        </FormRow>
-
-        <FormRow label="Result Cap (max results)" help="Maximum number of results returned to the UI (returnLimit).">
-          <input :value="settings.searchResultCap" @input="e => updateField('searchResultCap', Number((e.target as HTMLInputElement).value || 1))" type="number" min="1" max="200" />
-        </FormRow>
-      </div>
-
-      <FormRow label="Fuzzy Threshold" help="Fuzzy matching threshold used when comparing titles/authors (0.0-1.0). Higher values require closer matches.">
-        <input :value="settings.searchFuzzyThreshold" @input="e => updateField('searchFuzzyThreshold', Number((e.target as HTMLInputElement).value || 0))" type="number" step="0.01" min="0" max="1" />
-      </FormRow>
     </div>
   </div>
 </template>
@@ -32,7 +15,6 @@ import type { ApplicationSettings } from '@/types'
 import { PhMagnifyingGlass } from '@phosphor-icons/vue'
 // Checkbox usage handled via CheckboxCard; no direct Checkbox import needed here
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
-import FormRow from '@/components/settings/FormRow.vue'
 
 const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
 const emit = defineEmits<{
