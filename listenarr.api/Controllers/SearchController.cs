@@ -104,8 +104,38 @@ namespace Listenarr.Api.Controllers
         }
 
 
+        private List<object> SimplifySearchResults(List<SearchResult> results)
+        {
+            return results?.Select(r => new
+            {
+                r.Id,
+                r.Title,
+                Artist = r.Artist,
+                r.Subtitle,
+                r.Description,
+                r.Publisher,
+                r.Language,
+                r.Runtime,
+                r.Narrator,
+                r.ImageUrl,
+                r.Asin,
+                r.Isbn,
+                r.Series,
+                r.SeriesNumber,
+                r.ProductUrl,
+                r.PublishedDate,
+                r.PublishYear,
+                r.Genres,
+                r.IsEnriched,
+                r.MetadataSource,
+                r.Source,
+                r.SourceLink,
+                r.Score
+            }).Cast<object>().ToList() ?? new List<object>();
+        }
+
         [HttpPost]
-        public async Task<ActionResult<object>> Search([FromBody] JsonElement reqJson)
+        public async Task<ActionResult<object>> Search([FromBody] JsonElement reqJson, [FromQuery] bool? simplified = null)
         {
             try
             {
@@ -120,6 +150,9 @@ namespace Listenarr.Api.Controllers
                 var req = JsonSerializer.Deserialize<Listenarr.Api.Models.SearchRequest>(reqJson.GetRawText(), options);
                 if (req == null) return BadRequest("SearchRequest body is required");
                 _logger.LogDebug("[DBG] Search received mode={Mode}, query='{Query}'", req.Mode, req.Query ?? "<null>");
+
+                // Default to simplified=true for both modes (user only needs metadata for Add New feature)
+                var useSimplified = simplified ?? true;
 
                 if (req.Mode == Listenarr.Api.Models.SearchMode.Simple)
                 {
@@ -274,7 +307,8 @@ namespace Listenarr.Api.Controllers
                                 if (md != null)
                                 {
                                     var result = SearchResultConverters.ToSearchResult(md);
-                                    return Ok(new List<SearchResult> { result });
+                                    var asinResults = new List<SearchResult> { result };
+                                    return Ok(useSimplified ? SimplifySearchResults(asinResults) : asinResults);
                                 }
                             }
                             // If audimeta didn't return a record, fall through to unified search below

@@ -1285,6 +1285,13 @@ function getAudiobookStatus(
     return 'downloading'
   }
 
+  // Use server's wanted flag if available (it checks File.Exists() on backend)
+  // wanted === true means files are missing or invalid
+  // wanted === false means files exist and are valid
+  if (audiobook.wanted === true) {
+    return 'no-file'
+  }
+
   // If there are no files at all, treat as no-file
   if (!audiobook.files || !Array.isArray(audiobook.files) || audiobook.files.length === 0) {
     return 'no-file'
@@ -1316,8 +1323,8 @@ function getAudiobookStatus(
   })
 
   if (candidateFiles.length === 0) {
-    // No files in preferred formats - treat as no-file (or could be considered mismatch)
-    return 'no-file'
+    // Files exist but none match preferred formats; treat as mismatch instead of missing.
+    return 'quality-mismatch'
   }
 
   // If no cutoff defined, assume match

@@ -1093,6 +1093,9 @@ onMounted(async () => {
                 recentDownloadTitles.value.delete(title)
               }, 30000)
             }
+          } else if (status === 'moved') {
+            // Download was successfully imported - refresh wanted badge to reflect the change
+            refreshWantedBadge()
           } else {
             // Ignore progress/other transient updates
           }
@@ -1442,6 +1445,12 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   transition: all 0.2s;
   position: relative;
   gap: 0.75rem;
+}
+
+/* Push count pills to the end of sidebar nav items */
+.sidebar .nav-item .pill-count,
+.sidebar .nav-item .pill.pill-count {
+  margin-left: auto;
 }
 
 .nav-item:hover {

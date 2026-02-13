@@ -12,12 +12,17 @@
             <PhArrowClockwise />
           </button>
 
-          <!-- Scan button now placed between Refresh and Monitor; neutral filled grey by default -->
+          <!-- Manual Search button -->
+          <button class="nav-btn icon-button" @click="openManualSearch" title="Manual Search" aria-label="Manual Search">
+            <PhMagnifyingGlass />
+          </button>
+
+          <!-- Scan button now placed between Manual Search and Monitor; neutral filled grey by default -->
           <button class="nav-btn icon-button" :disabled="scanning || scanQueued" @click="scanFiles"
             :title="scanning ? 'Scanning...' : (scanQueued ? 'Scan queued' : 'Scan Folder')" aria-label="Scan Folder">
             <PhSpinner v-if="scanning" class="ph-spin" />
             <PhClock v-else-if="scanQueued" />
-            <PhMagnifyingGlass v-else />
+            <PhFolderOpen v-else />
           </button>
 
           <button class="nav-btn icon-button primary" @click="toggleMonitored"
@@ -61,11 +66,19 @@
               <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
               <span>{{ audiobook.monitored ? 'Monitored' : 'Monitor' }}</span>
             </button>
+            <button class="dropdown-item" @click="
+              openManualSearch();
+            showMoreActions = false
+              ">
+              <PhMagnifyingGlass />
+              <span>Manual Search</span>
+            </button>
+
             <button class="dropdown-item" :disabled="scanning || scanQueued" @click="
               scanFiles();
             showMoreActions = false
               ">
-              <PhMagnifyingGlass />
+              <PhFolderOpen />
               <span>Scan Folder</span>
             </button>
 
@@ -457,6 +470,13 @@
   <EditAudiobookModal :is-open="showEditModal" :audiobook="audiobook" @close="closeEditModal"
     @saved="handleEditSaved" />
 
+  <!-- Manual Search Modal -->
+  <ManualSearchModal
+    :is-open="showManualSearchModal"
+    :audiobook="audiobook"
+    @close="closeManualSearch"
+    @downloaded="handleDownloaded"
+  />
 
 </template>
 
@@ -474,11 +494,12 @@ import { getPlaceholderUrl } from '@/utils/placeholder'
 import { joinPaths, isAbsolutePath } from '@/utils/path'
 import { observeLazyImages, ensureVisibleImagesLoad } from '@/utils/lazyLoad'
 import { signalRService } from '@/services/signalr'
-import type { Audiobook, History } from '@/types'
+import type { Audiobook, History, SearchResult } from '@/types'
 import { safeText } from '@/utils/textUtils'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
+import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import { Pill } from '@/components/base'
@@ -488,6 +509,7 @@ import {
   PhBookmark,
   PhSpinner,
   PhMagnifyingGlass,
+  PhFolderOpen,
   PhTrash,
   PhClock,
   PhFolder,
@@ -528,6 +550,7 @@ const loading = ref(true)
 const error = ref<string | null>(null)
 const activeTab = ref('details')
 const showDeleteDialog = ref(false)
+const showManualSearchModal = ref(false)
 const deleting = ref(false)
 const showFullDescription = ref(false)
 const scanning = ref(false)
@@ -842,6 +865,21 @@ async function loadHistory() {
   } finally {
     historyLoading.value = false
   }
+}
+
+function openManualSearch() {
+  showManualSearchModal.value = true
+}
+
+function closeManualSearch() {
+  showManualSearchModal.value = false
+}
+
+function handleDownloaded(result: SearchResult) {
+  logger.debug('Download initiated from manual search:', result.title)
+  const toast = useToast()
+  toast.success('Download Added', `${result.title} has been sent to your download client`)
+  closeManualSearch()
 }
 
 async function scanFiles() {

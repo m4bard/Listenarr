@@ -131,6 +131,14 @@
             <PhPlus />
             Add Indexer
           </button>
+          <button
+            v-if="activeTab === 'indexers'"
+            @click="indexersRef?.openProwlarrImport()"
+            class="add-button btn btn-primary"
+          >
+            <PhDownloadSimple />
+            Import from Prowlarr
+          </button>
 
           <button
             v-if="activeTab === 'notifications'"
@@ -346,6 +354,7 @@ import {
   PhFloppyDisk,
   PhX,
   PhCheck,
+  PhDownloadSimple,
 } from '@phosphor-icons/vue'
 import { useToast } from '@/services/toastService'
 

@@ -481,7 +481,13 @@ namespace Listenarr.Api.Controllers
                     source = f.Source,
                     createdAt = f.CreatedAt
                 }).ToList(),
-                wanted = a.Monitored && (a.Files == null || !a.Files.Any() || !a.Files.Any(f => !string.IsNullOrEmpty(f.Path) && System.IO.File.Exists(f.Path)))
+                wanted = a.Monitored && (a.Files == null || !a.Files.Any() || !a.Files.Any(f =>
+                {
+                    if (string.IsNullOrEmpty(f.Path)) return false;
+                    var isAbsolute = System.IO.Path.IsPathRooted(f.Path);
+                    var fullPath = isAbsolute ? f.Path : (!string.IsNullOrEmpty(a.BasePath) ? System.IO.Path.Combine(a.BasePath, f.Path) : f.Path);
+                    return System.IO.File.Exists(fullPath);
+                }))
             });
 
             return Ok(dto);
@@ -553,7 +559,13 @@ namespace Listenarr.Api.Controllers
                     source = f.Source,
                     createdAt = f.CreatedAt
                 }).ToList(),
-                wanted = updated.Monitored && (updated.Files == null || !updated.Files.Any() || !updated.Files.Any(f => !string.IsNullOrEmpty(f.Path) && System.IO.File.Exists(f.Path)))
+                wanted = updated.Monitored && (updated.Files == null || !updated.Files.Any() || !updated.Files.Any(f =>
+                {
+                    if (string.IsNullOrEmpty(f.Path)) return false;
+                    var isAbsolute = System.IO.Path.IsPathRooted(f.Path);
+                    var fullPath = isAbsolute ? f.Path : (!string.IsNullOrEmpty(updated.BasePath) ? System.IO.Path.Combine(updated.BasePath, f.Path) : f.Path);
+                    return System.IO.File.Exists(fullPath);
+                }))
             };
 
             return Ok(audiobookDto);

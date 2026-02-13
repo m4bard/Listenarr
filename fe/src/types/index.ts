@@ -397,6 +397,8 @@ export interface Audiobook {
   qualityProfileId?: number
   // Optional list of author ASINs (populated by backend when available)
   authorAsins?: string[]
+  // Server-computed flag indicating if this audiobook is wanted (monitored and missing files)
+  wanted?: boolean
 }
 
 export interface History {

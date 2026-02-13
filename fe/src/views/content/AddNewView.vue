@@ -2350,7 +2350,8 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
         if (raw === undefined || raw === null) return undefined
         const num = Number(raw)
         if (Number.isNaN(num)) return undefined
-        return num > 1000 ? Math.round(num / 60) : num
+        // Only convert from seconds if the number is suspiciously large (> 2 days in seconds)
+        return num > 172800 ? Math.round(num / 60) : num
       })()
       // Also set runtime on searchResult for template display
       if (tr['runtime']) {

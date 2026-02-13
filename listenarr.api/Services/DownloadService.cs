@@ -24,6 +24,7 @@ using Listenarr.Api.Hubs;
 using Microsoft.AspNetCore.WebUtilities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
+using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -58,6 +59,7 @@ namespace Listenarr.Api.Services
         private readonly IAppMetricsService _metrics;
         private readonly IDownloadQueueService _downloadQueueService;
         private readonly ICompletedDownloadProcessor _completedDownloadProcessor;
+        private readonly IDownloadHistoryService? _downloadHistoryService;
 
         // Track qBittorrent sync state for incremental updates (clientId -> last rid)
         private readonly Dictionary<string, int> _qbittorrentSyncState = new();
@@ -83,7 +85,8 @@ namespace Listenarr.Api.Services
             ICompletedDownloadProcessor completedDownloadProcessor,
             IAppMetricsService metrics,
             NotificationService notificationService,
-            Listenarr.Application.Services.IHubBroadcaster? hubBroadcaster = null)
+            Listenarr.Application.Services.IHubBroadcaster? hubBroadcaster = null,
+            IDownloadHistoryService? downloadHistoryService = null)
         {
             _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
             _hubBroadcaster = hubBroadcaster ?? new NoopHubBroadcaster();
@@ -104,6 +107,7 @@ namespace Listenarr.Api.Services
             _notificationService = notificationService ?? throw new ArgumentNullException(nameof(notificationService));
             _downloadQueueService = downloadQueueService ?? throw new ArgumentNullException(nameof(downloadQueueService));
             _completedDownloadProcessor = completedDownloadProcessor ?? throw new ArgumentNullException(nameof(completedDownloadProcessor));
+            _downloadHistoryService = downloadHistoryService;
         }
 
         /// <summary>
@@ -564,6 +568,25 @@ namespace Listenarr.Api.Services
             dbContext.Downloads.Add(download);
             await dbContext.SaveChangesAsync();
             _logger.LogInformation("Created download record in database: {DownloadId} for '{Title}'", downloadId, searchResult.Title);
+            
+            // Record in download history for idempotency tracking
+            if (_downloadHistoryService != null && !string.IsNullOrEmpty(downloadClientIdForModel))
+            {
+                try
+                {
+                    var protocol = IsTorrentResult(searchResult) ? Listenarr.Domain.Models.DownloadProtocol.Torrent : Listenarr.Domain.Models.DownloadProtocol.Usenet;
+                    await _downloadHistoryService.RecordGrabbedAsync(
+                        downloadId,
+                        downloadClientIdForModel,
+                        searchResult.Title ?? "Unknown",
+                        protocol);
+                    _logger.LogInformation("Recorded grabbed event in history for download {DownloadId}", downloadId);
+                }
+                catch (Exception histEx)
+                {
+                    _logger.LogWarning(histEx, "Failed to record grabbed event in history for download {DownloadId} (non-critical)", downloadId);
+                }
+            }
 
             // Attempt to cache MyAnonamouse torrents ahead of handing off to qBittorrent
             await TryPrepareMyAnonamouseTorrentAsync(searchResult, downloadId);
@@ -2126,103 +2149,122 @@ namespace Listenarr.Api.Services
                         clientQueue = await GetQueueFallbackAsync(client);
                     }
 
-                    // Filter to only include items that Listenarr initiated
-                    _logger.LogInformation("Before filtering - Client {ClientName} has {TotalItems} queue items", client.Name ?? client.Id, clientQueue.Count);
-                    _logger.LogInformation("Database has {DatabaseItems} Listenarr downloads for filtering", listenarrDownloads.Count);
+                    // SONARR PATTERN: Show ALL client queue items, enrich with DB metadata if available
+                    // The download client is the source of truth for what's actually downloading
+                    _logger.LogInformation("Client {ClientName} has {TotalItems} queue items", client.Name ?? client.Id, clientQueue.Count);
+                    _logger.LogInformation("Database has {DatabaseItems} Listenarr downloads for metadata enrichment", listenarrDownloads.Count);
 
-                    foreach (var download in listenarrDownloads)
+                    // Process all queue items - client is the source of truth
+                    var mappedFiltered = new List<QueueItem>();
+                    foreach (var queueItem in clientQueue)
                     {
-                        var hashValue = download.Metadata?.TryGetValue("TorrentHash", out var h) == true ? h?.ToString() : "NO_HASH";
-                        _logger.LogInformation("DB Download: Id={Id}, Title='{Title}', ClientId='{ClientId}', Status={Status}, TorrentHash={Hash}",
-                            download.Id, download.Title, download.DownloadClientId, download.Status, hashValue);
-                    }
-
-                    foreach (var queueItem in clientQueue.Take(3)) // Just show first 3 to avoid spam
-                    {
-                        _logger.LogInformation("Queue Item: Id={Id}, Title='{Title}', ClientId='{ClientId}'",
-                            queueItem.Id, queueItem.Title, queueItem.DownloadClientId);
-                    }
-
-                    // Find queue items that correspond to Listenarr downloads
-                    // Include ONLY client queue items that ARE tracked by Listenarr
-                    var initialFiltered = clientQueue.Where(queueItem =>
-                        listenarrDownloads.Any(download =>
+                        try
                         {
-                            var idMatch = download.Id == queueItem.Id;
-
-                            // For qBittorrent, also check if queue item ID matches stored torrent hash
-                            var hashMatch = false;
-                            if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase))
+                            // Set CompletionTime for completed downloads (used by CompletedDownloadHandlingService)
+                            // This tracks when a download was detected as complete for stability window validation
+                            if (queueItem.Status == "completed" && queueItem.CompletionTime == null)
                             {
-                                try
+                                queueItem.CompletionTime = DateTime.UtcNow;
+                            }
+
+                            // Try to find matching database record for metadata enrichment
+                            var matchedDownload = listenarrDownloads.FirstOrDefault(download =>
+                            {
+                                // Must be same client
+                                if (download.DownloadClientId != client.Id)
+                                    return false;
+
+                                // Try direct ID match
+                                if (download.Id == queueItem.Id)
+                                    return true;
+
+                                // For qBittorrent, check torrent hash
+                                if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase))
                                 {
                                     if (download.Metadata != null && download.Metadata.TryGetValue("TorrentHash", out var hashObj))
                                     {
                                         var storedHash = hashObj?.ToString();
-                                        if (!string.IsNullOrEmpty(storedHash))
-                                        {
-                                            hashMatch = storedHash.Equals(queueItem.Id, StringComparison.OrdinalIgnoreCase);
-                                        }
+                                        if (!string.IsNullOrEmpty(storedHash) && 
+                                            storedHash.Equals(queueItem.Id, StringComparison.OrdinalIgnoreCase))
+                                            return true;
                                     }
                                 }
-                                catch
-                                {
-                                    hashMatch = false;
-                                }
-                            }
 
-                            // Enhanced title match using robust normalization
-                            var titleMatch = false;
-                            try
-                            {
+                                // Try title matching as fallback
                                 if (!string.IsNullOrEmpty(download.Title) && !string.IsNullOrEmpty(queueItem.Title))
                                 {
-                                    titleMatch = IsMatchingTitle(download.Title, queueItem.Title);
-                                    _logger.LogInformation("Title matching for download {DownloadId}: '{DownloadTitle}' vs '{QueueTitle}' = {Match}",
-                                        download.Id, download.Title, queueItem.Title, titleMatch);
+                                    if (IsMatchingTitle(download.Title, queueItem.Title))
+                                    {
+                                        _logger.LogDebug("Matched download {DownloadId} to queue item {QueueId} via title: '{DownloadTitle}' <-> '{QueueTitle}'",
+                                            download.Id, queueItem.Id, download.Title, queueItem.Title);
+                                        return true;
+                                    }
                                 }
-                            }
-                            catch (Exception ex)
-                            {
-                                _logger.LogWarning(ex, "Failed to match title for download {DownloadId}, defaulting to false", download.Id);
-                                titleMatch = false;
-                            }
 
-                            var clientMatch = download.DownloadClientId == client.Id;
-                            var overallMatch = clientMatch && (idMatch || hashMatch || titleMatch);
-
-                            _logger.LogInformation("Matching check for download {DownloadId} vs queue item {QueueId}: ClientMatch={ClientMatch}, IdMatch={IdMatch}, HashMatch={HashMatch}, TitleMatch={TitleMatch}, Overall={Overall}",
-                                download.Id, queueItem.Id, clientMatch, idMatch, hashMatch, titleMatch, overallMatch);
-
-                            return overallMatch;
-                        })
-                    ).ToList();
-
-                    // Map each filtered queue item to the Listenarr DB download id so the UI won't show duplicates
-                    var mappedFiltered = new List<QueueItem>();
-                    foreach (var queueItem in initialFiltered)
-                    {
-                        try
-                        {
-                            var matchedDownload = listenarrDownloads.FirstOrDefault(download =>
-                                download.DownloadClientId == client.Id && (
-                                    download.Id == queueItem.Id ||
-                    (download.Metadata != null && download.Metadata.TryGetValue("TorrentHash", out var h) && (h?.ToString() ?? string.Empty).Equals(queueItem.Id, StringComparison.OrdinalIgnoreCase)) ||
-                    (!string.IsNullOrEmpty(download.Title) && !string.IsNullOrEmpty(queueItem.Title) && IsMatchingTitle(download.Title, queueItem.Title))
-                                )
-                            );
+                                return false;
+                            });
 
                             if (matchedDownload != null)
                             {
-                                // Normalize the queue item id to the Listenarr DB id so the front-end treats them as the same
+                                // Store original torrent hash in metadata BEFORE changing ID
+                                var originalClientId = queueItem.Id;
+                                bool hashUpdated = false;
+                                
+                                if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    if (matchedDownload.Metadata == null)
+                                        matchedDownload.Metadata = new Dictionary<string, object>();
+                                    
+                                    if (!matchedDownload.Metadata.ContainsKey("TorrentHash"))
+                                    {
+                                        matchedDownload.Metadata["TorrentHash"] = originalClientId;
+                                        hashUpdated = true;
+                                        _logger.LogInformation("Stored torrent hash {Hash} for download {DownloadId}", originalClientId, matchedDownload.Id);
+                                    }
+                                }
+                                
+                                // Persist hash to database if we just discovered it
+                                if (hashUpdated)
+                                {
+                                    try
+                                    {
+                                        var dbContext = await _dbContextFactory.CreateDbContextAsync();
+                                        var dbDownload = await dbContext.Downloads.FindAsync(matchedDownload.Id);
+                                        if (dbDownload != null)
+                                        {
+                                            if (dbDownload.Metadata == null)
+                                                dbDownload.Metadata = new Dictionary<string, object>();
+                                            dbDownload.Metadata["TorrentHash"] = originalClientId;
+                                            await dbContext.SaveChangesAsync();
+                                            _logger.LogInformation("Persisted torrent hash {Hash} to database for download {DownloadId}", originalClientId, matchedDownload.Id);
+                                        }
+                                    }
+                                    catch (Exception dbEx)
+                                    {
+                                        _logger.LogWarning(dbEx, "Failed to persist torrent hash for download {DownloadId}", matchedDownload.Id);
+                                    }
+                                }
+                                
+                                // Enrich queue item with database metadata
+                                // Use DB ID so UI doesn't show duplicates
                                 queueItem.Id = matchedDownload.Id;
+                                
+                                _logger.LogDebug("Enriched queue item (original: {OriginalId}) with DB metadata from download {DownloadId}", 
+                                    originalClientId, matchedDownload.Id);
+                            }
+                            else
+                            {
+                                // No DB record found - this is an untracked download
+                                // Still show it (Sonarr pattern: client is source of truth)
+                                _logger.LogDebug("Queue item {QueueId} '{Title}' not tracked in database - showing as untracked", 
+                                    queueItem.Id, queueItem.Title);
                             }
 
                             mappedFiltered.Add(queueItem);
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogDebug(ex, "Error mapping filtered queue item to Listenarr download");
+                            _logger.LogWarning(ex, "Error processing queue item {QueueId}, including anyway", queueItem.Id);
                             mappedFiltered.Add(queueItem);
                         }
                     }
@@ -2280,41 +2322,80 @@ namespace Listenarr.Api.Services
                         }
                     }
 
-                    _logger.LogDebug("Client {ClientName}: {TotalItems} total items, {FilteredItems} Listenarr items",
-                        client.Name, clientQueue.Count, mappedFiltered.Count);
+                    _logger.LogDebug("Client {ClientName}: showing {TotalItems} queue items", 
+                        client.Name, mappedFiltered.Count);
 
-                    // Purge orphaned download records that are no longer in the client's queue
+                    // CONSERVATIVE CLEANUP: Only purge downloads that are clearly abandoned
+                    // Sonarr doesn't rely on aggressive purging - client is the source of truth
                     try
                     {
                         var clientDownloads = listenarrDownloads.Where(d => d.DownloadClientId == client.Id).ToList();
-                        var mappedDownloadIds = mappedFiltered.Select(q => q.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                        
+                        // Build set of all client item IDs (both original client IDs and normalized DB IDs)
+                        var allClientItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        
+                        // Add all normalized (mapped) IDs from the processed queue
+                        foreach (var mapped in mappedFiltered)
+                        {
+                            allClientItemIds.Add(mapped.Id);
+                        }
+                        
+                        // Also add original client queue IDs (torrent hashes, etc)
+                        foreach (var item in clientQueue)
+                        {
+                            allClientItemIds.Add(item.Id);
+                        }
 
+                        // Only purge downloads that meet ALL these criteria:
+                        // 1. Not in client queue
+                        // 2. Not Completed status (needs processing first)
+                        // 3. Not very recent (allow 5 minutes for hash resolution)
+                        // 4. Not in Downloading/Processing state (might be actively monitored)
                         var orphanedDownloads = clientDownloads.Where(d =>
                         {
-                            // Check if download ID matches
-                            if (mappedDownloadIds.Contains(d.Id))
+                            // Check if in client queue by ID
+                            if (allClientItemIds.Contains(d.Id))
                                 return false;
 
-                            // For qBittorrent, also check if the TorrentHash matches
+                            // Check if in client queue by torrent hash
                             if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase) &&
                                 d.Metadata != null && d.Metadata.TryGetValue("TorrentHash", out var hashObj))
                             {
                                 var torrentHash = hashObj?.ToString();
-                                if (!string.IsNullOrEmpty(torrentHash) && mappedDownloadIds.Contains(torrentHash))
+                                if (!string.IsNullOrEmpty(torrentHash) && allClientItemIds.Contains(torrentHash))
                                     return false;
                             }
 
-                            // Don't purge Completed status downloads - they need cleanup first
-                            if (d.Status == DownloadStatus.Completed)
+                            // Don't purge terminal states - they need proper cleanup
+                            if (d.Status == DownloadStatus.Completed || 
+                                d.Status == DownloadStatus.Moved ||
+                                d.Status == DownloadStatus.Failed)
                                 return false;
 
+                            // Don't purge active states
+                            if (d.Status == DownloadStatus.Downloading || 
+                                d.Status == DownloadStatus.Processing)
+                                return false;
+
+                            // Give NEW downloads 5 minutes to appear in client queue
+                            // This handles race conditions during download addition
+                            if ((DateTime.UtcNow - d.StartedAt).TotalMinutes < 5)
+                            {
+                                _logger.LogDebug("Skipping purge for recent download {DownloadId} '{Title}' (age: {Age:F1} min)",
+                                    d.Id, d.Title, (DateTime.UtcNow - d.StartedAt).TotalMinutes);
+                                return false;
+                            }
+
+                            _logger.LogDebug("Download {DownloadId} '{Title}' is orphaned (not in client queue, age: {Age:F1} min, status: {Status})",
+                                d.Id, d.Title, (DateTime.UtcNow - d.StartedAt).TotalMinutes, d.Status);
                             return true;
                         }).ToList();
 
                         if (orphanedDownloads.Any())
                         {
-                            // If this is a SABnzbd or NZBGet client, consult the client's history first
-                            // SAFETY: If history fetch fails, skip purging to avoid accidental deletion
+                            _logger.LogInformation("Found {Count} potentially orphaned downloads for client {ClientName}, will purge after validation",
+                                orphanedDownloads.Count, client.Name);
+                                
                             var toPurge = orphanedDownloads;
                             try
                             {
@@ -2823,6 +2904,20 @@ namespace Listenarr.Api.Services
                             ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
                             : contentPath;
 
+                        // If qBittorrent doesn't return content_path, fall back to save path + torrent name
+                        // to avoid scanning the entire download root.
+                        if (string.IsNullOrWhiteSpace(localContentPath))
+                        {
+                            if (!string.IsNullOrWhiteSpace(localPath) && !string.IsNullOrWhiteSpace(name))
+                            {
+                                localContentPath = Path.Combine(localPath, name);
+                            }
+                            else if (!string.IsNullOrWhiteSpace(localPath))
+                            {
+                                localContentPath = localPath;
+                            }
+                        }
+
                         // Map qBittorrent states to unified status
                         // Note: qBittorrent doesn't have explicit "completed" states
                         // Completion is determined by progress >= 100% + uploading/seeding state
@@ -3003,9 +3098,53 @@ namespace Listenarr.Api.Services
             {
                 var An = NormalizeTitle(a);
                 var Bn = NormalizeTitle(b);
-                if (An.Contains(Bn) || Bn.Contains(An) || An == Bn) return true;
+                
+                // Exact match
+                if (An == Bn) return true;
+                
+                // One contains the other (substring match)
+                if (An.Contains(Bn) || Bn.Contains(An)) return true;
+                
+                // Check if the shorter title contains all major words from the shorter title
+                // This handles cases where the torrent filename has extra metadata
+                var shorterTokens = (An.Length <= Bn.Length ? An : Bn).Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var longerTitle = An.Length <= Bn.Length ? Bn : An;
+                
+                // If shorter is at least 3 words and all words appear in longer (in order or scattered)
+                if (shorterTokens.Length >= 3)
+                {
+                    // Check if all tokens from shorter appear in longer (as substrings or words)
+                    var allTokensFound = shorterTokens.All(token => longerTitle.Contains(token));
+                    if (allTokensFound)
+                    {
+                        // Additional validation: check that tokens appear in roughly the same order
+                        var lastPos = 0;
+                        var inOrder = true;
+                        foreach (var token in shorterTokens)
+                        {
+                            var pos = longerTitle.IndexOf(token, lastPos);
+                            if (pos < 0)
+                            {
+                                inOrder = false;
+                                break;
+                            }
+                            lastPos = pos + token.Length;
+                        }
+                        if (inOrder) return true;
+                    }
+                }
+                
+                // Levenshtein distance with more generous threshold for longer titles
                 var dist = LevenshteinDistance(An, Bn);
-                var threshold = Math.Max(3, (int)(Math.Min(An.Length, Bn.Length) * 0.15));
+                var minLen = Math.Min(An.Length, Bn.Length);
+                var maxLen = Math.Max(An.Length, Bn.Length);
+                
+                // For longer titles, use a percentage-based threshold; for shorter, use absolute
+                // This handles cases like the torrent having extra metadata appended
+                var threshold = minLen < 20 
+                    ? Math.Max(3, (int)(minLen * 0.20))  // 20% for short titles
+                    : Math.Max(5, (int)(minLen * 0.25)); // 25% for longer titles
+                
                 return dist <= threshold;
             }
             catch { return false; }

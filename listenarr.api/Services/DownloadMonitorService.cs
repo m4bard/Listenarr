@@ -26,6 +26,7 @@ using Listenarr.Api.Hubs;
 using Listenarr.Domain.Models;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Memory;
+using Listenarr.Application.Services;
 
 namespace Listenarr.Api.Services
 {
@@ -495,12 +496,16 @@ namespace Listenarr.Api.Services
             // Include:
             // - Queued, Downloading, Paused, Processing (actively being monitored)
             // - Completed without FinalPath (completed in client but not yet imported)
+            // Exclude:
+            // - ImportBlocked (blocked due to repeated failures, no point in retrying)
+            // - Moved, Failed, Cancelled (terminal states)
             var activeDownloads = await dbContext.Downloads
-                .Where(d => d.Status == DownloadStatus.Queued ||
-                           d.Status == DownloadStatus.Downloading ||
-                           d.Status == DownloadStatus.Paused ||
-                           d.Status == DownloadStatus.Processing ||
-                           (d.Status == DownloadStatus.Completed && string.IsNullOrEmpty(d.FinalPath)))
+                .Where(d => (d.Status == DownloadStatus.Queued ||
+                            d.Status == DownloadStatus.Downloading ||
+                            d.Status == DownloadStatus.Paused ||
+                            d.Status == DownloadStatus.Processing ||
+                            (d.Status == DownloadStatus.Completed && string.IsNullOrEmpty(d.FinalPath))) &&
+                           d.Status != DownloadStatus.ImportBlocked)
                 .ToListAsync(cancellationToken);
 
             _logger.LogInformation("DownloadMonitorService found {Count} active downloads", activeDownloads.Count);
@@ -668,9 +673,18 @@ namespace Listenarr.Api.Services
                     }
 
                     var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+                    _logger.LogInformation("Polling qBittorrent client {ClientName} at {BaseUrl}", client.Name, baseUrl);
 
-                    using var http = _httpClientFactory.CreateClient("DownloadClient");
-                    _logger.LogInformation("Created HttpClient from factory for qbittorrent polling. BaseAddress={BaseAddress}", http.BaseAddress);
+                    // Create a new HttpClient with cookie support for this session
+                    var cookieJar = new System.Net.CookieContainer();
+                    var handler = new HttpClientHandler
+                    {
+                        CookieContainer = cookieJar,
+                        UseCookies = true,
+                        AutomaticDecompression = System.Net.DecompressionMethods.All
+                    };
+                    using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+                    _logger.LogInformation("Created HttpClient with cookie support for qbittorrent polling. BaseAddress={BaseAddress}", http.BaseAddress);
 
                     // Login
                     using var loginData = new FormUrlEncodedContent(new[]
@@ -681,11 +695,14 @@ namespace Listenarr.Api.Services
                     var loginResp = await http.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, cancellationToken);
                     if (!loginResp.IsSuccessStatusCode)
                     {
-                        _logger.LogWarning("qBittorrent login failed for client {ClientName}", client.Name);
+                        var loginError = await loginResp.Content.ReadAsStringAsync(cancellationToken);
+                        _logger.LogWarning("qBittorrent login failed for client {ClientName} at {BaseUrl} - StatusCode={StatusCode}, Response={Response}", 
+                            client.Name, baseUrl, loginResp.StatusCode, loginError);
                         // Schedule a retry with backoff
                         ScheduleNextClientPollOnFailure(client.Id);
                         return;
                     }
+                    _logger.LogDebug("qBittorrent login successful for client {ClientName}", client.Name);
 
                     // Request all necessary fields from torrents/info to avoid additional API calls per torrent
                     // This single call replaces the need for individual /properties calls per download
@@ -719,7 +736,9 @@ namespace Listenarr.Api.Services
                             var torrentsResp = await http.GetAsync($"{baseUrl}/api/v2/torrents/info{query}", cancellationToken);
                             if (!torrentsResp.IsSuccessStatusCode)
                             {
-                                _logger.LogWarning("Failed to fetch torrent batch from qBittorrent for {ClientName} (batch size={Size})", client.Name, batch.Count);
+                                var errorContent = await torrentsResp.Content.ReadAsStringAsync(cancellationToken);
+                                _logger.LogWarning("Failed to fetch torrent batch from qBittorrent for {ClientName} (batch size={Size}, URL={Url}, StatusCode={StatusCode}, Response={Response})", 
+                                    client.Name, batch.Count, $"{baseUrl}/api/v2/torrents/info{query}", torrentsResp.StatusCode, errorContent);
                                 // Respect remote failure - stop processing further batches and let failure handling back off
                                 ScheduleNextClientPollOnFailure(client.Id);
                                 return;
@@ -868,6 +887,10 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("Found matching qBittorrent torrent for {DownloadId}: {TorrentName} (Hash: {Hash}, State: {State}, Progress: {Progress:P2}, SavePath: {SavePath}, ContentPath: {ContentPath})",
                                 dl.Id, matched.Name, matched.Hash, matched.State, matched.Progress, matched.SavePath, matched.ContentPath);
 
+                            // DIAGNOSTIC: Log detailed completion check values
+                            _logger.LogInformation("Completion diagnostic for {DownloadId}: Progress={Progress:F4} (>= 1.0? {ProgressCheck}), AmountLeft={AmountLeft} (== 0? {AmountCheck}), State={State}",
+                                dl.Id, matched.Progress, matched.Progress >= 1.0, matched.AmountLeft, matched.AmountLeft == 0, matched.State);
+
                             // Persist client's save/content path to the download (using data from main torrents/info call)
                             // This avoids making individual /properties API calls per download which can overwhelm qBittorrent
                             try
@@ -927,8 +950,12 @@ namespace Listenarr.Api.Services
                             if (isComplete)
                             {
                                 // Determine the best path to use for file discovery
-                                // Priority: content_path (actual file/folder) > save_path (download directory)
-                                var completionPath = !string.IsNullOrEmpty(matched.ContentPath) ? matched.ContentPath : matched.SavePath;
+                                // Priority: content_path (actual file/folder) > save_path + name (torrent root) > save_path (download directory)
+                                var completionPath = !string.IsNullOrEmpty(matched.ContentPath)
+                                    ? matched.ContentPath
+                                    : (!string.IsNullOrEmpty(matched.SavePath) && !string.IsNullOrEmpty(matched.Name)
+                                        ? Path.Combine(matched.SavePath, matched.Name)
+                                        : matched.SavePath);
 
                                 _logger.LogInformation("qBittorrent torrent {TorrentName} detected as complete. Using path: {CompletionPath}",
                                     matched.Name, completionPath);
@@ -1302,6 +1329,22 @@ namespace Listenarr.Api.Services
                     if (download.Status == DownloadStatus.Moved)
                     {
                         _logger.LogInformation("Download {DownloadId} has already been processed (status: Moved), skipping duplicate finalization", download.Id);
+                        return;
+                    }
+                }
+
+                // Check idempotency: prevent re-importing downloads that were already successfully imported
+                var historyService = scope.ServiceProvider.GetService<IDownloadHistoryService>();
+                if (historyService != null && !string.IsNullOrEmpty(download.DownloadClientId))
+                {
+                    var alreadyImported = await historyService.IsAlreadyImportedAsync(download.Id, download.DownloadClientId);
+                    if (alreadyImported)
+                    {
+                        _logger.LogInformation("Download {DownloadId} ({Title}) was already imported - idempotency check prevented re-import from client {ClientId}",
+                            download.Id, download.Title, download.DownloadClientId);
+                        download.Status = DownloadStatus.Moved;
+                        db.Downloads.Update(download);
+                        await db.SaveChangesAsync();
                         return;
                     }
                 }
@@ -2276,9 +2319,14 @@ namespace Listenarr.Api.Services
                         download.Status = mappedStatus;
                     }
                 }
+                else if (download.Status != DownloadStatus.Completed)
+                {
+                    // Don't overwrite Completed status - it's managed by the completion detection logic
+                    download.Status = mappedStatus;
+                }
                 else
                 {
-                    download.Status = mappedStatus;
+                    _logger.LogDebug("Preserving Completed status for {DownloadId} - not overwriting with client state {ClientState}", downloadId, clientState);
                 }
 
                 // Add metadata for real-time updates

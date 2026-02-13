@@ -141,11 +141,11 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Property<bool>("ExtractArchives")
                         .HasColumnType("INTEGER");
 
-                    b.Property<string>("FolderNamingPattern")
+                    b.Property<string>("FileNamingPattern")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("FileNamingPattern")
+                    b.Property<string>("FolderNamingPattern")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
@@ -158,20 +158,15 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Property<int>("MissingSourceRetryInitialDelaySeconds")
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("MultiFileNamingPattern")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("OutputPath")
                         .IsRequired()
                         .HasColumnType("TEXT");
 
                     b.Property<int>("PollingIntervalSeconds")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("SearchCandidateCap")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<double>("SearchFuzzyThreshold")
-                        .HasColumnType("REAL");
-
-                    b.Property<int>("SearchResultCap")
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("ShowCompletedExternalDownloads")
@@ -492,6 +487,79 @@ namespace Listenarr.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("DownloadClientConfigurations");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Models.DownloadHistory", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<Guid?>("AudiobookId")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Data")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DownloadClient")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DownloadClientId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("DownloadId")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ErrorMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("EventDate")
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("EventType")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime?>("ImportedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("OutputPath")
+                        .HasMaxLength(1000)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("Protocol")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("Status")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("WasImported")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER")
+                        .HasDefaultValue(false);
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AudiobookId");
+
+                    b.HasIndex("DownloadId");
+
+                    b.HasIndex("EventDate");
+
+                    b.HasIndex("DownloadId", "EventType");
+
+                    b.ToTable("DownloadHistories", (string)null);
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Models.DownloadProcessingJob", b =>

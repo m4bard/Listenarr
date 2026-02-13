@@ -29,16 +29,21 @@
             </FormRow>
 
             <FormRow v-if="formData.implementation !== 'InternetArchive'" label="URL *" labelFor="url">
+              <select
+                v-if="formData.implementation === 'MyAnonamouse'"
+                id="url"
+                v-model="formData.url"
+                required
+              >
+                <option value="https://www.myanonamouse.net">https://www.myanonamouse.net</option>
+              </select>
               <input
+                v-else
                 id="url"
                 v-model="formData.url"
                 type="url"
                 required
-                :placeholder="
-                  formData.implementation === 'MyAnonamouse'
-                    ? 'https://www.myanonamouse.net'
-                    : 'https://indexer.example.com'
-                "
+                :placeholder="'https://indexer.example.com'"
               />
             </FormRow>
 
@@ -393,6 +398,8 @@ watch(
     // MyAnonamouse is torrent only
     else if (newImplementation === 'MyAnonamouse') {
       formData.value.type = 'Torrent'
+      // Set default URL for MyAnonamouse
+      formData.value.url = 'https://www.myanonamouse.net'
     }
     // Torznab defaults to Torrent
     else if (newImplementation === 'Torznab') {

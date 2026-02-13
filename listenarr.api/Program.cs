@@ -143,6 +143,8 @@ builder.Services.AddControllers()
     {
         // Serialize enums as strings instead of integers for better frontend compatibility
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        // Only ignore null values (not empty strings or zeros) to reduce payload size while preserving meaningful empty values
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
 // Add SignalR for real-time updates
@@ -161,6 +163,9 @@ builder.Services.AddScoped<Listenarr.Api.Services.ILegacyOutputPathMigrator, Lis
 
 // History repository for tracking events
 builder.Services.AddScoped<Listenarr.Infrastructure.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.HistoryRepository>();
+
+// Download history service for idempotency and audit trail (Sonarr pattern)
+builder.Services.AddScoped<Listenarr.Application.Services.IDownloadHistoryService, Listenarr.Infrastructure.Services.DownloadHistoryService>();
 
 // Add in-memory cache for metadata prefetch / reuse
 builder.Services.AddMemoryCache();

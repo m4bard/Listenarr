@@ -1523,6 +1523,22 @@ class ApiService {
     })
   }
 
+  async importProwlarrIndexers(payload: {
+    url: string
+    port?: number
+    apiKey: string
+  }): Promise<{
+    addedCount: number
+    skippedCount: number
+    total: number
+    indexers: Array<{ id: number; name: string; url: string; implementation: string }>
+  }> {
+    return this.request(`/indexers/prowlarr/import`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
   async getEnabledIndexers(): Promise<Indexer[]> {
     return this.request<Indexer[]>('/indexers/enabled')
   }
@@ -1823,6 +1839,8 @@ export const testIndexerDraft = (indexer: Omit<Indexer, 'id' | 'createdAt' | 'up
   apiService.testIndexerDraft(indexer)
 export const toggleIndexer = (id: number) => apiService.toggleIndexer(id)
 export const getEnabledIndexers = () => apiService.getEnabledIndexers()
+export const importProwlarrIndexers = (payload: { url: string; port?: number; apiKey: string }) =>
+  apiService.importProwlarrIndexers(payload)
 
 // Export individual remote path mapping functions for convenience
 export const getRemotePathMappings = () => apiService.getRemotePathMappings()

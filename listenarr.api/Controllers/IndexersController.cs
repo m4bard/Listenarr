@@ -20,10 +20,12 @@ using Microsoft.AspNetCore.Mvc;
 using Listenarr.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Linq;
 using System.Collections.Generic;
 using Listenarr.Domain.Models;
+using Listenarr.Api.Models;
 using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Controllers
@@ -274,6 +276,146 @@ namespace Listenarr.Api.Controllers
                 indexer.Name, indexer.Id, indexer.Type);
 
             return CreatedAtAction(nameof(GetById), new { id = indexer.Id }, indexer);
+        }
+
+        /// <summary>
+        /// Import indexers from Prowlarr that include category 3000 or 3030
+        /// </summary>
+        [HttpPost("prowlarr/import")]
+        public async Task<IActionResult> ImportFromProwlarr([FromBody] ProwlarrImportRequest request)
+        {
+            if (request == null)
+            {
+                return BadRequest(new { message = "Request body is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Url))
+            {
+                return BadRequest(new { message = "Prowlarr URL is required" });
+            }
+
+            if (string.IsNullOrWhiteSpace(request.ApiKey))
+            {
+                return BadRequest(new { message = "Prowlarr API key is required" });
+            }
+
+            var baseUrl = BuildProwlarrBaseUrl(request.Url, request.Port);
+            HttpResponseMessage response;
+            string payload;
+            try
+            {
+                (response, payload) = await FetchProwlarrIndexersAsync(baseUrl, request.ApiKey.Trim());
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to reach Prowlarr at {Url}", LogRedaction.SanitizeUrl(baseUrl));
+                return StatusCode(502, new { message = "Failed to reach Prowlarr API" });
+            }
+
+            if (!response.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Prowlarr API returned {StatusCode}: {Body}", (int)response.StatusCode, LogRedaction.SanitizeText(payload));
+                return StatusCode((int)response.StatusCode, new { message = "Prowlarr API error", status = (int)response.StatusCode });
+            }
+            using var doc = JsonDocument.Parse(payload);
+            if (doc.RootElement.ValueKind != JsonValueKind.Array)
+            {
+                return StatusCode(502, new { message = "Unexpected Prowlarr API response" });
+            }
+
+            var existingIndexers = await _dbContext.Indexers.AsNoTracking().ToListAsync();
+            var createdIndexers = new List<Indexer>();
+            var skipped = 0;
+
+            foreach (var element in doc.RootElement.EnumerateArray())
+            {
+                if (!element.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.Number)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var indexerId = idProp.GetInt32();
+                var categoryIds = GetCategoryIdsFromProwlarrIndexer(element);
+                if (!categoryIds.Contains(3000) && !categoryIds.Contains(3030))
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var name = element.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
+                    ? nameProp.GetString() ?? "Prowlarr Indexer"
+                    : "Prowlarr Indexer";
+                if (!name.EndsWith(" (Prowlarr)", StringComparison.OrdinalIgnoreCase))
+                {
+                    name = $"{name} (Prowlarr)";
+                }
+
+                var protocol = element.TryGetProperty("protocol", out var protocolProp) && protocolProp.ValueKind == JsonValueKind.String
+                    ? protocolProp.GetString() ?? string.Empty
+                    : string.Empty;
+
+                var implementation = protocol.Equals("usenet", StringComparison.OrdinalIgnoreCase) ? "Newznab" : "Torznab";
+
+                var proxyUrl = BuildProwlarrProxyUrl(baseUrl, indexerId);
+                var normalizedUrl = NormalizeProwlarrProxyUrl(proxyUrl);
+
+                var exists = existingIndexers.FirstOrDefault(i =>
+                    NormalizeProwlarrProxyUrl(i.Url) == normalizedUrl &&
+                    string.Equals(i.Implementation, implementation, StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(i.ApiKey ?? string.Empty, request.ApiKey ?? string.Empty, StringComparison.Ordinal));
+
+                if (exists != null)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                var type = protocol.Equals("usenet", StringComparison.OrdinalIgnoreCase) ? "Usenet" : "Torrent";
+                var categories = string.Join(',', categoryIds.Where(c => c == 3000 || c == 3030).OrderBy(c => c));
+
+                var isEnabled = true;
+                if (element.TryGetProperty("enable", out var enableProp))
+                {
+                    isEnabled = enableProp.ValueKind == JsonValueKind.True;
+                }
+                else if (element.TryGetProperty("enabled", out var enabledProp))
+                {
+                    isEnabled = enabledProp.ValueKind == JsonValueKind.True;
+                }
+
+                var indexer = new Indexer
+                {
+                    Name = name,
+                    Type = type,
+                    Implementation = implementation,
+                    Url = normalizedUrl,
+                    ApiKey = string.IsNullOrWhiteSpace(request.ApiKey) ? null : request.ApiKey.Trim(),
+                    Categories = categories,
+                    EnableRss = true,
+                    EnableAutomaticSearch = true,
+                    EnableInteractiveSearch = true,
+                    IsEnabled = isEnabled,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                _dbContext.Indexers.Add(indexer);
+                createdIndexers.Add(indexer);
+            }
+
+            if (createdIndexers.Count > 0)
+            {
+                await _dbContext.SaveChangesAsync();
+            }
+
+            return Ok(new
+            {
+                addedCount = createdIndexers.Count,
+                skippedCount = skipped,
+                total = createdIndexers.Count + skipped,
+                indexers = createdIndexers.Select(i => new { id = i.Id, name = i.Name, url = i.Url, implementation = i.Implementation })
+            });
         }
 
         /// <summary>
@@ -761,13 +903,200 @@ namespace Listenarr.Api.Controllers
                 url = url.Replace("/api/api", "/api", StringComparison.OrdinalIgnoreCase);
             }
 
-            // If the url ends with '/api', remove it so we can append the correct apiPath later
-            if (url.EndsWith("/api", StringComparison.OrdinalIgnoreCase))
+            // Preserve /api for Prowlarr proxy URLs (/{id}/api or /api/v1/indexer/{id}/api)
+            var prowlarrProxyPattern = @"/((api/v1/indexer/\d+)|\d+)/api$";
+            if (url.EndsWith("/api", StringComparison.OrdinalIgnoreCase) &&
+                !Regex.IsMatch(url, prowlarrProxyPattern, RegexOptions.IgnoreCase))
             {
                 url = url.Substring(0, url.Length - 4);
             }
 
             return url.TrimEnd('/');
+        }
+
+        private string BuildProwlarrBaseUrl(string rawUrl, int? port)
+        {
+            var trimmed = rawUrl.Trim();
+            if (!trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+            {
+                trimmed = "http://" + trimmed;
+            }
+
+            var builder = new UriBuilder(trimmed);
+            if (port.HasValue && port.Value > 0)
+            {
+                builder.Port = port.Value;
+            }
+
+            return builder.Uri.ToString().TrimEnd('/');
+        }
+
+        private string BuildProwlarrProxyUrl(string baseUrl, int indexerId)
+        {
+            var root = baseUrl.TrimEnd('/');
+            return $"{root}/{indexerId}/api";
+        }
+
+        private string NormalizeProwlarrProxyUrl(string? rawUrl)
+        {
+            if (string.IsNullOrWhiteSpace(rawUrl)) return rawUrl ?? string.Empty;
+            return rawUrl.Trim().TrimEnd('/');
+        }
+
+        private async Task<(HttpResponseMessage Response, string Payload)> FetchProwlarrIndexersAsync(string baseUrl, string apiKey)
+        {
+            var encodedKey = System.Net.WebUtility.UrlEncode(apiKey);
+            var endpoints = new List<string>
+            {
+                $"{baseUrl}/api/v1/indexer",
+                $"{baseUrl}/api/v1/indexer?apikey={encodedKey}"
+            };
+
+            HttpResponseMessage? lastResponse = null;
+            string lastPayload = string.Empty;
+
+            foreach (var endpoint in endpoints)
+            {
+                var httpRequest = new HttpRequestMessage(HttpMethod.Get, endpoint);
+                httpRequest.Headers.Add("X-Api-Key", apiKey);
+
+                var response = await _httpClient.SendAsync(httpRequest);
+                var body = await response.Content.ReadAsStringAsync();
+
+                if (response.IsSuccessStatusCode)
+                {
+                    return (response, body);
+                }
+
+                lastResponse = response;
+                lastPayload = body;
+
+                if (response.StatusCode != System.Net.HttpStatusCode.MethodNotAllowed &&
+                    response.StatusCode != System.Net.HttpStatusCode.Unauthorized &&
+                    response.StatusCode != System.Net.HttpStatusCode.Forbidden)
+                {
+                    break;
+                }
+            }
+
+            return (lastResponse ?? new HttpResponseMessage(System.Net.HttpStatusCode.BadGateway), lastPayload);
+        }
+
+        private static string? GetFieldStringValue(JsonElement element, string fieldName)
+        {
+            if (!element.TryGetProperty("fields", out var fields) || fields.ValueKind != JsonValueKind.Array)
+            {
+                return null;
+            }
+
+            foreach (var field in fields.EnumerateArray())
+            {
+                if (!field.TryGetProperty("name", out var nameProp) || nameProp.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                if (!string.Equals(nameProp.GetString(), fieldName, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (!field.TryGetProperty("value", out var valueProp))
+                {
+                    continue;
+                }
+
+                return valueProp.ValueKind == JsonValueKind.String ? valueProp.GetString() : valueProp.ToString();
+            }
+
+            return null;
+        }
+
+        private static HashSet<int> GetCategoryIdsFromProwlarrIndexer(JsonElement element)
+        {
+            var categories = new HashSet<int>();
+
+            if (element.TryGetProperty("capabilities", out var caps) && caps.ValueKind == JsonValueKind.Object)
+            {
+                if (caps.TryGetProperty("categories", out var catArray) && catArray.ValueKind == JsonValueKind.Array)
+                {
+                    foreach (var cat in catArray.EnumerateArray())
+                    {
+                        TryAddCategoryId(cat, categories);
+
+                        if (cat.ValueKind == JsonValueKind.Object && cat.TryGetProperty("subCategories", out var subCats) && subCats.ValueKind == JsonValueKind.Array)
+                        {
+                            foreach (var sub in subCats.EnumerateArray())
+                            {
+                                TryAddCategoryId(sub, categories);
+                            }
+                        }
+                    }
+                }
+            }
+
+            if (element.TryGetProperty("categories", out var directCategories))
+            {
+                AddCategoryValues(directCategories, categories);
+            }
+
+            if (element.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var field in fields.EnumerateArray())
+                {
+                    if (!field.TryGetProperty("name", out var nameProp) || nameProp.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(nameProp.GetString(), "categories", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (field.TryGetProperty("value", out var valueProp))
+                    {
+                        AddCategoryValues(valueProp, categories);
+                    }
+                }
+            }
+
+            return categories;
+        }
+
+        private static void AddCategoryValues(JsonElement value, HashSet<int> categories)
+        {
+            if (value.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var v in value.EnumerateArray())
+                {
+                    TryAddCategoryId(v, categories);
+                }
+            }
+            else
+            {
+                TryAddCategoryId(value, categories);
+            }
+        }
+
+        private static void TryAddCategoryId(JsonElement element, HashSet<int> categories)
+        {
+            if (element.ValueKind == JsonValueKind.Object && element.TryGetProperty("id", out var idProp))
+            {
+                TryAddCategoryId(idProp, categories);
+                return;
+            }
+
+            if (element.ValueKind == JsonValueKind.Number && element.TryGetInt32(out var id))
+            {
+                categories.Add(id);
+                return;
+            }
+
+            if (element.ValueKind == JsonValueKind.String && int.TryParse(element.GetString(), out var parsed))
+            {
+                categories.Add(parsed);
+            }
         }
     }
 }

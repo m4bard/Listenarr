@@ -121,6 +121,64 @@ namespace Listenarr.Api.Services
 
                 var metadataForNaming = namingMetadata ?? metadata;
 
+                // If linked to an audiobook, prevent importing worse quality than existing files
+                if (audiobookId != null)
+                {
+                    try
+                    {
+                        await using var db = await _dbFactory.CreateDbContextAsync(ct);
+                        var ab = await db.Audiobooks
+                            .Include(a => a.QualityProfile)
+                            .Include(a => a.Files)
+                            .FirstOrDefaultAsync(a => a.Id == audiobookId.Value, ct);
+
+                        if (ab != null && ab.Files != null && ab.Files.Any())
+                        {
+                            var abProfile = ab.QualityProfile;
+                            string? bestExisting = null;
+
+                            foreach (var f in ab.Files)
+                            {
+                                try
+                                {
+                                    string q = string.Empty;
+                                    if (!string.IsNullOrEmpty(f.Format)) q = f.Format;
+                                    if (f.Bitrate.HasValue)
+                                    {
+                                        var kb = f.Bitrate.Value / 1000;
+                                        if (kb >= 320) q = "MP3 320kbps";
+                                        else if (kb >= 256) q = "MP3 256kbps";
+                                        else if (kb >= 192) q = "MP3 192kbps";
+                                        else if (kb >= 128) q = "MP3 128kbps";
+                                    }
+                                    if (string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(f.Path)) q = DetermineQualityFromMetadata(null, f.Path);
+
+                                    if (string.IsNullOrEmpty(bestExisting)) bestExisting = q;
+                                    else if (!string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(bestExisting) && abProfile != null)
+                                    {
+                                        if (IsQualityBetter(q, bestExisting, abProfile)) bestExisting = q;
+                                    }
+                                }
+                                catch { }
+                            }
+
+                            var candidateQuality = DetermineQualityFromMetadata(metadata, sourcePath);
+                            if (!IsQualityBetter(candidateQuality, bestExisting, abProfile))
+                            {
+                                result.Success = false;
+                                result.SkippedReason = $"candidate quality '{candidateQuality}' is not better than existing '{bestExisting}'";
+                                result.Message = result.SkippedReason;
+                                _logger.LogInformation("ImportSingleFile: Skipping import of file {File} for audiobook {AudiobookId} because candidate quality '{Candidate}' is not better than existing '{Existing}'", sourcePath, ab.Id, candidateQuality, bestExisting);
+                                return result;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "ImportSingleFile: Failed to evaluate quality for {File}", sourcePath);
+                    }
+                }
+
                 // Folder/file naming patterns
                 var folderPattern = settings.FolderNamingPattern;
                 var isMultiFile = metadataForNaming.DiscNumber.HasValue || metadataForNaming.TrackNumber.HasValue;

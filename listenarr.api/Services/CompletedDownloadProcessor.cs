@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Listenarr.Infrastructure.Repositories;
+using Listenarr.Application.Services;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.EntityFrameworkCore;
@@ -24,6 +25,7 @@ namespace Listenarr.Api.Services
         private readonly IHubBroadcaster? _hubBroadcaster;
         private readonly IHubContext<Listenarr.Api.Hubs.DownloadHub> _hubContext;
         private readonly IDownloadQueueService _downloadQueueService;
+        private readonly IDownloadHistoryService? _downloadHistoryService;
         private readonly ILogger<CompletedDownloadProcessor> _logger;
         private readonly IAppMetricsService _metrics;
 
@@ -38,7 +40,8 @@ namespace Listenarr.Api.Services
             IHubContext<Listenarr.Api.Hubs.DownloadHub> hubContext,
             ILogger<CompletedDownloadProcessor> logger,
             IHubBroadcaster? hubBroadcaster = null,
-            IAppMetricsService? metrics = null)
+            IAppMetricsService? metrics = null,
+            IDownloadHistoryService? downloadHistoryService = null)
         {
             _downloadRepository = downloadRepository;
             _fileFinalizer = fileFinalizer;
@@ -51,6 +54,7 @@ namespace Listenarr.Api.Services
             _hubBroadcaster = hubBroadcaster;
             _logger = logger;
             _metrics = metrics ?? new NoopAppMetricsService();
+            _downloadHistoryService = downloadHistoryService;
         }
 
         public async Task ProcessCompletedDownloadAsync(string downloadId, string finalPath)
@@ -107,6 +111,7 @@ namespace Listenarr.Api.Services
                     }
                 }
 
+                var importToastSent = false;
                 ApplicationSettings settings = new ApplicationSettings();
                 try
                 {
@@ -146,6 +151,24 @@ namespace Listenarr.Api.Services
                                         tracked.Status = DownloadStatus.Moved;
                                         await _downloadRepository.UpdateAsync(tracked);
                                         _logger.LogInformation("Updated download {DownloadId} FinalPath to directory import result: {FinalPath}", downloadId, finalFromDirectory);
+                                        
+                                        // Record successful import in history for idempotency
+                                        if (_downloadHistoryService != null && !string.IsNullOrEmpty(tracked.DownloadClientId))
+                                        {
+                                            try
+                                            {
+                                                await _downloadHistoryService.RecordImportedAsync(
+                                                    tracked.Id,
+                                                    tracked.DownloadClientId,
+                                                    tracked.Title ?? "Unknown",
+                                                    audiobookId: null);  // Audiobook ID is int in Download, but Guid in DownloadHistory
+                                                _logger.LogInformation("Recorded successful import in history for download {DownloadId}", downloadId);
+                                            }
+                                            catch (Exception histEx)
+                                            {
+                                                _logger.LogWarning(histEx, "Failed to record import in history for download {DownloadId} (non-critical)", downloadId);
+                                            }
+                                        }
                                     }
 
                                     try
@@ -203,6 +226,24 @@ namespace Listenarr.Api.Services
                                                         tracked.Status = DownloadStatus.Moved;
                                                         await _downloadRepository.UpdateAsync(tracked);
                                                         _logger.LogInformation("Updated download {DownloadId} FinalPath to extracted import result: {FinalPath}", downloadId, finalFromExtracted);
+                                                        
+                                                        // Record successful import in history for idempotency
+                                                        if (_downloadHistoryService != null && !string.IsNullOrEmpty(tracked.DownloadClientId))
+                                                        {
+                                                            try
+                                                            {
+                                                                await _downloadHistoryService.RecordImportedAsync(
+                                                                    tracked.Id,
+                                                                    tracked.DownloadClientId,
+                                                                    tracked.Title ?? "Unknown",
+                                                                    audiobookId: null);
+                                                                _logger.LogInformation("Recorded successful import in history for download {DownloadId}", downloadId);
+                                                            }
+                                                            catch (Exception histEx)
+                                                            {
+                                                                _logger.LogWarning(histEx, "Failed to record import in history for download {DownloadId} (non-critical)", downloadId);
+                                                            }
+                                                        }
                                                     }
 
                                                     try
@@ -281,6 +322,24 @@ namespace Listenarr.Api.Services
                                                     tracked.Status = DownloadStatus.Moved;
                                                     await _downloadRepository.UpdateAsync(tracked);
                                                     _logger.LogInformation("Updated download {DownloadId} FinalPath to extracted import result: {FinalPath}", downloadId, finalFromExtracted);
+                                                    
+                                                    // Record successful import in history for idempotency
+                                                    if (_downloadHistoryService != null && !string.IsNullOrEmpty(tracked.DownloadClientId))
+                                                    {
+                                                        try
+                                                        {
+                                                            await _downloadHistoryService.RecordImportedAsync(
+                                                                tracked.Id,
+                                                                tracked.DownloadClientId,
+                                                                tracked.Title ?? "Unknown",
+                                                                audiobookId: null);
+                                                            _logger.LogInformation("Recorded successful import in history for download {DownloadId}", downloadId);
+                                                        }
+                                                        catch (Exception histEx)
+                                                        {
+                                                            _logger.LogWarning(histEx, "Failed to record import in history for download {DownloadId} (non-critical)", downloadId);
+                                                        }
+                                                    }
                                                 }
 
                                                 try
@@ -335,6 +394,24 @@ namespace Listenarr.Api.Services
                                             tracked.Status = DownloadStatus.Moved;
                                             await _downloadRepository.UpdateAsync(tracked);
                                             _logger.LogInformation("Updated download {DownloadId} FinalPath to import result: {FinalPath}", downloadId, importResult.FinalPath);
+                                            
+                                            // Record successful import in history for idempotency
+                                            if (_downloadHistoryService != null && !string.IsNullOrEmpty(tracked.DownloadClientId))
+                                            {
+                                                try
+                                                {
+                                                    await _downloadHistoryService.RecordImportedAsync(
+                                                        tracked.Id,
+                                                        tracked.DownloadClientId,
+                                                        tracked.Title ?? "Unknown",
+                                                        audiobookId: null);
+                                                    _logger.LogInformation("Recorded successful import in history for download {DownloadId}", downloadId);
+                                                }
+                                                catch (Exception histEx)
+                                                {
+                                                    _logger.LogWarning(histEx, "Failed to record import in history for download {DownloadId} (non-critical)", downloadId);
+                                                }
+                                            }
                                         }
 
                                         try
@@ -547,12 +624,16 @@ namespace Listenarr.Api.Services
                                     var downloadName = !string.IsNullOrEmpty(downloadForHistory.Title) ? downloadForHistory.Title : "Download";
                                     var message = $"{downloadName} has been imported into {audiobookName}";
                                     
-                                    await toastService.PublishToastAsync(
-                                        "success", 
-                                        "Import Complete", 
-                                        message,
-                                        timeoutMs: 5000);
-                                    _logger.LogDebug("Sent toast notification for imported download {DownloadId}", downloadId);
+                                    if (!importToastSent)
+                                    {
+                                        await toastService.PublishToastAsync(
+                                            "success", 
+                                            "Import Complete", 
+                                            message,
+                                            timeoutMs: 5000);
+                                        importToastSent = true;
+                                        _logger.LogDebug("Sent toast notification for imported download {DownloadId}", downloadId);
+                                    }
                                 }
                             }
                             catch (Exception toastEx)
@@ -725,12 +806,16 @@ namespace Listenarr.Api.Services
                                                 ? $"{downloadName} has been imported into {audiobookName} and files deleted"
                                                 : $"{downloadName} has been imported into {audiobookName}";
                                             
-                                            await toastService.PublishToastAsync(
-                                                "success", 
-                                                "Import Complete", 
-                                                message,
-                                                timeoutMs: 5000); // Auto-dismiss after 5 seconds
-                                            _logger.LogDebug("Sent toast notification for imported download {DownloadId}", downloadId);
+                                            if (!importToastSent)
+                                            {
+                                                await toastService.PublishToastAsync(
+                                                    "success", 
+                                                    "Import Complete", 
+                                                    message,
+                                                    timeoutMs: 5000); // Auto-dismiss after 5 seconds
+                                                importToastSent = true;
+                                                _logger.LogDebug("Sent toast notification for imported download {DownloadId}", downloadId);
+                                            }
                                         }
                                     }
                                     catch (Exception toastEx)
@@ -825,6 +910,49 @@ namespace Listenarr.Api.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Unexpected error in ProcessCompletedDownloadAsync for {DownloadId}", downloadId);
+                
+                // Record import failure in history and check if we should block further attempts
+                try
+                {
+                    var download = await _downloadRepository.FindAsync(downloadId);
+                    if (download != null)
+                    {
+                        // Increment import attempts
+                        download.ImportAttempts = download.ImportAttempts + 1;
+                        const int MaxImportAttempts = 3;  // Block after 3 consecutive failures during testing
+                        
+                        if (download.ImportAttempts >= MaxImportAttempts)
+                        {
+                            // Block this download from further import attempts
+                            download.Status = DownloadStatus.ImportBlocked;
+                            download.ImportBlockReason = "MaxAttemptsExceeded";
+                            _logger.LogWarning("Download {DownloadId} blocked after {Attempts} failed import attempts", downloadId, download.ImportAttempts);
+                        }
+                        
+                        await _downloadRepository.UpdateAsync(download);
+                        
+                        // Record in history
+                        if (_downloadHistoryService != null && !string.IsNullOrEmpty(download.DownloadClientId))
+                        {
+                            var errorMessage = ex.Message ?? "Unknown error";
+                            var errorDetails = new List<string> { errorMessage };
+                            if (ex.InnerException != null)
+                            {
+                                errorDetails.Add($"Inner: {ex.InnerException.Message}");
+                            }
+                            
+                            await _downloadHistoryService.RecordImportFailedAsync(
+                                download.Id,
+                                download.DownloadClientId,
+                                string.Join(" | ", errorDetails));
+                            _logger.LogInformation("Recorded import failure in history for download {DownloadId}: {Error}", downloadId, errorMessage);
+                        }
+                    }
+                }
+                catch (Exception histEx)
+                {
+                    _logger.LogWarning(histEx, "Failed to record import failure in history for download {DownloadId} (non-critical)", downloadId);
+                }
             }
         }
     }

@@ -165,9 +165,9 @@ export const normalizeRuntime = (raw: unknown): number | undefined => {
   const num = Number(raw)
   if (isNaN(num) || num <= 0) return undefined
 
-  // If > 1000, assume it's seconds; convert to minutes
-  // Otherwise assume it's already in minutes
-  return num > 1000 ? Math.round(num / 60) : num
+  // Only convert from seconds if the number is suspiciously large (> 2 days in seconds = 172800)
+  // Most audiobooks are under 172800 minutes (~4 months) but expressed in seconds would be much larger
+  return num > 172800 ? Math.round(num / 60) : num
 }
 
 /**

@@ -145,6 +145,69 @@
         @saved="loadIndexers()"
       />
 
+      <Modal :visible="showProwlarrModal" size="md" @close="closeProwlarrModal">
+        <template #header>
+          <ModalHeader title="Import from Prowlarr" :icon="PhDownloadSimple" @close="closeProwlarrModal" />
+        </template>
+        <template #default>
+          <ModalForm :submitting="importingProwlarr" @submit="importFromProwlarr">
+            <ModalBody>
+              <FormSection title="Connection" :icon="PhGlobe">
+                <FormRow
+                  label="Prowlarr URL / IP"
+                  labelFor="prowlarr-url"
+                  help="Include scheme (http/https). Example: http://localhost"
+                >
+                  <input
+                    id="prowlarr-url"
+                    v-model="prowlarrUrl"
+                    type="text"
+                    placeholder="http://localhost"
+                    autocomplete="off"
+                  />
+                </FormRow>
+
+                <FormRow label="Port (optional)" labelFor="prowlarr-port">
+                  <input
+                    id="prowlarr-port"
+                    v-model="prowlarrPort"
+                    type="number"
+                    min="1"
+                    max="65535"
+                    placeholder="9696"
+                  />
+                </FormRow>
+
+                <FormRow label="API Key" labelFor="prowlarr-key" help="Find this in Prowlarr Settings → General">
+                  <PasswordInput
+                    id="prowlarr-key"
+                    v-model="prowlarrApiKey"
+                    placeholder="Prowlarr API Key"
+                  />
+                </FormRow>
+              </FormSection>
+
+              <div v-if="prowlarrSummary" class="prowlarr-summary">
+                Imported {{ prowlarrSummary.addedCount }} indexer(s), skipped {{
+                  prowlarrSummary.skippedCount
+                }}.
+              </div>
+            </ModalBody>
+          </ModalForm>
+        </template>
+        <template #footer>
+          <ModalFooter
+            :showCancel="true"
+            :showSave="true"
+            :saving="importingProwlarr"
+            saveLabel="Import"
+            saveLabelLoading="Importing..."
+            @cancel="closeProwlarrModal"
+            @save="importFromProwlarr"
+          />
+        </template>
+      </Modal>
+
       <!-- Delete Indexer Confirmation Modal (shared) -->
       <DeleteConfirmationModal :visible="!!indexerToDelete" title="Delete Indexer" @close="indexerToDelete = null" @confirm="executeDeleteIndexer">
         <template v-slot>
@@ -174,18 +237,24 @@ import {
   PhPlus,
   PhX,
   PhSpinner,
+  PhDownloadSimple,
 } from '@phosphor-icons/vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import IndexerFormModal from '@/components/settings/IndexerFormModal.vue'
+import FormSection from '@/components/settings/FormSection.vue'
+import FormRow from '@/components/settings/FormRow.vue'
+import PasswordInput from '@/components/form/PasswordInput.vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import { Pill } from '@/components/base'
+import { Modal, ModalHeader, ModalFooter, ModalBody, ModalForm } from '@/components/feedback'
 import type { Indexer } from '@/types'
 import {
   getIndexers,
   toggleIndexer as apiToggleIndexer,
   testIndexer as apiTestIndexer,
   deleteIndexer,
+  importProwlarrIndexers,
 } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 
@@ -198,6 +267,14 @@ const indexerToDelete = ref<Indexer | null>(null)
 const testingIndexer = ref<number | null>(null)
 // Per-indexer ephemeral test results: 'success' | 'fail' | undefined
 const lastTestResults = reactive<Record<number, 'success' | 'fail' | undefined>>({})
+
+// Prowlarr import state
+const prowlarrUrl = ref('')
+const prowlarrPort = ref('')
+const prowlarrApiKey = ref('')
+const importingProwlarr = ref(false)
+const prowlarrSummary = ref<{ addedCount: number; skippedCount: number } | null>(null)
+const showProwlarrModal = ref(false)
 
 // Functions
 const formatApiError = (error: unknown): string => {
@@ -323,6 +400,69 @@ const executeDeleteIndexer = async () => {
   }
 }
 
+const openProwlarrModal = () => {
+  showProwlarrModal.value = true
+}
+
+const closeProwlarrModal = () => {
+  showProwlarrModal.value = false
+  prowlarrSummary.value = null
+}
+
+const importFromProwlarr = async () => {
+  const url = prowlarrUrl.value.trim()
+  const apiKey = prowlarrApiKey.value.trim()
+  const portRaw = prowlarrPort.value.trim()
+
+  if (!url) {
+    toast.warning('Prowlarr', 'Please enter a Prowlarr URL or IP')
+    return
+  }
+
+  if (!apiKey) {
+    toast.warning('Prowlarr', 'Please enter your Prowlarr API key')
+    return
+  }
+
+  let portValue: number | undefined
+  if (portRaw.length > 0) {
+    const parsed = Number(portRaw)
+    if (Number.isNaN(parsed) || parsed <= 0) {
+      toast.warning('Prowlarr', 'Please enter a valid port number')
+      return
+    }
+    portValue = parsed
+  }
+
+  importingProwlarr.value = true
+  prowlarrSummary.value = null
+
+  try {
+    const result = await importProwlarrIndexers({
+      url,
+      port: portValue,
+      apiKey,
+    })
+
+    prowlarrSummary.value = {
+      addedCount: result.addedCount,
+      skippedCount: result.skippedCount,
+    }
+
+    await loadIndexers()
+    toast.success('Prowlarr', `Imported ${result.addedCount} indexer(s)`)
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'IndexersTab',
+      operation: 'importProwlarrIndexers',
+    })
+    const errorMessage = formatApiError(error)
+    toast.error('Prowlarr import failed', errorMessage)
+  } finally {
+    importingProwlarr.value = false
+  }
+}
+
 // Lifecycle
 const newlyAddedIds = ref<Set<number>>(new Set())
 
@@ -369,7 +509,7 @@ const openAddIndexer = () => {
   showIndexerForm.value = true
 }
 
-defineExpose({ openAddIndexer })
+defineExpose({ openAddIndexer, openProwlarrImport: openProwlarrModal })
 </script>
 
 <style scoped>
@@ -397,6 +537,11 @@ defineExpose({ openAddIndexer })
   color: #fff;
   font-size: 1.5rem;
   font-weight: 500;
+}
+
+.prowlarr-summary {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
 }
 
 .add-button {

@@ -885,9 +885,9 @@ namespace Listenarr.Api.Services
                 var skipOpenLibrary = false;
 
                 // Handle ASIN queries immediately with metadata-first approach
-                if (searchType == "ASIN" && !string.IsNullOrEmpty(actualQuery))
+                if (searchType == "ASIN" && !string.IsNullOrEmpty(parsedAsin))
                 {
-                    var asin = actualQuery.Trim();
+                    var asin = parsedAsin.Trim();
                     var asinMetadataSources = await GetEnabledMetadataSourcesAsync();
                     var asinSearchResults = await _asinSearchHandler.SearchByAsinAsync(asin, asinMetadataSources);
                     return asinSearchResults.Select(r => SearchResultConverters.ToMetadata(r)).ToList();

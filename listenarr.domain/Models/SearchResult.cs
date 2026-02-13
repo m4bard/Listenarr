@@ -431,5 +431,47 @@ namespace Listenarr.Domain.Models
         {
             return results.Select(ToMetadata).ToList();
         }
+
+        /// <summary>
+        /// Convert SearchResult to simplified DTO (removes torrent/NZB fields)
+        /// Useful for advanced search responses which focus on metadata
+        /// </summary>
+        public static object ToSimplified(SearchResult result)
+        {
+            return new
+            {
+                result.Id,
+                result.Title,
+                Artist = result.Artist,
+                result.Subtitle,
+                result.Description,
+                result.Publisher,
+                result.Language,
+                result.Runtime,
+                result.Narrator,
+                result.ImageUrl,
+                result.Asin,
+                result.Isbn,
+                result.Series,
+                result.SeriesNumber,
+                result.ProductUrl,
+                result.PublishedDate,
+                result.PublishYear,
+                result.Genres,
+                result.IsEnriched,
+                result.MetadataSource,
+                result.Source,
+                result.SourceLink,
+                result.Score
+            };
+        }
+
+        /// <summary>
+        /// Convert list of SearchResults to simplified DTOs
+        /// </summary>
+        public static List<object> ToSimplifiedList(IEnumerable<SearchResult> results)
+        {
+            return results.Select(ToSimplified).ToList();
+        }
     }
 }

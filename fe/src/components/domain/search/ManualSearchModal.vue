@@ -28,13 +28,17 @@
                   :disabled="searching"
                 />
                 <button
-                  class="search-btn"
+                  class="btn btn-primary"
                   @click="search"
                   :disabled="searching || !searchQuery.trim()"
                 >
                   <span v-if="!searching"><PhMagnifyingGlass /></span>
                   <span v-else><PhSpinner class="ph-spin" /></span>
                   Search
+                </button>
+                <button v-if="!searching" class="btn btn-secondary btn-sm" @click="search">
+                  <PhArrowClockwise />
+                  Refresh
                 </button>
               </div>
             </div>
@@ -43,10 +47,6 @@
               <div class="results-count">
                 {{ displayResults.length }} result{{ displayResults.length !== 1 ? 's' : '' }} found
               </div>
-              <button v-if="!searching" class="btn btn-secondary btn-sm" @click="search">
-                <PhArrowClockwise />
-                Refresh
-              </button>
             </div>
           </div>
 
@@ -90,10 +90,16 @@
                       <component :is="getSortIcon('Size')" class="sort-icon" />
                     </span>
                   </th>
-                  <th v-if="anyHasPeers" class="col-peers sortable" @click="setSort('Seeders')">
+                  <th v-if="anyHasPeers" class="col-seeders sortable" @click="setSort('Seeders')">
                     <span class="header-content">
-                      Peers
+                      Seeders
                       <component :is="getSortIcon('Seeders')" class="sort-icon" />
+                    </span>
+                  </th>
+                  <th v-if="anyHasPeers" class="col-leechers sortable" @click="setSort('Leechers')">
+                    <span class="header-content">
+                      Leechers
+                      <component :is="getSortIcon('Leechers')" class="sort-icon" />
                     </span>
                   </th>
                   <th class="col-grabs sortable" @click="setSort('Grabs')">
@@ -130,16 +136,16 @@
               <tbody>
                 <tr v-for="result in displayResults" :key="result.id" class="result-row">
                   <td class="col-source">
-                    <span :class="['source-badge', getSourceType(result)]">
-                      {{ getSourceType(result) }}
+                    <span :class="['source-badge', getSourceType(result).toLowerCase()]">
+                      {{ getSourceType(result).toUpperCase() }}
                     </span>
                   </td>
                   <td class="col-age">{{ formatAge(result.publishedDate) }}</td>
                   <td class="col-title">
                     <div class="title-cell">
                         <a
-                          v-if="getResultLink(result)"
-                          :href="getResultLink(result)"
+                          v-if="result.id"
+                          :href="result.id"
                           class="title-text"
                           target="_blank"
                           rel="noopener noreferrer"
@@ -153,33 +159,31 @@
                     <span class="indexer-name">{{ result.source }}</span>
                   </td>
                   <td class="col-size">{{ formatSize(result.size) }}</td>
-                  <td v-if="anyHasPeers" class="col-peers">
-                    <div
-                      class="peers-cell"
+                  <td v-if="anyHasPeers" class="col-seeders">
+                    <span
                       v-if="result.seeders !== undefined && result.seeders !== null"
+                      class="seeders"
+                      :class="{
+                        good: (result.seeders ?? 0) > 10,
+                        medium: (result.seeders ?? 0) > 0 && (result.seeders ?? 0) <= 10,
+                      }"
                     >
-                      <span
-                        class="seeders"
-                        :class="{
-                          good: (result.seeders ?? 0) > 10,
-                          medium: (result.seeders ?? 0) > 0 && (result.seeders ?? 0) <= 10,
-                        }"
-                      >
-                        <PhArrowUp /> {{ result.seeders }}
-                      </span>
-                      <span
-                        class="leechers"
-                        v-if="result.leechers !== undefined && result.leechers !== null"
-                      >
-                        <PhArrowDown /> {{ result.leechers }}
-                      </span>
-                    </div>
+                      <PhArrowUp /> {{ result.seeders }}
+                    </span>
+                  </td>
+                  <td v-if="anyHasPeers" class="col-leechers">
+                    <span
+                      v-if="result.leechers !== undefined && result.leechers !== null"
+                      class="leechers"
+                    >
+                      <PhArrowDown /> {{ result.leechers }}
+                    </span>
                   </td>
                   <td class="col-grabs">
-                    <span v-if="result.grabs !== undefined" class="grabs"
-                      >✚ {{ result.grabs }}</span
+                    <span v-if="result.grabs !== undefined" class="grabs-badge"
+                      ><strong>{{ result.grabs }}</strong></span
                     >
-                    <span v-else class="grabs unknown">-</span>
+                    <span v-else class="grabs-badge unknown">-</span>
                   </td>
                   <td v-if="anyHasLanguage" class="col-language">
                     <span v-if="normalizeLanguage(result.language)" class="language-badge">
@@ -516,7 +520,7 @@ async function search() {
             category: '',
             source: String(dto.indexer ?? indexer.name),
             sourceLink: String(dto.infoUrl ?? dto.guid ?? ''),
-            publishedDate: String(dto.publishDate ?? dto.added ?? dto.publish_date ?? ''),
+            publishedDate: String(dto.PublishDate ?? dto.publishDate ?? dto.added ?? dto.publish_date ?? ''),
             // Use filetype when available (MP3/M4B/etc), fallback to protocol (torrent/nzb)
             format: String(dto.filetype ?? dto.protocol ?? ''),
             score: 0,
@@ -551,6 +555,10 @@ async function search() {
             return sortDirection.value === 'Ascending'
               ? (a.seeders ?? 0) - (b.seeders ?? 0)
               : (b.seeders ?? 0) - (a.seeders ?? 0)
+          case 'Leechers':
+            return sortDirection.value === 'Ascending'
+              ? (a.leechers ?? 0) - (b.leechers ?? 0)
+              : (b.leechers ?? 0) - (a.leechers ?? 0)
           case 'Grabs':
             return sortDirection.value === 'Ascending'
               ? (a.grabs ?? 0) - (b.grabs ?? 0)
@@ -927,7 +935,6 @@ function getScoreClass(score: number): string {
   display: flex;
   flex-direction: column;
   gap: 1rem;
-  padding-bottom: 1rem;
 }
 
 .results-controls {
@@ -950,7 +957,7 @@ function getScoreClass(score: number): string {
   display: flex;
   align-items: stretch; /* ensure input and button match height */
   gap: 0.5rem;
-  max-width: 600px;
+  max-width: 100%;
 }
 
 .search-icon {
@@ -990,46 +997,10 @@ function getScoreClass(score: number): string {
   cursor: not-allowed;
 }
 
-.search-btn {
+/* Ensure buttons in search wrapper match input height */
+.search-input-wrapper .btn {
+  height: 40px;
   padding: 0 1rem;
-  white-space: nowrap;
-  min-width: 96px;
-  background-color: var(--brand-500);
-  color: white;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: 500;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  transition: all 0.2s;
-  height: 40px; /* match input height */
-  box-sizing: border-box;
-}
-
-.search-btn:hover:not(:disabled) {
-  background-color: var(--brand-700);
-} 
-
-.search-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-}
-
-/* Ensure icon color follows button color (spinner inherits text color) */
-.search-btn .ph {
-  color: inherit;
-}
-
-/* Primary visuals are centralized in `src/assets/buttons.css` and `src/assets/modals.css` — use `.btn` / `.btn-primary` here. */
-
-/* Button color variants centralized in `src/assets/modals.css` */
-
-.btn-sm {
-  padding: 0.4rem 0.8rem;
-  font-size: 0.875rem;
 }
 
 .no-results {
@@ -1058,6 +1029,7 @@ function getScoreClass(score: number): string {
   overflow-x: auto;
   border: 1px solid #3a3a3a;
   border-radius: 6px;
+  height: calc(100vh - 360px);
 }
 
 .results-table {
@@ -1119,7 +1091,12 @@ function getScoreClass(score: number): string {
 
 .results-table tbody tr {
   border-bottom: 1px solid #2a2a2a;
-  transition: background-color 0.2s;
+  transition: background-color 0.2s, box-shadow 0.2s;
+}
+
+.results-table tbody tr:hover {
+  background-color: rgba(33, 150, 243, 0.08);
+  box-shadow: inset 2px 0 0 var(--brand-500);
 }
 
 /* Remove row background change on hover — underline title text instead */
@@ -1127,12 +1104,13 @@ function getScoreClass(score: number): string {
   color: white;
   font-weight: 500;
   text-decoration: none;
+  transition: color 0.2s;
 }
 
-.title-text:hover {
+.result-row:hover .title-text {
+  color: var(--brand-300);
   text-decoration: underline;
   text-underline-offset: 2px;
-  background-color: unset;
 }
 
 .results-table td {
@@ -1161,8 +1139,12 @@ function getScoreClass(score: number): string {
   width: 100px;
 }
 
-.col-peers {
-  width: 120px;
+.col-seeders {
+  width: 100px;
+}
+
+.col-leechers {
+  width: 100px;
 }
 
 .col-language {
@@ -1181,6 +1163,23 @@ function getScoreClass(score: number): string {
   color: #7f8c8d;
 }
 
+.grabs-badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  background-color: rgba(52, 152, 219, 0.15);
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #3498db;
+  border: 1px solid rgba(52, 152, 219, 0.3);
+}
+
+.grabs-badge.unknown {
+  background-color: #3a3a3a;
+  color: #666;
+  border: none;
+}
+
 .col-quality {
   width: 120px;
 }
@@ -1195,14 +1194,37 @@ function getScoreClass(score: number): string {
   align-items: center;
   gap: 0.35rem;
   color: #adb5bd;
-  font-size: 0.875rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  padding: 0.35rem 0.7rem;
-  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  background-color: rgba(255, 255, 255, 0.08);
+  padding: 0.35rem 0.6rem;
+  border-radius: 4px;
   white-space: nowrap;
+  border: 1px solid rgba(255, 255, 255, 0.1);
   transition:
     background-color 0.2s ease,
-    color 0.2s ease;
+    color 0.2s ease,
+    border-color 0.2s ease;
+}
+
+.source-badge.torrent {
+  background-color: rgba(52, 152, 219, 0.15);
+  color: #3498db;
+  border-color: rgba(52, 152, 219, 0.3);
+}
+
+.source-badge.nzb {
+  background-color: rgba(155, 89, 182, 0.15);
+  color: #9b59b6;
+  border-color: rgba(155, 89, 182, 0.3);
+}
+
+.source-badge.ddl {
+  background-color: rgba(26, 188, 156, 0.15);
+  color: #1abc9c;
+  border-color: rgba(26, 188, 156, 0.3);
 }
 
 .title-cell {
@@ -1211,19 +1233,9 @@ function getScoreClass(score: number): string {
   gap: 0.25rem;
 }
 
-.title-text {
-  color: white;
-  font-weight: 500;
-}
-
 .indexer-name {
-  color: var(--brand-500);
-}
-
-.peers-cell {
-  display: flex;
-  gap: 0.75rem;
-  align-items: center;
+  color: var(--brand-400);
+  font-size: 0.8rem;
 }
 
 .seeders,
@@ -1256,9 +1268,15 @@ function getScoreClass(score: number): string {
   display: inline-block;
   padding: 0.25rem 0.5rem;
   background-color: #3a3a3a;
-  border-radius: 6px;
-  font-size: 0.8rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: 500;
   color: #ccc;
+}
+
+.quality-badge.format-only {
+  color: #999;
+  font-style: italic;
 }
 
 .score-cell {
@@ -1271,10 +1289,10 @@ function getScoreClass(score: number): string {
   display: inline-flex;
   align-items: center;
   gap: 0.25rem;
-  padding: 0.25rem 0.75rem;
-  border-radius: 6px;
+  padding: 0.35rem 0.75rem;
+  border-radius: 4px;
   font-size: 0.85rem;
-  font-weight: 500;
+  font-weight: 600;
   white-space: nowrap;
 }
 
@@ -1286,51 +1304,39 @@ function getScoreClass(score: number): string {
 }
 
 .score-badge.rejected {
-  background-color: rgba(231, 76, 60, 0.15);
-  color: #e74c3c;
-  border: 1px solid rgba(231, 76, 60, 0.3);
+  background-color: rgba(231, 76, 60, 0.2);
+  color: #ff6b6b;
+  border: 1px solid rgba(231, 76, 60, 0.4);
 }
 
 .score-badge.excellent {
-  background-color: rgba(39, 174, 96, 0.15);
-  color: #27ae60;
-  border: 1px solid rgba(39, 174, 96, 0.3);
+  background-color: rgba(39, 174, 96, 0.2);
+  color: #51cf66;
+  border: 1px solid rgba(39, 174, 96, 0.4);
 }
 
 .score-badge.good {
-  background-color: rgba(52, 152, 219, 0.15);
-  color: #3498db;
-  border: 1px solid rgba(52, 152, 219, 0.3);
+  background-color: rgba(52, 152, 219, 0.2);
+  color: #74c0fc;
+  border: 1px solid rgba(52, 152, 219, 0.4);
 }
 
 .score-badge.fair {
-  background-color: rgba(241, 196, 15, 0.15);
-  color: #f39c12;
-  border: 1px solid rgba(241, 196, 15, 0.3);
+  background-color: rgba(241, 196, 15, 0.2);
+  color: #ffd43b;
+  border: 1px solid rgba(241, 196, 15, 0.4);
 }
 
 .score-badge.poor {
-  background-color: rgba(149, 165, 166, 0.15);
-  color: #7f8c8d;
-  border: 1px solid rgba(149, 165, 166, 0.3);
-}
-
-.language-badge.unknown,
-.quality-badge.unknown {
-  border-radius: 6px;
-  font-size: 0.8rem;
-  color: #ddd;
-}
-
-.language-badge.unknown,
-.quality-badge.unknown {
-  color: #666;
+  background-color: rgba(149, 165, 166, 0.2);
+  color: #adb5bd;
+  border: 1px solid rgba(149, 165, 166, 0.4);
 }
 
 .btn-icon {
   background: none;
   border: none;
-  color: #ccc;
+  color: #666;
   cursor: pointer;
   padding: 0.5rem;
   border-radius: 6px;
@@ -1341,8 +1347,13 @@ function getScoreClass(score: number): string {
   font-size: 1.2rem;
 }
 
+.result-row:hover .btn-icon {
+  color: #ccc;
+  background-color: rgba(33, 150, 243, 0.2);
+}
+
 .btn-icon:hover:not(:disabled) {
-  background-color: #3a3a3a;
+  background-color: var(--brand-500);
   color: white;
 }
 
@@ -1402,52 +1413,44 @@ function getScoreClass(score: number): string {
     padding: 1rem 1.5rem;
   }
 
-  /* Mobile search bar - position absolute at top center */
+  /* Mobile search bar - inline with results header */
   .search-bar {
-    position: fixed;
-    top: 1rem;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 90%;
-    max-width: 400px;
-    z-index: 1001;
-    background-color: #1e1e1e;
-    border-radius: 6px;
-    padding: 0.75rem;
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-    border: 1px solid #3a3a3a;
+    width: 100%;
   }
 
   .search-input-wrapper {
     gap: 0.25rem;
+    flex-wrap: wrap;
   }
 
   .search-input {
     padding: 0.5rem 1rem 0.5rem 2.25rem;
     font-size: 0.95rem;
     height: 44px;
+    flex: 1 1 100%;
   }
 
   .search-icon {
     left: 0.75rem;
     font-size: 1.1rem;
+    top: 25%;
   }
 
-  .search-btn {
-    padding: 0 0.75rem;
-    min-width: 80px;
+  /* Mobile button sizing - buttons on same line */
+  .search-input-wrapper .btn {
+    padding: 0.4rem 0.6rem;
     height: 44px;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
+    flex: 1;
   }
 
-  /* Hide search bar from normal flow on mobile */
-  .results-header .search-bar {
-    display: none;
+  .search-input-wrapper .btn-primary {
+    flex: 1.2;
   }
 
   /* Adjust results header spacing on mobile */
   .results-header {
-    padding-top: 5rem; /* Make room for fixed search bar */
+    padding-top: 0;
   }
 
   .results-controls {
