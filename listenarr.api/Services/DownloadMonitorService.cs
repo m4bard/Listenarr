@@ -2478,9 +2478,9 @@ namespace Listenarr.Api.Services
                         {
                             _logger.LogDebug("Skipping status overwrite for failed download {DownloadId}: incoming progress {Incoming} <= current {Current}", downloadId, incomingProgress, download.Progress);
                             // still update metadata for visibility
-                            if (download.Metadata == null) download.Metadata = new Dictionary<string, object>();
-                            download.Metadata["ClientState"] = clientState;
-                            download.Metadata["AmountLeft"] = amountLeft;
+                            download.Metadata ??= new Dictionary<string, object>();
+                            download.Metadata!["ClientState"] = clientState ?? "Unknown";
+                            download.Metadata!["AmountLeft"] = amountLeft;
                             dbContext.Downloads.Update(download);
                             await dbContext.SaveChangesAsync(cancellationToken);
                             return;
@@ -2501,12 +2501,9 @@ namespace Listenarr.Api.Services
                 }
 
                 // Add metadata for real-time updates
-                if (download.Metadata == null)
-                {
-                    download.Metadata = new Dictionary<string, object>();
-                }
-                download.Metadata["ClientState"] = clientState;
-                download.Metadata["AmountLeft"] = amountLeft;
+                download.Metadata ??= new Dictionary<string, object>();
+                download.Metadata!["ClientState"] = clientState ?? "Unknown";
+                download.Metadata!["AmountLeft"] = amountLeft;
 
                 dbContext.Downloads.Update(download);
                 await dbContext.SaveChangesAsync(cancellationToken);

@@ -18,7 +18,9 @@
 
 using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.ChangeTracking;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using System.Linq;
 using System.Text.Json;
 
 namespace Listenarr.Infrastructure.Configurations
@@ -74,7 +76,12 @@ namespace Listenarr.Infrastructure.Configurations
                     v => v == null ? null : JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
                     v => v == null ? null : JsonSerializer.Deserialize<Dictionary<string, object>>(v, (JsonSerializerOptions?)null)
                 )
-                .HasColumnType("TEXT");
+                .HasColumnType("TEXT")
+                .Metadata.SetValueComparer(new ValueComparer<Dictionary<string, object>?>(
+                    (a, b) => a == null && b == null || a != null && b != null && a.SequenceEqual(b),
+                    a => a == null ? 0 : a.Aggregate(0, (acc, x) => unchecked(acc * 397 ^ (x.Key.GetHashCode() ^ (x.Value == null ? 0 : x.Value.GetHashCode())))),
+                    a => a == null ? null : a.ToDictionary(x => x.Key, x => x.Value)
+                ));
 
             builder.Property(dh => dh.ErrorMessage)
                 .HasMaxLength(2000);
