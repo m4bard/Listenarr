@@ -1,6 +1,17 @@
 <template>
   <div class="api-key-input">
-    <input class="api-key-field" :value="apiKey" type="password" readonly />
+    <input class="api-key-field" :value="apiKey" :type="show ? 'text' : 'password'" readonly />
+    <button
+      type="button"
+      class="api-key-icon visibility-icon"
+      @click="toggleVisibility"
+      :aria-pressed="show"
+      :aria-label="show ? 'Hide API key' : 'Show API key'"
+      :title="show ? 'Hide API key' : 'Show API key'"
+    >
+      <PhEye class="icon" v-if="!show" />
+      <PhEyeSlash class="icon" v-else />
+    </button>
     <button
       type="button"
       class="api-key-icon copy-icon"
@@ -27,7 +38,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-import { PhCopy, PhCheck, PhArrowClockwise } from '@phosphor-icons/vue'
+import { PhCopy, PhCheck, PhArrowClockwise, PhEye, PhEyeSlash } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { showConfirm } from '@/composables/useConfirm'
 
@@ -35,6 +46,11 @@ const props = withDefaults(defineProps<{ apiKey?: string }>(), { apiKey: '' })
 const emit = defineEmits(['update:apiKey'])
 
 const copySuccess = ref(false)
+const show = ref(false)
+
+function toggleVisibility() {
+  show.value = !show.value
+}
 
 async function onCopy() {
   if (!props.apiKey) return
@@ -89,7 +105,7 @@ async function onRegenerate() {
 
 .api-key-field {
   padding: 0.75rem;
-  padding-right: 6.5rem; /* Make room for both icons */
+  padding-right: 7.5rem; /* Make room for three icons */
   border: 1px solid #3a3a3a;
   border-radius: 6px;
   background-color: #1a1a1a;
@@ -135,6 +151,10 @@ async function onRegenerate() {
 .api-key-icon:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+.visibility-icon {
+  right: 4.75rem;
 }
 
 .copy-icon {

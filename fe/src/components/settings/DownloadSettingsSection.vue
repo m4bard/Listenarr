@@ -23,6 +23,21 @@
       <FormRow label="Missing-source Max Retries" help="Maximum number of retries to attempt if the finalized download's source files are missing.">
         <input :value="settings.missingSourceMaxRetries" @input="e => updateField('missingSourceMaxRetries', Number((e.target as HTMLInputElement).value || 0))" type="number" min="0" max="20" />
       </FormRow>
+
+      <CheckboxCard
+        :modelValue="settings.failedDownloadHandlingEnabled"
+        @update:modelValue="v => updateField('failedDownloadHandlingEnabled', v)"
+        title="Enable Failed Download Handling"
+        description="When a download fails, mark it as failed, remove it from the client, and record history."
+      />
+
+      <CheckboxCard
+        :modelValue="settings.failedDownloadAutoSearch"
+        @update:modelValue="v => updateField('failedDownloadAutoSearch', v)"
+        :disabled="!settings.failedDownloadHandlingEnabled"
+        title="Auto-search on Failed Downloads"
+        description="Automatically search for a replacement when a download fails (requires failed download handling)."
+      />
     </div>
   </div>
 </template>
@@ -31,6 +46,7 @@
 import type { ApplicationSettings } from '@/types'
 import { PhDownload } from '@phosphor-icons/vue'
 import FormRow from '@/components/settings/FormRow.vue'
+import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 
 const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
 const emit = defineEmits<{

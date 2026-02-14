@@ -609,10 +609,18 @@ namespace Listenarr.Api.Services
                     if (downloadToUpdate.Metadata == null)
                         downloadToUpdate.Metadata = new Dictionary<string, object>();
 
-                    downloadToUpdate.Metadata["TorrentHash"] = clientSpecificId;
+                    // Persist client-specific ID for all clients (NZBGet/SABnzbd/etc.)
+                    downloadToUpdate.Metadata["ClientDownloadId"] = clientSpecificId;
+
+                    // Maintain TorrentHash for qBittorrent compatibility
+                    if (downloadClient.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase))
+                    {
+                        downloadToUpdate.Metadata["TorrentHash"] = clientSpecificId;
+                    }
+
                     updateContext.Downloads.Update(downloadToUpdate);
                     await updateContext.SaveChangesAsync();
-                    _logger.LogInformation("Updated download {DownloadId} with qBittorrent hash: {Hash}", downloadId, clientSpecificId);
+                    _logger.LogInformation("Updated download {DownloadId} with client-specific ID: {ClientId}", downloadId, clientSpecificId);
                 }
             }
 

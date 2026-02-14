@@ -116,6 +116,12 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Property<int>("DownloadCompletionStabilitySeconds")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("FailedDownloadAutoSearch")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("FailedDownloadHandlingEnabled")
+                        .HasColumnType("INTEGER");
+
                     b.Property<bool>("EnableAmazonSearch")
                         .HasColumnType("INTEGER");
 
