@@ -1,13 +1,16 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <EFVersion>8.*</EFVersion>
+  </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\listenarr.domain\Listenarr.Domain.csproj" />
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="8.0.23" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="8.0.23" />
-    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="8.0.23" />
+    <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="$(EFVersion)" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore" Version="$(EFVersion)" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="$(EFVersion)" />
   </ItemGroup>
 
   <PropertyGroup>
