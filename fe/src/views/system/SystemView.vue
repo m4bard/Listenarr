@@ -392,7 +392,7 @@ onMounted(() => {
 
 <style scoped>
 .system-view {
-  padding: 2rem;
+  padding: 1rem;
   margin: 0 auto;
 }
 
@@ -683,10 +683,11 @@ onMounted(() => {
 }
 
 .section {
-  background: #1e1e1e;
+  background: #232323;
   border: 1px solid #333;
-  border-radius: 6px;
+  border-radius: 8px;
   padding: 1.5rem;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
 }
 
 .section-header {
