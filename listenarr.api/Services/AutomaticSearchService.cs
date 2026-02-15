@@ -166,7 +166,7 @@ namespace Listenarr.Api.Services
             _logger.LogInformation("Audiobook '{Title}': cutoff met={CutoffMet}, best existing quality={BestQuality}",
                 audiobook.Title, cutoffMet, bestExistingQuality ?? "none");
 
-            // Skip automatic search if quality cutoff is already met (matches Sonarr behavior)
+            // Skip automatic search if quality cutoff is already met
             if (cutoffMet)
             {
                 _logger.LogInformation("Quality cutoff already met for audiobook '{Title}', skipping automatic search", audiobook.Title);
@@ -256,7 +256,7 @@ namespace Listenarr.Api.Services
             }
 
             var topResult = scoredResults
-                .Where(s => !s.IsRejected) // Only non-rejected results (matches Sonarr's multilayered decision system)
+                .Where(s => !s.IsRejected) // Only non-rejected results
                 .OrderByDescending(s => s.TotalScore)
                 .FirstOrDefault(); // Pick only the top scoring result
 

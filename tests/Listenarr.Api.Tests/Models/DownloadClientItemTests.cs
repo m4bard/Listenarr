@@ -22,7 +22,7 @@ using Listenarr.Domain.Models;
 namespace Listenarr.Api.Tests.Models
 {
     /// <summary>
-    /// Tests for the new Sonarr-style DownloadClientItem model
+    /// Tests for the DownloadClientItem model
     /// Stage 1: Verify standardized model works correctly
     /// </summary>
     public class DownloadClientItemTests

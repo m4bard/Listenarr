@@ -21,7 +21,7 @@ using Listenarr.Domain.Models;
 namespace Listenarr.Application.Services
 {
     /// <summary>
-    /// Service for recording and querying download events (Sonarr pattern).
+    /// Service for recording and querying download events.
     /// Provides idempotency checking and audit trail functionality.
     /// 
     /// This is the critical service that:

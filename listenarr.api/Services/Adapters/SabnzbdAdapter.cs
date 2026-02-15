@@ -469,7 +469,7 @@ namespace Listenarr.Api.Services.Adapters
         }
 
         /// <summary>
-        /// NEW Sonarr-style method: Get all downloads as standardized DownloadClientItem objects
+        /// Get all downloads as standardized DownloadClientItem objects
         /// </summary>
         public async Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
@@ -622,7 +622,7 @@ namespace Listenarr.Api.Services.Adapters
         }
 
         /// <summary>
-        /// NEW Sonarr-style method: Get import item from DownloadClientItem
+        /// Get import item from DownloadClientItem
         /// </summary>
         public async Task<DownloadClientItem> GetImportItemAsync(
             DownloadClientConfiguration client,
@@ -787,7 +787,7 @@ namespace Listenarr.Api.Services.Adapters
         /// <summary>
         /// Resolves the actual import item for a completed download.
         /// Queries SABnzbd history for storage path.
-        /// EXACTLY matches Sonarr's Sabnzbd.GetImportItem pattern.
+        /// Matches Sabnzbd.GetImportItem pattern.
         /// </summary>
         public async Task<QueueItem> GetImportItemAsync(
             DownloadClientConfiguration client,

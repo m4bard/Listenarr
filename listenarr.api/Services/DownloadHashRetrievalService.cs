@@ -29,7 +29,7 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Api.Services
 {
     /// <summary>
-    /// Stage 4: Hash Retrieval Service with exponential backoff (Sonarr pattern)
+    /// Stage 4: Hash Retrieval Service with exponential backoff
     /// 
     /// Problem: When a torrent/NZB is sent to a download client, the hash/ID isn't
     /// immediately available. The client needs time to process the file.
@@ -48,7 +48,7 @@ namespace Listenarr.Api.Services
         private readonly DownloadHistoryRepository _historyRepo;
         private readonly Dictionary<string, IDownloadClientAdapter> _adapters;
 
-        // Retry configuration (Sonarr-style exponential backoff)
+        // Retry configuration with exponential backoff
         private const int MaxRetries = 10;
         private const int MaxBackoffSeconds = 30;
         private const int BaseBackoffSeconds = 2;

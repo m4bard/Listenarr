@@ -494,7 +494,7 @@ namespace Listenarr.Api.Services.Adapters
         }
 
         /// <summary>
-        /// NEW Sonarr-style method: Get all downloads as standardized DownloadClientItem objects
+        /// Get all downloads as standardized DownloadClientItem objects
         /// </summary>
         public async Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
@@ -566,7 +566,7 @@ namespace Listenarr.Api.Services.Adapters
                     var category = torrent.TryGetValue("category", out var categoryEl) ? categoryEl.GetString() ?? string.Empty : string.Empty;
                     var contentPath = torrent.TryGetValue("content_path", out var contentPathEl) ? contentPathEl.GetString() ?? string.Empty : string.Empty;
 
-                    // ✅ Map qBittorrent status to DownloadItemStatus enum (Sonarr pattern)
+                    // ✅ Map qBittorrent status to DownloadItemStatus enum
                     var status = state switch
                     {
                         "downloading" => DownloadItemStatus.Downloading,
@@ -608,7 +608,7 @@ namespace Listenarr.Api.Services.Adapters
 
                     items.Add(new DownloadClientItem
                     {
-                        DownloadId = hash.ToUpperInvariant(), // ✅ Uppercase SHA1 hash (Sonarr standard)
+                        DownloadId = hash.ToUpperInvariant(), // ✅ Uppercase SHA1 hash (standard format)
                         Title = name,
                         Category = category,
                         Status = status,
@@ -645,7 +645,7 @@ namespace Listenarr.Api.Services.Adapters
         }
 
         /// <summary>
-        /// NEW Sonarr-style method: Get import item from DownloadClientItem
+        /// Get import item from DownloadClientItem
         /// </summary>
         public async Task<DownloadClientItem> GetImportItemAsync(
             DownloadClientConfiguration client,
@@ -653,7 +653,7 @@ namespace Listenarr.Api.Services.Adapters
             DownloadClientItem? previousAttempt = null,
             CancellationToken ct = default)
         {
-            // Clone to avoid modifying original (Sonarr pattern)
+            // Clone to avoid modifying original
             var result = item.Clone();
 
             // If OutputPath is already set, use it directly
@@ -764,7 +764,7 @@ namespace Listenarr.Api.Services.Adapters
 
         /// <summary>
         /// LEGACY: Resolves the actual import item for a completed download.
-        /// EXACTLY matches Sonarr's GetImportItem pattern.
+        /// Matches GetImportItem pattern.
         /// </summary>
         public async Task<QueueItem> GetImportItemAsync(
             DownloadClientConfiguration client,
@@ -773,7 +773,7 @@ namespace Listenarr.Api.Services.Adapters
             QueueItem? previousAttempt = null,
             CancellationToken ct = default)
         {
-            // ✅ Clone to avoid modifying original (Sonarr pattern)
+            // ✅ Clone to avoid modifying original
             var result = queueItem.Clone();
 
             // On API >= 2.6.1, ContentPath/OutputPath is already set correctly from content_path field
@@ -818,7 +818,7 @@ namespace Listenarr.Api.Services.Adapters
                     return result;
                 }
 
-                // ✅ Query files API to determine base folder (Sonarr QBittorrent.cs pattern)
+                // ✅ Query files API to determine base folder
                 var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={hash}", ct);
                 if (!filesResp.IsSuccessStatusCode)
                 {

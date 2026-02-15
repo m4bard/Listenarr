@@ -38,7 +38,7 @@ namespace Listenarr.Api.Extensions
             services.AddHostedService<DownloadMonitorService>();
 
             // Register background service for completed download handling (import pipeline)
-            // Implements Sonarr's CompletedDownloadService pattern for stability window validation
+            // Implements CompletedDownloadService pattern for stability window validation
             services.AddHostedService<CompletedDownloadHandlingService>();
 
             // Register background service for queue monitoring (external clients) and real-time updates

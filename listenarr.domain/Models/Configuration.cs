@@ -145,7 +145,7 @@ namespace Listenarr.Domain.Models
         // Whether to show completed downloads from external clients in the Activity view
         public bool ShowCompletedExternalDownloads { get; set; } = false;
 
-        // Failed download handling settings (Sonarr-style)
+        // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;
 

@@ -963,7 +963,7 @@ namespace Listenarr.Api.Services
                                 continue;
                             }
 
-                            // Lenient completion detection for qBittorrent (similar to Sonarr)
+                            // Lenient completion detection for qBittorrent
                             // A torrent is complete when progress >= 100% OR amount left is 0
                             // The stability window below ensures we don't immediately import a torrent
                             // that just hit 100% - we wait for the configured delay period

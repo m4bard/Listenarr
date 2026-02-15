@@ -13,7 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [0.2.48] - 2026-01-14
 
 ### Added
-- **Prowlarr compatibility improvements**: `POST /api/v1/indexers`, `POST /api/v1/indexer` and `PUT /api/v1/indexer/{id}` now accept varied payload shapes (nested `settings`, `fields` arrays and multiple property name variants) and return Lidarr-style DTOs with non-null `fields` and `tags` for better interoperability.
+- **Prowlarr compatibility improvements**: `POST /api/v1/indexers`, `POST /api/v1/indexer` and `PUT /api/v1/indexer/{id}` now accept varied payload shapes (nested `settings`, `fields` arrays and multiple property name variants) and return standard DTOs with non-null `fields` and `tags` for better interoperability.
 - **Toast suppression**: Global message-level and per-indexer toast suppression to reduce notification noise during rapid indexer imports (default suppression window: 5 seconds).
 
 ### Changed
@@ -57,8 +57,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Root folder management**: Complete root folder system with named folders, selection when adding/editing audiobooks, move/rename confirmation dialogs, and comprehensive E2E and unit tests.
 - **Bulk update endpoint**: Batch update API endpoint for audiobooks with frontend integration for efficient mass updates.
 - **Notification system**: Toast messages now also appear as persistent notifications via SignalR, with support for import and deletion broadcasts.
-- **Quality profile minimum score threshold**: Added MinimumScore property to quality profiles (similar to Sonarr's MinFormatScore) to reject releases below specified threshold (migration: `20260103235802_AddMinimumScoreToQualityProfile`).
-- **Import item resolution service**: Implemented GetImportItemAsync pattern across all download client adapters following Sonarr's approach for accurate post-download path resolution.
+- **Quality profile minimum score threshold**: Added MinimumScore property to quality profiles to reject releases below specified threshold (migration: `20260103235802_AddMinimumScoreToQualityProfile`).
+- **Import item resolution service**: Implemented GetImportItemAsync pattern across all download client adapters for accurate post-download path resolution.
 - **Lazy image loading**: Native browser loading="lazy" for all images with placeholder support, replacing custom lazy loading logic.
 - **Advanced search and collection features**: New AdvancedSearchModal with ASIN, author, title, and series search prefixes for precise queries
 - **Collection view**: Comprehensive CollectionView for managing audiobook collections with author and series grouping

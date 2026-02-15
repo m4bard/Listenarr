@@ -148,7 +148,7 @@ namespace Listenarr.Api.Tests
                 Assert.NotNull(valueObj);
             }
 
-            // If the created/returned indexer object is present, ensure DTO includes fields and tags (compatibility with Lidarr/Prowlarr)
+            // If the created/returned indexer object is present, ensure DTO includes fields and tags (compatibility with Prowlarr)
             if (valueObj != null)
             {
                 var fieldsProp = valueObj.GetType().GetProperty("fields");

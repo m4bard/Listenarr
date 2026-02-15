@@ -28,7 +28,7 @@ using Microsoft.EntityFrameworkCore;
 namespace Listenarr.Infrastructure.Repositories
 {
     /// <summary>
-    /// Repository for event-sourced download history (Sonarr pattern).
+    /// Repository for event-sourced download history.
     /// Provides audit trail and prevents duplicate downloads.
     /// </summary>
     public class DownloadHistoryRepository
@@ -95,7 +95,7 @@ namespace Listenarr.Infrastructure.Repositories
 
         /// <summary>
         /// Check if a download has already been imported (prevents duplicates)
-        /// This is a key Sonarr pattern - check history before grabbing
+        /// This is a key pattern - check history before grabbing
         /// </summary>
         public async Task<bool> WasImportedAsync(string downloadId, CancellationToken ct = default)
         {

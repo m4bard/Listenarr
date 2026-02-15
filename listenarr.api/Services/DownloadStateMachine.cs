@@ -28,7 +28,7 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Api.Services
 {
     /// <summary>
-    /// Stage 5: Explicit state machine for download status transitions (Sonarr pattern)
+    /// Stage 5: Explicit state machine for download status transitions
     /// 
     /// State Flow:
     /// 1. Grabbed (initial) → Queued (client accepts)
@@ -53,7 +53,7 @@ namespace Listenarr.Api.Services
         private readonly ILogger<DownloadStateMachine> _logger;
         private readonly DownloadHistoryRepository _historyRepo;
 
-        // Valid state transitions (Sonarr pattern)
+        // Valid state transitions
         private static readonly Dictionary<DownloadItemStatus, HashSet<DownloadItemStatus>> ValidTransitions = new()
         {
             // From Queued

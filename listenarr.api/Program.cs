@@ -164,7 +164,7 @@ builder.Services.AddScoped<Listenarr.Api.Services.ILegacyOutputPathMigrator, Lis
 // History repository for tracking events
 builder.Services.AddScoped<Listenarr.Infrastructure.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.HistoryRepository>();
 
-// Download history service for idempotency and audit trail (Sonarr pattern)
+// Download history service for idempotency and audit trail
 builder.Services.AddScoped<Listenarr.Application.Services.IDownloadHistoryService, Listenarr.Infrastructure.Services.DownloadHistoryService>();
 
 // Add in-memory cache for metadata prefetch / reuse

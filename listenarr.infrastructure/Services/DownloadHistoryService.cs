@@ -25,7 +25,7 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Infrastructure.Services
 {
     /// <summary>
-    /// Implementation of download history service (Sonarr pattern).
+    /// Implementation of download history service.
     /// Records all download events to provide idempotency and audit trail.
     /// </summary>
     public class DownloadHistoryService : IDownloadHistoryService

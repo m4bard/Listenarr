@@ -29,7 +29,7 @@ using Microsoft.Extensions.Logging;
 namespace Listenarr.Api.Services
 {
     /// <summary>
-    /// Stage 6: Three-phase validation pipeline for processing completed downloads (Sonarr pattern)
+    /// Stage 6: Three-phase validation pipeline for processing completed downloads
     /// 
     /// Phase 1 - Check: Validate download is complete and ready
     ///   - Verify files exist on disk

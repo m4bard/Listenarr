@@ -86,7 +86,7 @@ namespace Listenarr.Domain.Models
         public int MinimumSeeders { get; set; } = 1;
 
         /// <summary>
-        /// Minimum score threshold for automatic downloads (Sonarr's MinFormatScore equivalent)
+        /// Minimum score threshold for automatic downloads
         /// Releases with TotalScore below this will be rejected. 0 = no minimum (allow any score)
         /// </summary>
         public int MinimumScore { get; set; } = 0;

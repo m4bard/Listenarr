@@ -19,7 +19,7 @@
 namespace Listenarr.Domain.Models
 {
     /// <summary>
-    /// Protocol type for download clients (Sonarr pattern)
+    /// Protocol type for download clients
     /// </summary>
     public enum DownloadProtocol
     {
@@ -28,7 +28,7 @@ namespace Listenarr.Domain.Models
     }
 
     /// <summary>
-    /// Normalized status for download items across all clients (Sonarr pattern)
+    /// Normalized status for download items across all clients
     /// </summary>
     public enum DownloadItemStatus
     {
@@ -47,7 +47,7 @@ namespace Listenarr.Domain.Models
     }
 
     /// <summary>
-    /// Metadata about which download client a DownloadClientItem originated from (Sonarr pattern)
+    /// Metadata about which download client a DownloadClientItem originated from
     /// </summary>
     public class DownloadClientItemClientInfo
     {
@@ -80,7 +80,7 @@ namespace Listenarr.Domain.Models
 
     /// <summary>
     /// Normalized representation of a download queue item from any download client.
-    /// This follows Sonarr's DownloadClientItem pattern for consistency across
+    /// This follows the DownloadClientItem pattern for consistency across
     /// qBittorrent, Transmission, SABnzbd, NZBGet, etc.
     /// 
     /// All download clients are expected to map their native queue items to this structure.
@@ -196,7 +196,7 @@ namespace Listenarr.Domain.Models
         /// <summary>
         /// Creates a shallow copy of this DownloadClientItem.
         /// Used by GetImportItem to avoid modifying the original item.
-        /// Matches Sonarr's pattern for resolving final paths.
+        /// Matches the pattern for resolving final paths.
         /// </summary>
         public DownloadClientItem Clone()
         {

@@ -236,7 +236,7 @@ namespace Listenarr.Api.Services.Adapters
         }
 
         /// <summary>
-        /// NEW Sonarr-style method: Get all downloads as standardized DownloadClientItem objects
+        /// Get all downloads as standardized DownloadClientItem objects
         /// </summary>
         public async Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
@@ -287,7 +287,7 @@ namespace Listenarr.Api.Services.Adapters
         }
 
         /// <summary>
-        /// NEW Sonarr-style method: Get import item from DownloadClientItem
+        /// Get import item from DownloadClientItem
         /// </summary>
         public async Task<DownloadClientItem> GetImportItemAsync(
             DownloadClientConfiguration client,
@@ -372,7 +372,7 @@ namespace Listenarr.Api.Services.Adapters
         /// <summary>
         /// LEGACY: Resolves the actual import item for a completed download.
         /// Queries Transmission API for downloadDir and builds the content path.
-        /// EXACTLY matches Sonarr's Transmission.GetImportItem pattern.
+        /// Matches Transmission.GetImportItem pattern.
         /// </summary>
         public async Task<QueueItem> GetImportItemAsync(
             DownloadClientConfiguration client,
@@ -607,7 +607,7 @@ namespace Listenarr.Api.Services.Adapters
 
             TimeSpan? remainingTime = eta >= 0 ? TimeSpan.FromSeconds(eta) : null;
 
-            // ✅ Use hash as DownloadId if available, otherwise fall back to numeric ID (Sonarr pattern)
+            // ✅ Use hash as DownloadId if available, otherwise fall back to numeric ID
             var downloadId = !string.IsNullOrEmpty(hash) ? hash.ToUpperInvariant() : numericId.ToString(CultureInfo.InvariantCulture);
 
             return new DownloadClientItem

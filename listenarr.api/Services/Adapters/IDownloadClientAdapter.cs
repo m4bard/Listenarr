@@ -8,7 +8,7 @@ namespace Listenarr.Api.Services.Adapters
     /// <summary>
     /// Encapsulates all download-client specific operations. Implement an adapter per client to keep
     /// protocol details isolated from the orchestration layer.
-    /// Follows Sonarr's IDownloadClient pattern for consistency.
+    /// Follows IDownloadClient pattern for consistency.
     /// </summary>
     public interface IDownloadClientAdapter
     {
@@ -27,7 +27,7 @@ namespace Listenarr.Api.Services.Adapters
         Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default);
         
         /// <summary>
-        /// New Sonarr-style method - returns normalized DownloadClientItem list
+        /// Returns normalized DownloadClientItem list
         /// This is the preferred method going forward
         /// </summary>
         Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default);
@@ -35,7 +35,7 @@ namespace Listenarr.Api.Services.Adapters
         Task<List<(string Id, string Name)>> GetRecentHistoryAsync(DownloadClientConfiguration client, int limit = 100, CancellationToken ct = default);
 
         /// <summary>
-        /// Resolves the actual import item for a completed download (Sonarr pattern).
+        /// Resolves the actual import item for a completed download.
         /// Called just before import to ensure the most accurate path and metadata.
         /// Some clients (like qBittorrent) require additional queries to determine final paths.
         /// </summary>

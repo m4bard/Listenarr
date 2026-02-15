@@ -22,7 +22,7 @@ namespace Listenarr.Domain.Models
 {
     /// <summary>
     /// Stage 4: Query object for finding downloads in clients
-    /// Used by hash retrieval retry logic (Sonarr pattern)
+    /// Used by hash retrieval retry logic
     /// </summary>
     public class DownloadClientItemQuery
     {

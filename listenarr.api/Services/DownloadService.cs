@@ -2157,7 +2157,7 @@ namespace Listenarr.Api.Services
                         clientQueue = await GetQueueFallbackAsync(client);
                     }
 
-                    // SONARR PATTERN: Show ALL client queue items, enrich with DB metadata if available
+                    // Show ALL client queue items, enrich with DB metadata if available
                     // The download client is the source of truth for what's actually downloading
                     _logger.LogInformation("Client {ClientName} has {TotalItems} queue items", client.Name ?? client.Id, clientQueue.Count);
                     _logger.LogInformation("Database has {DatabaseItems} Listenarr downloads for metadata enrichment", listenarrDownloads.Count);
@@ -2263,7 +2263,7 @@ namespace Listenarr.Api.Services
                             else
                             {
                                 // No DB record found - this is an untracked download
-                                // Still show it (Sonarr pattern: client is source of truth)
+                                // Still show it (client is source of truth)
                                 _logger.LogDebug("Queue item {QueueId} '{Title}' not tracked in database - showing as untracked", 
                                     queueItem.Id, queueItem.Title);
                             }
@@ -2334,7 +2334,7 @@ namespace Listenarr.Api.Services
                         client.Name, mappedFiltered.Count);
 
                     // CONSERVATIVE CLEANUP: Only purge downloads that are clearly abandoned
-                    // Sonarr doesn't rely on aggressive purging - client is the source of truth
+                    // Client is the source of truth for active downloads
                     try
                     {
                         var clientDownloads = listenarrDownloads.Where(d => d.DownloadClientId == client.Id).ToList();

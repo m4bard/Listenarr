@@ -537,7 +537,7 @@ export interface QualityProfile {
   mustContain?: string[] // Must be present
   preferredLanguages?: string[] // e.g., ["English", "Spanish"]
   minimumSeeders?: number
-  minimumScore?: number // Minimum score threshold for automatic downloads (Sonarr's MinFormatScore)
+  minimumScore?: number // Minimum score threshold for automatic downloads
   isDefault?: boolean
   preferNewerReleases?: boolean
   maximumAge?: number // days (0 = no limit)

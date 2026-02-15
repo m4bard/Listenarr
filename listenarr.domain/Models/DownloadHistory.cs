@@ -22,7 +22,7 @@ using System.Collections.Generic;
 namespace Listenarr.Domain.Models
 {
     /// <summary>
-    /// Event-sourced history of download state transitions (Sonarr pattern).
+    /// Event-sourced history of download state transitions.
     /// Each record represents a state change event for a download.
     /// This prevents duplicate downloads and provides audit trail.
     /// </summary>
@@ -107,7 +107,7 @@ namespace Listenarr.Domain.Models
 
     /// <summary>
     /// Types of events that can occur in the download lifecycle
-    /// Following Sonarr's event-sourced pattern
+    /// Following an event-sourced pattern
     /// </summary>
     public enum DownloadHistoryEventType
     {

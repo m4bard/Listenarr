@@ -28,7 +28,7 @@ namespace Listenarr.Api.Services
     /// <summary>
     /// Background service that handles completed downloads for import.
     /// 
-    /// This implements Sonarr's CompletedDownloadService pattern:
+    /// This implements the CompletedDownloadService pattern:
     /// 1. Monitor detects completion (Status = Completed)
     /// 2. This handler validates and processes completed downloads
     /// 3. Triggers finalization and import pipeline
@@ -116,7 +116,7 @@ namespace Listenarr.Api.Services
 
             try
             {
-                // SONARR PATTERN: Find all downloads that are Completed but not yet imported (FinalPath still empty)
+                // Find all downloads that are Completed but not yet imported (FinalPath still empty)
                 var completedDownloads = await dbContext.Downloads
                     .Where(d => d.Status == DownloadStatus.Completed && string.IsNullOrEmpty(d.FinalPath))
                     .ToListAsync(cancellationToken);

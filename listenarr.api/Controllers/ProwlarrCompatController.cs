@@ -202,7 +202,7 @@ namespace Listenarr.Api.Controllers
                     baseUrl = i.Url,
                     apiKey = i.ApiKey,
                     categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray(),
-                    // Provide nested settings for compatibility with clients expecting a Lidarr-style payload
+                    // Provide nested settings for compatibility with clients expecting a standard payload
                     settings = new
                     {
                         baseUrl = i.Url,
@@ -210,7 +210,7 @@ namespace Listenarr.Api.Controllers
                         apiPath = string.Empty,
                         categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray()
                     },
-                    // Provide a fields array similar to Lidarr's payload (name/value pairs)
+                    // Provide a fields array similar to standard payload (name/value pairs)
                     fields = new[]
                     {
                         new FieldDto("baseUrl", i.Url ?? string.Empty),
@@ -323,13 +323,13 @@ namespace Listenarr.Api.Controllers
         public IActionResult GetIndexersList()
         {
             Response.ContentType = "application/json";
-            // Return an empty array by default. Prowlarr/Sonarr will POST indexers to populate.
+            // Return an empty array by default. Prowlarr will POST indexers to populate.
             return Ok(System.Array.Empty<object>());
         }
 
         /// <summary>
         /// DELETE /api/v1/indexer/{id}
-        /// Removes a persisted indexer by id. Matches Lidarr semantics: id must be > 0 and the endpoint returns an empty JSON object on success.
+        /// Removes a persisted indexer by id. Matches standard semantics: id must be > 0 and the endpoint returns an empty JSON object on success.
         /// Maintained for Prowlarr compatibility so remote apps can delete indexers.
         /// </summary>
         [HttpDelete("indexer/{id:int}")]
@@ -342,7 +342,7 @@ namespace Listenarr.Api.Controllers
 
             try
             {
-                // Validate id (Lidarr rejects id <= 0), but be tolerant for external clients that may send 0.
+                // Validate id (reject id <= 0), but be tolerant for external clients that may send 0.
                 if (id <= 0)
                 {
                     // Log a clear warning with caller IP so operators can trace the origin of bad delete requests.
@@ -388,7 +388,7 @@ namespace Listenarr.Api.Controllers
                     _logger?.LogInformation("Prowlarr: Delete requested for non-existent indexer {Id}", id);
                 }
 
-                // Return empty JSON object like Lidarr's ProviderControllerBase.DeleteProvider
+                // Return empty JSON object like standard ProviderControllerBase.DeleteProvider
                 return Ok(new { });
             }
             catch (System.Exception ex)

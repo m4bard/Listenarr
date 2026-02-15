@@ -147,7 +147,7 @@ namespace Listenarr.Domain.Models
         /// <summary>
         /// Creates a shallow copy of this QueueItem.
         /// Used by GetImportItem to avoid modifying the original item.
-        /// Matches Sonarr's DownloadClientItem.Clone() pattern.
+        /// Matches DownloadClientItem.Clone() pattern.
         /// </summary>
         public QueueItem Clone()
         {
