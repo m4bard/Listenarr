@@ -327,7 +327,7 @@
       :class="['audiobooks-scroll-container', { 'has-selection': selectedCount > 0 }]"
       @scroll="updateVisibleRange"
     >
-      <div class="audiobooks-scroll-spacer" :style="{ height: `${totalHeight}px` }">
+      <div class="audiobooks-scroll-spacer">
         <div
           v-if="viewMode === 'grid'"
           class="audiobooks-grid"
@@ -2614,10 +2614,10 @@ defineExpose({
 }
 
 .audiobooks-scroll-container {
-  height: calc(100vh - 170px); /* Account for toolbar and header */
+  height: calc(100vh - 165px); /* Account for toolbar and header */
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 20px var(--legend-height);
+  padding: 0 20px;
 }
 
 .audiobook-status-legend {
@@ -2628,7 +2628,7 @@ defineExpose({
   flex-wrap: wrap;
   align-items: center;
   gap: 10px 16px;
-  padding: 10px 20px 20px;
+  padding: 10px 20px;
   background: linear-gradient(180deg, rgba(26, 26, 26, 0.6) 0%, #1a1a1a 40%);
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   z-index: 200;
