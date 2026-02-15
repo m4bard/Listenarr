@@ -333,7 +333,11 @@
           class="audiobooks-grid"
           :style="{ transform: `translateY(${topPadding}px)` }"
         >
-            <div v-for="audiobook in visibleAudiobooks" :key="audiobook.id" class="audiobook-wrapper">
+          <div
+            v-for="audiobook in visibleAudiobooks"
+            :key="audiobook.id"
+            class="audiobook-wrapper"
+          >
             <div
               tabindex="0"
               @keydown.enter="navigateToDetail(audiobook.id)"
@@ -2610,7 +2614,7 @@ defineExpose({
 }
 
 .audiobooks-scroll-container {
-  height: calc(100vh - 130px); /* Account for toolbar and header */
+  height: calc(100vh - 170px); /* Account for toolbar and header */
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0 20px var(--legend-height);
