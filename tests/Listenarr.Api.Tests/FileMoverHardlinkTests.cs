@@ -111,9 +111,13 @@ namespace Listenarr.Api.Tests
             var sourceFile = Path.Combine(_root, "nonexistent.mp3");
             var destFile = Path.Combine(_root, "dest.mp3");
 
-            // Act & Assert
-            await Assert.ThrowsAsync<FileNotFoundException>(async () =>
-                await _mover.HardlinkFileAsync(sourceFile, destFile));
+            // Act
+            var result = await _mover.HardlinkFileAsync(sourceFile, destFile);
+
+            // Assert
+            // Method gracefully returns false when source doesn't exist (exception is caught internally)
+            Assert.False(result, "HardlinkFileAsync should return false when source doesn't exist");
+            Assert.False(File.Exists(destFile), "Destination file should not be created");
         }
 
         [Fact]

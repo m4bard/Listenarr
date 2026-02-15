@@ -60,19 +60,9 @@ namespace Listenarr.Api.Services
                 Explicit = audiobook.Explicit
             };
 
-            // Compute wanted flag (treat presence of file records as authoritative for "not wanted")
-            // Check both that files exist in DB and that files physically exist on disk
-            // Handle relative paths by combining with BasePath when necessary
-            dto.Wanted = audiobook.Monitored && (dto.Files == null || !dto.Files.Any() || !dto.Files.Any(f =>
-            {
-                if (string.IsNullOrEmpty(f.Path)) return false;
-                
-                // Check if path is absolute (starts with drive letter or root slash)
-                var isAbsolute = Path.IsPathRooted(f.Path);
-                var fullPath = isAbsolute ? f.Path : (!string.IsNullOrEmpty(audiobook.BasePath) ? Path.Combine(audiobook.BasePath, f.Path) : f.Path);
-                
-                return System.IO.File.Exists(fullPath);
-            }));
+            // Compute wanted flag: true if monitored but has no file records
+            // (if we have file records, audiobook has content and is not "wanted")
+            dto.Wanted = audiobook.Monitored && (dto.Files == null || !dto.Files.Any());
 
 
             return dto;

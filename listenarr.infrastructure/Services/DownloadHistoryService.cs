@@ -307,15 +307,19 @@ namespace Listenarr.Infrastructure.Services
         {
             var cutoffDate = DateTime.UtcNow.AddDays(-retentionDays);
 
-            var deletedCount = await _context.Set<DownloadHistory>()
+            // Use ToList() first for in-memory DB compatibility, then delete
+            var oldEntries = await _context.Set<DownloadHistory>()
                 .Where(h => h.EventDate < cutoffDate)
-                .ExecuteDeleteAsync();
+                .ToListAsync();
+
+            _context.Set<DownloadHistory>().RemoveRange(oldEntries);
+            await _context.SaveChangesAsync();
 
             _logger.LogInformation(
                 "Cleaned up {Count} old download history entries (older than {Days} days)",
-                deletedCount, retentionDays);
+                oldEntries.Count, retentionDays);
 
-            return deletedCount;
+            return oldEntries.Count;
         }
     }
 }
