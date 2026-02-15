@@ -275,19 +275,22 @@ namespace Listenarr.Api.Tests
             try { Directory.Delete(srcDir, true); } catch { }
         }
 
-        [Fact(Skip = "Mock verification for telemetry Increment() not being called - requires investigation of download purge logic and metrics service")]
+        [Fact]
         public async Task GetQueue_DoesNotPurge_WhenSabnzbdHistoryContainsMatch()
         {
             var db = CreateInMemoryDb();
 
-            // Seed download that would otherwise be considered orphaned
+            // Seed download that would be considered orphaned: 
+            // - Status is Queued (not Downloading/Processing, not terminal states)
+            // - Started >5 minutes ago (meets orphan age threshold)
+            // - Not in client queue (will be detected as orphaned)
             var download = new Download
             {
                 Id = "purge-1",
                 Title = "William Faulkner - The Sound and the Fury",
-                Status = DownloadStatus.Downloading,
+                Status = DownloadStatus.Queued,
                 DownloadClientId = "sab-1",
-                StartedAt = DateTime.UtcNow
+                StartedAt = DateTime.UtcNow.AddMinutes(-10)
             };
             db.Downloads.Add(download);
             await db.SaveChangesAsync();
