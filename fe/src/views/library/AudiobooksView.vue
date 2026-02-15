@@ -53,15 +53,15 @@
             <PhCaretDown />
           </button>
           <div v-if="showGroupMenu" class="group-menu">
-            <button class="menu-item" @click="setGroupBy('books')">
+            <button class="menu-item" :class="{ active: groupBy === 'books' }" @click="setGroupBy('books')">
               <PhBook />
               Books
             </button>
-            <button class="menu-item" @click="setGroupBy('authors')">
+            <button class="menu-item" :class="{ active: groupBy === 'authors' }" @click="setGroupBy('authors')">
               <PhUser />
               Authors
             </button>
-            <button class="menu-item" @click="setGroupBy('series')">
+            <button class="menu-item" :class="{ active: groupBy === 'series' }" @click="setGroupBy('series')">
               <PhBooks />
               Series
             </button>
@@ -101,11 +101,15 @@
             @create="handleCreateCustomFilter"
             @edit="handleEditCustomFilter"
             @delete="handleDeleteCustomFilter"
+            :active="!!selectedFilterId"
             class="toolbar-filter-dropdown"
           />
           <CustomSelect
             v-model="sortKeyProxy"
             :options="sortOptions"
+            :sort-order="sortOrder"
+            :current-value="sortKey"
+            :active="sortKey !== 'title' || sortOrder !== 'asc'"
             class="toolbar-custom-select"
             aria-label="Sort by"
           />
@@ -179,21 +183,32 @@
         >
           <div class="collection-cover">
             <template v-if="groupBy === 'authors'">
-              <div class="audiobook-poster-container">
+              <div
+                class="audiobook-poster-container author-poster"
+                :data-author-name="collection.name"
+                :data-author-has-cover="getAuthorImageUrl(collection) ? '1' : ''"
+              >
                 <div class="series-count-badge">{{ collection.count }}</div>
+                <div
+                  class="author-placeholder"
+                  :class="{ loaded: authorImageLoaded[collection.name] }"
+                ></div>
                 <img
-                  v-if="collection.coverUrl"
-                  :src="apiService.getImageUrl(collection.coverUrl) || getPlaceholderUrl()"
+                  v-if="getAuthorImageUrl(collection)"
+                  class="audiobook-poster author-cover lazy-img"
+                  :class="{ loaded: authorImageLoaded[collection.name] }"
+                  :data-src="apiService.getImageUrl(getAuthorImageUrl(collection))"
+                  :src="getPlaceholderUrl()"
                   :alt="collection.name"
-                  class="audiobook-poster"
                   loading="lazy"
                   decoding="async"
-                  @error="handleImageError"
+                  @error="handleAuthorImageError(collection.name, $event)"
+                  @load="onAuthorImageLoad(collection.name)"
                 />
-                <div v-if="imagesLoading" class="image-loading-overlay">
-                  <PhSpinner class="ph-spin small" />
-                </div>
-                <div v-else class="no-cover">
+                <div
+                  class="author-placeholder-icon"
+                  :class="{ loaded: authorImageLoaded[collection.name] }"
+                >
                   <PhUser />
                 </div>
 
@@ -318,7 +333,7 @@
           class="audiobooks-grid"
           :style="{ transform: `translateY(${topPadding}px)` }"
         >
-          <div v-for="audiobook in visibleAudiobooks" :key="audiobook.id" class="audiobook-wrapper">
+            <div v-for="audiobook in visibleAudiobooks" :key="audiobook.id" class="audiobook-wrapper">
             <div
               tabindex="0"
               @keydown.enter="navigateToDetail(audiobook.id)"
@@ -554,6 +569,25 @@
         </div>
       </div>
     </div>
+    <div v-if="groupBy === 'books'" class="audiobook-status-legend">
+      <span class="legend-title">Border colors:</span>
+      <span class="legend-item">
+        <span class="legend-dot status-downloading"></span>
+        Downloading
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot status-no-file"></span>
+        Missing
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot status-quality-mismatch"></span>
+        Below Cutoff
+      </span>
+      <span class="legend-item">
+        <span class="legend-dot status-quality-match"></span>
+        Downloaded
+      </span>
+    </div>
 
     <!-- Delete confirmation handled via global ConfirmDialog (showConfirm) -->
 
@@ -607,8 +641,8 @@ import {
   PhSpinner,
   PhWarningCircle,
   PhInfo,
-  PhCaretUp,
   PhCaretDown,
+  PhBookOpen,
   PhX,
   PhUser,
   PhBooks,
@@ -964,10 +998,45 @@ const audiobooks = computed(() => filteredAndSortedAudiobooks.value)
 
 // Reactive map of fetched author cover overrides (keyed by author name)
 const authorCoverOverrides = reactive<Record<string, string>>({})
+const authorCoverLoading = reactive<Record<string, boolean>>({})
+const authorImageLoaded = reactive<Record<string, boolean>>({})
+
+function getAuthorImageUrl(collection: { name: string; coverUrl?: string }) {
+  const override = authorCoverOverrides[collection.name]
+  if (override) return override
+  if (collection.coverUrl && collection.coverUrl.includes('/config/cache/images/authors/')) {
+    return collection.coverUrl
+  }
+  return undefined
+}
+
+function onAuthorImageLoad(authorName: string) {
+  authorImageLoaded[authorName] = true
+}
+
+function handleAuthorImageError(authorName: string, event: Event) {
+  authorImageLoaded[authorName] = false
+  const img = event.target as HTMLImageElement | null
+  if (!img) return
+  try {
+    img.removeAttribute('data-src')
+  } catch {}
+  try {
+    img.style.opacity = '0'
+  } catch {}
+  try {
+    ;(img as unknown as { onerror?: null }).onerror = null
+  } catch {}
+  if (!authorCoverOverrides[authorName] && !authorCoverLoading[authorName]) {
+    void ensureAuthorCover(authorName)
+  }
+}
 
 async function ensureAuthorCover(authorName: string) {
   if (!authorName) return
   if (authorCoverOverrides[authorName]) return
+  if (authorCoverLoading[authorName]) return
+  authorCoverLoading[authorName] = true
   try {
     if (typeof apiService.getAuthorLookup !== 'function') return
     const info = await apiService.getAuthorLookup(authorName)
@@ -977,6 +1046,10 @@ async function ensureAuthorCover(authorName: string) {
     } else if (info.asin) {
       authorCoverOverrides[authorName] = `/config/cache/images/authors/${info.asin}.jpg`
     }
+    try {
+      await nextTick()
+      observeLazyImages()
+    } catch {}
   } catch (e: unknown) {
     errorTracking.captureException(e as Error, {
       component: 'AudiobooksView',
@@ -984,6 +1057,8 @@ async function ensureAuthorCover(authorName: string) {
       metadata: { authorName },
     })
     // ignore network/lookup failures
+  } finally {
+    authorCoverLoading[authorName] = false
   }
 }
 
@@ -1060,8 +1135,6 @@ const groupedCollections = computed(() => {
             } catch {}
           }
 
-          if (!cover) cover = book.imageUrl
-
           groups.set(key, { name: key, count: 0, coverUrl: cover })
         } else {
           groups.set(key, { name: key, count: 0, coverUrls: [] })
@@ -1080,30 +1153,61 @@ const groupedCollections = computed(() => {
   return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name))
 })
 
-// When grouped collections change (or grouping set to authors), fetch missing author images
-// Also re-run the lazy image observer after a short delay so any newly-populated
-// author cover overrides are applied to image `data-src` attributes and observed.
+let authorCardObserver: IntersectionObserver | null = null
+
+function observeAuthorCards() {
+  if (groupBy.value !== 'authors') return
+  const cards = Array.from(
+    document.querySelectorAll<HTMLElement>(
+      '.author-collection .audiobook-poster-container[data-author-name]',
+    ),
+  )
+  if (cards.length === 0) return
+
+  if (!('IntersectionObserver' in window)) {
+    for (const card of cards) {
+      const name = card.dataset.authorName
+      if (name) void ensureAuthorCover(name)
+    }
+    return
+  }
+
+  if (!authorCardObserver) {
+    authorCardObserver = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (!entry.isIntersecting) continue
+          const target = entry.target as HTMLElement
+          const name = target.dataset.authorName
+          const hasCover = target.dataset.authorHasCover === '1'
+          if (name && !hasCover) void ensureAuthorCover(name)
+          authorCardObserver?.unobserve(target)
+        }
+      },
+      { rootMargin: '400px', threshold: 0.01 },
+    )
+  }
+
+  for (const card of cards) {
+    authorCardObserver.observe(card)
+  }
+}
+
+// When grouped collections change (or grouping set to authors), observe visible author cards
+// so we only fetch cover data for items near the viewport.
 watch(
   () => groupedCollections.value.map((g) => g.name),
   async () => {
     if (groupBy.value !== 'authors') return
-    for (const g of groupedCollections.value) {
-      try {
-        const hasAuthorImage = !!g.coverUrl && g.coverUrl.includes('/config/cache/images/authors/')
-        if (!authorCoverOverrides[g.name] && !hasAuthorImage) {
-          // Kick off fetch but don't await serially to avoid blocking UI
-          void ensureAuthorCover(g.name)
-        }
-      } catch {}
-    }
+    await nextTick()
+    observeAuthorCards()
   },
   { immediate: true },
 )
 
-// Options for custom selects used in the toolbar
-// Build sort options and attach an up/down caret icon for the currently selected key
+// Options for sort dropdown in toolbar
 const sortOptions = computed(() => {
-  const opts = [
+  return [
     { value: 'title', label: 'Title' },
     { value: 'author-last', label: 'Author Last Name' },
     { value: 'author-first', label: 'Author First Name' },
@@ -1114,13 +1218,6 @@ const sortOptions = computed(() => {
     { value: 'monitored', label: 'Monitored' },
     { value: 'status', label: 'Status' },
   ]
-
-  // attach icon to the currently selected option to indicate sort direction
-  return opts.map((o) => ({
-    ...o,
-    icon:
-      o.value === sortKey.value ? (sortOrder.value === 'asc' ? PhCaretUp : PhCaretDown) : undefined,
-  }))
 })
 
 // Proxy so selecting the same key toggles sort order, selecting a new key sets ascending
@@ -1458,6 +1555,13 @@ onMounted(async () => {
       })
     }
 
+    if (groupBy.value === 'authors') {
+      try {
+        await nextTick()
+        observeAuthorCards()
+      } catch {}
+    }
+
     // Re-run observer when visible range changes (virtual scrolling)
     watch(
       () => visibleRange.value,
@@ -1505,6 +1609,9 @@ onMounted(async () => {
       resizeObserver.disconnect()
       stopWatch()
       stopPersist()
+      try {
+        authorCardObserver?.disconnect()
+      } catch {}
       document.removeEventListener('click', handleClickOutside)
     })
   }
@@ -1565,6 +1672,11 @@ function toggleViewMode() {
 async function setGroupBy(mode: 'books' | 'authors' | 'series') {
   groupBy.value = mode
   showGroupMenu.value = false
+  if (mode !== 'authors') {
+    try {
+      authorCardObserver?.disconnect()
+    } catch {}
+  }
   // Clear any active selection when switching grouping mode
   try {
     libraryStore.clearSelection()
@@ -1583,7 +1695,7 @@ async function setGroupBy(mode: 'books' | 'authors' | 'series') {
   }
 
   // Show image loading overlay and ensure DOM settles and recalc visible range for the virtual scroller
-  imagesLoading.value = true
+  imagesLoading.value = mode !== 'authors'
   try {
     await nextTick()
     try {
@@ -1596,9 +1708,18 @@ async function setGroupBy(mode: 'books' | 'authors' | 'series') {
       })
     }
 
+    if (mode === 'authors') {
+      await nextTick()
+      observeAuthorCards()
+      try {
+        observeLazyImages()
+      } catch {}
+      return
+    }
+
     // Wait for visible images to finish loading (or timeout)
     try {
-      await waitForImagesToLoad()
+      await waitForImagesToLoad(5000)
     } catch {
       // ignore, we'll clear loading overlay regardless
     }
@@ -1610,27 +1731,6 @@ async function setGroupBy(mode: 'books' | 'authors' | 'series') {
     })
   } finally {
     imagesLoading.value = false
-  }
-
-  // If switching to authors, kick off author lookups for missing covers
-  if (mode === 'authors') {
-    try {
-      for (const g of groupedCollections.value) {
-        try {
-          const hasAuthorImage =
-            !!g.coverUrl && g.coverUrl.includes('/config/cache/images/authors/')
-          if (!authorCoverOverrides[g.name] && !hasAuthorImage) {
-            void ensureAuthorCover(g.name)
-          }
-        } catch {}
-      }
-    } catch (e) {
-      errorTracking.captureException(e as Error, {
-        component: 'AudiobooksView',
-        operation: 'setGroupBy.authorCovers',
-        metadata: { mode },
-      })
-    }
   }
 }
 
@@ -1651,10 +1751,24 @@ async function waitForImagesToLoad(timeoutMs = 5000) {
     if (grouped) imgs.push(...Array.from(grouped.querySelectorAll<HTMLImageElement>('img')))
   }
 
-  if (imgs.length === 0) return
+  const containerRect = scrollContainer.value?.getBoundingClientRect()
+  const visibleImgs = containerRect
+    ? imgs.filter((img) => {
+        const rect = img.getBoundingClientRect()
+        const margin = 100
+        return (
+          rect.bottom >= containerRect.top - margin &&
+          rect.top <= containerRect.bottom + margin &&
+          rect.right >= containerRect.left - margin &&
+          rect.left <= containerRect.right + margin
+        )
+      })
+    : imgs
+
+  if (visibleImgs.length === 0) return
 
   await new Promise<void>((resolve) => {
-    let remaining = imgs.length
+    let remaining = visibleImgs.length
     const onDone = () => {
       remaining -= 1
       if (remaining <= 0) resolve()
@@ -1662,7 +1776,7 @@ async function waitForImagesToLoad(timeoutMs = 5000) {
 
     setTimeout(() => resolve(), timeoutMs)
 
-    imgs.forEach((img) => {
+    visibleImgs.forEach((img) => {
       if (img.complete && img.naturalWidth && img.naturalWidth > 0) {
         onDone()
       } else {
@@ -1913,6 +2027,20 @@ defineExpose({
   margin-top: 60px; /* Add margin to account for fixed toolbar */
   background-color: #1a1a1a;
   min-height: calc(100vh - 120px);
+  --legend-height: 44px;
+  position: relative;
+}
+
+@media (max-width: 1024px) {
+  .audiobooks-view {
+    margin-top: 60px; /* Toolbar may wrap on tablet, add extra space */
+  }
+}
+
+@media (max-width: 768px) {
+  .audiobooks-view {
+    margin-top: 60px; /* More space needed on mobile */
+  }
 }
 
 .toolbar {
@@ -1920,8 +2048,9 @@ defineExpose({
   top: 60px; /* Account for global header nav */
   left: 200px; /* Account for sidebar width */
   right: 0;
-  z-index: 99; /* Below global nav (1000) but above content */
+  z-index: 500; /* Below global nav (1000) but above content overlays */
   display: flex;
+  flex-wrap: wrap;
   justify-content: space-between;
   align-items: center;
   padding: 12px 20px;
@@ -1930,17 +2059,55 @@ defineExpose({
   margin-bottom: 20px;
 }
 
+@media (max-width: 1200px) {
+  .toolbar {
+    padding: 10px 16px;
+    gap: 6px;
+  }
+}
+
 @media (max-width: 768px) {
   .toolbar {
     left: 0; /* Full width on mobile */
+    padding: 8px 12px;
+    gap: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar {
+    padding: 6px 8px;
+    gap: 2px;
   }
 }
 
 .toolbar-left,
 .toolbar-right {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
+}
+
+@media (max-width: 1200px) {
+  .toolbar-left,
+  .toolbar-right {
+    gap: 6px;
+  }
+}
+
+@media (max-width: 768px) {
+  .toolbar-left,
+  .toolbar-right {
+    gap: 4px;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar-left,
+  .toolbar-right {
+    gap: 2px;
+  }
 }
 
 .toolbar-btn {
@@ -1954,6 +2121,7 @@ defineExpose({
   color: #e6eef8;
   font-size: 12px;
   cursor: pointer;
+  white-space: nowrap;
   transition:
     background-color 0.12s ease,
     transform 0.08s ease,
@@ -1998,7 +2166,13 @@ defineExpose({
   outline-offset: 2px;
 }
 
-/* Mobile-friendly toolbar: hide text, show only icons on screens 1024px and below */
+@media (max-width: 1200px) {
+  .toolbar-btn {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+}
+
 @media (max-width: 1024px) {
   .toolbar-btn {
     padding: 8px;
@@ -2032,11 +2206,39 @@ defineExpose({
   }
 }
 
+@media (max-width: 480px) {
+  .toolbar-btn {
+    padding: 6px;
+    min-width: 32px;
+  }
+}
+
 .toolbar-filters {
   display: inline-flex;
+  flex-wrap: wrap;
   align-items: center;
   gap: 8px;
   margin-left: 8px;
+}
+
+@media (max-width: 1200px) {
+  .toolbar-filters {
+    gap: 6px;
+    margin-left: 4px;
+  }
+}
+
+@media (max-width: 768px) {
+  .toolbar-filters {
+    gap: 4px;
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar-filters {
+    gap: 2px;
+  }
 }
 .toolbar-search {
   background: rgba(255, 255, 255, 0.02);
@@ -2045,6 +2247,30 @@ defineExpose({
   padding: 8px 8px;
   border-radius: 6px;
   min-width: 180px;
+}
+
+@media (max-width: 1200px) {
+  .toolbar-search {
+    min-width: 140px;
+    padding: 7px 6px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 768px) {
+  .toolbar-search {
+    min-width: 100px;
+    padding: 6px 6px;
+    font-size: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .toolbar-search {
+    min-width: 80px;
+    padding: 4px 4px;
+    font-size: 9px;
+  }
 }
 .toolbar-select {
   background-color: #2a2a2a; /* match CustomSelect trigger */
@@ -2078,7 +2304,9 @@ defineExpose({
 }
 
 .count-badge {
-  padding: 6px 12px;
+  display: inline-flex;
+  align-items: center;
+  padding: 8px 12px;
   background-color: var(--brand-500);
   border-radius: 6px;
   color: #fff;
@@ -2091,6 +2319,26 @@ defineExpose({
   background-color: var(--brand-700);
 }
 
+@media (max-width: 1200px) {
+  .count-badge {
+    padding: 7px 10px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 1024px) {
+  .count-badge {
+    display: none;
+  }
+}
+
+@media (max-width: 480px) {
+  .count-badge {
+    padding: 6px 8px;
+    font-size: 10px;
+  }
+}
+
 .group-dropdown {
   position: relative;
 }
@@ -2101,6 +2349,12 @@ defineExpose({
   gap: 0.5rem;
 }
 
+@media (max-width: 768px) {
+  .group-btn {
+    gap: 0.2rem;
+  }
+}
+
 .group-menu {
   position: absolute;
   top: calc(100% + 6px);
@@ -2108,9 +2362,11 @@ defineExpose({
   background: #2a2a2a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-  z-index: 100;
-  min-width: 120px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
+  z-index: 1100;
+  min-width: 180px;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .menu-item {
@@ -2120,7 +2376,8 @@ defineExpose({
   padding: 0.75rem 1rem;
   color: var(--text-color);
   cursor: pointer;
-  transition: background 0.2s;
+  font-size: 12px;
+  transition: background-color 0.15s;
   width: 100%;
   border: none;
   background: transparent;
@@ -2128,7 +2385,13 @@ defineExpose({
 }
 
 .menu-item:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
+}
+
+.menu-item.active {
+  background-color: rgba(33, 150, 243, 0.1);
+  color: #fff;
 }
 
 .menu-item:first-child {
@@ -2350,7 +2613,96 @@ defineExpose({
   height: calc(100vh - 130px); /* Account for toolbar and header */
   overflow-y: auto;
   overflow-x: hidden;
-  padding: 0 20px;
+  padding: 0 20px var(--legend-height);
+}
+
+.audiobook-status-legend {
+  position: sticky;
+  bottom: 0;
+  min-height: var(--legend-height);
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 16px;
+  padding: 10px 20px 20px;
+  background: linear-gradient(180deg, rgba(26, 26, 26, 0.6) 0%, #1a1a1a 40%);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  z-index: 200;
+  color: #bfcad6;
+  font-size: 12px;
+}
+
+.legend-title {
+  color: #e6eef8;
+  font-weight: 500;
+}
+
+.legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legend-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+.legend-dot.status-downloading {
+  background-color: #3498db;
+}
+
+.legend-dot.status-no-file {
+  background-color: #e74c3c;
+}
+
+.legend-dot.status-quality-mismatch {
+  background-color: #f39c12;
+}
+
+.legend-dot.status-quality-match {
+  background-color: #2ecc71;
+}
+
+@media (max-width: 768px) {
+  .audiobooks-view {
+    --legend-height: 36px;
+  }
+
+  .audiobook-status-legend {
+    padding: 8px 12px 12px;
+    gap: 8px;
+    flex-wrap: nowrap;
+    overflow-x: hidden;
+  }
+
+  .legend-title {
+    flex: 0 0 auto;
+    font-size: 11px;
+  }
+
+  .legend-item {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    font-size: 11px;
+  }
+
+  .legend-dot {
+    width: 8px;
+    height: 8px;
+  }
+}
+
+@media (max-width: 480px) {
+  .audiobooks-view {
+    --legend-height: 32px;
+  }
+
+  .legend-title {
+    display: none;
+  }
 }
 
 .audiobooks-scroll-spacer {
@@ -2621,6 +2973,62 @@ defineExpose({
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+.author-poster {
+  background: #1f1f1f;
+}
+
+.author-placeholder {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, #242424 0%, #2f343a 50%, #242424 100%);
+  background-size: 200% 100%;
+  animation: authorShimmer 1.6s ease infinite;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+  z-index: 1;
+}
+
+.author-placeholder.loaded {
+  opacity: 0;
+}
+
+.author-placeholder-icon {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #9aa4b2;
+  z-index: 2;
+  opacity: 1;
+  transition: opacity 0.2s ease;
+}
+
+.author-placeholder-icon.loaded {
+  opacity: 0;
+}
+
+.author-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.author-cover.loaded {
+  opacity: 1;
+}
+
+@keyframes authorShimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
 
 .status-overlay {

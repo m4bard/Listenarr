@@ -1,6 +1,7 @@
 using Listenarr.Api.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace Listenarr.Api.Controllers
 {
@@ -12,16 +13,19 @@ namespace Listenarr.Api.Controllers
         private readonly ILogger<MetadataController> _logger;
         private readonly AudimetaService _audimetaService;
         private readonly IImageCacheService _imageCacheService;
+        private readonly IMemoryCache _cache;
 
         public MetadataController(
             IAudiobookMetadataService metadataService,
             AudimetaService audimetaService,
             IImageCacheService imageCacheService,
+            IMemoryCache cache,
             ILogger<MetadataController> logger)
         {
             _metadataService = metadataService;
             _audimetaService = audimetaService;
             _imageCacheService = imageCacheService;
+            _cache = cache;
             _logger = logger;
         }
 
@@ -110,8 +114,49 @@ namespace Listenarr.Api.Controllers
             {
                 if (string.IsNullOrWhiteSpace(name)) return BadRequest("Author name is required");
 
-                var info = await _audimetaService.LookupAuthorAsync(name, region);
-                if (info == null) return NotFound("Author not found");
+                var normalizedName = name.Trim();
+                var cacheKey = $"author-lookup:{region}:{normalizedName.ToLowerInvariant()}";
+
+                if (_cache.TryGetValue(cacheKey, out AuthorLookupCacheEntry? cachedEntry) && cachedEntry != null)
+                {
+                    if (cachedEntry.NotFound)
+                    {
+                        return NotFound("Author not found");
+                    }
+
+                    string? cachedPath = cachedEntry.CachedPath;
+                    if (!string.IsNullOrWhiteSpace(cachedEntry.Asin))
+                    {
+                        var diskPath = await _imageCacheService.GetCachedImagePathAsync(cachedEntry.Asin);
+                        if (!string.IsNullOrWhiteSpace(diskPath))
+                        {
+                            cachedPath = "/" + diskPath.TrimStart('/');
+                        }
+                    }
+
+                    if (!string.IsNullOrWhiteSpace(cachedPath))
+                    {
+                        return Ok(new
+                        {
+                            asin = cachedEntry.Asin,
+                            name = cachedEntry.Name ?? normalizedName,
+                            image = cachedEntry.Image,
+                            cachedPath = cachedPath
+                        });
+                    }
+                }
+
+                var info = await _audimetaService.LookupAuthorAsync(normalizedName, region);
+                if (info == null)
+                {
+                    _cache.Set(cacheKey, new AuthorLookupCacheEntry
+                    {
+                        NotFound = true,
+                        Name = normalizedName
+                    }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(6) });
+
+                    return NotFound("Author not found");
+                }
 
                 string? cached = null;
                 try
@@ -135,6 +180,15 @@ namespace Listenarr.Api.Controllers
                     cachedPath = cached
                 };
 
+                _cache.Set(cacheKey, new AuthorLookupCacheEntry
+                {
+                    Asin = info.Asin,
+                    Name = info.Name ?? normalizedName,
+                    Image = info.Image,
+                    CachedPath = cached,
+                    NotFound = false
+                }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
+
                 return Ok(result);
             }
             catch (Exception ex)
@@ -142,6 +196,15 @@ namespace Listenarr.Api.Controllers
                 _logger.LogError(ex, "Error looking up author: {Name}", name);
                 return StatusCode(500, "Internal server error");
             }
+        }
+
+        private sealed class AuthorLookupCacheEntry
+        {
+            public string? Asin { get; set; }
+            public string? Name { get; set; }
+            public string? Image { get; set; }
+            public string? CachedPath { get; set; }
+            public bool NotFound { get; set; }
         }
     }
 }

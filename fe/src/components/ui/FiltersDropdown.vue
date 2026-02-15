@@ -1,14 +1,12 @@
 <template>
   <div ref="root" class="filters-dropdown">
-    <button class="trigger" @click="toggle" :aria-expanded="open">
-      <span style="display:inline-flex; align-items:center; gap:8px">
-        <span class="icon">Filters</span>
-      </span>
-      <span class="caret">▾</span>
+    <button class="trigger" :class="{ active: active }" @click="toggle" :aria-expanded="open">
+      <span class="trigger-label">Filters</span>
+      <PhFunnel class="funnel-icon" />
     </button>
 
     <div v-if="open" class="dropdown">
-      <div v-for="o in builtInOptions" :key="o.value" class="dropdown-item" @click="selectBuiltIn(o.value)">
+      <div v-for="o in builtInOptions" :key="o.value" class="dropdown-item" :class="{ active: selectedBuiltIn === o.value }" @click="selectBuiltIn(o.value)">
         <div class="dropdown-item-main">
           <span>{{ o.label }}</span>
         </div>
@@ -18,15 +16,17 @@
       <div class="dropdown-divider"></div>
 
       <div v-if="customFilters.length === 0" class="dropdown-item">No custom filters</div>
-      <div v-for="f in customFilters" :key="f.id" class="dropdown-item">
+      <div v-for="f in customFilters" :key="f.id" class="dropdown-item" :class="{ active: selectedCustom === f.id }">
         <div class="dropdown-item-main" @click="selectCustom(f.id)">{{ f.label }}</div>
-        <div class="dropdown-item-actions">
+        <div v-if="selectedCustom === f.id" class="check">✓</div>
+        <div v-else class="dropdown-item-actions">
           <button class="icon-btn" @click.stop="emitEdit(f)">Edit</button>
           <button class="icon-btn delete" @click.stop="emitDelete(f)">Delete</button>
         </div>
       </div>
 
       <div class="dropdown-divider"></div>
+      <div v-if="hasActiveFilter" class="dropdown-item reset" @click="resetFilter">Reset filter</div>
       <div class="dropdown-item create" @click="emitCreate">Create filter</div>
     </div>
   </div>
@@ -34,6 +34,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { PhFunnel } from '@phosphor-icons/vue'
 interface CustomFilterRule {
   field: string
   operator: string
@@ -49,9 +50,11 @@ const props = withDefaults(
   defineProps<{
     customFilters: CustomFilter[]
     modelValue?: string | null
+    active?: boolean
   }>(),
   {
     modelValue: null,
+    active: false,
   },
 )
 
@@ -66,7 +69,6 @@ const open = ref(false)
 const root = ref<HTMLElement | null>(null)
 
 const builtInOptions = [
-  { value: 'all', label: 'All' },
   { value: 'monitored', label: 'Monitored Only' },
   { value: 'unmonitored', label: 'Unmonitored Only' },
   { value: 'missing', label: 'Missing' },
@@ -89,6 +91,8 @@ const selectedCustom = computed(() => {
   return null
 })
 
+const hasActiveFilter = computed(() => !!props.modelValue)
+
 function toggle() {
   open.value = !open.value
 }
@@ -98,12 +102,17 @@ function close() {
 }
 
 function selectBuiltIn(val: string) {
-  emit('update:modelValue', val)
+  emit('update:modelValue', val === selectedBuiltIn.value ? null : val)
   close()
 }
 
 function selectCustom(id: string) {
-  emit('update:modelValue', id)
+  emit('update:modelValue', id === selectedCustom.value ? null : id)
+  close()
+}
+
+function resetFilter() {
+  emit('update:modelValue', null)
   close()
 }
 
@@ -139,7 +148,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  padding: 6px 8px;
+  padding: 8px 12px;
   background: #2a2a2a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
@@ -147,15 +156,23 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   cursor: pointer;
   font-size: 12px;
 }
+.trigger.active {
+  background-color: var(--brand-500);
+  border-color: var(--brand-500);
+  color: #fff;
+}
 .dropdown {
   position: absolute;
   top: calc(100% + 6px);
+  left: 0;
   min-width: 220px;
   background: #2a2a2a;
   border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
   box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6);
   z-index: 1100;
+  max-height: 60vh;
+  overflow-y: auto;
 }
 
 .dropdown-item {
@@ -165,9 +182,11 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   justify-content: space-between;
   align-items: center;
   font-size: 12px;
+  transition: background-color 0.15s;
 }
 .dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background-color: rgba(255, 255, 255, 0.18);
+  color: #fff;
 }
 .dropdown-divider {
   height: 1px;
@@ -175,6 +194,10 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   margin: 6px 0;
 }
 .dropdown-item.create {
+  font-weight: 500;
+  color: #fff;
+}
+.dropdown-item.reset {
   font-weight: 500;
   color: #fff;
 }
@@ -195,20 +218,37 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 
 /* Mobile-friendly toolbar: hide text, show only icons on screens 1024px and below */
 @media (max-width: 1024px) {
+  .dropdown {
+    left: auto;
+    right: 0;
+    min-width: 180px;
+    max-width: calc(100vw - 16px);
+  }
+  
   .trigger {
-    padding: 10px 6px;
+    padding: 8px 6px;
     min-width: 36px;
     justify-content: center;
-    gap: unset;
+    gap: 0;
   }
-  /* Hide the text/icon group but keep the caret visible for affordance */
-  .trigger > span:first-child {
+  /* Hide text label on mobile, show only funnel icon */
+  .trigger-label {
     display: none;
   }
-  .trigger .caret {
-    display: inline-block;
-    font-size: 14px;
-    line-height: 1;
+  .funnel-icon {
+    width: 18px;
+    height: 18px;
   }
+}
+
+.funnel-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.dropdown-item.active {
+  background-color: rgba(33, 150, 243, 0.1);
+  color: #fff;
 }
 </style>
