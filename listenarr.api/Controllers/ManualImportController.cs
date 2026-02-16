@@ -111,14 +111,19 @@ public class ManualImportController : ControllerBase
                     .GroupBy(i => i.MatchedAudiobookId)
                     .ToDictionary(g => g.Key, g => g.Count());
                 
+                _logger.LogDebug("Manual import batch: {ItemCount} items, filesPerAudiobook: {AudiobookFileCount}", request.Items.Count, string.Join(";", filesPerAudiobook.Select(x => $"{x.Key}:{x.Value}")));
+                
                 foreach (var item in request.Items)
                 {
                     var isMultiFile = filesPerAudiobook.TryGetValue(item.MatchedAudiobookId, out var count) && count > 1;
+                    _logger.LogDebug("Importing item {Index}: {Path} for audiobook {AudiobookId}, isMultiFile: {IsMultiFile}", request.Items.IndexOf(item), item.FullPath, item.MatchedAudiobookId, isMultiFile);
                     var result = await ImportFileAsync(item, request.InputMode ?? "copy", usedDestinations, isMultiFile);
+                    _logger.LogDebug("Import result {Index}: Success={Success}, Destination={Destination}, Error={Error}", request.Items.IndexOf(item), result.Success, result.DestinationPath, result.Error);
                     results.Add(result);
                 }
 
                 var successCount = results.Count(r => r.Success);
+                _logger.LogInformation("Manual import batch completed: {SuccessCount}/{TotalCount} succeeded, usedDestinations: {DestinationCount}", successCount, results.Count, usedDestinations.Count);
                 return Ok(new
                 {
                     importedCount = successCount,
@@ -217,10 +222,15 @@ public class ManualImportController : ControllerBase
             }
 
             // If destination file exists, create a unique filename (append " (1)", " (2)", ...)
+            var preUniquePath = destinationPath;
             try
             {
-                _logger.LogDebug("Resolving unique destination for manual import: {Dest}", destinationPath);
+                _logger.LogDebug("Resolving unique destination for manual import: {Dest}, usedDestinations count: {Count}", destinationPath, usedDestinations?.Count ?? 0);
                 destinationPath = FileUtils.GetUniqueDestinationPath(destinationPath, System.IO.File.Exists, usedDestinations);
+                if (preUniquePath != destinationPath)
+                {
+                    _logger.LogDebug("Unique destination changed from {Old} to {New}", preUniquePath, destinationPath);
+                }
             }
             catch (Exception ex)
             {
@@ -228,15 +238,24 @@ public class ManualImportController : ControllerBase
             }
 
             // Move or copy the file
-            if (inputMode == "move")
+            try
             {
-                System.IO.File.Move(item.FullPath, destinationPath);
-                _logger.LogInformation("Moved file {Source} to {Destination}", item.FullPath, destinationPath);
+                _logger.LogDebug("Attempting to {Operation} file from {Source} to {Destination}", inputMode == "move" ? "move" : "copy", item.FullPath, destinationPath);
+                if (inputMode == "move")
+                {
+                    System.IO.File.Move(item.FullPath, destinationPath, overwrite: false);
+                    _logger.LogInformation("Moved file {Source} to {Destination}", item.FullPath, destinationPath);
+                }
+                else
+                {
+                    System.IO.File.Copy(item.FullPath, destinationPath, overwrite: false);
+                    _logger.LogInformation("Copied file {Source} to {Destination}", item.FullPath, destinationPath);
+                }
             }
-            else
+            catch (IOException ex) when (System.IO.File.Exists(destinationPath))
             {
-                System.IO.File.Copy(item.FullPath, destinationPath);
-                _logger.LogInformation("Copied file {Source} to {Destination}", item.FullPath, destinationPath);
+                _logger.LogWarning(ex, "Destination file already exists despite unique name generation: {Destination}", destinationPath);
+                throw;
             }
             // Record the destination to avoid collisions with subsequent items in this batch
             try
@@ -244,6 +263,7 @@ public class ManualImportController : ControllerBase
                 if (usedDestinations != null)
                 {
                     usedDestinations.Add(destinationPath);
+                    _logger.LogDebug("Added destination to usedDestinations: {Destination}, total count now: {Count}", destinationPath, usedDestinations.Count);
                 }
             }
             catch { }
