@@ -284,7 +284,20 @@ namespace Listenarr.Api.Services
                     else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
                     {
                         var ok = await _fileMover.HardlinkFileAsync(sourcePath, uniqueInitial);
-                        if (ok) result.WasCopied = true;
+                        if (!ok)
+                        {
+                            _logger.LogWarning("ImportSingleFile: Hardlink failed for {Source}, attempting copy fallback", sourcePath);
+                            ok = await _fileMover.CopyFileAsync(sourcePath, uniqueInitial);
+                        }
+
+                        if (ok)
+                        {
+                            result.WasCopied = true;
+                        }
+                        else
+                        {
+                            throw new IOException("Hardlink/Copy failed");
+                        }
                     }
                     else
                     {
@@ -583,10 +596,20 @@ namespace Listenarr.Api.Services
                         else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
                         {
                             var ok = await _fileMover.HardlinkFileAsync(file, uniqueInitial);
+                            if (!ok)
+                            {
+                                _logger.LogWarning("ImportFilesFromDirectory: Hardlink failed for {Source}, attempting copy fallback", file);
+                                ok = await _fileMover.CopyFileAsync(file, uniqueInitial);
+                            }
+
                             if (ok)
                             {
-                                _logger.LogInformation("ImportFilesFromDirectory: Hardlinked file {Source} -> {Dest}", file, uniqueInitial);
+                                _logger.LogInformation("ImportFilesFromDirectory: Hardlinked/copied file {Source} -> {Dest}", file, uniqueInitial);
                                 res.WasCopied = true;
+                            }
+                            else
+                            {
+                                throw new IOException("Hardlink/Copy failed");
                             }
                         }
                         else
