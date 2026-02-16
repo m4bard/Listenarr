@@ -134,7 +134,7 @@ if (!args?.Any(arg => arg.StartsWith("--urls")) ?? true)
 // If running as an integration test host, allow the test-side partial to apply any
 // additional registrations (for example AddListenarrPersistence so IDbContextFactory<>
 // is available to hosted/background services during tests).
-if (builder.Environment.IsEnvironment("Testing"))
+if (builder.Environment.IsEnvironment("Test"))
 {
     ApplyTestHostPatches(builder);
 }

@@ -15,7 +15,8 @@ namespace Listenarr.Api.Tests
     {
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
-            builder.UseEnvironment("Testing");
+            // Use "Test" environment (matches GitHub Actions ASPNETCORE_ENVIRONMENT=Test)
+            builder.UseEnvironment("Test");
 
             builder.ConfigureAppConfiguration((context, config) =>
             {
