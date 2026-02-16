@@ -421,8 +421,12 @@ builder.Services.AddListenarrAdapters(builder.Configuration);
 builder.Services.AddListenarrInfrastructure();
 // Register application-level services (moved from Program.cs to keep startup focused)
 builder.Services.AddListenarrAppServices(builder.Configuration);
-// Register hosted/background services (moved from Program.cs)
-builder.Services.AddListenarrHostedServices(builder.Configuration);
+// Register hosted/background services (moved from Program.cs). Allow tests to disable these.
+var disableHostedServices = builder.Configuration.GetValue<bool>("Listenarr:DisableHostedServices");
+if (!disableHostedServices)
+{
+    builder.Services.AddListenarrHostedServices(builder.Configuration);
+}
 
 // External request options (Prefer US domain / optional US proxy)
 builder.Services.Configure<Listenarr.Api.Services.ExternalRequestOptions>(builder.Configuration.GetSection("ExternalRequests"));

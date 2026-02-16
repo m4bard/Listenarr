@@ -30,7 +30,8 @@ namespace Listenarr.Api.Tests
                 var overrides = new Dictionary<string, string?>
                 {
                     ["Listenarr:SqliteDbPath"] = dbPath,
-                    ["Playwright:Enabled"] = "false"
+                    ["Playwright:Enabled"] = "false",
+                    ["Listenarr:DisableHostedServices"] = "true"
                 };
 
                 config.AddInMemoryCollection(overrides);
