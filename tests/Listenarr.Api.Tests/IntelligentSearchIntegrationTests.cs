@@ -13,11 +13,11 @@ using Xunit;
 
 namespace Listenarr.Api.Tests
 {
-    public class IntelligentSearchIntegrationTests : IClassFixture<WebApplicationFactory<Program>>
+    public class IntelligentSearchIntegrationTests : IClassFixture<ListenarrWebApplicationFactory>
     {
-        private readonly WebApplicationFactory<Program> _factory;
+        private readonly ListenarrWebApplicationFactory _factory;
 
-        public IntelligentSearchIntegrationTests(WebApplicationFactory<Program> factory)
+        public IntelligentSearchIntegrationTests(ListenarrWebApplicationFactory factory)
         {
             _factory = factory;
         }

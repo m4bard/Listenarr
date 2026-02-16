@@ -394,7 +394,13 @@ builder.Services.AddHttpClient("DirectDownload")
 // the published exe will create/use the intended config/database path even
 // when the working directory differs.
 // Compute default SQLite DB path (config/database/listenarr.db) relative to content root.
-var sqliteDbPath = Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db");
+// Allow tests to override the path via configuration to avoid shared DB state in CI.
+var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
+var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
+    ? Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
+    : (Path.IsPathRooted(sqliteDbPathOverride)
+        ? sqliteDbPathOverride
+        : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
 // Ensure directory exists at startup so EF migrations can create the DB file there
 var sqliteDbDir = Path.GetDirectoryName(sqliteDbPath);
 if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))

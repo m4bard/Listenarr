@@ -8,11 +8,11 @@ using Xunit;
 
 namespace Listenarr.Api.Tests
 {
-    public class ProwlarrEndpointsTests : IClassFixture<WebApplicationFactory<Program>>
+    public class ProwlarrEndpointsTests : IClassFixture<ListenarrWebApplicationFactory>
     {
-        private readonly WebApplicationFactory<Program> _factory;
+        private readonly ListenarrWebApplicationFactory _factory;
 
-        public ProwlarrEndpointsTests(WebApplicationFactory<Program> factory)
+        public ProwlarrEndpointsTests(ListenarrWebApplicationFactory factory)
         {
             _factory = factory;
         }

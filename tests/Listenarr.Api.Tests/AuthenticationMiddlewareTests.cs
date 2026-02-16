@@ -10,11 +10,11 @@ using Xunit;
 
 namespace Listenarr.Api.Tests
 {
-    public class AuthenticationMiddlewareTests : IClassFixture<WebApplicationFactory<Program>>
+    public class AuthenticationMiddlewareTests : IClassFixture<ListenarrWebApplicationFactory>
     {
-        private readonly WebApplicationFactory<Program> _factory;
+        private readonly ListenarrWebApplicationFactory _factory;
 
-        public AuthenticationMiddlewareTests(WebApplicationFactory<Program> factory)
+        public AuthenticationMiddlewareTests(ListenarrWebApplicationFactory factory)
         {
             _factory = factory;
         }
