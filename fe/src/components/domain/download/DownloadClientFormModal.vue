@@ -478,13 +478,43 @@ const closeModal = () => {
 const testConnection = async () => {
   testing.value = true
   try {
-    // Build config for testing:
-    // - If user entered a password, use it
-    // - If editing an existing client with no password entered, include the ID so server merges the saved password
-    // - If creating new client, don't include ID (test only the submitted values)
+    // Build config for testing with proper settings structure
+    // Match the structure that handleSubmit uses to ensure settings are properly formatted
     const configToTest: Partial<DownloadClientConfiguration> = {
-      ...formData.value,
-      ...(props.editingClient?.id && !formData.value.password && { id: props.editingClient.id }),
+      id: props.editingClient?.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      name: formData.value.name,
+      type: formData.value.type,
+      host: formData.value.host,
+      port: formData.value.port,
+      username: formData.value.username || '',
+      password: formData.value.password || '',
+      downloadPath: formData.value.downloadPath || '',
+      useSSL: formData.value.useSSL,
+      isEnabled: formData.value.isEnabled,
+      removeCompletedDownloads: formData.value.removeCompletedDownloads,
+      settings: {
+        ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
+          ? { apiKey: formData.value.apiKey }
+          : {}),
+        ...(formData.value.category && { category: formData.value.category }),
+        ...(formData.value.tags && { tags: formData.value.tags }),
+        recentPriority: formData.value.recentPriority,
+        olderPriority: formData.value.olderPriority,
+        removeCompleted: formData.value.removeCompleted,
+        removeFailed: formData.value.removeFailed,
+        initialState: formData.value.initialState,
+        sequentialOrder: formData.value.sequentialOrder,
+        firstAndLastFirst: formData.value.firstAndLastFirst,
+        contentLayout: formData.value.contentLayout,
+        ...(formData.value.remotePathMappingIds && formData.value.remotePathMappingIds.length > 0
+          ? { remotePathMappingIds: formData.value.remotePathMappingIds }
+          : {}),
+      },
+    }
+
+    // If editing with existing password not changed, include ID so server merges saved password
+    if (props.editingClient?.id && !formData.value.password) {
+      configToTest.id = props.editingClient.id
     }
 
     const result = await testDownloadClient(configToTest)

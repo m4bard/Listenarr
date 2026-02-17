@@ -1359,7 +1359,8 @@ namespace Listenarr.Api.Services
                 _logger.LogDebug("Torrent URL: {Url}", torrentUrl);
 
                 // Get existing torrents list before adding (only request hashes to minimize payload)
-                var torrentsBeforeResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash");
+                var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "?");
+                var torrentsBeforeResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash{categoryFilter}");
                 var existingHashes = new HashSet<string>();
                 if (torrentsBeforeResp.IsSuccessStatusCode)
                 {
@@ -1467,7 +1468,8 @@ namespace Listenarr.Api.Services
                 await Task.Delay(1000);
 
                 // Get updated torrents list to find the newly added torrent hash (request minimal fields)
-                var torrentsAfterResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash,name");
+                var categoryFilter2 = QBittorrentHelpers.BuildCategoryParameter(client?.Settings ?? new Dictionary<string, object>(), "&");
+                var torrentsAfterResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash,name{categoryFilter2}");
                 if (torrentsAfterResp.IsSuccessStatusCode)
                 {
                     var afterJson = await torrentsAfterResp.Content.ReadAsStringAsync();
@@ -2869,7 +2871,8 @@ namespace Listenarr.Api.Services
                     }
 
                     // Get torrents (with or without authentication)
-                    var torrentsResponse = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info");
+                    var categoryFilter3 = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "?");
+                    var torrentsResponse = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info{categoryFilter3}");
                     if (!torrentsResponse.IsSuccessStatusCode) return items;
 
                     torrentsJson = await torrentsResponse.Content.ReadAsStringAsync();

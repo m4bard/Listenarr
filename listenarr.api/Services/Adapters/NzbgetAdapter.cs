@@ -65,17 +65,32 @@ namespace Listenarr.Api.Services.Adapters
                     return (false, "NZBGet: Unable to retrieve version");
                 }
 
-                return (true, $"NZBGet: Authentication succeeded (version {version}, using XML-RPC)");
+                return (true, "NZBGet: connected");
             }
             catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
             {
                 _logger.LogDebug(httpEx, "NZBGet authentication failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, "NZBGet: Authentication failed (check username/password)");
             }
+            catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _logger.LogDebug(httpEx, "NZBGet authentication failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
+                return (false, "NZBGet: Authentication failed (check username/password)");
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogDebug(httpEx, "NZBGet network error for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
+                return (false, $"NZBGet: network error ({httpEx.StatusCode?.ToString() ?? "unavailable"})");
+            }
+            catch (TaskCanceledException tce)
+            {
+                _logger.LogDebug(tce, "NZBGet test timed out for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
+                return (false, "NZBGet: connection timed out");
+            }
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "NZBGet test failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
-                return (false, ex.Message);
+                return (false, "NZBGet: connection failed");
             }
         }
 

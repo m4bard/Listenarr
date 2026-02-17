@@ -44,12 +44,27 @@ namespace Listenarr.Api.Services.Adapters
                     tag = 1
                 };
                 await InvokeRpcAsync(client, payload, ct);
-                return (true, "Transmission: session established");
+                return (true, "Transmission: connected");
+            }
+            catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _logger.LogDebug(httpEx, "Transmission authentication failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id ?? client?.Name ?? client?.Type));
+                return (false, "Transmission: authentication failed (check username/password)");
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogDebug(httpEx, "Transmission test failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id ?? client?.Name ?? client?.Type));
+                return (false, $"Transmission: network error ({httpEx.StatusCode?.ToString() ?? "unavailable"})");
+            }
+            catch (TaskCanceledException tce)
+            {
+                _logger.LogDebug(tce, "Transmission test timed out for client {ClientId}", LogRedaction.SanitizeText(client?.Id ?? client?.Name ?? client?.Type));
+                return (false, "Transmission: connection timed out");
             }
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "Transmission test failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id ?? client?.Name ?? client?.Type));
-                return (false, ex.Message);
+                return (false, "Transmission: connection failed");
             }
         }
 

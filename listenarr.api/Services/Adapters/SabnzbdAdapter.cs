@@ -55,16 +55,36 @@ namespace Listenarr.Api.Services.Adapters
                 var txt = await resp.Content.ReadAsStringAsync(ct);
                 if (!resp.IsSuccessStatusCode)
                 {
-                    var redacted = LogRedaction.RedactText(txt, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { apiKey }));
-                    return (false, $"SABnzbd returned {resp.StatusCode}: {redacted}");
+                    // Map common statuses to simple, actionable messages
+                    if (resp.StatusCode == HttpStatusCode.Unauthorized || resp.StatusCode == HttpStatusCode.Forbidden)
+                    {
+                        return (false, "SABnzbd: API key invalid or unauthorized");
+                    }
+
+                    if (resp.StatusCode == HttpStatusCode.NotFound)
+                    {
+                        return (false, "SABnzbd: host or endpoint not found (check host/port)");
+                    }
+
+                    return (false, $"SABnzbd: returned {resp.StatusCode}");
                 }
 
-                return (true, "SABnzbd: API reachable and key validated");
+                return (true, "SABnzbd: connected");
+            }
+            catch (HttpRequestException httpEx)
+            {
+                _logger.LogDebug(httpEx, "SABnzbd TestConnection network error");
+                return (false, $"SABnzbd: network error ({httpEx.StatusCode?.ToString() ?? "unavailable"})");
+            }
+            catch (TaskCanceledException tce)
+            {
+                _logger.LogDebug(tce, "SABnzbd TestConnection timed out");
+                return (false, "SABnzbd: connection timed out");
             }
             catch (Exception ex)
             {
                 _logger.LogDebug(ex, "SABnzbd TestConnection failed");
-                return (false, ex.Message);
+                return (false, "SABnzbd: connection failed");
             }
         }
 
