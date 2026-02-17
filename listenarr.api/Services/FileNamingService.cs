@@ -157,7 +157,12 @@ namespace Listenarr.Api.Services
         {
             var settings = await _configService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
             var folderPattern = settings.FolderNamingPattern;
-            var filePattern = settings.FileNamingPattern;
+            
+            // Determine if this is a multi-file import (has disk or chapter number)
+            bool isMultiFile = diskNumber.HasValue || chapterNumber.HasValue;
+            var filePattern = isMultiFile 
+                ? settings.MultiFileNamingPattern 
+                : settings.FileNamingPattern;
 
             var effectiveFolderPattern = folderPattern;
             try
