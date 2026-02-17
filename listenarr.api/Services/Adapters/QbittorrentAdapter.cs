@@ -49,26 +49,16 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     try
                     {
-                        var cookieJar = new CookieContainer();
-                        var handler = new HttpClientHandler
-                        {
-                            CookieContainer = cookieJar,
-                            UseCookies = true,
-                            AutomaticDecompression = DecompressionMethods.All
-                        };
-
-                        using var httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
-
                         using var loginData = new FormUrlEncodedContent(new[]
                         {
                             new KeyValuePair<string, string>("username", client.Username ?? string.Empty),
                             new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                         });
 
-                        var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+                        var loginResp = await http.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
                         if (loginResp.IsSuccessStatusCode)
                         {
-                            var retry = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                            var retry = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                             if (retry.IsSuccessStatusCode)
                                 return (true, "qBittorrent API reachable (authenticated)");
 
