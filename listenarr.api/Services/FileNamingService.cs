@@ -110,6 +110,13 @@ namespace Listenarr.Api.Services
                 var effectiveFilePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
 
                 var folderRelative = ApplyNamingPattern(folderPattern, variables, treatAsFilename: false);
+                
+                // Normalize path separators to platform-specific ones
+                if (!string.IsNullOrWhiteSpace(folderRelative))
+                {
+                    folderRelative = folderRelative.Replace('/', Path.DirectorySeparatorChar)
+                                                   .Replace('\\', Path.DirectorySeparatorChar);
+                }
 
                 var patternAllowsSubfolders = effectiveFilePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
                     || effectiveFilePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
@@ -241,6 +248,13 @@ namespace Listenarr.Api.Services
                 var effectiveFilePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
 
                 var folderRelative = ApplyNamingPattern(effectiveFolderPattern, variables, treatAsFilename: false);
+                
+                // Normalize path separators to platform-specific ones
+                if (!string.IsNullOrWhiteSpace(folderRelative))
+                {
+                    folderRelative = folderRelative.Replace('/', Path.DirectorySeparatorChar)
+                                                   .Replace('\\', Path.DirectorySeparatorChar);
+                }
 
                 var patternAllowsSubfolders = effectiveFilePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
                     || effectiveFilePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
