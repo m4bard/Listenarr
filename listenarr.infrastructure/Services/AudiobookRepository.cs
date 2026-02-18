@@ -105,5 +105,40 @@ namespace Listenarr.Api.Services
             await _db.SaveChangesAsync();
             return audiobooks.Count;
         }
+
+        public async Task<string?> GetAuthorAsinByNameAsync(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return null;
+
+            static string Normalize(string s)
+            {
+                if (string.IsNullOrWhiteSpace(s)) return string.Empty;
+                // Remove punctuation, collapse whitespace, and lowercase
+                var cleaned = new string(s.Where(c => char.IsLetterOrDigit(c) || char.IsWhiteSpace(c)).ToArray());
+                var parts = cleaned.Split(new[] { ' ', '\t', '\n', '\r' }, System.StringSplitOptions.RemoveEmptyEntries);
+                return string.Join(' ', parts).ToLowerInvariant();
+            }
+
+            var target = Normalize(name);
+
+            // Query audibooks that have author ASINs to limit work
+            var candidates = await _db.Audiobooks
+                .Where(a => a.AuthorAsins != null && a.AuthorAsins.Count > 0 && a.Authors != null && a.Authors.Count > 0)
+                .ToListAsync();
+
+            foreach (var b in candidates)
+            {
+                foreach (var author in b.Authors ?? new List<string>())
+                {
+                    if (Normalize(author) == target)
+                    {
+                        var asin = b.AuthorAsins?.FirstOrDefault();
+                        if (!string.IsNullOrWhiteSpace(asin)) return asin;
+                    }
+                }
+            }
+
+            return null;
+        }
     }
 }

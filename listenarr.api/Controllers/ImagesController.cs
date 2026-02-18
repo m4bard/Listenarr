@@ -202,12 +202,35 @@ namespace Listenarr.Api.Controllers
                         {
                             try
                             {
-                                // 1) Audimeta author lookup by name
-                                var authorLookup = await _audimetaService.LookupAuthorAsync(identifier, region);
-                                if (authorLookup != null && !string.IsNullOrWhiteSpace(authorLookup.Image) && (authorLookup.Image.StartsWith("http://") || authorLookup.Image.StartsWith("https://")))
+                                // First: try to find a stored author ASIN in the DB and serve its cached image if available
+                                try
                                 {
-                                    candidateUrl = authorLookup.Image;
-                                    _logger.LogInformation("Found author image from Audimeta for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                    var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(identifier);
+                                    if (!string.IsNullOrWhiteSpace(authorAsin))
+                                    {
+                                        var diskPath = await _imageCacheService.GetCachedImagePathAsync(authorAsin);
+                                        if (!string.IsNullOrWhiteSpace(diskPath))
+                                        {
+                                            // Use cached author image by ASIN (prefer authors storage path)
+                                            relativePath = "/" + diskPath.TrimStart('/');
+                                            _logger.LogInformation("Found cached author image for identifier {Identifier} via stored ASIN {Asin}: {Path}", identifier, authorAsin, relativePath);
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogDebug(ex, "Failed to lookup stored author ASIN for identifier {Identifier}", identifier);
+                                }
+
+                                // If we didn't find a cached author image via stored ASIN, fallback to Audimeta lookup by name
+                                if (string.IsNullOrWhiteSpace(relativePath))
+                                {
+                                    var authorLookup = await _audimetaService.LookupAuthorAsync(identifier, region);
+                                    if (authorLookup != null && !string.IsNullOrWhiteSpace(authorLookup.Image) && (authorLookup.Image.StartsWith("http://") || authorLookup.Image.StartsWith("https://")))
+                                    {
+                                        candidateUrl = authorLookup.Image;
+                                        _logger.LogInformation("Found author image from Audimeta for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                    }
                                 }
                             }
                             catch (Exception ex)
@@ -244,27 +267,21 @@ namespace Listenarr.Api.Controllers
                                         // Try to find stored author ASIN in database (match by author name) and prefer direct GET
                                         try
                                         {
-                                            var books = await _audiobookRepository.GetAllAsync();
-                                            var match = books.SelectMany(b => (b.Authors ?? new List<string>()).Select((name, idx) => new { book = b, name, idx }))
-                                                             .FirstOrDefault(x => string.Equals(x.name?.Trim(), identifier?.Trim(), StringComparison.OrdinalIgnoreCase) && ((x.book.AuthorAsins?.Count ?? 0) > 0));
-                                            if (match != null)
+                                            var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(identifier);
+                                            if (!string.IsNullOrWhiteSpace(authorAsin))
                                             {
-                                                var authorAsin = match.book.AuthorAsins?.FirstOrDefault();
-                                                if (!string.IsNullOrWhiteSpace(authorAsin))
+                                                try
                                                 {
-                                                    try
+                                                    var authorResp = await _audnexusService.GetAuthorAsync(authorAsin, region, update: false);
+                                                    if (authorResp != null && !string.IsNullOrWhiteSpace(authorResp.Image) && (authorResp.Image.StartsWith("http://") || authorResp.Image.StartsWith("https://")))
                                                     {
-                                                        var authorResp = await _audnexusService.GetAuthorAsync(authorAsin, region, update: false);
-                                                        if (authorResp != null && !string.IsNullOrWhiteSpace(authorResp.Image) && (authorResp.Image.StartsWith("http://") || authorResp.Image.StartsWith("https://")))
-                                                        {
-                                                            candidateUrl = authorResp.Image;
-                                                            _logger.LogInformation("Found author image from Audnexus by stored ASIN {Asin} for identifier {Identifier}: {Url}", authorAsin, identifier, candidateUrl);
-                                                        }
+                                                        candidateUrl = authorResp.Image;
+                                                        _logger.LogInformation("Found author image from Audnexus by stored ASIN {Asin} for identifier {Identifier}: {Url}", authorAsin, identifier, candidateUrl);
                                                     }
-                                                    catch (Exception ex)
-                                                    {
-                                                        _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Asin}", authorAsin);
-                                                    }
+                                                }
+                                                catch (Exception ex)
+                                                {
+                                                    _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Asin}", authorAsin);
                                                 }
                                             }
                                         }
