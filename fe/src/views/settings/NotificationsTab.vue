@@ -2,9 +2,15 @@
   <div class="tab-content">
     <div class="notifications-tab">
       <div class="section-header">
-        <h3>Notifications</h3>
+        <h3>
+          Notifications
+          <PhSpinner v-if="loading" class="ph-spin small-inline-spinner" />
+        </h3>
       </div>
-      <div v-if="webhooks.length === 0" class="empty-state">
+
+      <LoadingState v-if="loading && webhooks.length === 0" message="Loading notifications..." />
+
+      <div v-else-if="webhooks.length === 0" class="empty-state">
         <PhBellSlash class="empty-icon" />
         <h3>No webhooks configured</h3>
         <p>Webhooks allow you to receive real-time notifications when important events occur.</p>
@@ -258,6 +264,7 @@ const props = defineProps<{
 
 const toast = useToast()
 const configStore = useConfigurationStore()
+const loading = computed(() => configStore.isLoading || !props.settings)
 
 // Helper function to format API errors
 const formatApiError = (err: unknown): string => {
@@ -679,6 +686,12 @@ defineExpose({ openWebhookForm })
   color: #fff;
   font-size: 1.5rem;
   font-weight: 500;
+}
+
+.section-header .small-inline-spinner {
+  margin-left: 0.5rem;
+  width: 18px;
+  height: 18px;
 }
 
 /* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */

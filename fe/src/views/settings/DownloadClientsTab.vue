@@ -2,10 +2,15 @@
   <div class="tab-content">
     <div class="download-clients-tab">
       <div class="section-header">
-        <h3>Download Clients</h3>
+        <h3>
+          Download Clients
+          <PhSpinner v-if="configStore.isLoading" class="ph-spin small-inline-spinner" />
+        </h3>
       </div>
 
-      <div v-if="configStore.downloadClientConfigurations.length === 0" class="empty-state">
+      <LoadingState v-if="configStore.isLoading && configStore.downloadClientConfigurations.length === 0" message="Loading download clients..." />
+
+      <div v-else-if="configStore.downloadClientConfigurations.length === 0" class="empty-state">
         <PhDownloadSimple />
         <p>
           No download clients configured. Add qBittorrent, Transmission, SABnzbd, or NZBGet to
@@ -254,7 +259,7 @@ import { Modal, ModalHeader, ModalFooter, ModalForm, ModalBody } from '@/compone
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import RemotePathMappingModal from '@/components/feedback/RemotePathMappingModal.vue'
 import FormSection from '@/components/settings/FormSection.vue'
-import { Pill } from '@/components/base'
+import { Pill, LoadingState } from '@/components/base'
 import {
   PhDownloadSimple,
   PhToggleRight,
@@ -585,6 +590,12 @@ defineExpose({
   color: #fff;
   font-size: 1.5rem;
   font-weight: 500;
+}
+
+.section-header .small-inline-spinner {
+  margin-left: 0.5rem;
+  width: 18px;
+  height: 18px;
 }
 
 .add-button {

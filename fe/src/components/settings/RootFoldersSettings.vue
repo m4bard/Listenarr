@@ -1,7 +1,10 @@
 <template>
   <div class="root-folders-settings">
     <div v-if="!props.hideHeader" class="section-header">
-      <h3>Root Folders</h3>
+      <h3>
+        Root Folders
+        <PhSpinner v-if="store.loading" class="ph-spin small-inline-spinner" />
+      </h3>
     </div>
     <div v-if="store.loading" class="loading-state">
       <PhSpinner class="ph-spin" />
@@ -209,6 +212,12 @@ defineExpose({
   color: #fff;
   font-size: 1.5rem;
   font-weight: 500;
+}
+
+.section-header .small-inline-spinner {
+  margin-left: 0.5rem;
+  width: 18px;
+  height: 18px;
 }
 
 .add-button {

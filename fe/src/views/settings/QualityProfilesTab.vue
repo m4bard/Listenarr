@@ -2,11 +2,16 @@
   <div class="tab-content">
     <div class="quality-profiles-tab">
       <div class="section-header">
-        <h3>Quality Profiles</h3>
+        <h3>
+          Quality Profiles
+          <PhSpinner v-if="loading" class="ph-spin small-inline-spinner" />
+        </h3>
       </div>
 
+      <LoadingState v-if="loading && qualityProfiles.length === 0" message="Loading quality profiles..." />
+
       <!-- Empty State -->
-      <div v-if="qualityProfiles.length === 0" class="empty-state">
+      <div v-else-if="qualityProfiles.length === 0" class="empty-state">
         <PhStar class="empty-icon" />
         <p>No quality profiles configured yet.</p>
         <p class="empty-help">
@@ -272,6 +277,7 @@ import {
 } from '@phosphor-icons/vue'
 
 const toast = useToast()
+const loading = ref(false)
 const qualityProfiles = ref<QualityProfile[]>([])
 const showQualityProfileForm = ref(false)
 const editingQualityProfile = ref<QualityProfile | null>(null)
@@ -416,6 +422,7 @@ const formatApiError = (error: unknown): string => {
 }
 
 const loadQualityProfiles = async () => {
+  loading.value = true
   try {
     qualityProfiles.value = await getQualityProfiles()
   } catch (error) {
@@ -425,6 +432,8 @@ const loadQualityProfiles = async () => {
     })
     const errorMessage = formatApiError(error)
     toast.error('Load failed', errorMessage)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -542,6 +551,12 @@ defineExpose({
   font-size: 1.5rem;
   font-weight: 500;
   margin: 0;
+}
+
+.section-header .small-inline-spinner {
+  margin-left: 0.5rem;
+  width: 18px;
+  height: 18px;
 }
 
 .empty-state {

@@ -2,10 +2,15 @@
   <div class="tab-content">
     <div class="indexers-tab">
       <div class="section-header">
-        <h3>Indexers</h3>
+        <h3>
+          Indexers
+          <PhSpinner v-if="loading" class="ph-spin small-inline-spinner" />
+        </h3>
       </div>
 
-      <div v-if="indexers.length === 0" class="empty-state">
+      <LoadingState v-if="loading && indexers.length === 0" message="Loading indexers..." />
+
+      <div v-else-if="indexers.length === 0" class="empty-state">
         <PhListMagnifyingGlass />
         <p>No indexers configured. Add Newznab or Torznab indexers to search for audiobooks.</p>
       </div>
@@ -247,7 +252,7 @@ import FormRow from '@/components/settings/FormRow.vue'
 import PasswordInput from '@/components/form/PasswordInput.vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
-import { Pill } from '@/components/base'
+import { Pill, LoadingState } from '@/components/base'
 import { Modal, ModalHeader, ModalFooter, ModalBody, ModalForm } from '@/components/feedback'
 import type { Indexer } from '@/types'
 import {
@@ -262,6 +267,7 @@ import { signalRService } from '@/services/signalr'
 // State
 const toast = useToast()
 const indexers = ref<Indexer[]>([])
+const loading = ref(false)
 const showIndexerForm = ref(false)
 const editingIndexer = ref<Indexer | null>(null)
 const indexerToDelete = ref<Indexer | null>(null)
@@ -299,6 +305,7 @@ const formatDate = (dateString: string | undefined): string => {
 }
 
 const loadIndexers = async () => {
+  loading.value = true
   try {
     indexers.value = await getIndexers()
   } catch (error) {
@@ -308,6 +315,8 @@ const loadIndexers = async () => {
     })
     const errorMessage = formatApiError(error)
     toast.error('Load failed', errorMessage)
+  } finally {
+    loading.value = false
   }
 }
 
@@ -747,6 +756,12 @@ defineExpose({ openAddIndexer, openProwlarrImport: openProwlarrModal })
 }
 
 /* Badge styles - Now using Pill component from @/components/base */
+
+.section-header .small-inline-spinner {
+  margin-left: 0.5rem;
+  width: 18px;
+  height: 18px;
+}
 
 .error-row {
   background: rgba(239, 68, 68, 0.1);

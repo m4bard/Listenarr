@@ -49,4 +49,18 @@ describe('DownloadClientsTab', () => {
     expect(calledWith.host).toBe('dbhost.local')
     expect(calledWith.port).toBe(8080)
   })
+
+  it('shows loading state while download client configurations are loading', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useConfigurationStore()
+
+    // simulate loading state on the store
+    store.isLoading = true
+    store.downloadClientConfigurations = [] as any
+
+    const wrapper = mount(DownloadClientsTab, { global: { plugins: [pinia] } })
+
+    expect(wrapper.find('.loading-state').exists()).toBe(true)
+  })
 })

@@ -44,6 +44,17 @@ globalConfig.components = {
   },
   ModalHeader: { template: '<div class="modal-header"><slot /></div>' },
   ModalBody: { template: '<div class="modal-body"><slot /></div>' },
+
+  // Provide lightweight test stubs for commonly used components so unit tests
+  // don't fail on missing component resolution for icon or small base pieces.
+  LoadingState: {
+    props: ['message', 'size'],
+    template: '<div class="loading-state"><div class="spinner"/><p v-if="message">{{ message }}</p></div>',
+  },
+  PhSpinner: {
+    props: ['size'],
+    template: '<i class="ph-spinner" aria-hidden="true"></i>',
+  },
 }
 
 // Some components import the modal pieces locally (via named imports). To ensure
