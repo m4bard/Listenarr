@@ -225,6 +225,7 @@ import {
   PhListMagnifyingGlass,
   PhToggleRight,
   PhToggleLeft,
+  PhGlobe,
   PhCheckCircle,
   PhXCircle,
   PhPencil,

@@ -614,6 +614,7 @@ export interface QualityScore {
 
 export type SearchSortBy =
   | 'Seeders'
+  | 'Leechers'
   | 'Size'
   | 'PublishedDate'
   | 'Title'
@@ -621,6 +622,7 @@ export type SearchSortBy =
   | 'Language'
   | 'Quality'
   | 'Grabs'
+  | 'Score'
 
 export type SearchSortDirection = 'Ascending' | 'Descending'
 

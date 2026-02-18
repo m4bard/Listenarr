@@ -164,7 +164,8 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 .dropdown {
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  left: auto;
+  right: 0;
   min-width: 220px;
   background: #2a2a2a;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -219,8 +220,6 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 /* Mobile-friendly toolbar: hide text, show only icons on screens 1024px and below */
 @media (max-width: 1024px) {
   .dropdown {
-    left: auto;
-    right: 0;
     min-width: 180px;
     max-width: calc(100vw - 16px);
   }

@@ -178,7 +178,7 @@
         <div
           v-for="collection in groupedCollections || []"
           :key="collection.name"
-          :class="['collection-card', { 'author-collection': groupBy === 'authors' }]"
+          :class="['collection-card', { 'author-collection': groupBy === 'authors', 'series-collection': groupBy === 'series' }]"
           @click="navigateToCollection(collection)"
         >
           <div class="collection-cover">
@@ -212,12 +212,9 @@
                   <PhUser />
                 </div>
 
-                <div class="status-overlay">
-                  <div class="audiobook-title">{{ collection.name }}</div>
-                  <div class="audiobook-author">
-                    {{ collection.count }} book{{ collection.count !== 1 ? 's' : '' }}
-                  </div>
-                </div>
+                    <div class="status-overlay hover-overlay">
+                      <div class="audiobook-title">{{ collection.name }}</div>
+                    </div>
 
                 <div class="action-buttons">
                   <button
@@ -289,9 +286,9 @@
                 <div class="series-count-badge">
                   {{ collection.count }}
                 </div>
-                <!-- Hover overlay -->
-                <div class="series-hover-overlay">
-                  <p>{{ collection.name }}</p>
+                <!-- Hover overlay (use same status-overlay as books; show only series name) -->
+                <div class="status-overlay hover-overlay">
+                  <div class="audiobook-title">{{ collection.name }}</div>
                 </div>
               </div>
               <div v-else class="no-cover">
@@ -2512,22 +2509,7 @@ defineExpose({
   border-radius: 6px;
 }
 
-.series-hover-overlay {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  height: 100%;
-  background-color: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  padding: 1rem;
-  opacity: 0;
-  transition: opacity 0.2s ease;
-  z-index: 100;
-}
+/* legacy .series-hover-overlay removed — series now use the shared .status-overlay hover styling */
 
 /* Blurred background used when a series has a single cover */
 .series-single-bg {
@@ -2553,15 +2535,22 @@ defineExpose({
   border-radius: 6px;
 }
 
-.series-hover-overlay p {
-  font-size: 1.2em;
-  color: var(--text-color);
-  margin: 0;
-  font-weight: 500;
-  z-index: 100;
+/* legacy .series-hover-overlay rules removed; use .status-overlay for hover */
+
+/* Show the same bottom status-overlay for collection covers on hover */
+.collection-cover:hover .status-overlay,
+.series-covers-container:hover .status-overlay {
+  padding: 80px 8px 8px;
+  opacity: 1;
 }
 
-.collection-card:hover .series-hover-overlay {
+/* Reveal title/author text inside collection/series/author covers on hover (match book poster behavior) */
+.collection-cover:hover .audiobook-title,
+.collection-cover:hover .audiobook-author,
+.series-covers-container:hover .audiobook-title,
+.series-covers-container:hover .audiobook-author,
+.author-poster:hover .audiobook-title,
+.author-poster:hover .audiobook-author {
   opacity: 1;
 }
 
@@ -3010,6 +2999,11 @@ defineExpose({
   transition: opacity 0.2s ease;
 }
 
+.author-placeholder-icon svg {
+  height: 3em;
+  width: 3em;
+}
+
 .author-placeholder-icon.loaded {
   opacity: 0;
 }
@@ -3046,6 +3040,8 @@ defineExpose({
     padding 0.2s ease,
     opacity 0.2s ease;
   opacity: 0;
+  z-index: 20; /* ensure overlay sits above covers but below action buttons */
+  pointer-events: none; /* don't block action buttons or other controls */
 }
 
 .audiobook-poster-container:hover .status-overlay {
@@ -3059,8 +3055,9 @@ defineExpose({
   opacity: 1;
 }
 
-/* When global details toggle is enabled, hide status overlay for author collections (only show on hover disabled) */
-.audiobooks-view.details-enabled .collection-card.author-collection .status-overlay {
+/* When global details toggle is enabled, hide status overlay for author and series collections (only show on hover disabled) */
+.audiobooks-view.details-enabled .collection-card.author-collection .status-overlay,
+.audiobooks-view.details-enabled .collection-card.series-collection .status-overlay {
   opacity: 0 !important;
   pointer-events: none !important;
 }

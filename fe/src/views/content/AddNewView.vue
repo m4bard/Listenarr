@@ -619,7 +619,7 @@
               <div class="result-stats">
                 <span v-if="book.searchResult?.runtime || book.searchResult?.lengthMinutes" class="stat-item">
                   <PhClock />
-                  {{ formatRuntime(book.searchResult?.runtime || book.searchResult?.lengthMinutes) }}
+                  {{ formatRuntime(book.searchResult?.runtime ?? book.searchResult?.lengthMinutes ?? 0) }}
                 </span>
                 <span v-if="book.searchResult?.language" class="stat-item">
                   <PhGlobe />
@@ -1337,7 +1337,7 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       tr['runtime'] = normalizeRuntime(r.runtimeLengthMin ?? r.runtime)
       // Also set runtime on searchResult for template display
       if (tr['runtime']) {
-        ;(titleResult.searchResult as Record<string, unknown>)['runtime'] = tr['runtime']
+        ;(titleResult.searchResult as unknown as Record<string, unknown>)['runtime'] = tr['runtime']
       }
 
       tr['publishedDate'] = extractPublishedDate(r)

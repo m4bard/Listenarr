@@ -97,6 +97,9 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
   align-items: center;
   gap: 8px;
 }
+.select-trigger .label {
+  font-size: 12px;
+}
 .select-trigger.active {
   background-color: var(--brand-500);
   border-color: var(--brand-500);
@@ -105,7 +108,8 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 .select-dropdown {
   position: absolute;
   top: calc(100% + 6px);
-  left: 0;
+  left: auto;
+  right: 0;
   min-width: 180px;
   background: #2a2a2a;
   border: 1px solid rgba(255,255,255,0.06);
@@ -122,8 +126,6 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 @media (max-width: 1024px) {
   .select-dropdown {
     /* Align to right on tablet/mobile to prevent overflow */
-    left: auto;
-    right: 0;
     min-width: 140px;
     max-width: calc(100vw - 16px);
   }
@@ -137,10 +139,6 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     display: none;
   }
   
-  .sort-icon {
-    width: 16px;
-    height: 16px;
-  }
 }
 
 .select-item {
@@ -163,8 +161,8 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
 }
 
 .sort-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   flex-shrink: 0;
 }
 
