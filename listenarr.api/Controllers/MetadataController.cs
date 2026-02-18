@@ -14,18 +14,21 @@ namespace Listenarr.Api.Controllers
         private readonly AudimetaService _audimetaService;
         private readonly IImageCacheService _imageCacheService;
         private readonly IMemoryCache _cache;
+        private readonly IAudiobookRepository _audiobookRepository;
 
         public MetadataController(
             IAudiobookMetadataService metadataService,
             AudimetaService audimetaService,
             IImageCacheService imageCacheService,
             IMemoryCache cache,
+            IAudiobookRepository audiobookRepository,
             ILogger<MetadataController> logger)
         {
             _metadataService = metadataService;
             _audimetaService = audimetaService;
             _imageCacheService = imageCacheService;
             _cache = cache;
+            _audiobookRepository = audiobookRepository;
             _logger = logger;
         }
 
@@ -119,10 +122,48 @@ namespace Listenarr.Api.Controllers
 
                 if (_cache.TryGetValue(cacheKey, out AuthorLookupCacheEntry? cachedEntry) && cachedEntry != null)
                 {
-                    if (cachedEntry.NotFound)
-                    {
-                        return NotFound("Author not found");
-                    }
+                        // If previously marked NotFound, try to resolve an ASIN from the DB and check cache by ASIN
+                        if (cachedEntry.NotFound)
+                        {
+                            try
+                            {
+                                // Try to find a stored author ASIN in the DB matching this author name
+                                try
+                                {
+                                    var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
+                                    if (!string.IsNullOrWhiteSpace(authorAsin))
+                                    {
+                                        var diskPath = await _imageCacheService.GetCachedImagePathAsync(authorAsin);
+                                        if (!string.IsNullOrWhiteSpace(diskPath))
+                                        {
+                                            cachedEntry.Asin = authorAsin;
+                                            cachedEntry.CachedPath = "/" + diskPath.TrimStart('/');
+                                            cachedEntry.Name = cachedEntry.Name ?? normalizedName;
+                                            cachedEntry.NotFound = false;
+                                            _cache.Set(cacheKey, cachedEntry, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
+
+                                            return Ok(new
+                                            {
+                                                asin = cachedEntry.Asin,
+                                                name = cachedEntry.Name,
+                                                image = cachedEntry.Image,
+                                                cachedPath = cachedEntry.CachedPath
+                                            });
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "Failed to probe DB/image cache for previously-missing author: {Author}", normalizedName);
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to probe DB/image cache for previously-missing author: {Author}", normalizedName);
+                            }
+
+                            return NotFound("Author not found");
+                        }
 
                     string? cachedPath = cachedEntry.CachedPath;
                     if (!string.IsNullOrWhiteSpace(cachedEntry.Asin))
