@@ -39,20 +39,33 @@ namespace Listenarr.Api.Services.Adapters
             {
                 var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
 
-                    // Use a local HttpClient with its own CookieContainer for authentication,
-                    // so we don't rely on the named HttpClient's cookie handling (which can
-                    // be disabled in test environments).
-                    var cookieJar = new CookieContainer();
-                    var handler = new HttpClientHandler
+                    // Prefer the IHttpClientFactory-created client so unit tests can inject
+                    // a DelegatingHandler mock. Fall back to a local cookie-enabled client
+                    // only when required for real-world qBittorrent auth flows.
+                    HttpClient? http = null;
+                    bool disposeHttp = false;
+                    try
                     {
-                        CookieContainer = cookieJar,
-                        UseCookies = true,
-                        AutomaticDecompression = DecompressionMethods.All
-                    };
+                        http = _httpFactory?.CreateClient(client.Id ?? "qbittorrent");
+                        if (http == null)
+                        {
+                            var cookieJar = new CookieContainer();
+                            var handler = new HttpClientHandler
+                            {
+                                CookieContainer = cookieJar,
+                                UseCookies = true,
+                                AutomaticDecompression = DecompressionMethods.All
+                            };
+                            http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+                            disposeHttp = true;
+                        }
+                        else
+                        {
+                            // ensure a reasonable timeout for factory clients
+                            http.Timeout = TimeSpan.FromSeconds(30);
+                        }
 
-                    using var http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
-
-                    var resp = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                        var resp = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                     if (resp.IsSuccessStatusCode)
                         return (true, "Successfully connected to qBittorrent.");
 
@@ -86,35 +99,67 @@ namespace Listenarr.Api.Services.Adapters
 
                             if (loginResp.IsSuccessStatusCode)
                             {
-                                // Inspect cookies set by the server
+                                // Try to detect cookies via Set-Cookie header when using factory clients
                                 try
                                 {
-                                    var cookies = cookieJar.GetCookies(new Uri(baseUrl));
-                                    if (cookies == null || cookies.Count == 0)
+                                    if (loginResp.Headers.TryGetValues("Set-Cookie", out var cookieHeaders))
                                     {
-                                        _logger.LogDebug("qBittorrent TestConnection: login succeeded but no cookies were set for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                                        _logger.LogDebug("qBittorrent TestConnection: login returned Set-Cookie header for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                                     }
                                     else
                                     {
-                                        foreach (Cookie c in cookies)
-                                        {
-                                            if (c.Secure && !client.UseSSL)
-                                            {
-                                                _logger.LogWarning("qBittorrent TestConnection: server set a Secure cookie but connection is HTTP; try HTTPS for client {ClientId}", LogRedaction.SanitizeText(client.Id));
-                                            }
-                                        }
+                                        _logger.LogDebug("qBittorrent TestConnection: login succeeded but no Set-Cookie header present for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                                     }
                                 }
                                 catch (Exception ex)
                                 {
-                                    _logger.LogDebug(ex, "qBittorrent TestConnection: unable to inspect cookies after login for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                                    _logger.LogDebug(ex, "qBittorrent TestConnection: unable to inspect login response headers for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                                 }
 
+                                // Retry using the same client first (this covers unit tests which
+                                // simulate stateful behavior on the mocked handler). If the retry
+                                // fails and we created a factory client that doesn't handle cookies,
+                                // fall back to a local cookie-enabled client attempt.
                                 var retry = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                                 if (retry.IsSuccessStatusCode)
                                     return (true, "Successfully connected to qBittorrent.");
 
                                 _logger.LogWarning("qBittorrent TestConnection: authenticated but subsequent request returned {Status} for client {ClientId}", retry.StatusCode, LogRedaction.SanitizeText(client.Id));
+
+                                // If we used a factory client, try a cookie-enabled HttpClient as a last resort
+                                if (!disposeHttp)
+                                {
+                                    try
+                                    {
+                                        var cookieJar2 = new CookieContainer();
+                                        var handler2 = new HttpClientHandler
+                                        {
+                                            CookieContainer = cookieJar2,
+                                            UseCookies = true,
+                                            AutomaticDecompression = DecompressionMethods.All
+                                        };
+
+                                        using var local = new HttpClient(handler2) { Timeout = TimeSpan.FromSeconds(30) };
+                                        using var localLoginContent = new FormUrlEncodedContent(new[]
+                                        {
+                                            new KeyValuePair<string, string>("username", client.Username ?? string.Empty),
+                                            new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
+                                        });
+
+                                        var localLogin = await local.PostAsync($"{baseUrl}/api/v2/auth/login", localLoginContent, ct);
+                                        if (localLogin.IsSuccessStatusCode)
+                                        {
+                                            var final = await local.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                                            if (final.IsSuccessStatusCode)
+                                                return (true, "Successfully connected to qBittorrent.");
+                                        }
+                                    }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogDebug(ex, "qBittorrent TestConnection: fallback local login attempt failed for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                                    }
+                                }
+
                                 return (false, "qBittorrent: Connection to download client successful but could not authenticate. Please check username/password.");
                             }
                             else
@@ -148,6 +193,14 @@ namespace Listenarr.Api.Services.Adapters
                     }
 
                     return (false, $"qBittorrent: network error ({resp.StatusCode})");
+                    }
+                    finally
+                    {
+                        if (disposeHttp)
+                        {
+                            try { http?.Dispose(); } catch { }
+                        }
+                    }
                 }
             catch (TaskCanceledException tce)
             {
