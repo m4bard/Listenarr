@@ -182,7 +182,7 @@ namespace Listenarr.Api.Services.Adapters
                     if (resp.StatusCode == HttpStatusCode.Forbidden || resp.StatusCode == HttpStatusCode.Unauthorized)
                     {
                         if (string.IsNullOrEmpty(client.Username))
-                            return (false, "Authentication Required.");
+                            return (false, "Forbidden: Authentication required.");
 
                         return (false, "Authentication Failed. Check your username and/or password.");
                     }
