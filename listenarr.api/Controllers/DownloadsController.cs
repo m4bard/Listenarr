@@ -288,7 +288,11 @@ public class DownloadsController : ControllerBase
                 downloadClientId = d.DownloadClientId,
                 downloadClientName = d.DownloadClientId == "DDL" ? "Direct Download" :
                                    clientLookup.TryGetValue(d.DownloadClientId, out var clientName) ? clientName : "Unknown Client",
-                metadata = sanitizedMetadata
+                metadata = sanitizedMetadata,
+                // Sprint 2: Error handling and import blocking fields
+                importBlockReason = d.ImportBlockReason,
+                importBlockMessages = d.ImportBlockMessages,
+                importAttempts = d.ImportAttempts
             };
         }).Cast<object>().ToList();
     }

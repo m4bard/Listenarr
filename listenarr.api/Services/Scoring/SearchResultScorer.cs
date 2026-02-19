@@ -355,7 +355,7 @@ namespace Listenarr.Api.Services.Scoring
                 }
             }
 
-            // Check minimum score threshold (Sonarr's MinFormatScore equivalent)
+            // Check minimum score threshold
             if (profile.MinimumScore > 0 && score.TotalScore < profile.MinimumScore)
             {
                 score.RejectionReasons.Add($"Score {score.TotalScore} below profile minimum {profile.MinimumScore}");

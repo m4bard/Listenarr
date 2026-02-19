@@ -40,12 +40,8 @@ namespace Listenarr.Api.Services
         private readonly HttpClient _httpClient;
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SearchService> _logger;
-        private readonly IAudibleMetadataService _audibleMetadataService;
-        private readonly IAmazonMetadataService _amazonMetadataService;
         private readonly IOpenLibraryService _openLibraryService;
         private readonly IHubContext<DownloadHub> _hubContext;
-        private readonly IAmazonSearchService _amazonSearchService;
-        private readonly IAudibleSearchService _audibleSearchService;
         private readonly IImageCacheService _imageCacheService;
         private readonly ListenArrDbContext _dbContext;
         private readonly AudimetaService _audimetaService;
@@ -57,7 +53,6 @@ namespace Listenarr.Api.Services
         private readonly MetadataStrategyCoordinator _metadataStrategyCoordinator;
         private readonly AsinCandidateCollector _asinCandidateCollector;
         private readonly AsinEnricher _asinEnricher;
-        private readonly FallbackScraper _fallbackScraper;
         private readonly SearchResultScorer _searchResultScorer;
         private readonly AsinSearchHandler _asinSearchHandler;
         private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache? _cache;
@@ -67,11 +62,7 @@ namespace Listenarr.Api.Services
             HttpClient httpClient,
             IConfigurationService configurationService,
             ILogger<SearchService> logger,
-            IAudibleMetadataService audibleMetadataService,
-            IAmazonMetadataService amazonMetadataService,
             IOpenLibraryService openLibraryService,
-            IAmazonSearchService amazonSearchService,
-            IAudibleSearchService audibleSearchService,
             IImageCacheService imageCacheService,
             ListenArrDbContext dbContext,
             IHubContext<DownloadHub> hubContext,
@@ -84,7 +75,6 @@ namespace Listenarr.Api.Services
             MetadataStrategyCoordinator metadataStrategyCoordinator,
             AsinCandidateCollector asinCandidateCollector,
             AsinEnricher asinEnricher,
-            FallbackScraper fallbackScraper,
             SearchResultScorer searchResultScorer,
             AsinSearchHandler asinSearchHandler,
             IEnumerable<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider>? searchProviders = null,
@@ -93,11 +83,7 @@ namespace Listenarr.Api.Services
             _httpClient = httpClient;
             _configurationService = configurationService;
             _logger = logger;
-            _audibleMetadataService = audibleMetadataService;
-            _amazonMetadataService = amazonMetadataService;
             _openLibraryService = openLibraryService;
-            _amazonSearchService = amazonSearchService;
-            _audibleSearchService = audibleSearchService;
             _imageCacheService = imageCacheService;
             _dbContext = dbContext;
             _hubContext = hubContext;
@@ -110,7 +96,6 @@ namespace Listenarr.Api.Services
             _metadataStrategyCoordinator = metadataStrategyCoordinator;
             _asinCandidateCollector = asinCandidateCollector;
             _asinEnricher = asinEnricher;
-            _fallbackScraper = fallbackScraper;
             _searchProviders = searchProviders ?? Enumerable.Empty<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider>();
             _searchResultScorer = searchResultScorer;
             _asinSearchHandler = asinSearchHandler;
@@ -140,116 +125,16 @@ namespace Listenarr.Api.Services
                 return ApplySorting(results, sortBy, sortDirection);
             }
 
-            // For manual/interactive search, use intelligent search (Amazon/Audible) + indexers
+            // For manual/interactive search, use intelligent search (Audimeta/Audnexus/OpenLibrary) + indexers
             var intelligentResults = await IntelligentSearchAsync(query);
             if (intelligentResults.Any())
             {
                 results.AddRange(intelligentResults.Select((MetadataSearchResult r) => SearchResultConverters.ToSearchResult(r)));
-                _logger.LogInformation("Found {Count} valid Amazon/Audible results using intelligent search for query: {Query}", intelligentResults.Count, query);
+                _logger.LogInformation("Found {Count} valid metadata results using intelligent search for query: {Query}", intelligentResults.Count, query);
             }
             else
             {
-                _logger.LogInformation("No valid Amazon/Audible results found for query: {Query}; falling back to raw search conversions", query);
-
-                // Consult application settings to avoid calling providers that are disabled
-                try
-                {
-                    var appSettings = await _configurationService.GetApplicationSettingsAsync();
-
-                    var fallback = new ConcurrentBag<MetadataSearchResult>();
-
-                    // Parallelize Amazon and Audible searches
-                    var fallbackTasks = new List<Task>();
-
-                    if (appSettings == null || appSettings.EnableAmazonSearch)
-                    {
-                        fallbackTasks.Add(Task.Run(async () =>
-                        {
-                            var amazonResults = await _amazonSearchService.SearchAudiobooksAsync(query);
-                            var validResults = amazonResults.Take(12)
-                                .Where(a => !string.IsNullOrWhiteSpace(a.Author) && !string.IsNullOrWhiteSpace(a.Title))
-                                .Select(a =>
-                                {
-                                    var r = _metadataConverters.ConvertAmazonSearchToMetadataResult(a);
-                                    return r;
-                                });
-                            
-                            foreach (var r in validResults)
-                            {
-                                fallback.Add(r);
-                            }
-                        }));
-                    }
-
-                    if (appSettings == null || appSettings.EnableAudibleSearch)
-                    {
-                        fallbackTasks.Add(Task.Run(async () =>
-                        {
-                            var audibleResults = await _audibleSearchService.SearchAudiobooksAsync(query);
-                            var validResults = audibleResults.Take(12)
-                                .Where(a => !string.IsNullOrWhiteSpace(a.Author) && !string.IsNullOrWhiteSpace(a.Title))
-                                .Select(a =>
-                                {
-                                    var r = ConvertAudibleSearchToResult(a);
-                                    r.IsEnriched = false;
-                                    var meta = SearchResultConverters.ToMetadata(r);
-                                    return meta;
-                                });
-                            
-                            foreach (var r in validResults)
-                            {
-                                fallback.Add(r);
-                            }
-                        }));
-                    }
-
-                    await Task.WhenAll(fallbackTasks);
-
-                    var fallbackList = fallback.ToList();
-                    _logger.LogInformation("Returning {Count} raw-conversion fallback results for query: {Query}", fallbackList.Count, query);
-                    results.AddRange(fallbackList.Select(r => SearchResultConverters.ToSearchResult(r)));
-                    return ApplySorting(results, sortBy, sortDirection);
-                }
-                catch (Exception exFallback)
-                {
-                    _logger.LogWarning(exFallback, "Failed to consult application settings during fallback; performing provider calls conservatively");
-
-                    // Conservative fallback: call both providers in parallel if settings couldn't be loaded
-                    var amazonTask = _amazonSearchService.SearchAudiobooksAsync(query);
-                    var audibleTask = _audibleSearchService.SearchAudiobooksAsync(query);
-                    await Task.WhenAll(amazonTask, audibleTask);
-                    
-                    var amazonResults = await amazonTask;
-                    var audibleResults = await audibleTask;
-                    var fallback = new List<MetadataSearchResult>();
-                    foreach (var a in amazonResults.Take(12))
-                    {
-                        // Skip results with missing critical information
-                        if (string.IsNullOrWhiteSpace(a.Author) || string.IsNullOrWhiteSpace(a.Title))
-                        {
-                            _logger.LogDebug("Skipping Amazon fallback result with missing author/title: {Title}, {Author}", a.Title, a.Author);
-                            continue;
-                        }
-                        var r = _metadataConverters.ConvertAmazonSearchToMetadataResult(a);
-                        r.IsEnriched = false;
-                        fallback.Add(r);
-                    }
-                    foreach (var a in audibleResults.Take(12))
-                    {
-                        // Skip results with missing critical information
-                        if (string.IsNullOrWhiteSpace(a.Author) || string.IsNullOrWhiteSpace(a.Title))
-                        {
-                            _logger.LogDebug("Skipping Audible fallback result with missing author/title: {Title}, {Author}", a.Title, a.Author);
-                            continue;
-                        }
-                        var r = ConvertAudibleSearchToResult(a);
-                        r.IsEnriched = false;
-                        fallback.Add(SearchResultConverters.ToMetadata(r));
-                    }
-                    _logger.LogInformation("Returning {Count} raw-conversion fallback results for query: {Query}", fallback.Count, query);
-                    results.AddRange(fallback.Select(r => SearchResultConverters.ToSearchResult(r)));
-                    return ApplySorting(results, sortBy, sortDirection);
-                }
+                _logger.LogInformation("No metadata results found for query: {Query}", query);
             }
 
             // Also search configured indexers for additional results (including DDL downloads)
@@ -677,7 +562,7 @@ namespace Listenarr.Api.Services
                                     Publisher = book.Publisher,
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate,
-                                    Isbn = book.Asin // fallback (audimeta search by isbn may not populate)
+                                    Isbn = book.Isbn
                                 };
                                 var meta = _metadataConverters.ConvertAudimetaToMetadata(bookResp, book.Asin ?? string.Empty, "Audimeta");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
@@ -997,14 +882,12 @@ namespace Listenarr.Api.Services
                 }
 
                 // Flags controlling provider calls (enabled by default) - declare at outer scope
-                var skipAmazon = false;
-                var skipAudible = false;
                 var skipOpenLibrary = false;
 
                 // Handle ASIN queries immediately with metadata-first approach
-                if (searchType == "ASIN" && !string.IsNullOrEmpty(actualQuery))
+                if (searchType == "ASIN" && !string.IsNullOrEmpty(parsedAsin))
                 {
-                    var asin = actualQuery.Trim();
+                    var asin = parsedAsin.Trim();
                     var asinMetadataSources = await GetEnabledMetadataSourcesAsync();
                     var asinSearchResults = await _asinSearchHandler.SearchByAsinAsync(asin, asinMetadataSources);
                     return asinSearchResults.Select(r => SearchResultConverters.ToMetadata(r)).ToList();
@@ -1014,37 +897,13 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Searching for: {Query}", actualQuery);
                 await _searchProgressReporter.BroadcastAsync($"Searching for {actualQuery}", null);
 
-                // Detect if the query is an ISBN (digits only after cleaning). If so, skip Audible
-                var digitsOnly = new string((actualQuery ?? string.Empty).Where(char.IsDigit).ToArray());
-                var isIsbnQuery = digitsOnly.Length == 10 || digitsOnly.Length == 13 || searchType == "ISBN";
-
-                List<AmazonSearchResult> amazonResults = new();
-                List<AudibleSearchResult> audibleResults = new();
-
                 // Apply application-level search settings (if configured)
                 try
                 {
                     var appSettings = await _configurationService.GetApplicationSettingsAsync();
                     if (appSettings != null)
                     {
-                        // Provider toggles (invert to skip flags)
-                        skipAmazon = !appSettings.EnableAmazonSearch;
-                        skipAudible = !appSettings.EnableAudibleSearch;
                         skipOpenLibrary = !appSettings.EnableOpenLibrarySearch;
-
-                        // Apply candidate/result caps and fuzzy threshold when provided
-                        if (appSettings.SearchCandidateCap > 0)
-                        {
-                            candidateLimit = appSettings.SearchCandidateCap;
-                        }
-                        if (appSettings.SearchResultCap > 0)
-                        {
-                            returnLimit = appSettings.SearchResultCap;
-                        }
-                        if (appSettings.SearchFuzzyThreshold >= 0.0 && appSettings.SearchFuzzyThreshold <= 1.0)
-                        {
-                            fuzzyThreshold = appSettings.SearchFuzzyThreshold;
-                        }
                     }
                 }
                 catch (Exception exAppSettings)
@@ -1055,68 +914,12 @@ namespace Listenarr.Api.Services
                 // Initialize ASIN candidate list
                 var asinCandidates = new List<string>();
 
-                // Otherwise search Amazon/Audible first to find results, then enrich with metadata sources
-                if (!string.IsNullOrEmpty(actualQuery))
-                {
-                    var searchTasks = new List<Task>();
-                    Task<List<AmazonSearchResult>>? amazonTask = null;
-                    Task<List<AudibleSearchResult>>? audibleTask = null;
-                    
-                    // All search types should search Amazon/Audible first
-                    // The prefix just helps parse the query, but we still need to find the book
-                    if (searchType == "ISBN")
-                    {
-                        // For ISBN, prefer Amazon (Audible doesn't support ISBN well)
-                        if (!skipAmazon)
-                        {
-                            amazonTask = _amazonSearchService.SearchAudiobooksAsync(actualQuery!, null, ct);
-                            searchTasks.Add(amazonTask);
-                        }
-                        if (!skipAudible)
-                        {
-                            audibleTask = _audibleSearchService.SearchAudiobooksAsync(actualQuery!, ct);
-                            searchTasks.Add(audibleTask);
-                        }
-                    }
-                    else
-                    {
-                        // For AUTHOR, TITLE, or normal search - search both in parallel
-                        if (!skipAmazon)
-                        {
-                            amazonTask = _amazonSearchService.SearchAudiobooksAsync(actualQuery!, null, ct);
-                            searchTasks.Add(amazonTask);
-                        }
-                        if (!skipAudible)
-                        {
-                            audibleTask = _audibleSearchService.SearchAudiobooksAsync(actualQuery!, ct);
-                            searchTasks.Add(audibleTask);
-                        }
-                    }
-
-                    // Execute all search tasks in parallel
-                    if (searchTasks.Any())
-                    {
-                        await Task.WhenAll(searchTasks);
-                    }
-
-                    if (amazonTask != null)
-                    {
-                        amazonResults = await amazonTask;
-                    }
-
-                    if (audibleTask != null)
-                    {
-                        audibleResults = await audibleTask;
-                    }
-                }
-
-                // Step 2: Collect ASIN candidates from all sources
+                // Step 2: Collect candidates from OpenLibrary (and other non-scraping sources)
                 var candidateCollection = await _asinCandidateCollector.CollectCandidatesAsync(
-                    amazonResults, audibleResults, query, skipOpenLibrary);
+                    query, skipOpenLibrary, ct);
 
                 asinCandidates = candidateCollection.AsinCandidates;
                 var asinToRawResult = candidateCollection.AsinToRawResult;
-                var asinToAudibleResult = candidateCollection.AsinToAudibleResult;
                 var asinToSource = candidateCollection.AsinToSource;
                 var asinToOpenLibrary = candidateCollection.AsinToOpenLibrary;
                 var openLibraryDerivedResults = candidateCollection.OpenLibraryDerivedResults;
@@ -1149,7 +952,6 @@ namespace Listenarr.Api.Services
                 var enrichmentResult = await _asinEnricher.EnrichAsinsAsync(
                     asinCandidates,
                     asinToRawResult,
-                    asinToAudibleResult,
                     asinToSource,
                     asinToOpenLibrary,
                     metadataSources,
@@ -1170,9 +972,8 @@ namespace Listenarr.Api.Services
                 {
                     // Only merge OpenLibrary-derived candidates when we did not obtain any enriched
                     // metadata from external sources. If we already have enriched metadata results
-                    // (e.g. from Audible/Amazon/Audimeta/Audnexus or the audible scraper), prefer
-                    // those authoritative results and avoid adding OpenLibrary fallbacks that could
-                    // dilute the final ranked list.
+                    // (e.g. from Audimeta/Audnexus), prefer those authoritative results and avoid
+                    // adding OpenLibrary fallbacks that could dilute the final ranked list.
                     if ((openLibraryDerivedResults != null && openLibraryDerivedResults.Any()) && !enrichedList.Any())
                     {
                         _logger.LogInformation("Merging {Count} OpenLibrary-derived candidate(s) into enriched results", openLibraryDerivedResults.Count);
@@ -1219,27 +1020,6 @@ namespace Listenarr.Api.Services
                 catch (Exception ex)
                 {
                     _logger.LogWarning(ex, "Failed to merge OpenLibrary-derived results into enriched list");
-                }
-
-                // Last-ditch fallback: scrape product detail pages for ASINs that failed all metadata sources
-                try
-                {
-                    var fallbackResult = await _fallbackScraper.ScrapeAsinsAsync(
-                        asinsNeedingFallback,
-                        enrichedList,
-                        candidateDropReasons,
-                        asinToRawResult,
-                        ct);
-
-                    // Add scraped results to enriched list
-                    enriched.AddRange(fallbackResult.ScrapedResults);
-                    enrichedList = enriched;
-                    
-                    await _searchProgressReporter.BroadcastAsync($"Total enriched results after fallback: {enrichedList.Count}", null);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogWarning(ex, "Product-page scraping fallback encountered an error");
                 }
 
                 // Compute scores and apply deferred filtering (containment, author/publisher, fuzzy)
@@ -1341,70 +1121,7 @@ namespace Listenarr.Api.Services
                 results.AddRange(finalList.Select(r => SearchResultConverters.ToMetadata(r)));
                 await _searchProgressReporter.BroadcastAsync($"Returning {results.Count} final results", null);
 
-                // If still no enriched results, try OpenLibrary derived titles to attempt enrichment again
-                if (!results.Any())
-                {
-                    if (!skipOpenLibrary)
-                    {
-                        _logger.LogInformation("No Amazon or Audible results found, trying OpenLibrary for title variations");
-                        if (!string.IsNullOrEmpty(query))
-                        {
-                            var books = await _openLibraryService.SearchBooksAsync(query, null, 5);
-
-                            foreach (var book in books.Docs.Take(3))
-                            {
-                                if (!string.IsNullOrEmpty(book.Title) && book.Title != query)
-                                {
-                                    _logger.LogInformation("Trying Amazon search with OpenLibrary title: {Title}", book.Title);
-                                    var altResults = await _amazonSearchService.SearchAudiobooksAsync(book.Title!, null, ct);
-
-                                    foreach (var altResult in altResults.Take(2))
-                                    {
-                                        if (!string.IsNullOrEmpty(altResult.Asin))
-                                        {
-                                            try
-                                            {
-                                                await _searchProgressReporter.BroadcastAsync($"Attempting metadata fetch for alternate ASIN: {altResult.Asin}", altResult.Asin);
-
-                                                // Try audimeta first
-                                                var audimetaData = await _audimetaService.GetBookMetadataAsync(altResult.Asin, region, true, language);
-                                                AudibleBookMetadata? metadata = null;
-
-                                                if (audimetaData != null)
-                                                {
-                                                    metadata = _metadataConverters.ConvertAudimetaToMetadata(audimetaData, altResult.Asin, "Amazon");
-                                                }
-                                                else
-                                                {
-                                                    // Fallback to scraping
-                                                    metadata = await _audibleMetadataService.ScrapeAudibleMetadataAsync(altResult.Asin);
-                                                    if (metadata != null)
-                                                    {
-                                                        metadata.Source = "Amazon";
-                                                    }
-                                                }
-
-                                                if (metadata != null && !string.IsNullOrEmpty(metadata.Title))
-                                                {
-                                                    var searchResult = await _metadataConverters.ConvertMetadataToSearchResultAsync(metadata, altResult.Asin);
-                                                    searchResult.IsEnriched = true;
-                                                    results.Add(SearchResultConverters.ToMetadata(searchResult));
-
-                                                }
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                _logger.LogWarning(ex, "Failed to get metadata for alternative ASIN: {Asin}", altResult.Asin);
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if (results.Any()) break; // Stop if we found results
-                            }
-                        }
-                    }
-                }
+                // If still no enriched results, OpenLibrary-derived candidates are already merged above.
 
                 // Final filter: Keep OpenLibrary-sourced results even if they look noisy;
                 // otherwise remove results with problematic titles
@@ -1429,7 +1146,6 @@ namespace Listenarr.Api.Services
                         if (string.IsNullOrEmpty(r.MetadataSource)) return 0;
                         var md = r.MetadataSource.ToLowerInvariant();
                         if (md.Contains("audimeta") || md.Contains("audnex") || md.Contains("audnexus")) return 3;
-                        if (md == "amazon" || md == "audible") return 1;
                         if (string.Equals(md, "openlibrary", StringComparison.OrdinalIgnoreCase)) return 2;
                         return 1;
                     })
@@ -1731,54 +1447,6 @@ namespace Listenarr.Api.Services
             return bestUrl;
         }
 
-        private SearchResult ConvertAudibleSearchToResult(AudibleSearchResult audibleResult)
-        {
-            return new SearchResult
-            {
-                Id = Guid.NewGuid().ToString(),
-                Title = audibleResult.Title ?? "Unknown Title",
-                Artist = audibleResult.Author ?? "Unknown Author",
-                Album = audibleResult.Title ?? "Unknown Album",
-                Category = "Audiobook",
-                Size = 0,
-                Seeders = 0,
-                Leechers = 0,
-                MagnetLink = $"audible://asin/{audibleResult.Asin}",
-                Source = "Audible",
-                PublishedDate = "1970-01-01",
-                Quality = "Unknown",
-                Format = "Audiobook",
-                Description = null,
-                Publisher = null,
-                Language = null,
-                Runtime = ParseDuration(audibleResult.Duration),
-                Narrator = audibleResult.Narrator,
-                ImageUrl = audibleResult.ImageUrl,
-                Asin = audibleResult.Asin
-            };
-        }
-
-        private MetadataSearchResult ConvertAudibleSearchToMetadataResult(AudibleSearchResult audibleResult)
-        {
-            return new MetadataSearchResult
-            {
-                Id = Guid.NewGuid().ToString(),
-                Title = audibleResult.Title ?? "Unknown Title",
-                Artist = audibleResult.Author ?? "Unknown Author",
-                Album = audibleResult.Title ?? "Unknown Album",
-                Category = "Audiobook",
-                Source = "Audible",
-                PublishedDate = "1970-01-01",
-                Format = "Audiobook",
-                Runtime = ParseDuration(audibleResult.Duration),
-                Narrator = audibleResult.Narrator,
-                ImageUrl = audibleResult.ImageUrl,
-                Asin = audibleResult.Asin,
-                ProductUrl = audibleResult.Asin != null ? $"https://www.audible.com/pd/{audibleResult.Asin}" : null,
-                IsEnriched = false,
-                MetadataSource = "Audible"
-            };
-        }
 
         private int? ParseDuration(string? duration)
         {
@@ -1829,31 +1497,6 @@ namespace Listenarr.Api.Services
             {
                 foreach (var result in apiResult)
                 {
-                    // Try to enrich with Audible metadata if ASIN is present
-                    if (!string.IsNullOrEmpty(result.MagnetLink)) // Replace with ASIN property if available
-                    {
-                        try
-                        {
-                            // Example: extract ASIN from MagnetLink or other property
-                            var asin = ExtractAsin(result.MagnetLink);
-                            if (!string.IsNullOrEmpty(asin))
-                            {
-                                var metadata = await _audibleMetadataService.ScrapeAudibleMetadataAsync(asin);
-                                if (metadata != null)
-                                {
-                                    result.Title = metadata.Title ?? result.Title;
-                                    result.Artist = metadata.Authors?.FirstOrDefault() ?? result.Artist;
-                                    result.Album = metadata.Series ?? result.Album;
-                                    result.Category = string.Join(", ", metadata.Genres ?? new List<string>());
-                                }
-                                // Add more fields as needed
-                            }
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning($"Failed to enrich result with Audible metadata: {ex.Message}");
-                        }
-                    }
                     results.Add(result);
                 }
             }

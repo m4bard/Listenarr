@@ -7,11 +7,19 @@ using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Diagnostics;
 using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
 {
     public class FileMover : IFileMover
     {
+        // P/Invoke for hardlink creation
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+
+        [DllImport("libc", SetLastError = true)]
+        private static extern int link(string oldpath, string newpath);
+
         private readonly ILogger<FileMover> _logger;
         private readonly IProcessRunner? _processRunner;
         private readonly FileMoverOptions _options;
@@ -227,6 +235,69 @@ namespace Listenarr.Api.Services
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Copy file failed: {Source} -> {Dest}", sourceFile, destFile);
+                return Task.FromResult(false);
+            }
+        }
+
+        public Task<bool> HardlinkFileAsync(string sourceFile, string destFile)
+        {
+            try
+            {
+                // Ensure destination directory exists
+                var destDir = Path.GetDirectoryName(destFile);
+                if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
+                {
+                    Directory.CreateDirectory(destDir);
+                }
+
+                // Delete destination if it exists (hardlink requires non-existent target)
+                if (File.Exists(destFile))
+                {
+                    File.Delete(destFile);
+                }
+
+                // Try creating hardlink using P/Invoke
+                bool success = false;
+                try
+                {
+                    if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                    {
+                        success = CreateHardLink(destFile, sourceFile, IntPtr.Zero);
+                        if (!success)
+                        {
+                            var error = Marshal.GetLastWin32Error();
+                            throw new IOException($"CreateHardLink failed with error code {error}");
+                        }
+                    }
+                    else
+                    {
+                        // Unix/Linux/macOS
+                        var result = link(sourceFile, destFile);
+                        if (result != 0)
+                        {
+                            var error = Marshal.GetLastWin32Error();
+                            throw new IOException($"link() failed with error code {error}");
+                        }
+                        success = true;
+                    }
+
+                    _logger.LogInformation("Hardlinked file: {Source} -> {Dest}", sourceFile, destFile);
+                    return Task.FromResult(true);
+                }
+                catch (Exception linkEx)
+                {
+                    // Hardlink failed (likely cross-volume or unsupported filesystem)
+                    _logger.LogWarning(linkEx, "Hardlink failed, falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
+                    
+                    // Fallback to copy
+                    File.Copy(sourceFile, destFile, true);
+                    _logger.LogInformation("Copied file (hardlink fallback): {Source} -> {Dest}", sourceFile, destFile);
+                    return Task.FromResult(true);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Hardlink/Copy failed: {Source} -> {Dest}", sourceFile, destFile);
                 return Task.FromResult(false);
             }
         }

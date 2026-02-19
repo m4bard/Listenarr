@@ -1,8 +1,3 @@
-using System.Text.RegularExpressions;
-using System.Net;
-using HtmlAgilityPack;
-using System.Text.Json;
-using System.Buffers.Binary;
 
 namespace Listenarr.Api.Services
 {

@@ -25,13 +25,15 @@ namespace Listenarr.Api.Services
             string originalExtension = ".m4b")
         {
             var settings = await _configService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
-            var pattern = settings.FileNamingPattern;
+            var folderPattern = settings.FolderNamingPattern;
+            
+            // Determine if this is a multi-file import (has disk or chapter number)
+            bool isMultiFile = diskNumber.HasValue || chapterNumber.HasValue;
+            var filePattern = isMultiFile 
+                ? settings.MultiFileNamingPattern 
+                : settings.FileNamingPattern;
+            
             var outputPath = settings.OutputPath;
-
-            if (string.IsNullOrWhiteSpace(pattern))
-            {
-                pattern = "{Author}/{Series}/{Title}";
-            }
 
             // Helper to pick the first non-empty value
             string FirstNonEmpty(params string?[] candidates)
@@ -92,8 +94,41 @@ namespace Listenarr.Api.Services
                 // ignore logging errors
             }
 
-            // Apply the naming pattern
-            var relativePath = ApplyNamingPattern(pattern, variables);
+            string relativePath;
+            if (string.IsNullOrWhiteSpace(folderPattern))
+            {
+                // Legacy behavior: use FileNamingPattern as the full relative path pattern
+                var legacyPattern = string.IsNullOrWhiteSpace(filePattern)
+                    ? "{Author}/{Series}/{Title}"
+                    : filePattern;
+
+                relativePath = ApplyNamingPattern(legacyPattern, variables);
+            }
+            else
+            {
+                // New behavior: separate folder and file patterns
+                var effectiveFilePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
+
+                var folderRelative = ApplyNamingPattern(folderPattern, variables, treatAsFilename: false);
+                
+                // Normalize path separators to platform-specific ones
+                if (!string.IsNullOrWhiteSpace(folderRelative))
+                {
+                    folderRelative = folderRelative.Replace('/', Path.DirectorySeparatorChar)
+                                                   .Replace('\\', Path.DirectorySeparatorChar);
+                }
+
+                var patternAllowsSubfolders = effectiveFilePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                    || effectiveFilePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                    || effectiveFilePattern.IndexOf('/') >= 0
+                    || effectiveFilePattern.IndexOf('\\') >= 0;
+
+                var fileRelative = ApplyNamingPattern(effectiveFilePattern, variables, treatAsFilename: !patternAllowsSubfolders);
+
+                relativePath = string.IsNullOrWhiteSpace(folderRelative)
+                    ? fileRelative
+                    : Path.Combine(folderRelative, fileRelative);
+            }
 
             // Ensure it has the correct extension
             if (!relativePath.EndsWith(originalExtension, StringComparison.OrdinalIgnoreCase))
@@ -121,11 +156,31 @@ namespace Listenarr.Api.Services
             string originalExtension = ".m4b")
         {
             var settings = await _configService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
-            var pattern = settings.FileNamingPattern;
+            var folderPattern = settings.FolderNamingPattern;
+            
+            // Determine if this is a multi-file import (has disk or chapter number)
+            bool isMultiFile = diskNumber.HasValue || chapterNumber.HasValue;
+            var filePattern = isMultiFile 
+                ? settings.MultiFileNamingPattern 
+                : settings.FileNamingPattern;
 
-            if (string.IsNullOrWhiteSpace(pattern))
+            var effectiveFolderPattern = folderPattern;
+            try
             {
-                pattern = "{Author}/{Series}/{Title}";
+                if (!string.IsNullOrWhiteSpace(outputPath) && !string.IsNullOrWhiteSpace(settings.OutputPath))
+                {
+                    var requestedRoot = Path.GetFullPath(outputPath);
+                    var configuredRoot = Path.GetFullPath(settings.OutputPath);
+                    if (!string.Equals(requestedRoot, configuredRoot, StringComparison.OrdinalIgnoreCase))
+                    {
+                        // Caller provided a custom base path (e.g., audiobook BasePath) -> skip folder pattern
+                        effectiveFolderPattern = string.Empty;
+                    }
+                }
+            }
+            catch
+            {
+                // If paths are invalid, fall back to configured folder pattern
             }
 
             // Helper to pick the first non-empty value
@@ -182,8 +237,41 @@ namespace Listenarr.Api.Services
                 // ignore logging errors
             }
 
-            // Apply the naming pattern
-            var relativePath = ApplyNamingPattern(pattern, variables);
+            string relativePath;
+            if (string.IsNullOrWhiteSpace(effectiveFolderPattern))
+            {
+                // Legacy behavior: use FileNamingPattern as the full relative path pattern
+                var legacyPattern = string.IsNullOrWhiteSpace(filePattern)
+                    ? "{Author}/{Series}/{Title}"
+                    : filePattern;
+
+                relativePath = ApplyNamingPattern(legacyPattern, variables);
+            }
+            else
+            {
+                // New behavior: separate folder and file patterns
+                var effectiveFilePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
+
+                var folderRelative = ApplyNamingPattern(effectiveFolderPattern, variables, treatAsFilename: false);
+                
+                // Normalize path separators to platform-specific ones
+                if (!string.IsNullOrWhiteSpace(folderRelative))
+                {
+                    folderRelative = folderRelative.Replace('/', Path.DirectorySeparatorChar)
+                                                   .Replace('\\', Path.DirectorySeparatorChar);
+                }
+
+                var patternAllowsSubfolders = effectiveFilePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                    || effectiveFilePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                    || effectiveFilePattern.IndexOf('/') >= 0
+                    || effectiveFilePattern.IndexOf('\\') >= 0;
+
+                var fileRelative = ApplyNamingPattern(effectiveFilePattern, variables, treatAsFilename: !patternAllowsSubfolders);
+
+                relativePath = string.IsNullOrWhiteSpace(folderRelative)
+                    ? fileRelative
+                    : Path.Combine(folderRelative, fileRelative);
+            }
 
             // Ensure it has the correct extension
             if (!relativePath.EndsWith(originalExtension, StringComparison.OrdinalIgnoreCase))

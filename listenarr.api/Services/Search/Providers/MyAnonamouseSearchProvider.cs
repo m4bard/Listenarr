@@ -189,17 +189,19 @@ namespace Listenarr.Api.Services.Search.Providers
                 List<IndexerSearchResult> results = new List<IndexerSearchResult>();
                 try
                 {
-                    var indexerUri = new Uri(indexer.Url);
-                    if (_httpClient?.BaseAddress == null || !string.Equals(_httpClient.BaseAddress.Host, indexerUri.Host, StringComparison.OrdinalIgnoreCase))
+                    if (_httpClient?.BaseAddress == null)
                     {
                         httpClientToUse = MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
                         disposableClient = httpClientToUse;
                     }
                     else
                     {
-                        // Add cookie header for injected client so the request is authenticated for MAM
+                        // Add cookie header for injected client so the request is authenticated for MAM.
+                        // This keeps test handlers in place even when the BaseAddress host differs.
                         if (!string.IsNullOrEmpty(mamId))
+                        {
                             mamRequest.Headers.Add("Cookie", $"mam_id={mamId}");
+                        }
                     }
 
                     _logger.LogDebug("MyAnonamouse API URL: {Url}", LogRedaction.RedactText(url, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));

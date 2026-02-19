@@ -116,43 +116,23 @@ namespace Listenarr.Api.Services
                         using var retryReq = new HttpRequestMessage(HttpMethod.Get, usUrl);
                         foreach (var h in req.Headers)
                             retryReq.Headers.TryAddWithoutValidation(h.Key, h.Value);
-                        HttpClient? usClient = null;
-                        try
-                        {
-                            var appSettings = await _configurationService.GetApplicationSettingsAsync();
-                            if (appSettings != null && appSettings.UseUsProxy && !string.IsNullOrWhiteSpace(appSettings.UsProxyHost) && appSettings.UsProxyPort > 0)
+                            HttpClient? usClient = null;
+                            try
                             {
-                                var handler = new HttpClientHandler
+                                // Always prefer a named "us" client if available, otherwise use the default client.
+                                usClient = _httpClientFactory != null ? _httpClientFactory.CreateClient("us") : _httpClient;
+                                var retryResp = await usClient.SendAsync(retryReq, ct);
+                                if (retryResp.IsSuccessStatusCode)
+                                    return await retryResp.Content.ReadAsStringAsync(ct);
+                            }
+                            finally
+                            {
+                                // Dispose only if we created a dedicated client here (unlikely when using factory)
+                                if (usClient != null && usClient != _httpClient && (_httpClientFactory == null || usClient != _httpClientFactory.CreateClient("us")))
                                 {
-                                    AutomaticDecompression = DecompressionMethods.All
-                                };
-                                var proxy = new WebProxy(appSettings.UsProxyHost, appSettings.UsProxyPort);
-                                if (!string.IsNullOrWhiteSpace(appSettings.UsProxyUsername))
-                                    proxy.Credentials = new NetworkCredential(appSettings.UsProxyUsername, appSettings.UsProxyPassword ?? string.Empty);
-                                handler.Proxy = proxy;
-                                handler.UseProxy = true;
-                                usClient = new HttpClient(handler, disposeHandler: true);
+                                    try { usClient.Dispose(); } catch { }
+                                }
                             }
-                            else if (_httpClientFactory != null)
-                            {
-                                usClient = _httpClientFactory.CreateClient("us");
-                            }
-                            else
-                            {
-                                usClient = _httpClient;
-                            }
-
-                            var retryResp = await usClient.SendAsync(retryReq, ct);
-                            if (retryResp.IsSuccessStatusCode)
-                                return await retryResp.Content.ReadAsStringAsync(ct);
-                        }
-                        finally
-                        {
-                            if (usClient != null && usClient != _httpClient && (_httpClientFactory == null || usClient != _httpClientFactory.CreateClient("us")))
-                            {
-                                try { usClient.Dispose(); } catch { }
-                            }
-                        }
                     }
                 }
                 catch (Exception ex)

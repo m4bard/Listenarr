@@ -171,8 +171,9 @@ export function useSearch() {
     const cleanAsin = asin.replace(/^ASIN:/i, '').trim()
 
     // Validate ASIN using the same strict pattern as detection.
-    if (!/^(B[0-9A-Z]{9})$/.test(cleanAsin.toUpperCase())) {
-      searchError.value = 'Invalid ASIN format. Expected an Amazon ASIN like B08G9PRS1K'
+    // Matches: 'B' + 9 alphanumerics OR 10-digit numeric ASIN (ISBN-10 format)
+    if (!/^(B[0-9A-Z]{9}|\d{9}(?:X|\d))$/.test(cleanAsin.toUpperCase())) {
+      searchError.value = 'Invalid ASIN format. Expected an Amazon ASIN like B08G9PRS1K or 1980006520'
       return
     }
 

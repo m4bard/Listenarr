@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 
 namespace Listenarr.Api.Services
 {
@@ -37,7 +38,9 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    redacted = redacted.Replace(s, "<redacted>", StringComparison.OrdinalIgnoreCase);
+                    if (string.IsNullOrEmpty(s)) continue;
+                    // Use Regex.Replace with escaped secret for robust, case-insensitive replacement
+                    redacted = Regex.Replace(redacted, Regex.Escape(s), "<redacted>", RegexOptions.IgnoreCase);
                 }
                 catch { }
             }

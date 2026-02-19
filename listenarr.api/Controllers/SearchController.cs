@@ -84,9 +84,13 @@ namespace Listenarr.Api.Controllers
                         {
                             r.ImageUrl = $"/api/images/{r.Asin}";
                         }
+                        else
+                        {
+                            // Let the client trigger an on-demand download by including the original URL as a query param
+                            r.ImageUrl = $"/api/images/{r.Asin}?url={Uri.EscapeDataString(r.ImageUrl)}";
+                        }
                     }
-                    // If no external URL or download failed, still map to API endpoint if ASIN present
-                    // This ensures consistent image serving and avoids external URL failures
+                    // If no external URL was present, map to API endpoint if ASIN present
                     else if (!string.IsNullOrWhiteSpace(r.Asin))
                     {
                         r.ImageUrl = $"/api/images/{r.Asin}";
@@ -100,8 +104,38 @@ namespace Listenarr.Api.Controllers
         }
 
 
+        private List<object> SimplifySearchResults(List<SearchResult> results)
+        {
+            return results?.Select(r => new
+            {
+                r.Id,
+                r.Title,
+                Artist = r.Artist,
+                r.Subtitle,
+                r.Description,
+                r.Publisher,
+                r.Language,
+                r.Runtime,
+                r.Narrator,
+                r.ImageUrl,
+                r.Asin,
+                r.Isbn,
+                r.Series,
+                r.SeriesNumber,
+                r.ProductUrl,
+                r.PublishedDate,
+                r.PublishYear,
+                r.Genres,
+                r.IsEnriched,
+                r.MetadataSource,
+                r.Source,
+                r.SourceLink,
+                r.Score
+            }).Cast<object>().ToList() ?? new List<object>();
+        }
+
         [HttpPost]
-        public async Task<ActionResult<object>> Search([FromBody] JsonElement reqJson)
+        public async Task<ActionResult<object>> Search([FromBody] JsonElement reqJson, [FromQuery] bool? simplified = null)
         {
             try
             {
@@ -116,6 +150,9 @@ namespace Listenarr.Api.Controllers
                 var req = JsonSerializer.Deserialize<Listenarr.Api.Models.SearchRequest>(reqJson.GetRawText(), options);
                 if (req == null) return BadRequest("SearchRequest body is required");
                 _logger.LogDebug("[DBG] Search received mode={Mode}, query='{Query}'", req.Mode, req.Query ?? "<null>");
+
+                // Default to simplified=true for both modes (user only needs metadata for Add New feature)
+                var useSimplified = simplified ?? true;
 
                 if (req.Mode == Listenarr.Api.Models.SearchMode.Simple)
                 {
@@ -148,6 +185,14 @@ namespace Listenarr.Api.Controllers
                                     {
                                         r.ImageUrl = $"/api/images/{r.Asin}";
                                     }
+                                    else
+                                    {
+                                        r.ImageUrl = $"/api/images/{r.Asin}?url={Uri.EscapeDataString(r.ImageUrl)}";
+                                    }
+                                }
+                                else if (!string.IsNullOrWhiteSpace(r.Asin))
+                                {
+                                    r.ImageUrl = $"/api/images/{r.Asin}";
                                 }
                             }
                             catch (Exception ex)
@@ -251,6 +296,7 @@ namespace Listenarr.Api.Controllers
                                         {
                                             var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(md.ImageUrl, md.Asin);
                                             if (!string.IsNullOrWhiteSpace(downloaded)) md.ImageUrl = $"/api/images/{md.Asin}";
+                                            else md.ImageUrl = $"/api/images/{md.Asin}?url={Uri.EscapeDataString(md.ImageUrl)}";
                                         }
                                     }
                                     catch (Exception ex)
@@ -261,7 +307,8 @@ namespace Listenarr.Api.Controllers
                                 if (md != null)
                                 {
                                     var result = SearchResultConverters.ToSearchResult(md);
-                                    return Ok(new List<SearchResult> { result });
+                                    var asinResults = new List<SearchResult> { result };
+                                    return Ok(useSimplified ? SimplifySearchResults(asinResults) : asinResults);
                                 }
                             }
                             // If audimeta didn't return a record, fall through to unified search below
@@ -408,6 +455,7 @@ namespace Listenarr.Api.Controllers
                                                 Subtitle = book.Subtitle,
                                                 Authors = book.Authors,
                                                 ImageUrl = book.ImageUrl,
+                                                LengthMinutes = book.RuntimeLengthMin ?? book.LengthMinutes ?? book.RuntimeMinutes,
                                                 Language = book.Language,
                                                 BookFormat = book.BookFormat,
                                                 Genres = book.Genres,
@@ -726,7 +774,7 @@ namespace Listenarr.Api.Controllers
                 lengthMinutes = md?.Runtime,
                 whisperSync = false,
                 publisher = md?.Publisher,
-                isbn = (string?)null,
+                isbn = md?.Isbn,
                 language = md?.Language,
                 rating = (double?)null,
                 releaseDate = md?.PublishedDate,

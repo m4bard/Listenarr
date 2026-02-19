@@ -11,8 +11,13 @@ public partial class Program
 {
     static partial void ApplyTestHostPatches(WebApplicationBuilder builder)
     {
-        // Compute a test-local SQLite path (mirrors Program.cs behavior).
-        var sqliteDbPath = Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db");
+        // Compute a test-local SQLite path (mirrors Program.cs behavior) and honor overrides.
+        var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
+        var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
+            ? Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
+            : (Path.IsPathRooted(sqliteDbPathOverride)
+                ? sqliteDbPathOverride
+                : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
         var sqliteDbDir = Path.GetDirectoryName(sqliteDbPath);
         if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))
         {
@@ -27,7 +32,8 @@ public partial class Program
         // Inject a small in-memory configuration value that overrides the default.
         var inMemory = new Dictionary<string, string?>()
         {
-            ["Playwright:Enabled"] = "false"
+            ["Playwright:Enabled"] = "false",
+            ["Listenarr:DisableHostedServices"] = "true"
         };
         builder.Configuration.AddInMemoryCollection(inMemory);
     }

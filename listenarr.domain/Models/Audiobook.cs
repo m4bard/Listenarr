@@ -32,6 +32,7 @@ namespace Listenarr.Domain.Models
         public List<string>? AuthorAsins { get; set; }
         public string? ImageUrl { get; set; }
         public string? PublishYear { get; set; }
+        public string? PublishedDate { get; set; } // Full ISO 8601 date for calendar/timeline features
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string? Description { get; set; }

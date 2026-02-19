@@ -86,12 +86,16 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
     private string BuildTorznabUrl(Indexer indexer, string query, string? category)
     {
         var url = indexer.Url.TrimEnd('/');
-        var apiPath = indexer.Implementation.ToLower() switch
-        {
-            "torznab" => "/api",
-            "newznab" => "/api",
-            _ => "/api"
-        };
+        
+        // Don't append /api if URL already ends with it (e.g., Prowlarr proxy URLs)
+        var apiPath = url.EndsWith("/api", StringComparison.OrdinalIgnoreCase) 
+            ? "" 
+            : indexer.Implementation.ToLower() switch
+            {
+                "torznab" => "/api",
+                "newznab" => "/api",
+                _ => "/api"
+            };
 
         var queryParams = new List<string>
         {
@@ -176,6 +180,9 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                     result.IndexerId = indexer.Id;
                     result.IndexerImplementation = indexer.Implementation;
 
+                    // Track peers value for potential leechers calculation
+                    int? peersValue = null;
+
                     // Parse published date
                     var pubDateStr = item.Element("pubDate")?.Value;
                     if (DateTime.TryParse(pubDateStr, out var pubDate))
@@ -200,6 +207,9 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                         if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(value))
                             continue;
 
+                        // Debug logging to see what Prowlarr sends
+                        _logger.LogDebug("Torznab attr from {Indexer}: {Name}={Value} for title {Title}", indexer.Name, name, value, result.Title);
+
                         switch (name.ToLower())
                         {
                             case "size":
@@ -219,8 +229,15 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                     result.Seeders = seeders;
                                 break;
                             case "peers":
+                                // Peers = seeders + leechers (total peers)
+                                // Store for later calculation if no explicit leechers
                                 if (int.TryParse(value, out var peers))
-                                    result.Leechers = peers;
+                                    peersValue = peers;
+                                break;
+                            case "leechers":
+                                // Explicit leechers attribute takes priority
+                                if (int.TryParse(value, out var leechers))
+                                    result.Leechers = leechers;
                                 break;
                             case "magneturl":
                                 result.MagnetLink = value;
@@ -489,6 +506,14 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                     {
                         result.Artist = "Unknown Author";
                         result.Album = result.Title;
+                    }
+
+                    // Calculate leechers from peers if no explicit leechers was provided
+                    if (!result.Leechers.HasValue && peersValue.HasValue && result.Seeders.HasValue)
+                    {
+                        result.Leechers = Math.Max(0, peersValue.Value - result.Seeders.Value);
+                        _logger.LogDebug("Calculated leechers for {Title}: peers={Peers} - seeders={Seeders} = {Leechers}",
+                            result.Title, peersValue.Value, result.Seeders.Value, result.Leechers.Value);
                     }
 
                     // Only add results that have a valid download link

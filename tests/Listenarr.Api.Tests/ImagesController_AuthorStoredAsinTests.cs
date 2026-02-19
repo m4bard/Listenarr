@@ -34,7 +34,9 @@ namespace Listenarr.Api.Tests
 
             var book = new Audiobook { Title = "Sample", Authors = new System.Collections.Generic.List<string> { identifier }, AuthorAsins = new System.Collections.Generic.List<string> { authorAsin } };
             var mockRepo = new Mock<IAudiobookRepository>();
+            // Legacy callers used GetAllAsync; new implementation prefers GetAuthorAsinByNameAsync — mock both for compatibility in tests
             mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(new System.Collections.Generic.List<Audiobook> { book });
+            mockRepo.Setup(r => r.GetAuthorAsinByNameAsync(identifier)).ReturnsAsync(authorAsin);
 
             var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr_test_contentroot_author_stored_asin");
             Directory.CreateDirectory(Path.Combine(tempRoot, "config", "cache", "images", "temp"));

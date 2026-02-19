@@ -16,31 +16,8 @@ export const useLibraryStore = defineStore('library', () => {
     error.value = null
     try {
       const serverList = await apiService.getLibrary()
-      // Defensive merge: prefer server-provided fields, but avoid wiping local files when server returns empty array
-      const merged = serverList.map((serverItem) => {
-        const local = audiobooks.value.find((b) => b.id === serverItem.id)
-        if (!local) return serverItem
-
-        // If server provided files array is empty but local has files, keep local files
-        const files =
-          serverItem.files && serverItem.files.length > 0
-            ? serverItem.files
-            : local.files && local.files.length > 0
-              ? local.files
-              : serverItem.files
-
-        // Preserve a meaningful basePath: prefer server value when present, otherwise keep local
-        const basePath =
-          serverItem.basePath && serverItem.basePath.length > 0
-            ? serverItem.basePath
-            : local.basePath && local.basePath.length > 0
-              ? local.basePath
-              : serverItem.basePath
-
-        return { ...local, ...serverItem, files, basePath }
-      })
-
-      audiobooks.value = merged
+      // Always trust server data - it includes accurate wanted flags based on File.Exists() checks
+      audiobooks.value = serverList
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to fetch library'
       errorTracking.captureException(err as Error, {

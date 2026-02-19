@@ -114,7 +114,7 @@ Log.Logger = new Serilog.LoggerConfiguration()
     .WriteTo.File(
         logFilePath,
         rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 30,
+        retainedFileCountLimit: 5,
         outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")
     .WriteTo.Sink(signalRSink)
     .CreateLogger();
@@ -134,7 +134,7 @@ if (!args?.Any(arg => arg.StartsWith("--urls")) ?? true)
 // If running as an integration test host, allow the test-side partial to apply any
 // additional registrations (for example AddListenarrPersistence so IDbContextFactory<>
 // is available to hosted/background services during tests).
-if (builder.Environment.IsEnvironment("Testing"))
+if (builder.Environment.IsEnvironment("Test"))
 {
     ApplyTestHostPatches(builder);
 }
@@ -143,6 +143,8 @@ builder.Services.AddControllers()
     {
         // Serialize enums as strings instead of integers for better frontend compatibility
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        // Only ignore null values (not empty strings or zeros) to reduce payload size while preserving meaningful empty values
+        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
 // Add SignalR for real-time updates
@@ -162,18 +164,11 @@ builder.Services.AddScoped<Listenarr.Api.Services.ILegacyOutputPathMigrator, Lis
 // History repository for tracking events
 builder.Services.AddScoped<Listenarr.Infrastructure.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.HistoryRepository>();
 
+// Download history service for idempotency and audit trail
+builder.Services.AddScoped<Listenarr.Application.Services.IDownloadHistoryService, Listenarr.Infrastructure.Services.DownloadHistoryService>();
+
 // Add in-memory cache for metadata prefetch / reuse
 builder.Services.AddMemoryCache();
-
-// Add HTTP client for external API calls with decompression support
-builder.Services.AddHttpClient<IAudibleMetadataService, AudibleMetadataService>()
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All
-    });
-
-// Add Amazon metadata service (delegates to AudibleMetadataService for shared logic)
-builder.Services.AddScoped<IAmazonMetadataService, AmazonMetadataService>();
 
 // Add HTTP client for Audimeta service
 builder.Services.AddHttpClient<AudimetaService>()
@@ -217,15 +212,11 @@ builder.Services.AddScoped<AsinCandidateCollector>();
 builder.Services.AddScoped<AsinEnricher>();
 
 // Add fallback scraper
-builder.Services.AddScoped<FallbackScraper>();
-
 // Add search result scorer
 builder.Services.AddScoped<SearchResultScorer>();
 
 // Add ASIN search handler
 builder.Services.AddScoped<AsinSearchHandler>();
-
-// Audible integration removed: AudibleApiService registration omitted
 
 // Add default HTTP client for other services
 builder.Services.AddHttpClient();
@@ -403,7 +394,13 @@ builder.Services.AddHttpClient("DirectDownload")
 // the published exe will create/use the intended config/database path even
 // when the working directory differs.
 // Compute default SQLite DB path (config/database/listenarr.db) relative to content root.
-var sqliteDbPath = Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db");
+// Allow tests to override the path via configuration to avoid shared DB state in CI.
+var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
+var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
+    ? Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
+    : (Path.IsPathRooted(sqliteDbPathOverride)
+        ? sqliteDbPathOverride
+        : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
 // Ensure directory exists at startup so EF migrations can create the DB file there
 var sqliteDbDir = Path.GetDirectoryName(sqliteDbPath);
 if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))
@@ -424,72 +421,12 @@ builder.Services.AddListenarrAdapters(builder.Configuration);
 builder.Services.AddListenarrInfrastructure();
 // Register application-level services (moved from Program.cs to keep startup focused)
 builder.Services.AddListenarrAppServices(builder.Configuration);
-// Register hosted/background services (moved from Program.cs)
-builder.Services.AddListenarrHostedServices(builder.Configuration);
-
-// Typed HttpClients with automatic decompression for scraping services
-builder.Services.AddHttpClient<IAmazonSearchService, AmazonSearchService>()
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All
-    })
-    // Treat Forbidden/TooManyRequests/ServiceUnavailable as transient-handled results
-    // Retry a few times with exponential backoff before the circuit-breaker sees the failure
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-    .OrResult(r => r.StatusCode == HttpStatusCode.Forbidden
-                     || r.StatusCode == (HttpStatusCode)429
-                     || r.StatusCode == HttpStatusCode.ServiceUnavailable)
-        .WaitAndRetryAsync(
-            retryCount: 3,
-            sleepDurationProvider: retryAttempt => TimeSpan.FromSeconds(Math.Pow(2, retryAttempt)),
-            onRetry: (outcome, timespan, retryAttempt, context) =>
-            {
-                var reason = outcome.Result != null ? $"HTTP {(int)outcome.Result.StatusCode}" : outcome.Exception?.Message;
-                Log.Logger.Information("[RETRY] Amazon search retry attempt {Attempt} due to {Reason}. Waiting {Delay}s", retryAttempt, reason, timespan.TotalSeconds);
-            }))
-    // Circuit-breaker: raise threshold slightly to avoid tripping on short throttling bursts
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-    .OrResult(r => r.StatusCode == HttpStatusCode.Forbidden
-                     || r.StatusCode == (HttpStatusCode)429
-                     || r.StatusCode == HttpStatusCode.ServiceUnavailable)
-        .CircuitBreakerAsync(
-            handledEventsAllowedBeforeBreaking: 6,
-            durationOfBreak: TimeSpan.FromMinutes(2),
-            onBreak: (outcome, duration) =>
-            {
-                var reason = outcome.Result != null ? $"HTTP {(int)outcome.Result.StatusCode}" : outcome.Exception?.Message ?? "policy trigger";
-                Log.Logger.Warning("[CIRCUIT BREAKER] Amazon search circuit opened due to {Reason}. Breaking for {Minutes}m", reason, duration.TotalMinutes);
-            },
-            onReset: () =>
-            {
-                Log.Logger.Information("[CIRCUIT BREAKER] Amazon search circuit reset");
-            }
-        ));
-
-builder.Services.AddHttpClient<IAudibleSearchService, AudibleSearchService>()
-    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All
-    })
-            .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .CircuitBreakerAsync(
-            handledEventsAllowedBeforeBreaking: 4,
-            durationOfBreak: TimeSpan.FromMinutes(2),
-            onBreak: (outcome, duration) =>
-            {
-                Log.Logger.Warning("[CIRCUIT BREAKER] Audible search circuit opened. Breaking for {Minutes}m", duration.TotalMinutes);
-            },
-            onReset: () =>
-            {
-                Log.Logger.Information("[CIRCUIT BREAKER] Audible search circuit reset");
-            }
-        ))
-    .AddPolicyHandler(HttpPolicyExtensions
-        .HandleTransientHttpError()
-        .WaitAndRetryAsync(2, retryAttempt => TimeSpan.FromSeconds(1)));
+// Register hosted/background services (moved from Program.cs). Allow tests to disable these.
+var disableHostedServices = builder.Configuration.GetValue<bool>("Listenarr:DisableHostedServices");
+if (!disableHostedServices)
+{
+    builder.Services.AddListenarrHostedServices(builder.Configuration);
+}
 
 // External request options (Prefer US domain / optional US proxy)
 builder.Services.Configure<Listenarr.Api.Services.ExternalRequestOptions>(builder.Configuration.GetSection("ExternalRequests"));
@@ -502,52 +439,10 @@ builder.Services.AddHttpClient("us").ConfigurePrimaryHttpMessageHandler(() =>
         AutomaticDecompression = System.Net.DecompressionMethods.All
     };
 
-    try
-    {
-        var section = builder.Configuration.GetSection("ExternalRequests");
-        var useProxy = section.GetValue<bool>("UseUsProxy");
-        if (useProxy)
-        {
-            var host = section.GetValue<string>("UsProxyHost");
-            var port = section.GetValue<int>("UsProxyPort");
-            if (!string.IsNullOrWhiteSpace(host) && port > 0)
-            {
-                var proxy = new WebProxy(host, port);
-                var user = section.GetValue<string>("UsProxyUsername");
-                var pass = section.GetValue<string>("UsProxyPassword");
-                if (!string.IsNullOrWhiteSpace(user))
-                    proxy.Credentials = new NetworkCredential(user, pass ?? string.Empty);
-                handler.Proxy = proxy;
-                handler.UseProxy = true;
-            }
-        }
-    }
-    catch (Exception ex)
-    {
-        Log.Logger.Warning("[WARNING] Failed to configure proxy settings: {Message}", ex.Message);
-    }
+    // Proxy configuration removed; keep handler default (no explicit proxy configuration)
 
     return handler;
 });
-
-// Read Playwright enablement flag from config (default true)
-var playwrightEnabled = builder.Configuration.GetValue<bool>("Playwright:Enabled", true);
-
-// Register Playwright services only when enabled in configuration
-if (playwrightEnabled)
-{
-    // Register Playwright page fetcher for JS-rendered pages and bot-workarounds
-    builder.Services.AddSingleton<Listenarr.Api.Services.IPlaywrightPageFetcher, Listenarr.Api.Services.PlaywrightPageFetcher>();
-
-    // Playwright install status and background installer
-    builder.Services.AddSingleton<Listenarr.Api.Services.PlaywrightInstallStatus>();
-    builder.Services.AddHostedService<Listenarr.Api.Services.PlaywrightInstallBackgroundService>();
-    builder.Services.AddSingleton<Listenarr.Api.Services.IPlaywrightInstaller, Listenarr.Api.Services.PlaywrightInstaller>();
-}
-else
-{
-    Log.Logger.Information("Playwright integration is disabled via configuration; skipping Playwright service registration.");
-}
 
 // CORS is handled by reverse proxy (nginx, Traefik, Caddy, etc.)
 // Only add CORS support for local development
@@ -768,316 +663,6 @@ using (var scope = app.Services.CreateScope())
 
 // Initialize the SignalR sink now that the hub context is available
 signalRSink.Initialize(app.Services.GetRequiredService<IHubContext<LogHub>>());
-
-// Attempt to install Playwright browser binaries on startup (blocking with timeout).
-// This reduces repeated missing-executable warnings during runtime by ensuring
-// the browser artifacts are present before handling requests. If installation
-// fails the app will continue to run; Playwright fallbacks will be skipped.
-try
-{
-    using var scope = app.Services.CreateScope();
-    var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
-    logger.LogInformation("Attempting Playwright browser install on startup (timeout: 90s)");
-
-    var cts = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-    var installTask = Task.Run(async () =>
-    {
-        // Local function to check if Playwright browsers are installed
-        static bool ArePlaywrightBrowsersInstalled()
-        {
-            string playwrightPath;
-            if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-            {
-                playwrightPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "ms-playwright");
-            }
-            else if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX))
-            {
-                playwrightPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Library", "Caches", "ms-playwright");
-            }
-            else // Linux and others
-            {
-                playwrightPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".cache", "ms-playwright");
-            }
-
-            if (!Directory.Exists(playwrightPath)) return false;
-
-            // Check for at least one browser directory (chromium-*, firefox-*, webkit-*)
-            try
-            {
-                var browserDirs = Directory.GetDirectories(playwrightPath, "*-*");
-                return browserDirs.Length > 0;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        try
-        {
-            // Check if Playwright browsers are already installed
-            if (ArePlaywrightBrowsersInstalled())
-            {
-                logger.LogInformation("Playwright browsers are already installed, skipping startup installation");
-                return true;
-            }
-
-            // Try reflection-based InstallAsync if available on the Playwright package
-            try
-            {
-                var playwrightType = typeof(Microsoft.Playwright.Playwright);
-                var installMethod = playwrightType.GetMethod("InstallAsync", System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static);
-                if (installMethod != null)
-                {
-                    logger.LogInformation("Found Playwright.InstallAsync via reflection; invoking to install browsers...");
-                    var installTaskObj = (System.Threading.Tasks.Task?)installMethod.Invoke(null, null);
-                    if (installTaskObj != null)
-                    {
-                        await installTaskObj.ConfigureAwait(false);
-                        logger.LogInformation("Playwright.InstallAsync completed successfully");
-                        return true;
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Reflection-based Playwright.InstallAsync attempt failed or not available");
-            }
-
-            // Fallback: try running the platform-specific Playwright install script (no Node.js required)
-            try
-            {
-                // Use AppContext.BaseDirectory instead of Assembly.Location for single-file publish compatibility
-                var assemblyDir = AppContext.BaseDirectory;
-                if (!string.IsNullOrEmpty(assemblyDir))
-                {
-                    string? scriptPath = null;
-                    string arguments;
-                    if (System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows))
-                    {
-                        scriptPath = Path.Combine(assemblyDir, "playwright.ps1");
-                        arguments = "install";
-                        if (!File.Exists(scriptPath))
-                        {
-                            // Try in bin subfolder
-                            scriptPath = Path.Combine(assemblyDir, "..", "..", "bin", "playwright.ps1");
-                            if (!File.Exists(scriptPath))
-                            {
-                                scriptPath = null;
-                            }
-                        }
-                        if (scriptPath != null)
-                        {
-                            logger.LogInformation("Running PowerShell Playwright install script: {Script}", scriptPath);
-                            var psi = new System.Diagnostics.ProcessStartInfo
-                            {
-                                FileName = "pwsh",
-                                Arguments = $"\"{scriptPath}\" {arguments}",
-                                RedirectStandardOutput = true,
-                                RedirectStandardError = true,
-                                UseShellExecute = false,
-                                CreateNoWindow = true
-                            };
-
-                            var processRunner = scope.ServiceProvider.GetService<Listenarr.Api.Services.IProcessRunner>();
-                            if (processRunner != null)
-                            {
-                                var result = await processRunner.RunAsync(psi, timeoutMs: (int)TimeSpan.FromSeconds(90).TotalMilliseconds, cancellationToken: cts.Token).ConfigureAwait(false);
-                                if (result.TimedOut)
-                                {
-                                    logger.LogWarning("PowerShell Playwright install script timed out after {Timeout}s", TimeSpan.FromSeconds(90).TotalSeconds);
-                                }
-                                else if (result.ExitCode == 0)
-                                {
-                                    logger.LogInformation("PowerShell Playwright install script completed successfully");
-                                    return true;
-                                }
-                                else
-                                {
-                                    logger.LogWarning("PowerShell Playwright install script failed with exit code {ExitCode}. StdErr: {Err}", result.ExitCode, result.Stderr?.Length > 1000 ? result.Stderr.Substring(0, 1000) : result.Stderr);
-                                }
-                            }
-                            else
-                            {
-                                logger.LogWarning("IProcessRunner is not available; skipping PowerShell Playwright install script fallback.");
-                            }
-                        }
-                    }
-                    else
-                    {
-                        scriptPath = Path.Combine(assemblyDir, "playwright.sh");
-                        arguments = "install";
-                        if (!File.Exists(scriptPath))
-                        {
-                            scriptPath = Path.Combine(assemblyDir, "..", "..", "bin", "playwright.sh");
-                            if (!File.Exists(scriptPath))
-                            {
-                                scriptPath = null;
-                            }
-                        }
-                        if (scriptPath != null)
-                        {
-                            logger.LogInformation("Running bash Playwright install script: {Script}", scriptPath);
-                            var psi = new System.Diagnostics.ProcessStartInfo
-                            {
-                                FileName = "bash",
-                                Arguments = $"\"{scriptPath}\" {arguments}",
-                                RedirectStandardOutput = true,
-                                RedirectStandardError = true,
-                                UseShellExecute = false,
-                                CreateNoWindow = true
-                            };
-
-                            var processRunner = scope.ServiceProvider.GetService<Listenarr.Api.Services.IProcessRunner>();
-                            if (processRunner != null)
-                            {
-                                var result = await processRunner.RunAsync(psi, timeoutMs: (int)TimeSpan.FromSeconds(90).TotalMilliseconds, cancellationToken: cts.Token).ConfigureAwait(false);
-                                if (result.TimedOut)
-                                {
-                                    logger.LogWarning("Bash Playwright install script timed out after {Timeout}s", TimeSpan.FromSeconds(90).TotalSeconds);
-                                }
-                                else if (result.ExitCode == 0)
-                                {
-                                    logger.LogInformation("Bash Playwright install script completed successfully");
-                                    return true;
-                                }
-                                else
-                                {
-                                    logger.LogWarning("Bash Playwright install script failed with exit code {ExitCode}. StdErr: {Err}", result.ExitCode, result.Stderr?.Length > 1000 ? result.Stderr.Substring(0, 1000) : result.Stderr);
-                                }
-                            }
-                            else
-                            {
-                                logger.LogWarning("IProcessRunner is not available; skipping bash Playwright install script fallback.");
-                            }
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Platform-specific Playwright install script attempt failed");
-            }
-
-            // Fallback: try the configured Playwright installer (which will itself handle npx presence checks)
-            try
-            {
-                logger.LogInformation("Attempting Playwright npx fallback via IPlaywrightInstaller (if available)");
-                var installer = scope.ServiceProvider.GetService<Listenarr.Api.Services.IPlaywrightInstaller>();
-                if (installer != null)
-                {
-                    var result = await installer.InstallOnceAsync(cts.Token).ConfigureAwait(false);
-                    logger.LogDebug("Playwright installer output: {Out}\n{Err}", LogRedaction.RedactText(result.Out, LogRedaction.GetSensitiveValuesFromEnvironment()), LogRedaction.RedactText(result.Err, LogRedaction.GetSensitiveValuesFromEnvironment()));
-                    if (result.Success)
-                    {
-                        logger.LogInformation("Playwright installer completed successfully");
-                        return true;
-                    }
-                    else
-                    {
-                        logger.LogInformation("Playwright installer did not provision browsers: {Err}", result.Err);
-                    }
-                }
-                else
-                {
-                    // Fallback: prior behavior was to attempt 'npx' directly; avoid doing that unless we can resolve the executable.
-                    var resolved = Listenarr.Api.Services.ProcessHelpers.FindExecutableOnPath("npx");
-                    if (string.IsNullOrEmpty(resolved))
-                    {
-                        logger.LogInformation("npx not found on PATH; skipping 'npx playwright install chromium' fallback.");
-                    }
-                    else
-                    {
-                        var psi = new System.Diagnostics.ProcessStartInfo
-                        {
-                            FileName = resolved,
-                            Arguments = "playwright install chromium",
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            UseShellExecute = false,
-                            CreateNoWindow = true
-                        };
-
-                        var processRunner = scope.ServiceProvider.GetService<Listenarr.Api.Services.IProcessRunner>();
-                        if (processRunner != null)
-                        {
-                            var pr = await processRunner.RunAsync(psi, timeoutMs: (int)TimeSpan.FromMinutes(10).TotalMilliseconds, cancellationToken: CancellationToken.None).ConfigureAwait(false);
-                            logger.LogDebug("Playwright npx output: {Out}\n{Err}", LogRedaction.RedactText(pr.Stdout, LogRedaction.GetSensitiveValuesFromEnvironment()), LogRedaction.RedactText(pr.Stderr, LogRedaction.GetSensitiveValuesFromEnvironment()));
-                            if (pr.TimedOut)
-                            {
-                                logger.LogWarning("'npx playwright install chromium' timed out after {Timeout} seconds", TimeSpan.FromMinutes(10).TotalSeconds);
-                            }
-                            else if (pr.ExitCode == 0)
-                            {
-                                logger.LogInformation("'npx playwright install chromium' completed successfully");
-                                return true;
-                            }
-                            else
-                            {
-                                logger.LogWarning("'npx playwright install chromium' did not complete successfully. ExitCode={ExitCode}", pr.ExitCode);
-                            }
-                        }
-                        else
-                        {
-                            logger.LogWarning("IProcessRunner is not available; skipping 'npx playwright install chromium' fallback.");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "Playwright npx fallback attempt failed");
-            }
-
-            // As a last resort, ask the PlaywrightPageFetcher to ensure browsers are initialized.
-            // Use the explicit TryEnsureInitializedAsync method so we can reliably detect whether
-            // a browser instance is available instead of inferring success from a swallowed fetch.
-            try
-            {
-                var pwFetcher = scope.ServiceProvider.GetService<Listenarr.Api.Services.IPlaywrightPageFetcher>();
-                if (pwFetcher != null)
-                {
-                    logger.LogInformation("Invoking PlaywrightPageFetcher.TryEnsureInitializedAsync as final fallback");
-                    var initialized = await pwFetcher.TryEnsureInitializedAsync(cts.Token).ConfigureAwait(false);
-                    if (initialized)
-                    {
-                        logger.LogInformation("PlaywrightPageFetcher initialized browsers on fallback");
-                        return true;
-                    }
-                    else
-                    {
-                        logger.LogWarning("PlaywrightPageFetcher fallback did not initialize browsers");
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogDebug(ex, "PlaywrightPageFetcher fallback initialization failed");
-            }
-
-            return false;
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("Playwright install attempt timed out");
-            return false;
-        }
-    }, cts.Token);
-
-    var finished = installTask.Wait(TimeSpan.FromSeconds(90));
-    if (finished && installTask.IsCompletedSuccessfully && installTask.Result)
-    {
-        logger.LogInformation("Playwright installation succeeded on startup");
-    }
-    else
-    {
-        logger.LogWarning("Playwright installation did not complete successfully on startup. Playwright fallbacks will be skipped until browsers are installed.");
-    }
-}
-catch (Exception ex)
-{
-    try { var l = app.Services.GetRequiredService<ILogger<Program>>(); l.LogWarning(ex, "Playwright installation attempt on startup failed"); } catch { }
-}
 
 // Ensure ffprobe is available on first launch (best-effort). Installation runs in background via
 // the registered hosted service so the app can serve requests immediately.

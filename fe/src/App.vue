@@ -3,7 +3,7 @@
     <!-- Top Navigation Bar -->
     <header v-if="!hideLayout" class="top-nav">
       <div class="nav-brand">
-        <img src="/logo.svg" alt="Listenarr" class="brand-logo" />
+        <div class="brand-logo" aria-hidden="true"><BrandLogo /></div>
         <h1>Listenarr</h1>
         <span v-if="version && version.length > 0" class="version">v{{ version }}</span>
       </div>
@@ -175,6 +175,7 @@
             <RouterLink
               :to="{ path: '/audiobooks', query: { group: 'books' } }"
               class="nav-item"
+              :class="{ 'router-link-active': route.name === 'home' || route.name === 'audiobooks' }"
               @mouseenter="preload('home'); onNavMouseEnter('audiobooks')"
               @mouseleave="onNavMouseLeave('audiobooks')"
               @focus="preload('home'); onNavFocus('audiobooks')"
@@ -242,6 +243,17 @@
               <PhPlus />
               <span>Add New</span>
             </RouterLink>
+                        <RouterLink
+              to="/calendar"
+              class="nav-item"
+              @mouseenter="preload('calendar')"
+              @focus="preload('calendar')"
+              @touchstart.passive="preload('calendar')"
+              @click="closeMobileMenu"
+            >
+              <PhCalendar />
+              <span>Calendar</span>
+            </RouterLink>
             <!-- <RouterLink to="/library-import" class="nav-item">
               <PhFolderOpen />
               <span>Library Import</span>
@@ -249,11 +261,6 @@
           </div>
 
           <div class="nav-section">
-            <!-- Calendar temporarily hidden -->
-            <!-- <RouterLink to="/calendar" class="nav-item">
-              <PhCalendar />
-              <span>Calendar</span>
-            </RouterLink> -->
             <RouterLink
               to="/activity"
               class="nav-item"
@@ -264,7 +271,7 @@
             >
               <PhActivity />
               <span>Activity</span>
-              <span class="badge" v-if="activityCount > 0">{{ activityCount }}</span>
+              <Pill variant="count" v-if="activityCount > 0">{{ activityCount }}</Pill>
             </RouterLink>
             <RouterLink
               to="/wanted"
@@ -276,7 +283,7 @@
             >
               <PhHeart />
               <span>Wanted</span>
-              <span class="badge" v-if="wantedCount > 0">{{ wantedCount }}</span>
+              <Pill variant="count" v-if="wantedCount > 0">{{ wantedCount }}</Pill>
             </RouterLink>
           </div>
 
@@ -380,7 +387,7 @@
             >
               <PhMonitor />
               <span>System</span>
-              <span class="badge error" v-if="systemIssues > 0">{{ systemIssues }}</span>
+              <Pill variant="error" v-if="systemIssues > 0">{{ systemIssues }}</Pill>
             </RouterLink>
           </div>
         </nav>
@@ -432,6 +439,7 @@ import {
   PhBooks,
   PhPlus,
   PhActivity,
+  PhCalendar,
   PhHeart,
   PhGear,
   PhMonitor,
@@ -445,22 +453,25 @@ import { useEventListener } from '@vueuse/core'
 import { preloadRoute } from '@/router'
 // SignalR indicator moved to System view; session token handled where needed
 import { useRoute, useRouter } from 'vue-router'
-import NotificationModal from '@/components/NotificationModal.vue'
-import ConfirmDialog from '@/components/ConfirmDialog.vue'
+import NotificationModal from '@/components/feedback/NotificationModal.vue'
+import ConfirmDialog from '@/components/feedback/ConfirmDialog.vue'
 import { useConfirmService } from '@/composables/confirmService'
 import { useNotification } from '@/composables/useNotification'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useAuthStore } from '@/stores/auth'
 import { apiService } from '@/services/api'
 import { handleImageError } from '@/utils/imageFallback'
+import { Pill } from '@/components/base'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
 import type { QueueItem } from '@/types'
 import { ref as vueRef2, reactive } from 'vue'
-import GlobalToast from '@/components/GlobalToast.vue'
+import GlobalToast from '@/components/ui/GlobalToast.vue'
 import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
+import BrandLogo from '@/components/base/BrandLogo.vue'
+
 
 const { notification, close: closeNotification } = useNotification()
 const downloadsStore = useDownloadsStore()
@@ -662,8 +673,12 @@ const activeQueueCount = computed(
 )
 
 // Step 3: Count DDL downloads separately (memoized)
+// Treat downloadClientId case-insensitively to be robust against lower/upper-cased values
 const ddlDownloadsCount = computed(
-  () => activeDownloads.value.filter((d) => d.downloadClientId === 'DDL').length,
+  () =>
+    activeDownloads.value.filter((d) =>
+      ((d && d.downloadClientId) || '').toString().toUpperCase() === 'DDL',
+    ).length,
 )
 
 // Step 4: Count external client downloads (memoized)
@@ -1084,6 +1099,9 @@ onMounted(async () => {
                 recentDownloadTitles.value.delete(title)
               }, 30000)
             }
+          } else if (status === 'moved') {
+            // Download was successfully imported - refresh wanted badge to reflect the change
+            refreshWantedBadge()
           } else {
             // Ignore progress/other transient updates
           }
@@ -1257,7 +1275,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 .nav-brand h1 {
   margin: 0;
   font-size: 1.5rem;
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
   /* Use Figtree for the brand heading when available */
   font-family:
@@ -1326,7 +1344,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 }
 
 .user-menu-item.username {
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
 }
 
@@ -1435,13 +1453,24 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   gap: 0.75rem;
 }
 
+/* Push count pills to the end of sidebar nav items */
+.sidebar .nav-item .pill-count,
+.sidebar .nav-item .pill.pill-count {
+  margin-left: auto;
+}
+
 .nav-item:hover {
   background-color: #3a3a3a;
   color: white;
 }
 
 .nav-item.router-link-active {
-  background-color: #007acc;
+  background-color: var(--brand-500);
+  color: white;
+}
+
+.sidebar .nav-item.router-link-active svg,
+.sidebar .nav-item.router-link-active .ph {
   color: white;
 }
 
@@ -1452,7 +1481,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   top: 0;
   bottom: 0;
   width: 3px;
-  background-color: #007acc;
+  background-color: var(--brand-500);
 }
 
 /* Icons */
@@ -1487,24 +1516,15 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   content: '🔔';
 }
 
-/* Badges */
-.badge {
-  background-color: #f39c12;
-  color: white;
-  border-radius: 6px;
-  padding: 0.2rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: bold;
-  margin-left: auto;
-}
-
+/* Badges - Now using Pill component from @/components/base */
+/* Legacy badge styles kept only for notification-badge positioning */
 .notification-badge {
   background-color: #f39c12;
   color: white;
   border-radius: 6px;
   padding: 0.1rem 0.3rem;
   font-size: 0.65rem;
-  font-weight: bold;
+  font-weight: 500;
   position: absolute;
   top: -2px;
   right: -2px;
@@ -1514,24 +1534,6 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   align-items: center;
   justify-content: center;
   z-index: 10;
-}
-
-.badge.error {
-  background-color: #e74c3c;
-}
-
-/* Sidebar-specific badge: branded blue */
-.sidebar .badge {
-  background-color: #007acc;
-  transition:
-    background-color 0.12s ease,
-    box-shadow 0.12s ease;
-}
-
-.sidebar .badge:hover,
-.sidebar .badge:focus {
-  background-color: #005fa3;
-  box-shadow: 0 6px 18px rgba(0, 122, 204, 0.12);
 }
 
 /* Main Content */
@@ -1799,7 +1801,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 
 .sidebar .nav-subitem.active {
   color: #ffffff;
-  font-weight: 600;
+  font-weight: 500;
   border-left: 3px solid #2196f3; /* Highlighted border for active */
 }
 
@@ -1892,11 +1894,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   animation: spin 800ms linear infinite;
 }
 
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* @keyframes spin is centralized in src/assets/animations.css */
 
 .search-result {
   display: flex;
@@ -1913,7 +1911,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 }
 
 .result-title {
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
   font-size: 0.95rem;
 }
@@ -2069,7 +2067,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 .dropdown-header strong {
   color: #fff;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .clear-btn {
@@ -2131,7 +2129,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 
 .notif-title {
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 500;
   color: #fff;
   margin-bottom: 2px;
   overflow: hidden;

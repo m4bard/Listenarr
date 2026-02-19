@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
@@ -43,6 +44,7 @@ namespace Listenarr.Api.Services
                 Tags = audiobook.Tags?.ToArray(),
                 Description = audiobook.Description,
                 PublishYear = audiobook.PublishYear,
+                PublishedDate = audiobook.PublishedDate,
                 Series = audiobook.Series,
                 SeriesNumber = audiobook.SeriesNumber,
                 Monitored = audiobook.Monitored,
@@ -58,8 +60,9 @@ namespace Listenarr.Api.Services
                 Explicit = audiobook.Explicit
             };
 
-            // Compute wanted flag (treat presence of file records as authoritative for "not wanted")
-            dto.Wanted = audiobook.Monitored && (dto.Files == null || !dto.Files.Any() || !dto.Files.Any(f => !string.IsNullOrEmpty(f.Path)));
+            // Compute wanted flag: true if monitored but has no file records
+            // (if we have file records, audiobook has content and is not "wanted")
+            dto.Wanted = audiobook.Monitored && (dto.Files == null || !dto.Files.Any());
 
 
             return dto;

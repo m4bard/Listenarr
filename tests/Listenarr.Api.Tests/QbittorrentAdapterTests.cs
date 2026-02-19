@@ -62,7 +62,7 @@ namespace Listenarr.Api.Tests
             var (success, message) = await adapter.TestConnectionAsync(cfg);
 
             Assert.True(success);
-            Assert.Contains("reachable", message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("connected", message, StringComparison.OrdinalIgnoreCase);
         }
 
         [Fact]

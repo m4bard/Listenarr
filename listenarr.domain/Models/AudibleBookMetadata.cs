@@ -28,6 +28,7 @@ namespace Listenarr.Domain.Models
         public List<string>? Authors { get; set; }
         public string? ImageUrl { get; set; }
         public string? PublishYear { get; set; }
+        public string? PublishedDate { get; set; } // Full date (YYYY-MM-DD) for calendar/timeline features
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string? Description { get; set; }

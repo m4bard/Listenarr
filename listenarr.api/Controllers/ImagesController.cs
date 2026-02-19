@@ -66,6 +66,14 @@ namespace Listenarr.Api.Controllers
                 identifier = identifier.Substring(0, queryIndex);
             }
 
+            // Validate identifier to prevent path traversal or overly long values.
+            // Identifiers should be simple ASINs, numeric IDs or author names—disallow path separators.
+            if (identifier.IndexOfAny(new char[] { '\\', '/', '\0' }) >= 0 || identifier.Length > 256)
+            {
+                _logger.LogWarning("Rejected invalid identifier: {Identifier}", identifier);
+                return BadRequest("Invalid identifier");
+            }
+
             // Check for url parameter to download on demand
             var url = Request.Query["url"].ToString();
             if (!string.IsNullOrWhiteSpace(url) && (url.StartsWith("http://") || url.StartsWith("https://")))
@@ -89,22 +97,165 @@ namespace Listenarr.Api.Controllers
             {
                 // Get the cached image path (checks library first, then temp)
                 var relativePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
+                _logger.LogInformation("ImagesController DEBUG: returned relativePath='{RelativePath}' for identifier {Identifier}", relativePath, identifier);
+                bool movedAttempted = false;
+
+                // Shortcut: if the returned relative path clearly points to a temp cache
+                // layout, attempt to move it into library storage immediately. This
+                // handles cases where path normalization/validation later could
+                // interfere with detection (unit tests expect the move to be invoked).
+                if (!string.IsNullOrWhiteSpace(relativePath))
+                {
+                    try
+                    {
+                        var preNormalized = relativePath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                        if (preNormalized.IndexOf(Path.Combine("cache", "images", "temp"), StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            preNormalized.IndexOf(Path.Combine("config", "cache", "images", "temp"), StringComparison.OrdinalIgnoreCase) >= 0)
+                        {
+                            var book = await _audiobookRepository.GetByAsinAsync(identifier);
+                            if (book != null)
+                            {
+                                movedAttempted = true;
+                                var moved = await _imageCacheService.MoveToLibraryStorageAsync(identifier, null);
+                                if (!string.IsNullOrWhiteSpace(moved))
+                                {
+                                    relativePath = moved;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Pre-validation move attempt failed for identifier {Identifier}", identifier);
+                    }
+                }
+
+                // At this point, determine explicitly whether we have a valid image path
+                bool hasValidImagePath = !string.IsNullOrWhiteSpace(relativePath);
+
+                // Sanitize/validate the returned relative path to ensure it points inside
+                // known image directories. Treat any unexpected location as not-found.
+                if (!string.IsNullOrWhiteSpace(relativePath))
+                {
+                    // Defend against services returning absolute paths unexpectedly
+                    if (Path.IsPathRooted(relativePath))
+                    {
+                        _logger.LogWarning("Image service returned rooted path for identifier {Identifier}: {Path}", identifier, relativePath);
+                        relativePath = null;
+                    }
+                    else
+                    {
+                    _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", identifier, relativePath);
+                    try
+                    {
+                        var candidateFull = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, relativePath));
+                        var imagesRoot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "cache", "images"));
+                        var imagesRootConfig = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "config", "cache", "images"));
+                        var wwwroot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "wwwroot"));
+
+                        // Use Path.GetRelativePath to reliably determine whether candidateFull
+                        // is inside one of the allowed roots. This works across separator styles.
+                        bool insideImagesRoot = !Path.GetRelativePath(imagesRoot, candidateFull).StartsWith("..", StringComparison.Ordinal);
+                        bool insideImagesRootConfig = !Path.GetRelativePath(imagesRootConfig, candidateFull).StartsWith("..", StringComparison.Ordinal);
+                        bool insideWwwroot = !Path.GetRelativePath(wwwroot, candidateFull).StartsWith("..", StringComparison.Ordinal);
+
+                        if (!insideImagesRoot && !insideImagesRootConfig && !insideWwwroot)
+                        {
+                            _logger.LogWarning("Resolved image path outside permitted directories for identifier {Identifier}: {Path}", identifier, candidateFull);
+                            relativePath = null;
+                        }
+                        else
+                        {
+                            try
+                            {
+                                // Defend against symlink/reparse-point escapes
+                                if (System.IO.File.Exists(candidateFull))
+                                {
+                                    var attrs = System.IO.File.GetAttributes(candidateFull);
+                                    if ((attrs & System.IO.FileAttributes.ReparsePoint) != 0)
+                                    {
+                                        _logger.LogWarning("Rejected reparse-point (symlink) image path for identifier {Identifier}: {Path}", identifier, candidateFull);
+                                        relativePath = null;
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to inspect candidate image attributes for identifier {Identifier}", identifier);
+                                relativePath = null;
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "Failed to validate image path for identifier {Identifier}", identifier);
+                        relativePath = null;
+                    }
+                    }
+                }
 
                 // If we found a temp cached image but the identifier corresponds to an audiobook in the library,
                 // attempt to move it into permanent library storage so library images don't live in /temp.
-                if (!string.IsNullOrWhiteSpace(relativePath) && relativePath.Contains("cache/images/temp/"))
+                    if (!string.IsNullOrWhiteSpace(relativePath))
                 {
+                    var normalizedRelative = relativePath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
+                    _logger.LogDebug("ImagesController: normalizedRelative for {Identifier}: {Normalized}", identifier, normalizedRelative);
+                    if (!movedAttempted && normalizedRelative.Contains(Path.Combine("cache", "images", "temp")))
+                    {
                     try
                     {
                         var book = await _audiobookRepository.GetByAsinAsync(identifier);
                         if (book != null)
                         {
                             _logger.LogInformation("Found temp cached image for library audiobook {Identifier}, attempting move to library storage", identifier);
-                            var moved = await _imageCacheService.MoveToLibraryStorageAsync(identifier);
+                            var moved = await _imageCacheService.MoveToLibraryStorageAsync(identifier, null);
                             if (!string.IsNullOrWhiteSpace(moved))
                             {
                                 // Prefer the moved library path when serving the image
-                                relativePath = moved;
+                                // Validate moved path as well
+                                try
+                                {
+                                    var movedFull = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, moved));
+                                    var imagesRoot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "cache", "images"));
+                                    var imagesRootConfig = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "config", "cache", "images"));
+                                    var wwwroot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "wwwroot"));
+
+                                    if (movedFull.StartsWith(imagesRoot, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(imagesRootConfig, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(wwwroot, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        try
+                                        {
+                                            if (System.IO.File.Exists(movedFull))
+                                            {
+                                                var matt = System.IO.File.GetAttributes(movedFull);
+                                                if ((matt & System.IO.FileAttributes.ReparsePoint) != 0)
+                                                {
+                                                    _logger.LogWarning("Rejected moved reparse-point (symlink) image path for identifier {Identifier}: {Path}", identifier, movedFull);
+                                                }
+                                                else
+                                                {
+                                                    relativePath = moved;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                // If file doesn't yet exist, conservatively reject the moved path
+                                                _logger.LogWarning("Moved image file does not exist for identifier {Identifier}: {Path}", identifier, movedFull);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogWarning(ex, "Failed to inspect moved image attributes for identifier {Identifier}", identifier);
+                                        }
+                                    }
+                                    else
+                                    {
+                                        _logger.LogWarning("Moved image path outside permitted directories for identifier {Identifier}: {Path}", identifier, movedFull);
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogWarning(ex, "Failed to validate moved image path for identifier {Identifier}", identifier);
+                                }
                             }
                         }
                     }
@@ -114,7 +265,9 @@ namespace Listenarr.Api.Controllers
                     }
                 }
 
-                if (relativePath == null)
+                }
+
+                if (!hasValidImagePath)
                 {
                     _logger.LogWarning("Image not found for identifier: {Identifier}", identifier);
 
@@ -202,12 +355,38 @@ namespace Listenarr.Api.Controllers
                         {
                             try
                             {
-                                // 1) Audimeta author lookup by name
-                                var authorLookup = await _audimetaService.LookupAuthorAsync(identifier, region);
-                                if (authorLookup != null && !string.IsNullOrWhiteSpace(authorLookup.Image) && (authorLookup.Image.StartsWith("http://") || authorLookup.Image.StartsWith("https://")))
+                                // First: try to find a stored author ASIN in the DB and serve its cached image if available
+                                try
                                 {
-                                    candidateUrl = authorLookup.Image;
-                                    _logger.LogInformation("Found author image from Audimeta for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                    if (!string.IsNullOrWhiteSpace(identifier))
+                                    {
+                                        var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(identifier);
+                                        if (!string.IsNullOrWhiteSpace(authorAsin))
+                                        {
+                                            var diskPath = await _imageCacheService.GetCachedImagePathAsync(authorAsin);
+                                            if (!string.IsNullOrWhiteSpace(diskPath))
+                                            {
+                                                // Use cached author image by ASIN (prefer authors storage path)
+                                                relativePath = "/" + diskPath.TrimStart('/');
+                                                _logger.LogInformation("Found cached author image for identifier {Identifier} via stored ASIN {Asin}: {Path}", identifier, authorAsin, relativePath);
+                                            }
+                                        }
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    _logger.LogDebug(ex, "Failed to lookup stored author ASIN for identifier {Identifier}", identifier);
+                                }
+
+                                // If we didn't find a cached author image via stored ASIN, fallback to Audimeta lookup by name
+                                if (string.IsNullOrWhiteSpace(relativePath))
+                                {
+                                    var authorLookup = await _audimetaService.LookupAuthorAsync(identifier, region);
+                                    if (authorLookup != null && !string.IsNullOrWhiteSpace(authorLookup.Image) && (authorLookup.Image.StartsWith("http://") || authorLookup.Image.StartsWith("https://")))
+                                    {
+                                        candidateUrl = authorLookup.Image;
+                                        _logger.LogInformation("Found author image from Audimeta for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                    }
                                 }
                             }
                             catch (Exception ex)
@@ -244,12 +423,9 @@ namespace Listenarr.Api.Controllers
                                         // Try to find stored author ASIN in database (match by author name) and prefer direct GET
                                         try
                                         {
-                                            var books = await _audiobookRepository.GetAllAsync();
-                                            var match = books.SelectMany(b => (b.Authors ?? new List<string>()).Select((name, idx) => new { book = b, name, idx }))
-                                                             .FirstOrDefault(x => string.Equals(x.name?.Trim(), identifier?.Trim(), StringComparison.OrdinalIgnoreCase) && ((x.book.AuthorAsins?.Count ?? 0) > 0));
-                                            if (match != null)
+                                            if (!string.IsNullOrWhiteSpace(identifier))
                                             {
-                                                var authorAsin = match.book.AuthorAsins?.FirstOrDefault();
+                                                var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(identifier);
                                                 if (!string.IsNullOrWhiteSpace(authorAsin))
                                                 {
                                                     try

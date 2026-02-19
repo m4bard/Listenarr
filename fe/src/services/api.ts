@@ -38,6 +38,13 @@ import { getPlaceholderUrl } from '@/utils/placeholder'
 // In production, prefer a configured VITE_API_BASE_URL but fall back to a relative '/api'
 const API_BASE_URL = import.meta.env.DEV ? '/api' : import.meta.env.VITE_API_BASE_URL || '/api'
 
+// In Node test environments (Vitest), fetch does not accept bare-relative URLs.
+// Create an effective absolute base when running without `window` so tests can
+// call fetch('/api/...') by using 'http://localhost' as the origin.
+const EFFECTIVE_API_BASE = typeof window === 'undefined' && API_BASE_URL.startsWith('/')
+  ? `http://localhost${API_BASE_URL}`
+  : API_BASE_URL
+
 // Backend base (origin) used to build absolute image URLs or websocket origins
 const BACKEND_BASE_URL = import.meta.env.DEV ? '' : API_BASE_URL.replace('/api', '')
 
@@ -45,10 +52,6 @@ type ErrorWithStatus = Error & { status?: number; body?: string; retryAfter?: nu
 
 class ApiService {
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
-
-  // In-memory cache for metadata-derived image candidates to avoid repeated metadata calls
-  private metadataUrlCache = new Map<string, { urls: string[]; fetchedAt: number }>()
-  private METADATA_CACHE_TTL_MS = 1000 * 60 * 60 // 1 hour
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     const url = `${API_BASE_URL}${endpoint}`
@@ -101,10 +104,7 @@ class ApiService {
         // Only attach if header not already set
         const hdrs = config.headers as Record<string, string> | undefined
         if (!hdrs || !hdrs['X-XSRF-TOKEN']) {
-          // Pass the request's auth headers to the token fetch so the token
-          // is issued for the same claims-based principal that will send
-          // the unsafe request (avoids token-principal mismatch).
-          const token = await this.fetchAntiforgeryToken(config.headers as Record<string, string>)
+          const token = await this.fetchAntiforgeryToken(config.headers as Record<string, string> | undefined)
           if (token) {
             config.headers = {
               ...(config.headers as Record<string, string>),
@@ -190,21 +190,39 @@ class ApiService {
         // antiforgery token and retry the request once before surfacing the error.
         if (response.status === 400 && /csrf|anti.?forgery|invalid or missing/i.test(respText)) {
           try {
-            const toast = (await import('@/services/toastService')).useToast()
-
-            // Inform the user we're attempting to refresh the token and retry.
-            try { toast.info('Security', 'Refreshing CSRF token and retrying request...', 3000) } catch {}
-
-            // When retrying, fetch a fresh token using the same auth headers
-            // as the original request (if any) so the token is issued for the
-            // same claims-based principal (prevents "different user" failures).
-            const providedAuthHeaders = (config.headers as Record<string, string>) || {}
-            const freshToken = await this.fetchAntiforgeryToken(providedAuthHeaders)
+            // First, attempt to fetch a fresh token using the request's headers (if present)
+            let freshToken = await this.fetchAntiforgeryToken(config.headers as Record<string, string> | undefined)
             logger.debug('[ApiService] CSRF retry - fetched token?', {
               freshTokenExists: !!freshToken,
               freshTokenLength: freshToken ? freshToken.length : 0,
-              providedAuthHeadersPreview: providedAuthHeaders ? Object.keys(providedAuthHeaders) : null,
             })
+
+            // If we didn't get a token, or the retry failed, attempt once more using
+            // explicitly constructed headers that ensure both Authorization and
+            // X-Api-Key (when available) are present. This helps in races where a
+            // non-blocking startup prefetch created an anonymous token before
+            // startup configuration (API key) was available.
+            if (!freshToken) {
+              try {
+                const explicitHeaders: Record<string, string> = { ...(config.headers as Record<string, string> | undefined) || {} }
+                try {
+                  const sess = sessionTokenManager.getToken()
+                  if (sess && !explicitHeaders['Authorization']) explicitHeaders['Authorization'] = `Bearer ${sess}`
+                } catch {}
+                try {
+                  const sc = await getStartupConfigCached(2000)
+                  const apiKey = sc?.apiKey
+                  if (apiKey && !explicitHeaders['X-Api-Key']) explicitHeaders['X-Api-Key'] = apiKey
+                } catch {}
+
+                logger.debug('[ApiService] CSRF retry - attempting explicit token fetch', { explicitHeaders })
+                freshToken = await this.fetchAntiforgeryToken(explicitHeaders)
+                logger.debug('[ApiService] CSRF retry - explicit fetched token?', { freshTokenExists: !!freshToken, freshTokenLength: freshToken ? freshToken.length : 0 })
+              } catch (e) {
+                logger.debug('[ApiService] CSRF explicit retry failed', e)
+              }
+            }
+
             if (freshToken) {
               const retryConfig: RequestInit = {
                 ...config,
@@ -218,13 +236,10 @@ class ApiService {
               })
               const retryResp = await fetch(url, retryConfig)
               if (retryResp.ok) {
-                // Notify the user that the retry succeeded
-                try { toast.success('Request retried', 'Request succeeded after refreshing CSRF token', 3000) } catch {}
                 const retryText = await retryResp.text()
                 if (!retryText || retryText.trim().length === 0) return null as T
                 return JSON.parse(retryText) as T
               }
-
               // If retry failed, prefer showing the retry response body for clarity
               const retryBody = await retryResp.text().catch(() => '')
               const retryErr = new Error(
@@ -232,10 +247,6 @@ class ApiService {
               ) as ErrorWithStatus
               retryErr.status = retryResp.status
               retryErr.body = retryBody
-
-              // Notify the user the retry failed
-              try { toast.error('Request failed', 'The request failed even after refreshing CSRF token. Please try again.', 5000) } catch {}
-
               throw retryErr
             }
           } catch (retryErr) {
@@ -542,7 +553,7 @@ class ApiService {
     }
 
     const checks = asins.map(async (asin) => {
-      const url = `${API_BASE_URL}/images/${encodeURIComponent(asin)}`
+      const url = `${EFFECTIVE_API_BASE}/images/${encodeURIComponent(asin)}`
       // Try repeatedly until per-fetch timeout or overall timeout
       const deadline = Date.now() + Math.min(perFetchTimeout, overallTimeoutMs)
       while (Date.now() < deadline && Date.now() - start < overallTimeoutMs) {
@@ -643,7 +654,7 @@ class ApiService {
   }
 
   async getCachedTorrent(downloadId: string): Promise<{ blob: Blob; filename?: string } | null> {
-    const url = `${API_BASE_URL}/download/cached/${downloadId}/torrent`
+    const url = `${EFFECTIVE_API_BASE}/download/cached/${downloadId}/torrent`
     const resp = await fetch(url, { method: 'GET', credentials: 'include' })
     if (!resp.ok) return null
     const contentDisposition = resp.headers.get('content-disposition') || ''
@@ -840,12 +851,6 @@ class ApiService {
       botInfo?: unknown
       message?: string
     }>('/discord/status')
-  }
-
-  async getThumbnailStatus(): Promise<{ queueLength: number; inProgress: number; channelCapacity: number }> {
-    return this.request<{ queueLength: number; inProgress: number; channelCapacity: number }>(
-      '/configuration/admin/thumbnail-status',
-    )
   }
 
   async registerDiscordCommands(): Promise<{ success: boolean; message?: string; body?: unknown }> {
@@ -1141,6 +1146,18 @@ class ApiService {
     return this.request(`/filesystem/validate?path=${encodeURIComponent(path)}`)
   }
 
+  async checkVolume(sourcePath: string, destPath: string): Promise<{
+    sameVolume: boolean
+    willBreakHardlinks: boolean
+    sourceVolume?: string
+    destVolume?: string
+    message?: string
+  }> {
+    return this.request(
+      `/filesystem/check-volume?sourcePath=${encodeURIComponent(sourcePath)}&destPath=${encodeURIComponent(destPath)}`,
+    )
+  }
+
   // Manual import preview / start
   async previewManualImport(path: string): Promise<ManualImportPreviewResponse> {
     const params = path ? `?path=${encodeURIComponent(path)}` : ''
@@ -1329,109 +1346,60 @@ class ApiService {
     return absolute
   }
 
-  // Ensure an image is cached on the backend. Returns true when the image is available
-  // (either already cached or successfully downloaded), false otherwise.
-  async ensureImageCached(imageUrl?: string): Promise<boolean> {
-    if (!imageUrl) return false
+  // Expose a lightweight cache for image metadata candidates (tests and UI may seed/read this)
+  // Keys: ASIN-like identifier => { urls: string[]; fetchedAt: number }
+  public metadataUrlCache = new Map<string, { urls: string[]; fetchedAt: number }>()
 
+  /**
+   * Ensure the backend image cache has a cached copy for the given image endpoint.
+   * Attempts to resolve candidate image URLs from Audimeta and Audnexus metadata,
+   * caches discovered candidate URLs, and triggers a backend fetch for each candidate URL.
+   * Returns true if any candidate (or the base image endpoint) returned a successful response.
+   */
+  async ensureImageCached(path: string): Promise<boolean> {
     try {
-      // First, try to fetch the resolved URL (this will trigger backend download if a 'url' query param is present)
-      const resolved = this.getImageUrl(imageUrl)
-      // If resolved is empty, nothing to do
-      if (!resolved) return false
+      // Expect path like '/api/images/{id}' optionally with query string
+      const m = String(path).match(/\/api\/images\/([^\?\/]+)/)
+      if (!m || !m[1]) return false
+      const id = decodeURIComponent(m[1])
 
-      const response = await fetch(resolved, { method: 'GET', credentials: 'include' })
-      if (response.ok && response.status !== 404) {
-        return true
-      }
-
-      // Extract identifier from stored local image URL (pattern: /api/images/{identifier})
-      const idMatch = imageUrl.match(/\/api\/images\/([^\?\/]+)/)
-      const identifier = idMatch ? idMatch[1] : null
-      if (!identifier) return false
-
-      // If we have a cached list of candidate URLs recently fetched, try those first
-      const cached = this.metadataUrlCache.get(identifier)
-      const now = Date.now()
-      if (cached && now - cached.fetchedAt < this.METADATA_CACHE_TTL_MS) {
-        for (const candidate of cached.urls) {
-          try {
-            const tryUrl = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}?url=${encodeURIComponent(
-              candidate,
-            )}`
-            const r = await fetch(tryUrl, { method: 'GET', credentials: 'include' })
-            if (r.ok && r.status !== 404) return true
-          } catch (e) {
-            logger.debug('[ApiService] ensureImageCached cached candidate fetch failed', e)
-          }
-        }
-      }
-
-      // Helper to try a candidate and record success
-      const tryCandidate = async (candidateUrl: string) => {
+      // Check seeded cache first
+      const cached = this.metadataUrlCache.get(id)
+      let candidates: string[] = []
+      if (cached && Array.isArray(cached.urls) && cached.urls.length > 0) {
+        candidates = cached.urls.slice()
+      } else {
+        // Query audimeta first, then fallback to backend metadata (audnexus)
         try {
-          const tryUrl = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}?url=${encodeURIComponent(
-            candidateUrl,
-          )}`
-          const r = await fetch(tryUrl, { method: 'GET', credentials: 'include' })
-          if (r.ok && r.status !== 404) return true
-        } catch (e) {
-          logger.debug('[ApiService] ensureImageCached fetch candidate failed', e)
-        }
-        return false
-      }
-
-      // Try Audimeta first (ASIN-style identifiers are common). Use metadata to extract imageUrl(s).
-      const candidateUrls: string[] = []
-
-      // Determine if identifier is likely an ASIN (10 alphanumeric chars)
-      const isAsin = /^[A-Z0-9]{10}$/i.test(identifier)
-
-      if (isAsin) {
+          const am = await this.getAudimetaMetadata(id, 'us', true)
+          if (am && (am as any).imageUrl) candidates.push((am as any).imageUrl)
+        } catch {}
         try {
-          const aud = await this.getAudimetaMetadata(identifier, 'us', true).catch(() => null)
-          if (aud?.imageUrl) candidateUrls.push(aud.imageUrl)
-        } catch (e) {
-          logger.debug('[ApiService] audimeta lookup failed', e)
-        }
+          const mm = await this.getMetadata(id, 'us', true)
+          if (mm && (mm as any).metadata && (mm as any).metadata.imageUrl)
+            candidates.push((mm as any).metadata.imageUrl)
+        } catch {}
 
-        // If Audimeta didn't yield an image, try the generic metadata endpoint which may use Audnexus as a fallback
-        if (candidateUrls.length === 0) {
-          try {
-            const md = await this.getMetadata(identifier, 'us', true).catch(() => null)
-            const img = md?.metadata?.imageUrl || md?.sourceUrl
-            if (img) candidateUrls.push(img)
-          } catch (e) {
-            logger.debug('[ApiService] metadata lookup failed', e)
-          }
-        }
+        // Cache the discovered candidates for future calls (even if empty)
+        this.metadataUrlCache.set(id, { urls: candidates, fetchedAt: Date.now() })
       }
 
-      // Fall back to common vendor patterns if metadata sources didn't return anything useful
-      if (candidateUrls.length === 0) {
-        candidateUrls.push(
-          `https://m.media-amazon.com/images/P/${identifier}.jpg`,
-          `https://m.media-amazon.com/images/I/${identifier}.jpg`,
-          `https://images-na.ssl-images-amazon.com/images/P/${identifier}.jpg`,
-          `https://images-na.ssl-images-amazon.com/images/I/${identifier}.jpg`,
-          `https://cover-images.audible.com/covers/${identifier}.jpg`,
-        )
+      // Try each candidate by asking backend to fetch and cache it via /api/images/{id}?url=...
+      for (const url of candidates) {
+        try {
+          const resp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}?url=${encodeURIComponent(url)}`)
+          if ((resp as any).ok) return true
+        } catch {}
       }
 
-      // Cache candidate URLs for a while to avoid repeated metadata lookups
+      // As a fallback, check the base image endpoint (maybe already cached)
       try {
-        this.metadataUrlCache.set(identifier, { urls: candidateUrls, fetchedAt: Date.now() })
+        const baseResp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}`)
+        if ((baseResp as any).ok) return true
       } catch {}
-
-      // Try candidate URLs
-      for (const candidate of candidateUrls) {
-        const ok = await tryCandidate(candidate)
-        if (ok) return true
-      }
 
       return false
     } catch (e) {
-      logger.debug('[ApiService] ensureImageCached error', e)
       return false
     }
   }
@@ -1555,6 +1523,22 @@ class ApiService {
     })
   }
 
+  async importProwlarrIndexers(payload: {
+    url: string
+    port?: number
+    apiKey: string
+  }): Promise<{
+    addedCount: number
+    skippedCount: number
+    total: number
+    indexers: Array<{ id: number; name: string; url: string; implementation: string }>
+  }> {
+    return this.request(`/indexers/prowlarr/import`, {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
   async getEnabledIndexers(): Promise<Indexer[]> {
     return this.request<Indexer[]>('/indexers/enabled')
   }
@@ -1624,7 +1608,7 @@ class ApiService {
   }
 
   async downloadLogs(): Promise<void> {
-    const url = `${API_BASE_URL}/system/logs/download`
+    const url = `${EFFECTIVE_API_BASE}/system/logs/download`
     window.open(url, '_blank')
   }
 
@@ -1677,31 +1661,33 @@ class ApiService {
   }
 
   // Antiforgery token for SPA (calls our new /api/antiforgery/token endpoint)
-  async fetchAntiforgeryToken(authHeaders?: Record<string, string>): Promise<string | null> {
+  async fetchAntiforgeryToken(headersToUse?: Record<string, string>): Promise<string | null> {
     try {
-      // Allow callers to provide explicit auth headers (e.g., the original
-      // request's Authorization or X-Api-Key) so the token endpoint issues a
-      // token bound to the same claims-based principal that will perform the
-      // unsafe request. Fall back to session or startup API key when not
-      // provided.
-      const headers: Record<string, string> = { ...(authHeaders || {}) }
+      // If the caller provides headers (e.g., the request's headers), use them as
+      // the base so the token is issued for the same principal. Otherwise,
+      // build headers from the current auth state.
+      const headers: Record<string, string> = headersToUse ? { ...headersToUse } : {}
 
       // Prefer the current session Authorization when available so the token
       // is bound to the same claims-based user the SPA will use for unsafe
-      // requests. Only attach the server API key when no session token is
-      // present and the startup config indicates an API key should be used.
+      // requests. If the caller already supplied an Authorization header, do
+      // not overwrite it.
       try {
         if (!headers['Authorization']) {
           const sess = sessionTokenManager.getToken()
-          if (sess) {
-            headers['Authorization'] = `Bearer ${sess}`
-          } else {
-            const sc = await getStartupConfigCached(2000)
-            const apiKey = sc?.apiKey
-            // Only attach X-Api-Key here as a last resort when no session
-            // token or explicit auth header was supplied.
-            if (apiKey && !headers['X-Api-Key']) headers['X-Api-Key'] = apiKey
-          }
+          if (sess) headers['Authorization'] = `Bearer ${sess}`
+        }
+      } catch {}
+
+      // If no Authorization header present, allow an API key header to be
+      // attached so the token is issued for the API key principal when used.
+      try {
+        if (!headers['X-Api-Key']) {
+          const sc = await getStartupConfigCached(2000)
+          const apiKey = sc?.apiKey
+          // Only attach X-Api-Key here; request-level logic already avoids
+          // sending it when authentication is enabled for other calls.
+          if (apiKey) headers['X-Api-Key'] = apiKey
         }
       } catch {}
 
@@ -1853,6 +1839,8 @@ export const testIndexerDraft = (indexer: Omit<Indexer, 'id' | 'createdAt' | 'up
   apiService.testIndexerDraft(indexer)
 export const toggleIndexer = (id: number) => apiService.toggleIndexer(id)
 export const getEnabledIndexers = () => apiService.getEnabledIndexers()
+export const importProwlarrIndexers = (payload: { url: string; port?: number; apiKey: string }) =>
+  apiService.importProwlarrIndexers(payload)
 
 // Export individual remote path mapping functions for convenience
 export const getRemotePathMappings = () => apiService.getRemotePathMappings()
@@ -1887,11 +1875,9 @@ export const scoreSearchResults = (profileId: number, searchResults: SearchResul
   apiService.scoreSearchResults(profileId, searchResults)
 
 // Download client helpers
-export const testDownloadClient = (config: DownloadClientConfiguration) =>
-  apiService.testDownloadClient(config)
-
-// Ensure an image is cached on the backend (tries resolved URL or candidate vendor URLs)
-export const ensureImageCached = (imageUrl?: string) => apiService.ensureImageCached(imageUrl)
+export const testDownloadClient = (config: Partial<DownloadClientConfiguration>) =>
+  // The backend test endpoint accepts partial client objects (no id) — cast to any for the lower-level call
+  apiService.testDownloadClient(config as any)
 
 // Audimeta helpers
 export const searchAudimeta = (
@@ -1913,6 +1899,9 @@ export const getAudimetaMetadata = (asin: string, region?: string, cache?: boole
   apiService.getAudimetaMetadata(asin, region, cache)
 export const getMetadata = (asin: string, region?: string, cache?: boolean) =>
   apiService.getMetadata(asin, region, cache)
+
+// Image cache helper
+export const ensureImageCached = (path: string) => apiService.ensureImageCached(path)
 
 // Audible auth helpers
 export const getAudibleAuthStatus = () => apiService.getAudibleAuthStatus()
