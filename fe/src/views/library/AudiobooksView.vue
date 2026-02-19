@@ -1182,36 +1182,32 @@ const groupedCollections = computed(() => {
 
   const vals = Array.from(groups.values())
 
-  // If grouped (authors/series), respect toolbar sortKey for collection sorting
-  if (groupBy.value !== 'books') {
-    const order = sortOrder.value === 'asc' ? 1 : -1
-    switch (sortKey.value) {
-      case 'count':
-        vals.sort((a, b) => (a.count - b.count) * order)
-        break
-      case 'author-last':
-        vals.sort((a, b) => {
-          const av = getAuthorSortKey(a.name)
-          const bv = getAuthorSortKey(b.name)
-          return av === bv ? 0 : (av < bv ? -1 : 1) * order
-        })
-        break
-      case 'author-first':
-        vals.sort((a, b) => {
-          const av = getAuthorFirstNameSortKey(a.name)
-          const bv = getAuthorFirstNameSortKey(b.name)
-          return av === bv ? 0 : (av < bv ? -1 : 1) * order
-        })
-        break
-      // default: sort by name (collection title)
-      default:
-        vals.sort((a, b) => a.name.localeCompare(b.name) * order)
-        break
-    }
-    return vals
+  // For grouped views (authors/series), respect toolbar sortKey for collection sorting
+  const order = sortOrder.value === 'asc' ? 1 : -1
+  switch (sortKey.value) {
+    case 'count':
+      vals.sort((a, b) => (a.count - b.count) * order)
+      break
+    case 'author-last':
+      vals.sort((a, b) => {
+        const av = getAuthorSortKey(a.name)
+        const bv = getAuthorSortKey(b.name)
+        return av === bv ? 0 : (av < bv ? -1 : 1) * order
+      })
+      break
+    case 'author-first':
+      vals.sort((a, b) => {
+        const av = getAuthorFirstNameSortKey(a.name)
+        const bv = getAuthorFirstNameSortKey(b.name)
+        return av === bv ? 0 : (av < bv ? -1 : 1) * order
+      })
+      break
+    // default: sort by name (collection title)
+    default:
+      vals.sort((a, b) => a.name.localeCompare(b.name) * order)
+      break
   }
-
-  return vals.sort((a, b) => a.name.localeCompare(b.name))
+  return vals
 })
 
 let authorCardObserver: IntersectionObserver | null = null
@@ -1317,13 +1313,23 @@ const sortKeyProxy = computed<string>({
 const rawAudiobooksLength = computed(() => (libraryStore.audiobooks || []).length)
 
 function clearFilters() {
+  // Reset toolbar sort
   sortKey.value = 'title'
   sortOrder.value = 'asc'
+
+  // Reset builtin filters
   filterMonitored.value = 'all'
   filterStatus.value = 'all'
   filterQualityProfile.value = 'all'
   filterLanguage.value = 'all'
   filterYear.value = 'all'
+
+  // Clear search text and any custom filter selection (also remove persisted search value)
+  try {
+    searchQuery.value = ''
+    localStorage.removeItem(SEARCH_QUERY_KEY)
+  } catch {}
+  selectedFilterId.value = null
 }
 const loading = computed(() => libraryStore.loading)
 const error = computed(() => libraryStore.error)

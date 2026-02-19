@@ -431,6 +431,60 @@ describe('AudiobooksView Grouping', () => {
     expect(groupedCollections).toHaveLength(0)
   })
 
+  it("'Clear Filters' button resets search, custom filter and builtin filters", async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+      ],
+    })
+    await router.push('/audiobooks')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    // single audiobook that would be shown when no filters/search applied
+    store.audiobooks = [
+      { id: 1, title: 'Visible Book', authors: ['Author A'], imageUrl: 'c1', files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['BulkEditModal', 'EditAudiobookModal', 'CustomFilterModal', 'FiltersDropdown', 'CustomSelect'],
+      },
+    })
+
+    const vm = wrapper.vm as unknown as any
+
+    // Apply a search that yields no results and a custom filter selection
+    vm.searchQuery = 'no-match-query'
+    vm.selectedFilterId = 'custom-1'
+    vm.filterMonitored = 'monitored'
+    await wrapper.vm.$nextTick()
+
+    // Should show the 'No audiobooks match your filters' empty state
+    expect(wrapper.text()).toContain('No audiobooks match your filters')
+
+    // Click the Clear Filters button and verify everything resets
+    const clearBtn = wrapper.find('button.btn.btn-primary')
+    expect(clearBtn.exists()).toBe(true)
+    expect(clearBtn.text()).toContain('Clear Filters')
+
+    await clearBtn.trigger('click')
+    await wrapper.vm.$nextTick()
+
+    expect(vm.searchQuery).toBe('')
+    expect(vm.selectedFilterId).toBeNull()
+    expect(vm.filterMonitored).toBe('all')
+
+    // After clearing, the audiobook should be visible again
+    expect(wrapper.text()).toContain('Visible Book')
+  })
+
   it('route query group parameter overrides stored preference on initial load', async () => {
     if (
       typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'

@@ -5,12 +5,14 @@ import { createPinia, setActivePinia } from 'pinia'
 // We'll mock getIndexers so we can control its resolution during the test
 describe('IndexersTab', () => {
   it('shows loading state while fetching indexers', async () => {
+    vi.resetModules()
     const pinia = createPinia()
     setActivePinia(pinia)
 
     let resolveFn: (value: unknown) => void = () => {}
 
-    vi.mock('@/services/api', async (importOriginal) => {
+    // Use doMock so the module is mocked for subsequent imports in this test
+    vi.doMock('@/services/api', async (importOriginal) => {
       const actual = await importOriginal()
       return {
         ...(actual as any),

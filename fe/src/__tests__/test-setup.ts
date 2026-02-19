@@ -30,6 +30,12 @@ class MockWebSocket {
 // Centralized apiService and signalR mocks used by unit tests.
 import { vi } from 'vitest'
 
+// Diagnostic: help locate failures during test setup in CI/local runs
+try {
+  // eslint-disable-next-line no-console
+  console.log('[test-setup] initializing test setup')
+} catch {}
+
 // Provide default component stubs for Modal teleporting components so unit tests
 // render modal content inline instead of using real teleport behavior.
 import { config as vtConfig } from '@vue/test-utils'
@@ -60,6 +66,15 @@ globalConfig.components = {
     template: '<div class="brand-logo-stub" />',
   },
 }
+
+// Also mock the BrandLogo module at import-time so Vite doesn't compile the real
+// SFC (which would try to resolve `/logo.svg` at build/transform time and can
+// cause file:/// URL issues in the test runner).
+vi.mock('@/components/base/BrandLogo.vue', () => ({
+  default: {
+    template: '<div class="brand-logo-stub" />',
+  },
+}))
 
 // Some components import the modal pieces locally (via named imports). To ensure
 // tests always render the simplified accessible modal markup (and avoid teleport
@@ -130,6 +145,26 @@ vi.mock('@/services/api', () => {
     getApiConfigurations: vi.fn(async () => []),
     // add getRootFolders to apiService so tests that spy on apiService.getRootFolders work
     getRootFolders: vi.fn(async () => []),
+
+    // add checkVolume to apiService so components that call `apiService.checkVolume` in
+    // unit tests have a sensible default value that matches the real API signature.
+    // Default behaviour: treat paths on the same root as sameVolume and do not break
+    // hardlinks.
+    checkVolume: vi.fn(async (sourcePath: string, destPath: string) => {
+      const same =
+        typeof sourcePath === 'string' &&
+        typeof destPath === 'string' &&
+        // simple heuristic: same leading path segment or same drive letter on Windows
+        (sourcePath.split(/[\\/]/)[1] === destPath.split(/[\\/]/)[1] ||
+          (/^[A-Za-z]:/.test(sourcePath) && sourcePath[0].toLowerCase() === destPath[0]?.toLowerCase()))
+      return {
+        sameVolume: Boolean(same),
+        willBreakHardlinks: !same,
+        sourceVolume: typeof sourcePath === 'string' ? sourcePath.split(/[\\/]/)[1] || '' : undefined,
+        destVolume: typeof destPath === 'string' ? destPath.split(/[\\/]/)[1] || '' : undefined,
+        message: same ? 'Same volume' : 'Different volumes',
+      }
+    }),
   }
 
   // Named exports commonly imported by components/tests
@@ -153,6 +188,12 @@ vi.mock('@/services/api', () => {
     // Keep the startup / app settings helpers available as named exports too
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: vi.fn(async () => ({})),
+
+    // Expose checkVolume as a named export as well (delegates to the apiService
+    // mock above) so tests that import the function directly behave the same.
+    checkVolume: vi.fn(async (sourcePath: string, destPath: string) =>
+      (apiService as any).checkVolume(sourcePath, destPath),
+    ),
   }
 })
 
@@ -217,6 +258,12 @@ try {
     // Replace file://... base with http://localhost/
     window.history.replaceState({}, '', 'http://localhost/')
   }
+  // Also ensure document.baseURI is an HTTP URL (some code consults baseURI directly)
+  if (typeof document !== 'undefined' && document.baseURI && document.baseURI.startsWith('file:')) {
+    try {
+      Object.defineProperty(document, 'baseURI', { value: 'http://localhost/', configurable: true })
+    } catch {}
+  }
 } catch {}
 
 // Provide a simple localStorage polyfill for tests that rely on it
@@ -280,5 +327,110 @@ try {
     },
     configurable: true,
   })
+
+  // Some code sets src via setAttribute('src', ...) which bypasses the property
+  // setter. Intercept attribute assignments and normalize file:// URLs for src.
+  const origSetAttr = Element.prototype.setAttribute
+  Element.prototype.setAttribute = function (name: string, value: string) {
+    try {
+      if (
+        typeof name === 'string' &&
+        name.toLowerCase() === 'src' &&
+        typeof value === 'string' &&
+        value.startsWith('file:///')
+      ) {
+        const u = new URL(value)
+        return origSetAttr.call(this, name, u.pathname)
+      }
+    } catch {}
+    return origSetAttr.call(this, name, value)
+  }
 } catch {}
 
+// Defensive: some test runners / source-map consumers may attempt to read 'file:///logo.svg'
+  // which can throw on Windows / Node file APIs. Normalize any `file:///...` paths to an
+  // absolute pathname or return an empty string so tests don't crash during stacktrace
+  // or source-map processing.
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const _fs = require('fs') as typeof import('fs')
+    const _origRead = _fs.readFile.bind(_fs)
+    const _origReadSync = _fs.readFileSync.bind(_fs)
+    const _origExistsSync = _fs.existsSync.bind(_fs)
+    const _origStatSync = _fs.statSync.bind(_fs)
+    const _origRealpathSync = _fs.realpathSync.bind(_fs)
+    const _origCreateReadStream = _fs.createReadStream.bind(_fs)
+    const _origOpenSync = _fs.openSync ? _fs.openSync.bind(_fs) : undefined
+    const _origPromisesRead = _fs.promises && _fs.promises.readFile ? _fs.promises.readFile.bind(_fs.promises) : undefined
+
+    function normalizePathArg(p: unknown) {
+      try {
+        if (typeof p === 'string' && p.startsWith('file:///')) {
+          // Convert 'file:///logo.svg' -> '/logo.svg' (safe for test runtime)
+          return new URL(p).pathname
+        }
+      } catch {}
+      return p
+    }
+
+    function isProblematicLogoPath(p: unknown) {
+      const np = typeof p === 'string' ? p : ''
+      return np === 'file:///logo.svg' || np.endsWith('/logo.svg')
+    }
+
+    ;(_fs as any).readFile = function (p: any, ...args: any[]) {
+      const path = normalizePathArg(p)
+      if (isProblematicLogoPath(p)) {
+        const cb = args[args.length - 1]
+        if (typeof cb === 'function') return cb(null, '')
+        return Promise.resolve('')
+      }
+      return _origRead(path, ...args)
+    }
+
+    ;(_fs as any).readFileSync = function (p: any, ...args: any[]) {
+      const path = normalizePathArg(p)
+      if (isProblematicLogoPath(p)) return ''
+      return _origReadSync(path, ...args)
+    }
+
+    if (_origPromisesRead) {
+      ;(_fs as any).promises.readFile = function (p: any, ...args: any[]) {
+        const path = normalizePathArg(p)
+        if (isProblematicLogoPath(p)) return Promise.resolve('')
+        return _origPromisesRead(path, ...args)
+      }
+    }
+
+    ;(_fs as any).existsSync = function (p: any) {
+      const path = normalizePathArg(p)
+      if (isProblematicLogoPath(p)) return true
+      return _origExistsSync(path)
+    }
+
+    ;(_fs as any).statSync = function (p: any, ...args: any[]) {
+      const path = normalizePathArg(p)
+      if (isProblematicLogoPath(p)) return { isFile: () => true, isDirectory: () => false } as any
+      return _origStatSync(path, ...args)
+    }
+
+    ;(_fs as any).realpathSync = function (p: any, ...args: any[]) {
+      const path = normalizePathArg(p)
+      if (isProblematicLogoPath(p)) return path
+      return _origRealpathSync(path, ...args)
+    }
+
+    ;(_fs as any).createReadStream = function (p: any, ...args: any[]) {
+      const path = normalizePathArg(p)
+      if (isProblematicLogoPath(p)) return _origCreateReadStream('/dev/null')
+      return _origCreateReadStream(path, ...args)
+    }
+
+    if (_origOpenSync) {
+      ;(_fs as any).openSync = function (p: any, ...args: any[]) {
+        const path = normalizePathArg(p)
+        if (isProblematicLogoPath(p)) return _origOpenSync(path)
+        return _origOpenSync(path, ...args)
+      }
+    }
+  } catch {}

@@ -6,6 +6,11 @@ export default defineConfig((configEnv) =>
   mergeConfig(
     typeof viteConfig === 'function' ? viteConfig(configEnv) : viteConfig,
     {
+      resolve: {
+        alias: {
+          '@': fileURLToPath(new URL('./src', import.meta.url)),
+        },
+      },
       test: {
         environment: 'jsdom',
         setupFiles: './src/__tests__/test-setup.ts',
