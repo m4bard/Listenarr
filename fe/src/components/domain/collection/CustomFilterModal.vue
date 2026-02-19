@@ -8,153 +8,130 @@
       <ModalBody>
         <form @submit.prevent="onSave" class="edit-form">
           <div class="form-row">
-            <label class="form-label">Label</label>
-            <input v-model="local.label" class="form-input" placeholder="Filter name" />
+            <label class="form-label" for="filter-label">Label</label>
+            <input id="filter-label" v-model="local.label" class="form-input" placeholder="Filter name" autocomplete="off" />
           </div>
-
           <div class="form-row">
             <label class="form-label">Filters</label>
-            <div class="rules">
-              <div v-for="(r, idx) in local.rules" :key="idx" class="rule-row">
-                <!-- Group start toggle -->
-                <button
-                  type="button"
-                  class="group-toggle"
-                  :class="{ active: r.groupStart }"
-                  @click.prevent="r.groupStart = !r.groupStart"
-                >
-                  (
-                </button>
-
-                <!-- Show conjunction selector before each rule except the first -->
-                <template v-if="idx > 0">
-                  <select v-model="r.conjunction" class="form-select" style="width: 80px">
-                    <option value="and">AND</option>
-                    <option value="or">OR</option>
-                  </select>
-                </template>
-                <select v-model="r.field" class="form-select">
-                  <option value="monitored">Monitored</option>
-                  <option value="title">Title</option>
-                  <option value="author">Author</option>
-                  <option value="narrator">Narrator</option>
-                  <option value="language">Language</option>
-                  <option value="publisher">Publisher</option>
-                  <option value="qualityProfileId">Quality Profile</option>
-                  <option value="publishYear">Published Year</option>
-                  <option value="path">Path</option>
-                  <option value="files">Files</option>
-                  <option value="filesize">Filesize</option>
-                </select>
-
-                <select v-model="r.operator" class="form-select small">
-                  <!-- Operator choices depend on field type -->
-                  <template v-if="r.field === 'monitored'">
-                    <option value="is">is</option>
-                    <option value="is_not">is not</option>
-                  </template>
-                  <template
-                    v-else-if="
-                      ['publishYear', 'publishedYear', 'files', 'filesize'].includes(r.field)
-                    "
-                  >
-                    <option value="eq">=</option>
-                    <option value="ne">!=</option>
-                    <option value="lt">&lt;</option>
-                    <option value="lte">&lt;=</option>
-                    <option value="gt">&gt;</option>
-                    <option value="gte">&gt;=</option>
-                  </template>
-                  <template v-else>
-                    <option value="is">is</option>
-                    <option value="is_not">is not</option>
-                    <option value="contains">contains</option>
-                    <option value="not_contains">not contains</option>
-                  </template>
-                </select>
-
-                <template v-if="r.field === 'monitored'">
-                  <select v-model="r.value" class="form-select">
-                    <option value="true">true</option>
-                    <option value="false">false</option>
-                  </select>
-                </template>
-
-                <template v-else-if="r.field === 'qualityProfileId'">
-                  <select v-model="r.value" class="form-select">
-                    <option value="">(any)</option>
-                    <option v-for="p in qualityProfiles" :key="p.id" :value="String(p.id)">
-                      {{ p.name }}
-                    </option>
-                  </select>
-                </template>
-
-                <template v-else-if="r.field === 'language'">
-                  <select v-model="r.value" class="form-select">
-                    <option value="">(any)</option>
-                    <option v-for="l in languages" :key="l" :value="l">{{ l }}</option>
-                  </select>
-                </template>
-
-                <template v-else-if="r.field === 'publishYear' || r.field === 'publishedYear'">
-                  <!-- Numeric input for year so users can use comparisons -->
-                  <input
-                    v-model.number="r.value"
-                    type="number"
-                    class="form-input"
-                    placeholder="e.g. 2023"
-                  />
-                </template>
-
-                <template v-else-if="r.field === 'files'">
-                  <!-- Numeric input for file count -->
-                  <input
-                    v-model.number="r.value"
-                    type="number"
-                    class="form-input"
-                    placeholder="Number of files"
-                  />
-                </template>
-
-                <template v-else-if="r.field === 'filesize'">
-                  <!-- Number + unit selector for filesize -->
-                  <div style="display: flex; gap: 8px; align-items: center">
-                    <input
-                      :value="getFileSizeDisplay(r).num"
-                      @input.prevent="onFileSizeInputEvent(r, $event)"
-                      type="number"
-                      class="form-input"
-                      placeholder="Size"
-                    />
-                    <select
-                      :value="getFileSizeDisplay(r).unit"
-                      @change.prevent="onFileSizeUnitChangeEvent(r, $event)"
-                      class="form-select small"
-                    >
-                      <option v-for="u in SIZE_UNITS" :key="u" :value="u">{{ u }}</option>
+            <div class="rules rules-list">
+              <div v-for="(r, idx) in local.rules" :key="idx" class="rule-row card">
+                <div class="rule-fields">
+                  <template v-if="idx > 0">
+                    <select v-model="r.conjunction" class="form-select conjunction-select">
+                      <option value="and">AND</option>
+                      <option value="or">OR</option>
                     </select>
-                  </div>
-                </template>
-
-                <template v-else>
-                  <input v-model="r.value" class="form-input" placeholder="Value" />
-                </template>
-
-                <div class="rule-actions">
-                  <button type="button" class="btn btn-secondary" @click.prevent="removeRule(idx)">
-                    −
-                  </button>
+                  </template>
                   <button
                     type="button"
-                    class="group-toggle end"
-                    :class="{ active: r.groupEnd }"
-                    @click.prevent="r.groupEnd = !r.groupEnd"
+                    class="group-toggle"
+                    :class="{ active: r.groupStart }"
+                    @click.prevent="r.groupStart = !r.groupStart"
+                    :aria-pressed="r.groupStart"
+                    title="Start group"
                   >
+                    (
+                  </button>
+                  <select v-model="r.field" class="form-select field-select">
+                    <option value="monitored">Monitored</option>
+                    <option value="title">Title</option>
+                    <option value="author">Author</option>
+                    <option value="narrator">Narrator</option>
+                    <option value="language">Language</option>
+                    <option value="publisher">Publisher</option>
+                    <option value="qualityProfileId">Quality Profile</option>
+                    <option value="publishYear">Published Year</option>
+                    <option value="path">Path</option>
+                    <option value="files">Files</option>
+                    <option value="filesize">Filesize</option>
+                  </select>
+                  <select v-model="r.operator" class="form-select small op-select">
+                    <template v-if="r.field === 'monitored'">
+                      <option value="is">is</option>
+                      <option value="is_not">is not</option>
+                    </template>
+                    <template v-else-if="['publishYear', 'publishedYear', 'files', 'filesize'].includes(r.field)">
+                      <option value="eq">=</option>
+                      <option value="ne">!=</option>
+                      <option value="lt">&lt;</option>
+                      <option value="lte">&lt;=</option>
+                      <option value="gt">&gt;</option>
+                      <option value="gte">&gt;=</option>
+                    </template>
+                    <template v-else>
+                      <option value="is">is</option>
+                      <option value="is_not">is not</option>
+                      <option value="contains">contains</option>
+                      <option value="not_contains">not contains</option>
+                    </template>
+                  </select>
+                  <template v-if="r.field === 'monitored'">
+                    <select v-model="r.value" class="form-select value-select">
+                      <option value="true">true</option>
+                      <option value="false">false</option>
+                    </select>
+                  </template>
+                  <template v-else-if="r.field === 'qualityProfileId'">
+                    <select v-model="r.value" class="form-select value-select">
+                      <option value="">(any)</option>
+                      <option v-for="p in qualityProfiles" :key="p.id" :value="String(p.id)">
+                        {{ p.name }}
+                      </option>
+                    </select>
+                  </template>
+                  <template v-else-if="r.field === 'language'">
+                    <select v-model="r.value" class="form-select value-select">
+                      <option value="">(any)</option>
+                      <option v-for="l in languages" :key="l" :value="l">{{ l }}</option>
+                    </select>
+                  </template>
+                  <template v-else-if="r.field === 'publishYear' || r.field === 'publishedYear'">
+                    <input
+                      v-model.number="r.value"
+                      type="number"
+                      class="form-input value-input"
+                      placeholder="e.g. 2023"
+                    />
+                  </template>
+                  <template v-else-if="r.field === 'files'">
+                    <input
+                      v-model.number="r.value"
+                      type="number"
+                      class="form-input value-input"
+                      placeholder="Number of files"
+                    />
+                  </template>
+                  <template v-else-if="r.field === 'filesize'">
+                    <div class="filesize-input-group">
+                      <input
+                        :value="getFileSizeDisplay(r).num"
+                        @input.prevent="onFileSizeInputEvent(r, $event)"
+                        type="number"
+                        class="form-input value-input"
+                        placeholder="Size"
+                      />
+                      <select
+                        :value="getFileSizeDisplay(r).unit"
+                        @change.prevent="onFileSizeUnitChangeEvent(r, $event)"
+                        class="form-select small value-select"
+                      >
+                        <option v-for="u in SIZE_UNITS" :key="u" :value="u">{{ u }}</option>
+                      </select>
+                    </div>
+                  </template>
+                  <template v-else>
+                    <input v-model="r.value" class="form-input value-input" placeholder="Value" />
+                  </template>
+                  <button type="button" class="group-toggle end" :class="{ active: r.groupEnd }" @click.prevent="r.groupEnd = !r.groupEnd" :aria-pressed="r.groupEnd" title="End group">
                     )
                   </button>
                 </div>
+                <div class="rule-actions">
+                  <button type="button" class="btn btn-secondary" @click.prevent="removeRule(idx)" title="Remove rule">
+                    −
+                  </button>
+                </div>
               </div>
-
               <div class="rules-actions">
                 <button type="button" class="btn btn-primary" @click.prevent="addRule">
                   ＋ Add rule
@@ -162,7 +139,6 @@
               </div>
             </div>
           </div>
-
         </form>
       </ModalBody>
     </template>
@@ -347,12 +323,18 @@ function onClose() {
   font-size: 18px;
 }
 .form-row {
-  margin-bottom: 12px;
+  margin-bottom: 18px;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 18px;
 }
 .form-label {
   display: block;
-  margin-bottom: 6px;
+  min-width: 80px;
+  margin-top: 8px;
   color: #ddd;
+  font-weight: 500;
 }
 .form-input,
 .form-select {
@@ -362,32 +344,59 @@ function onClose() {
   background: #121212;
   border: 1px solid rgba(255, 255, 255, 0.06);
   color: #fff;
+  font-size: 1rem;
 }
 .form-select.small {
-  width: 140px;
+  width: 120px;
 }
-.rules {
+.rules-list {
+  gap: 14px;
+}
+.rule-row.card {
+  background: #181a1b;
+  border-radius: 8px;
+  box-shadow: 0 1px 4px 0 rgba(0,0,0,0.12);
+  padding: 12px 14px 10px 14px;
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-direction: row;
+  align-items: flex-start;
+  gap: 12px;
 }
-.rule-row {
+.rule-fields {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  flex: 1 1 auto;
+}
+.conjunction-select {
+  width: 80px;
+}
+.field-select {
+  min-width: 120px;
+}
+.op-select {
+  min-width: 110px;
+}
+.value-select, .value-input {
+  min-width: 120px;
+  max-width: 180px;
+}
+.filesize-input-group {
   display: flex;
   gap: 8px;
   align-items: center;
 }
 .rule-actions {
-  margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-left: 8px;
 }
 .rules-actions {
-  margin-top: 8px;
+  margin-top: 12px;
+  text-align: left;
 }
-/* modal-footer centralized in src/assets/modals.css; preserve small local spacing */
-.modal-footer {
-  margin-top: 8px;
-} 
-/* Button color variants centralized in `src/assets/modals.css`. Keep modal-specific overrides minimal. */ 
-
 .group-toggle {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -395,6 +404,8 @@ function onClose() {
   padding: 4px 8px;
   border-radius: 6px;
   cursor: pointer;
+  font-size: 1.1em;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
 }
 .group-toggle.active {
   background: rgba(33, 150, 243, 0.12);
