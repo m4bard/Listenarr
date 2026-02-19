@@ -109,7 +109,7 @@
             :options="sortOptions"
             :sort-order="sortOrder"
             :current-value="sortKey"
-            :active="(groupBy === 'books' && (sortKey !== 'title' || sortOrder !== 'asc')) || (groupBy === 'authors' && (sortKey !== 'author-last' || sortOrder !== 'asc')) || (groupBy === 'series' && (sortKey !== 'title' || sortOrder !== 'asc'))"
+            :active="sortKey !== (sortOptions[0]?.value || 'title') || sortOrder !== 'asc'"
             class="toolbar-custom-select"
             aria-label="Sort by"
           />
@@ -725,9 +725,31 @@ watch(searchQuery, (v) => {
     localStorage.setItem(SEARCH_QUERY_KEY, v)
   } catch {}
 })
-// use string here because CustomSelect emits strings
-const sortKey = ref<string>('title')
-const sortOrder = ref<'asc' | 'desc'>('asc')
+// Store sortKey and sortOrder per group
+const DEFAULT_SORTS = {
+  books: { key: 'title', order: 'asc' },
+  authors: { key: 'author-last', order: 'asc' },
+  series: { key: 'title', order: 'asc' },
+} as const
+
+const sortState = reactive({
+  books: { key: 'title', order: 'asc' as 'asc' | 'desc' },
+  authors: { key: 'author-last', order: 'asc' as 'asc' | 'desc' },
+  series: { key: 'title', order: 'asc' as 'asc' | 'desc' },
+})
+
+const sortKey = computed({
+  get: () => sortState[groupBy.value].key,
+  set: (val: string) => {
+    sortState[groupBy.value].key = val
+  },
+})
+const sortOrder = computed({
+  get: () => sortState[groupBy.value].order,
+  set: (val: 'asc' | 'desc') => {
+    sortState[groupBy.value].order = val
+  },
+})
 const filterMonitored = ref<'all' | 'monitored' | 'unmonitored'>('all')
 const filterStatus = ref<'all' | 'downloaded' | 'missing' | 'mismatch' | 'downloading'>('all')
 const filterQualityProfile = ref<string>('all')
@@ -1069,54 +1091,35 @@ const groupBy = ref<'books' | 'authors' | 'series'>('books')
 const imagesLoading = ref(false) // show loading overlay while images rerender when grouping changes
 const showGroupMenu = ref(false)
 
+// --- GroupBy and SortKey Initialization ---
 try {
   // Start with any stored preference
   const stored = localStorage.getItem(GROUP_BY_KEY)
   if (stored && ['books', 'authors', 'series'].includes(stored)) {
     groupBy.value = stored as 'books' | 'authors' | 'series'
   }
-} catch {}
-
-// If the route contains an explicit group query parameter, prefer it on initial load
-try {
   const initialQ = route.query.group as string | undefined
   if (initialQ && ['books', 'authors', 'series'].includes(initialQ) && initialQ !== groupBy.value) {
-    // Use setGroupBy to ensure the same side-effects (selection clear, lazy image handling, etc.)
-    // fire-and-forget to avoid blocking initialization
-    void setGroupBy(initialQ as 'books' | 'authors' | 'series')
-  } else if (!initialQ) {
-    // If there's no query parameter, sync the current groupBy value to the route
-    // so the sidebar can highlight the correct grouping
+    groupBy.value = initialQ as 'books' | 'authors' | 'series'
+  }
+  // No need to set sortKey/order here; handled per-group below
+  if (!initialQ) {
     router.replace({ path: '/audiobooks', query: { group: groupBy.value } })
   }
 } catch {}
 
-watch(groupBy, (v) => {
+watch(groupBy, (v, oldV) => {
   try {
     localStorage.setItem(GROUP_BY_KEY, v)
   } catch {}
 
-  // Ensure selected sort key is valid for the new grouping; reset to sensible
-  // defaults when necessary. For `authors` grouping the default should be
-  // `author-last` (ascending) unless the user already has an author/collection
-  // sort key selected.
+  // Ensure selected sort key is valid for the new grouping; reset to sensible defaults if needed
   const allowed = sortOptions.value.map((o) => o.value)
-
-  if (v === 'authors') {
-    // If the current sortKey is not one of the collection-relevant keys,
-    // set the default to `author-last` ascending.
-    const collectionKeys = ['author-last', 'author-first', 'count']
-    if (!collectionKeys.includes(sortKey.value)) {
-      sortKey.value = allowed.includes('author-last') ? 'author-last' : (allowed.includes('title') ? 'title' : (allowed[0] || 'title'))
-      sortOrder.value = 'asc'
-    }
-    return
-  }
-
-  if (!allowed.includes(sortKey.value)) {
-    // Prefer `title` when available, otherwise pick the first allowed option
-    sortKey.value = allowed.includes('title') ? 'title' : (allowed[0] || 'title')
-    sortOrder.value = 'asc'
+  const groupSort = sortState[v]
+  if (!allowed.includes(groupSort.key)) {
+    // Pick a default for this group
+    groupSort.key = DEFAULT_SORTS[v].key
+    groupSort.order = DEFAULT_SORTS[v].order
   }
 })
 
@@ -1312,10 +1315,11 @@ const sortKeyProxy = computed<string>({
 // Raw library length (unfiltered) so we can show appropriate empty-state vs no-results
 const rawAudiobooksLength = computed(() => (libraryStore.audiobooks || []).length)
 
+
 function clearFilters() {
-  // Reset toolbar sort
-  sortKey.value = 'title'
-  sortOrder.value = 'asc'
+  // Reset toolbar sort for current group
+  sortState[groupBy.value].key = DEFAULT_SORTS[groupBy.value].key
+  sortState[groupBy.value].order = DEFAULT_SORTS[groupBy.value].order
 
   // Reset builtin filters
   filterMonitored.value = 'all'
@@ -1330,6 +1334,11 @@ function clearFilters() {
     localStorage.removeItem(SEARCH_QUERY_KEY)
   } catch {}
   selectedFilterId.value = null
+
+  // Reset author image caches so images reload after clearing filters
+  Object.keys(authorCoverOverrides).forEach(k => delete authorCoverOverrides[k])
+  Object.keys(authorImageLoaded).forEach(k => delete authorImageLoaded[k])
+  nextTick(() => typeof observeLazyImages === 'function' && observeLazyImages())
 }
 const loading = computed(() => libraryStore.loading)
 const error = computed(() => libraryStore.error)
@@ -3375,7 +3384,7 @@ defineExpose({
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 60vh;
+  height: calc(100vh - 164px);
   color: #ccc;
   text-align: center;
 }

@@ -1660,7 +1660,7 @@ defineExpose({
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 60vh;
+  height: calc(100vh - 164px);
   color: #ccc;
   text-align: center;
 }
