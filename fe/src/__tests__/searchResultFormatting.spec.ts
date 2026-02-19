@@ -36,17 +36,18 @@ describe('searchResultFormatting', () => {
 
   describe('formatRuntime', () => {
     it('formats hours and minutes', () => {
-      expect(formatRuntime(45900)).toBe('12h 45m') // 12h 45m in seconds
+      // pass minutes (765 minutes = 12h 45m)
+      expect(formatRuntime(765)).toBe('12h 45m')
     })
 
     it('formats only hours', () => {
-      expect(formatRuntime(3600)).toBe('1h')
-      expect(formatRuntime(7200)).toBe('2h')
+      expect(formatRuntime(60)).toBe('1h')
+      expect(formatRuntime(120)).toBe('2h')
     })
 
     it('formats only minutes', () => {
-      expect(formatRuntime(2700)).toBe('45m')
-      expect(formatRuntime(600)).toBe('10m')
+      expect(formatRuntime(45)).toBe('45m')
+      expect(formatRuntime(10)).toBe('10m')
     })
 
     it('returns Unknown for zero or negative', () => {
@@ -54,16 +55,14 @@ describe('searchResultFormatting', () => {
       expect(formatRuntime(-100)).toBe('Unknown')
     })
 
-    it('rounds minutes correctly', () => {
-      // 2939 / 60 = 48.98... -> floor = 48m
-      expect(formatRuntime(2939)).toBe('48m')
-      // 3659 / 60 = 60.98... -> floor = 60m = 1h
-      expect(formatRuntime(3659)).toBe('1h')
+    it('handles minute values correctly', () => {
+      expect(formatRuntime(48)).toBe('48m')
+      expect(formatRuntime(61)).toBe('1h 1m')
     })
 
     it('handles large durations', () => {
-      expect(formatRuntime(129600)).toBe('36h') // 36 hours
-      expect(formatRuntime(133920)).toBe('37h 12m') // 37h 12m
+      expect(formatRuntime(2160)).toBe('36h') // 2160 minutes = 36 hours
+      expect(formatRuntime(2222)).toBe('37h 2m') // 2222 minutes = 37h 2m
     })
   })
 

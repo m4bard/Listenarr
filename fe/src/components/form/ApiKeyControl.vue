@@ -14,7 +14,7 @@
     </button>
     <button
       type="button"
-      class="api-key-icon copy-icon"
+      class="api-key-icon copy-icon copy-btn"
       @click="onCopy"
       :disabled="!apiKey"
       :aria-pressed="copySuccess"
@@ -26,7 +26,7 @@
     </button>
     <button
       type="button"
-      class="api-key-icon regen-icon"
+      class="api-key-icon regen-icon regen-btn"
       @click="onRegenerate"
       :aria-label="apiKey ? 'Regenerate API key' : 'Generate API key'"
       :title="apiKey ? 'Regenerate API key' : 'Generate API key'"

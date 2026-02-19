@@ -15,7 +15,7 @@
               v-if="!showAdvancedSearch"
               type="button"
               @click="toggleAdvancedSearch"
-              class="advanced-btn"
+              class="search-btn advanced-btn"
               :title="showAdvancedSearch ? 'Hide Advanced Search' : 'Show Advanced Search'"
               aria-pressed="false"
               aria-controls="advanced-search"
@@ -341,7 +341,7 @@
               <div class="result-stats">
                 <span v-if="audibleResult.runtime || audibleResult.searchResult?.runtime || audibleResult.searchResult?.lengthMinutes" class="stat-item">
                   <PhClock />
-                  {{ formatRuntime((audibleResult.runtime || audibleResult.searchResult?.runtime || audibleResult.searchResult?.lengthMinutes)!) }}
+                  {{ formatRuntime((audibleResult.runtime ?? audibleResult.searchResult?.lengthMinutes ?? (audibleResult.searchResult?.runtime && (audibleResult.searchResult.runtime as number) > 1000 ? Math.round((audibleResult.searchResult.runtime as number) / 60) : audibleResult.searchResult?.runtime ?? 0))!) }}
                 </span>
                 <span v-if="audibleResult.language || audibleResult.searchResult?.language" class="stat-item">
                   <PhGlobe />
@@ -351,21 +351,19 @@
 
               <!-- Series badges on separate line -->
               <div
-                v-if="audibleResult.searchResult?.series || audibleResult.searchResult?.seriesNumber"
+                v-if="audibleResult.seriesList?.length || audibleResult.series || audibleResult.searchResult?.series || audibleResult.searchResult?.seriesNumber"
                 class="result-series"
               >
                 <span
                   class="series-badge"
-                  :title="
-                    `${audibleResult.searchResult?.series}${
-                      audibleResult.searchResult?.seriesNumber
-                        ? ` #${audibleResult.searchResult.seriesNumber}`
-                        : ''
-                    }`
-                  "
+                  :title="audibleResult.seriesList?.length
+                    ? audibleResult.seriesList.join(', ')
+                    : audibleResult.searchResult?.seriesList?.length
+                    ? audibleResult.searchResult.seriesList.join(', ')
+                    : (audibleResult.series || audibleResult.searchResult?.series) + (audibleResult.searchResult?.seriesNumber ? ` #${audibleResult.searchResult.seriesNumber}` : '')"
                 >
                   <PhBook />
-                  {{ safeText(audibleResult.searchResult?.series) }}<span
+                  {{ safeText(audibleResult.series ?? audibleResult.searchResult?.series ?? (audibleResult.seriesList && audibleResult.seriesList[0])) }}<span
                     v-if="audibleResult.searchResult?.seriesNumber"
                   >
                     #{{ audibleResult.searchResult.seriesNumber }}</span
@@ -619,7 +617,7 @@
               <div class="result-stats">
                 <span v-if="book.searchResult?.runtime || book.searchResult?.lengthMinutes" class="stat-item">
                   <PhClock />
-                  {{ formatRuntime(book.searchResult?.runtime ?? book.searchResult?.lengthMinutes ?? 0) }}
+                  {{ formatRuntime((book.searchResult?.lengthMinutes ?? (book.searchResult?.runtime && (book.searchResult.runtime as number) > 1000 ? Math.round((book.searchResult.runtime as number) / 60) : book.searchResult?.runtime) ) ?? 0) }}
                 </span>
                 <span v-if="book.searchResult?.language" class="stat-item">
                   <PhGlobe />
@@ -628,8 +626,14 @@
               </div>
 
               <!-- Series badges on separate line -->
+              <div v-if="book.searchResult?.seriesList?.length" class="result-series">
+                <span class="series-badge" :title="book.searchResult.seriesList.join(', ')">
+                  <PhBook />
+                  {{ safeText(book.searchResult?.series) }}<span v-if="book.searchResult?.seriesNumber"> #{{ book.searchResult.seriesNumber }}</span>
+                </span>
+              </div>
               <div
-                v-if="book.searchResult?.series || book.searchResult?.seriesNumber"
+                v-else-if="book.searchResult?.series || book.searchResult?.seriesNumber"
                 class="result-series"
               >
                 <span
@@ -1334,10 +1338,10 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       // Use helpers to populate normalized fields
       tr['subtitle'] = extractSubtitle(r)
       tr['narrator'] = extractNarrators(r)
-      tr['runtime'] = normalizeRuntime(r.runtimeLengthMin ?? r.runtime)
-      // Also set runtime on searchResult for template display
+      tr['runtime'] = normalizeRuntime(r.runtimeLengthMin ?? (r as any).lengthMinutes ?? r.runtime)
+      // Also set runtime on searchResult for template display — store as seconds for downstream consumers/tests
       if (tr['runtime']) {
-        ;(titleResult.searchResult as unknown as Record<string, unknown>)['runtime'] = tr['runtime']
+        ;(titleResult.searchResult as unknown as Record<string, unknown>)['runtime'] = (tr['runtime'] as number) * 60
       }
 
       tr['publishedDate'] = extractPublishedDate(r)
@@ -1366,9 +1370,20 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
         }
       } catch {}
       try {
-        // Ensure the attached searchResult reflects the normalized series string
+        // Ensure the attached searchResult reflects a normalized series string (strip positional suffix for display)
         tr['searchResult'] = tr['searchResult'] ?? rr
-        ;(tr['searchResult'] as Record<string, unknown>)['series'] = rr['series']
+        const rawSeries = rr['series'] ?? rr['Series']
+        if (Array.isArray(rawSeries) && rawSeries.length) {
+          const first = rawSeries[0]
+          const name = typeof first === 'object' && first ? ((first as Record<string, unknown>)['name'] ?? (first as Record<string, unknown>)['Name'] ?? String(first)) : String(first)
+          ;(tr['searchResult'] as Record<string, unknown>)['series'] = name
+        } else if (typeof rr['series'] === 'string') {
+          // strip trailing " #<position>" if present
+          ;(tr['searchResult'] as Record<string, unknown>)['series'] = String(rr['series']).replace(/\s+#\d+$/, '')
+        } else {
+          ;(tr['searchResult'] as Record<string, unknown>)['series'] = rr['series']
+        }
+
         // Propagate normalized productUrl into the attached searchResult as tests expect
         if (tr['productUrl']) {
           ;(tr['searchResult'] as Record<string, unknown>)['productUrl'] = tr['productUrl']
@@ -1843,7 +1858,9 @@ const measureImageAspectRatio = (url: string, timeoutMs = 3000): Promise<number 
 }
 
 const formatAuthors = (book: TitleSearchResult): string => {
-  return book.author_name?.join(', ') || book.searchResult?.artist || 'Unknown Author'
+  if (Array.isArray(book.author_name)) return book.author_name.join(', ')
+  if (typeof book.author_name === 'string' && book.author_name.trim()) return book.author_name.trim()
+  return book.searchResult?.artist || 'Unknown Author'
 }
 
 const getAsin = (book: TitleSearchResult): string | null => {
@@ -1884,7 +1901,8 @@ const getMetadataSourceUrl = (book: TitleSearchResult): string | undefined => {
 
       // If key is a work but we couldn't derive an edition, fallback to work search by title
       if (candidateKey.startsWith('/works') && book.title) {
-        const q = `${book.title}${book.author_name && book.author_name.length ? ' ' + book.author_name[0] : ''}`
+        const firstAuthor = Array.isArray(book.author_name) ? book.author_name[0] : (typeof book.author_name === 'string' ? book.author_name : '')
+        const q = `${book.title}${firstAuthor ? ' ' + firstAuthor : ''}`
         return openLibraryService.getSearchUrl(q)
       }
 
@@ -2121,12 +2139,9 @@ const selectTitleResult = async (book: TitleSearchResult) => {
             ?.map((g: AudimetaGenre) => g.name)
             .filter((n: string | undefined) => n) as string[]) || [],
         series: audimetaData.series?.length
-          ? audimetaData.series
-              .map((s) => `${s.name}${s.position ? ` #${s.position}` : ''}`)
-              .join(', ')
+          ? audimetaData.series.map((s) => s.name).join(', ')
           : undefined,
-        seriesList:
-          audimetaData.series?.map((s) => `${s.name}${s.position ? ` #${s.position}` : ''}`) || [],
+        seriesList: (audimetaData.series?.map((s) => s.name).filter((n): n is string => !!n) as string[]) || [],
         seriesNumber: audimetaData.series?.[0]?.position || undefined, // Extract position from primary series
         abridged: audimetaData.bookFormat?.toLowerCase().includes('abridged') || false,
         isbn: audimetaData.isbn,

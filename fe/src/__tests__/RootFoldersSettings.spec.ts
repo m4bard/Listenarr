@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import RootFoldersSettings from '@/components/settings/RootFoldersSettings.vue'
@@ -14,7 +14,8 @@ describe('RootFoldersSettings', () => {
     // Make the underlying API call pending so store.loading remains true while mounted
     const api = await import('@/services/api')
     let resolveFn: (value: unknown) => void = () => {}
-    vi.spyOn(api, 'getRootFolders').mockImplementation(
+    // spy on the apiService instance method (module-level named export is not present in TS types)
+    vi.spyOn((api as any).apiService, 'getRootFolders').mockImplementation(
       () => new Promise((res) => {
         resolveFn = res
       }) as any,

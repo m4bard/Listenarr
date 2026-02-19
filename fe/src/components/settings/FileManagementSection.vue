@@ -119,7 +119,7 @@ const sampleVariables = {
   SeriesNumber: '1',
   Year: '1982',
   DiskNumber: '3',
-  ChapterNumber: '12',
+  ChapterNumber: '3',
   Quality: '128kbps'
 }
 
@@ -135,9 +135,10 @@ function applyPattern(pattern: string, type: 'folder' | 'file' = 'folder', multi
   // Replace all variables with sample values
   for (const [key, value] of Object.entries(sampleVariables)) {
     if (key === 'DiskNumber' || key === 'ChapterNumber') {
-      // Handle zero-padding for disk and chapter numbers
+      // Handle zero-padding for disk and chapter numbers using the sample value
       const paddedRegex = new RegExp(`\\{${key}:00\\}`, 'g')
-      result = result.replace(paddedRegex, '03') // Pad to 2 digits
+      const paddedSample = value.toString().padStart(2, '0')
+      result = result.replace(paddedRegex, paddedSample)
       result = result.replace(new RegExp(`\\{${key}\\}`, 'g'), value)
     } else {
       const regex = new RegExp(`\\{${key}\\}`, 'g')
@@ -163,16 +164,20 @@ function applyPattern(pattern: string, type: 'folder' | 'file' = 'folder', multi
     
     // Replace DiskNumber variants
     if (hasDiskNumber) {
-      file1 = file1.replace(/03/g, '01')
-      file2 = file2.replace(/03/g, '02')
-      file3 = file3.replace(/03/g, '03')
+      const diskSample = sampleVariables.DiskNumber.toString().padStart(2, '0')
+      const diskRegex = new RegExp(diskSample, 'g')
+      file1 = file1.replace(diskRegex, '01')
+      file2 = file2.replace(diskRegex, '02')
+      // file3 already contains the sample value for the third file — no-op replacement removed
     }
     
     // Replace ChapterNumber variants
     if (hasChapterNumber) {
-      file1 = file1.replace(/12/g, '01')
-      file2 = file2.replace(/12/g, '02')
-      file3 = file3.replace(/12/g, '03')
+      const chapterSample = sampleVariables.ChapterNumber.toString().padStart(2, '0')
+      const chapterRegex = new RegExp(chapterSample, 'g')
+      file1 = file1.replace(chapterRegex, '01')
+      file2 = file2.replace(chapterRegex, '02')
+      // file3 already contains the sample value for the third file — no-op replacement removed
     }
     
     return `${file1}.ext, ${file2}.ext, ${file3}.ext...`

@@ -8,6 +8,10 @@
       <PhCalendar />
       {{ formatDate(publishedDate) }}
     </span>
+    <span v-else-if="publishYear" class="metadata-badge">
+      <PhCalendar />
+      {{ publishYear }}
+    </span>
     <span v-if="asin" class="metadata-badge">
       <PhBarcode />
       {{ asin }}
@@ -32,6 +36,7 @@ import { safeText } from '@/utils/textUtils'
 interface Props {
   publisher?: string
   publishedDate?: string
+  publishYear?: number | string
   asin?: string
   isbn?: string
   openLibraryId?: string
@@ -40,6 +45,7 @@ interface Props {
 const props = withDefaults(defineProps<Props>(), {
   publisher: undefined,
   publishedDate: undefined,
+  publishYear: undefined,
   asin: undefined,
   isbn: undefined,
   openLibraryId: undefined,
@@ -47,7 +53,9 @@ const props = withDefaults(defineProps<Props>(), {
 
 const hasAnyMetadata = computed(() => {
   // Check if any metadata is present
-  return props.publisher || props.publishedDate || props.asin || props.isbn || props.openLibraryId
+  return (
+    props.publisher || props.publishedDate || props.publishYear || props.asin || props.isbn || props.openLibraryId
+  )
 })
 </script>
 

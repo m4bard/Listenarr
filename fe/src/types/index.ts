@@ -14,7 +14,8 @@ export interface BaseSearchResult {
 export interface OpenLibraryBook {
   key: string
   title: string
-  author_name?: string[]
+  // OpenLibrary sometimes returns `author_name` as an array, other times a single string
+  author_name?: string[] | string
   author_key?: string[]
   first_publish_year?: number
   isbn?: string[]

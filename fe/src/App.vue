@@ -3,7 +3,7 @@
     <!-- Top Navigation Bar -->
     <header v-if="!hideLayout" class="top-nav">
       <div class="nav-brand">
-        <img src="/logo.svg" alt="Listenarr" class="brand-logo" />
+        <div class="brand-logo" aria-hidden="true"><BrandLogo /></div>
         <h1>Listenarr</h1>
         <span v-if="version && version.length > 0" class="version">v{{ version }}</span>
       </div>
@@ -470,6 +470,8 @@ import { ref as vueRef2, reactive } from 'vue'
 import GlobalToast from '@/components/ui/GlobalToast.vue'
 import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
+import BrandLogo from '@/components/base/BrandLogo.vue'
+
 
 const { notification, close: closeNotification } = useNotification()
 const downloadsStore = useDownloadsStore()
@@ -671,8 +673,12 @@ const activeQueueCount = computed(
 )
 
 // Step 3: Count DDL downloads separately (memoized)
+// Treat downloadClientId case-insensitively to be robust against lower/upper-cased values
 const ddlDownloadsCount = computed(
-  () => activeDownloads.value.filter((d) => d.downloadClientId === 'DDL').length,
+  () =>
+    activeDownloads.value.filter((d) =>
+      ((d && d.downloadClientId) || '').toString().toUpperCase() === 'DDL',
+    ).length,
 )
 
 // Step 4: Count external client downloads (memoized)

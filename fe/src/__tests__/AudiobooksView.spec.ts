@@ -193,6 +193,10 @@ describe('AudiobooksView Grouping', () => {
       count: 1,
       coverUrl: 'cover3.jpg',
     })
+
+    // Default sorting when grouped by authors should be author-last ascending
+    expect((vm as any).sortKey).toBe('author-last')
+    expect((vm as any).sortOrder).toBe('asc')
   })
 
   it('groups audiobooks by series when groupBy is series', async () => {
@@ -282,6 +286,87 @@ describe('AudiobooksView Grouping', () => {
       count: 1,
       coverUrls: ['cover3.jpg'],
     })
+  })
+
+  it('updates toolbar sort options and sorts grouped collections by count/name depending on grouping', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
+      ],
+    })
+    await router.push('/audiobooks')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      { id: 1, title: 'A1', authors: ['Author A'], series: 'Series X', imageUrl: 'c1', files: [] },
+      { id: 2, title: 'A2', authors: ['Author A'], series: 'Series X', imageUrl: 'c2', files: [] },
+      { id: 3, title: 'B1', authors: ['Author B'], series: 'Series Y', imageUrl: 'c3', files: [] },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(AudiobooksView, {
+      global: { plugins: [pinia, router], stubs: ['BulkEditModal', 'EditAudiobookModal', 'CustomFilterModal', 'FiltersDropdown', 'CustomSelect'] },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const vm = wrapper.vm as unknown as any
+
+    // Switch to authors grouping and verify sortOptions exposed for collections
+    await vm.setGroupBy('authors')
+    await wrapper.vm.$nextTick()
+
+    const optValues = (vm.sortOptions || []).map((o: any) => o.value)
+    expect(optValues).toContain('author-last')
+    expect(optValues).toContain('author-first')
+    expect(optValues).toContain('count')
+
+    // Default sorting when grouped by authors should be author-last ascending
+    expect((vm as any).sortKey).toBe('author-last')
+    expect((vm as any).sortOrder).toBe('asc')
+
+    // CustomSelect should not be marked "active" for the default author sort
+    const csStub = wrapper.find('custom-select-stub')
+    expect(csStub.exists()).toBe(true)
+    expect(csStub.attributes('active')).toBe('false')
+
+    // Sort collections by count descending (non-default) — control should become active
+    vm.sortKey = 'count'
+    vm.sortOrder = 'desc'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('custom-select-stub').attributes('active')).toBe('true')
+    expect(vm.groupedCollections[0].name).toBe('Author A')
+
+    // Sort collections by author-last ascending (back to default) — control should be inactive
+    vm.sortKey = 'author-last'
+    vm.sortOrder = 'asc'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('custom-select-stub').attributes('active')).toBe('false')
+    expect(vm.groupedCollections[0].name).toBe('Author A')
+
+    // Switch to series grouping and verify options
+    await vm.setGroupBy('series')
+    await wrapper.vm.$nextTick()
+    const seriesOpt = (vm.sortOptions || []).map((o: any) => o.value)
+    expect(seriesOpt).toContain('title')
+    expect(seriesOpt).toContain('count')
+    expect(seriesOpt).not.toContain('author-last')
+
+    // Series default should be `title` ascending and the control should NOT be active
+    expect((vm as any).sortKey).toBe('title')
+    expect((vm as any).sortOrder).toBe('asc')
+    expect(wrapper.find('custom-select-stub').attributes('active')).toBe('false')
+
+    // Sort series by count ascending (non-default)
+    vm.sortKey = 'count'
+    vm.sortOrder = 'asc'
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('custom-select-stub').attributes('active')).toBe('true')
+    expect(vm.groupedCollections[0].name).toBe('Series Y')
   })
 
   it('shows individual books when groupBy is books', async () => {

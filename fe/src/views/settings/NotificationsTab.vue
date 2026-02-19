@@ -17,10 +17,6 @@
         <p class="empty-help">
           Supported services include Slack, Discord, Telegram, Pushover, and more.
         </p>
-        <button @click="openWebhookForm" class="add-button-large btn btn-lg btn-primary">
-          <PhPlus />
-          Create Your First Webhook
-        </button>
       </div>
 
       <div v-else class="webhooks-grid">

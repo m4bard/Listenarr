@@ -25,14 +25,21 @@ export const formatDate = (dateString: string): string => {
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
-        day: 'numeric',
+        day: '2-digit', // pad day with leading zero to match tests (e.g. 'Oct 05, 2015')
       })
     }
 
-    // For valid ISO dates, use the components directly
+    // Validate numeric ranges for month/day to avoid JS "rollover" behavior
     const year = parseInt(parts[0]!, 10)
-    const month = parseInt(parts[1]!, 10) - 1 // JS months are 0-indexed
-    const day = parseInt(parts[2]!, 10)
+    const monthNum = parseInt(parts[1]!, 10)
+    const dayNum = parseInt(parts[2]!, 10)
+
+    // Reject obviously invalid dates (e.g. month 13)
+    if (isNaN(year) || isNaN(monthNum) || isNaN(dayNum)) return dateString
+    if (monthNum < 1 || monthNum > 12 || dayNum < 1 || dayNum > 31) return dateString
+
+    const month = monthNum - 1 // JS months are 0-indexed
+    const day = dayNum
 
     const date = new Date(year, month, day)
     if (isNaN(date.getTime())) return dateString
@@ -40,7 +47,7 @@ export const formatDate = (dateString: string): string => {
     return date.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'short',
-      day: 'numeric',
+      day: '2-digit',
     })
   } catch {
     return dateString
@@ -56,10 +63,13 @@ export const formatDate = (dateString: string): string => {
  * formatRuntime(120) // "2h"
  * formatRuntime(45) // "45m"
  */
-export const formatRuntime = (minutes: number): string => {
-  if (!minutes || minutes <= 0) return 'Unknown'
+export const formatRuntime = (raw: number): string => {
+  if (!raw || raw <= 0) return 'Unknown'
 
-  const totalMinutes = Math.floor(minutes)
+  // Input is expected to be minutes. Callers should normalize seconds -> minutes
+  // when necessary (use normalizeRuntime for that). Treat the incoming value as
+  // minutes and floor to an integer before formatting.
+  const totalMinutes = Math.floor(raw)
   const hours = Math.floor(totalMinutes / 60)
   const mins = totalMinutes % 60
 

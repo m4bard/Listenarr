@@ -480,8 +480,10 @@ const testConnection = async () => {
   try {
     // Build config for testing with proper settings structure
     // Match the structure that handleSubmit uses to ensure settings are properly formatted
+    // Build a test-only config — do NOT include an `id` so that the server
+    // does not perform DB fallbacks when running a connection test. The
+    // full configuration (with id) is only sent on save.
     const configToTest: Partial<DownloadClientConfiguration> = {
-      id: props.editingClient?.id || `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
       name: formData.value.name,
       type: formData.value.type,
       host: formData.value.host,
@@ -510,11 +512,6 @@ const testConnection = async () => {
           ? { remotePathMappingIds: formData.value.remotePathMappingIds }
           : {}),
       },
-    }
-
-    // If editing with existing password not changed, include ID so server merges saved password
-    if (props.editingClient?.id && !formData.value.password) {
-      configToTest.id = props.editingClient.id
     }
 
     const result = await testDownloadClient(configToTest)

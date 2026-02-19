@@ -109,7 +109,7 @@
             :options="sortOptions"
             :sort-order="sortOrder"
             :current-value="sortKey"
-            :active="sortKey !== 'title' || sortOrder !== 'asc'"
+            :active="(groupBy === 'books' && (sortKey !== 'title' || sortOrder !== 'asc')) || (groupBy === 'authors' && (sortKey !== 'author-last' || sortOrder !== 'asc')) || (groupBy === 'series' && (sortKey !== 'title' || sortOrder !== 'asc'))"
             class="toolbar-custom-select"
             aria-label="Sort by"
           />
@@ -571,7 +571,7 @@
       </div>
     </div>
     <div v-if="groupBy === 'books'" class="audiobook-status-legend">
-      <span class="legend-title">Border colors:</span>
+      <span class="legend-title"></span>
       <span class="legend-item">
         <span class="legend-dot status-downloading"></span>
         Downloading
@@ -1095,6 +1095,29 @@ watch(groupBy, (v) => {
   try {
     localStorage.setItem(GROUP_BY_KEY, v)
   } catch {}
+
+  // Ensure selected sort key is valid for the new grouping; reset to sensible
+  // defaults when necessary. For `authors` grouping the default should be
+  // `author-last` (ascending) unless the user already has an author/collection
+  // sort key selected.
+  const allowed = sortOptions.value.map((o) => o.value)
+
+  if (v === 'authors') {
+    // If the current sortKey is not one of the collection-relevant keys,
+    // set the default to `author-last` ascending.
+    const collectionKeys = ['author-last', 'author-first', 'count']
+    if (!collectionKeys.includes(sortKey.value)) {
+      sortKey.value = allowed.includes('author-last') ? 'author-last' : (allowed.includes('title') ? 'title' : (allowed[0] || 'title'))
+      sortOrder.value = 'asc'
+    }
+    return
+  }
+
+  if (!allowed.includes(sortKey.value)) {
+    // Prefer `title` when available, otherwise pick the first allowed option
+    sortKey.value = allowed.includes('title') ? 'title' : (allowed[0] || 'title')
+    sortOrder.value = 'asc'
+  }
 })
 
 // (grouping sync handled earlier in file)
@@ -1143,6 +1166,12 @@ const groupedCollections = computed(() => {
       }
       const group = groups.get(key)!
       group.count++
+      // For authors: if no explicit author cover is available yet, use the
+      // first book's cover as a sensible fallback so the UI and tests show
+      // a representative image for the author collection.
+      if (groupBy.value === 'authors' && !group.coverUrl && book.imageUrl) {
+        group.coverUrl = book.imageUrl
+      }
       if (groupBy.value === 'series' && group.coverUrls && group.coverUrls.length < 8) {
         if (book.imageUrl && !group.coverUrls.includes(book.imageUrl)) {
           group.coverUrls.push(book.imageUrl)
@@ -1151,7 +1180,38 @@ const groupedCollections = computed(() => {
     }
   })
 
-  return Array.from(groups.values()).sort((a, b) => a.name.localeCompare(b.name))
+  const vals = Array.from(groups.values())
+
+  // If grouped (authors/series), respect toolbar sortKey for collection sorting
+  if (groupBy.value !== 'books') {
+    const order = sortOrder.value === 'asc' ? 1 : -1
+    switch (sortKey.value) {
+      case 'count':
+        vals.sort((a, b) => (a.count - b.count) * order)
+        break
+      case 'author-last':
+        vals.sort((a, b) => {
+          const av = getAuthorSortKey(a.name)
+          const bv = getAuthorSortKey(b.name)
+          return av === bv ? 0 : (av < bv ? -1 : 1) * order
+        })
+        break
+      case 'author-first':
+        vals.sort((a, b) => {
+          const av = getAuthorFirstNameSortKey(a.name)
+          const bv = getAuthorFirstNameSortKey(b.name)
+          return av === bv ? 0 : (av < bv ? -1 : 1) * order
+        })
+        break
+      // default: sort by name (collection title)
+      default:
+        vals.sort((a, b) => a.name.localeCompare(b.name) * order)
+        break
+    }
+    return vals
+  }
+
+  return vals.sort((a, b) => a.name.localeCompare(b.name))
 })
 
 let authorCardObserver: IntersectionObserver | null = null
@@ -1206,18 +1266,34 @@ watch(
   { immediate: true },
 )
 
-// Options for sort dropdown in toolbar
+// Options for sort dropdown in toolbar (change depending on grouping)
 const sortOptions = computed(() => {
+  if (groupBy.value === 'books') {
+    return [
+      { value: 'title', label: 'Title' },
+      { value: 'author-last', label: 'Author Last Name' },
+      { value: 'author-first', label: 'Author First Name' },
+      { value: 'narrator-last', label: 'Narrator Last Name' },
+      { value: 'narrator-first', label: 'Narrator First Name' },
+      { value: 'publisher', label: 'Publisher' },
+      { value: 'year', label: 'Release Year' },
+      { value: 'monitored', label: 'Monitored' },
+      { value: 'status', label: 'Status' },
+    ]
+  }
+
+  // When grouped by authors or series, expose collection-relevant sort keys
+  if (groupBy.value === 'authors') {
+    return [
+      { value: 'author-last', label: 'Author Last Name' },
+      { value: 'author-first', label: 'Author First Name' },
+      { value: 'count', label: 'Books' }, // number of books in the collection
+    ]
+  }
+
   return [
-    { value: 'title', label: 'Title' },
-    { value: 'author-last', label: 'Author Last Name' },
-    { value: 'author-first', label: 'Author First Name' },
-    { value: 'narrator-last', label: 'Narrator Last Name' },
-    { value: 'narrator-first', label: 'Narrator First Name' },
-    { value: 'publisher', label: 'Publisher' },
-    { value: 'year', label: 'Release Year' },
-    { value: 'monitored', label: 'Monitored' },
-    { value: 'status', label: 'Status' },
+    { value: 'title', label: 'Series' }, // sort by series name
+    { value: 'count', label: 'Books' }, // number of books in the collection
   ]
 })
 

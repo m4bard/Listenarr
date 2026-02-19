@@ -1292,7 +1292,6 @@ onMounted(async () => {
   position: relative;
   top: 60px;
   padding: 2rem;
-  min-height: 100vh;
   background-color: #1a1a1a;
 }
 

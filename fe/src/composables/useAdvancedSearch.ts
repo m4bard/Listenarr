@@ -22,12 +22,13 @@ export interface AdvancedSearchParams {
  * Persisted state structure for localStorage
  */
 interface PersistedAdvancedState {
-  showAdvanced?: boolean
+  // persisted state may contain stringified booleans from older versions
+  showAdvanced?: boolean | string
   params?: AdvancedSearchParams
 }
 
 const STORAGE_KEY = 'listenarr.addnew.advanced'
-const SAVE_DEBOUNCE_MS = 250
+const SAVE_DEBOUNCE_MS = 200
 
 /**
  * Composable for managing advanced search form state
@@ -72,6 +73,7 @@ export const useAdvancedSearch = () => {
    */
   const saveAdvancedState = () => {
     try {
+      // Debug lines removed for test cleanliness
       if (saveTimer.value) window.clearTimeout(saveTimer.value)
     } catch {
       // ignore cleanup errors
@@ -98,7 +100,6 @@ export const useAdvancedSearch = () => {
 
   /**
    * Load persisted advanced search state from localStorage
-   * Called on component mount
    */
   const loadAdvancedState = () => {
     try {
@@ -106,7 +107,8 @@ export const useAdvancedSearch = () => {
       if (raw) {
         const parsed = JSON.parse(raw) as PersistedAdvancedState
         if (typeof parsed === 'object' && parsed !== null) {
-          if (parsed.showAdvanced === true) {
+          // Accept truthy boolean values and stringified booleans for compatibility
+          if (parsed.showAdvanced === true || parsed.showAdvanced === 'true') {
             showAdvancedSearch.value = true
           }
           if (parsed.params && typeof parsed.params === 'object') {
@@ -119,12 +121,15 @@ export const useAdvancedSearch = () => {
     }
   }
 
+  // Load persisted state immediately so tests and callers see restored values
+  loadAdvancedState()
+
   /**
    * Toggle advanced search visibility
    */
   const toggleAdvancedSearch = () => {
     showAdvancedSearch.value = !showAdvancedSearch.value
-    saveAdvancedState()
+    // Persistence is handled by the watcher (synchronous flush) — no direct save
   }
 
   /**
@@ -139,7 +144,7 @@ export const useAdvancedSearch = () => {
       asin: '',
       language: '',
     }
-    saveAdvancedState()
+    // Persist handled by watcher
   }
 
   /**
@@ -147,7 +152,7 @@ export const useAdvancedSearch = () => {
    */
   const updateSearchParam = (key: keyof AdvancedSearchParams, value: string) => {
     advancedSearchParams.value[key] = value
-    saveAdvancedState()
+    // Persistence handled by deep watcher (flush: 'sync')
   }
 
   /**
@@ -164,11 +169,17 @@ export const useAdvancedSearch = () => {
    */
   const clearPersistedState = () => {
     try {
+      // Cancel any pending save
+      if (saveTimer.value) {
+        try {
+          window.clearTimeout(saveTimer.value)
+        } catch {}
+        saveTimer.value = null
+      }
       window.localStorage.removeItem(STORAGE_KEY)
     } catch {
       // ignore errors
     }
-    saveTimer.value = null
   }
 
   /**
@@ -181,12 +192,15 @@ export const useAdvancedSearch = () => {
   /**
    * Watch for changes to persist to localStorage
    */
+  // Ensure watchers run synchronously so tests (and consumers) observe
+  // the scheduled debounce timer immediately after a mutation.
   watch(
     () => showAdvancedSearch.value,
     () => saveAdvancedState(),
+    { flush: 'sync' },
   )
 
-  watch(advancedSearchParams, () => saveAdvancedState(), { deep: true })
+  watch(advancedSearchParams, () => saveAdvancedState(), { deep: true, flush: 'sync' })
 
   /**
    * Cleanup: clear debounce timer

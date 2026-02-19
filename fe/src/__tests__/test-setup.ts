@@ -55,6 +55,10 @@ globalConfig.components = {
     props: ['size'],
     template: '<i class="ph-spinner" aria-hidden="true"></i>',
   },
+  // Stub the BrandLogo component so tests don't trigger static-asset resolution
+  BrandLogo: {
+    template: '<div class="brand-logo-stub" />',
+  },
 }
 
 // Some components import the modal pieces locally (via named imports). To ensure
@@ -124,6 +128,8 @@ vi.mock('@/services/api', () => {
     previewLibraryPath: vi.fn(async () => ({ path: '' })),
     getQualityProfiles: vi.fn(async () => []),
     getApiConfigurations: vi.fn(async () => []),
+    // add getRootFolders to apiService so tests that spy on apiService.getRootFolders work
+    getRootFolders: vi.fn(async () => []),
   }
 
   // Named exports commonly imported by components/tests
@@ -201,6 +207,18 @@ if (typeof (window as unknown as { WebSocket?: unknown }).WebSocket === 'undefin
 // Provide a noop for console.debug in tests where code wraps in try/catch
 if (typeof console.debug !== 'function') console.debug = console.log.bind(console)
 
+// Ensure JSDOM's base URL is HTTP (not file://) so absolute static asset paths
+// (e.g. `/logo.svg`) resolve to `http://localhost/...` instead of `file:///...`.
+// On Windows the `file:///` form can surface in source-maps and cause Node APIs
+// to reject the path; setting the location prevents those file URLs from
+// appearing during transforms and stacktrace processing.
+try {
+  if (typeof window !== 'undefined' && window.location && window.location.href.startsWith('file:')) {
+    // Replace file://... base with http://localhost/
+    window.history.replaceState({}, '', 'http://localhost/')
+  }
+} catch {}
+
 // Provide a simple localStorage polyfill for tests that rely on it
 // Ensure a working localStorage implementation exists for tests. Some test
 // runners may set a placeholder object; normalize it so .setItem/.getItem exist.
@@ -236,3 +254,31 @@ if (
     },
   }
 }
+
+// Defensive: JSDOM / Vitest may encounter `file://` asset URLs (e.g. transformed
+// static asset paths like `file:///logo.svg`). Some environments propagate
+// those to HTMLImageElement.src setters which can trigger Node internal URL/path
+// handling and cause tests to crash. Normalize `file://` image URLs to plain
+// absolute paths to avoid runtime errors during tests.
+try {
+  const imgProto = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, 'src')
+  Object.defineProperty(HTMLImageElement.prototype, 'src', {
+    set(this: HTMLImageElement, value: string) {
+      try {
+        if (typeof value === 'string' && value.startsWith('file:///')) {
+          // Convert file URL (file:///logo.svg) to a usable pathname (/logo.svg)
+          const u = new URL(value)
+          return imgProto?.set?.call(this, u.pathname)
+        }
+      } catch {
+        // fall through to default setter
+      }
+      return imgProto?.set?.call(this, value)
+    },
+    get(this: HTMLImageElement) {
+      return imgProto?.get?.call(this)
+    },
+    configurable: true,
+  })
+} catch {}
+

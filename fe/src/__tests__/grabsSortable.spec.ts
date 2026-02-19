@@ -113,8 +113,9 @@ describe('ManualSearchModal - grabs sorting', () => {
     // Read grabs values from rows in order
     const rowsAfterDesc = wrapper.findAll('tbody tr')
     const grabsDesc = rowsAfterDesc.map((r) => {
-      const txt = r.find('td.col-grabs .grabs').text()
-      return Number(txt.replace('✚ ', '').trim())
+      const badge = r.find('td.col-grabs .grabs-badge')
+      const txt = badge.exists() ? badge.text() : ''
+      return Number((txt || '').replace(/[^0-9]/g, '').trim())
     })
     expect(grabsDesc).toEqual([100, 50, 10])
 
@@ -125,8 +126,9 @@ describe('ManualSearchModal - grabs sorting', () => {
 
     const rowsAfterAsc = wrapper.findAll('tbody tr')
     const grabsAsc = rowsAfterAsc.map((r) => {
-      const txt = r.find('td.col-grabs .grabs').text()
-      return Number(txt.replace('✚ ', '').trim())
+      const badge = r.find('td.col-grabs .grabs-badge')
+      const txt = badge.exists() ? badge.text() : ''
+      return Number((txt || '').replace(/[^0-9]/g, '').trim())
     })
     expect(grabsAsc).toEqual([10, 50, 100])
   })

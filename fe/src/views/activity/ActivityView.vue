@@ -337,7 +337,7 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
     quality: '',
     downloadClient: clientName ?? download.downloadClientId ?? 'Unknown Client',
     downloadClientId: download.downloadClientId,
-    downloadClientType: download.downloadClientId === 'DDL' ? 'DDL' : 'external',
+    downloadClientType: ((download.downloadClientId || '').toString().toUpperCase() === 'DDL') ? 'DDL' : 'external',
     addedAt: download.startedAt,
     canPause: false,
     canRemove: true,
@@ -362,7 +362,7 @@ const allActivityItems = computed(() => {
   const failedDownloadsList = unref(downloadsStore.failedDownloads || [])
 
   const ddlDownloadItems = activeDownloadsList
-    .filter((d) => (d.downloadClientId || '').toString() === 'DDL')
+    .filter((d) => ((d.downloadClientId || '').toString().toUpperCase() === 'DDL'))
     .map(convertDownloadToQueueItem)
 
   // Include failed DDL downloads so internal failed items can be cleared by users
@@ -372,7 +372,7 @@ const allActivityItems = computed(() => {
   // queue-less active items are visible in Activity (e.g., when queue snapshot
   // doesn't contain corresponding entries). Convert to QueueItem shape.
   const externalActiveDownloads = activeDownloadsList
-    .filter((d) => d.downloadClientId && d.downloadClientId !== 'DDL')
+    .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
     .map(convertDownloadToQueueItem)
 
   // Combine queue items (external clients managed by Listenarr), DDL downloads,
@@ -385,7 +385,7 @@ const allActivityItems = computed(() => {
   if (userPref) {
     // Include completed external downloads from the downloads store
     const completedExternal = (downloadsStore.completedDownloads || [])
-      .filter((d) => d.downloadClientId && d.downloadClientId !== 'DDL')
+      .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
       .map(convertDownloadToQueueItem)
 
     // Merge and deduplicate by id (prefer entries that already exist in `combined` which
@@ -431,14 +431,14 @@ const completedActivityItems = computed(() => {
   const base = (() => {
     const queueItems = [...queue.value]
     const ddlDownloadItems = downloadsStore.activeDownloads
-      .filter((d) => d.downloadClientId === 'DDL')
+      .filter((d) => ((d.downloadClientId || '').toString().toUpperCase() === 'DDL'))
       .map(convertDownloadToQueueItem)
     return [...queueItems, ...ddlDownloadItems]
   })()
 
   // Completed external downloads from the downloads store
   const completedExternal = (downloadsStore.completedDownloads || [])
-    .filter((d) => d.downloadClientId && d.downloadClientId !== 'DDL')
+    .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
     .map(convertDownloadToQueueItem)
 
   // Merge and deduplicate by id (prefer queue/base entries where present)
@@ -527,7 +527,10 @@ const removeFromQueue = async (item: QueueItem) => {
   itemToRemove.value = item
 
   // If the item is DDL (internal) we don't need to pre-check client queue
-  if (item.downloadClientId === 'DDL' || item.downloadClientType === 'DDL') {
+  if (
+    ((item.downloadClientId || '').toString().toUpperCase() === 'DDL') ||
+    ((item.downloadClientType || '').toString().toUpperCase() === 'DDL')
+  ) {
     clientHasQueueEntry.value = true
     showRemoveModal.value = true
     return
@@ -549,8 +552,8 @@ const confirmRemove = async () => {
   try {
     // Check if this is a DDL download (from database) or external queue item
     if (
-      itemToRemove.value.downloadClientId === 'DDL' ||
-      itemToRemove.value.downloadClientType === 'DDL'
+      ((itemToRemove.value.downloadClientId || '').toString().toUpperCase() === 'DDL') ||
+      ((itemToRemove.value.downloadClientType || '').toString().toUpperCase() === 'DDL')
     ) {
       // DDL downloads: Cancel/delete from database
       await apiService.cancelDownload(itemToRemove.value.id)

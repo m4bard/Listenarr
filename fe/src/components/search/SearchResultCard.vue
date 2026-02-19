@@ -48,7 +48,7 @@
         <div class="result-stats">
           <span v-if="book.searchResult?.runtime" class="stat-item">
             <PhClock />
-            {{ formatRuntime(book.searchResult.runtime) }}
+            {{ formatRuntime((book.searchResult?.lengthMinutes ?? (book.searchResult?.runtime && (book.searchResult.runtime as number) > 1000 ? Math.round((book.searchResult.runtime as number) / 60) : book.searchResult?.runtime)) ?? 0) }}
           </span>
           <span v-if="book.searchResult?.language" class="stat-item">
             <PhGlobe />
@@ -62,16 +62,17 @@
         <div
           v-if="
             (book.searchResult?.series && book.searchResult.series.length > 0) ||
-            (book.searchResult?.seriesNumber && book.searchResult.seriesNumber.length > 0)
+            (book.searchResult?.seriesNumber && book.searchResult.seriesNumber.length > 0) ||
+            (book.seriesList && book.seriesList.length > 0)
           "
           class="result-series"
         >
           <span
             class="series-badge"
-            :title="`${book.searchResult?.series}${book.searchResult?.seriesNumber ? ` #${book.searchResult.seriesNumber}` : ''}`"
+            :title="book.searchResult?.seriesList?.length ? book.searchResult.seriesList.join(', ') : `${book.searchResult?.series}${book.searchResult?.seriesNumber ? ` #${book.searchResult.seriesNumber}` : ''}`"
           >
             <PhBook />
-            {{ safeText(book.searchResult?.series) }}<span v-if="book.searchResult?.seriesNumber"> #{{ book.searchResult.seriesNumber }}</span>
+            {{ safeText(book.searchResult?.series ?? (book.seriesList && book.seriesList[0])) }}<span v-if="book.searchResult?.seriesNumber"> #{{ book.searchResult.seriesNumber }}</span>
           </span>
         </div>
       </slot>
@@ -79,7 +80,7 @@
       <!-- Metadata Badges -->
       <slot name="metadata">
         <div class="metadata-badges">
-          <span v-if="book.publisher?.length" class="metadata-badge">
+              <span v-if="book.publisher?.length" class="metadata-badge">
             <PhBuilding />
             {{ safeText(book.publisher[0]) }}
           </span>
@@ -91,7 +92,11 @@
             <PhCalendar />
             {{ book.first_publish_year }}
           </span>
-          <span v-if="openLibraryId" class="metadata-badge">
+          <span v-if="asin" class="metadata-badge">
+            <PhBarcode />
+            {{ asin }}
+          </span>
+          <span v-if="openLibraryId && !asin" class="metadata-badge">
             <PhBarcode />
             {{ openLibraryId }}
           </span>
@@ -114,7 +119,7 @@
           </a>
           <span v-else-if="book.metadataSource" class="metadata-source-badge" :data-source="book.metadataSource">
             <PhGlobe />
-            Metadata: {{ book.metadataSource }}
+            {{ metadataSourceLabel }}
           </span>
 
           <a
@@ -230,10 +235,17 @@ const openLibraryId = computed(() => {
  * Format author names from various sources
  */
 const formatAuthors = (book: typeof props.book): string => {
-  if (book.author_name && Array.isArray(book.author_name)) {
-    return book.author_name.slice(0, 2).join(', ')
+  // If author_name is explicitly provided and is an array, respect it (including empty array -> Unknown)
+  if (book.author_name !== undefined) {
+    if (Array.isArray(book.author_name)) {
+      if (book.author_name.length) return book.author_name.slice(0, 2).join(', ')
+      return 'Unknown Author'
+    }
+    if (typeof book.author_name === 'string' && book.author_name.trim()) return book.author_name.trim()
   }
-  if (props.book.searchResult?.authors) {
+
+  // Fallback to searchResult authors when author_name was not explicitly provided
+  if (props.book.searchResult?.authors && props.book.searchResult.authors.length) {
     return props.book.searchResult.authors
       .map((a: unknown) => {
         const obj = a as Record<string, unknown>

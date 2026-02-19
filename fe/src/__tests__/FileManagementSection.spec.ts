@@ -29,8 +29,26 @@ describe('FileManagementSection', () => {
     expect(last.fileNamingPattern).toBe('{Title}-{DiskNumber}')
 
     const sel = wrapper.find('select')
-    await sel.setValue('Copy')
+    await sel.setValue('Hardlink/Copy')
     last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
-    expect(last.completedFileAction).toBe('Copy')
+    expect(last.completedFileAction).toBe('Hardlink/Copy')
+  })
+
+  it('shows preview for multi-file pattern with chapter numbers', async () => {
+    const { default: FileManagementSection } = await import('@/components/settings/FileManagementSection.vue')
+    const wrapper = mount(FileManagementSection, {
+      props: {
+        settings: {
+          multiFileNamingPattern: '{Title}-Ch{ChapterNumber:00}'
+        }
+      }
+    })
+
+    // Preview should show simulated chapter numbers 01/02/03
+    const preview = wrapper.find('.pattern-preview code')
+    expect(preview.exists()).toBe(true)
+    expect(preview.text()).toContain('Ch01')
+    expect(preview.text()).toContain('Ch02')
+    expect(preview.text()).toContain('Ch03')
   })
 })
