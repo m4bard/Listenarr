@@ -130,6 +130,9 @@ namespace Listenarr.Api.Controllers
                     }
                 }
 
+                // At this point, determine explicitly whether we have a valid image path
+                bool hasValidImagePath = !string.IsNullOrWhiteSpace(relativePath);
+
                 // Sanitize/validate the returned relative path to ensure it points inside
                 // known image directories. Treat any unexpected location as not-found.
                 if (!string.IsNullOrWhiteSpace(relativePath))
@@ -264,7 +267,7 @@ namespace Listenarr.Api.Controllers
 
                 }
 
-                if (relativePath == null)
+                if (!hasValidImagePath)
                 {
                     _logger.LogWarning("Image not found for identifier: {Identifier}", identifier);
 
