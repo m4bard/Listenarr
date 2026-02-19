@@ -134,6 +134,14 @@ namespace Listenarr.Api.Controllers
                 // known image directories. Treat any unexpected location as not-found.
                 if (!string.IsNullOrWhiteSpace(relativePath))
                 {
+                    // Defend against services returning absolute paths unexpectedly
+                    if (Path.IsPathRooted(relativePath))
+                    {
+                        _logger.LogWarning("Image service returned rooted path for identifier {Identifier}: {Path}", identifier, relativePath);
+                        relativePath = null;
+                    }
+                    else
+                    {
                     _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", identifier, relativePath);
                     try
                     {
@@ -153,11 +161,33 @@ namespace Listenarr.Api.Controllers
                             _logger.LogWarning("Resolved image path outside permitted directories for identifier {Identifier}: {Path}", identifier, candidateFull);
                             relativePath = null;
                         }
+                        else
+                        {
+                            try
+                            {
+                                // Defend against symlink/reparse-point escapes
+                                if (System.IO.File.Exists(candidateFull))
+                                {
+                                    var attrs = System.IO.File.GetAttributes(candidateFull);
+                                    if ((attrs & System.IO.FileAttributes.ReparsePoint) != 0)
+                                    {
+                                        _logger.LogWarning("Rejected reparse-point (symlink) image path for identifier {Identifier}: {Path}", identifier, candidateFull);
+                                        relativePath = null;
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogWarning(ex, "Failed to inspect candidate image attributes for identifier {Identifier}", identifier);
+                                relativePath = null;
+                            }
+                        }
                     }
                     catch (Exception ex)
                     {
                         _logger.LogWarning(ex, "Failed to validate image path for identifier {Identifier}", identifier);
                         relativePath = null;
+                    }
                     }
                 }
 
@@ -189,7 +219,30 @@ namespace Listenarr.Api.Controllers
 
                                     if (movedFull.StartsWith(imagesRoot, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(imagesRootConfig, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(wwwroot, StringComparison.OrdinalIgnoreCase))
                                     {
-                                        relativePath = moved;
+                                        try
+                                        {
+                                            if (System.IO.File.Exists(movedFull))
+                                            {
+                                                var matt = System.IO.File.GetAttributes(movedFull);
+                                                if ((matt & System.IO.FileAttributes.ReparsePoint) != 0)
+                                                {
+                                                    _logger.LogWarning("Rejected moved reparse-point (symlink) image path for identifier {Identifier}: {Path}", identifier, movedFull);
+                                                }
+                                                else
+                                                {
+                                                    relativePath = moved;
+                                                }
+                                            }
+                                            else
+                                            {
+                                                // If file doesn't yet exist, conservatively reject the moved path
+                                                _logger.LogWarning("Moved image file does not exist for identifier {Identifier}: {Path}", identifier, movedFull);
+                                            }
+                                        }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogWarning(ex, "Failed to inspect moved image attributes for identifier {Identifier}", identifier);
+                                        }
                                     }
                                     else
                                     {
