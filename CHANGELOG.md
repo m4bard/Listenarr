@@ -5,16 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [0.2.48] - 2026-01-14
-### Fixed
-- **qBittorrent Test**: `qBittorrent` client test now attempts authentication when the unauthenticated `/api/v2/app/version` returns `403` and retries the request; valid credentials will now cause the test to succeed (e.g., when behind authentication or proxy).
-- **Download client test behavior**: The Test button on the **Download Client** modal now tests the client using the current form input values (unsaved edits), while the Test button on the download client card in the settings tab tests using the saved DB configuration values.
-
-
-## [0.2.48] - 2026-01-14
 
 ### Added
 - **Prowlarr compatibility improvements**: `POST /api/v1/indexers`, `POST /api/v1/indexer` and `PUT /api/v1/indexer/{id}` now accept varied payload shapes (nested `settings`, `fields` arrays and multiple property name variants) and return standard DTOs with non-null `fields` and `tags` for better interoperability.
 - **Toast suppression**: Global message-level and per-indexer toast suppression to reduce notification noise during rapid indexer imports (default suppression window: 5 seconds).
+- **Settings — loading UI**: Added visible loading indicators and a `LoadingState` placeholder to Settings tab components (`QualityProfilesTab`, `NotificationsTab`, `RootFoldersSettings`, `IndexersTab`, `DownloadClientsTab`). Inline header spinners and unit tests were added to improve perceived responsiveness during async loads.
+
 
 ### Changed
 - **`ProwlarrCompatController` behavior**:
@@ -23,11 +19,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `DELETE /api/v1/indexer/{id}` tolerates `id == 0` from external clients and returns an empty JSON object with a warning log to avoid noisy caller errors.
 - **General Settings — API Key control**: Improved the API key input in the General Settings tab—input is full width with an inline visibility toggle and the regenerate/copy buttons placed inside the input (order: visibility, regenerate, copy). The regenerate button uses a red hue to indicate the key will be invalidated, and the copy button uses a blue hue. Functionality is unchanged and unit tests pass locally.
 - **PasswordInput component**: Added a named `append` slot to `PasswordInput.vue` so callers can inject inline controls (e.g., copy/regenerate buttons) without relying on deep CSS overrides. `ApiKeyControl` now uses the slot, improving layout robustness and accessibility. Unit tests updated and pass locally.
+- **Frontend — route prefetch**: Added route prefetch in `main.ts` to improve perceived navigation performance.
+- **Images / Author ASIN**: Prefer stored author ASIN for author image lookup and probe the DB when a cached image lookup returns NotFound; this reduces unnecessary Audnexus calls and improves cache hit rates.
+- **qBittorrent adapter**: Prefer `IHttpClientFactory` with a cookie-client fallback, use injected `HttpClient` for auth requests, and clarified auth failure messages; added `QBittorrentHelpers` and robustness improvements in the adapter.
+- **Dependencies**: Bumped frontend/backend dependencies and regenerated lockfiles.
 
 ### Fixed
 - **qBittorrent Test**: `qBittorrent` client test now attempts authentication when the unauthenticated `/api/v2/app/version` values.
 - **Duplicate notifications & race**: Added `NotificationSuppressionSeconds`, `_lastToastTimes`, `_lastToastMessages`, and helper methods `ShouldSendToastForIndexer`/`ShouldSendToastForMessage`. Fixed an edge-case race where the per-indexer check previously updated the global message timestamp causing unintended self-suppression.
 - **EF translation error**: Moved normalization/dedupe to in-memory evaluation to avoid EF Core InvalidOperationException when calling `NormalizeIndexerUrl` inside an EF expression.
+- **Download client test behavior**: The Test button on the **Download Client** modal uses the current (unsaved) form input values; the Test button on the download client card in the Settings tab tests the saved DB configuration values.
+- **Images / Author ASIN tests**: Mocked `IAudiobookRepository.GetAuthorAsinByNameAsync` in ImagesController tests so the stored‑ASIN path is exercised; tests updated accordingly.
+- **Frontend — Loading UI & tests**: Added VTU test stubs for `LoadingState` and `PhSpinner` and unit tests covering loading indicators in settings tabs to prevent component-resolution warnings in tests.
 - **Tests**: Added and updated unit tests in `tests/Listenarr.Api.Tests` (e.g., `ProwlarrCompatControllerTests`, `ProwlarrEndpointsTests`) to validate broadcasting, idempotent PUT upsert, delete `id==0` tolerance, and toast/message-level dedupe. All API tests pass locally (253 tests).
 
 ### Removed
