@@ -11,7 +11,7 @@
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square"></a>
   <a href="https://github.com/Listenarrs/Listenarr/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Listenarrs/Listenarr/total?style=flat-square"></a>
   <a href="https://github.com/Listenarrs/Listenarr/pkgs/container/listenarr"><img alt="GHCR" src="https://img.shields.io/badge/ghcr.io-listenarr-181717?style=flat-square&logo=github"></a>
-  <a href="https://hub.docker.com/r/Listenarrs/listenarr"><img alt="Docker Hub Mirror" src="https://img.shields.io/badge/docker%20hub-mirror-0db7ed?style=flat-square&logo=docker"></a>
+  <a href="https://hub.docker.com/r/therobbiedavis/listenarr"><img alt="Docker Hub Mirror" src="https://img.shields.io/badge/docker%20hub-mirror-0db7ed?style=flat-square&logo=docker"></a>
 </p>
 
 ---
