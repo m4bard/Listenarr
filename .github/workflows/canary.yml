@@ -397,7 +397,7 @@ jobs:
 
       - name: Notify Discord
         uses: rjstone/discord-webhook-notify@v2.2.1
-        if: ${{ github.repository_owner == 'therobbiedavis' }}
+        if: ${{ github.repository_owner == 'listenarrs' }}
         with:
             severity: info
             description: v${{steps.resolve-version.outputs.VERSION}} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
