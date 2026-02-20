@@ -58,7 +58,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
             // Make HTTP request with User-Agent header
             var request_msg = new HttpRequestMessage(HttpMethod.Get, url);
             var version = typeof(TorznabNewznabSearchProvider).Assembly.GetName().Version?.ToString() ?? "0.0.0";
-            var userAgent = $"Listenarr/{version} (+https://github.com/therobbiedavis/listenarr)";
+            var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
             request_msg.Headers.UserAgent.ParseAdd(userAgent);
             
             var response = await _httpClient.SendAsync(request_msg);

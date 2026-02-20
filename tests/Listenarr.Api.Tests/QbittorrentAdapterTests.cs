@@ -52,11 +52,11 @@ namespace Listenarr.Api.Tests
 
             var cfg = new DownloadClientConfiguration
             {
-                Host = "qbittorrent.therobbiedavis.com",
+                Host = "localhost",
                 Port = 443,
                 UseSSL = true,
                 Username = "admin",
-                Password = "123nortex"
+                Password = "admin"
             };
 
             var (success, message) = await adapter.TestConnectionAsync(cfg);
@@ -85,7 +85,7 @@ namespace Listenarr.Api.Tests
 
             var cfg = new DownloadClientConfiguration
             {
-                Host = "qbittorrent.therobbiedavis.com",
+                Host = "localhost",
                 Port = 443,
                 UseSSL = true,
                 Username = null,

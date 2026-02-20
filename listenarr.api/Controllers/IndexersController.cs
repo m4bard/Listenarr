@@ -126,7 +126,7 @@ namespace Listenarr.Api.Controllers
                 var request = new HttpRequestMessage(HttpMethod.Get, testUrl);
                 // Ensure User-Agent is present even if the injected HttpClient was created without defaults
                 var version = typeof(IndexersController).Assembly.GetName().Version?.ToString() ?? "0.0.0";
-                var userAgent = $"Listenarr/{version} (+https://github.com/therobbiedavis/listenarr)";
+                var userAgent = $"Listenarr/{version} (+https://github.com/listenarrs/listenarr)";
                 request.Headers.UserAgent.ParseAdd(userAgent);
                 // For Newznab/Torznab, also add API key as header (some servers support both)
                 // For other indexers, add header if API key is provided

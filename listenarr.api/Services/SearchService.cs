@@ -1771,7 +1771,7 @@ namespace Listenarr.Api.Services
                 // Make HTTP request with User-Agent header
                 var request = new HttpRequestMessage(HttpMethod.Get, url);
                 var version = typeof(SearchService).Assembly.GetName().Version?.ToString() ?? "0.0.0";
-                var userAgent = $"Listenarr/{version} (+https://github.com/therobbiedavis/listenarr)";
+                var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
                 request.Headers.UserAgent.ParseAdd(userAgent);
                 
                 var response = await _httpClient.SendAsync(request);

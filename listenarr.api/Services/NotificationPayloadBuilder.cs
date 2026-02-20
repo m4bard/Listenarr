@@ -244,7 +244,7 @@ namespace Listenarr.Api.Services
             var shortContent = BuildDiscordContent(trigger, title ?? string.Empty, author ?? string.Empty);
             payload["content"] = shortContent;
             payload["username"] = "Listenarr";
-            payload["avatar_url"] = "https://raw.githubusercontent.com/therobbiedavis/Listenarr/main/.github/logo-icon.png";
+            payload["avatar_url"] = "https://raw.githubusercontent.com/Listenarrs/Listenarr/main/.github/logo-icon.png";
             if (embeds.Count > 0) payload["embeds"] = embeds;
 
             return payload;
@@ -483,7 +483,7 @@ namespace Listenarr.Api.Services
             var shortContent = BuildDiscordContent(trigger, title ?? string.Empty, author ?? string.Empty);
             payload["content"] = shortContent;
             payload["username"] = "Listenarr";
-            payload["avatar_url"] = "https://raw.githubusercontent.com/therobbiedavis/Listenarr/main/.github/logo-icon.png";
+            payload["avatar_url"] = "https://raw.githubusercontent.com/Listenarrs/Listenarr/main/.github/logo-icon.png";
             if (embeds.Count > 0)
             {
                 payload["embeds"] = embeds;
