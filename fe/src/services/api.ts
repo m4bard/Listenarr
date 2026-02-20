@@ -798,8 +798,13 @@ class ApiService {
   }
 
   async saveApplicationSettings(settings: ApplicationSettings): Promise<ApplicationSettings> {
+    // Always fetch a fresh CSRF token for settings save
+    const token = await this.fetchAntiforgeryToken()
+    const headers: Record<string, string> = {}
+    if (token) headers['X-XSRF-TOKEN'] = token
     return this.request<ApplicationSettings>('/configuration/settings', {
       method: 'POST',
+      headers,
       body: JSON.stringify(settings),
     })
   }

@@ -71,6 +71,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
+                // Always allow frontend to overwrite AuthenticationRequired
                 SaveConfigFile(config);
                 _config = config;
             }

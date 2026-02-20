@@ -129,12 +129,13 @@ export function preloadRoute(nameOrPath: string) {
 }
 
 // Navigation guard: protect routes requiring auth and preserve redirectTo
+let routerStartupConfig: StartupConfig | null = null
+let routerStartupConfigLoaded = false
+
 router.beforeEach(async (to, from, next) => {
-  // Skip auth guard in Cypress tests
   if (import.meta.env.CYPRESS) return next()
   const auth = useAuthStore()
 
-  // Debug: Log every navigation attempt
   logger.log('router', 'Navigation:', {
     from: from.fullPath,
     to: to.fullPath,
@@ -142,32 +143,24 @@ router.beforeEach(async (to, from, next) => {
     loaded: auth.loaded,
   })
 
-  // Load current user only once per app lifetime (avoid repeated calls on every navigation)
+  // Load current user only once per app lifetime
   if (!auth.loaded) {
     try {
       await auth.loadCurrentUser()
-    } catch {
-      // ignore - loadCurrentUser handles errors and sets loaded flag
-    }
+    } catch {}
   }
 
-  logger.debug('[router] beforeEach', {
-    to: to.fullPath,
-    authenticated: auth.user.authenticated,
-    loaded: auth.loaded,
-  })
-
-  // Obtain startup config using a shared module-level promise/cache so multiple navigations
-  // during app boot don't trigger many GETs to /api/startupconfig.
-  // use shared startup config cache (deduplicates inflight requests)
-  const startupConfig = await getStartupConfigCached()
-  // Fail-safe: if we couldn't load startup config, assume authentication is required
+  // Fetch startup config only once per session
+  if (!routerStartupConfigLoaded) {
+    routerStartupConfig = await getStartupConfigCached(24 * 60 * 60 * 1000) // 24h TTL
+    routerStartupConfigLoaded = true
+  }
+  const startupConfig = routerStartupConfig
   const startupConfigMissing = !startupConfig
   logger.debug('[router] startupConfigMissing', startupConfigMissing)
   logger.debug('[router] startupConfig', startupConfig)
   const authRequiredConfig = (() => {
     if (startupConfigMissing) return true
-    // Accept both camelCase and PascalCase variants from backend
     const raw =
       startupConfig?.authenticationRequired ??
       (startupConfig as StartupConfig & { AuthenticationRequired?: string | boolean })

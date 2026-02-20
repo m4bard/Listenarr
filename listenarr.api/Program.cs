@@ -682,8 +682,15 @@ if (app.Environment.IsDevelopment())
 }
 
 // Use forwarded headers middleware (must be early in pipeline)
-// This processes X-Forwarded-For and X-Forwarded-Proto headers from the reverse proxy
-app.UseForwardedHeaders();
+// This processes X-Forwarded-For and X-Forwarded-Proto headers from the reverse proxy.
+// By default, ASP.NET Core will only trust forwarded headers from loopback addresses (127.0.0.1, ::1).
+// This is safe for most self-hosted and direct scenarios, and will work behind a reverse proxy if the proxy runs locally or you set ASPNETCORE_FORWARDEDHEADERS_ENABLED=true.
+// For advanced scenarios, set trusted proxies via KnownProxies/KnownNetworks if needed.
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
+    // Do not set KnownProxies/KnownNetworks here for maximum compatibility
+});
 
 // Note: HTTPS redirection is handled by the reverse proxy, not by this application
 
