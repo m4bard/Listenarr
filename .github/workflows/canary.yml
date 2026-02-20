@@ -188,7 +188,7 @@ jobs:
           # Use repository owner as namespace for Docker Hub
           echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
           # Publish GHCR images under the same owner namespace
-          echo "GHCR_IMAGE=ghcr.io/${{ github.repository_owner }}/listenarr" >> $GITHUB_OUTPUT
+          echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
 
       - name: Find triggering Pull Request
         id: find_triggering_pr
