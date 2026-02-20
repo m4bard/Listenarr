@@ -314,7 +314,7 @@ jobs:
       - name: Set image name
         id: set-tags
         run: |
-          echo "DOCKER_IMAGE=docker.io/${{ github.repository_owner }}/listenarr" >> $GITHUB_OUTPUT
+          echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
           echo "GHCR_IMAGE=ghcr.io/${{ github.repository_owner }}/listenarr" >> $GITHUB_OUTPUT
           TAG=${GITHUB_REF/refs/tags/}
           echo "TAG=$TAG" >> $GITHUB_OUTPUT
