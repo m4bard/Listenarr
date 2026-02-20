@@ -60,6 +60,8 @@ docker run -d \
   ## OPTIONAL: Used by Discord Bot
   -e LISTENARR_PUBLIC_URL=https://your-domain.com \
   -v listenarr_data:/app/config \
+  -v /path/to/audiobooks:/audiobooks #optional \
+  -v /path/to/downloadclient-downloads:/downloads #optional \
   ghcr.io/listenarrs/listenarr:canary
 ```
 
