@@ -37,26 +37,52 @@ using Listenarr.Api.Extensions;
 using Listenarr.Infrastructure.Extensions;
 
 // Check for special CLI helpers before building the web host
-// Set ContentRootPath to repo root for local dev, but leave Docker/production unaffected
+// Set ContentRootPath to a reliable value for local dev, but leave Docker/production unaffected.
 var isDocker = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
 var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
-// calculate three levels above the base directory without Path.Combine (which
-// can drop earlier segments if a later segment is absolute). fall back gracefully
-// if the directory hierarchy is shorter than expected.
-var baseDir = AppContext.BaseDirectory;
-var repoRoot = Directory.GetParent(
-                   Directory.GetParent(
-                       Directory.GetParent(baseDir)?.FullName ?? baseDir
-                   )?.FullName ?? baseDir
-               )?.FullName ?? baseDir;
 
-var builder = isDev && !isDocker
-    ? WebApplication.CreateBuilder(new WebApplicationOptions
-        {
-            Args = args,
-            ContentRootPath = repoRoot
-        })
-    : WebApplication.CreateBuilder(args ?? Array.Empty<string>());
+// Allow an explicit override via environment variable (robust for CI and custom installs)
+var contentRootOverride = Environment.GetEnvironmentVariable("LISTENARR_CONTENT_ROOT");
+
+WebApplicationBuilder builder;
+string? projectDir = null;
+if (!string.IsNullOrWhiteSpace(contentRootOverride))
+{
+    builder = WebApplication.CreateBuilder(new WebApplicationOptions
+    {
+        Args = args,
+        ContentRootPath = contentRootOverride
+    });
+    projectDir = contentRootOverride;
+}
+else if (isDev && !isDocker)
+{
+    // Resolve to the listenarr.api project directory from the build output.
+    // AppContext.BaseDirectory is typically: <project>/bin/<config>/<tfm>/
+    // Three GetParent calls navigate back to the project root.
+    var baseDir = AppContext.BaseDirectory;
+    projectDir = Directory.GetParent(
+        Directory.GetParent(
+            Directory.GetParent(baseDir)?.FullName ?? baseDir
+        )?.FullName ?? baseDir
+    )?.FullName ?? baseDir;
+
+    // Safety check: if the resolved directory doesn't look like the project root
+    // (i.e. no 'config' sibling or the project file), fall back to default.
+    var looksLikeProjectRoot = Directory.Exists(Path.Combine(projectDir, "config"))
+        || File.Exists(Path.Combine(projectDir, "listenarr.api.csproj"));
+
+    builder = looksLikeProjectRoot
+        ? WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = projectDir })
+        : WebApplication.CreateBuilder(args ?? Array.Empty<string>());
+}
+else
+{
+    builder = WebApplication.CreateBuilder(args ?? Array.Empty<string>());
+}
+
+// repoRoot fallback used in other path computations later
+var repoRoot = projectDir ?? AppContext.BaseDirectory;
 
 // Configure Serilog for structured logging, file rotation and SignalR broadcasting
 var logFilePath = Path.Combine(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
@@ -73,13 +99,14 @@ try
     var dir = Path.GetDirectoryName(externalConfigAbsolute) ?? string.Empty;
     if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-    if (!File.Exists(externalConfigAbsolute))
-    {
-        // Minimal, safe default configuration (non-sensitive)
-        var defaultJson = "{\n  \"Serilog\": {\n    \"MinimumLevel\": {\n      \"Default\": \"Information\",\n      \"Override\": {\n        \"Microsoft\": \"Warning\",\n        \"System\": \"Warning\"\n      }\n    }\n  }\n}";
-        File.WriteAllText(externalConfigAbsolute, defaultJson);
-        Console.WriteLine($"[Listenarr] Created default configuration at '{externalConfigRelative}'. Edit this file to customize app settings.");
-    }
+        if (!File.Exists(externalConfigAbsolute))
+        {
+            // Minimal, safe default configuration (non-sensitive)
+            var defaultJson = "{\n  \"Serilog\": {\n    \"MinimumLevel\": {\n      \"Default\": \"Information\",\n      \"Override\": {\n        \"Microsoft\": \"Warning\",\n        \"System\": \"Warning\"\n      }\n    }\n  }\n}";
+            File.WriteAllText(externalConfigAbsolute, defaultJson);
+            // Log the absolute path so it's clear where the file was created
+            Console.WriteLine($"[Listenarr] Created default configuration at '{externalConfigAbsolute}'. Edit this file to customize app settings.");
+        }
 }
 catch (Exception ex)
 {
