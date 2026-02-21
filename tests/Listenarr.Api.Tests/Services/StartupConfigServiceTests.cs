@@ -15,7 +15,7 @@ namespace Listenarr.Api.Tests.Services
         {
             // arrange - ensure no existing config on disk
             var baseDir = AppContext.BaseDirectory;
-            var cfgDir = Path.Combine(baseDir, "config");
+            var cfgDir = Path.Join(baseDir, "config");
 
             using var loggerFactory = new LoggerFactory();
             var logger = loggerFactory.CreateLogger<StartupConfigService>();
@@ -53,7 +53,7 @@ namespace Listenarr.Api.Tests.Services
             Assert.Equal(12345, after.Port);
 
             // the file on disk should also contain the updated auth flag
-            var jsonPath = Path.Combine(cfgDir, "config.json");
+            var jsonPath = Path.Join(cfgDir, "config.json");
             Assert.True(File.Exists(jsonPath));
             var json = File.ReadAllText(jsonPath);
             Assert.Contains("\"AuthenticationRequired\": \"true\"", json);

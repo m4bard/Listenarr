@@ -461,17 +461,20 @@ if (isDev && !isDocker)
         var dir = new DirectoryInfo(builder.Environment.ContentRootPath);
         const int maxDepth = 8;
         int depth = 0;
-            while (dir != null && depth++ < maxDepth)
+        while (dir != null && depth++ < maxDepth)
+        {
+            if (Directory.Exists(Path.Join(dir.FullName, "listenarr.api", "config")))
             {
-                if (Directory.Exists(Path.Join(dir.FullName, "listenarr.api", "config")))
-                {
-                    repoCandidate = dir.FullName;
-                    break;
-                }
-                dir = dir.Parent;
+                repoCandidate = dir.FullName;
+                break;
             }
+            dir = dir.Parent;
+        }
     }
-    catch { }
+    catch (Exception ex)
+    {
+        Log.Logger.Debug(ex, "[Startup] Failed to resolve repo candidate from ContentRootPath; continuing with fallback resolution.");
+    }
 
     // Prefer the current working directory when running dev (npm run dev uses repo root)
     try
@@ -497,7 +500,10 @@ if (isDev && !isDocker)
                 dir = dir.Parent;
             }
         }
-        catch { }
+        catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+        {
+            Log.Logger.Debug(ex, "[Startup] Failed to probe for repo root from current directory '{Cwd}'", cwd);
+        }
         string devRepoRoot = repoRootFromCwd ?? repoCandidate ?? repoRoot;
 
         // If the chosen root already points at the listenarr.api folder, avoid adding
@@ -517,7 +523,12 @@ if (isDev && !isDocker)
             Log.Logger.Information("[Startup] Development mode detected - forcing SQLite DB to repo path: {DevRepoDb}", devRepoDb);
         }
     }
-    catch (Exception ex)
+    catch (Exception ex) when (
+        ex is IOException ||
+        ex is UnauthorizedAccessException ||
+        ex is DirectoryNotFoundException ||
+        ex is PathTooLongException ||
+        ex is System.Security.SecurityException)
     {
         Log.Logger.Warning(ex, "Failed to resolve dev repo DB using working directory; falling back to computed repoRoot");
         var devRepoDbFallback = Path.Join(repoRoot, "listenarr.api", "config", "database", "listenarr.db");

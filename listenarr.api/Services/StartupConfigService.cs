@@ -63,7 +63,11 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex)
+            catch (IOException ex)
+            {
+                _logger.LogDebug(ex, "Error while probing for repository config.json; falling back to content root");
+            }
+            catch (UnauthorizedAccessException ex)
             {
                 _logger.LogDebug(ex, "Error while probing for repository config.json; falling back to content root");
             }
