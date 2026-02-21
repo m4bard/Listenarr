@@ -71,13 +71,15 @@ namespace Listenarr.Api.Services
         {
             try
             {
+                _logger.LogInformation("[StartupConfigService] Attempting to save config to {Path}", _configPath);
                 // Always allow frontend to overwrite AuthenticationRequired
                 SaveConfigFile(config);
+                _logger.LogInformation("[StartupConfigService] Successfully saved config to {Path}", _configPath);
                 _config = config;
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "Failed to save startup config to {Path}", _configPath);
+                _logger.LogError(ex, "[StartupConfigService] Exception while saving config to {Path}", _configPath);
                 throw;
             }
 
@@ -146,18 +148,32 @@ namespace Listenarr.Api.Services
 
         private void SaveConfigFile(StartupConfig? config)
         {
-            if (config == null) return;
+            if (config == null)
+            {
+                _logger.LogWarning("[StartupConfigService] SaveConfigFile called with null config. Path: {Path}", _configPath);
+                return;
+            }
 
             // Ensure the config directory exists
             var configDir = Path.GetDirectoryName(_configPath);
             if (!string.IsNullOrEmpty(configDir) && !Directory.Exists(configDir))
             {
+                _logger.LogWarning("[StartupConfigService] Config directory did not exist. Creating: {Dir}", configDir);
                 Directory.CreateDirectory(configDir);
             }
 
             var options = new JsonSerializerOptions { WriteIndented = true };
             var json = JsonSerializer.Serialize(config, options);
-            File.WriteAllText(_configPath, json);
+            try
+            {
+                File.WriteAllText(_configPath, json);
+                _logger.LogInformation("[StartupConfigService] File.WriteAllText succeeded for {Path}", _configPath);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "[StartupConfigService] File.WriteAllText failed for {Path}", _configPath);
+                throw;
+            }
         }
     }
 }

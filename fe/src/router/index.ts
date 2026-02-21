@@ -129,8 +129,8 @@ export function preloadRoute(nameOrPath: string) {
 }
 
 // Navigation guard: protect routes requiring auth and preserve redirectTo
-let routerStartupConfig: StartupConfig | null = null
-let routerStartupConfigLoaded = false
+
+
 
 router.beforeEach(async (to, from, next) => {
   if (import.meta.env.CYPRESS) return next()
@@ -150,27 +150,39 @@ router.beforeEach(async (to, from, next) => {
     } catch {}
   }
 
-  // Fetch startup config only once per session
-  if (!routerStartupConfigLoaded) {
-    routerStartupConfig = await getStartupConfigCached(24 * 60 * 60 * 1000) // 24h TTL
-    routerStartupConfigLoaded = true
-  }
-  const startupConfig = routerStartupConfig
+  // Always fetch the latest startup config (no cache)
+  const startupConfig = await getStartupConfigCached(0)
   const startupConfigMissing = !startupConfig
   logger.debug('[router] startupConfigMissing', startupConfigMissing)
   logger.debug('[router] startupConfig', startupConfig)
   const authRequiredConfig = (() => {
-    if (startupConfigMissing) return true
+    if (startupConfigMissing) {
+      logger.debug('[router] startupConfig missing, defaulting authRequiredConfig to true')
+      return true
+    }
     const raw =
       startupConfig?.authenticationRequired ??
       (startupConfig as StartupConfig & { AuthenticationRequired?: string | boolean })
         ?.AuthenticationRequired
-    const v = raw
-    if (v === undefined || v === null) return false
-    if (typeof v === 'boolean') return v
-    if (typeof v === 'string') return v.toLowerCase() === 'enabled' || v.toLowerCase() === 'true'
+    logger.debug('[router] startupConfig raw authRequired:', raw)
+    let v = raw
+    if (v === undefined || v === null) {
+      logger.debug('[router] authRequiredConfig: value undefined/null, returning false')
+      return false
+    }
+    if (typeof v === 'boolean') {
+      logger.debug('[router] authRequiredConfig: boolean value', v)
+      return v
+    }
+    if (typeof v === 'string') {
+      const parsed = v.toLowerCase() === 'enabled' || v.toLowerCase() === 'true'
+      logger.debug('[router] authRequiredConfig: string value', v, 'parsed as', parsed)
+      return parsed
+    }
+    logger.debug('[router] authRequiredConfig: unknown type, returning false')
     return false
   })()
+  logger.debug('[router] FINAL authRequiredConfig:', authRequiredConfig)
 
   // If authentication is disabled in startup config, prevent access to login page
   if (!authRequiredConfig) {

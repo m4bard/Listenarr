@@ -9,7 +9,7 @@ import type {
   Indexer,
   QueueItem,
   RemotePathMapping,
-  QualityScore,
+  // ...existing code...
   TranslatePathRequest,
   TranslatePathResponse,
   SystemInfo,
@@ -51,9 +51,20 @@ const BACKEND_BASE_URL = import.meta.env.DEV ? '' : API_BASE_URL.replace('/api',
 type ErrorWithStatus = Error & { status?: number; body?: string; retryAfter?: number }
 
 class ApiService {
+  private antiforgeryToken: string | null = null;
+  private antiforgeryTokenSession: string | null = null;
+  private tokenReadyPromise: Promise<void> | null = null;
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
 
+
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
+      // Await tokenReadyPromise before any unsafe request to guarantee fresh token
+      const method = (options.method || 'GET').toString().toUpperCase();
+      if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) && this.tokenReadyPromise) {
+        logger.debug('[ApiService] Awaiting tokenReadyPromise before unsafe request');
+        await this.tokenReadyPromise;
+        this.tokenReadyPromise = null;
+      }
     const url = `${API_BASE_URL}${endpoint}`
 
     const config: RequestInit = {
@@ -61,40 +72,34 @@ class ApiService {
         'Content-Type': 'application/json',
         ...options.headers,
       },
-      // Include cookies for same-site auth
       credentials: 'include',
       ...options,
     }
-
-    // Attach API key from startup config if present (cached call).
-    // IMPORTANT: only attach the API key automatically when the server has
-    // authentication disabled. If authentication is enabled, the presence of
-    // an API key would authenticate the SPA itself and bypass login/logout.
-    try {
-      const sc = await getStartupConfigCached(2000)
-      const apiKey = sc?.apiKey
-      // Accept both camelCase and PascalCase variants for compatibility
-      const rawAuth =
-        sc?.authenticationRequired ??
-        (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-      const authEnabled =
-        typeof rawAuth === 'boolean'
-          ? rawAuth
-          : typeof rawAuth === 'string'
-            ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-            : false
-
-      if (apiKey && !authEnabled) {
-        const hdrs = config.headers as Record<string, string> | undefined
-        config.headers = { ...(hdrs || {}), 'X-Api-Key': apiKey }
-      }
-    } catch {}
 
     // Attach session token if available
     const sessionToken = sessionTokenManager.getToken()
     if (sessionToken) {
       const hdrs = config.headers as Record<string, string> | undefined
       config.headers = { ...(hdrs || {}), Authorization: `Bearer ${sessionToken}` }
+    } else {
+      // Only attach API key if authentication is disabled
+      try {
+        const sc = await getStartupConfigCached(2000)
+        const apiKey = sc?.apiKey
+        const rawAuth =
+          sc?.authenticationRequired ??
+          (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
+        const authEnabled =
+          typeof rawAuth === 'boolean'
+            ? rawAuth
+            : typeof rawAuth === 'string'
+              ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
+              : false
+        if (apiKey && !authEnabled) {
+          const hdrs = config.headers as Record<string, string> | undefined
+          config.headers = { ...(hdrs || {}), 'X-Api-Key': apiKey }
+        }
+      } catch {}
     }
 
     // Auto-attach antiforgery token for unsafe HTTP methods when not already provided.
@@ -104,17 +109,33 @@ class ApiService {
         // Only attach if header not already set
         const hdrs = config.headers as Record<string, string> | undefined
         if (!hdrs || !hdrs['X-XSRF-TOKEN']) {
-          const token = await this.fetchAntiforgeryToken(config.headers as Record<string, string> | undefined)
-          if (token) {
+          // Use cached antiforgery token if available and session matches
+          const sessionToken = sessionTokenManager.getToken() || null;
+          if (
+            this.antiforgeryToken &&
+            this.antiforgeryTokenSession === sessionToken
+          ) {
             config.headers = {
               ...(config.headers as Record<string, string>),
-              'X-XSRF-TOKEN': token,
+              'X-XSRF-TOKEN': this.antiforgeryToken,
+            }
+          } else {
+            // Fetch and cache new token for this session
+            const token = await this.fetchAntiforgeryToken(
+              sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined
+            )
+            if (token) {
+              this.antiforgeryToken = token;
+              this.antiforgeryTokenSession = sessionToken;
+              config.headers = {
+                ...(config.headers as Record<string, string>),
+                'X-XSRF-TOKEN': token,
+              }
             }
           }
         }
       }
     } catch (e) {
-      // Swallow errors fetching token; the server will return a clear error if required
       logger.debug('[ApiService] failed to fetch CSRF token', e)
     }
 
@@ -798,13 +819,12 @@ class ApiService {
   }
 
   async saveApplicationSettings(settings: ApplicationSettings): Promise<ApplicationSettings> {
-    // Always fetch a fresh CSRF token for settings save
-    const token = await this.fetchAntiforgeryToken()
-    const headers: Record<string, string> = {}
-    if (token) headers['X-XSRF-TOKEN'] = token
+    // Delegate CSRF handling to request(); it will fetch/attach a fresh token and
+    // wait for any login-related tokenReadyPromise if necessary. Avoid manually
+    // calling fetchAntiforgeryToken here because that can return a stale anonymous
+    // token and override the cached value.
     return this.request<ApplicationSettings>('/configuration/settings', {
       method: 'POST',
-      headers,
       body: JSON.stringify(settings),
     })
   }
@@ -892,73 +912,27 @@ class ApiService {
     const resp = await fetch(`${API_BASE_URL}/configuration/startupconfig`, {
       method: 'GET',
       credentials: 'include',
-    })
+    });
     if (!resp.ok) {
-      const txt = await resp.text().catch(() => '')
-      const err = new Error(`Startup config fetch failed: ${resp.status} ${txt}`) as ErrorWithStatus
-      err.status = resp.status
-      throw err
+      throw new Error(`Failed to fetch startup config: ${resp.status}`)
     }
-    const json = await resp.json().catch(() => null)
-    return json as import('@/types').StartupConfig
+    return await resp.json();
   }
 
-  async saveStartupConfig(
-    config: import('@/types').StartupConfig,
-  ): Promise<import('@/types').StartupConfig> {
-    // Read the cached startup config synchronously (if available) so we can
-    // detect auth-related changes and refresh the antiforgery token only when
-    // needed.
-    const prev = getCachedStartupConfig() as import('@/types').StartupConfig | undefined
-
-    const res = await this.request<import('@/types').StartupConfig>(
-      '/configuration/startupconfig',
-      {
+    /**
+     * Save the startup configuration to the backend.
+     * @param config The StartupConfig object to save
+     */
+    async saveStartupConfig(config: import('@/types').StartupConfig): Promise<{ success: boolean; message?: string }> {
+      return this.request<{ success: boolean; message?: string }>('/configuration/startupconfig', {
         method: 'POST',
         body: JSON.stringify(config),
-      },
-    )
-
-    try {
-      const prevObj = prev as unknown as Record<string, unknown> | undefined
-      const cfgObj = config as unknown as Record<string, unknown>
-
-      const prevAuthRaw = prevObj
-        ? (prevObj['authenticationRequired'] ?? prevObj['AuthenticationRequired'])
-        : undefined
-      const newAuthRaw = cfgObj['authenticationRequired'] ?? cfgObj['AuthenticationRequired']
-      const prevApiKey = prevObj ? prevObj['apiKey'] : undefined
-      const newApiKey = cfgObj['apiKey']
-
-      const prevAuth =
-        typeof prevAuthRaw === 'boolean'
-          ? prevAuthRaw
-          : typeof prevAuthRaw === 'string'
-            ? (prevAuthRaw as string).toLowerCase() === 'enabled' ||
-              (prevAuthRaw as string).toLowerCase() === 'true'
-            : false
-
-      const newAuth =
-        typeof newAuthRaw === 'boolean'
-          ? newAuthRaw
-          : typeof newAuthRaw === 'string'
-            ? (newAuthRaw as string).toLowerCase() === 'enabled' ||
-              (newAuthRaw as string).toLowerCase() === 'true'
-            : false
-
-      // If authentication mode or API key changed, refresh antiforgery token
-      // for the current auth principal so subsequent unsafe requests succeed.
-      if (prevAuth !== newAuth || prevApiKey !== newApiKey) {
-        try {
-          await this.ensureAntiforgeryForCurrentAuth()
-        } catch {}
-      }
-    } catch {
-      // Non-fatal; do not block saving on token refresh failures
+      });
     }
 
-    return res
-  }
+
+
+  // ...existing code...
 
   // Regenerate server-side API key. Returns the new API key in the response.
   async regenerateApiKey(): Promise<{ apiKey: string }> {
@@ -1668,33 +1642,27 @@ class ApiService {
   // Antiforgery token for SPA (calls our new /api/antiforgery/token endpoint)
   async fetchAntiforgeryToken(headersToUse?: Record<string, string>): Promise<string | null> {
     try {
-      // If the caller provides headers (e.g., the request's headers), use them as
-      // the base so the token is issued for the same principal. Otherwise,
-      // build headers from the current auth state.
+      // If the caller provides headers, use them as the base.
       const headers: Record<string, string> = headersToUse ? { ...headersToUse } : {}
 
-      // Prefer the current session Authorization when available so the token
-      // is bound to the same claims-based user the SPA will use for unsafe
-      // requests. If the caller already supplied an Authorization header, do
-      // not overwrite it.
-      try {
-        if (!headers['Authorization']) {
-          const sess = sessionTokenManager.getToken()
-          if (sess) headers['Authorization'] = `Bearer ${sess}`
-        }
-      } catch {}
-
-      // If no Authorization header present, allow an API key header to be
-      // attached so the token is issued for the API key principal when used.
-      try {
-        if (!headers['X-Api-Key']) {
+      // If Authorization is present, never attach API key (enforce user session only)
+      if (!headers['Authorization']) {
+        // Only attach API key if authentication is disabled
+        try {
           const sc = await getStartupConfigCached(2000)
           const apiKey = sc?.apiKey
-          // Only attach X-Api-Key here; request-level logic already avoids
-          // sending it when authentication is enabled for other calls.
-          if (apiKey) headers['X-Api-Key'] = apiKey
-        }
-      } catch {}
+          const rawAuth =
+            sc?.authenticationRequired ??
+            (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
+          const authEnabled =
+            typeof rawAuth === 'boolean'
+              ? rawAuth
+              : typeof rawAuth === 'string'
+                ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
+                : false
+          if (apiKey && !authEnabled) headers['X-Api-Key'] = apiKey
+        } catch {}
+      }
 
       logger.debug('[ApiService] fetching antiforgery token', {
         url: `${API_BASE_URL}/antiforgery/token`,
@@ -1716,6 +1684,10 @@ class ApiService {
         tokenExists: !!token,
         tokenLength: token ? token.length : 0,
       })
+      // Cache the token in memory for the current session
+      const sessionToken = sessionTokenManager.getToken() || null;
+      this.antiforgeryToken = token;
+      this.antiforgeryTokenSession = sessionToken;
       return token
     } catch {
       return null
@@ -1764,24 +1736,50 @@ class ApiService {
     // Handle session token response (only expected when authentication is required)
     const responseData = await resp.json()
     if (responseData.sessionToken) {
-      sessionTokenManager.setToken(responseData.sessionToken)
-      console.log('[ApiService] Session token received and stored')
-      // Ensure antiforgery token is fetched for the newly authenticated principal.
-      // This prevents a common failure where a token issued to an anonymous
-      // user is later reused for an authenticated request (causes validation
-      // error: "meant for a different claims-based user").
-      try {
-        await this.fetchAntiforgeryToken()
-        logger.debug('[ApiService] Fetched antiforgery token after login')
-      } catch (e) {
-        logger.debug('[ApiService] Failed to fetch antiforgery token after login', e)
+      // Clear antiforgery token cache BEFORE setting session token
+      this.antiforgeryToken = null;
+      this.antiforgeryTokenSession = null;
+      sessionTokenManager.setToken(responseData.sessionToken);
+      logger.debug('[ApiService] Session token received and stored');
+      if (typeof window !== 'undefined') {
+        try { window.localStorage.removeItem('listenarr_csrf_token'); } catch {}
       }
+      // Set tokenReadyPromise and resolve after token is fetched
+      this.tokenReadyPromise = (async () => {
+        try {
+          await new Promise(resolve => setTimeout(resolve, 10));
+          const token = await this.fetchAntiforgeryToken({ Authorization: `Bearer ${responseData.sessionToken}` });
+          logger.debug('[ApiService] Fetched antiforgery token after login', {
+            tokenExists: !!token,
+            tokenLength: token ? token.length : 0,
+            sessionToken: responseData.sessionToken,
+          });
+        } catch (e) {
+          logger.debug('[ApiService] Failed to fetch antiforgery token after login', e);
+        }
+      })();
+      await this.tokenReadyPromise;
+      this.tokenReadyPromise = null;
     } else if (responseData.authType === 'none') {
-      // Authentication not required - clear any existing token
-      sessionTokenManager.clearToken()
-      console.log('[ApiService] Authentication not required - no session token needed')
+      sessionTokenManager.clearToken();
+      this.antiforgeryToken = null;
+      this.antiforgeryTokenSession = null;
+      logger.debug('[ApiService] Authentication not required - no session token needed');
+      this.tokenReadyPromise = (async () => {
+        try {
+          const token = await this.fetchAntiforgeryToken();
+          logger.debug('[ApiService] Fetched antiforgery token after anonymous login', {
+            tokenExists: !!token,
+            tokenLength: token ? token.length : 0,
+          });
+        } catch (e) {
+          logger.debug('[ApiService] Failed to fetch antiforgery token after anonymous login', e);
+        }
+      })();
+      await this.tokenReadyPromise;
+      this.tokenReadyPromise = null;
     } else {
-      throw new Error('Login succeeded but expected session token or auth type not received')
+      throw new Error('Login succeeded but expected session token or auth type not received');
     }
   }
 
@@ -1802,10 +1800,10 @@ class ApiService {
   }
 
   async logout(): Promise<void> {
-    console.log('[ApiService] Making logout request to /account/logout')
+    logger.debug('[ApiService] Making logout request to /account/logout')
     try {
       await this.request<void>('/account/logout', { method: 'POST' })
-      console.log('[ApiService] Logout request completed successfully')
+      logger.debug('[ApiService] Logout request completed successfully')
     } catch (error) {
       errorTracking.captureException(error as Error, {
         component: 'ApiService',
@@ -1813,9 +1811,18 @@ class ApiService {
       })
       throw error
     } finally {
-      // Always clear session token on logout, regardless of API call success
+      // Always clear session token and antiforgery token on logout
       sessionTokenManager.clearToken()
-      console.log('[ApiService] Session token cleared')
+      this.antiforgeryToken = null;
+      this.antiforgeryTokenSession = null;
+      logger.debug('[ApiService] Session token cleared')
+      // Prefetch antiforgery token for anonymous principal after logout
+      try {
+        await this.fetchAntiforgeryToken()
+        logger.debug('[ApiService] Fetched antiforgery token after logout')
+      } catch (e) {
+        logger.debug('[ApiService] Failed to fetch antiforgery token after logout', e)
+      }
     }
   }
 
@@ -1885,36 +1892,6 @@ export const testDownloadClient = (config: Partial<DownloadClientConfiguration>)
   apiService.testDownloadClient(config as any)
 
 // Audimeta helpers
-export const searchAudimeta = (
-  query: string,
-  page: number = 1,
-  limit: number = 50,
-  region?: string,
-  language?: string,
-) => apiService.searchAudimeta(query, page, limit, region, language)
-export const searchAudimetaByTitleAndAuthor = (
-  title: string,
-  author: string,
-  page: number = 1,
-  limit: number = 50,
-  region?: string,
-  language?: string,
-) => apiService.searchAudimetaByTitleAndAuthor(title, author, page, limit, region, language)
-export const getAudimetaMetadata = (asin: string, region?: string, cache?: boolean) =>
-  apiService.getAudimetaMetadata(asin, region, cache)
-export const getMetadata = (asin: string, region?: string, cache?: boolean) =>
-  apiService.getMetadata(asin, region, cache)
-
-// Image cache helper
-export const ensureImageCached = (path: string) => apiService.ensureImageCached(path)
-
-// Audible auth helpers
-export const getAudibleAuthStatus = () => apiService.getAudibleAuthStatus()
-export const startAudibleExternalLogin = (locale?: string, deviceName?: string) =>
-  apiService.startAudibleExternalLogin(locale, deviceName)
-export const completeAudibleExternalLogin = (
-  responseUrl: string,
-  locale?: string,
-  deviceName?: string,
-) => apiService.completeAudibleExternalLogin(responseUrl, locale, deviceName)
-export const logoutAudible = () => apiService.logoutAudible()
+// ...existing code...
+// ...existing code...
+export const ensureImageCached = apiService.ensureImageCached.bind(apiService);

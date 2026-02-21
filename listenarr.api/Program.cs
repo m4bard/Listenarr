@@ -37,8 +37,18 @@ using Listenarr.Api.Extensions;
 using Listenarr.Infrastructure.Extensions;
 
 // Check for special CLI helpers before building the web host
-// Pass a non-null args array to satisfy nullable analysis
-var builder = WebApplication.CreateBuilder(args ?? Array.Empty<string>());
+// Set ContentRootPath to repo root for local dev, but leave Docker/production unaffected
+var isDocker = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
+var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
+var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+
+var builder = isDev && !isDocker
+    ? WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            Args = args,
+            ContentRootPath = repoRoot
+        })
+    : WebApplication.CreateBuilder(args ?? Array.Empty<string>());
 
 // Configure Serilog for structured logging, file rotation and SignalR broadcasting
 var logFilePath = Path.Combine(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
