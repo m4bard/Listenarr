@@ -419,12 +419,95 @@ var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
     : (Path.IsPathRooted(sqliteDbPathOverride)
         ? sqliteDbPathOverride
         : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
+
+// In development, prefer the repository database path so `npm run dev` uses
+// `listenarr.api/config/database/listenarr.db` regardless of the resolved
+// ContentRootPath. This ensures developers see and edit the canonical DB.
+if (isDev && !isDocker)
+{
+    // Search ancestors from the content root for a directory that contains
+    // the `listenarr.api/config` folder. This avoids duplicating `listenarr.api`
+    // when ContentRootPath is already inside a nested build folder.
+    string? repoCandidate = null;
+    try
+    {
+        var dir = new DirectoryInfo(builder.Environment.ContentRootPath);
+        while (dir != null)
+        {
+            if (Directory.Exists(Path.Combine(dir.FullName, "listenarr.api", "config")))
+            {
+                repoCandidate = dir.FullName;
+                break;
+            }
+            dir = dir.Parent;
+        }
+    }
+    catch { }
+
+    // Prefer the current working directory when running dev (npm run dev uses repo root)
+    try
+    {
+        // First, search upward from the current working directory for the repository root
+        // (identified by the presence of listenarr.sln). This is the most reliable
+        // indicator of the repo root regardless of whether the process was started
+        // from a build output folder or the repo directory itself.
+        var cwd = Directory.GetCurrentDirectory();
+        string? repoRootFromCwd = null;
+        try
+        {
+            var dir = new DirectoryInfo(cwd);
+            while (dir != null)
+            {
+                if (File.Exists(Path.Combine(dir.FullName, "listenarr.sln")))
+                {
+                    repoRootFromCwd = dir.FullName;
+                    break;
+                }
+                dir = dir.Parent;
+            }
+        }
+        catch { }
+
+        string devRepoRoot = repoRootFromCwd ?? repoCandidate ?? repoRoot;
+
+        // If the chosen root already points at the listenarr.api folder, avoid adding
+        // an extra 'listenarr.api' segment which previously produced duplicate paths.
+        bool rootIsListenarrApi = devRepoRoot.EndsWith(Path.Combine("listenarr.api"), StringComparison.OrdinalIgnoreCase)
+                                 || devRepoRoot.EndsWith("listenarr.api", StringComparison.OrdinalIgnoreCase);
+
+        string devRepoDb;
+        if (rootIsListenarrApi)
+        {
+            devRepoDb = Path.Combine(devRepoRoot, "config", "database", "listenarr.db");
+        }
+        else
+        {
+            devRepoDb = Path.Combine(devRepoRoot, "listenarr.api", "config", "database", "listenarr.db");
+        }
+
+        if (File.Exists(devRepoDb) || Directory.Exists(Path.GetDirectoryName(devRepoDb)!))
+        {
+            sqliteDbPath = devRepoDb;
+            Log.Logger.Information("[Startup] Development mode detected - forcing SQLite DB to repo path: {DevRepoDb}", devRepoDb);
+        }
+    }
+    catch (Exception ex)
+    {
+        Log.Logger.Warning(ex, "Failed to resolve dev repo DB using working directory; falling back to computed repoRoot");
+        var devRepoDbFallback = Path.Combine(repoRoot, "listenarr.api", "config", "database", "listenarr.db");
+        sqliteDbPath = devRepoDbFallback;
+        Log.Logger.Information("[Startup] Development mode detected - forcing SQLite DB to repo path (fallback): {DevRepoDb}", devRepoDbFallback);
+    }
+}
 // Ensure directory exists at startup so EF migrations can create the DB file there
 var sqliteDbDir = Path.GetDirectoryName(sqliteDbPath);
 if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))
 {
     Directory.CreateDirectory(sqliteDbDir);
 }
+
+// Log the resolved SQLite DB path so developers can verify which file is used at runtime
+Log.Logger.Information("[Startup] Resolved SQLite DB path: {SqliteDbPath}", sqliteDbPath);
 
 // Register persistence (DbContextFactory + compatibility DbContext + repositories) via extension
 builder.Services.AddListenarrPersistence(builder.Configuration, sqliteDbPath);
