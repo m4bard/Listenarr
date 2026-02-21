@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Settings save CSRF failure**: ensured antiforgery token is refreshed and bound to authenticated user. Added `tokenReadyPromise` in `ApiService` and blocked unsafe requests until token is available. Removed manual CSRFFetch from `saveApplicationSettings`.
+- **Startup config persistence**: previously, `AuthenticationRequired` was preserved from `config.json` and ignored when the frontend saved.  Toggle in General Settings now updates the flag and writes it to the file; authentication behaves the same as the other startup options.
 - **Token export**: properly export `ensureImageCached` and cleaned stray code from `api.ts` that caused build errors.
 - **Startup cache logging**: added missing `logger` import and removed unsafe `console` usage.
 

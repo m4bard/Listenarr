@@ -40,7 +40,15 @@ using Listenarr.Infrastructure.Extensions;
 // Set ContentRootPath to repo root for local dev, but leave Docker/production unaffected
 var isDocker = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
 var isDev = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") == "Development";
-var repoRoot = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", ".."));
+// calculate three levels above the base directory without Path.Combine (which
+// can drop earlier segments if a later segment is absolute). fall back gracefully
+// if the directory hierarchy is shorter than expected.
+var baseDir = AppContext.BaseDirectory;
+var repoRoot = Directory.GetParent(
+                   Directory.GetParent(
+                       Directory.GetParent(baseDir)?.FullName ?? baseDir
+                   )?.FullName ?? baseDir
+               )?.FullName ?? baseDir;
 
 var builder = isDev && !isDocker
     ? WebApplication.CreateBuilder(new WebApplicationOptions

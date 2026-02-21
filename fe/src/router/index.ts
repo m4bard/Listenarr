@@ -157,9 +157,12 @@ router.beforeEach(async (to, from, next) => {
   logger.debug('[router] startupConfig', startupConfig)
   const authRequiredConfig = (() => {
     if (startupConfigMissing) {
-      logger.debug('[router] startupConfig missing, defaulting authRequiredConfig to true')
-      return true
-    }
+        logger.debug('[router] startupConfig missing, defaulting authRequiredConfig to false')
+        // If the backend is temporarily unreachable or the config fetch fails,
+        // do not force the login screen. Treat missing config as "no auth"
+        // to avoid blocking the SPA from loading.
+        return false
+      }
     const raw =
       startupConfig?.authenticationRequired ??
       (startupConfig as StartupConfig & { AuthenticationRequired?: string | boolean })

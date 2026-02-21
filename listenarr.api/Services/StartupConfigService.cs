@@ -16,13 +16,63 @@ namespace Listenarr.Api.Services
         private readonly string _configPath;
         private StartupConfig? _config;
 
-        public StartupConfigService(ILogger<StartupConfigService> logger)
+        public StartupConfigService(ILogger<StartupConfigService> logger, Microsoft.Extensions.Hosting.IHostEnvironment env)
         {
             _logger = logger;
-            // Path to config.json in the application config directory
-            // For published executables, use the base directory (publish folder)
-            // For development, this will be adjusted by the content root path logic in Program.cs
-            _configPath = Path.Combine(AppContext.BaseDirectory, "config", "config.json");
+
+            // Determine config.json path. Prefer the repository copy at
+            // <repoRoot>/listenarr.api/config/config.json when it exists so
+            // local development runs always use the repo config file.
+            var contentRoot = env.ContentRootPath ?? AppContext.BaseDirectory;
+
+            try
+            {
+                var dirInfo = new DirectoryInfo(contentRoot);
+
+                // First pass: search ancestors for a repository-style config at
+                // <ancestor>/listenarr.api/config/config.json and prefer that.
+                while (dirInfo != null)
+                {
+                    var candidateRepo = Path.Combine(dirInfo.FullName, "listenarr.api", "config", "config.json");
+                    if (File.Exists(candidateRepo))
+                    {
+                        _configPath = candidateRepo;
+                        break;
+                    }
+
+                    dirInfo = dirInfo.Parent;
+                }
+
+                // Second pass (only if repo-style not found): search for any
+                // config/config.json in ancestors (this picks up bin/config/config.json).
+                if (string.IsNullOrEmpty(_configPath))
+                {
+                    dirInfo = new DirectoryInfo(contentRoot);
+                    while (dirInfo != null)
+                    {
+                        var candidateLocal = Path.Combine(dirInfo.FullName, "config", "config.json");
+                        if (File.Exists(candidateLocal))
+                        {
+                            _configPath = candidateLocal;
+                            break;
+                        }
+                        dirInfo = dirInfo.Parent;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error while probing for repository config.json; falling back to content root");
+            }
+
+            // Fallback: use content-root/config/config.json if nothing else was found
+            if (string.IsNullOrEmpty(_configPath))
+            {
+                _configPath = Path.Combine(contentRoot, "config", "config.json");
+            }
+
+            _logger.LogInformation("[StartupConfigService] Using startup config path: {Path}", _configPath);
+
             Load();
         }
 
@@ -72,7 +122,8 @@ namespace Listenarr.Api.Services
             try
             {
                 _logger.LogInformation("[StartupConfigService] Attempting to save config to {Path}", _configPath);
-                // Always allow frontend to overwrite AuthenticationRequired
+                // Accept whatever value the caller provides for AuthenticationRequired.
+                // This allows the frontend 'require login' toggle to control the flag.
                 SaveConfigFile(config);
                 _logger.LogInformation("[StartupConfigService] Successfully saved config to {Path}", _configPath);
                 _config = config;
