@@ -459,7 +459,9 @@ if (isDev && !isDocker)
     try
     {
         var dir = new DirectoryInfo(builder.Environment.ContentRootPath);
-        while (dir != null)
+        const int maxDepth = 8;
+        int depth = 0;
+        while (dir != null && depth++ < maxDepth)
         {
             if (Directory.Exists(Path.Combine(dir.FullName, "listenarr.api", "config")))
             {
@@ -483,7 +485,9 @@ if (isDev && !isDocker)
         try
         {
             var dir = new DirectoryInfo(cwd);
-            while (dir != null)
+            const int maxDepth2 = 8;
+            int depth2 = 0;
+            while (dir != null && depth2++ < maxDepth2)
             {
                 if (File.Exists(Path.Combine(dir.FullName, "listenarr.sln")))
                 {
@@ -494,23 +498,18 @@ if (isDev && !isDocker)
             }
         }
         catch { }
-
         string devRepoRoot = repoRootFromCwd ?? repoCandidate ?? repoRoot;
 
         // If the chosen root already points at the listenarr.api folder, avoid adding
         // an extra 'listenarr.api' segment which previously produced duplicate paths.
-        bool rootIsListenarrApi = devRepoRoot.EndsWith(Path.Combine("listenarr.api"), StringComparison.OrdinalIgnoreCase)
-                                 || devRepoRoot.EndsWith("listenarr.api", StringComparison.OrdinalIgnoreCase);
+        bool rootIsListenarrApi = string.Equals(
+            Path.GetFileName(devRepoRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+            "listenarr.api",
+            StringComparison.OrdinalIgnoreCase);
 
-        string devRepoDb;
-        if (rootIsListenarrApi)
-        {
-            devRepoDb = Path.Combine(devRepoRoot, "config", "database", "listenarr.db");
-        }
-        else
-        {
-            devRepoDb = Path.Combine(devRepoRoot, "listenarr.api", "config", "database", "listenarr.db");
-        }
+        string devRepoDb = rootIsListenarrApi
+            ? Path.Combine(devRepoRoot, "config", "database", "listenarr.db")
+            : Path.Combine(devRepoRoot, "listenarr.api", "config", "database", "listenarr.db");
 
         if (File.Exists(devRepoDb) || Directory.Exists(Path.GetDirectoryName(devRepoDb)!))
         {

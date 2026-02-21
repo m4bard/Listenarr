@@ -31,7 +31,9 @@ namespace Listenarr.Api.Services
 
                 // First pass: search ancestors for a repository-style config at
                 // <ancestor>/listenarr.api/config/config.json and prefer that.
-                while (dirInfo != null)
+                const int maxDepth = 8;
+                int depth = 0;
+                while (dirInfo != null && depth++ < maxDepth)
                 {
                     var candidateRepo = Path.Combine(dirInfo.FullName, "listenarr.api", "config", "config.json");
                     if (File.Exists(candidateRepo))
@@ -48,7 +50,8 @@ namespace Listenarr.Api.Services
                 if (string.IsNullOrEmpty(_configPath))
                 {
                     dirInfo = new DirectoryInfo(contentRoot);
-                    while (dirInfo != null)
+                    depth = 0;
+                    while (dirInfo != null && depth++ < maxDepth)
                     {
                         var candidateLocal = Path.Combine(dirInfo.FullName, "config", "config.json");
                         if (File.Exists(candidateLocal))

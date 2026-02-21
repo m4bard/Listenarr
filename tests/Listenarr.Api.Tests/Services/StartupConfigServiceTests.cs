@@ -16,15 +16,20 @@ namespace Listenarr.Api.Tests.Services
             // arrange - ensure no existing config on disk
             var baseDir = AppContext.BaseDirectory;
             var cfgDir = Path.Combine(baseDir, "config");
-            if (Directory.Exists(cfgDir))
-            {
-                Directory.Delete(cfgDir, recursive: true);
-            }
 
-            var logger = new LoggerFactory().CreateLogger<StartupConfigService>();
+            using var loggerFactory = new LoggerFactory();
+            var logger = loggerFactory.CreateLogger<StartupConfigService>();
             var envMock = new Moq.Mock<Microsoft.Extensions.Hosting.IHostEnvironment>();
             envMock.Setup(e => e.ContentRootPath).Returns(AppContext.BaseDirectory);
-            var svc = new StartupConfigService(logger, envMock.Object);
+
+            try
+            {
+                if (Directory.Exists(cfgDir))
+                {
+                    Directory.Delete(cfgDir, recursive: true);
+                }
+
+                var svc = new StartupConfigService(logger, envMock.Object);
 
             // default config should exist and have false auth
             var original = svc.GetConfig();
@@ -67,6 +72,12 @@ namespace Listenarr.Api.Tests.Services
             Assert.Equal(54321, after2.Port);
             json = File.ReadAllText(jsonPath);
             Assert.Contains("\"AuthenticationRequired\": \"false\"", json);
+            }
+            finally
+            {
+                if (Directory.Exists(cfgDir))
+                    Directory.Delete(cfgDir, recursive: true);
+            }
         }
     }
 }
