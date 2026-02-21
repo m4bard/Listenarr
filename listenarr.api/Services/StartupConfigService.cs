@@ -35,7 +35,7 @@ namespace Listenarr.Api.Services
                 int depth = 0;
                 while (dirInfo != null && depth++ < maxDepth)
                 {
-                    var candidateRepo = Path.Combine(dirInfo.FullName, "listenarr.api", "config", "config.json");
+                    var candidateRepo = Path.Combine(dirInfo.FullName, Path.Combine("listenarr.api", "config", "config.json"));
                     if (File.Exists(candidateRepo))
                     {
                         _configPath = candidateRepo;
@@ -53,7 +53,7 @@ namespace Listenarr.Api.Services
                     depth = 0;
                     while (dirInfo != null && depth++ < maxDepth)
                     {
-                        var candidateLocal = Path.Combine(dirInfo.FullName, "config", "config.json");
+                        var candidateLocal = Path.Combine(dirInfo.FullName, Path.Combine("config", "config.json"));
                         if (File.Exists(candidateLocal))
                         {
                             _configPath = candidateLocal;
@@ -71,7 +71,7 @@ namespace Listenarr.Api.Services
             // Fallback: use content-root/config/config.json if nothing else was found
             if (string.IsNullOrEmpty(_configPath))
             {
-                _configPath = Path.Combine(contentRoot, "config", "config.json");
+                _configPath = Path.Combine(contentRoot, Path.Combine("config", "config.json"));
             }
 
             _logger.LogInformation("[StartupConfigService] Using startup config path: {Path}", _configPath);

@@ -461,15 +461,15 @@ if (isDev && !isDocker)
         var dir = new DirectoryInfo(builder.Environment.ContentRootPath);
         const int maxDepth = 8;
         int depth = 0;
-        while (dir != null && depth++ < maxDepth)
-        {
-            if (Directory.Exists(Path.Combine(dir.FullName, "listenarr.api", "config")))
+            while (dir != null && depth++ < maxDepth)
             {
-                repoCandidate = dir.FullName;
-                break;
+                if (Directory.Exists(Path.Combine(dir.FullName, Path.Combine("listenarr.api", "config"))))
+                {
+                    repoCandidate = dir.FullName;
+                    break;
+                }
+                dir = dir.Parent;
             }
-            dir = dir.Parent;
-        }
     }
     catch { }
 
@@ -489,7 +489,7 @@ if (isDev && !isDocker)
             int depth2 = 0;
             while (dir != null && depth2++ < maxDepth2)
             {
-                if (File.Exists(Path.Combine(dir.FullName, "listenarr.sln")))
+                if (File.Exists(Path.Combine(dir.FullName, Path.Combine("listenarr.sln"))))
                 {
                     repoRootFromCwd = dir.FullName;
                     break;
@@ -508,8 +508,8 @@ if (isDev && !isDocker)
             StringComparison.OrdinalIgnoreCase);
 
         string devRepoDb = rootIsListenarrApi
-            ? Path.Combine(devRepoRoot, "config", "database", "listenarr.db")
-            : Path.Combine(devRepoRoot, "listenarr.api", "config", "database", "listenarr.db");
+            ? Path.Combine(devRepoRoot, Path.Combine("config", "database", "listenarr.db"))
+            : Path.Combine(devRepoRoot, Path.Combine("listenarr.api", "config", "database", "listenarr.db"));
 
         if (File.Exists(devRepoDb) || Directory.Exists(Path.GetDirectoryName(devRepoDb)!))
         {
@@ -520,7 +520,7 @@ if (isDev && !isDocker)
     catch (Exception ex)
     {
         Log.Logger.Warning(ex, "Failed to resolve dev repo DB using working directory; falling back to computed repoRoot");
-        var devRepoDbFallback = Path.Combine(repoRoot, "listenarr.api", "config", "database", "listenarr.db");
+        var devRepoDbFallback = Path.Combine(repoRoot, Path.Combine("listenarr.api", "config", "database", "listenarr.db"));
         sqliteDbPath = devRepoDbFallback;
         Log.Logger.Information("[Startup] Development mode detected - forcing SQLite DB to repo path (fallback): {DevRepoDb}", devRepoDbFallback);
     }
