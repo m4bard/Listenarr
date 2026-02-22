@@ -48,12 +48,21 @@ WebApplicationBuilder builder;
 string? projectDir = null;
 if (!string.IsNullOrWhiteSpace(contentRootOverride))
 {
-    builder = WebApplication.CreateBuilder(new WebApplicationOptions
+    // Validate the provided override path before using it as ContentRootPath.
+    if (Directory.Exists(contentRootOverride))
     {
-        Args = args,
-        ContentRootPath = contentRootOverride
-    });
-    projectDir = contentRootOverride;
+        builder = WebApplication.CreateBuilder(new WebApplicationOptions
+        {
+            Args = args,
+            ContentRootPath = contentRootOverride
+        });
+        projectDir = contentRootOverride;
+    }
+    else
+    {
+        Console.WriteLine($"[Listenarr] Warning: LISTENARR_CONTENT_ROOT '{contentRootOverride}' does not exist; ignoring override.");
+        builder = WebApplication.CreateBuilder(args ?? Array.Empty<string>());
+    }
 }
 else if (isDev && !isDocker)
 {
@@ -72,9 +81,26 @@ else if (isDev && !isDocker)
     var looksLikeProjectRoot = Directory.Exists(Path.Join(projectDir, "config"))
         || File.Exists(Path.Join(projectDir, "listenarr.api.csproj"));
 
-    builder = looksLikeProjectRoot
-        ? WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = projectDir })
-        : WebApplication.CreateBuilder(args ?? Array.Empty<string>());
+    if (looksLikeProjectRoot && Directory.Exists(projectDir))
+    {
+        try
+        {
+            builder = WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = projectDir });
+        }
+        catch (Exception ex) when (ex is DirectoryNotFoundException || ex is IOException || ex is UnauthorizedAccessException)
+        {
+            // If for some reason the ContentRootPath cannot be used by CreateBuilder
+            // (for example a transient IO issue or an unexpected path layout), fall
+            // back to the default builder which will use the running assembly's
+            // base directory. Log to console so developers can see the fallback.
+            Console.WriteLine($"[Listenarr] Warning: failed to use content root '{projectDir}' - falling back to default. Error: {ex.Message}");
+            builder = WebApplication.CreateBuilder(args ?? Array.Empty<string>());
+        }
+    }
+    else
+    {
+        builder = WebApplication.CreateBuilder(args ?? Array.Empty<string>());
+    }
 }
 else
 {

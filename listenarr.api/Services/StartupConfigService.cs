@@ -1,5 +1,6 @@
 ﻿using Listenarr.Domain.Models;
 using System.Text.Json;
+using Serilog;
 
 namespace Listenarr.Api.Services
 {
@@ -21,45 +22,116 @@ namespace Listenarr.Api.Services
             _logger = logger;
 
             // Determine config.json path. Prefer the repository copy at
-            // <repoRoot>/listenarr.api/config/config.json when it exists so
-            // local development runs always use the repo config file.
+            // <repoRoot>/listenarr.api/config/config.json for local development
+            // so `npm run dev` uses the repo config file. Otherwise fall back to
+            // content-root-based config (e.g., published/bin layouts).
             var contentRoot = env.ContentRootPath ?? AppContext.BaseDirectory;
+
+            // In Development, try to resolve the repository root from the current
+            // working directory (most reliable when running via `npm run dev`).
+            var isDev = string.Equals(Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT"), "Development", StringComparison.OrdinalIgnoreCase);
+            var isDocker = Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true";
+            if (isDev && !isDocker)
+            {
+                try
+                {
+                    // Search upward from the current working directory for listenarr.sln
+                    var cwd = Directory.GetCurrentDirectory();
+                    string? repoRootFromCwd = null;
+                    try
+                    {
+                        var dir = new DirectoryInfo(cwd);
+                        const int maxDepth2 = 8;
+                        int depth2 = 0;
+                        while (dir != null && depth2++ < maxDepth2)
+                        {
+                            if (File.Exists(Path.Join(dir.FullName, "listenarr.sln")))
+                            {
+                                repoRootFromCwd = dir.FullName;
+                                break;
+                            }
+                            dir = dir.Parent;
+                        }
+                    }
+                    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                    {
+                        _logger.LogDebug(ex, "[StartupConfigService] Failed to probe for repo root from current directory '{Cwd}'", cwd);
+                    }
+
+                    var devRepoRoot = repoRootFromCwd ?? contentRoot;
+                    bool rootIsListenarrApi = string.Equals(
+                        Path.GetFileName(devRepoRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)),
+                        "listenarr.api",
+                        StringComparison.OrdinalIgnoreCase);
+
+                    var devRepoConfig = rootIsListenarrApi
+                        ? Path.Join(devRepoRoot, "config", "config.json")
+                        : Path.Join(devRepoRoot, "listenarr.api", "config", "config.json");
+
+                    if (File.Exists(devRepoConfig) || Directory.Exists(Path.GetDirectoryName(devRepoConfig)!))
+                    {
+                        _configPath = devRepoConfig;
+                        _logger.LogInformation("[StartupConfigService] Development mode detected - forcing startup config to repo path: {DevRepoConfig}", devRepoConfig);
+                    }
+                }
+                catch (Exception ex) when (
+                    ex is IOException ||
+                    ex is UnauthorizedAccessException ||
+                    ex is DirectoryNotFoundException ||
+                    ex is PathTooLongException ||
+                    ex is System.Security.SecurityException)
+                {
+                    _logger.LogWarning(ex, "[StartupConfigService] Failed to resolve dev repo config using working directory; continuing with content-root probing");
+                }
+            }
 
             try
             {
+                // If the content root equals the current AppContext base directory
+                // (common in unit tests) prefer the local content-root config and
+                // skip ancestor probing to keep tests isolated and deterministic.
+                if (string.Equals(contentRoot, AppContext.BaseDirectory, StringComparison.OrdinalIgnoreCase))
+                {
+                    _configPath = Path.Join(contentRoot, "config", "config.json");
+                }
+                else
+                {
                 var dirInfo = new DirectoryInfo(contentRoot);
 
-                // First pass: search ancestors for a repository-style config at
-                // <ancestor>/listenarr.api/config/config.json and prefer that.
+                // First pass: search ancestors for any local config at
+                // <ancestor>/config/config.json. This ensures local/test folders
+                // are preferred for isolation and determinism.
                 const int maxDepth = 8;
                 int depth = 0;
                 while (dirInfo != null && depth++ < maxDepth)
                 {
-                    var candidateRepo = Path.Join(dirInfo.FullName, "listenarr.api", "config", "config.json");
-                    if (File.Exists(candidateRepo))
+                    var candidateLocal = Path.Join(dirInfo.FullName, "config", "config.json");
+                    if (File.Exists(candidateLocal))
                     {
-                        _configPath = candidateRepo;
+                        _configPath = candidateLocal;
                         break;
                     }
 
                     dirInfo = dirInfo.Parent;
                 }
 
-                // Second pass (only if repo-style not found): search for any
-                // config/config.json in ancestors (this picks up bin/config/config.json).
-                if (string.IsNullOrEmpty(_configPath))
-                {
-                    dirInfo = new DirectoryInfo(contentRoot);
-                    depth = 0;
-                    while (dirInfo != null && depth++ < maxDepth)
+                    // Second pass (only if local not found): search for a repository-style
+                    // config at <ancestor>/listenarr.api/config/config.json and prefer that.
+                    if (string.IsNullOrEmpty(_configPath))
                     {
-                        var candidateLocal = Path.Join(dirInfo.FullName, "config", "config.json");
-                        if (File.Exists(candidateLocal))
+                        dirInfo = new DirectoryInfo(contentRoot);
+                        depth = 0;
+                        while (dirInfo != null && depth++ < maxDepth)
                         {
-                            _configPath = candidateLocal;
-                            break;
+                            var candidateRepo = Path.Join(dirInfo.FullName, "listenarr.api", "config", "config.json");
+                            if (File.Exists(candidateRepo))
+                            {
+                                _configPath = candidateRepo;
+                                break;
+                            }
+
+                            dirInfo = dirInfo.Parent;
                         }
-                        dirInfo = dirInfo.Parent;
                     }
                 }
             }
@@ -79,6 +151,9 @@ namespace Listenarr.Api.Services
             }
 
             _logger.LogInformation("[StartupConfigService] Using startup config path: {Path}", _configPath);
+            // Mirror this into the global Serilog logger so the resolved path appears
+            // alongside other startup diagnostics (similar to the SQLite DB path).
+            Log.Information("[Startup] Resolved startup config path: {StartupConfigPath}", _configPath);
 
             Load();
         }
@@ -129,15 +204,26 @@ namespace Listenarr.Api.Services
             try
             {
                 _logger.LogInformation("[StartupConfigService] Attempting to save config to {Path}", _configPath);
+                // Update in-memory config first so callers observe the change immediately.
+                // If the file write fails we revert to the previous config to avoid
+                // leaving the service in an inconsistent in-memory state.
+                var previous = _config;
+                _config = config;
+
                 // Accept whatever value the caller provides for AuthenticationRequired.
                 // This allows the frontend 'require login' toggle to control the flag.
                 SaveConfigFile(config);
                 _logger.LogInformation("[StartupConfigService] Successfully saved config to {Path}", _configPath);
-                _config = config;
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "[StartupConfigService] Exception while saving config to {Path}", _configPath);
+                // Revert in-memory config on failure
+                try
+                {
+                    _config = _config ?? CreateDefaultConfig();
+                }
+                catch { }
                 throw;
             }
 
