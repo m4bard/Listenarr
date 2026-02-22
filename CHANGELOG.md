@@ -4,6 +4,18 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [0.2.49] - 2026-02-21
+
+### Fixed
+- **Settings save CSRF failure**: ensured antiforgery token is refreshed and bound to authenticated user. Added `tokenReadyPromise` in `ApiService` and blocked unsafe requests until token is available. Removed manual CSRFFetch from `saveApplicationSettings`.
+- **Startup config persistence**: previously, `AuthenticationRequired` was preserved from `config.json` and ignored when the frontend saved.  Toggle in General Settings now updates the flag and writes it to the file; authentication behaves the same as the other startup options.
+- **Token export**: properly export `ensureImageCached` and cleaned stray code from `api.ts` that caused build errors.
+- **Startup cache logging**: added missing `logger` import and removed unsafe `console` usage.
+
+### Changed
+- **Logging cleanup**: converted remaining `console.log` calls in `ApiService` to `logger.debug` and tidied comments.
+
+
 ## [0.2.48] - 2026-01-14
 
 ### Added

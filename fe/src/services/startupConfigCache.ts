@@ -1,4 +1,5 @@
 import { apiService } from './api'
+import { logger } from '@/utils/logger'
 
 type StartupConfig = import('@/types').StartupConfig
 
@@ -19,11 +20,14 @@ export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfi
     _inflight = apiService
       .getStartupConfig()
       .then((cfg) => {
+        // Debug: log the raw config response
+        logger.debug('[startupConfigCache] Raw config response:', cfg)
         _cache = cfg
         _cacheTs = Date.now()
         return cfg
       })
-      .catch(() => {
+      .catch((err) => {
+        logger.debug('[startupConfigCache] Error fetching config:', err)
         // On error (including 401 unauthorized), cache the null result for the TTL
         // so we don't immediately hammer the backend with repeated requests.
         _cache = null

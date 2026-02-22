@@ -527,6 +527,15 @@ namespace Listenarr.Api.Controllers
                     }
                 }
 
+
+                // Defensive: If relativePath is null, return NotFound
+                if (relativePath == null)
+                {
+                    _logger.LogWarning("Image service returned null relativePath for identifier {Identifier}", identifier);
+                    Response.Headers["Cache-Control"] = "public, max-age=300";
+                    return NotFound(new { message = "Image not found" });
+                }
+
                 // Build the full file path
                 var fullPath = Path.Combine(_environment.ContentRootPath, relativePath);
 

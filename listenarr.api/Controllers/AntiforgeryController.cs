@@ -37,8 +37,11 @@ namespace Listenarr.Api.Controllers
                         nameMask = name.Length <= 8 ? name : name.Substring(0, 8);
                     }
                 }
-
-                _logger.LogInformation("Issuing antiforgery token. Authenticated={Authenticated}, NameMask={NameMask}, ClaimsCount={ClaimsCount}", isAuthenticated, nameMask, user?.Claims?.Count() ?? 0);
+                var sessionToken = HttpContext.Request.Headers["Authorization"].FirstOrDefault();
+                var cookieNames = string.Join(',', HttpContext.Request.Cookies.Keys);
+                var afCookie = HttpContext.Request.Cookies.FirstOrDefault(kv => kv.Key?.StartsWith(".AspNetCore.Antiforgery") == true);
+                var cookiePrefix = afCookie.Value != null && afCookie.Value.Length > 8 ? afCookie.Value.Substring(0, 8) : afCookie.Value;
+                _logger.LogInformation("Issuing antiforgery token. Authenticated={Authenticated}, NameMask={NameMask}, ClaimsCount={ClaimsCount}, SessionToken={SessionToken}, CookieNames={CookieNames}, AntiforgeryCookiePrefix={CookiePrefix}", isAuthenticated, nameMask, user?.Claims?.Count() ?? 0, sessionToken, cookieNames, cookiePrefix);
             }
             catch (Exception ex)
             {

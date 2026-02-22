@@ -819,10 +819,11 @@ const saveSettings = async () => {
     // If user toggled the authEnabled, attempt to save to startup config
     try {
       const original = startupConfig.value || {}
-      // Persist authenticationRequired as string 'true'/'false' so it's explicit and
-      // consistent with expectations from the UI (was previously 'Enabled'/'Disabled').
+      // Only persist authenticationRequired (lowercase) as string 'true'/'false'.
+      // Remove any legacy AuthenticationRequired (uppercase) key from the outgoing config.
+      const { AuthenticationRequired, ...rest } = original
       const newCfg: import('@/types').StartupConfig = {
-        ...original,
+        ...rest,
         authenticationRequired: authEnabled.value ? 'true' : 'false',
       }
       try {

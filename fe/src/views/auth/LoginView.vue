@@ -51,7 +51,7 @@
 </template>
 
 <script lang="ts">
-import { defineComponent, ref } from 'vue'
+import { defineComponent, ref, onMounted } from 'vue'
 import PasswordInput from '@/components/form/PasswordInput.vue'
 import Checkbox from '@/components/form/Checkbox.vue'
 import { apiService } from '@/services/api'
@@ -95,7 +95,33 @@ export default defineComponent({
         const { normalizeRedirect } = await import('@/utils/redirect')
         let queryRedirect = normalizeRedirect(rawQueryRedirect)
 
+          const startupConfigChecked = ref(false)
         if (!queryRedirect || queryRedirect === '/') {
+          // On mount, fetch startup config ONCE and redirect if authentication is not required
+          onMounted(async () => {
+            if (startupConfigChecked.value) return
+            try {
+              const sc = await apiService.getStartupConfig()
+              // Accept both camelCase and PascalCase variants for compatibility
+              const rawAuth =
+                sc?.authenticationRequired ??
+                (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
+              const authEnabled =
+                typeof rawAuth === 'boolean'
+                  ? rawAuth
+                  : typeof rawAuth === 'string'
+                    ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
+                    : false
+              startupConfigChecked.value = true
+              if (!authEnabled) {
+                // Redirect to main app if authentication is not required
+                await router.replace({ name: 'home' })
+              }
+            } catch (e) {
+              // If config fetch fails, show error (optional: could retry or show fallback UI)
+              error.value = 'Failed to load configuration.'
+            }
+          })
           try {
             const pending = sessionStorage.getItem('listenarr_pending_redirect') ?? undefined
             const normalizedPending = normalizeRedirect(pending)

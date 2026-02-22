@@ -129,12 +129,13 @@ export function preloadRoute(nameOrPath: string) {
 }
 
 // Navigation guard: protect routes requiring auth and preserve redirectTo
+
+
+
 router.beforeEach(async (to, from, next) => {
-  // Skip auth guard in Cypress tests
   if (import.meta.env.CYPRESS) return next()
   const auth = useAuthStore()
 
-  // Debug: Log every navigation attempt
   logger.log('router', 'Navigation:', {
     from: from.fullPath,
     to: to.fullPath,
@@ -142,42 +143,49 @@ router.beforeEach(async (to, from, next) => {
     loaded: auth.loaded,
   })
 
-  // Load current user only once per app lifetime (avoid repeated calls on every navigation)
+  // Load current user only once per app lifetime
   if (!auth.loaded) {
     try {
       await auth.loadCurrentUser()
-    } catch {
-      // ignore - loadCurrentUser handles errors and sets loaded flag
-    }
+    } catch {}
   }
 
-  logger.debug('[router] beforeEach', {
-    to: to.fullPath,
-    authenticated: auth.user.authenticated,
-    loaded: auth.loaded,
-  })
-
-  // Obtain startup config using a shared module-level promise/cache so multiple navigations
-  // during app boot don't trigger many GETs to /api/startupconfig.
-  // use shared startup config cache (deduplicates inflight requests)
-  const startupConfig = await getStartupConfigCached()
-  // Fail-safe: if we couldn't load startup config, assume authentication is required
+  // Always fetch the latest startup config (no cache)
+  const startupConfig = await getStartupConfigCached(0)
   const startupConfigMissing = !startupConfig
   logger.debug('[router] startupConfigMissing', startupConfigMissing)
   logger.debug('[router] startupConfig', startupConfig)
   const authRequiredConfig = (() => {
-    if (startupConfigMissing) return true
-    // Accept both camelCase and PascalCase variants from backend
+    if (startupConfigMissing) {
+        logger.debug('[router] startupConfig missing, defaulting authRequiredConfig to false')
+        // If the backend is temporarily unreachable or the config fetch fails,
+        // do not force the login screen. Treat missing config as "no auth"
+        // to avoid blocking the SPA from loading.
+        return false
+      }
     const raw =
       startupConfig?.authenticationRequired ??
       (startupConfig as StartupConfig & { AuthenticationRequired?: string | boolean })
         ?.AuthenticationRequired
-    const v = raw
-    if (v === undefined || v === null) return false
-    if (typeof v === 'boolean') return v
-    if (typeof v === 'string') return v.toLowerCase() === 'enabled' || v.toLowerCase() === 'true'
+    logger.debug('[router] startupConfig raw authRequired:', raw)
+    let v = raw
+    if (v === undefined || v === null) {
+      logger.debug('[router] authRequiredConfig: value undefined/null, returning false')
+      return false
+    }
+    if (typeof v === 'boolean') {
+      logger.debug('[router] authRequiredConfig: boolean value', v)
+      return v
+    }
+    if (typeof v === 'string') {
+      const parsed = v.toLowerCase() === 'enabled' || v.toLowerCase() === 'true'
+      logger.debug('[router] authRequiredConfig: string value', v, 'parsed as', parsed)
+      return parsed
+    }
+    logger.debug('[router] authRequiredConfig: unknown type, returning false')
     return false
   })()
+  logger.debug('[router] FINAL authRequiredConfig:', authRequiredConfig)
 
   // If authentication is disabled in startup config, prevent access to login page
   if (!authRequiredConfig) {
