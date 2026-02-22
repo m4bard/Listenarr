@@ -321,6 +321,8 @@ export interface StartupConfig {
   syslogPort?: number
   analyticsEnabled?: boolean
   authenticationRequired?: string | boolean
+  // PascalCase variant is accepted for compatibility with some server responses
+  AuthenticationRequired?: string | boolean
   sslCertPath?: string
   sslCertPassword?: string
 }

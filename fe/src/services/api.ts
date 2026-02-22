@@ -26,6 +26,8 @@ import type {
   ManualImportRequest,
   ManualImportResult,
   RootFolder,
+  QualityScore,
+  StartupConfig,
 } from '@/types'
 import { getStartupConfigCached, getCachedStartupConfig } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
