@@ -69,8 +69,8 @@ else if (isDev && !isDocker)
 
     // Safety check: if the resolved directory doesn't look like the project root
     // (i.e. no 'config' sibling or the project file), fall back to default.
-    var looksLikeProjectRoot = Directory.Exists(Path.Combine(projectDir, "config"))
-        || File.Exists(Path.Combine(projectDir, "listenarr.api.csproj"));
+    var looksLikeProjectRoot = Directory.Exists(Path.Join(projectDir, "config"))
+        || File.Exists(Path.Join(projectDir, "listenarr.api.csproj"));
 
     builder = looksLikeProjectRoot
         ? WebApplication.CreateBuilder(new WebApplicationOptions { Args = args, ContentRootPath = projectDir })
