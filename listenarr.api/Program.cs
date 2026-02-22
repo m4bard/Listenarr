@@ -471,7 +471,7 @@ if (isDev && !isDocker)
             dir = dir.Parent;
         }
     }
-    catch (Exception ex)
+    catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException || ex is System.Security.SecurityException)
     {
         Log.Logger.Debug(ex, "[Startup] Failed to resolve repo candidate from ContentRootPath; continuing with fallback resolution.");
     }
