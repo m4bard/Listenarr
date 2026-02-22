@@ -3131,7 +3131,7 @@ defineExpose({
     padding 0.2s ease,
     opacity 0.2s ease;
   opacity: 0;
-  z-index: 20; /* ensure overlay sits above covers but below action buttons */
+  z-index: 101; /* ensure overlay sits above covers but below action buttons */
   pointer-events: none; /* don't block action buttons or other controls */
 }
 
