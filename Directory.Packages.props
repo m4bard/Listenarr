@@ -2,7 +2,7 @@
 	<PropertyGroup>
 		<ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
 		<CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
-		<EFVersion>8.0.23</EFVersion>
+		<EFVersion>8.0.*</EFVersion>
 	</PropertyGroup>
 
 	<ItemGroup>
