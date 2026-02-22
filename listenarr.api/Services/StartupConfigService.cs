@@ -224,7 +224,10 @@ namespace Listenarr.Api.Services
                 {
                     _config = previous;
                 }
-                catch (Exception rollbackEx)
+                catch (Exception rollbackEx) when (rollbackEx is not OutOfMemoryException &&
+                                                   rollbackEx is not ThreadAbortException &&
+                                                   rollbackEx is not StackOverflowException &&
+                                                   rollbackEx is not ThreadInterruptedException)
                 {
                     _logger.LogError(rollbackEx, "[StartupConfigService] Failed to revert in-memory startup config after error while saving to {Path}", _configPath);
                 }
