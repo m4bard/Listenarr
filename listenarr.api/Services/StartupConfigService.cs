@@ -201,13 +201,14 @@ namespace Listenarr.Api.Services
 
         public Task SaveAsync(StartupConfig config)
         {
+            // Preserve current config so we can roll back on failure
+            StartupConfig? previous = _config;
             try
             {
                 _logger.LogInformation("[StartupConfigService] Attempting to save config to {Path}", _configPath);
                 // Update in-memory config first so callers observe the change immediately.
                 // If the file write fails we revert to the previous config to avoid
                 // leaving the service in an inconsistent in-memory state.
-                var previous = _config;
                 _config = config;
 
                 // Accept whatever value the caller provides for AuthenticationRequired.
@@ -221,9 +222,12 @@ namespace Listenarr.Api.Services
                 // Revert in-memory config on failure
                 try
                 {
-                    _config = _config ?? CreateDefaultConfig();
+                    _config = previous;
                 }
-                catch { }
+                catch (Exception rollbackEx)
+                {
+                    _logger.LogError(rollbackEx, "[StartupConfigService] Failed to revert in-memory startup config after error while saving to {Path}", _configPath);
+                }
                 throw;
             }
 
