@@ -27,13 +27,15 @@ namespace Listenarr.Infrastructure
                 string? repoRoot = FindRepoRoot();
                 if (repoRoot != null)
                 {
-                    var candidate = Path.Combine(repoRoot, "listenarr.api", "config", "database", "listenarr.db");
+                    var relativeDbPath = Path.Combine("listenarr.api", "config", "database", "listenarr.db");
+                    var candidate = Path.Combine(repoRoot, relativeDbPath);
                     dbPath = Path.GetFullPath(candidate);
                 }
                 else
                 {
                     // Last-resort: fall back to current directory behavior to remain compatible
-                    var cwdCandidate = Path.Combine(Directory.GetCurrentDirectory(), "..", "listenarr.api", "config", "database", "listenarr.db");
+                    var relativePart = Path.Combine("..", "listenarr.api", "config", "database", "listenarr.db");
+                    var cwdCandidate = Path.Combine(Directory.GetCurrentDirectory(), relativePart);
                     dbPath = Path.GetFullPath(cwdCandidate);
                 }
             }
@@ -56,9 +58,14 @@ namespace Listenarr.Infrastructure
                 while (dir != null)
                 {
                     // Look for solution file or listenarr.api folder as sentinel
-                    var slnx = Path.Combine(dir.FullName, "listenarr.slnx");
-                    var sln = Path.Combine(dir.FullName, "listenarr.sln");
-                    var apiFolder = Path.Combine(dir.FullName, "listenarr.api");
+                    const string slnxName = "listenarr.slnx";
+                    const string slnName = "listenarr.sln";
+                    const string apiFolderName = "listenarr.api";
+
+                    var slnx = Path.Combine(dir.FullName, slnxName);
+                    var sln = Path.Combine(dir.FullName, slnName);
+                    var apiFolder = Path.Combine(dir.FullName, apiFolderName);
+
                     if (File.Exists(slnx) || File.Exists(sln) || Directory.Exists(apiFolder))
                     {
                         return dir.FullName;

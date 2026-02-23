@@ -66,6 +66,11 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(new { success = true, message = "Test notification sent" });
             }
+            catch (OperationCanceledException)
+            {
+                // Let request cancellations propagate; don't treat them as server errors.
+                throw;
+            }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in DiagnosticsController.TestNotification");

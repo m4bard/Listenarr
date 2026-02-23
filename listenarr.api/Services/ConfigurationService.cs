@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Text.Json;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
@@ -265,9 +266,10 @@ namespace Listenarr.Api.Services
                         }
                     }
                 }
-                catch
+                catch (Exception ex)
                 {
                     // Defensive: do not fail saving due to normalization issues
+                    _logger.LogWarning(ex, "Failed to normalize notification triggers; saving with original values");
                 }
 
                 var existing = await _dbContext.ApplicationSettings.FirstOrDefaultAsync(s => s.Id == 1);
@@ -453,9 +455,13 @@ namespace Listenarr.Api.Services
                         var decoded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(first);
                         if (decoded != null && decoded.Count > 0) return decoded;
                     }
-                    catch (Exception)
+                    catch (JsonException)
                     {
-                        // Ignore parse errors and fall through to returning original list
+                        // Malformed JSON — ignore and fall through to returning original list
+                    }
+                    catch (NotSupportedException)
+                    {
+                        // Unsupported JSON shape — ignore and fall through
                     }
                 }
             }

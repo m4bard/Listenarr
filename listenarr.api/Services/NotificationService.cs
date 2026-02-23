@@ -110,12 +110,19 @@ namespace Listenarr.Api.Services
                         if (!response.IsSuccessStatusCode) await HandleFailedResponseAsync(response);
                     }
                 }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogError(ex, "HTTP error sending Discord notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "Error sending notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    _logger.LogError(ex, "Error sending Discord notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                 }
 
-                return;
             }
 
             // NTFY-specific handling (https://docs.ntfy.sh/publish/)
@@ -164,12 +171,19 @@ namespace Listenarr.Api.Services
                         await HandleFailedResponseAsync(response);
                     }
                 }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogError(ex, "HTTP error sending NTFY notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error sending NTFY notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                 }
 
-                return;
             }
 
             // Pushover (https://pushover.net/api)
@@ -229,12 +243,20 @@ namespace Listenarr.Api.Services
                         return;
                     }
                 }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogError(ex, "HTTP error sending Pushover notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error sending Pushover notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return;
                 }
-
-                return;
             }
 
             // Telegram (https://core.telegram.org/bots/api#sendmessage)
@@ -283,6 +305,15 @@ namespace Listenarr.Api.Services
                         }
                         return;
                     }
+                }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogError(ex, "HTTP error sending Telegram notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -367,12 +398,20 @@ namespace Listenarr.Api.Services
                         return;
                     }
                 }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogError(ex, "HTTP error sending Pushbullet notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error sending Pushbullet notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return;
                 }
-
-                return;
             }
 
             // Slack Incoming Webhooks (https://api.slack.com/messaging/webhooks)
@@ -415,12 +454,20 @@ namespace Listenarr.Api.Services
                     }
                     return;
                 }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogError(ex, "HTTP error sending Slack notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return;
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error sending Slack notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return;
                 }
-
-                return;
             }
 
             // Generic webhook fallback: send the full JSON payload produced by the payload builder
@@ -450,6 +497,14 @@ namespace Listenarr.Api.Services
                 {
                     await HandleFailedResponseAsync(response);
                 }
+            }
+            catch (HttpRequestException ex)
+            {
+                _logger.LogError(ex, "HTTP error sending Generic notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
