@@ -10,8 +10,11 @@
   <a href="https://github.com/Listenarrs/Listenarr/releases"><img alt="Release" src="https://img.shields.io/github/v/release/Listenarrs/Listenarr?style=flat-square"></a>
   <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/license-AGPL--3.0-blue?style=flat-square"></a>
   <a href="https://github.com/Listenarrs/Listenarr/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/Listenarrs/Listenarr/total?style=flat-square"></a>
+  <a href="https://hub.docker.com/r/jvmilazz0/kavita"><img alt="Docker Hub Pulls" src="https://img.shields.io/docker/pulls/therobbiedavis/listenarr.svg"></a>
   <a href="https://github.com/Listenarrs/Listenarr/pkgs/container/listenarr"><img alt="GHCR" src="https://img.shields.io/badge/ghcr.io-listenarr-181717?style=flat-square&logo=github"></a>
   <a href="https://hub.docker.com/r/therobbiedavis/listenarr"><img alt="Docker Hub Mirror" src="https://img.shields.io/badge/docker%20hub-mirror-0db7ed?style=flat-square&logo=docker"></a>
+  <a href="#backers"><img alt="Open Collective Backers" src="https://opencollective.com/listenarr/backers/badge.svg"></a>
+  <a href="#sponsors"><img alt="Open Collective Sponsors" src="https://opencollective.com/listenarr/sponsors/badge.svg"></a>
 </p>
 
 ---
@@ -36,6 +39,13 @@ Listenarr is a fast, feature-rich, cross-platform audiobook management server. B
 - [ ] **Full localization support** Soon™️
 
 To see what's coming up, check out our [Roadmap](#roadmap)! If you have a suggestion or feature request, please submit them in [Discussions](https://github.com/Listenarrs/Listenarr/discussions)
+
+## Disclaimer
+
+This app is coded with AI assistance. I started this because my wife (an avid audiobook listener) was plowing multiple series and I wanted an automated way for her to request, download, and listen to new audiobooks. I am a front-end developer and I don't know C#, so I took this as an opportunity to learn and started this project.
+
+> [!NOTE]  
+> This is just a fun a side project that solved a need for me; it is not my main priority. I will choose my work, family, and mental health before this project.
 
 ## Support
 
@@ -472,6 +482,18 @@ Bumped versions are persisted via PR to maintain branch protection.
 This project exists thanks to all the people who contribute. [Contribute](CONTRIBUTING.md).
 
 <a href="https://github.com/Listenarrs/Listenarr/graphs/contributors"><img src="https://opencollective.com/Listenarr/contributors.svg?width=890&button=false" /></a>
+
+## Backers
+
+Thank you to all our backers! 🙏 [Become a backer](https://opencollective.com/Listenarr#backer)
+
+<a href="https://opencollective.com/Listenarr#backer"><img src="https://opencollective.com/listenarr/backers.svg?width=890"></a>
+
+## Sponsors
+
+Support this project by becoming a sponsor. Your logo will show up here with a link to your website. [Become a sponsor](https://opencollective.com/Listenarr#sponsor)
+
+<a href="https://opencollective.com/Listenarr#sponsor"><img src="https://opencollective.com/listenarr/sponsors.svg?width=890"></a>
 
 ## License
 
