@@ -813,7 +813,7 @@ const testWebhook = async (webhook: (typeof webhooks.value)[0]) => {
   testingWebhook.value = webhook.id
   try {
     const payload = { trigger: 'book-available', data: { message: 'Test notification from Listenarr UI' } }
-    const response = await apiService.testNotification(payload.trigger, payload.data, webhook.id)
+    const response = await apiService.testNotification(payload.trigger, payload.data, webhook.id, webhook.url)
     if (response && response.success) {
       toast.success('Test notification', response.message || `Test notification sent to ${webhook.name}`)
       lastWebhookTestResults[webhook.id] = 'success'

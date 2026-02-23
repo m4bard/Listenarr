@@ -243,6 +243,54 @@ namespace Listenarr.Api.Services
                 // Ensure Id is always 1 (singleton pattern)
                 settings.Id = 1;
 
+                // Normalize possible JSON-encoded trigger lists coming from the frontend.
+                // Some UI payloads have been observed to send a JSON stringified array
+                // inside the array (eg. ["[\"book-available\"]"]) which breaks
+                // server-side trigger matching. Detect and decode that case here.
+                try
+                {
+                    if (settings.EnabledNotificationTriggers != null && settings.EnabledNotificationTriggers.Count == 1)
+                    {
+                        var first = settings.EnabledNotificationTriggers[0];
+                        if (!string.IsNullOrWhiteSpace(first) && first.TrimStart().StartsWith("["))
+                        {
+                            try
+                            {
+                                var decoded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(first);
+                                if (decoded != null && decoded.Count > 0)
+                                {
+                                    settings.EnabledNotificationTriggers = decoded;
+                                }
+                            }
+                            catch { /* ignore parse errors and leave as-is */ }
+                        }
+                    }
+
+                    if (settings.Webhooks != null)
+                    {
+                        foreach (var w in settings.Webhooks)
+                        {
+                            if (w.Triggers != null && w.Triggers.Count == 1)
+                            {
+                                var t0 = w.Triggers[0];
+                                if (!string.IsNullOrWhiteSpace(t0) && t0.TrimStart().StartsWith("["))
+                                {
+                                    try
+                                    {
+                                        var decoded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(t0);
+                                        if (decoded != null && decoded.Count > 0)
+                                        {
+                                            w.Triggers = decoded;
+                                        }
+                                    }
+                                    catch { /* ignore parse errors */ }
+                                }
+                            }
+                        }
+                    }
+                }
+                catch { /* defensive: do not fail saving due to normalization issues */ }
+
                 var existing = await _dbContext.ApplicationSettings.FirstOrDefaultAsync(s => s.Id == 1);
 
                 Console.WriteLine($"DEBUG: existing is null? {existing == null}; ReferenceEquals(existing, settings)={ReferenceEquals(existing, settings)}; existingHash={existing?.GetHashCode()}, settingsHash={settings.GetHashCode()}");

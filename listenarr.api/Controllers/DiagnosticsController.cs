@@ -24,9 +24,11 @@ namespace Listenarr.Api.Controllers
             public string? Trigger { get; set; }
             public object? Data { get; set; }
             public string? WebhookId { get; set; }
+            public string? WebhookUrl { get; set; }
         }
 
         [HttpPost("test-notification")]
+        [IgnoreAntiforgeryToken]
         public async Task<ActionResult<object>> TestNotification([FromBody] TestNotificationRequest req)
         {
             try
@@ -40,14 +42,19 @@ namespace Listenarr.Api.Controllers
                     return StatusCode(500, new { success = false, message = "Application settings unavailable" });
                 }
 
+                // Prefer explicit webhook URL supplied by the UI (avoids race with concurrent saves)
                 string? targetUrl = null;
-                if (!string.IsNullOrWhiteSpace(req.WebhookId) && settings.Webhooks != null)
+                if (!string.IsNullOrWhiteSpace(req.WebhookUrl))
+                {
+                    targetUrl = req.WebhookUrl;
+                }
+                else if (!string.IsNullOrWhiteSpace(req.WebhookId) && settings.Webhooks != null)
                 {
                     var match = settings.Webhooks.FirstOrDefault(w => string.Equals(w.Id, req.WebhookId, StringComparison.OrdinalIgnoreCase));
                     if (match != null) targetUrl = match.Url;
                 }
 
-                // Fallback to legacy WebhookUrl
+                // Fallback to legacy WebhookUrl from settings
                 if (string.IsNullOrWhiteSpace(targetUrl)) targetUrl = settings.WebhookUrl;
 
                 if (string.IsNullOrWhiteSpace(targetUrl))

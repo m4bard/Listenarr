@@ -301,8 +301,8 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    string token = null;
-                    Uri uri = null;
+                    string? token = null;
+                    Uri? uri = null;
                     try
                     {
                         uri = new Uri(webhookUrl);
