@@ -120,7 +120,11 @@ namespace Listenarr.Api.Services
                 {
                     throw;
                 }
+                // Intentional broad catch: notification delivery failures must never propagate to callers.
+                // OperationCanceledException is already handled above. All other failures are logged and swallowed.
+#pragma warning disable CA1031
                 catch (Exception ex)
+#pragma warning restore CA1031
                 {
                     _logger.LogError(ex, "Error sending Discord notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                 }
@@ -324,7 +328,11 @@ namespace Listenarr.Api.Services
                 {
                     throw;
                 }
+                // Intentional broad catch: notification delivery failures must never propagate to callers.
+                // OperationCanceledException is already handled above. All other failures are logged and swallowed.
+#pragma warning disable CA1031
                 catch (Exception ex)
+#pragma warning restore CA1031
                 {
                     _logger.LogError(ex, "Error sending Telegram notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
@@ -416,7 +424,11 @@ namespace Listenarr.Api.Services
                 {
                     throw;
                 }
+                // Intentional broad catch: notification delivery failures must never propagate to callers.
+                // OperationCanceledException is already handled above. All other failures are logged and swallowed.
+#pragma warning disable CA1031
                 catch (Exception ex)
+#pragma warning restore CA1031
                 {
                     _logger.LogError(ex, "Error sending Pushbullet notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
@@ -472,7 +484,11 @@ namespace Listenarr.Api.Services
                 {
                     throw;
                 }
+                // Intentional broad catch: notification delivery failures must never propagate to callers.
+                // OperationCanceledException is already handled above. All other failures are logged and swallowed.
+#pragma warning disable CA1031
                 catch (Exception ex)
+#pragma warning restore CA1031
                 {
                     _logger.LogError(ex, "Error sending Slack notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
@@ -515,7 +531,11 @@ namespace Listenarr.Api.Services
             {
                 throw;
             }
+            // Intentional broad catch: notification delivery failures must never propagate to callers.
+            // OperationCanceledException is already handled above. All other failures are logged and swallowed.
+#pragma warning disable CA1031
             catch (Exception ex)
+#pragma warning restore CA1031
             {
                 _logger.LogError(ex, "Error sending notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
             }
