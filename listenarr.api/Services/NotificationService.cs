@@ -1,9 +1,11 @@
 using System.Net.Http;
 using System.Net;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using System.Linq;
+using System.Collections.Generic;
 using Microsoft.AspNetCore.Http;
 
 namespace Listenarr.Api.Services
@@ -111,6 +113,317 @@ namespace Listenarr.Api.Services
                 catch (Exception ex)
                 {
                     _logger.LogError(ex, "Error sending notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                }
+
+                return;
+            }
+
+            // NTFY-specific handling (https://docs.ntfy.sh/publish/)
+            if (webhookUrl.IndexOf("ntfy", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                try
+                {
+                    // Use the payload builder to create a concise message/title
+                    string? baseUrl = null;
+                    var startup = await _configurationService.GetStartupConfigAsync();
+                    if (startup?.UrlBase != null) baseUrl = startup.UrlBase;
+                    if (string.IsNullOrWhiteSpace(baseUrl) && _httpContextAccessor?.HttpContext != null)
+                    {
+                        var derived = NotificationPayloadBuilder.GetBaseUrlFromHttpContext(_httpContextAccessor.HttpContext);
+                        if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
+                    }
+
+                    var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                    var title = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
+                    var message = title;
+
+                    using var request = new HttpRequestMessage(HttpMethod.Post, webhookUrl)
+                    {
+                        Content = new StringContent(message ?? string.Empty, Encoding.UTF8, "text/plain")
+                    };
+
+                    // Helpful ntfy headers per docs: Title, Priority, Tags
+                    if (!string.IsNullOrWhiteSpace(title)) request.Headers.TryAddWithoutValidation("Title", title);
+                    request.Headers.TryAddWithoutValidation("Priority", "3");
+                    request.Headers.TryAddWithoutValidation("Tags", trigger);
+
+                    var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
+                    var headers = string.Join(", ", request.Headers.Select(h => $"{h.Key}={string.Join(';', h.Value)}"));
+                    var requestBody = request.Content != null ? await request.Content.ReadAsStringAsync() : string.Empty;
+                    var redactedRequestBody = AggressiveRedact(LogRedaction.RedactText(requestBody, LogRedaction.GetSensitiveValuesFromEnvironment()));
+
+                    _logger.LogInformation("Sending NTFY POST to {WebhookUrl} with headers {Headers} and body: {Body}", redactedUrl, headers, redactedRequestBody);
+
+                    var response = await _httpClient.SendAsync(request);
+
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string respText = string.Empty;
+                        try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                        var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                        _logger.LogWarning("NTFY response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
+                        await HandleFailedResponseAsync(response);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending NTFY notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                }
+
+                return;
+            }
+
+            // Pushover (https://pushover.net/api)
+            // Expect webhookUrl like: https://api.pushover.net/1/messages.json?token=<app_token>&user=<user_key>
+            if (webhookUrl.IndexOf("api.pushover.net/1/messages.json", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                try
+                {
+                    var uri = new Uri(webhookUrl);
+                    var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                    var token = query["token"];
+                    var user = query["user"];
+
+                    if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(user))
+                    {
+                        _logger.LogWarning("Pushover webhook URL missing 'token' or 'user' query parameter: {WebhookUrl}", LogRedaction.SanitizeUrl(webhookUrl));
+                        // Fall through to generic webhook behaviour below
+                    }
+                    else
+                    {
+                        string? baseUrl = null;
+                        var startup = await _configurationService.GetStartupConfigAsync();
+                        if (startup?.UrlBase != null) baseUrl = startup.UrlBase;
+                        if (string.IsNullOrWhiteSpace(baseUrl) && _httpContextAccessor?.HttpContext != null)
+                        {
+                            var derived = NotificationPayloadBuilder.GetBaseUrlFromHttpContext(_httpContextAccessor.HttpContext);
+                            if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
+                        }
+
+                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                        var message = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
+
+                        var values = new List<KeyValuePair<string, string>>
+                        {
+                            new("token", token),
+                            new("user", user),
+                            new("message", message ?? string.Empty),
+                            new("title", "Listenarr")
+                        };
+
+                        using var content = new FormUrlEncodedContent(values);
+                        var requestBody = string.Empty;
+                        try { requestBody = await content.ReadAsStringAsync(); } catch { }
+                        var redactedRequestBody = AggressiveRedact(LogRedaction.RedactText(requestBody, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                        var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
+                        _logger.LogInformation("Sending Pushover POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedRequestBody);
+
+                        // Post to the base path (without query) to comply with Pushover API expectations
+                        var postUrl = uri.GetLeftPart(UriPartial.Path);
+                        var response = await _httpClient.PostAsync(postUrl, content);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            string respText = string.Empty;
+                            try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                            var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                            _logger.LogWarning("Pushover response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
+                            await HandleFailedResponseAsync(response);
+                        }
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending Pushover notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                }
+
+                return;
+            }
+
+            // Telegram (https://core.telegram.org/bots/api#sendmessage)
+            // Expect webhookUrl like: https://api.telegram.org/bot<token>/sendMessage?chat_id=12345
+            if (webhookUrl.IndexOf("api.telegram.org/bot", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                try
+                {
+                    var uri = new Uri(webhookUrl);
+                    var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                    var chatId = query["chat_id"];
+
+                    if (string.IsNullOrWhiteSpace(chatId))
+                    {
+                        _logger.LogWarning("Telegram webhook URL missing 'chat_id' query parameter: {WebhookUrl}", LogRedaction.SanitizeUrl(webhookUrl));
+                        // Fall through to generic webhook behaviour below
+                    }
+                    else
+                    {
+                        string? baseUrl = null;
+                        var startup = await _configurationService.GetStartupConfigAsync();
+                        if (startup?.UrlBase != null) baseUrl = startup.UrlBase;
+                        if (string.IsNullOrWhiteSpace(baseUrl) && _httpContextAccessor?.HttpContext != null)
+                        {
+                            var derived = NotificationPayloadBuilder.GetBaseUrlFromHttpContext(_httpContextAccessor.HttpContext);
+                            if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
+                        }
+
+                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                        var text = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
+
+                        var telegramBody = new { chat_id = chatId, text = text ?? string.Empty, disable_notification = true, parse_mode = "Markdown" };
+                        var json = JsonSerializer.Serialize(telegramBody);
+                        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                        var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
+                        _logger.LogInformation("Sending Telegram POST to {WebhookUrl} with body: {Body}", redactedUrl, AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment())));
+
+                        var response = await _httpClient.PostAsync(webhookUrl, content);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            string respText = string.Empty;
+                            try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                            var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                            _logger.LogWarning("Telegram response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
+                            await HandleFailedResponseAsync(response);
+                        }
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending Telegram notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    return;
+                }
+            }
+
+            // Pushbullet (https://docs.pushbullet.com/#pushes)
+            // Expect webhookUrl like: https://api.pushbullet.com/v2/pushes?token=<access_token>
+            if (webhookUrl.IndexOf("api.pushbullet.com/v2/pushes", StringComparison.OrdinalIgnoreCase) >= 0 || webhookUrl.StartsWith("pushbullet://", StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    string token = null;
+                    Uri uri = null;
+                    try
+                    {
+                        uri = new Uri(webhookUrl);
+                        var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
+                        token = query["token"] ?? query["access_token"];
+                    }
+                    catch
+                    {
+                        // support pushbullet://TOKEN format
+                        if (webhookUrl.StartsWith("pushbullet://", StringComparison.OrdinalIgnoreCase))
+                        {
+                            token = webhookUrl.Substring("pushbullet://".Length);
+                            uri = new Uri("https://api.pushbullet.com/v2/pushes");
+                        }
+                    }
+
+                    if (string.IsNullOrWhiteSpace(token))
+                    {
+                        _logger.LogWarning("Pushbullet webhook URL missing access token: {WebhookUrl}", LogRedaction.SanitizeUrl(webhookUrl));
+                        // Fall through to generic webhook behaviour below
+                    }
+                    else
+                    {
+                        string? baseUrl = null;
+                        var startup = await _configurationService.GetStartupConfigAsync();
+                        if (startup?.UrlBase != null) baseUrl = startup.UrlBase;
+                        if (string.IsNullOrWhiteSpace(baseUrl) && _httpContextAccessor?.HttpContext != null)
+                        {
+                            var derived = NotificationPayloadBuilder.GetBaseUrlFromHttpContext(_httpContextAccessor.HttpContext);
+                            if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
+                        }
+
+                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                        var message = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
+
+                        var pushObj = new JsonObject
+                        {
+                            ["type"] = "note",
+                            ["title"] = "Listenarr",
+                            ["body"] = message ?? string.Empty
+                        };
+
+                        var json = pushObj.ToJsonString();
+                        using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                        var postUrl = uri != null ? uri.GetLeftPart(UriPartial.Path) : "https://api.pushbullet.com/v2/pushes";
+
+                        using var request = new HttpRequestMessage(HttpMethod.Post, postUrl)
+                        {
+                            Content = content
+                        };
+                        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+                        var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
+                        var redactedBody = AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                        _logger.LogInformation("Sending Pushbullet POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
+
+                        var response = await _httpClient.SendAsync(request);
+                        if (!response.IsSuccessStatusCode)
+                        {
+                            string respText = string.Empty;
+                            try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                            var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                            _logger.LogWarning("Pushbullet response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
+                            await HandleFailedResponseAsync(response);
+                        }
+                        return;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending Pushbullet notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                }
+
+                return;
+            }
+
+            // Slack Incoming Webhooks (https://api.slack.com/messaging/webhooks)
+            // Expect webhookUrl like: https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXXXXXX
+            if (webhookUrl.IndexOf("hooks.slack.com/services", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                try
+                {
+                    string? baseUrl = null;
+                    var startup = await _configurationService.GetStartupConfigAsync();
+                    if (startup?.UrlBase != null) baseUrl = startup.UrlBase;
+                    if (string.IsNullOrWhiteSpace(baseUrl) && _httpContextAccessor?.HttpContext != null)
+                    {
+                        var derived = NotificationPayloadBuilder.GetBaseUrlFromHttpContext(_httpContextAccessor.HttpContext);
+                        if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
+                    }
+
+                    var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                    var message = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
+
+                    var slackObj = new JsonObject
+                    {
+                        ["text"] = message ?? string.Empty
+                    };
+
+                    var json = slackObj.ToJsonString();
+                    using var content = new StringContent(json, Encoding.UTF8, "application/json");
+
+                    var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
+                    var redactedBody = AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    _logger.LogInformation("Sending Slack POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
+
+                    var response = await _httpClient.PostAsync(webhookUrl, content);
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        string respText = string.Empty;
+                        try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                        var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                        _logger.LogWarning("Slack response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
+                        await HandleFailedResponseAsync(response);
+                    }
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "Error sending Slack notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                 }
 
                 return;
