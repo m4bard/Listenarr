@@ -69,7 +69,8 @@ namespace Listenarr.Api.Controllers
             catch (Exception ex)
             {
                 _logger.LogError(ex, "Error in DiagnosticsController.TestNotification");
-                return StatusCode(500, new { success = false, message = "Failed to send test notification", error = ex.Message });
+                // Do not leak internal exception messages to callers. Details are available in server logs.
+                return StatusCode(500, new { success = false, message = "Failed to send test notification" });
             }
         }
     }

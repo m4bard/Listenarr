@@ -20,12 +20,22 @@ namespace Listenarr.Infrastructure
             var dbPath = Environment.GetEnvironmentVariable("LISTENARR_SQLITE_PATH");
             if (string.IsNullOrWhiteSpace(dbPath))
             {
-                // Default to repo-relative path where the API stores the DB during development
-                var repoRoot = Directory.GetCurrentDirectory();
-                // Handle running from different working directories: attempt common relative location
-                var candidate = Path.Combine(repoRoot, "..", "listenarr.api", "config", "database", "listenarr.db");
-                candidate = Path.GetFullPath(candidate);
-                dbPath = candidate;
+                // Try to resolve repo root deterministically by walking up from the
+                // assembly base directory (AppContext.BaseDirectory). This is more
+                // reliable than Directory.GetCurrentDirectory() which depends on
+                // how the process was launched.
+                string? repoRoot = FindRepoRoot();
+                if (repoRoot != null)
+                {
+                    var candidate = Path.Combine(repoRoot, "listenarr.api", "config", "database", "listenarr.db");
+                    dbPath = Path.GetFullPath(candidate);
+                }
+                else
+                {
+                    // Last-resort: fall back to current directory behavior to remain compatible
+                    var cwdCandidate = Path.Combine(Directory.GetCurrentDirectory(), "..", "listenarr.api", "config", "database", "listenarr.db");
+                    dbPath = Path.GetFullPath(cwdCandidate);
+                }
             }
 
             var migrationsAssembly = typeof(Listenarr.Infrastructure.Repositories.QualityProfileRepository).Assembly.GetName().Name;
@@ -36,6 +46,30 @@ namespace Listenarr.Infrastructure
             });
 
             return new ListenArrDbContext(optionsBuilder.Options);
+        }
+
+        private static string? FindRepoRoot()
+        {
+            try
+            {
+                var dir = new DirectoryInfo(AppContext.BaseDirectory);
+                while (dir != null)
+                {
+                    // Look for solution file or listenarr.api folder as sentinel
+                    var slnx = Path.Combine(dir.FullName, "listenarr.slnx");
+                    var sln = Path.Combine(dir.FullName, "listenarr.sln");
+                    var apiFolder = Path.Combine(dir.FullName, "listenarr.api");
+                    if (File.Exists(slnx) || File.Exists(sln) || Directory.Exists(apiFolder))
+                    {
+                        return dir.FullName;
+                    }
+
+                    dir = dir.Parent;
+                }
+            }
+            catch { /* ignore and return null */ }
+
+            return null;
         }
     }
 }

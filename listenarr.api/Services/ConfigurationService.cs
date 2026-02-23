@@ -247,49 +247,28 @@ namespace Listenarr.Api.Services
                 // Some UI payloads have been observed to send a JSON stringified array
                 // inside the array (eg. ["[\"book-available\"]"]) which breaks
                 // server-side trigger matching. Detect and decode that case here.
+                //
+                // We keep this defensive normalization server-side for robustness,
+                // but the real fix would be to avoid producing double-encoded JSON
+                // from the frontend. This helper centralizes the detection/decoding
+                // logic so it's consistently applied to both the global triggers
+                // and per-webhook trigger lists.
                 try
                 {
-                    if (settings.EnabledNotificationTriggers != null && settings.EnabledNotificationTriggers.Count == 1)
-                    {
-                        var first = settings.EnabledNotificationTriggers[0];
-                        if (!string.IsNullOrWhiteSpace(first) && first.TrimStart().StartsWith("["))
-                        {
-                            try
-                            {
-                                var decoded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(first);
-                                if (decoded != null && decoded.Count > 0)
-                                {
-                                    settings.EnabledNotificationTriggers = decoded;
-                                }
-                            }
-                            catch { /* ignore parse errors and leave as-is */ }
-                        }
-                    }
+                    settings.EnabledNotificationTriggers = NormalizeTriggerList(settings.EnabledNotificationTriggers) ?? new List<string>();
 
                     if (settings.Webhooks != null)
                     {
                         foreach (var w in settings.Webhooks)
                         {
-                            if (w.Triggers != null && w.Triggers.Count == 1)
-                            {
-                                var t0 = w.Triggers[0];
-                                if (!string.IsNullOrWhiteSpace(t0) && t0.TrimStart().StartsWith("["))
-                                {
-                                    try
-                                    {
-                                        var decoded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(t0);
-                                        if (decoded != null && decoded.Count > 0)
-                                        {
-                                            w.Triggers = decoded;
-                                        }
-                                    }
-                                    catch { /* ignore parse errors */ }
-                                }
-                            }
+                            w.Triggers = NormalizeTriggerList(w.Triggers) ?? new List<string>();
                         }
                     }
                 }
-                catch { /* defensive: do not fail saving due to normalization issues */ }
+                catch
+                {
+                    // Defensive: do not fail saving due to normalization issues
+                }
 
                 var existing = await _dbContext.ApplicationSettings.FirstOrDefaultAsync(s => s.Id == 1);
 
@@ -455,6 +434,33 @@ namespace Listenarr.Api.Services
                 // do not attempt to alter the schema automatically here.
                 throw;
             }
+        }
+
+        // Normalize a potentially double-encoded JSON stringified array that
+        // sometimes arrives from the front-end as a single-element list where
+        // the first item is a JSON array string. Example: ["[\"book-available\"]"].
+        // Returns the original list when no decoding is required.
+        private static List<string>? NormalizeTriggerList(List<string>? list)
+        {
+            if (list == null) return null;
+            if (list.Count == 1)
+            {
+                var first = list[0];
+                if (!string.IsNullOrWhiteSpace(first) && first.TrimStart().StartsWith("["))
+                {
+                    try
+                    {
+                        var decoded = System.Text.Json.JsonSerializer.Deserialize<List<string>>(first);
+                        if (decoded != null && decoded.Count > 0) return decoded;
+                    }
+                    catch (Exception)
+                    {
+                        // Ignore parse errors and fall through to returning original list
+                    }
+                }
+            }
+
+            return list;
         }
 
         // Startup Configuration methods

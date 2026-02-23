@@ -158,8 +158,7 @@ namespace Listenarr.Api.Services
 
                     if (!response.IsSuccessStatusCode)
                     {
-                        string respText = string.Empty;
-                        try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                        var respText = await TryReadContentAsync(response.Content);
                         var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
                         _logger.LogWarning("NTFY response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
                         await HandleFailedResponseAsync(response);
@@ -212,8 +211,7 @@ namespace Listenarr.Api.Services
                         };
 
                         using var content = new FormUrlEncodedContent(values);
-                        var requestBody = string.Empty;
-                        try { requestBody = await content.ReadAsStringAsync(); } catch { }
+                        var requestBody = await TryReadContentAsync(content);
                         var redactedRequestBody = AggressiveRedact(LogRedaction.RedactText(requestBody, LogRedaction.GetSensitiveValuesFromEnvironment()));
                         var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
                         _logger.LogInformation("Sending Pushover POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedRequestBody);
@@ -223,8 +221,7 @@ namespace Listenarr.Api.Services
                         var response = await _httpClient.PostAsync(postUrl, content);
                         if (!response.IsSuccessStatusCode)
                         {
-                            string respText = string.Empty;
-                            try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                            var respText = await TryReadContentAsync(response.Content);
                             var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
                             _logger.LogWarning("Pushover response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
                             await HandleFailedResponseAsync(response);
@@ -279,8 +276,7 @@ namespace Listenarr.Api.Services
                         var response = await _httpClient.PostAsync(webhookUrl, content);
                         if (!response.IsSuccessStatusCode)
                         {
-                            string respText = string.Empty;
-                            try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                            var respText = await TryReadContentAsync(response.Content);
                             var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
                             _logger.LogWarning("Telegram response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
                             await HandleFailedResponseAsync(response);
@@ -363,8 +359,7 @@ namespace Listenarr.Api.Services
                         var response = await _httpClient.SendAsync(request);
                         if (!response.IsSuccessStatusCode)
                         {
-                            string respText = string.Empty;
-                            try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                            var respText = await TryReadContentAsync(response.Content);
                             var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
                             _logger.LogWarning("Pushbullet response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
                             await HandleFailedResponseAsync(response);
@@ -413,8 +408,7 @@ namespace Listenarr.Api.Services
                     var response = await _httpClient.PostAsync(webhookUrl, content);
                     if (!response.IsSuccessStatusCode)
                     {
-                        string respText = string.Empty;
-                        try { respText = await response.Content.ReadAsStringAsync(); } catch { }
+                        var respText = await TryReadContentAsync(response.Content);
                         var redactedResp = AggressiveRedact(LogRedaction.RedactText(respText, LogRedaction.GetSensitiveValuesFromEnvironment()));
                         _logger.LogWarning("Slack response from {WebhookUrl}: {Status} - {Body}", redactedUrl, response.StatusCode, redactedResp);
                         await HandleFailedResponseAsync(response);
@@ -485,6 +479,23 @@ namespace Listenarr.Api.Services
                 return result;
             }
             catch { return input; }
+        }
+
+        // Safely attempt to read the content of an HttpContent instance. If reading
+        // fails (disposed stream, IO error, etc.) the exception is logged at Debug
+        // and an empty string is returned to avoid masking the original failure.
+        private async Task<string> TryReadContentAsync(HttpContent? content)
+        {
+            if (content == null) return string.Empty;
+            try
+            {
+                return await content.ReadAsStringAsync();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not read HTTP content for diagnostic logging");
+                return string.Empty;
+            }
         }
     }
 }
