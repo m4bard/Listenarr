@@ -100,6 +100,7 @@ namespace Listenarr.Api.Services
                         imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(attachment.ContentType);
                         multipartContent.Add(imageContent, "files[0]", attachment.Filename);
 
+                        _logger.LogDebug("Posting multipart to {WebhookUrl} (attachment filename={Filename}, size={Size})", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()), attachment.Filename, attachment.ImageData?.Length ?? 0);
                         var response = await _httpClient.PostAsync(webhookUrl, multipartContent);
                         if (!response.IsSuccessStatusCode) await HandleFailedResponseAsync(response);
                     }
