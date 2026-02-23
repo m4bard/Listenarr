@@ -42,7 +42,7 @@
                 <div class="webhook-meta">
                   <div class="triggers-preview">
                     <span
-                      v-for="trigger in webhook.triggers"
+                      v-for="trigger in orderedTriggers(webhook.triggers)"
                       :key="trigger"
                       class="trigger-badge-small"
                       :class="getTriggerClass(trigger)"
@@ -451,6 +451,14 @@ const getTriggerClass = (trigger: string): string => {
     'book-completed': 'trigger-completed',
   }
   return classMap[trigger] || ''
+}
+
+// Return triggers in a consistent display order
+const orderedTriggerList = ['book-added', 'book-downloading', 'book-available', 'book-completed']
+
+const orderedTriggers = (triggers: string[] | undefined) => {
+  if (!triggers || triggers.length === 0) return []
+  return orderedTriggerList.filter((t) => triggers.includes(t))
 }
 
 const formatTriggerName = (trigger: string): string => {
