@@ -429,15 +429,33 @@ namespace Listenarr.Api.Services
                 return;
             }
 
-            // Generic webhook fallback
-            var defaultPayload = new { @event = trigger, data = data, timestamp = DateTime.UtcNow };
-            var defaultJson = JsonSerializer.Serialize(defaultPayload, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
-            using var defaultContent = new StringContent(defaultJson, Encoding.UTF8, "application/json");
-
+            // Generic webhook fallback: send the full JSON payload produced by the payload builder
             try
             {
+                string? baseUrl = null;
+                var startup = await _configurationService.GetStartupConfigAsync();
+                if (startup?.UrlBase != null) baseUrl = startup.UrlBase;
+                if (string.IsNullOrWhiteSpace(baseUrl) && _httpContextAccessor?.HttpContext != null)
+                {
+                    var derived = NotificationPayloadBuilder.GetBaseUrlFromHttpContext(_httpContextAccessor.HttpContext);
+                    if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
+                }
+
+                // Prefer rich payload created by the static helper (includes content, embeds, image links, etc.)
+                var payloadObj = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                string defaultJson = payloadObj != null ? payloadObj.ToJsonString() : JsonSerializer.Serialize(new { @event = trigger, data = data, timestamp = DateTime.UtcNow }, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
+
+                using var defaultContent = new StringContent(defaultJson, Encoding.UTF8, "application/json");
+
+                var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
+                var redactedBody = AggressiveRedact(LogRedaction.RedactText(defaultJson, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                _logger.LogInformation("Sending Generic POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
+
                 var response = await _httpClient.PostAsync(webhookUrl, defaultContent);
-                if (!response.IsSuccessStatusCode) await HandleFailedResponseAsync(response);
+                if (!response.IsSuccessStatusCode)
+                {
+                    await HandleFailedResponseAsync(response);
+                }
             }
             catch (Exception ex)
             {
