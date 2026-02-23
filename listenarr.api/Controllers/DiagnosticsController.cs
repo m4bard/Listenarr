@@ -71,9 +71,9 @@ namespace Listenarr.Api.Controllers
                 // Let request cancellations propagate; don't treat them as server errors.
                 throw;
             }
-            catch (Exception ex)
+            catch (TimeoutException ex)
             {
-                _logger.LogError(ex, "Error in DiagnosticsController.TestNotification");
+                _logger.LogError(ex, "Operation timed out in DiagnosticsController.TestNotification");
                 // Do not leak internal exception messages to callers. Details are available in server logs.
                 return StatusCode(500, new { success = false, message = "Failed to send test notification" });
             }
