@@ -266,10 +266,15 @@ namespace Listenarr.Api.Services
                         }
                     }
                 }
-                catch (Exception ex)
+                catch (JsonException ex)
                 {
-                    // Defensive: do not fail saving due to normalization issues
-                    _logger.LogWarning(ex, "Failed to normalize notification triggers; saving with original values");
+                    // Malformed JSON when attempting to decode double-encoded trigger lists
+                    _logger.LogWarning(ex, "Failed to normalize notification triggers due to JSON error; saving with original values");
+                }
+                catch (FormatException ex)
+                {
+                    // Catch formatting/parsing issues if any string parsing is introduced in the future
+                    _logger.LogWarning(ex, "Failed to normalize notification triggers due to formatting error; saving with original values");
                 }
 
                 var existing = await _dbContext.ApplicationSettings.FirstOrDefaultAsync(s => s.Id == 1);

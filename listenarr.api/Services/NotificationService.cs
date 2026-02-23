@@ -86,17 +86,18 @@ namespace Listenarr.Api.Services
                         logDebug: (ex, msg) => _logger.LogDebug(ex, msg)
                     );
 
+                    Console.WriteLine($"DEBUG: NotificationService received attachment? {attachment != null}");
+
+                    _logger.LogDebug("Discord payload attachment present? {HasAttachment}", attachment != null);
                     if (attachment != null)
                     {
+                        _logger.LogDebug("Attachment filename: {Filename}, size={Size}", attachment.Filename, attachment.ImageData?.Length ?? 0);
                         using var multipartContent = new MultipartFormDataContent();
                         var jsonContent = new System.Net.Http.StringContent(payloadObj.ToJsonString(), Encoding.UTF8, "application/json");
-                        jsonContent.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("form-data") { Name = "payload_json" };
-                        jsonContent.Headers.TryAddWithoutValidation("Content-Disposition", "form-data; name=\"payload_json\"");
                         multipartContent.Add(jsonContent, "payload_json");
 
-                        var imageContent = new ByteArrayContent(attachment.ImageData);
+                        var imageContent = new ByteArrayContent(attachment.ImageData ?? Array.Empty<byte>());
                         imageContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(attachment.ContentType);
-                        imageContent.Headers.TryAddWithoutValidation("X-Debug-Files", $"name=\"files[0]\"; filename=\"{attachment.Filename}\"");
                         multipartContent.Add(imageContent, "files[0]", attachment.Filename);
 
                         var response = await _httpClient.PostAsync(webhookUrl, multipartContent);
