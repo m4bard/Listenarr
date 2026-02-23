@@ -181,10 +181,15 @@ namespace Listenarr.Api.Services
                 {
                     throw;
                 }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Error sending NTFY notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
-                }
+                    // OperationCanceledException is handled above (re-thrown). No TaskCanceledException handler here.
+                    catch (JsonException ex)
+                    {
+                        _logger.LogError(ex, "JSON error while building NTFY notification payload for {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        _logger.LogError(ex, "Invalid operation while sending NTFY notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
+                    }
 
             }
 
@@ -254,7 +259,9 @@ namespace Listenarr.Api.Services
                 {
                     throw;
                 }
-                catch (Exception ex)
+                catch (Exception ex) when (ex is not OutOfMemoryException
+                                            && ex is not StackOverflowException
+                                            && ex is not ThreadAbortException)
                 {
                     _logger.LogError(ex, "Error sending Pushover notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
