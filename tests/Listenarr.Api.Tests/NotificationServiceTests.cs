@@ -307,6 +307,8 @@ namespace Listenarr.Api.Tests
             // Mock HttpClient to capture the posted content
             string? capturedJson = null;
             var mockHttpMessageHandler = new Mock<HttpMessageHandler>();
+            var postResponse = new HttpResponseMessage(HttpStatusCode.OK);
+
             mockHttpMessageHandler
                 .Protected()
                 .Setup<Task<HttpResponseMessage>>(
@@ -318,10 +320,7 @@ namespace Listenarr.Api.Tests
                 {
                     capturedJson = await request.Content!.ReadAsStringAsync();
                 })
-                .ReturnsAsync(new HttpResponseMessage
-                {
-                    StatusCode = HttpStatusCode.OK
-                });
+                .ReturnsAsync(postResponse);
 
             var httpClient = new HttpClient(mockHttpMessageHandler.Object);
 
@@ -416,6 +415,9 @@ namespace Listenarr.Api.Tests
                 var postedFooter = postedEmbed["footer"]!.AsObject();
                 Assert.Equal(expectedFooter["text"]?.ToString(), postedFooter["text"]?.ToString());
             }
+
+            // Dispose responses created for Moq to avoid leaking IDisposable instances
+            postResponse.Dispose();
         }
     }
 
@@ -441,6 +443,13 @@ namespace Listenarr.Api.Tests
 
             // Mock HttpMessageHandler to return an image on GET and capture POST body
             var mockHandler = new Mock<HttpMessageHandler>();
+            // Create named responses for disposal after test
+            var imageGetResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(new byte[] { 1, 2, 3 })
+            };
+            imageGetResponse.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
+
             // GET for image
             mockHandler
                 .Protected()
@@ -449,18 +458,10 @@ namespace Listenarr.Api.Tests
                     ItExpr.Is<HttpRequestMessage>(r => r.Method == HttpMethod.Get),
                     ItExpr.IsAny<CancellationToken>()
                 )
-                .ReturnsAsync(() =>
-                {
-                    var img = new byte[] { 1, 2, 3 };
-                    var resp = new HttpResponseMessage(HttpStatusCode.OK)
-                    {
-                        Content = new ByteArrayContent(img)
-                    };
-                    resp.Content.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg");
-                    return resp;
-                });
+                .ReturnsAsync(imageGetResponse);
 
             // POST to webhook - capture body (match exact webhook URL to avoid capturing unrelated POSTs)
+            var webhookPostResponse = new HttpResponseMessage(HttpStatusCode.OK);
             mockHandler
                 .Protected()
                 .Setup<Task<HttpResponseMessage>>(
@@ -484,9 +485,10 @@ namespace Listenarr.Api.Tests
 
                     capturedBodies.Add(contentType + "\n" + bodyText);
                 })
-                .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
+                .ReturnsAsync(webhookPostResponse);
 
             // Fallback for other POSTs in the test run
+            var fallbackPostResponse = new HttpResponseMessage(HttpStatusCode.OK);
             mockHandler
                 .Protected()
                 .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.Is<HttpRequestMessage>(r => r.Method == HttpMethod.Post && (r.RequestUri == null || !r.RequestUri.ToString().StartsWith(webhookUrl, System.StringComparison.OrdinalIgnoreCase))), ItExpr.IsAny<CancellationToken>())
@@ -494,7 +496,7 @@ namespace Listenarr.Api.Tests
                 {
                     Console.WriteLine("DEBUG FALLBACK POST to: " + (request.RequestUri?.ToString() ?? "(null)") + " ContentType=" + (request.Content?.Headers.ContentType?.ToString() ?? "(none)"));
                 })
-                .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK));
+                .ReturnsAsync(fallbackPostResponse);
 
             var httpClient = new HttpClient(mockHandler.Object);
 
@@ -538,6 +540,11 @@ namespace Listenarr.Api.Tests
 
             // Assert we captured at least one POST to the webhook URL
             Assert.NotEmpty(capturedBodies);
+
+            // Dispose responses created for Moq
+            imageGetResponse.Dispose();
+            webhookPostResponse.Dispose();
+            fallbackPostResponse.Dispose();
             // Dump captured bodies for debugging when assertions fail
             foreach (var cb in capturedBodies) Console.WriteLine("DEBUG CAPTURED POST BODY:\n" + cb);
 
