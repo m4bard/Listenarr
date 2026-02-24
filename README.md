@@ -42,7 +42,7 @@ To see what's coming up, check out our [Roadmap](#roadmap)! If you have a sugges
 
 ## Disclaimer
 
-This app is coded with AI assistance. I started this because my wife (an avid audiobook listener) was plowing multiple series and I wanted an automated way for her to request, download, and listen to new audiobooks. I am a front-end developer and I don't know C#, so I took this as an opportunity to learn and started this project.
+This app is coded with AI assistance. I started this because my wife (an avid audiobook listener) was reading through multiple series quickly and I wanted an automated way for her to request, download, and listen to new audiobooks. I am a front-end developer and I don't know C#, so I took this as an opportunity to learn and started this project.
 
 > [!NOTE]  
 > This is just a fun a side project that solved a need for me; it is not my main priority. I will choose my work, family, and mental health before this project.
