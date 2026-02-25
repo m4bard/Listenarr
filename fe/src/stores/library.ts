@@ -52,12 +52,21 @@ export const useLibraryStore = defineStore('library', () => {
     if (ids.length === 0) return { success: false, deletedCount: 0 }
 
     try {
-      const result = await apiService.bulkRemoveFromLibrary(ids)
+      // Backend no longer exposes a single bulk-remove endpoint; perform safe per-id removes
+      let deleted = 0
+      for (const id of ids) {
+        try {
+          await apiService.removeFromLibrary(id)
+          deleted++
+        } catch (e) {
+          // Continue attempting remaining deletions even if one fails
+        }
+      }
       // Remove from local state
       audiobooks.value = audiobooks.value.filter((book) => !ids.includes(book.id))
       // Clear selection
       clearSelection()
-      return { success: true, deletedCount: result.deletedCount }
+      return { success: deleted > 0, deletedCount: deleted }
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to bulk remove audiobooks'
       errorTracking.captureException(err as Error, {

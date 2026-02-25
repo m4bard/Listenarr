@@ -40,6 +40,12 @@ namespace Listenarr.Api.Controllers
     [Route("api/library")]
     public class LibraryController : ControllerBase
     {
+        private static string? ToStringOrFirst(object? value)
+        {
+            if (value is List<string> list)
+                return list.FirstOrDefault();
+            return value as string;
+        }
         private readonly IAudiobookRepository _repo;
         private readonly IImageCacheService _imageCacheService;
         private readonly ILogger<LibraryController> _logger;
@@ -130,9 +136,10 @@ namespace Listenarr.Api.Controllers
                 }
             }
 
-            if (!string.IsNullOrEmpty(metadata.Isbn))
+            var firstIsbn = (metadata.Isbn != null && metadata.Isbn.Any()) ? metadata.Isbn.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i)) : null;
+            if (!string.IsNullOrWhiteSpace(firstIsbn))
             {
-                var existingByIsbn = await _repo.GetByIsbnAsync(metadata.Isbn);
+                var existingByIsbn = await _repo.GetByIsbnAsync(firstIsbn);
                 if (existingByIsbn != null)
                 {
                     return Conflict(new { message = "Audiobook already exists in library", audiobook = existingByIsbn });
@@ -145,9 +152,8 @@ namespace Listenarr.Api.Controllers
             {
                 try
                 {
-                    // Pass metadata.ImageUrl so the cache service can download-and-move if the temp file isn't present
                     var libraryImagePath = await _imageCacheService.MoveToLibraryStorageAsync(metadata.Asin, metadata.ImageUrl);
-                    if (libraryImagePath != null)
+                    if (!string.IsNullOrWhiteSpace(libraryImagePath))
                     {
                         imageUrl = $"/{libraryImagePath}";
                         _logger.LogInformation("Moved image for ASIN {Asin} to permanent library storage", metadata.Asin);
@@ -163,15 +169,46 @@ namespace Listenarr.Api.Controllers
                     // Continue with original image URL if move fails
                 }
             }
+            else if (metadata.Isbn != null && metadata.Isbn.Any(i => !string.IsNullOrWhiteSpace(i)))
+            {
+                firstIsbn = metadata.Isbn.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i));
+                if (!string.IsNullOrWhiteSpace(firstIsbn))
+                {
+                    var existingByIsbn = await _repo.GetByIsbnAsync(firstIsbn);
+                    if (existingByIsbn != null)
+                    {
+                        return Conflict(new { message = "Audiobook already exists in library", audiobook = existingByIsbn });
+                    }
+                }
+
+                try
+                {
+                    var derivedKey = "img-" + ComputeShortHash(firstIsbn ?? metadata.ImageUrl ?? string.Empty);
+                    var libraryImagePath = await _imageCacheService.MoveToLibraryStorageAsync(derivedKey, metadata.ImageUrl);
+                    if (!string.IsNullOrWhiteSpace(libraryImagePath))
+                    {
+                        imageUrl = $"/{libraryImagePath}";
+                        _logger.LogInformation("Moved image for derived ISBN {Key} to permanent library storage", derivedKey);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Failed to move image for derived ISBN {Key}, image may not be reachable", derivedKey);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Error moving image for derived ISBN to library storage");
+                }
+            }
             else if (!string.IsNullOrEmpty(metadata.ImageUrl))
             {
-                // No ASIN available; attempt to move/download the image using a derived key
+                // No ASIN or ISBN available; attempt to move/download the image using a derived key
                 try
                 {
                     var rawKey = request.SearchResult?.Id ?? request.SearchResult?.ResultUrl ?? request.SearchResult?.ProductUrl ?? metadata.ImageUrl;
                     var derivedKey = "img-" + ComputeShortHash(rawKey);
                     var libraryImagePath = await _imageCacheService.MoveToLibraryStorageAsync(derivedKey, metadata.ImageUrl);
-                    if (libraryImagePath != null)
+                    if (!string.IsNullOrWhiteSpace(libraryImagePath))
                     {
                         imageUrl = $"/{libraryImagePath}";
                         _logger.LogInformation("Moved image for derived key {Key} to permanent library storage", derivedKey);
@@ -200,15 +237,16 @@ namespace Listenarr.Api.Controllers
                 PublishYear = metadata.PublishYear,
                 PublishedDate = metadata.PublishedDate, // Store full date from metadata for calendar/timeline features
                 Series = metadata.Series,
-                SeriesNumber = metadata.SeriesNumber,
-                Description = metadata.Description,
-                Genres = metadata.Genres,
+                SeriesNumber = ToStringOrFirst(metadata.SeriesNumber),
+                Description = ToStringOrFirst(metadata.Description),
+                Publisher = ToStringOrFirst(metadata.Publisher),
+                Genres = (metadata.Genres != null && metadata.Genres.Any()) ? metadata.Genres : null,
                 Tags = metadata.Tags,
                 Narrators = (metadata.Narrators != null && metadata.Narrators.Any()) ? metadata.Narrators :
                             (!string.IsNullOrWhiteSpace(metadata.Narrator) ? new List<string> { metadata.Narrator! } : new List<string>()),
-                Isbn = metadata.Isbn,
+                Isbn = metadata.Isbn ?? new List<string>(),
                 Asin = metadata.Asin,
-                Publisher = metadata.Publisher,
+                // Removed duplicate Publisher assignment
                 Language = metadata.Language,
                 Runtime = metadata.Runtime,
                 Version = metadata.Version,
@@ -423,13 +461,13 @@ namespace Listenarr.Api.Controllers
                     .Include(a => a.Files)
                     .ToListAsync();
             }
-            catch (JsonException jex)
+            catch (Exception ex)
             {
-                // Defensive fallback: if a JSON-backed column contains legacy/non-JSON values
-                // EF's JSON reader can throw during materialization. Retry without the
-                // potentially-problematic navigation (QualityProfile) so the library view
-                // can still render basic audiobook and file information.
-                _logger.LogWarning(jex, "JSON parse error retrieving audiobooks; retrying without QualityProfile include to avoid malformed JSON in DB columns.");
+                // Defensive fallback: if any JSON-backed column or related navigation
+                // causes materialization errors (EF's JSON reader or coercion), log and
+                // retry without the QualityProfile include so the library view can still
+                // render basic audiobook and file information.
+                _logger.LogWarning(ex, "Error retrieving audiobooks with QualityProfile; retrying without QualityProfile include to avoid malformed JSON or mapping issues in DB columns.");
 
                 audiobooks = await _dbContext.Audiobooks
                     .Include(a => a.Files)
@@ -600,65 +638,197 @@ namespace Listenarr.Api.Controllers
 
             var problems = new Dictionary<string, object?>();
 
-            // QualityProfiles: Qualities, PreferredFormats, PreferredLanguages, MustContain, MustNotContain
-            var qps = await _dbContext.QualityProfiles
-                .Select(q => new
+            // Helper to execute a raw SQL query and collect non-JSON samples for specified columns
+            async Task<List<object>> ScanTableColumnsAsync(string table, string keyColumn, params string[] columns)
+            {
+                var results = new List<object>();
+                var conn = _dbContext.Database.GetDbConnection();
+                try
                 {
-                    q.Id,
-                    Qualities = EF.Property<string>(q, "Qualities"),
-                    PreferredFormats = EF.Property<string>(q, "PreferredFormats"),
-                    PreferredLanguages = EF.Property<string>(q, "PreferredLanguages"),
-                    MustContain = EF.Property<string>(q, "MustContain"),
-                    MustNotContain = EF.Property<string>(q, "MustNotContain")
-                })
-                .ToListAsync();
+                    if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
 
-            var qpProblems = qps.SelectMany(q => new[] {
-                new { Table = "QualityProfiles.Qualities", Id = q.Id, Raw = q.Qualities },
-                new { Table = "QualityProfiles.PreferredFormats", Id = q.Id, Raw = q.PreferredFormats },
-                new { Table = "QualityProfiles.PreferredLanguages", Id = q.Id, Raw = q.PreferredLanguages },
-                new { Table = "QualityProfiles.MustContain", Id = q.Id, Raw = q.MustContain },
-                new { Table = "QualityProfiles.MustNotContain", Id = q.Id, Raw = q.MustNotContain }
-            })
-            .Where(x => !LooksLikeJson(x.Raw))
-            .Select(x => new { x.Table, x.Id, Sample = (x.Raw ?? string.Empty).Substring(0, Math.Min(200, (x.Raw ?? string.Empty).Length)) })
-            .ToList();
+                    using var cmd = conn.CreateCommand();
+                    var cols = string.Join(", ", new[] { keyColumn }.Concat(columns).Select(c => c));
+                    cmd.CommandText = $"SELECT {cols} FROM {table}";
+                    using var rdr = await cmd.ExecuteReaderAsync();
+                    while (await rdr.ReadAsync())
+                    {
+                        var id = rdr[keyColumn];
+                        foreach (var col in columns)
+                        {
+                            var raw = rdr[col] == DBNull.Value ? null : rdr[col]?.ToString();
+                            // If it doesn't even look like JSON, flag immediately
+                            if (!LooksLikeJson(raw))
+                            {
+                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "NotJson", Sample = (raw ?? string.Empty).Length > 200 ? (raw ?? string.Empty).Substring(0, 200) : raw });
+                                continue;
+                            }
 
+                            // Try parsing to get root token info for more specific diagnostics
+                            try
+                            {
+                                if (!string.IsNullOrWhiteSpace(raw))
+                                {
+                                    using var doc = System.Text.Json.JsonDocument.Parse(raw);
+                                    var root = doc.RootElement;
+
+                                    // Heuristic checks for known columns
+                                    if (table == "QualityProfiles" && col == "Qualities")
+                                    {
+                                        // Expect an array of objects
+                                        if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
+                                        {
+                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedArray", Sample = raw?.Length > 200 ? raw.Substring(0, 200) : raw });
+                                        }
+                                        else
+                                        {
+                                            var first = root.EnumerateArray().FirstOrDefault();
+                                            if (first.ValueKind != System.Text.Json.JsonValueKind.Object && !first.Equals(default(System.Text.Json.JsonElement)))
+                                            {
+                                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ArrayNotObjects", Sample = raw?.Length > 200 ? raw.Substring(0, 200) : raw });
+                                            }
+                                        }
+                                    }
+                                    else if (table == "Downloads" && col == "Metadata")
+                                    {
+                                        // Expect an object/map
+                                        if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
+                                        {
+                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedObject", Sample = raw?.Length > 200 ? raw.Substring(0, 200) : raw });
+                                        }
+                                    }
+                                }
+                            }
+                            catch (System.Text.Json.JsonException)
+                            {
+                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ParseError", Sample = (raw ?? string.Empty).Length > 200 ? (raw ?? string.Empty).Substring(0, 200) : raw });
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogWarning(ex, "Failed to scan table {Table} for JSON columns", table);
+                }
+                return results;
+            }
+
+            // QualityProfiles
+            var qpProblems = await ScanTableColumnsAsync("QualityProfiles", "Id", "Qualities", "PreferredFormats", "PreferredLanguages", "MustContain", "MustNotContain");
             problems["QualityProfiles"] = qpProblems;
 
             // Downloads.Metadata
-            var downloads = await _dbContext.Downloads
-                .Select(d => new { d.Id, Metadata = EF.Property<string>(d, "Metadata") })
-                .ToListAsync();
-            var dlProblems = downloads.Where(d => !LooksLikeJson(d.Metadata))
-                .Select(d => new { Table = "Downloads.Metadata", d.Id, Sample = (d.Metadata ?? string.Empty).Substring(0, Math.Min(200, (d.Metadata ?? string.Empty).Length)) })
-                .ToList();
+            var dlProblems = await ScanTableColumnsAsync("Downloads", "Id", "Metadata");
             problems["Downloads"] = dlProblems;
 
             // DownloadProcessingJobs.JobData
-            var jobs = await _dbContext.DownloadProcessingJobs
-                .Select(j => new { j.Id, JobData = EF.Property<string>(j, "JobData") })
-                .ToListAsync();
-            var jobProblems = jobs.Where(j => !LooksLikeJson(j.JobData))
-                .Select(j => new { Table = "DownloadProcessingJobs.JobData", j.Id, Sample = (j.JobData ?? string.Empty).Substring(0, Math.Min(200, (j.JobData ?? string.Empty).Length)) })
-                .ToList();
+            var jobProblems = await ScanTableColumnsAsync("DownloadProcessingJobs", "Id", "JobData");
             problems["DownloadProcessingJobs"] = jobProblems;
 
             // ApiConfigurations: HeadersJson, ParametersJson
-            var apis = await _dbContext.ApiConfigurations
-                .Select(a => new { a.Id, Headers = EF.Property<string>(a, "HeadersJson"), Parameters = EF.Property<string>(a, "ParametersJson") })
-                .ToListAsync();
-            var apiProblems = apis.SelectMany(a => new[] {
-                new { Table = "ApiConfigurations.HeadersJson", Id = a.Id, Raw = a.Headers },
-                new { Table = "ApiConfigurations.ParametersJson", Id = a.Id, Raw = a.Parameters }
-            })
-            .Where(x => !LooksLikeJson(x.Raw))
-            .Select(x => new { x.Table, x.Id, Sample = (x.Raw ?? string.Empty).Substring(0, Math.Min(200, (x.Raw ?? string.Empty).Length)) })
-            .ToList();
+            var apiProblems = await ScanTableColumnsAsync("ApiConfigurations", "Id", "HeadersJson", "ParametersJson");
             problems["ApiConfigurations"] = apiProblems;
+
+            // Audiobooks: list-of-string properties mapped via JSON TEXT
+            var abProblems = await ScanTableColumnsAsync("Audiobooks", "Id", "Authors", "Genres", "Tags", "Narrators", "AuthorAsins");
+            problems["Audiobooks"] = abProblems;
+
+            // Expanded schema scan: inspect all tables and TEXT-like columns reported by SQLite
+            var expanded = new List<object>();
+            try
+            {
+                var conn = _dbContext.Database.GetDbConnection();
+                if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
+
+                using var tblCmd = conn.CreateCommand();
+                tblCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
+                using var tblRdr = await tblCmd.ExecuteReaderAsync();
+                var tables = new List<string>();
+                while (await tblRdr.ReadAsync()) tables.Add(tblRdr.GetString(0));
+
+                foreach (var table in tables)
+                {
+                    // Get columns and their types
+                    using var colCmd = conn.CreateCommand();
+                    colCmd.CommandText = $"PRAGMA table_info('{table}')";
+                    using var colRdr = await colCmd.ExecuteReaderAsync();
+                    var cols = new List<(string name, string type, int pk)>();
+                    while (await colRdr.ReadAsync())
+                    {
+                        var name = colRdr.GetString(colRdr.GetOrdinal("name"));
+                        var type = colRdr.IsDBNull(colRdr.GetOrdinal("type")) ? string.Empty : colRdr.GetString(colRdr.GetOrdinal("type"));
+                        var pk = colRdr.GetInt32(colRdr.GetOrdinal("pk"));
+                        cols.Add((name, type, pk));
+                    }
+
+                    // Identify candidate JSON columns: type contains TEXT or name ends with Json (case-insensitive)
+                    var jsonCols = cols.Where(c => (!string.IsNullOrEmpty(c.type) && c.type.IndexOf("TEXT", StringComparison.OrdinalIgnoreCase) >= 0)
+                                                   || c.name.EndsWith("Json", StringComparison.OrdinalIgnoreCase)
+                                                   || c.name.EndsWith("Metadata", StringComparison.OrdinalIgnoreCase)
+                                                   || c.name.Equals("Qualities", StringComparison.OrdinalIgnoreCase)
+                                                   || c.name.Equals("JobData", StringComparison.OrdinalIgnoreCase))
+                                        .Select(c => c.name).ToList();
+
+                    if (!jsonCols.Any()) continue;
+
+                    // Choose a key column (primary key if present, else first column)
+                    var keyCol = cols.FirstOrDefault(c => c.pk > 0).name ?? cols.First().name;
+
+                    using var scanCmd = conn.CreateCommand();
+                    var colsSql = string.Join(", ", new[] { keyCol }.Concat(jsonCols).Select(c => "\"" + c + "\""));
+                    scanCmd.CommandText = $"SELECT {colsSql} FROM \"{table}\"";
+                    try
+                    {
+                        using var scanRdr = await scanCmd.ExecuteReaderAsync();
+                        while (await scanRdr.ReadAsync())
+                        {
+                            var id = scanRdr[keyCol];
+                            foreach (var col in jsonCols)
+                            {
+                                var raw = scanRdr[col] == DBNull.Value ? null : scanRdr[col]?.ToString();
+                                if (!LooksLikeJson(raw))
+                                {
+                                    expanded.Add(new { Table = table + "." + col, Id = id, Issue = "NotJson", Sample = (raw ?? string.Empty).Length > 200 ? (raw ?? string.Empty).Substring(0, 200) : raw });
+                                    continue;
+                                }
+
+                                if (!string.IsNullOrWhiteSpace(raw))
+                                {
+                                    try
+                                    {
+                                        using var doc = System.Text.Json.JsonDocument.Parse(raw);
+                                        var root = doc.RootElement;
+                                        // heuristic: if root is Number, flag specifically since EF error mentioned 'Number'
+                                        if (root.ValueKind == System.Text.Json.JsonValueKind.Number)
+                                        {
+                                            expanded.Add(new { Table = table + "." + col, Id = id, Issue = "NumericRoot", Sample = raw });
+                                        }
+                                    }
+                                    catch (System.Text.Json.JsonException je)
+                                    {
+                                        expanded.Add(new { Table = table + "." + col, Id = id, Issue = "ParseError", Sample = (raw ?? string.Empty).Length > 200 ? (raw ?? string.Empty).Substring(0, 200) : raw, Error = je.Message });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        expanded.Add(new { Table = table, Id = "<query-failed>", Issue = "QueryError", Sample = ex.Message });
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Expanded schema scan failed");
+            }
+
+            problems["SchemaScan"] = expanded;
 
             return Ok(problems);
         }
+
+        // Diagnostics endpoints removed - cleanup completed
 
         [HttpPut("{id}")]
         public async Task<IActionResult> UpdateAudiobook(int id, [FromBody] Audiobook updatedAudiobook)

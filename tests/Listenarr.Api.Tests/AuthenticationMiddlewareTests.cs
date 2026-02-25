@@ -52,9 +52,9 @@ namespace Listenarr.Api.Tests
                 });
             }).CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-            // /api/startupconfig is intentionally allowed-anonymous by middleware allow-list
-            var resp = await client.GetAsync("/api/startupconfig");
-            Assert.True(resp.IsSuccessStatusCode, await resp.Content.ReadAsStringAsync());
+            // /api/configuration/startupconfig should require authentication if enabled
+            var resp = await client.GetAsync("/api/configuration/startupconfig");
+            Assert.Equal(System.Net.HttpStatusCode.Unauthorized, resp.StatusCode);
         }
     }
 

@@ -601,6 +601,8 @@ if (!disableHostedServices)
     builder.Services.AddListenarrHostedServices(builder.Configuration);
 }
 
+// Startup DB normalizer: run once at startup to idempotently normalize legacy JSON columns
+builder.Services.AddHostedService<Listenarr.Api.Services.StartupDbNormalizer>();
 // External request options (Prefer US domain / optional US proxy)
 builder.Services.Configure<Listenarr.Api.Services.ExternalRequestOptions>(builder.Configuration.GetSection("ExternalRequests"));
 

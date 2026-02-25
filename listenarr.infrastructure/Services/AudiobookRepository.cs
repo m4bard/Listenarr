@@ -37,7 +37,7 @@ namespace Listenarr.Api.Services
 
         public async Task<Audiobook?> GetByIsbnAsync(string isbn)
         {
-            return await _db.Audiobooks.FirstOrDefaultAsync(a => a.Isbn == isbn);
+            return await _db.Audiobooks.FirstOrDefaultAsync(a => a.Isbn != null && a.Isbn.Any(i => i == isbn));
         }
 
         public async Task<Audiobook?> GetByIdAsync(int id)

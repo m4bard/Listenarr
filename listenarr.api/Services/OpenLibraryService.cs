@@ -21,7 +21,7 @@ namespace Listenarr.Api.Services
         public int? FirstPublishYear { get; set; }
 
         [JsonPropertyName("isbn")]
-        public List<string>? Isbn { get; set; }
+        public List<string> Isbn { get; set; } = new();
 
         [JsonPropertyName("publisher")]
         public List<string>? Publisher { get; set; }

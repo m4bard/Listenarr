@@ -50,7 +50,7 @@ namespace Listenarr.Api.Middleware
                 }
 
                 // Allow some public endpoints without antiforgery (startup config reads, token request itself, login/register)
-                if (path.StartsWith("/api/antiforgery") || path.StartsWith("/api/account/login") || path.StartsWith("/api/account/register") || path.StartsWith("/api/account/logout") || path.StartsWith("/api/startupconfig") || path.StartsWith("/api/configuration/startupconfig") || path.StartsWith("/hubs/")
+                if (path.StartsWith("/api/antiforgery") || path.StartsWith("/api/account/login") || path.StartsWith("/api/account/register") || path.StartsWith("/api/account/logout") || path.StartsWith("/api/configuration/startupconfig") || path.StartsWith("/hubs/")
                     // Also allow Prowlarr-compatible indexer endpoints and system status
                     || path.StartsWith("/api/v1/indexer") || path.StartsWith("/api/v1/system"))
                 {

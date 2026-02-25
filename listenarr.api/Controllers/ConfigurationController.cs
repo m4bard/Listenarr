@@ -47,7 +47,12 @@ namespace Listenarr.Api.Controllers
         }
 
         // API Configuration endpoints
+        /// <summary>
+        /// Get all API configurations.
+        /// </summary>
         [HttpGet("apis")]
+        [ProducesResponseType(typeof(List<ApiConfiguration>), 200)]
+        [ProducesResponseType(500)]
         public async Task<ActionResult<List<ApiConfiguration>>> GetApiConfigurations()
         {
             try
@@ -62,7 +67,14 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Get a specific API configuration by ID.
+        /// </summary>
+        /// <param name="id">API configuration ID</param>
         [HttpGet("apis/{id}")]
+        [ProducesResponseType(typeof(ApiConfiguration), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
         public async Task<ActionResult<ApiConfiguration>> GetApiConfiguration(string id)
         {
             try
@@ -81,7 +93,13 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Save an API configuration.
+        /// </summary>
+        /// <param name="config">API configuration to save</param>
         [HttpPost("apis")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(500)]
         public async Task<ActionResult<object>> SaveApiConfiguration([FromBody] ApiConfiguration config)
         {
             try
@@ -96,7 +114,13 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Delete an API configuration by ID.
+        /// </summary>
+        /// <param name="id">API configuration ID</param>
         [HttpDelete("apis/{id}")]
+        [ProducesResponseType(typeof(bool), 200)]
+        [ProducesResponseType(500)]
         public async Task<ActionResult<bool>> DeleteApiConfiguration(string id)
         {
             try
@@ -112,7 +136,12 @@ namespace Listenarr.Api.Controllers
         }
 
         // Download Client Configuration endpoints
+        /// <summary>
+        /// Get all download client configurations.
+        /// </summary>
         [HttpGet("download-clients")]
+        [ProducesResponseType(typeof(List<DownloadClientConfiguration>), 200)]
+        [ProducesResponseType(500)]
         public async Task<ActionResult<List<DownloadClientConfiguration>>> GetDownloadClientConfigurations()
         {
             try
@@ -143,7 +172,14 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Get a specific download client configuration by ID.
+        /// </summary>
+        /// <param name="id">Download client configuration ID</param>
         [HttpGet("download-clients/{id}")]
+        [ProducesResponseType(typeof(DownloadClientConfiguration), 200)]
+        [ProducesResponseType(404)]
+        [ProducesResponseType(500)]
         public async Task<ActionResult<DownloadClientConfiguration>> GetDownloadClientConfiguration(string id)
         {
             try
@@ -379,12 +415,40 @@ namespace Listenarr.Api.Controllers
         }
 
         // Startup Configuration endpoints
+        /// <summary>
+        /// Get the Listenarr startup configuration (API key, authentication, etc).
+        /// API key is redacted if authentication is enabled and user is not authenticated.
+        /// </summary>
+        /// <returns>StartupConfig object</returns>
         [HttpGet("startupconfig")]
+        [ProducesResponseType(typeof(StartupConfig), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(500)]
         public async Task<ActionResult<StartupConfig>> GetStartupConfig()
         {
             try
             {
-                var config = await _configurationService.GetStartupConfigAsync();
+                var config = await _configurationService.GetStartupConfigAsync() ?? new StartupConfig();
+                var rawAuth = config.AuthenticationRequired;
+                var authEnabled = rawAuth?.ToLowerInvariant() is "true" or "yes" or "1";
+                var isAuthenticated = User?.Identity?.IsAuthenticated ?? false;
+                _logger.LogInformation($"[ConfigurationController] AuthenticationRequired config value: '{rawAuth}', authEnabled: {authEnabled}, user authenticated: {isAuthenticated}");
+                if (authEnabled && !isAuthenticated)
+                {
+                    _logger.LogWarning("[ConfigurationController] Authentication is enabled and user is not authenticated. Returning 401.");
+                    return Unauthorized();
+                }
+                // Only redact API key if authentication is enabled and user is not authenticated
+                if (authEnabled && !isAuthenticated)
+                {
+                    if (!string.IsNullOrEmpty(config.ApiKey))
+                    {
+                        _logger.LogInformation("[ConfigurationController] Authentication is enabled and user is not authenticated, redacting ApiKey.");
+                        config.ApiKey = "REDACTED";
+                    }
+                }
+                // If authentication is disabled, always return the real API key
+                _logger.LogInformation($"[ConfigurationController] Returning startup config. ApiKey: '{(string.IsNullOrEmpty(config.ApiKey) ? "(empty)" : config.ApiKey)}'");
                 return Ok(config);
             }
             catch (Exception ex)
@@ -394,7 +458,14 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Save the Listenarr startup configuration (API key, authentication, etc).
+        /// </summary>
+        /// <param name="config">StartupConfig object to save</param>
+        /// <returns>The saved StartupConfig</returns>
         [HttpPost("startupconfig")]
+        [ProducesResponseType(typeof(StartupConfig), 200)]
+        [ProducesResponseType(500)]
         public async Task<ActionResult<StartupConfig>> SaveStartupConfig([FromBody] StartupConfig config)
         {
             try

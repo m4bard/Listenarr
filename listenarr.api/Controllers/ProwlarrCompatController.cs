@@ -16,6 +16,17 @@ namespace Listenarr.Api.Controllers
 
     public class ProwlarrCompatController : ControllerBase
     {
+        private StartupConfig GetStartupConfig()
+        {
+            // Use the DB context to get config service, or inject if available
+            var configService = HttpContext?.RequestServices.GetService(typeof(IConfigurationService)) as IConfigurationService;
+            if (configService != null)
+            {
+                try { return configService.GetStartupConfigAsync().GetAwaiter().GetResult(); } catch { }
+            }
+            return new StartupConfig();
+        }
+
         private readonly ILogger<ProwlarrCompatController> _logger;
         private readonly ListenArrDbContext _dbContext;
         private readonly IHubContext<SettingsHub> _settingsHub;
@@ -106,15 +117,17 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetSystemStatus()
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             Response.ContentType = "application/json";
-
             var dto = new SystemStatusDto
             {
                 Status = "ok",
                 Version = GetApplicationVersion(),
                 Api = "Listenarr"
             };
-
             return Ok(dto);
         }
 
@@ -128,20 +141,20 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult PostIndexerTest()
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             _logger?.LogInformation("Prowlarr indexer test invoked (POST)");
             Response.ContentType = "application/json";
-
             var version = GetApplicationVersion();
-            // Return header for clients that expect it
             Response.Headers["X-Application-Version"] = version;
-
             var dto = new IndexerTestResponseDto
             {
                 Success = true,
                 Message = "Test OK",
                 Version = version
             };
-
             return Ok(dto);
         }
 
@@ -150,19 +163,20 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexerTest()
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             _logger?.LogInformation("Prowlarr indexer test invoked (GET)");
             Response.ContentType = "application/json";
-
             var version = GetApplicationVersion();
             Response.Headers["X-Application-Version"] = version;
-
             var dto = new IndexerTestResponseDto
             {
                 Success = true,
                 Message = "Test OK (GET)",
                 Version = version
             };
-
             return Ok(dto);
         }
 
@@ -173,6 +187,10 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult PostDebugTest()
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             Response.ContentType = "application/json";
             return Ok(new { ok = true });
         }
@@ -187,8 +205,11 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexers()
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             if (HttpContext?.Response != null) HttpContext.Response.ContentType = "application/json";
-            // Fetch persisted indexers so that remote applications (Prowlarr) receive a JSON array
             var indexers = _dbContext.Indexers
                 .OrderBy(i => i.Priority)
                 .ThenBy(i => i.Name)
@@ -200,28 +221,25 @@ namespace Listenarr.Api.Controllers
                     name = i.Name,
                     implementation = i.Implementation,
                     baseUrl = i.Url,
-                    apiKey = i.ApiKey,
+                    apiKey = authEnabled ? i.ApiKey : null,
                     categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray(),
-                    // Provide nested settings for compatibility with clients expecting a standard payload
                     settings = new
                     {
                         baseUrl = i.Url,
-                        apiKey = i.ApiKey,
+                        apiKey = authEnabled ? i.ApiKey : null,
                         apiPath = string.Empty,
                         categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray()
                     },
-                    // Provide a fields array similar to standard payload (name/value pairs)
                     fields = new[]
                     {
                         new FieldDto("baseUrl", i.Url ?? string.Empty),
-                        new FieldDto("apiKey", i.ApiKey ?? string.Empty),
+                        new FieldDto("apiKey", authEnabled ? i.ApiKey : null),
                         new FieldDto("apiPath", string.Empty),
                         new FieldDto("categories", string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray())
                     },
                     tags = System.Array.Empty<int>()
                 })
                 .ToArray();
-
             return Ok(indexers);
         }
 
@@ -234,11 +252,14 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexerById(int id)
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             Response.ContentType = "application/json";
             var i = _dbContext.Indexers.AsNoTracking().FirstOrDefault(x => x.Id == id);
             if (i == null)
             {
-                // Return a 200 with a minimal compatibility object for id=0 or unknown ids
                 var fallback = new
                 {
                     id = id,
@@ -263,35 +284,32 @@ namespace Listenarr.Api.Controllers
                     },
                     tags = System.Array.Empty<int>()
                 };
-
                 return Ok(fallback);
             }
-
             var dto = new
             {
                 id = i.Id,
                 name = i.Name,
                 implementation = i.Implementation,
                 baseUrl = i.Url,
-                apiKey = i.ApiKey,
+                apiKey = authEnabled ? i.ApiKey : null,
                 categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray(),
                 settings = new
                 {
                     baseUrl = i.Url,
-                    apiKey = i.ApiKey,
+                    apiKey = authEnabled ? i.ApiKey : null,
                     apiPath = string.Empty,
                     categories = string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray()
                 },
                 fields = new[]
                 {
                     new FieldDto("baseUrl", i.Url ?? string.Empty),
-                    new FieldDto("apiKey", i.ApiKey ?? string.Empty),
+                    new FieldDto("apiKey", authEnabled ? i.ApiKey : null),
                     new FieldDto("apiPath", string.Empty),
                     new FieldDto("categories", string.IsNullOrEmpty(i.Categories) ? System.Array.Empty<string>() : i.Categories.Split(',').Select(s => s.Trim()).ToArray())
                 },
                 tags = System.Array.Empty<int>()
             };
-
             return Ok(dto);
         }
 
@@ -304,6 +322,10 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexersInfo()
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             Response.ContentType = "application/json";
             var payload = new
             {
@@ -322,8 +344,11 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexersList()
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             Response.ContentType = "application/json";
-            // Return an empty array by default. Prowlarr will POST indexers to populate.
             return Ok(System.Array.Empty<object>());
         }
 
@@ -338,36 +363,29 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public async Task<IActionResult> DeleteIndexer(int id)
         {
+            var cfg = GetStartupConfig();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+                return Unauthorized();
             Response.ContentType = "application/json";
-
             try
             {
                 // Validate id (reject id <= 0), but be tolerant for external clients that may send 0.
                 if (id <= 0)
                 {
-                    // Log a clear warning with caller IP so operators can trace the origin of bad delete requests.
                     var remoteIp = HttpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
                     _logger?.LogWarning("Prowlarr: Delete requested with invalid id {Id} from {RemoteIp}", id, remoteIp);
-
-                    // Tolerate id==0 as a no-op to improve compatibility with clients that send 0 (avoid polluting their logs).
                     return Ok(new { });
                 }
-
                 var i = _dbContext.Indexers.FirstOrDefault(x => x.Id == id);
-
                 if (i != null)
                 {
                     _dbContext.Indexers.Remove(i);
                     await _dbContext.SaveChangesAsync();
-
                     _logger?.LogInformation("Prowlarr: Deleted indexer {Id} (name={Name})", i.Id, i.Name);
-
-                    // Broadcast update so UIs can refresh and publish a notification
                     try
                     {
                         await _settingsHub.Clients.All.SendAsync("IndexersUpdated", new { created = 0, skipped = 0, indexers = new[] { new { id = i.Id, name = i.Name, baseUrl = i.Url } } });
-
-                        // Suppress duplicate delete toasts if one was recently sent for this indexer or the same message was sent globally
                         var deleteMessage = $"Removed indexer: {i.Name}";
                         if (ShouldSendToastForIndexer(i.Id, deleteMessage) && ShouldSendToastForMessage(deleteMessage))
                         {
@@ -387,8 +405,6 @@ namespace Listenarr.Api.Controllers
                 {
                     _logger?.LogInformation("Prowlarr: Delete requested for non-existent indexer {Id}", id);
                 }
-
-                // Return empty JSON object like standard ProviderControllerBase.DeleteProvider
                 return Ok(new { });
             }
             catch (System.Exception ex)

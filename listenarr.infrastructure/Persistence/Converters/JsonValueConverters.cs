@@ -44,6 +44,42 @@ namespace Listenarr.Infrastructure.Persistence.Converters
 
             try
             {
+                // If T is a collection of strings, be permissive: allow a primitive
+                // JSON value (number/string) or a JSON string to be treated as a
+                // single-item array. This helps tolerate legacy DB rows while we
+                // normalize storage.
+                if (typeof(T).IsGenericType && typeof(T).GetGenericArguments().Length == 1 &&
+                    typeof(T).GetGenericArguments()[0] == typeof(string))
+                {
+                    // If the JSON is not an array or object, try wrapping it.
+                    if (first != '[' && first != '{')
+                    {
+                        try
+                        {
+                            string wrappedJson;
+                            if (first == '"')
+                            {
+                                // Deserialize the single JSON string and re-serialize as array
+                                var single = JsonSerializer.Deserialize<string>(json);
+                                wrappedJson = JsonSerializer.Serialize(new[] { single ?? string.Empty });
+                            }
+                            else
+                            {
+                                // Treat numeric or bare token as string and wrap
+                                var raw = trimmed;
+                                wrappedJson = JsonSerializer.Serialize(new[] { raw });
+                            }
+
+                            var desWrapped = JsonSerializer.Deserialize<T>(wrappedJson);
+                            if (desWrapped != null) return desWrapped;
+                        }
+                        catch
+                        {
+                            // Fall through to the default attempt below
+                        }
+                    }
+                }
+
                 var des = JsonSerializer.Deserialize<T>(json);
                 if (des != null) return des;
             }

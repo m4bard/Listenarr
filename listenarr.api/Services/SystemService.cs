@@ -37,6 +37,19 @@ namespace Listenarr.Api.Services
             _startTime = DateTime.UtcNow;
         }
 
+        public StartupConfig GetStartupConfig()
+        {
+            try
+            {
+                return _configurationService.GetStartupConfigAsync().GetAwaiter().GetResult();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error retrieving startup configuration");
+                return new StartupConfig();
+            }
+        }
+
         public SystemInfo GetSystemInfo()
         {
             try

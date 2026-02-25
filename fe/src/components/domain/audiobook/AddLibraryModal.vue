@@ -466,7 +466,7 @@ const seedPreview = async () => {
     if (props.book?.asin) {
       metadataLoading.value = true
       try {
-        const resp = await apiService.getMetadata(props.book.asin, 'us', true)
+        const resp = await apiService.getAudibleMetadata<any>(props.book.asin)
         if (resp && resp.metadata) {
           const enrichedMeta = mapAudimetaToAudible(resp.metadata, resp.source)
           // Sanitize seriesNumber to filter out the string "null"

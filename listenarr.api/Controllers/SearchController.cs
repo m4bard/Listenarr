@@ -119,7 +119,7 @@ namespace Listenarr.Api.Controllers
                 r.Narrator,
                 r.ImageUrl,
                 r.Asin,
-                r.Isbn,
+                Isbn = r.Isbn ?? new List<string>(),
                 r.Series,
                 r.SeriesNumber,
                 r.ProductUrl,
@@ -1313,76 +1313,7 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        /// <summary>
-        /// Get audiobook metadata from audimeta.de by ASIN (deprecated in favor of /api/metadata/audimeta/{asin})
-        /// </summary>
-        [Obsolete("Use /api/metadata/audimeta/{asin} instead.")]
-        [HttpGet("audimeta/{asin}")]
-        public async Task<ActionResult<AudimetaBookResponse>> GetAudimetaMetadata(
-            string asin,
-            [FromQuery] string region = "us",
-            [FromQuery] bool cache = true)
-        {
-            Response.Headers["Deprecation"] = "true";
-            Response.Headers["Link"] = $"</api/metadata/audimeta/{asin}>; rel=\"successor-version\"";
-
-            try
-            {
-                if (string.IsNullOrEmpty(asin))
-                {
-                    return BadRequest("ASIN parameter is required");
-                }
-
-                var result = await _metadataService.GetAudimetaMetadataAsync(asin, region, cache);
-                if (result == null)
-                {
-                    return NotFound($"No metadata found for ASIN: {asin}");
-                }
-
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching audimeta metadata for ASIN: {Asin}", asin);
-                return StatusCode(500, "Internal server error");
-            }
-        }
-
-        /// <summary>
-        /// Get audiobook metadata from configured metadata sources by ASIN (deprecated in favor of /api/metadata/{asin})
-        /// </summary>
-        [Obsolete("Use /api/metadata/{asin} instead.")]
-        [HttpGet("metadata/{asin}")]
-        public async Task<ActionResult<object>> GetMetadata(
-            string asin,
-            [FromQuery] string region = "us",
-            [FromQuery] bool cache = true)
-        {
-            Response.Headers["Deprecation"] = "true";
-            Response.Headers["Link"] = $"</api/metadata/{asin}>; rel=\"successor-version\"";
-
-            try
-            {
-                if (string.IsNullOrWhiteSpace(asin))
-                {
-                    return BadRequest("ASIN is required");
-                }
-
-                var result = await _metadataService.GetMetadataAsync(asin, region, cache);
-                if (result == null)
-                {
-                    return NotFound($"No metadata found for ASIN: {asin} from any configured source");
-                }
-
-                return Ok(result);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", asin);
-                return StatusCode(500, $"Error fetching metadata: {ex.Message}");
-            }
-        }
-
+        // existing code continuation
         /// <summary>
         /// Search a specific API by ID
         /// Note: This route uses a parameter and must come after all specific routes to avoid conflicts

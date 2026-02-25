@@ -34,31 +34,41 @@ namespace Listenarr.Api.Middleware
 
         public async Task InvokeAsync(HttpContext context, ISessionService sessionService)
         {
-
             // Only process session authentication if no user is already authenticated
-            if (!context.User.Identity?.IsAuthenticated ?? true)
+            var isAlreadyAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
+            var path = context.Request.Path.Value ?? string.Empty;
+            if (!isAlreadyAuthenticated)
             {
                 var sessionToken = ExtractSessionToken(context);
                 if (!string.IsNullOrEmpty(sessionToken))
                 {
+                    _logger.LogDebug("[SessionAuth] Incoming session token for {Path}: {TokenPrefix}...", path, sessionToken.Length > 8 ? sessionToken[..8] : sessionToken);
                     try
                     {
                         var principal = await sessionService.GetSessionUserAsync(sessionToken);
                         if (principal != null)
                         {
                             context.User = principal;
-                            _logger.LogDebug("Session authentication successful for token: {TokenPrefix}...", sessionToken[..8]);
+                            _logger.LogDebug("[SessionAuth] Session authentication successful for {Path}, token: {TokenPrefix}...", path, sessionToken.Length > 8 ? sessionToken[..8] : sessionToken);
                         }
                         else
                         {
-                            _logger.LogDebug("Session token invalid or expired: {TokenPrefix}...", sessionToken[..8]);
+                            _logger.LogDebug("[SessionAuth] Session token invalid or expired for {Path}: {TokenPrefix}...", path, sessionToken.Length > 8 ? sessionToken[..8] : sessionToken);
                         }
                     }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "Error during session authentication");
+                        _logger.LogError(ex, "[SessionAuth] Error during session authentication for {Path}", path);
                     }
                 }
+                else if (path.Contains("startupconfig"))
+                {
+                    _logger.LogDebug("[SessionAuth] No session token found for {Path}. Headers: {Headers}", path, string.Join(", ", context.Request.Headers.Select(h => h.Key + ":" + h.Value)));
+                }
+            }
+            else if (path.Contains("startupconfig"))
+            {
+                _logger.LogDebug("[SessionAuth] User already authenticated for {Path}. Identity: {Identity}, Name: {Name}", path, context.User.Identity?.AuthenticationType, context.User.Identity?.Name);
             }
 
             await _next(context);

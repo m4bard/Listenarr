@@ -39,7 +39,7 @@ namespace Listenarr.Domain.Models
         public List<string>? Genres { get; set; }
         public List<string>? Tags { get; set; }
         public List<string>? Narrators { get; set; }
-        public string? Isbn { get; set; }
+        public List<string>? Isbn { get; set; }
         public string? Asin { get; set; }
         // OpenLibrary identifier (OLID) when the audiobook originates from OpenLibrary
         public string? OpenLibraryId { get; set; }
