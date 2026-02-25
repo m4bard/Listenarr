@@ -67,7 +67,10 @@ export function useProtectedImages() {
 
     const existing = protectedImageSrcMap[safeKey]
     if (existing) return existing
-    if (protectedImageError[safeKey]) return fallback
+    if (protectedImageError[safeKey]) {
+      const retryResolved = apiService.getImageUrl(rawImageUrl)
+      if (!isLikelyBackendImageUrl(retryResolved)) return fallback
+    }
 
     const resolvedImmediate = apiService.getImageUrl(rawImageUrl)
     if (resolvedImmediate) {
@@ -106,7 +109,12 @@ export function useProtectedImages() {
 
           const objectUrl = await apiService.fetchImageObjectUrl(rawImageUrl)
           if (!objectUrl) {
-            protectedImageError[safeKey] = true
+            if (!isLikelyBackendImageUrl(resolved) || !isAuthRequiredByConfig()) {
+              protectedImageSrcMap[safeKey] = resolved
+              delete protectedImageError[safeKey]
+            } else {
+              protectedImageError[safeKey] = true
+            }
             return
           }
 
@@ -116,11 +124,18 @@ export function useProtectedImages() {
           }
 
           protectedImageSrcMap[safeKey] = objectUrl
+          delete protectedImageError[safeKey]
           if (objectUrl.startsWith('blob:')) {
             protectedImageObjectUrls.add(objectUrl)
           }
         } catch {
-          protectedImageError[safeKey] = true
+          const resolved = apiService.getImageUrl(rawImageUrl)
+          if (resolved && isLikelyBackendImageUrl(resolved) && !isAuthRequiredByConfig()) {
+            protectedImageSrcMap[safeKey] = resolved
+            delete protectedImageError[safeKey]
+          } else {
+            protectedImageError[safeKey] = true
+          }
         } finally {
           protectedImageLoading[safeKey] = false
         }

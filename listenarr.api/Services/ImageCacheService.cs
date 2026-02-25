@@ -21,6 +21,7 @@ using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
+using SixLabors.ImageSharp;
 
 namespace Listenarr.Api.Services
 {
@@ -82,16 +83,22 @@ namespace Listenarr.Api.Services
                 var libraryPath = GetImagePath(identifier, _libraryImagePath);
                 if (File.Exists(libraryPath))
                 {
-                    _logger.LogInformation("Image already in library storage: {Identifier}", identifier);
-                    return GetRelativePath(libraryPath);
+                    if (IsValidCachedCoverFile(libraryPath, identifier, "library"))
+                    {
+                        _logger.LogInformation("Image already in library storage: {Identifier}", identifier);
+                        return GetRelativePath(libraryPath);
+                    }
                 }
 
                 // Also check authors storage (author images may be stored separately)
                 var authorPath = GetImagePath(identifier, _authorImagePath);
                 if (File.Exists(authorPath))
                 {
-                    _logger.LogInformation("Image already in author storage: {Identifier}", identifier);
-                    return GetRelativePath(authorPath);
+                    if (IsValidCachedCoverFile(authorPath, identifier, "author"))
+                    {
+                        _logger.LogInformation("Image already in author storage: {Identifier}", identifier);
+                        return GetRelativePath(authorPath);
+                    }
                 }
 
                 // Check temp cache for a valid (non-placeholder) image
@@ -120,16 +127,22 @@ namespace Listenarr.Api.Services
                     libraryPath = GetImagePath(identifier, _libraryImagePath);
                     if (File.Exists(libraryPath))
                     {
-                        _logger.LogInformation("Image already in library storage (after wait): {Identifier}", identifier);
-                        return GetRelativePath(libraryPath);
+                        if (IsValidCachedCoverFile(libraryPath, identifier, "library"))
+                        {
+                            _logger.LogInformation("Image already in library storage (after wait): {Identifier}", identifier);
+                            return GetRelativePath(libraryPath);
+                        }
                     }
 
                     // Also check author storage after lock
                     authorPath = GetImagePath(identifier, _authorImagePath);
                     if (File.Exists(authorPath))
                     {
-                        _logger.LogInformation("Image already in author storage (after wait): {Identifier}", identifier);
-                        return GetRelativePath(authorPath);
+                        if (IsValidCachedCoverFile(authorPath, identifier, "author"))
+                        {
+                            _logger.LogInformation("Image already in author storage (after wait): {Identifier}", identifier);
+                            return GetRelativePath(authorPath);
+                        }
                     }
 
                     tempExisting = GetBestTempImagePathIfValid(identifier);
@@ -143,14 +156,22 @@ namespace Listenarr.Api.Services
                     var response = await _httpClient.GetAsync(imageUrl);
                     response.EnsureSuccessStatusCode();
 
+                    // Read bytes first so we can reject tiny placeholder images (for example 1x1)
+                    var imageBytes = await response.Content.ReadAsByteArrayAsync();
+                    var mediaType = response.Content.Headers.ContentType?.MediaType;
+                    if (IsPlaceholderImage(imageBytes, mediaType))
+                    {
+                        _logger.LogInformation("Skipping placeholder/tiny image for {Identifier} from {Url}", identifier, imageUrl);
+                        return null;
+                    }
+
                     // Determine file extension from content type or URL
                     var extension = GetImageExtension(imageUrl, response.Content.Headers.ContentType?.MediaType);
                     var fileName = $"{SanitizeFileName(identifier)}{extension}";
                     var filePath = Path.Combine(_tempCachePath, fileName);
 
                     // Save to temp cache
-                    await using var fileStream = File.Create(filePath);
-                    await response.Content.CopyToAsync(fileStream);
+                    await File.WriteAllBytesAsync(filePath, imageBytes);
 
                     _logger.LogInformation("Image cached successfully: {FilePath}", filePath);
                     return GetRelativePath(filePath);
@@ -316,13 +337,19 @@ namespace Listenarr.Api.Services
 
             // Check library storage first
             var libraryPath = GetImagePath(identifier, _libraryImagePath);
-            if (File.Exists(libraryPath))
-                return Task.FromResult<string?>(GetRelativePath(libraryPath));
+                if (File.Exists(libraryPath))
+                {
+                    if (IsValidCachedCoverFile(libraryPath, identifier, "library"))
+                        return Task.FromResult<string?>(GetRelativePath(libraryPath));
+                }
 
             // Check authors storage next
             var authorPath = GetImagePath(identifier, _authorImagePath);
-            if (File.Exists(authorPath))
-                return Task.FromResult<string?>(GetRelativePath(authorPath));
+                if (File.Exists(authorPath))
+                {
+                    if (IsValidCachedCoverFile(authorPath, identifier, "author"))
+                        return Task.FromResult<string?>(GetRelativePath(authorPath));
+                }
 
             // Check temp cache and prefer non-placeholder images
             var tempBest = GetBestTempImagePathIfValid(identifier);
@@ -342,22 +369,10 @@ namespace Listenarr.Api.Services
                 var path = Path.Combine(_tempCachePath, sanitized + ext);
                 if (!File.Exists(path)) continue;
 
-                // If it's a GIF that is very small, treat it as a placeholder and ignore it
-                if (ext.Equals(".gif", StringComparison.OrdinalIgnoreCase))
+                // Remove placeholder images (e.g. 1x1) from temp cache so fallback can continue.
+                if (!IsValidCachedCoverFile(path, identifier, "temp"))
                 {
-                    try
-                    {
-                        var fi = new FileInfo(path);
-                        if (fi.Length < 2048)
-                        {
-                            _logger.LogInformation("Ignoring small GIF placeholder in cache for {Identifier}: {Path} ({Length} bytes)", identifier, path, fi.Length);
-                            continue;
-                        }
-                    }
-                    catch
-                    {
-                        // If anything goes wrong inspecting the file, fall back to using it
-                    }
+                    continue;
                 }
 
                 return path;
@@ -503,6 +518,61 @@ namespace Listenarr.Api.Services
                 var b = ip.GetAddressBytes();
                 if (b.Length > 0 && (b[0] & 0xFE) == 0xFC) return true; // fc00::/7
                 return false;
+            }
+
+            return false;
+        }
+
+        private bool IsValidCachedCoverFile(string filePath, string identifier, string bucket)
+        {
+            try
+            {
+                if (!File.Exists(filePath)) return false;
+                var bytes = File.ReadAllBytes(filePath);
+                var mediaType = GetMediaTypeFromExtension(Path.GetExtension(filePath));
+                if (IsPlaceholderImage(bytes, mediaType))
+                {
+                    _logger.LogInformation("Deleting placeholder/tiny cached image for {Identifier} in {Bucket}: {Path}", identifier, bucket, filePath);
+                    try { File.Delete(filePath); } catch { }
+                    return false;
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed validating cached image file for {Identifier}: {Path}", identifier, filePath);
+                return false;
+            }
+        }
+
+        private static string? GetMediaTypeFromExtension(string ext)
+        {
+            return ext.ToLowerInvariant() switch
+            {
+                ".jpg" or ".jpeg" => "image/jpeg",
+                ".png" => "image/png",
+                ".gif" => "image/gif",
+                ".webp" => "image/webp",
+                ".svg" => "image/svg+xml",
+                _ => null
+            };
+        }
+
+        private static bool IsPlaceholderImage(byte[] data, string? mediaType)
+        {
+            if (data == null || data.Length == 0) return true;
+            if (!string.IsNullOrWhiteSpace(mediaType) && mediaType.Contains("gif", StringComparison.OrdinalIgnoreCase) && data.Length < 2048)
+                return true;
+
+            try
+            {
+                var info = Image.Identify(data);
+                if (info != null && (info.Width <= 1 || info.Height <= 1))
+                    return true;
+            }
+            catch
+            {
+                // If dimensions can't be detected, keep existing behavior and allow caching.
             }
 
             return false;

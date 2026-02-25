@@ -186,7 +186,7 @@
               <div
                 class="audiobook-poster-container author-poster"
                 :data-author-name="collection.name"
-                :data-author-has-cover="getAuthorImageUrl(collection) ? '1' : ''"
+                :data-author-has-cover="authorHasSpecificCoverMap[collection.name] ? '1' : ''"
               >
                 <div class="series-count-badge">{{ collection.count }}</div>
                 <div
@@ -382,8 +382,8 @@
                 <img
                   :src="
                     getProtectedImageSrc(
-                      audiobook.imageUrl,
-                      `book:${audiobook.id}:${audiobook.imageUrl || ''}`,
+                      getBookImageUrl(audiobook),
+                      `book:${audiobook.id}:${getBookImageUrl(audiobook) || ''}`,
                     ) || getPlaceholderUrl()
                   "
                   :alt="audiobook.title"
@@ -507,8 +507,8 @@
               class="list-thumb"
               :src="
                 getProtectedImageSrc(
-                  audiobook.imageUrl,
-                  `book:${audiobook.id}:${audiobook.imageUrl || ''}`,
+                  getBookImageUrl(audiobook),
+                  `book:${audiobook.id}:${getBookImageUrl(audiobook) || ''}`,
                 ) || getPlaceholderUrl()
               "
               :alt="audiobook.title"
@@ -696,6 +696,7 @@ import { safeText } from '@/utils/textUtils'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { observeLazyImages } from '@/utils/lazyLoad'
 import { errorTracking } from '@/services/errorTracking'
+import { getCachedStartupConfig } from '@/services/startupConfigCache'
 
 function getAuthorSortKey(author: string): string {
   const parts = author.trim().split(/\s+/)
@@ -1075,11 +1076,51 @@ function isLikelyBackendImage(url: string): boolean {
   return false
 }
 
+function isAuthRequiredByConfig(): boolean {
+  try {
+    const cfg = getCachedStartupConfig() as Record<string, unknown> | null
+    if (!cfg) return false
+    const raw = cfg.authenticationRequired ?? cfg.AuthenticationRequired
+    if (typeof raw === 'boolean') return raw
+    if (typeof raw === 'string') {
+      const normalized = raw.trim().toLowerCase()
+      return normalized === 'true' || normalized === 'enabled'
+    }
+    return false
+  } catch {
+    return false
+  }
+}
+
+function isPlaceholderCoverUrl(url: string | undefined): boolean {
+  const v = (url || '').trim()
+  if (!v) return true
+  return (
+    v === '/placeholder.svg' ||
+    v === 'placeholder.svg' ||
+    v.endsWith('/placeholder.svg') ||
+    v.includes('/placeholder.svg?')
+  )
+}
+
+function getBookImageUrl(book: Pick<Audiobook, 'imageUrl' | 'asin'> | null | undefined): string | undefined {
+  if (!book) return undefined
+  const raw = (book.imageUrl || '').trim()
+  if (raw && !isPlaceholderCoverUrl(raw)) return raw
+  const asin = (book.asin || '').trim()
+  if (asin) return `/api/images/${encodeURIComponent(asin)}`
+  return raw || undefined
+}
+
 function getProtectedImageSrc(rawImageUrl: string | undefined, cacheKey: string): string {
   if (!rawImageUrl) return getPlaceholderUrl()
   const existing = protectedImageSrcMap[cacheKey]
   if (existing) return existing
-  if (protectedImageError[cacheKey]) return getPlaceholderUrl()
+  if (protectedImageError[cacheKey]) {
+    // For backend images, avoid permanent placeholder lock-in after a transient failure.
+    const retryResolved = apiService.getImageUrl(rawImageUrl)
+    if (!isLikelyBackendImage(retryResolved)) return getPlaceholderUrl()
+  }
   if (!protectedImageLoading[cacheKey]) {
     protectedImageLoading[cacheKey] = true
     void (async () => {
@@ -1103,7 +1144,13 @@ function getProtectedImageSrc(rawImageUrl: string | undefined, cacheKey: string)
 
         const objectUrl = await apiService.fetchImageObjectUrl(rawImageUrl)
         if (!objectUrl) {
-          protectedImageError[cacheKey] = true
+          if (!isLikelyBackendImage(resolved) || !isAuthRequiredByConfig()) {
+            // In non-auth mode, direct URLs are fine and avoid blob churn.
+            protectedImageSrcMap[cacheKey] = resolved
+            delete protectedImageError[cacheKey]
+          } else {
+            protectedImageError[cacheKey] = true
+          }
           return
         }
         const previous = protectedImageSrcMap[cacheKey]
@@ -1111,11 +1158,18 @@ function getProtectedImageSrc(rawImageUrl: string | undefined, cacheKey: string)
           revokeProtectedImageUrl(previous)
         }
         protectedImageSrcMap[cacheKey] = objectUrl
+        delete protectedImageError[cacheKey]
         if (objectUrl.startsWith('blob:')) {
           protectedImageObjectUrls.add(objectUrl)
         }
       } catch {
-        protectedImageError[cacheKey] = true
+        const resolved = apiService.getImageUrl(rawImageUrl)
+        if (resolved && isLikelyBackendImage(resolved) && !isAuthRequiredByConfig()) {
+          protectedImageSrcMap[cacheKey] = resolved
+          delete protectedImageError[cacheKey]
+        } else {
+          protectedImageError[cacheKey] = true
+        }
       } finally {
         protectedImageLoading[cacheKey] = false
       }
@@ -1127,9 +1181,11 @@ function getProtectedImageSrc(rawImageUrl: string | undefined, cacheKey: string)
 function getAuthorImageUrl(collection: { name: string; coverUrl?: string }) {
   const override = authorCoverOverrides[collection.name]
   if (override) return override
-  if (collection.coverUrl && collection.coverUrl.includes('/config/cache/images/authors/')) {
-    return collection.coverUrl
-  }
+  const cover = collection.coverUrl?.trim()
+  if (!cover || isPlaceholderCoverUrl(cover)) return undefined
+  if (isLikelyBackendImage(cover)) return cover
+  if (cover.startsWith('http://') || cover.startsWith('https://')) return cover
+  if (cover.startsWith('/')) return cover
   return undefined
 }
 
@@ -1167,7 +1223,7 @@ async function ensureAuthorCover(authorName: string) {
     if (info.cachedPath) {
       authorCoverOverrides[authorName] = info.cachedPath
     } else if (info.asin) {
-      authorCoverOverrides[authorName] = `/config/cache/images/authors/${info.asin}.jpg`
+      authorCoverOverrides[authorName] = `/api/images/${encodeURIComponent(info.asin)}`
     }
     try {
       await nextTick()
@@ -1258,7 +1314,7 @@ const groupedCollections = computed(() => {
           if (!cover) {
             try {
               const asin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
-              if (asin) cover = `/config/cache/images/authors/${asin}.jpg`
+              if (asin) cover = `/api/images/${encodeURIComponent(asin)}`
             } catch {}
           }
 
@@ -1269,15 +1325,16 @@ const groupedCollections = computed(() => {
       }
       const group = groups.get(key)!
       group.count++
-      // For authors: if no explicit author cover is available yet, use the
-      // first book's cover as a sensible fallback so the UI and tests show
-      // a representative image for the author collection.
-      if (groupBy.value === 'authors' && !group.coverUrl && book.imageUrl) {
-        group.coverUrl = book.imageUrl
+      const bookCover = getBookImageUrl(book)
+      if (groupBy.value === 'authors') {
+        try {
+          const authorAsin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
+          if (authorAsin) group.coverUrl = `/api/images/${encodeURIComponent(authorAsin)}`
+        } catch {}
       }
       if (groupBy.value === 'series' && group.coverUrls && group.coverUrls.length < 8) {
-        if (book.imageUrl && !group.coverUrls.includes(book.imageUrl)) {
-          group.coverUrls.push(book.imageUrl)
+        if (bookCover && !group.coverUrls.includes(bookCover)) {
+          group.coverUrls.push(bookCover)
         }
       }
     }
@@ -1311,6 +1368,20 @@ const groupedCollections = computed(() => {
       break
   }
   return vals
+})
+
+const authorHasSpecificCoverMap = computed<Record<string, boolean>>(() => {
+  const map: Record<string, boolean> = {}
+  for (const [name, cover] of Object.entries(authorCoverOverrides)) {
+    if (name && cover) map[name] = true
+  }
+  for (const book of filteredAndSortedAudiobooks.value) {
+    const name = book.authors?.[0]
+    if (!name) continue
+    const authorAsin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
+    if (authorAsin) map[name] = true
+  }
+  return map
 })
 
 let authorCardObserver: IntersectionObserver | null = null

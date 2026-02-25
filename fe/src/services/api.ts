@@ -1138,6 +1138,31 @@ class ApiService {
     const resolved = this.getImageUrl(imageUrl)
     if (!resolved) return ''
 
+    // Prefer direct same-origin backend image URLs only when auth is not in
+    // play. In authenticated mode, <img src="/api/images/..."> cannot attach
+    // Authorization headers and will fail with 401.
+    try {
+      if (typeof window !== 'undefined') {
+        const parsed = new URL(resolved, window.location.origin)
+        if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/api/images/')) {
+          const cfg = getCachedStartupConfig() as Record<string, unknown> | null
+          const rawAuth = cfg?.authenticationRequired ?? cfg?.AuthenticationRequired
+          const authRequired =
+            typeof rawAuth === 'boolean'
+              ? rawAuth
+              : typeof rawAuth === 'string'
+                ? rawAuth.trim().toLowerCase() === 'enabled' || rawAuth.trim().toLowerCase() === 'true'
+                : false
+          const hasSessionToken = !!sessionTokenManager.getToken()
+          if (!authRequired && !hasSessionToken) {
+            return `${parsed.pathname}${parsed.search}`
+          }
+        }
+      }
+    } catch {
+      // If URL parsing fails, continue with existing fetch->blob behavior below.
+    }
+
     // Keep external URLs as-is; auth headers/cors may not be accepted cross-origin.
     if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
       try {
@@ -1196,17 +1221,28 @@ class ApiService {
         this.metadataUrlCache.set(id, { urls: candidates, fetchedAt: Date.now() })
       }
 
+      const requestConfig: RequestInit = {
+        method: 'GET',
+        headers: {
+          ...this.buildAuthHeaders(),
+        },
+        credentials: 'include',
+      }
+
       // Try each candidate by asking backend to fetch and cache it via /api/images/{id}?url=...
       for (const url of candidates) {
         try {
-          const resp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}?url=${encodeURIComponent(url)}`)
+          const resp = await fetch(
+            `${API_BASE_URL}/images/${encodeURIComponent(id)}?url=${encodeURIComponent(url)}`,
+            requestConfig,
+          )
           if ((resp as any).ok) return true
         } catch {}
       }
 
       // As a fallback, check the base image endpoint (maybe already cached)
       try {
-        const baseResp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}`)
+        const baseResp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}`, requestConfig)
         if ((baseResp as any).ok) return true
       } catch {}
 

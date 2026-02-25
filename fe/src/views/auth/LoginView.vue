@@ -310,7 +310,7 @@ export default defineComponent({
 
 .spinner {
   display: inline-block;
-  width: 20px !important;
+  width: 26px !important;
   height: 20px;
   border: 2px solid rgba(255, 255, 255, 0.15);
   border-top-color: white;

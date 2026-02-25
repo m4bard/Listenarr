@@ -267,11 +267,13 @@ namespace Listenarr.Api.Controllers
 
                 }
 
-                if (!hasValidImagePath)
+                var hasRequestedImageUrl = !string.IsNullOrWhiteSpace(url);
+                if (!hasValidImagePath && !hasRequestedImageUrl)
                 {
                     _logger.LogWarning("Image not found for identifier: {Identifier}", identifier);
 
-                    // Try to fetch metadata-driven image candidates and download on-demand
+                    // Cache is missing and caller did not provide a URL. Try metadata providers:
+                    // ASIN => Audimeta, then Audnexus; ISBN => OpenLibrary cover URL.
                     try
                     {
                         var region = Request.Query["region"].ToString();
@@ -279,13 +281,56 @@ namespace Listenarr.Api.Controllers
 
                         var audimeta = await _audiobookMetadataService.GetAudimetaMetadataAsync(identifier, region, cache: true);
                         string? candidateUrl = null;
+                        string? candidateIsbn = null;
 
                         if (audimeta != null)
                         {
                             candidateUrl = audimeta.ImageUrl ?? audimeta.Description;
+                            if (!string.IsNullOrWhiteSpace(audimeta.Isbn))
+                            {
+                                candidateIsbn = NormalizeIsbn(audimeta.Isbn);
+                            }
                         }
 
-                        // If audimeta didn't yield an image, call GetMetadataAsync to allow other providers (Audnexus) to be used
+                        // Explicit Audnexus fallback by ASIN (independent from source ordering)
+                        if (string.IsNullOrWhiteSpace(candidateUrl) && LooksLikeAsin(identifier))
+                        {
+                            try
+                            {
+                                var audnexus = await _audnexusService.GetBookMetadataAsync(identifier, region, seedAuthors: true, update: false);
+                                if (audnexus != null)
+                                {
+                                    candidateUrl = audnexus.Image;
+                                    if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(audnexus.Isbn))
+                                    {
+                                        candidateIsbn = NormalizeIsbn(audnexus.Isbn);
+                                    }
+                                }
+                            }
+                            catch (Exception ex)
+                            {
+                                _logger.LogDebug(ex, "Audnexus ASIN lookup failed for {Identifier}", identifier);
+                            }
+                        }
+
+                        // If provider image is still missing, attempt OpenLibrary by ISBN.
+                        if (string.IsNullOrWhiteSpace(candidateUrl))
+                        {
+                            // Allow ISBN identifier directly.
+                            if (string.IsNullOrWhiteSpace(candidateIsbn) && LooksLikeIsbn(identifier))
+                            {
+                                candidateIsbn = NormalizeIsbn(identifier);
+                            }
+
+                            if (!string.IsNullOrWhiteSpace(candidateIsbn))
+                            {
+                                // Keep the URL deterministic and avoid extra external calls here.
+                                candidateUrl = $"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(candidateIsbn)}-L.jpg";
+                                _logger.LogInformation("Using OpenLibrary ISBN cover candidate for {Identifier}: ISBN={Isbn}", identifier, candidateIsbn);
+                            }
+                        }
+
+                        // Legacy fallback path through configured source envelope for compatibility.
                         if (string.IsNullOrWhiteSpace(candidateUrl))
                         {
                             _logger.LogDebug("No image found in audimeta, attempting fallback GetMetadataAsync for {Identifier}", identifier);
@@ -322,6 +367,16 @@ namespace Listenarr.Api.Controllers
                                                     var v = prop.GetValue(mdObj)?.ToString();
                                                     if (!string.IsNullOrWhiteSpace(v)) candidateUrl = v;
                                                 }
+
+                                                if (string.IsNullOrWhiteSpace(candidateIsbn))
+                                                {
+                                                    var isbnProp = t.GetProperty("Isbn") ?? t.GetProperty("ISBN") ?? t.GetProperty("isbn");
+                                                    var isbnVal = isbnProp?.GetValue(mdObj)?.ToString();
+                                                    if (!string.IsNullOrWhiteSpace(isbnVal))
+                                                    {
+                                                        candidateIsbn = NormalizeIsbn(isbnVal);
+                                                    }
+                                                }
                                             }
                                         }
 
@@ -348,6 +403,13 @@ namespace Listenarr.Api.Controllers
                             {
                                 _logger.LogDebug(ex, "Fallback metadata lookup failed for {Identifier}", identifier);
                             }
+                        }
+
+                        // If metadata envelope yielded ISBN but still no image, try OpenLibrary cover.
+                        if (string.IsNullOrWhiteSpace(candidateUrl) && !string.IsNullOrWhiteSpace(candidateIsbn))
+                        {
+                            candidateUrl = $"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(candidateIsbn)}-L.jpg";
+                            _logger.LogInformation("Using OpenLibrary ISBN cover candidate after metadata fallback for {Identifier}: ISBN={Isbn}", identifier, candidateIsbn);
                         }
 
                         // If no image found from book metadata, attempt author lookups (treating identifier as author name/asin)
@@ -592,6 +654,27 @@ namespace Listenarr.Api.Controllers
                 _logger.LogError(ex, "Error retrieving image for identifier: {Identifier}", identifier);
                 return StatusCode(500, new { message = "Error retrieving image" });
             }
+        }
+
+        private static bool LooksLikeAsin(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return false;
+            var v = value.Trim();
+            if (v.Length != 10) return false;
+            return v.All(char.IsLetterOrDigit);
+        }
+
+        private static bool LooksLikeIsbn(string value)
+        {
+            var v = NormalizeIsbn(value);
+            if (string.IsNullOrWhiteSpace(v)) return false;
+            return v.Length == 10 || v.Length == 13;
+        }
+
+        private static string NormalizeIsbn(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return new string(value.Where(ch => char.IsLetterOrDigit(ch)).ToArray()).ToUpperInvariant();
         }
 
         [HttpDelete("{identifier}")]
