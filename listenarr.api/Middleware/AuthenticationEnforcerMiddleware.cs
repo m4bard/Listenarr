@@ -65,8 +65,8 @@ namespace Listenarr.Api.Middleware
                 return;
             }
 
-            // Allow some public paths used by SPA and startup (swagger/ui, antiforgery token, initial API key generation, and account login/register)
-            if (path.StartsWith("/swagger") || path.StartsWith("/api/antiforgery") || path.StartsWith("/api/configuration/apikey/generate-initial") || path.StartsWith("/api/account/login") || path.StartsWith("/api/account/register"))
+            // Allow some public paths used by SPA and startup (swagger/ui, antiforgery token, and account login/register)
+            if (path.StartsWith("/swagger") || path.StartsWith("/api/antiforgery") || path.StartsWith("/api/account/login") || path.StartsWith("/api/account/register"))
             {
                 await _next(context);
                 return;

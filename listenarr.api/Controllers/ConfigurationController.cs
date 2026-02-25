@@ -448,7 +448,7 @@ namespace Listenarr.Api.Controllers
                     }
                 }
                 // If authentication is disabled, always return the real API key
-                _logger.LogInformation($"[ConfigurationController] Returning startup config. ApiKey: '{(string.IsNullOrEmpty(config.ApiKey) ? "(empty)" : config.ApiKey)}'");
+                _logger.LogInformation("[ConfigurationController] Returning startup config.");
                 return Ok(config);
             }
             catch (Exception ex)
@@ -515,14 +515,33 @@ namespace Listenarr.Api.Controllers
         {
             try
             {
+                // This endpoint is intentionally restricted to first-run bootstrap from localhost only.
+                // Exposing it publicly allows remote callers to replace and retrieve the API key.
+                var remoteIp = HttpContext?.Connection?.RemoteIpAddress;
+                if (remoteIp == null || !System.Net.IPAddress.IsLoopback(remoteIp))
+                {
+                    return StatusCode(403, new { message = "Initial API key generation is only allowed from localhost" });
+                }
+
                 var current = await _configurationService.GetStartupConfigAsync();
                 if (current == null)
                 {
                     return StatusCode(500, "Unable to load startup configuration");
                 }
 
+                var hasUsers = await _userService.GetUsersCountAsync() > 0;
+                if (hasUsers || !string.IsNullOrWhiteSpace(current.ApiKey))
+                {
+                    return StatusCode(409, new { message = "Initial API key generation is only allowed before users and API key are configured" });
+                }
+
                 // Generate a new API key
-                var newKey = Guid.NewGuid().ToString("N") + Guid.NewGuid().ToString("N");
+                var bytes = new byte[32];
+                using (var rng = System.Security.Cryptography.RandomNumberGenerator.Create())
+                {
+                    rng.GetBytes(bytes);
+                }
+                var newKey = Convert.ToBase64String(bytes).TrimEnd('=');
                 current.ApiKey = newKey;
                 await _configurationService.SaveStartupConfigAsync(current);
                 return Ok(new { apiKey = newKey });

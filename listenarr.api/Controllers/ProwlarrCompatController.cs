@@ -18,6 +18,13 @@ namespace Listenarr.Api.Controllers
     {
         private StartupConfig GetStartupConfig()
         {
+            try
+            {
+                var cfg = _startupConfigService.GetConfig();
+                if (cfg != null) return cfg;
+            }
+            catch { }
+
             // Use the DB context to get config service, or inject if available
             var configService = HttpContext?.RequestServices.GetService(typeof(IConfigurationService)) as IConfigurationService;
             if (configService != null)
@@ -27,10 +34,33 @@ namespace Listenarr.Api.Controllers
             return new StartupConfig();
         }
 
+        private IActionResult? RequireAuthenticatedIfEnabled()
+        {
+            var cfg = GetStartupConfig();
+            var authEnabled = false;
+            if (cfg.AuthenticationRequired != null)
+            {
+                if (bool.TryParse(cfg.AuthenticationRequired, out var parsed))
+                {
+                    authEnabled = parsed;
+                }
+                else
+                {
+                    authEnabled = cfg.AuthenticationRequired.ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
+                }
+            }
+            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
+            {
+                return Unauthorized();
+            }
+            return null;
+        }
+
         private readonly ILogger<ProwlarrCompatController> _logger;
         private readonly ListenArrDbContext _dbContext;
         private readonly IHubContext<SettingsHub> _settingsHub;
         private readonly IToastService _toastService;
+        private readonly IStartupConfigService _startupConfigService;
 
         // Suppress update toasts for indexers that were created within this window (in seconds)
         private const int NotificationSuppressionSeconds = 5;
@@ -82,12 +112,13 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        public ProwlarrCompatController(ILogger<ProwlarrCompatController> logger, ListenArrDbContext dbContext, IHubContext<SettingsHub> settingsHub, IToastService toastService)
+        public ProwlarrCompatController(ILogger<ProwlarrCompatController> logger, ListenArrDbContext dbContext, IHubContext<SettingsHub> settingsHub, IToastService toastService, IStartupConfigService startupConfigService)
         {
             _logger = logger;
             _dbContext = dbContext;
             _settingsHub = settingsHub;
             _toastService = toastService;
+            _startupConfigService = startupConfigService;
         }
 
         private static string GetApplicationVersion()
@@ -424,6 +455,9 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public async Task<IActionResult> PutIndexer(int id, [FromBody] System.Text.Json.JsonElement payload)
         {
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
+
             if (HttpContext?.Response != null) HttpContext.Response.ContentType = "application/json";
 
             try
@@ -778,6 +812,9 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public async Task<IActionResult> PostIndexers([FromBody] System.Text.Json.JsonElement payload)
         {
+                var authGuard = RequireAuthenticatedIfEnabled();
+                if (authGuard != null) return authGuard;
+
                 _logger?.LogInformation("Prowlarr indexers payload received: {Kind}", payload.ValueKind.ToString());
                 // Log raw request body (redacted) to aid debugging; truncate/sanitize sensitive values
                 try
@@ -1038,6 +1075,11 @@ namespace Listenarr.Api.Controllers
         [ApiExplorerSettings(IgnoreApi = true)]
         public async Task<IActionResult> DebugPublishIndexers([FromBody] System.Text.Json.JsonElement? payload)
         {
+            if (!(User?.Identity?.IsAuthenticated ?? false))
+            {
+                return Unauthorized();
+            }
+
             // Build a small payload from optional incoming body or a default sample
             var created = 0;
             var indexers = new List<object>();
@@ -1099,6 +1141,11 @@ namespace Listenarr.Api.Controllers
         [ApiExplorerSettings(IgnoreApi = true)]
         public IActionResult GetSettingsHubClients()
         {
+            if (!(User?.Identity?.IsAuthenticated ?? false))
+            {
+                return Unauthorized();
+            }
+
             try
             {
                 var clients = Listenarr.Api.Hubs.SettingsHub.ConnectedClientIds.ToArray();
@@ -1122,6 +1169,9 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public async Task<IActionResult> PostIndexer([FromBody] System.Text.Json.JsonElement payload)
         {
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
+
             _logger?.LogInformation("Prowlarr indexer payload (single) received: {Kind}", payload.ValueKind.ToString());
             try
             {

@@ -218,6 +218,9 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
 
+// Required for [Authorize] / role policies used by controllers.
+builder.Services.AddAuthorization();
+
 // Add SignalR for real-time updates
 builder.Services.AddSignalR()
     .AddJsonProtocol(options =>
