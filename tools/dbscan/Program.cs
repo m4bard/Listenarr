@@ -46,6 +46,7 @@ foreach (var (table, key, cols) in checks)
             {
                 var id = rdr[key];
                 var raw = rdr.IsDBNull(1) ? null : rdr.GetString(1);
+                var sample = raw ?? string.Empty;
                 // Quick heuristic
                 bool looksLikeJson = true;
                 if (string.IsNullOrWhiteSpace(raw)) looksLikeJson = true;
@@ -60,11 +61,11 @@ foreach (var (table, key, cols) in checks)
                     }
                 }
 
-                if (!looksLikeJson)
-                {
-                    list.Add(new { Table = table + "." + col, Id = id, Issue = "NotJson", Sample = (raw ?? string.Empty).Length > 200 ? raw.Substring(0,200) : raw });
-                    continue;
-                }
+                        if (!looksLikeJson)
+                        {
+                            list.Add(new { Table = table + "." + col, Id = id, Issue = "NotJson", Sample = sample.Length > 200 ? sample.Substring(0,200) : sample });
+                            continue;
+                        }
 
                 if (!string.IsNullOrWhiteSpace(raw))
                 {
@@ -75,31 +76,31 @@ foreach (var (table, key, cols) in checks)
                         // Heuristics
                         if (table == "QualityProfiles" && col == "Qualities")
                         {
-                            if (root.ValueKind != JsonValueKind.Array)
-                            {
-                                list.Add(new { Table = table + "." + col, Id = id, Issue = "ExpectedArray", Sample = raw.Length > 200 ? raw.Substring(0,200) : raw });
-                            }
+                                if (root.ValueKind != JsonValueKind.Array)
+                                {
+                                    list.Add(new { Table = table + "." + col, Id = id, Issue = "ExpectedArray", Sample = sample.Length > 200 ? sample.Substring(0,200) : sample });
+                                }
                             else
                             {
                                 var first = root.EnumerateArray().FirstOrDefault();
-                                if (first.ValueKind != JsonValueKind.Object && !first.Equals(default(JsonElement)))
-                                {
-                                    list.Add(new { Table = table + "." + col, Id = id, Issue = "ArrayNotObjects", Sample = raw.Length > 200 ? raw.Substring(0,200) : raw });
-                                }
+                                    if (!first.Equals(default(JsonElement)) && first.ValueKind != JsonValueKind.Object)
+                                    {
+                                        list.Add(new { Table = table + "." + col, Id = id, Issue = "ArrayNotObjects", Sample = sample.Length > 200 ? sample.Substring(0,200) : sample });
+                                    }
                             }
                         }
                         else if (table == "Downloads" && col == "Metadata")
                         {
-                            if (root.ValueKind != JsonValueKind.Object)
-                            {
-                                list.Add(new { Table = table + "." + col, Id = id, Issue = "ExpectedObject", Sample = raw.Length > 200 ? raw.Substring(0,200) : raw });
-                            }
+                                if (root.ValueKind != JsonValueKind.Object)
+                                {
+                                    list.Add(new { Table = table + "." + col, Id = id, Issue = "ExpectedObject", Sample = sample.Length > 200 ? sample.Substring(0,200) : sample });
+                                }
                         }
                     }
-                    catch (JsonException je)
-                    {
-                        list.Add(new { Table = table + "." + col, Id = id, Issue = "ParseError", Sample = (raw ?? string.Empty).Length > 200 ? raw.Substring(0,200) : raw, Error = je.Message });
-                    }
+                        catch (JsonException je)
+                        {
+                            list.Add(new { Table = table + "." + col, Id = id, Issue = "ParseError", Sample = sample.Length > 200 ? sample.Substring(0,200) : sample, Error = je.Message });
+                        }
                 }
             }
         }
@@ -118,7 +119,7 @@ if (string.Equals(mode, "audiobook-raw", StringComparison.OrdinalIgnoreCase) && 
     using var conn2 = new Microsoft.Data.Sqlite.SqliteConnection($"Data Source={dbPath}");
     conn2.Open();
     var idList = modeArgs.SelectMany(a => a.Split(new[] { ',', ' ' }, StringSplitOptions.RemoveEmptyEntries)).Select(s => { int.TryParse(s, out var v); return v; }).Where(i => i != 0).ToList();
-    var outList = new Dictionary<int, Dictionary<string, object?>>();
+        var outList = new Dictionary<int, Dictionary<string, object?>?>();
     foreach (var id in idList)
     {
         var cmd = conn2.CreateCommand();

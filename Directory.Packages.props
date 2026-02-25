@@ -13,6 +13,7 @@
 		<PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="8.0.10" />
 		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.10" />
 		<PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="$(EFVersion)" />
+		<PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.0" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore" Version="$(EFVersion)" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="$(EFVersion)" />
 		<PackageVersion Include="Microsoft.EntityFrameworkCore.InMemory" Version="$(EFVersion)" />
@@ -29,5 +30,6 @@
 		<PackageVersion Include="Swashbuckle.AspNetCore" Version="6.9.0" />
 		<PackageVersion Include="xunit" Version="2.5.3" />
 		<PackageVersion Include="xunit.runner.visualstudio" Version="2.5.0" />
+		<PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="3.0.0" />
 	</ItemGroup>
 </Project>
