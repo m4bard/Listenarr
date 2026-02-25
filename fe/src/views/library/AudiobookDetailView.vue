@@ -166,7 +166,7 @@
           </div>
 
           <div class="description" v-if="audiobook.description">
-            <div class="description-content" :class="{ expanded: showFullDescription }" v-html="audiobook.description">
+            <div class="description-content" :class="{ expanded: showFullDescription }">{{ stripHtmlAndNormalize(audiobook.description) }}
             </div>
             <button v-if="!showFullDescription" class="show-more-btn" @click="showFullDescription = true">
               Show More
@@ -495,9 +495,10 @@ import { joinPaths, isAbsolutePath } from '@/utils/path'
 import { observeLazyImages, ensureVisibleImagesLoad } from '@/utils/lazyLoad'
 import { signalRService } from '@/services/signalr'
 import type { Audiobook, History, SearchResult } from '@/types'
-import { safeText } from '@/utils/textUtils'
+import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
+import { useProtectedImages } from '@/composables/useProtectedImages'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
@@ -544,6 +545,7 @@ const router = useRouter()
 const libraryStore = useLibraryStore()
 const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
+const { getProtectedImageSrc } = useProtectedImages()
 
 const audiobook = ref<Audiobook | null>(null)
 const loading = ref(true)
@@ -603,7 +605,11 @@ const capitalizeFirst = (str: string | undefined): string => {
 
 // Computed property for cover image URL
 const coverImageUrl = computed(() => {
-  return apiService.getImageUrl(audiobook.value?.imageUrl) || getPlaceholderUrl()
+  return getProtectedImageSrc(
+    audiobook.value?.imageUrl,
+    `audiobook-detail-${audiobook.value?.id ?? 'none'}`,
+    getPlaceholderUrl(),
+  )
 })
 
 // Show a base path even when no files exist yet by falling back to configured default root folder
@@ -1629,6 +1635,7 @@ function formatDate(dateString?: string): string {
   max-height: 140px;
   overflow: hidden;
   transition: max-height 0.3s ease;
+  white-space: pre-wrap;
 }
 
 @media (max-width: 768px) {

@@ -96,7 +96,7 @@ namespace Listenarr.Api.Middleware
                         bool principalAuthenticated = false;
                         string? principalNameMask = null;
                         int principalClaims = 0;
-                        string? sessionToken = context.Request.Headers["Authorization"].FirstOrDefault();
+                        var hasAuthorizationHeader = !string.IsNullOrWhiteSpace(context.Request.Headers["Authorization"].FirstOrDefault());
                         try
                         {
                             var user = context.User;
@@ -110,7 +110,7 @@ namespace Listenarr.Api.Middleware
                         }
                         catch { }
 
-                        _logger?.LogWarning(ex, "Antiforgery validation failed. Method={Method}, Path={Path}, HeaderLength={HeaderLength}, CookieNames={CookieNames}, HeaderPrefix={HeaderPrefix}, CookiePrefix={CookiePrefix}, PrefixesEqual={PrefixesEqual}, PrincipalAuthenticated={PrincipalAuthenticated}, PrincipalNameMask={PrincipalNameMask}, PrincipalClaims={PrincipalClaims}, SessionToken={SessionToken}", method, path, hdrLen, cookieNames, headerPrefix, cookiePrefix, equalPrefixes, principalAuthenticated, principalNameMask, principalClaims, sessionToken);
+                        _logger?.LogWarning(ex, "Antiforgery validation failed. Method={Method}, Path={Path}, HeaderLength={HeaderLength}, CookieNames={CookieNames}, HeaderPrefix={HeaderPrefix}, CookiePrefix={CookiePrefix}, PrefixesEqual={PrefixesEqual}, PrincipalAuthenticated={PrincipalAuthenticated}, PrincipalNameMask={PrincipalNameMask}, PrincipalClaims={PrincipalClaims}, HasAuthorizationHeader={HasAuthorizationHeader}", method, path, hdrLen, cookieNames, headerPrefix, cookiePrefix, equalPrefixes, principalAuthenticated, principalNameMask, principalClaims, hasAuthorizationHeader);
                     }
                     catch { /* ignore logging errors */ }
 

@@ -197,8 +197,12 @@
                   v-if="getAuthorImageUrl(collection)"
                   class="audiobook-poster author-cover lazy-img"
                   :class="{ loaded: authorImageLoaded[collection.name] }"
-                  :data-src="apiService.getImageUrl(getAuthorImageUrl(collection))"
-                  :src="getPlaceholderUrl()"
+                  :src="
+                    getProtectedImageSrc(
+                      getAuthorImageUrl(collection),
+                      `author:${collection.name}:${getAuthorImageUrl(collection) || ''}`,
+                    ) || getPlaceholderUrl()
+                  "
                   :alt="collection.name"
                   loading="lazy"
                   decoding="async"
@@ -238,7 +242,12 @@
                     <div
                       class="series-single-bg"
                       :style="{
-                        backgroundImage: `url(${apiService.getImageUrl(collection.coverUrls[0]) || getPlaceholderUrl()})`,
+                        backgroundImage: `url(${
+                          getProtectedImageSrc(
+                            collection.coverUrls[0],
+                            `series-bg:${collection.name}:${collection.coverUrls[0] || ''}`,
+                          ) || getPlaceholderUrl()
+                        })`,
                       }"
                     />
                     <div
@@ -247,7 +256,10 @@
                     >
                       <img
                         :src="
-                          apiService.getImageUrl(collection.coverUrls[0]) || getPlaceholderUrl()
+                          getProtectedImageSrc(
+                            collection.coverUrls[0],
+                            `series:${collection.name}:0:${collection.coverUrls[0] || ''}`,
+                          ) || getPlaceholderUrl()
                         "
                         :alt="`${collection.name} Cover`"
                         class="series-cover-image centered"
@@ -269,7 +281,12 @@
                       :style="getCoverStyle(index, collection.coverUrls.length)"
                     >
                       <img
-                        :src="apiService.getImageUrl(coverUrl) || getPlaceholderUrl()"
+                        :src="
+                          getProtectedImageSrc(
+                            coverUrl,
+                            `series:${collection.name}:${index}:${coverUrl || ''}`,
+                          ) || getPlaceholderUrl()
+                        "
                         :alt="`${collection.name} Cover`"
                         class="series-cover-image"
                         loading="lazy"
@@ -363,7 +380,12 @@
               </div>
               <div class="audiobook-poster-container" :class="{ 'show-details': showItemDetails }">
                 <img
-                  :src="apiService.getImageUrl(audiobook.imageUrl) || getPlaceholderUrl()"
+                  :src="
+                    getProtectedImageSrc(
+                      audiobook.imageUrl,
+                      `book:${audiobook.id}:${audiobook.imageUrl || ''}`,
+                    ) || getPlaceholderUrl()
+                  "
                   :alt="audiobook.title"
                   class="audiobook-poster"
                   loading="lazy"
@@ -483,7 +505,12 @@
             </div>
             <img
               class="list-thumb"
-              :src="apiService.getImageUrl(audiobook.imageUrl) || getPlaceholderUrl()"
+              :src="
+                getProtectedImageSrc(
+                  audiobook.imageUrl,
+                  `book:${audiobook.id}:${audiobook.imageUrl || ''}`,
+                ) || getPlaceholderUrl()
+              "
               :alt="audiobook.title"
               loading="lazy"
               decoding="async"
@@ -1023,6 +1050,79 @@ const audiobooks = computed(() => filteredAndSortedAudiobooks.value)
 const authorCoverOverrides = reactive<Record<string, string>>({})
 const authorCoverLoading = reactive<Record<string, boolean>>({})
 const authorImageLoaded = reactive<Record<string, boolean>>({})
+const protectedImageSrcMap = reactive<Record<string, string>>({})
+const protectedImageLoading = reactive<Record<string, boolean>>({})
+const protectedImageObjectUrls = new Set<string>()
+const protectedImageError = reactive<Record<string, boolean>>({})
+
+function revokeProtectedImageUrl(url: string | undefined) {
+  if (!url) return
+  if (!url.startsWith('blob:')) return
+  try {
+    URL.revokeObjectURL(url)
+  } catch {}
+  try {
+    protectedImageObjectUrls.delete(url)
+  } catch {}
+}
+
+function isLikelyBackendImage(url: string): boolean {
+  if (!url) return false
+  if (url.startsWith('/api/images/')) return true
+  if (url.includes('/api/images/')) return true
+  if (url.startsWith('/config/cache/images/')) return true
+  if (url.includes('/config/cache/images/')) return true
+  return false
+}
+
+function getProtectedImageSrc(rawImageUrl: string | undefined, cacheKey: string): string {
+  if (!rawImageUrl) return getPlaceholderUrl()
+  const existing = protectedImageSrcMap[cacheKey]
+  if (existing) return existing
+  if (protectedImageError[cacheKey]) return getPlaceholderUrl()
+  if (!protectedImageLoading[cacheKey]) {
+    protectedImageLoading[cacheKey] = true
+    void (async () => {
+      try {
+        const resolved = apiService.getImageUrl(rawImageUrl)
+        if (!resolved) {
+          protectedImageError[cacheKey] = true
+          return
+        }
+
+        // If this isn't a backend-served image URL, use direct URL fallback.
+        if (!isLikelyBackendImage(resolved)) {
+          protectedImageSrcMap[cacheKey] = resolved
+          return
+        }
+
+        if (typeof apiService.fetchImageObjectUrl !== 'function') {
+          protectedImageSrcMap[cacheKey] = resolved
+          return
+        }
+
+        const objectUrl = await apiService.fetchImageObjectUrl(rawImageUrl)
+        if (!objectUrl) {
+          protectedImageError[cacheKey] = true
+          return
+        }
+        const previous = protectedImageSrcMap[cacheKey]
+        if (previous && previous !== objectUrl) {
+          revokeProtectedImageUrl(previous)
+        }
+        protectedImageSrcMap[cacheKey] = objectUrl
+        if (objectUrl.startsWith('blob:')) {
+          protectedImageObjectUrls.add(objectUrl)
+        }
+      } catch {
+        protectedImageError[cacheKey] = true
+      } finally {
+        protectedImageLoading[cacheKey] = false
+      }
+    })()
+  }
+  return getPlaceholderUrl()
+}
 
 function getAuthorImageUrl(collection: { name: string; coverUrl?: string }) {
   const override = authorCoverOverrides[collection.name]
@@ -1338,6 +1438,12 @@ function clearFilters() {
   // Reset author image caches so images reload after clearing filters
   Object.keys(authorCoverOverrides).forEach(k => delete authorCoverOverrides[k])
   Object.keys(authorImageLoaded).forEach(k => delete authorImageLoaded[k])
+  Object.keys(protectedImageLoading).forEach(k => delete protectedImageLoading[k])
+  Object.keys(protectedImageError).forEach(k => delete protectedImageError[k])
+  Object.keys(protectedImageSrcMap).forEach((k) => {
+    revokeProtectedImageUrl(protectedImageSrcMap[k])
+    delete protectedImageSrcMap[k]
+  })
   nextTick(() => typeof observeLazyImages === 'function' && observeLazyImages())
 }
 const loading = computed(() => libraryStore.loading)
@@ -1596,6 +1702,11 @@ function handleClickOutside(event: Event) {
   }
 }
 
+let resizeObserver: ResizeObserver | null = null
+let stopVisibleRangeWatch: (() => void) | null = null
+let stopViewModeWatch: (() => void) | null = null
+let stopPersistViewModeWatch: (() => void) | null = null
+
 onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
   await Promise.all([
@@ -1655,7 +1766,7 @@ onMounted(async () => {
     }
 
     // Re-run observer when visible range changes (virtual scrolling)
-    watch(
+    stopVisibleRangeWatch = watch(
       () => visibleRange.value,
       async () => {
         await nextTick()
@@ -1671,7 +1782,7 @@ onMounted(async () => {
     )
 
     // Add resize observer to recalculate on window resize
-    const resizeObserver = new ResizeObserver(() => {
+    resizeObserver = new ResizeObserver(() => {
       // Guard against null - element may be unmounted during navigation
       if (!scrollContainer.value) return
       recalcItemsPerRow()
@@ -1680,7 +1791,7 @@ onMounted(async () => {
     resizeObserver.observe(scrollContainer.value)
 
     // Watch for view mode changes to recalc item layout
-    const stopWatch = watch(viewMode, async () => {
+    stopViewModeWatch = watch(viewMode, async () => {
       recalcItemsPerRow()
       // wait a tick for layout to update then recalc range
       await nextTick()
@@ -1688,25 +1799,49 @@ onMounted(async () => {
     })
 
     // Persist view mode whenever it changes
-    const stopPersist = watch(viewMode, (v) => {
+    stopPersistViewModeWatch = watch(viewMode, (v) => {
       try {
         localStorage.setItem(VIEWMODE_KEY, v)
       } catch {
         /* ignore */
       }
     })
-
-    // Clean up observer when component unmounts
-    onUnmounted(() => {
-      resizeObserver.disconnect()
-      stopWatch()
-      stopPersist()
-      try {
-        authorCardObserver?.disconnect()
-      } catch {}
-      document.removeEventListener('click', handleClickOutside)
-    })
   }
+})
+
+onUnmounted(() => {
+  try {
+    resizeObserver?.disconnect()
+  } catch {}
+  resizeObserver = null
+
+  try {
+    stopVisibleRangeWatch?.()
+  } catch {}
+  stopVisibleRangeWatch = null
+
+  try {
+    stopViewModeWatch?.()
+  } catch {}
+  stopViewModeWatch = null
+
+  try {
+    stopPersistViewModeWatch?.()
+  } catch {}
+  stopPersistViewModeWatch = null
+
+  try {
+    authorCardObserver?.disconnect()
+  } catch {}
+  try {
+    for (const url of Array.from(protectedImageObjectUrls)) {
+      revokeProtectedImageUrl(url)
+    }
+  } catch {}
+  Object.keys(protectedImageSrcMap).forEach((k) => delete protectedImageSrcMap[k])
+  Object.keys(protectedImageLoading).forEach((k) => delete protectedImageLoading[k])
+  Object.keys(protectedImageError).forEach((k) => delete protectedImageError[k])
+  document.removeEventListener('click', handleClickOutside)
 })
 
 async function loadQualityProfiles() {

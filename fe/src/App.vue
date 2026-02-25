@@ -60,7 +60,7 @@
                 <div style="display: flex; align-items: center; gap: 10px">
                   <img
                     v-if="s.imageUrl"
-                    :src="apiService.getImageUrl(s.imageUrl) || getPlaceholderUrl()"
+                    :src="getProtectedImageSrc(s.imageUrl, `app-suggestion-${s.id}`, getPlaceholderUrl())"
                     @error="handleImageError"
                     alt="cover"
                     class="result-thumb"
@@ -466,6 +466,7 @@ import { apiService } from '@/services/api'
 import { handleImageError } from '@/utils/imageFallback'
 import { Pill } from '@/components/base'
 import { getPlaceholderUrl } from '@/utils/placeholder'
+import { useProtectedImages } from '@/composables/useProtectedImages'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
 import type { QueueItem } from '@/types'
@@ -477,6 +478,7 @@ import BrandLogo from '@/components/base/BrandLogo.vue'
 
 
 const { notification, close: closeNotification } = useNotification()
+const { getProtectedImageSrc } = useProtectedImages()
 const downloadsStore = useDownloadsStore()
 const auth = useAuthStore()
 const authEnabled = ref(false)

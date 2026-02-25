@@ -60,6 +60,29 @@ class ApiService {
   private tokenReadyPromise: Promise<void> | null = null;
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
 
+  private buildAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {}
+    try {
+      const sc = getCachedStartupConfig()
+      const rawAuth = sc?.authenticationRequired ?? sc?.AuthenticationRequired
+      const authEnabled =
+        typeof rawAuth === 'boolean'
+          ? rawAuth
+          : typeof rawAuth === 'string'
+            ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
+            : false
+
+      if (authEnabled) {
+        const sessionToken = sessionTokenManager.getToken()
+        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`
+      } else {
+        const apiKey = sc?.apiKey
+        if (apiKey) headers['X-Api-Key'] = apiKey
+      }
+    } catch {}
+    return headers
+  }
+
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     // Await tokenReadyPromise before any unsafe request to guarantee fresh token
@@ -77,23 +100,7 @@ class ApiService {
     };
 
     // Attach Authorization or API key if needed
-    let authEnabled = false;
-    try {
-      const sc = getCachedStartupConfig();
-      const rawAuth = sc?.authenticationRequired ?? sc?.AuthenticationRequired;
-      authEnabled = typeof rawAuth === 'boolean'
-        ? rawAuth
-        : typeof rawAuth === 'string'
-          ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-          : false;
-      if (authEnabled) {
-        const sessionToken = sessionTokenManager.getToken();
-        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`;
-      } else {
-        const apiKey = sc?.apiKey;
-        if (apiKey) headers['X-Api-Key'] = apiKey;
-      }
-    } catch {}
+    Object.assign(headers, this.buildAuthHeaders())
 
     // Attach antiforgery token for unsafe requests
     if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
@@ -1065,14 +1072,6 @@ class ApiService {
             const identifier = asinMatch[1]
             let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
             const params = new URLSearchParams()
-            const sessionToken = sessionTokenManager.getToken()
-            if (sessionToken) {
-              params.append('access_token', sessionToken)
-            } else {
-              const cfg = getCachedStartupConfig()
-              const apiKey = cfg?.apiKey
-              if (apiKey) params.append('access_token', apiKey)
-            }
             params.append('url', imageUrl)
             const query = params.toString()
             if (query) url += `?${query}`
@@ -1089,14 +1088,6 @@ class ApiService {
               const identifier = base
               let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
               const params = new URLSearchParams()
-              const sessionToken = sessionTokenManager.getToken()
-              if (sessionToken) {
-                params.append('access_token', sessionToken)
-              } else {
-                const cfg = getCachedStartupConfig()
-                const apiKey = cfg?.apiKey
-                if (apiKey) params.append('access_token', apiKey)
-              }
               params.append('url', imageUrl)
               const query = params.toString()
               if (query) url += `?${query}`
@@ -1118,21 +1109,7 @@ class ApiService {
         // Extract filename (with extension) and strip extension to use as identifier
         const filename = libMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
-
-        // Append session token if available (for authenticated users)
-        const sessionToken = sessionTokenManager.getToken()
-        if (sessionToken) {
-          url += `?access_token=${encodeURIComponent(sessionToken)}`
-        } else {
-          // Fallback to API key if no session token (for non-authenticated access)
-          const cfg = getCachedStartupConfig()
-          const apiKey = cfg?.apiKey
-          if (apiKey) {
-            url += `?access_token=${encodeURIComponent(apiKey)}`
-          }
-        }
-        return url
+        return `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
       }
     } catch (e) {
       // fall back to default behavior below on any error
@@ -1146,46 +1123,49 @@ class ApiService {
       if (authorMatch && authorMatch[1]) {
         const filename = authorMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
-
-        const sessionToken = sessionTokenManager.getToken()
-        if (sessionToken) {
-          url += `?access_token=${encodeURIComponent(sessionToken)}`
-        } else {
-          const cfg = getCachedStartupConfig()
-          const apiKey = cfg?.apiKey
-          if (apiKey) {
-            url += `?access_token=${encodeURIComponent(apiKey)}`
-          }
-        }
-        return url
+        return `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
       }
     } catch (e) {
       logger.debug('[ApiService] getImageUrl authors-detect error', e)
     }
 
-    // Convert other relative URLs to absolute and append access_token
-    const absolute = `${BACKEND_BASE_URL}${imageUrl}`
-    try {
-      // Try session token first (for authenticated users)
-      const sessionToken = sessionTokenManager.getToken()
-      if (sessionToken) {
-        const sep = absolute.includes('?') ? '&' : '?'
-        return `${absolute}${sep}access_token=${encodeURIComponent(sessionToken)}`
-      }
+    // Convert other relative URLs to absolute (no query-string auth tokens).
+    return `${BACKEND_BASE_URL}${imageUrl}`
+  }
 
-      // Fallback to API key if no session token
-      const cfg = getCachedStartupConfig()
-      const apiKey = cfg?.apiKey
-      if (apiKey) {
-        const sep = absolute.includes('?') ? '&' : '?'
-        return `${absolute}${sep}access_token=${encodeURIComponent(apiKey)}`
+  async fetchImageObjectUrl(imageUrl: string | undefined): Promise<string> {
+    if (!imageUrl) return ''
+    const resolved = this.getImageUrl(imageUrl)
+    if (!resolved) return ''
+
+    // Keep external URLs as-is; auth headers/cors may not be accepted cross-origin.
+    if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+      try {
+        const u = new URL(resolved)
+        if (typeof window !== 'undefined' && u.origin !== window.location.origin) {
+          return resolved
+        }
+      } catch {
+        // If URL parsing fails, fall through and try fetch anyway.
       }
-    } catch {
-      // ignore and return plain absolute URL
     }
 
-    return absolute
+    const headers: Record<string, string> = {
+      ...this.buildAuthHeaders(),
+    }
+
+    const resp = await fetch(resolved, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    })
+
+    if (!resp.ok) {
+      throw new Error(`Image request failed with status ${resp.status}`)
+    }
+
+    const blob = await resp.blob()
+    return URL.createObjectURL(blob)
   }
 
   // Expose a lightweight cache for image metadata candidates (tests and UI may seed/read this)

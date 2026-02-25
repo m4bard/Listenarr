@@ -10,6 +10,12 @@ import { useLibraryStore } from '@/stores/library'
 // apiService and signalR are mocked centrally in test-setup.ts
 
 describe('AddNewView pagination', () => {
+  const createTestRouter = () =>
+    createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', component: { template: '<div />' } }],
+    })
+
   beforeEach(() => {
     const pinia = createPinia()
     setActivePinia(pinia)
@@ -49,7 +55,7 @@ describe('AddNewView pagination', () => {
       ],
     })
 
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as {
       showAdvancedSearch?: boolean
@@ -99,7 +105,7 @@ describe('AddNewView pagination', () => {
       ],
     })
 
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as {
       showAdvancedSearch?: boolean
@@ -122,7 +128,7 @@ describe('AddNewView pagination', () => {
   })
 
   it('shows region names instead of language names in search selects', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
 
     // Simple search language select should contain United States (US)
@@ -159,7 +165,7 @@ describe('AddNewView pagination', () => {
       ],
     })
 
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as { searchQuery?: string; performSearch?: () => Promise<void>; titleResults?: unknown[] }
 
@@ -194,7 +200,7 @@ describe('AddNewView pagination', () => {
       ],
     })
 
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as { searchQuery?: string; performAdvancedSearch?: () => Promise<void>; titleResults?: unknown[] }
 
@@ -214,7 +220,7 @@ describe('AddNewView pagination', () => {
     const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
     apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({ totalResults: 0, results: [] })
 
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as { searchQuery?: string; performSearch?: () => Promise<void> }
 
@@ -253,7 +259,7 @@ describe('AddNewView pagination', () => {
       ],
     })
 
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as {
       showAdvancedSearch?: boolean
@@ -289,7 +295,7 @@ describe('AddNewView pagination', () => {
       ],
     })
 
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as {
       showAdvancedSearch?: boolean
@@ -324,7 +330,7 @@ describe('AddNewView pagination', () => {
       ],
     })
 
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as {
       showAdvancedSearch?: boolean
@@ -347,7 +353,7 @@ describe('AddNewView pagination', () => {
   })
 
   it('shows metadata badge linking to internal Audimeta endpoint and source badge linking to Audible product', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as {
       searchType?: string
@@ -385,7 +391,7 @@ describe('AddNewView pagination', () => {
   })
 
   it('does not label non-Audible URLs containing audible.com as Audible', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as { searchType?: string; audibleResult?: Record<string, unknown> }
 
@@ -414,7 +420,7 @@ describe('AddNewView pagination', () => {
   })
 
   it('shows full series list on hover (title and asin result views)', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as { searchType?: string; titleResults?: unknown[] }
 
@@ -444,7 +450,7 @@ describe('AddNewView pagination', () => {
   })
 
   it('shows "Added" and disables add button when result is already in library', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes: [] })
+    const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as {
       searchType?: string

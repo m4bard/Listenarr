@@ -41,6 +41,11 @@ namespace Listenarr.Api.Services
         {
             if (string.IsNullOrWhiteSpace(webhookUrl) || enabledTriggers == null || !enabledTriggers.Contains(trigger))
                 return;
+            if (!TryValidateWebhookTarget(webhookUrl, out var validationReason))
+            {
+                _logger.LogWarning("Blocked outbound notification target: {Reason}", validationReason);
+                return;
+            }
 
             // Helper to handle a non-successful response consistently
             async Task HandleFailedResponseAsync(HttpResponseMessage response)
@@ -580,6 +585,64 @@ namespace Listenarr.Api.Services
                 _logger.LogDebug(ex, "Could not read HTTP content for diagnostic logging");
                 return string.Empty;
             }
+        }
+
+        private static bool TryValidateWebhookTarget(string webhookUrl, out string reason)
+        {
+            reason = string.Empty;
+            if (!Uri.TryCreate(webhookUrl, UriKind.Absolute, out var uri))
+            {
+                reason = "Invalid URL format";
+                return false;
+            }
+
+            if (!string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
+            {
+                reason = $"Unsupported URL scheme '{uri.Scheme}'";
+                return false;
+            }
+
+            var host = uri.Host ?? string.Empty;
+            if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "Localhost or .local targets are not allowed";
+                return false;
+            }
+
+            if (IPAddress.TryParse(host, out var ip) && IsPrivateOrLoopback(ip))
+            {
+                reason = "Private or loopback IP targets are not allowed";
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool IsPrivateOrLoopback(IPAddress ip)
+        {
+            if (IPAddress.IsLoopback(ip)) return true;
+
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
+            {
+                var b = ip.GetAddressBytes();
+                if (b[0] == 10) return true;
+                if (b[0] == 127) return true;
+                if (b[0] == 169 && b[1] == 254) return true;
+                if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
+                if (b[0] == 192 && b[1] == 168) return true;
+                return false;
+            }
+
+            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
+            {
+                if (ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal) return true;
+                var b = ip.GetAddressBytes();
+                if (b.Length > 0 && (b[0] & 0xFE) == 0xFC) return true; // fc00::/7
+                return false;
+            }
+
+            return false;
         }
     }
 }

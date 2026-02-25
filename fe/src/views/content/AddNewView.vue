@@ -309,7 +309,7 @@
             <div class="result-poster">
               <img
                 v-if="audibleResult.imageUrl"
-                :src="apiService.getImageUrl(audibleResult.imageUrl) || getPlaceholderUrl()"
+                :src="getAudibleResultImageSrc()"
                 :alt="audibleResult.title"
                 loading="lazy"
                 decoding="async"
@@ -471,7 +471,6 @@
                   ) ||
                   (audibleResult && audibleResult.metadataSource && audibleResult.metadataSource.toLowerCase().includes('openlibrary') && !canAddOpenLibraryResult)
                 )"
-"
               >
                 <component
                   :is="
@@ -835,7 +834,7 @@
   <AddLibraryModal
     :visible="showAddLibraryModal"
     :book="selectedBookForLibrary"
-    :resolved-image-url="apiService.getImageUrl(selectedBookForLibrary?.imageUrl || '')"
+    :resolved-image-url="getSelectedBookImageSrc()"
     @close="closeAddLibraryModal"
     @added="handleLibraryAdded"
   />
@@ -920,6 +919,7 @@ import {
   getOptionalString,
   canAddOpenLibraryResult as canAddOpenLibraryResultHelper,
 } from '@/utils/searchResultHelpers'
+import { useProtectedImages, isLikelyBackendImageUrl } from '@/composables/useProtectedImages'
 
 // Helper to normalize ISBN (strip hyphens/spaces, prefer ISBN-13 if present)
 function normalizeIsbn(input: unknown): string | undefined {
@@ -962,6 +962,7 @@ const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
 const libraryStore = useLibraryStore()
 const toast = useToast()
+const { getProtectedImageSrc } = useProtectedImages()
 
 // Initialize composables
 const {
@@ -1053,6 +1054,8 @@ watch(
 
 // Unified Search - now handled by useSearch composable
 const isCancelled = ref(false)
+let unsubscribeSearchProgress: (() => void) | null = null
+let stopWatchingLibrary: (() => void) | null = null
 
 // Results
 const audibleResult = ref<AudibleBookMetadata | null>(null)
@@ -1406,13 +1409,25 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
         if (typeof narr === 'string') return narr as string
         return undefined
       })()
+      if (tr['narrator']) {
+        ;(tr['searchResult'] as Record<string, unknown>)['narrator'] = tr['narrator']
+      }
       tr['runtime'] = (() => {
-        const raw = rrRes['runtimeLengthMin'] ?? rrRes['lengthMinutes'] ?? rrRes['runtimeMinutes'] ?? rrRes['RuntimeLengthMin'] ?? rrRes['runtime'] ?? rrRes['Runtime'] ?? rrRes['RuntimeMinutes'] ?? rrRes['RuntimeSeconds']
+        const rawMinutes =
+          rrRes['runtimeLengthMin'] ??
+          rrRes['lengthMinutes'] ??
+          rrRes['runtimeMinutes'] ??
+          rrRes['RuntimeLengthMin']
+        if (rawMinutes !== undefined && rawMinutes !== null) {
+          const m = Number(rawMinutes)
+          if (!isNaN(m)) return Math.max(0, Math.round(m * 60))
+        }
+
+        const raw = rrRes['runtime'] ?? rrRes['Runtime'] ?? rrRes['RuntimeMinutes'] ?? rrRes['RuntimeSeconds']
         if (raw === undefined || raw === null) return undefined
         const num = Number(raw)
         if (isNaN(num)) return undefined
-        // Only convert from seconds if the number is suspiciously large (> 2 days in seconds)
-        return num > 172800 ? Math.round(num / 60) : num
+        return num > 1000 ? Math.round(num) : Math.round(num * 60)
       })()
       // Also set runtime on searchResult for template display
       if (tr['runtime']) {
@@ -1423,17 +1438,27 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       tr['asin'] = rrRes['asin'] ?? rrRes['Asin'] ?? undefined
       tr['id'] = rrRes['asin'] ?? rrRes['sku'] ?? rrRes['id'] ?? rrRes['title']
       tr['productUrl'] = rrRes['productUrl'] ?? rrRes['link'] ?? rrRes['Link'] ?? undefined
+      if (tr['subtitle']) {
+        ;(tr['searchResult'] as Record<string, unknown>)['subtitle'] = tr['subtitle']
+      }
+      if (tr['productUrl']) {
+        ;(tr['searchResult'] as Record<string, unknown>)['productUrl'] = tr['productUrl']
+      }
       // preserve seriesList for tooltip display when provided as an array
       try {
         const rawSeries = rr['series'] ?? rr['Series']
         if (Array.isArray(rawSeries) && rawSeries.length) {
+          let firstSeriesPosition: string | undefined
           const list = (rawSeries as unknown[])
             .map((s: unknown) => {
               if (typeof s === 'object' && s) {
                 const srec = s as Record<string, unknown>
                 const name = (srec['name'] ?? srec['Name'] ?? String(s)) as string
                 const position = srec['position'] ?? srec['Position']
-                return position ? `${name} #${position}` : name
+                if (!firstSeriesPosition && position !== undefined && position !== null) {
+                  firstSeriesPosition = String(position)
+                }
+                return name
               }
               return String(s)
             })
@@ -1444,6 +1469,10 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
           // and choose first element as visible series string
           tr['series'] = list[0]
           ;(tr['searchResult'] as Record<string, unknown>)['series'] = list[0]
+          if (!tr['seriesNumber'] && firstSeriesPosition) {
+            tr['seriesNumber'] = firstSeriesPosition
+            ;(tr['searchResult'] as Record<string, unknown>)['seriesNumber'] = firstSeriesPosition
+          }
         } else if (rawSeries && typeof rawSeries === 'object' && !Array.isArray(rawSeries)) {
           // Handle single series object: convert to string by getting name property
           const seriesObj = rawSeries as Record<string, unknown>
@@ -1808,15 +1837,33 @@ const loadMoreTitleResults = async () => {
 const getCoverUrl = (book: TitleSearchResult): string => {
   const key = book.key || JSON.stringify(book.title || '')
   // If we've already selected a best cover, return it (proxied)
-  if (coverSelection.value[key]) return apiService.getImageUrl(coverSelection.value[key])
+  if (coverSelection.value[key]) {
+    return getProtectedImageSrc(coverSelection.value[key], `addnew-cover-${key}`, getPlaceholderUrl())
+  }
 
   // Start background evaluation of best cover (non-blocking)
   pickBestCoverForBook(book).catch(() => logger.debug('pickBestCoverForBook error'))
 
   // Immediate fallback: prefer explicit imageUrl, then searchResult image
-  if (book.imageUrl) return apiService.getImageUrl(book.imageUrl)
+  if (book.imageUrl) {
+    return getProtectedImageSrc(book.imageUrl, `addnew-cover-${key}`, getPlaceholderUrl())
+  }
   const imageUrl = book.searchResult?.imageUrl || ''
-  return apiService.getImageUrl(imageUrl)
+  return getProtectedImageSrc(imageUrl, `addnew-cover-${key}`, getPlaceholderUrl())
+}
+
+const getAudibleResultImageSrc = (): string => {
+  const result = audibleResult.value
+  if (!result?.imageUrl) return getPlaceholderUrl()
+  const key = result.asin || result.openLibraryId || result.title || 'result'
+  return getProtectedImageSrc(result.imageUrl, `addnew-asin-${key}`, getPlaceholderUrl())
+}
+
+const getSelectedBookImageSrc = (): string => {
+  const book = selectedBookForLibrary.value
+  if (!book?.imageUrl) return getPlaceholderUrl()
+  const key = book.asin || book.openLibraryId || book.title || 'none'
+  return getProtectedImageSrc(book.imageUrl, `addnew-selected-${key}`, getPlaceholderUrl())
 }
 
 // Try to pick the image whose aspect ratio is closest to 1:1 from available candidates
@@ -1854,7 +1901,10 @@ const pickBestCoverForBook = async (book: TitleSearchResult): Promise<void> => {
     const results: Array<{ url: string; score: number }> = []
     for (const url of uniq) {
       try {
-        const ratio = await measureImageAspectRatio(apiService.getImageUrl(url), 3000)
+        const { imageUrl, cleanup } = await resolveImageUrlForAspectRatio(url)
+        if (!imageUrl) continue
+        const ratio = await measureImageAspectRatio(imageUrl, 3000)
+        cleanup()
         if (ratio && ratio > 0) {
           const score = Math.abs(ratio - 1)
           results.push({ url, score })
@@ -1917,6 +1967,32 @@ const measureImageAspectRatio = (url: string, timeoutMs = 3000): Promise<number 
 
     img.src = url
   })
+}
+
+const resolveImageUrlForAspectRatio = async (
+  rawImageUrl: string,
+): Promise<{ imageUrl: string; cleanup: () => void }> => {
+  if (!rawImageUrl) return { imageUrl: '', cleanup: () => {} }
+  const resolved = apiService.getImageUrl(rawImageUrl)
+  if (!resolved) return { imageUrl: '', cleanup: () => {} }
+  if (!isLikelyBackendImageUrl(resolved) || typeof apiService.fetchImageObjectUrl !== 'function') {
+    return { imageUrl: resolved, cleanup: () => {} }
+  }
+
+  const objectUrl = await apiService.fetchImageObjectUrl(rawImageUrl)
+  if (!objectUrl) return { imageUrl: '', cleanup: () => {} }
+  if (!objectUrl.startsWith('blob:')) {
+    return { imageUrl: objectUrl, cleanup: () => {} }
+  }
+
+  return {
+    imageUrl: objectUrl,
+    cleanup: () => {
+      try {
+        URL.revokeObjectURL(objectUrl)
+      } catch {}
+    },
+  }
 }
 
 const formatAuthors = (book: TitleSearchResult): string => {
@@ -2588,7 +2664,7 @@ onMounted(async () => {
     details?: { rawCount?: number; scoredCount?: number; [key: string]: unknown }
   }
 
-  const unsub = signalRService.onSearchProgress((payload: ProgressPayload) => {
+  unsubscribeSearchProgress = signalRService.onSearchProgress((payload: ProgressPayload) => {
     if (!payload || !payload.message) return
 
     // Prefer structured details when available, but do not use an on-screen progress bar
@@ -2651,15 +2727,8 @@ onMounted(async () => {
 
     searchStatus.value = sanitizeMessage(payload.message)
   })
-  // When component is unmounted, unsubscribe
-  onUnmounted(() => {
-    try {
-      unsub()
-    } catch {}
-  })
-
   // Watch for library changes to update added status
-  const stopWatchingLibrary = watch(
+  stopWatchingLibrary = watch(
     () => libraryStore.audiobooks,
     async (newAudiobooks, oldAudiobooks) => {
       // Only update if the library actually changed (not just on initial load)
@@ -2670,11 +2739,18 @@ onMounted(async () => {
     },
     { deep: false }, // We don't need deep watching since we're just checking length
   )
+})
 
-  // Cleanup watcher on unmount
-  onUnmounted(() => {
-    stopWatchingLibrary()
-  })
+onUnmounted(() => {
+  try {
+    unsubscribeSearchProgress?.()
+  } catch {}
+  unsubscribeSearchProgress = null
+
+  try {
+    stopWatchingLibrary?.()
+  } catch {}
+  stopWatchingLibrary = null
 })
 </script>
 

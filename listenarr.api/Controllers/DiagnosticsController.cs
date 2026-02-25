@@ -46,7 +46,23 @@ namespace Listenarr.Api.Controllers
                 string? targetUrl = null;
                 if (!string.IsNullOrWhiteSpace(req.WebhookUrl))
                 {
-                    targetUrl = req.WebhookUrl;
+                    var configuredUrls = (settings.Webhooks ?? new List<WebhookConfiguration>())
+                        .Select(w => w.Url)
+                        .Where(u => !string.IsNullOrWhiteSpace(u))
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                    if (!string.IsNullOrWhiteSpace(settings.WebhookUrl))
+                    {
+                        configuredUrls.Add(settings.WebhookUrl);
+                    }
+
+                    if (configuredUrls.Contains(req.WebhookUrl))
+                    {
+                        targetUrl = req.WebhookUrl;
+                    }
+                    else
+                    {
+                        return BadRequest(new { success = false, message = "Webhook URL must match a configured webhook target" });
+                    }
                 }
                 else if (!string.IsNullOrWhiteSpace(req.WebhookId) && settings.Webhooks != null)
                 {

@@ -148,10 +148,8 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetSystemStatus()
         {
-            var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             Response.ContentType = "application/json";
             var dto = new SystemStatusDto
             {
@@ -172,10 +170,8 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult PostIndexerTest()
         {
-            var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             _logger?.LogInformation("Prowlarr indexer test invoked (POST)");
             Response.ContentType = "application/json";
             var version = GetApplicationVersion();
@@ -194,10 +190,8 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexerTest()
         {
-            var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             _logger?.LogInformation("Prowlarr indexer test invoked (GET)");
             Response.ContentType = "application/json";
             var version = GetApplicationVersion();
@@ -218,10 +212,8 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult PostDebugTest()
         {
-            var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             Response.ContentType = "application/json";
             return Ok(new { ok = true });
         }
@@ -236,10 +228,10 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexers()
         {
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
             if (HttpContext?.Response != null) HttpContext.Response.ContentType = "application/json";
             var indexers = _dbContext.Indexers
                 .OrderBy(i => i.Priority)
@@ -283,10 +275,10 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexerById(int id)
         {
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
             Response.ContentType = "application/json";
             var i = _dbContext.Indexers.AsNoTracking().FirstOrDefault(x => x.Id == id);
             if (i == null)
@@ -353,10 +345,8 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexersInfo()
         {
-            var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             Response.ContentType = "application/json";
             var payload = new
             {
@@ -375,10 +365,8 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult GetIndexersList()
         {
-            var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             Response.ContentType = "application/json";
             return Ok(System.Array.Empty<object>());
         }
@@ -394,10 +382,8 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public async Task<IActionResult> DeleteIndexer(int id)
         {
-            var cfg = GetStartupConfig();
-            var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-            if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                return Unauthorized();
+            var authGuard = RequireAuthenticatedIfEnabled();
+            if (authGuard != null) return authGuard;
             Response.ContentType = "application/json";
             try
             {

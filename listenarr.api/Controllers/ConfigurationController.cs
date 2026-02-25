@@ -432,22 +432,20 @@ namespace Listenarr.Api.Controllers
                 var rawAuth = config.AuthenticationRequired;
                 var authEnabled = rawAuth?.ToLowerInvariant() is "true" or "yes" or "1";
                 var isAuthenticated = User?.Identity?.IsAuthenticated ?? false;
+                var isAdmin = User?.IsInRole("Administrator") ?? false;
+                var remoteIp = HttpContext?.Connection?.RemoteIpAddress;
+                var isLocalRequest = remoteIp != null && System.Net.IPAddress.IsLoopback(remoteIp);
                 _logger.LogInformation($"[ConfigurationController] AuthenticationRequired config value: '{rawAuth}', authEnabled: {authEnabled}, user authenticated: {isAuthenticated}");
                 if (authEnabled && !isAuthenticated)
                 {
                     _logger.LogWarning("[ConfigurationController] Authentication is enabled and user is not authenticated. Returning 401.");
                     return Unauthorized();
                 }
-                // Only redact API key if authentication is enabled and user is not authenticated
-                if (authEnabled && !isAuthenticated)
+                // Do not expose API key to non-admin remote callers, even when auth is disabled.
+                if (!isLocalRequest && !isAdmin && !string.IsNullOrEmpty(config.ApiKey))
                 {
-                    if (!string.IsNullOrEmpty(config.ApiKey))
-                    {
-                        _logger.LogInformation("[ConfigurationController] Authentication is enabled and user is not authenticated, redacting ApiKey.");
-                        config.ApiKey = "REDACTED";
-                    }
+                    config.ApiKey = "REDACTED";
                 }
-                // If authentication is disabled, always return the real API key
                 _logger.LogInformation("[ConfigurationController] Returning startup config.");
                 return Ok(config);
             }
