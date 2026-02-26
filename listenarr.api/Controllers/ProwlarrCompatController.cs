@@ -23,13 +23,23 @@ namespace Listenarr.Api.Controllers
                 var cfg = _startupConfigService.GetConfig();
                 if (cfg != null) return cfg;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger?.LogDebug(ex, "ProwlarrCompat: Failed to load startup config from IStartupConfigService; falling back");
+            }
 
             // Use the DB context to get config service, or inject if available
             var configService = HttpContext?.RequestServices.GetService(typeof(IConfigurationService)) as IConfigurationService;
             if (configService != null)
             {
-                try { return configService.GetStartupConfigAsync().GetAwaiter().GetResult(); } catch { }
+                try
+                {
+                    return configService.GetStartupConfigAsync().GetAwaiter().GetResult();
+                }
+                catch (Exception ex)
+                {
+                    _logger?.LogDebug(ex, "ProwlarrCompat: Failed to load startup config from IConfigurationService; falling back to default");
+                }
             }
             return new StartupConfig();
         }

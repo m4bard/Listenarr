@@ -287,7 +287,7 @@ namespace Listenarr.Api.Tests
         private static async Task<HttpResponseMessage> PostRescanAsync(HttpClient client, int audiobookId)
         {
             var csrfToken = await GetAntiforgeryTokenAsync(client);
-            var request = new HttpRequestMessage(HttpMethod.Post, $"/api/library/{audiobookId}/rescan-metadata");
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/library/{audiobookId}/rescan-metadata");
             request.Headers.Add("X-XSRF-TOKEN", csrfToken);
             return await client.SendAsync(request);
         }

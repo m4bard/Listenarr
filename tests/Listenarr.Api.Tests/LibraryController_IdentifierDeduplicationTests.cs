@@ -141,7 +141,7 @@ namespace Listenarr.Api.Tests
                 }
                 """;
 
-            var request = new HttpRequestMessage(HttpMethod.Put, $"/api/library/{audiobookId}/identifiers")
+            using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/library/{audiobookId}/identifiers")
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };

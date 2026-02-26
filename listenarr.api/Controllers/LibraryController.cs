@@ -843,7 +843,10 @@ namespace Listenarr.Api.Controllers
                 {
                     Response.Headers["Retry-After"] = retryAfterSeconds.ToString();
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to set Retry-After header for metadata rescan rate-limit response");
+                }
 
                 return StatusCode(StatusCodes.Status429TooManyRequests, new
                 {
