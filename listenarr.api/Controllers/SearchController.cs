@@ -264,8 +264,16 @@ namespace Listenarr.Api.Controllers
                         return BadRequest("At least one advanced search parameter (title, author, isbn, asin, series, or query) is required");
                     }
                     // Debug: log incoming advanced parameters for diagnostics
-                    try { _logger.LogInformation("[DBG] Advanced search request: Author='{Author}', Title='{Title}', Isbn='{Isbn}', Asin='{Asin}', Query='{Query}', Region='{Region}', Language='{Language}'", req.Author, req.Title, req.Isbn, req.Asin, req.Query, region, language); } catch {}
-                    try { _logger.LogDebug("[DBG] Advanced params: Title='{Title}', Author='{Author}', Isbn='{Isbn}'", req.Title, req.Author, req.Isbn); } catch {}
+                    try { _logger.LogInformation("[DBG] Advanced search request: Author='{Author}', Title='{Title}', Isbn='{Isbn}', Asin='{Asin}', Query='{Query}', Region='{Region}', Language='{Language}'", req.Author, req.Title, req.Isbn, req.Asin, req.Query, region, language); }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"SearchController advanced-search info logging failed: {ex.Message}");
+                    }
+                    try { _logger.LogDebug("[DBG] Advanced params: Title='{Title}', Author='{Author}', Isbn='{Isbn}'", req.Title, req.Author, req.Isbn); }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"SearchController advanced-search debug logging failed: {ex.Message}");
+                    }
 
                     // If the advanced request contains an ASIN, prefer a direct Audimeta metadata
                     // lookup and return a single enriched SearchResult. ASIN searches should
@@ -398,7 +406,10 @@ namespace Listenarr.Api.Controllers
                                                     }
                                                     if (string.IsNullOrWhiteSpace(chosenAsin) && !string.IsNullOrWhiteSpace(elAsin)) chosenAsin = elAsin;
                                                 }
-                                                catch { }
+                                                catch (Exception ex)
+                                                {
+                                                    _logger.LogDebug(ex, "Failed to parse audimeta series candidate element for series '{Series}'", req.Series);
+                                                }
                                             }
                                             if (!string.IsNullOrWhiteSpace(chosenAsin)) seriesAsin = chosenAsin;
                                         }
@@ -431,7 +442,10 @@ namespace Listenarr.Api.Controllers
                                         var resp = JsonSerializer.Deserialize<List<Listenarr.Api.Services.AudimetaSearchResult>>(json, opts);
                                         books = resp;
                                     }
-                                    catch { }
+                                    catch (Exception ex)
+                                    {
+                                        _logger.LogDebug(ex, "Failed to deserialize audimeta series books list for series ASIN {SeriesAsin}", seriesAsin);
+                                    }
                                     if (books == null)
                                     {
                                         try
@@ -439,7 +453,10 @@ namespace Listenarr.Api.Controllers
                                             var respEnv = JsonSerializer.Deserialize<Listenarr.Api.Services.AudimetaSearchResponse>(json, opts);
                                             books = respEnv?.Results;
                                         }
-                                        catch { }
+                                        catch (Exception ex)
+                                        {
+                                            _logger.LogDebug(ex, "Failed to deserialize audimeta series books envelope for series ASIN {SeriesAsin}", seriesAsin);
+                                        }
                                     }
 
                                     if (books != null && books.Any())
@@ -539,7 +556,11 @@ namespace Listenarr.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(req.Isbn)) queryParts.Add($"ISBN:{req.Isbn}");
                     if (!string.IsNullOrWhiteSpace(req.Asin)) queryParts.Add($"ASIN:{req.Asin}");
                     var query = queryParts.Count > 0 ? string.Join(" ", queryParts) : (req.Query ?? string.Empty);
-                    try { _logger.LogInformation("Advanced search request composed parts={Parts} -> query='{Query}'", string.Join("|", queryParts), LogRedaction.SanitizeText(query)); } catch {}
+                    try { _logger.LogInformation("Advanced search request composed parts={Parts} -> query='{Query}'", string.Join("|", queryParts), LogRedaction.SanitizeText(query)); }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"SearchController composed-query logging failed: {ex.Message}");
+                    }
                     // Respect optional pagination/candidate caps from the client
                     var candidateLimit = req.Cap.HasValue ? Math.Clamp(req.Cap.Value, 5, 2000) : 200;
                     var returnLimit = req.Pagination != null && req.Pagination.Limit > 0 ? Math.Clamp(req.Pagination.Limit, 1, 1000) : 50;
@@ -629,7 +650,10 @@ namespace Listenarr.Api.Controllers
                     r.ProductUrl = $"https://www.amazon.com/dp/{r.Asin}";
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed to sanitize public search result for ASIN {Asin}", r?.Asin);
+            }
         }
 
         // Map our internal MetadataSearchResult to a lightweight Audimeta-shaped object (async)
@@ -975,10 +999,18 @@ namespace Listenarr.Api.Controllers
             try
             {
                 // Debug: log raw incoming query to help integration-test diagnostics
-                try { _logger.LogDebug("[DEBUG] IntelligentSearch called with query='{Query}'", query ?? "<null>"); } catch { }
+                try { _logger.LogDebug("[DEBUG] IntelligentSearch called with query='{Query}'", query ?? "<null>"); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"SearchController IntelligentSearch debug logging failed: {ex.Message}");
+                }
 
                 // Also emit a warning-level log so test output captures the value
-                try { _logger.LogWarning("[DBG] IntelligentSearch called with query='{Query}'", query ?? "<null>"); } catch { }
+                try { _logger.LogWarning("[DBG] IntelligentSearch called with query='{Query}'", query ?? "<null>"); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"SearchController IntelligentSearch warning logging failed: {ex.Message}");
+                }
 
                 if (string.IsNullOrEmpty(query))
                 {

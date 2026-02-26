@@ -33,7 +33,10 @@ class Program
                 var first = outp.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
                 if (!string.IsNullOrEmpty(first) && File.Exists(first)) sqlite3Path = first;
             }
-            catch { }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Warning: failed to probe sqlite3 on PATH via 'where': {ex.Message}");
+            }
         }
 
         if (sqlite3Path == null)

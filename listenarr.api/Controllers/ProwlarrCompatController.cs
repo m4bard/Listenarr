@@ -466,7 +466,10 @@ namespace Listenarr.Api.Controllers
                     var redacted = LogRedaction.RedactText(raw, LogRedaction.GetSensitiveValuesFromEnvironment());
                     _logger?.LogInformation("Prowlarr indexer update payload body: {Payload}", redacted);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"ProwlarrCompatController payload logging failed (PUT indexer): {ex.Message}");
+                }
 
                 var indexer = _dbContext.Indexers.FirstOrDefault(x => x.Id == id);
                 var created = false;
@@ -694,7 +697,10 @@ namespace Listenarr.Api.Controllers
                             _logger?.LogDebug("Suppressing update toast for indexer {Id} since it was created recently", indexer.Id);
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogDebug(ex, "Failed to evaluate recent-create toast suppression for Prowlarr indexer {Id}", indexer.Id);
+                    }
 
                     if (publishToast)
                     {
@@ -821,7 +827,10 @@ namespace Listenarr.Api.Controllers
                     var redacted = LogRedaction.RedactText(raw, LogRedaction.GetSensitiveValuesFromEnvironment());
                     _logger?.LogInformation("Prowlarr indexers payload body: {Payload}", redacted);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"ProwlarrCompatController payload logging failed (POST indexers): {ex.Message}");
+                }
 
                 if (HttpContext?.Response != null) HttpContext.Response.ContentType = "application/json";
 
@@ -1098,7 +1107,10 @@ namespace Listenarr.Api.Controllers
                         created = indexers.Count;
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger?.LogDebug(ex, "Failed parsing debug indexers publish payload");
+                }
             }
 
             if (!indexers.Any())
@@ -1173,7 +1185,10 @@ namespace Listenarr.Api.Controllers
                 var redacted = LogRedaction.RedactText(raw, LogRedaction.GetSensitiveValuesFromEnvironment());
                 _logger?.LogInformation("Prowlarr indexer payload body: {Payload}", redacted);
             }
-            catch { }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"ProwlarrCompatController payload logging failed (single indexer POST): {ex.Message}");
+            }
 
             if (HttpContext?.Response != null) HttpContext.Response.ContentType = "application/json";
 

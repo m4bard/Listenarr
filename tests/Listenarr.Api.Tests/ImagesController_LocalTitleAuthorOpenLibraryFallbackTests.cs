@@ -56,9 +56,9 @@ namespace Listenarr.Api.Tests
             openLibraryMock.Setup(o => o.GetIsbnsForTitleAsync(title, author))
                 .ReturnsAsync(new List<string> { isbn });
 
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr_test_contentroot_local_title_author_fallback");
-            Directory.CreateDirectory(Path.Combine(tempRoot, "config", "cache", "images", "temp"));
-            var fullPath = Path.Combine(tempRoot, relativePath);
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr_test_contentroot_local_title_author_fallback");
+            Directory.CreateDirectory(Path.Join(tempRoot, "config", "cache", "images", "temp"));
+            var fullPath = Path.Join(tempRoot, relativePath);
             File.WriteAllText(fullPath, "fake image data");
 
             var mockEnv = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
@@ -105,7 +105,7 @@ namespace Listenarr.Api.Tests
 
             try
             {
-                Directory.Delete(Path.Combine(tempRoot, "config", "cache", "images", "temp"), true);
+                Directory.Delete(Path.Join(tempRoot, "config", "cache", "images", "temp"), true);
             }
             catch (System.Exception)
             {

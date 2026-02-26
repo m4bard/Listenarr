@@ -55,9 +55,9 @@ namespace Listenarr.Api.Middleware
                                 if (qs.ContainsKey("access_token")) provided = qs["access_token"].FirstOrDefault();
                             }
                         }
-                        catch
+                        catch (Exception ex)
                         {
-                            // ignore any query parsing errors
+                            _logger?.LogDebug(ex, "ApiKeyMiddleware: failed reading hub access_token from query string");
                         }
                     }
 
@@ -69,7 +69,10 @@ namespace Listenarr.Api.Middleware
                             var keyHash = SecurityRequestUtils.HashSecretForLog(provided);
                             _logger?.LogDebug("ApiKeyMiddleware: API key provided ({KeyHash})", keyHash);
                         }
-                        catch { }
+                        catch (Exception ex)
+                        {
+                            System.Diagnostics.Debug.WriteLine($"ApiKeyMiddleware key fingerprint logging failed: {ex.Message}");
+                        }
 
                         if (provided == configuredKey)
                         {
@@ -87,17 +90,25 @@ namespace Listenarr.Api.Middleware
                             {
                                 _logger?.LogInformation("ApiKeyMiddleware: API key accepted, principal set. PrincipalNameMask={NameMask}, ClaimsCount={ClaimsCount}", "ApiKey", context.User?.Claims?.Count() ?? 0);
                             }
-                            catch { }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"ApiKeyMiddleware accepted-key logging failed: {ex.Message}");
+                            }
                         }
                         else
                         {
-                            try { _logger?.LogDebug("ApiKeyMiddleware: API key provided but did not match configured key"); } catch { }
+                            try { _logger?.LogDebug("ApiKeyMiddleware: API key provided but did not match configured key"); }
+                            catch (Exception ex)
+                            {
+                                System.Diagnostics.Debug.WriteLine($"ApiKeyMiddleware invalid-key logging failed: {ex.Message}");
+                            }
                         }
                     }
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                _logger?.LogWarning(ex, "ApiKeyMiddleware: failed to read startup config for API key authentication");
                 // Do not fail the request if config cannot be read - just continue without API key auth
             }
 

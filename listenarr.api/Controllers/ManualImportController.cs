@@ -266,7 +266,10 @@ public class ManualImportController : ControllerBase
                     _logger.LogDebug("Added destination to usedDestinations: {Destination}, total count now: {Count}", destinationPath, usedDestinations.Count);
                 }
             }
-            catch { }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Failed tracking used destination during manual import for {Destination}", destinationPath);
+            }
             // After a successful move/copy, enqueue a focused scan for the matched audiobook
             try
             {

@@ -741,7 +741,10 @@ namespace Listenarr.Api.Controllers
                         cookieContainer.Add(wwwUri, new System.Net.Cookie("mam_id", mamId));
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to add www host alias cookie for MyAnonamouse test request to {Host}", baseUri.Host);
+                }
 
                 // Create HttpClientHandler with cookies
                 var handler = new HttpClientHandler
@@ -830,7 +833,10 @@ namespace Listenarr.Api.Controllers
                         if (doc.RootElement.TryGetProperty("mam_id", out var mamIdProperty))
                             mamId = mamIdProperty.GetString() ?? string.Empty;
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Failed parsing AdditionalSettings JSON for indexer {Id} during debug search", id);
+                    }
                 }
 
                 if (string.IsNullOrEmpty(mamId))
@@ -880,7 +886,10 @@ namespace Listenarr.Api.Controllers
                         cookieContainer.Add(wwwUri, new System.Net.Cookie("mam_id", mamId));
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to retrieve/parse local parsed search results for indexer {Id} debug search", id);
+                }
 
                 var handler = new HttpClientHandler { CookieContainer = cookieContainer, UseCookies = true };
                 using var client = new HttpClient(handler);
@@ -910,7 +919,10 @@ namespace Listenarr.Api.Controllers
                         parsed = System.Text.Json.JsonSerializer.Deserialize<List<SearchResult>>(json, options) ?? new List<SearchResult>();
                     }
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to evaluate toast suppression recency for indexer {Id}", indexer.Id);
+                }
 
                 return Ok(new { success = true, status = (int)response.StatusCode, raw, parsedCount = parsed.Count, parsed });
             }

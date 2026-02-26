@@ -163,7 +163,11 @@ namespace Listenarr.Api.Services
             async Task HandleFailedResponseAsync(HttpResponseMessage response)
             {
                 string body = string.Empty;
-                try { body = await response.Content.ReadAsStringAsync(); } catch { }
+                try { body = await response.Content.ReadAsStringAsync(); }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed to read notification response body for diagnostic logging");
+                }
 
                 var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
                 var redactedBody = LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment());
@@ -674,7 +678,10 @@ namespace Listenarr.Api.Services
                         var esc = System.Text.RegularExpressions.Regex.Escape(s);
                         result = System.Text.RegularExpressions.Regex.Replace(result, esc, "<redacted>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"NotificationService.AggressiveRedact regex replace failed: {ex.Message}");
+                    }
                 }
 
                 return result;

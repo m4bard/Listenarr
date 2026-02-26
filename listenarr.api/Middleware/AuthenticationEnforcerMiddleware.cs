@@ -49,12 +49,18 @@ namespace Listenarr.Api.Middleware
                             if (!string.IsNullOrEmpty(pname)) nameMask = pname.Length <= 8 ? pname : pname.Substring(0, 8);
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        _logger?.LogDebug(ex, "Failed capturing logout principal diagnostics");
+                    }
 
                     _logger?.LogInformation("Logout request detected - Method: {Method}, Path: {Path}, Authenticated={Authenticated}, PrincipalNameMask={NameMask}, PrincipalClaims={ClaimsCount}",
                         context.Request.Method, path, authenticated, nameMask, claimsCount);
                 }
-                catch { }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"AuthenticationEnforcerMiddleware logout logging failed: {ex.Message}");
+                }
             }
 
             // If endpoint explicitly allows anonymous, skip enforcement

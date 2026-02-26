@@ -55,8 +55,8 @@ namespace Listenarr.Api.Tests
                     }
                 });
 
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr_test_contentroot_alt_asin_alias");
-            var fullPath = Path.Combine(tempRoot, relativePath);
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr_test_contentroot_alt_asin_alias");
+            var fullPath = Path.Join(tempRoot, relativePath);
             Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
             File.WriteAllText(fullPath, "fake image data");
 
@@ -93,7 +93,7 @@ namespace Listenarr.Api.Tests
 
             try
             {
-                Directory.Delete(Path.Combine(tempRoot, "config"), true);
+                Directory.Delete(Path.Join(tempRoot, "config"), true);
             }
             catch (System.Exception)
             {

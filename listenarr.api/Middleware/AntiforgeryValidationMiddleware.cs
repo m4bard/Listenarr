@@ -82,7 +82,10 @@ namespace Listenarr.Api.Middleware
                                 cookiePrefix = cookieVal.Length <= 8 ? cookieVal : cookieVal.Substring(0, 8);
                             }
                         }
-                        catch { /* ignore cookie read errors */ }
+                        catch (Exception cookieEx)
+                        {
+                            _logger?.LogDebug(cookieEx, "Failed reading antiforgery cookie prefix for diagnostics");
+                        }
 
                         var headerPrefix = string.Empty;
                         if (!string.IsNullOrEmpty(hdr))
@@ -108,11 +111,17 @@ namespace Listenarr.Api.Middleware
                                 if (!string.IsNullOrEmpty(pname)) principalNameMask = pname.Length <= 8 ? pname : pname.Substring(0, 8);
                             }
                         }
-                        catch { }
+                        catch (Exception ex2)
+                        {
+                            _logger?.LogDebug(ex2, "Failed capturing principal diagnostics during antiforgery validation failure");
+                        }
 
                         _logger?.LogWarning(ex, "Antiforgery validation failed. Method={Method}, Path={Path}, HeaderLength={HeaderLength}, CookieNames={CookieNames}, HeaderPrefix={HeaderPrefix}, CookiePrefix={CookiePrefix}, PrefixesEqual={PrefixesEqual}, PrincipalAuthenticated={PrincipalAuthenticated}, PrincipalNameMask={PrincipalNameMask}, PrincipalClaims={PrincipalClaims}, HasAuthorizationHeader={HasAuthorizationHeader}", method, path, hdrLen, cookieNames, headerPrefix, cookiePrefix, equalPrefixes, principalAuthenticated, principalNameMask, principalClaims, hasAuthorizationHeader);
                     }
-                    catch { /* ignore logging errors */ }
+                    catch (Exception logEx)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"AntiforgeryValidationMiddleware logging failed: {logEx.Message}");
+                    }
 
                     context.Response.StatusCode = StatusCodes.Status400BadRequest;
                     await context.Response.WriteAsJsonAsync(new { message = "Invalid or missing CSRF token" });

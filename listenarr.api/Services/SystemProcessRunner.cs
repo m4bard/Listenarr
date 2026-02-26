@@ -42,13 +42,21 @@ namespace Listenarr.Api.Services
                 var exited = await Task.Run(() => process.WaitForExit(timeoutMs), cancellationToken);
                 if (!exited)
                 {
-                    try { process.Kill(true); } catch { }
+                    try { process.Kill(true); }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Failed to kill timed-out process {FileName} {Args}", startInfo.FileName, startInfo.Arguments);
+                    }
                     _logger.LogWarning("Process timed out after {Timeout}ms: {FileName} {Args}", timeoutMs, startInfo.FileName, startInfo.Arguments);
                     return new ProcessResult(-1, stdout.ToString(), stderr.ToString(), true);
                 }
 
                 // Ensure asynchronous output readers have flushed into our buffers before reading them.
-                try { process.WaitForExit(); } catch { }
+                try { process.WaitForExit(); }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Failed waiting for process output readers to flush for {FileName} {Args}", startInfo.FileName, startInfo.Arguments);
+                }
 
                 var exit = process.ExitCode;
 
@@ -139,7 +147,11 @@ namespace Listenarr.Api.Services
             {
                 if (_disposed) return;
                 _disposed = true;
-                try { _action(); } catch { }
+                try { _action(); }
+                catch (Exception ex)
+                {
+                    System.Diagnostics.Debug.WriteLine($"SystemProcessRunner.DisposableAction cleanup failed: {ex.Message}");
+                }
             }
         }
     }
