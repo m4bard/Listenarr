@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
@@ -99,16 +100,7 @@ namespace Listenarr.Api.Tests
             }
 
             var client = factory.CreateClient();
-            var tokenResponse = await client.GetAsync("/api/antiforgery/token");
-            tokenResponse.EnsureSuccessStatusCode();
-            var tokenJson = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
-            var csrfToken = tokenJson.RootElement.GetProperty("token").GetString();
-            Assert.False(string.IsNullOrWhiteSpace(csrfToken));
-
-            var request = new HttpRequestMessage(HttpMethod.Post, $"/api/library/{audiobookId}/rescan-metadata");
-            request.Headers.Add("X-XSRF-TOKEN", csrfToken);
-
-            var response = await client.SendAsync(request);
+            var response = await PostRescanAsync(client, audiobookId);
             var responseBody = await response.Content.ReadAsStringAsync();
             Assert.True(
                 response.IsSuccessStatusCode,
@@ -160,6 +152,154 @@ namespace Listenarr.Api.Tests
             amazonAsinMock.Verify(
                 a => a.GetAsinFromIsbnAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
+        }
+
+        [Fact]
+        public async Task RescanMetadata_Returns429_WhenRepeatedImmediately_ForSameAudiobookAndActor()
+        {
+            var metadataMock = new Mock<IAudiobookMetadataService>();
+            metadataMock
+                .Setup(m => m.GetMetadataAsync("B0COOLDWN1", "us", false))
+                .ReturnsAsync(new
+                {
+                    metadata = new AudimetaBookResponse
+                    {
+                        Asin = "B0COOLDWN1",
+                        Title = "Cooldown Test"
+                    },
+                    source = "Audimeta"
+                });
+
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IAudiobookMetadataService>();
+                    services.AddSingleton(metadataMock.Object);
+                });
+            });
+
+            int audiobookId;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                var audiobook = new Audiobook
+                {
+                    Title = "Cooldown Book",
+                    Monitored = true,
+                    Asin = "B0COOLDWN1",
+                    ExternalIdentifiers = new List<AudiobookExternalIdentifier>
+                    {
+                        new()
+                        {
+                            Type = AudiobookExternalIdentifierType.Asin,
+                            ValueRaw = "B0COOLDWN1",
+                            ValueNormalized = "B0COOLDWN1",
+                            Region = "us",
+                            IsPrimary = true,
+                            Source = AudiobookExternalIdentifierSource.Manual
+                        }
+                    }
+                };
+
+                db.Audiobooks.Add(audiobook);
+                await db.SaveChangesAsync();
+                audiobookId = audiobook.Id;
+            }
+
+            var client = factory.CreateClient();
+            var first = await PostRescanAsync(client, audiobookId);
+            Assert.True(first.IsSuccessStatusCode, await first.Content.ReadAsStringAsync());
+
+            var second = await PostRescanAsync(client, audiobookId);
+            Assert.Equal(HttpStatusCode.TooManyRequests, second.StatusCode);
+            Assert.True(second.Headers.TryGetValues("Retry-After", out var retryAfterValues));
+            Assert.True(int.TryParse(retryAfterValues!.FirstOrDefault(), out var retryAfter));
+            Assert.True(retryAfter > 0);
+
+            using (var json = JsonDocument.Parse(await second.Content.ReadAsStringAsync()))
+            {
+                Assert.Equal("Rescan cooldown active. Please wait " + retryAfter + " seconds before rescanning this audiobook again.", json.RootElement.GetProperty("message").GetString());
+                Assert.Equal(retryAfter, json.RootElement.GetProperty("retryAfterSeconds").GetInt32());
+            }
+
+            metadataMock.Verify(m => m.GetMetadataAsync("B0COOLDWN1", "us", false), Times.Once);
+        }
+
+        [Fact]
+        public async Task RescanMetadata_CapsProviderAttempts_PerRequest()
+        {
+            var metadataMock = new Mock<IAudiobookMetadataService>();
+            metadataMock
+                .Setup(m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false))
+                .ReturnsAsync((object?)null);
+
+            var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.RemoveAll<IAudiobookMetadataService>();
+                    services.AddSingleton(metadataMock.Object);
+                });
+            });
+
+            int audiobookId;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                var audiobook = new Audiobook
+                {
+                    Title = "Cap Test",
+                    Monitored = true,
+                    ExternalIdentifiers = Enumerable.Range(1, 10)
+                        .Select(i => new AudiobookExternalIdentifier
+                        {
+                            Type = AudiobookExternalIdentifierType.Asin,
+                            ValueRaw = $"B{i:000000000}",
+                            ValueNormalized = $"B{i:000000000}",
+                            Region = "us",
+                            IsPrimary = i == 1,
+                            Source = AudiobookExternalIdentifierSource.Manual
+                        })
+                        .ToList()
+                };
+
+                db.Audiobooks.Add(audiobook);
+                await db.SaveChangesAsync();
+                audiobookId = audiobook.Id;
+            }
+
+            var client = factory.CreateClient();
+            var response = await PostRescanAsync(client, audiobookId);
+
+            Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+            using (var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync()))
+            {
+                Assert.Equal("No metadata found using the available identifiers.", json.RootElement.GetProperty("message").GetString());
+                Assert.False(json.RootElement.TryGetProperty("attempts", out _));
+            }
+
+            metadataMock.Verify(
+                m => m.GetMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), false),
+                Times.Exactly(8));
+        }
+
+        private static async Task<HttpResponseMessage> PostRescanAsync(HttpClient client, int audiobookId)
+        {
+            var csrfToken = await GetAntiforgeryTokenAsync(client);
+            var request = new HttpRequestMessage(HttpMethod.Post, $"/api/library/{audiobookId}/rescan-metadata");
+            request.Headers.Add("X-XSRF-TOKEN", csrfToken);
+            return await client.SendAsync(request);
+        }
+
+        private static async Task<string> GetAntiforgeryTokenAsync(HttpClient client)
+        {
+            var tokenResponse = await client.GetAsync("/api/antiforgery/token");
+            tokenResponse.EnsureSuccessStatusCode();
+            using var tokenJson = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
+            var csrfToken = tokenJson.RootElement.GetProperty("token").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(csrfToken));
+            return csrfToken!;
         }
     }
 }

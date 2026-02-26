@@ -17,9 +17,11 @@
  */
 
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Http;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Caching.Memory;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Listenarr.Api.Services;
@@ -40,6 +42,12 @@ namespace Listenarr.Api.Controllers
     [Route("api/library")]
     public class LibraryController : ControllerBase
     {
+        private const int MetadataRescanCooldownSeconds = 15;
+        private const int MetadataRescanWindowMinutes = 10;
+        private const int MetadataRescanMaxRequestsPerWindow = 5;
+        private const int MetadataRescanMaxAsinLookupAttempts = 8;
+        private const int MetadataRescanMaxIsbnConversionAttempts = 5;
+
         private static string? ToStringOrFirst(object? value)
         {
             if (value is List<string> list)
@@ -674,6 +682,13 @@ namespace Listenarr.Api.Controllers
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var primaryCountByType = new Dictionary<AudiobookExternalIdentifierType, int>();
             var now = DateTime.UtcNow;
+            var existingServerOwnedSourceKeys = new HashSet<string>(
+                (audiobook.ExternalIdentifiers ?? new List<AudiobookExternalIdentifier>())
+                    .Where(i =>
+                        i.Source != AudiobookExternalIdentifierSource.Manual &&
+                        !string.IsNullOrWhiteSpace(i.ValueNormalized))
+                    .Select(IdentifierFullSourceKey),
+                StringComparer.OrdinalIgnoreCase);
 
             for (var index = 0; index < incoming.Count; index++)
             {
@@ -711,6 +726,16 @@ namespace Listenarr.Api.Controllers
                 if (!Enum.IsDefined(typeof(AudiobookExternalIdentifierSource), source))
                 {
                     source = AudiobookExternalIdentifierSource.Manual;
+                }
+                else if (source != AudiobookExternalIdentifierSource.Manual)
+                {
+                    // Client writes cannot create or spoof Provider/Imported provenance.
+                    // Preserve server-owned provenance only for exact existing rows.
+                    var requestedKey = IdentifierFullSourceKey(item.Type, normalizedValue, normalizedRegion, source);
+                    if (!existingServerOwnedSourceKeys.Contains(requestedKey))
+                    {
+                        source = AudiobookExternalIdentifierSource.Manual;
+                    }
                 }
 
                 normalized.Add(new AudiobookExternalIdentifier
@@ -810,6 +835,23 @@ namespace Listenarr.Api.Controllers
                 return NotFound(new { message = "Audiobook not found" });
             }
 
+            var memoryCache = rescanScope.ServiceProvider.GetService<IMemoryCache>();
+            if (memoryCache != null &&
+                !TryConsumeMetadataRescanQuota(memoryCache, HttpContext, audiobook.Id, out var rateLimitMessage, out var retryAfterSeconds))
+            {
+                try
+                {
+                    Response.Headers["Retry-After"] = retryAfterSeconds.ToString();
+                }
+                catch { }
+
+                return StatusCode(StatusCodes.Status429TooManyRequests, new
+                {
+                    message = rateLimitMessage,
+                    retryAfterSeconds
+                });
+            }
+
             var effectiveIdentifiers = GetEffectiveIdentifiers(audiobook);
             var asinIdentifiers = effectiveIdentifiers
                 .Where(i => i.Type == AudiobookExternalIdentifierType.Asin)
@@ -831,8 +873,12 @@ namespace Listenarr.Api.Controllers
             }
 
             var triedAsinKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            var triedAsins = new List<object>();
-            var triedIsbns = new List<string>();
+            var triedAsinDebug = new List<object>();
+            var triedIsbnDebug = new List<string>();
+            var asinLookupAttempts = 0;
+            var isbnConversionAttempts = 0;
+            var asinLookupAttemptCapHit = false;
+            var isbnConversionAttemptCapHit = false;
 
             AudimetaBookResponse? providerMetadata = null;
             string? providerSource = null;
@@ -859,7 +905,15 @@ namespace Listenarr.Api.Controllers
                         continue;
                     }
 
-                    triedAsins.Add(new { asin = normalizedAsin, region = regionValue, via });
+                    triedAsinDebug.Add(new { asin = normalizedAsin, region = regionValue, via });
+
+                    if (asinLookupAttempts >= MetadataRescanMaxAsinLookupAttempts)
+                    {
+                        asinLookupAttemptCapHit = true;
+                        return false;
+                    }
+
+                    asinLookupAttempts++;
 
                     object? rawResult;
                     try
@@ -903,6 +957,11 @@ namespace Listenarr.Api.Controllers
                 {
                     break;
                 }
+
+                if (asinLookupAttemptCapHit)
+                {
+                    break;
+                }
             }
 
             if (providerMetadata == null)
@@ -918,18 +977,25 @@ namespace Listenarr.Api.Controllers
                     var isbnValue = FirstNonEmpty(isbnIdentifier.ValueNormalized, isbnIdentifier.ValueRaw);
                     if (string.IsNullOrWhiteSpace(isbnValue)) continue;
 
-                    if (!triedIsbns.Contains(isbnValue, StringComparer.OrdinalIgnoreCase))
+                    if (!triedIsbnDebug.Contains(isbnValue, StringComparer.OrdinalIgnoreCase))
                     {
-                        triedIsbns.Add(isbnValue);
+                        triedIsbnDebug.Add(isbnValue);
                     }
 
                     try
                     {
+                        if (isbnConversionAttempts >= MetadataRescanMaxIsbnConversionAttempts)
+                        {
+                            isbnConversionAttemptCapHit = true;
+                            break;
+                        }
+
                         if (amazonAsinService == null)
                         {
                             continue;
                         }
 
+                        isbnConversionAttempts++;
                         var (success, asinFromIsbn, _) = await amazonAsinService.GetAsinFromIsbnAsync(isbnValue);
                         if (!success || string.IsNullOrWhiteSpace(asinFromIsbn))
                         {
@@ -937,6 +1003,11 @@ namespace Listenarr.Api.Controllers
                         }
 
                         if (await TryMetadataLookupByAsinAsync(asinFromIsbn, null, "isbn"))
+                        {
+                            break;
+                        }
+
+                        if (asinLookupAttemptCapHit)
                         {
                             break;
                         }
@@ -954,11 +1025,20 @@ namespace Listenarr.Api.Controllers
 
             if (providerMetadata == null || string.IsNullOrWhiteSpace(resolvedAsin))
             {
+                _logger.LogDebug(
+                    "Metadata rescan found no metadata for audiobook {AudiobookId}. TriedAsins={TriedAsins}; TriedIsbns={TriedIsbns}; AsinLookups={AsinLookups}/{AsinCap}; IsbnConversions={IsbnConversions}/{IsbnCap}; Capped={Capped}",
+                    audiobook.Id,
+                    triedAsinDebug,
+                    triedIsbnDebug,
+                    asinLookupAttempts,
+                    MetadataRescanMaxAsinLookupAttempts,
+                    isbnConversionAttempts,
+                    MetadataRescanMaxIsbnConversionAttempts,
+                    asinLookupAttemptCapHit || isbnConversionAttemptCapHit);
+
                 return NotFound(new
                 {
-                    message = "No metadata found using the available identifiers.",
-                    triedAsins,
-                    triedIsbns
+                    message = "No metadata found using the available identifiers."
                 });
             }
 
@@ -3209,6 +3289,20 @@ namespace Listenarr.Api.Controllers
             return $"{item.Type}|{item.ValueNormalized}|{item.Region ?? string.Empty}";
         }
 
+        private static string IdentifierFullSourceKey(AudiobookExternalIdentifier item)
+        {
+            return IdentifierFullSourceKey(item.Type, item.ValueNormalized, item.Region, item.Source);
+        }
+
+        private static string IdentifierFullSourceKey(
+            AudiobookExternalIdentifierType type,
+            string? valueNormalized,
+            string? region,
+            AudiobookExternalIdentifierSource source)
+        {
+            return $"{type}|{valueNormalized ?? string.Empty}|{region ?? string.Empty}|{source}";
+        }
+
         private static List<AudiobookExternalIdentifier> GetEffectiveIdentifiers(Audiobook audiobook)
         {
             var merged = new List<AudiobookExternalIdentifier>();
@@ -3474,6 +3568,94 @@ namespace Listenarr.Api.Controllers
             }
 
             return null;
+        }
+
+        private static bool TryConsumeMetadataRescanQuota(
+            IMemoryCache cache,
+            Microsoft.AspNetCore.Http.HttpContext? httpContext,
+            int audiobookId,
+            out string message,
+            out int retryAfterSeconds)
+        {
+            message = string.Empty;
+            retryAfterSeconds = 0;
+
+            var actorKey = BuildMetadataRescanActorKey(httpContext);
+            var cacheKey = $"metadata-rescan-rate:{audiobookId}:{actorKey}";
+            var now = DateTime.UtcNow;
+
+            if (!cache.TryGetValue(cacheKey, out MetadataRescanRateLimitState? state) || state == null)
+            {
+                state = new MetadataRescanRateLimitState
+                {
+                    WindowStartUtc = now,
+                    Count = 0,
+                    LastAttemptUtc = null
+                };
+            }
+
+            if (state.LastAttemptUtc.HasValue)
+            {
+                var cooldownRemaining = TimeSpan.FromSeconds(MetadataRescanCooldownSeconds) - (now - state.LastAttemptUtc.Value);
+                if (cooldownRemaining > TimeSpan.Zero)
+                {
+                    retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(cooldownRemaining.TotalSeconds));
+                    message = $"Rescan cooldown active. Please wait {retryAfterSeconds} seconds before rescanning this audiobook again.";
+                    return false;
+                }
+            }
+
+            if ((now - state.WindowStartUtc) >= TimeSpan.FromMinutes(MetadataRescanWindowMinutes))
+            {
+                state.WindowStartUtc = now;
+                state.Count = 0;
+            }
+
+            if (state.Count >= MetadataRescanMaxRequestsPerWindow)
+            {
+                var windowEndsAt = state.WindowStartUtc.AddMinutes(MetadataRescanWindowMinutes);
+                var remaining = windowEndsAt - now;
+                retryAfterSeconds = Math.Max(1, (int)Math.Ceiling(remaining.TotalSeconds));
+                message = $"Metadata rescan rate limit reached for this audiobook. Try again in {retryAfterSeconds} seconds.";
+                return false;
+            }
+
+            state.Count++;
+            state.LastAttemptUtc = now;
+
+            cache.Set(
+                cacheKey,
+                state,
+                new MemoryCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(MetadataRescanWindowMinutes + 5)
+                });
+
+            return true;
+        }
+
+        private static string BuildMetadataRescanActorKey(Microsoft.AspNetCore.Http.HttpContext? httpContext)
+        {
+            var user = httpContext?.User;
+            var userId =
+                user?.FindFirst("sub")?.Value ??
+                user?.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ??
+                user?.Identity?.Name;
+
+            var remoteIp = httpContext?.Connection?.RemoteIpAddress?.ToString() ?? "unknown";
+
+            var actorDescriptor = !string.IsNullOrWhiteSpace(userId)
+                ? $"user:{userId}|ip:{remoteIp}"
+                : $"ip:{remoteIp}";
+
+            return ComputeShortHash(actorDescriptor);
+        }
+
+        private sealed class MetadataRescanRateLimitState
+        {
+            public DateTime WindowStartUtc { get; set; }
+            public int Count { get; set; }
+            public DateTime? LastAttemptUtc { get; set; }
         }
 
         public class BulkDeleteRequest

@@ -18,7 +18,10 @@
 
 using System;
 using System.IO;
+using System.Linq;
+using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
@@ -34,10 +37,12 @@ namespace Listenarr.Api.Services
         Task ClearTempCacheAsync();
     }
 
-    public class ImageCacheService : IImageCacheService
+    public class ImageCacheService : IImageCacheService, IDisposable
     {
+        private const int MaxImageRedirects = 5;
         private readonly ILogger<ImageCacheService> _logger;
         private readonly HttpClient _httpClient;
+        private readonly HttpClient _httpClientNoRedirect;
         private readonly string _tempCachePath;
         private readonly string _libraryImagePath;
         private readonly string _authorImagePath;
@@ -47,6 +52,13 @@ namespace Listenarr.Api.Services
     {
         _logger = logger;
         _httpClient = httpClientFactory.CreateClient();
+        _httpClientNoRedirect = new HttpClient(new HttpClientHandler
+        {
+            AllowAutoRedirect = false
+        })
+        {
+            Timeout = _httpClient.Timeout
+        };
         _contentRootPath = contentRootPath;
 
         // Set up cache directories relative to content root
@@ -152,8 +164,10 @@ namespace Listenarr.Api.Services
                         return GetRelativePath(tempExisting);
                     }
 
-                    // Download image
-                    var response = await _httpClient.GetAsync(imageUrl);
+                    // Download image with manual redirect handling so every redirect target is revalidated.
+                    var download = await DownloadWithValidatedRedirectsAsync(imageUrl);
+                    using var response = download.Response;
+                    var finalUri = download.FinalUri;
                     response.EnsureSuccessStatusCode();
 
                     // Read bytes first so we can reject tiny placeholder images (for example 1x1)
@@ -166,7 +180,7 @@ namespace Listenarr.Api.Services
                     }
 
                     // Determine file extension from content type or URL
-                    var extension = GetImageExtension(imageUrl, response.Content.Headers.ContentType?.MediaType);
+                    var extension = GetImageExtension(finalUri.ToString(), response.Content.Headers.ContentType?.MediaType);
                     var fileName = $"{SanitizeFileName(identifier)}{extension}";
                     var filePath = Path.Combine(_tempCachePath, fileName);
 
@@ -465,12 +479,86 @@ namespace Listenarr.Api.Services
             return ".jpg";
         }
 
+        private async Task<(HttpResponseMessage Response, Uri FinalUri)> DownloadWithValidatedRedirectsAsync(string imageUrl)
+        {
+            if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var currentUri))
+            {
+                throw new InvalidOperationException("Invalid image URL format");
+            }
+
+            HttpResponseMessage? response = null;
+
+            for (var redirectCount = 0; redirectCount <= MaxImageRedirects; redirectCount++)
+            {
+                if (!TryValidateExternalImageUri(currentUri, out var uriValidationReason))
+                {
+                    throw new InvalidOperationException($"Blocked image URL: {uriValidationReason}");
+                }
+
+                if (!await TryValidateResolvedExternalImageUriAsync(currentUri))
+                {
+                    throw new InvalidOperationException("Blocked image URL: DNS resolved to private or loopback address");
+                }
+
+                response?.Dispose();
+                using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
+                response = await _httpClientNoRedirect.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+
+                if (IsRedirectStatusCode(response.StatusCode))
+                {
+                    var location = response.Headers.Location;
+                    if (location == null)
+                    {
+                        throw new HttpRequestException($"Redirect response from {currentUri} did not include a Location header.");
+                    }
+
+                    var nextUri = location.IsAbsoluteUri ? location : new Uri(currentUri, location);
+                    if (!TryValidateExternalImageUri(nextUri, out var redirectValidationReason))
+                    {
+                        throw new InvalidOperationException($"Blocked redirect target: {redirectValidationReason}");
+                    }
+
+                    currentUri = nextUri;
+                    continue;
+                }
+
+                var finalUri = response.RequestMessage?.RequestUri ?? currentUri;
+                if (!TryValidateExternalImageUri(finalUri, out var finalValidationReason))
+                {
+                    throw new InvalidOperationException($"Blocked final image URL: {finalValidationReason}");
+                }
+
+                if (!await TryValidateResolvedExternalImageUriAsync(finalUri))
+                {
+                    throw new InvalidOperationException("Blocked final image URL: DNS resolved to private or loopback address");
+                }
+
+                return (response, finalUri);
+            }
+
+            response?.Dispose();
+            throw new HttpRequestException($"Too many redirects while downloading image (>{MaxImageRedirects}).");
+        }
+
         private static bool TryValidateExternalImageUrl(string imageUrl, out string reason)
         {
             reason = string.Empty;
             if (!Uri.TryCreate(imageUrl, UriKind.Absolute, out var uri))
             {
                 reason = "Invalid URL format";
+                return false;
+            }
+
+            return TryValidateExternalImageUri(uri, out reason);
+        }
+
+        private static bool TryValidateExternalImageUri(Uri uri, out string reason)
+        {
+            reason = string.Empty;
+
+            if (!uri.IsAbsoluteUri)
+            {
+                reason = "URL must be absolute";
                 return false;
             }
 
@@ -481,14 +569,22 @@ namespace Listenarr.Api.Services
                 return false;
             }
 
-            var host = uri.Host ?? string.Empty;
-            if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
+            if (!string.IsNullOrWhiteSpace(uri.UserInfo))
             {
-                reason = "Localhost or .local targets are not allowed";
+                reason = "URLs with embedded credentials are not allowed";
                 return false;
             }
 
-            if (System.Net.IPAddress.TryParse(host, out var ip) && IsPrivateOrLoopback(ip))
+            var host = uri.Host ?? string.Empty;
+            if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase)
+                || host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase))
+            {
+                reason = "Localhost or local-network hostnames are not allowed";
+                return false;
+            }
+
+            if (IPAddress.TryParse(host, out var ip) && IsPrivateOrLoopback(ip))
             {
                 reason = "Private or loopback IP targets are not allowed";
                 return false;
@@ -497,8 +593,68 @@ namespace Listenarr.Api.Services
             return true;
         }
 
+        private async Task<bool> TryValidateResolvedExternalImageUriAsync(Uri uri)
+        {
+            try
+            {
+                var host = uri.Host;
+                if (string.IsNullOrWhiteSpace(host))
+                {
+                    return false;
+                }
+
+                if (IPAddress.TryParse(host, out var ip))
+                {
+                    return !IsPrivateOrLoopback(ip);
+                }
+
+                var addresses = await Dns.GetHostAddressesAsync(host);
+                if (addresses == null || addresses.Length == 0)
+                {
+                    _logger.LogWarning("Blocked image URL because DNS resolution returned no addresses: {Host}", host);
+                    return false;
+                }
+
+                var privateOrLoopback = addresses.FirstOrDefault(IsPrivateOrLoopback);
+                if (privateOrLoopback != null)
+                {
+                    _logger.LogWarning(
+                        "Blocked image URL because DNS resolved to private/loopback address. Host={Host}, Address={Address}",
+                        host,
+                        privateOrLoopback);
+                    return false;
+                }
+
+                return true;
+            }
+            catch (SocketException ex)
+            {
+                _logger.LogWarning(ex, "Blocked image URL because DNS resolution failed for host {Host}", uri.Host);
+                return false;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Blocked image URL due to unexpected DNS validation error for host {Host}", uri.Host);
+                return false;
+            }
+        }
+
+        private static bool IsRedirectStatusCode(HttpStatusCode statusCode)
+        {
+            return statusCode == HttpStatusCode.Moved
+                || statusCode == HttpStatusCode.Redirect
+                || statusCode == HttpStatusCode.RedirectMethod
+                || statusCode == HttpStatusCode.TemporaryRedirect
+                || (int)statusCode == 308; // Permanent Redirect
+        }
+
         private static bool IsPrivateOrLoopback(System.Net.IPAddress ip)
         {
+            if (ip.IsIPv4MappedToIPv6)
+            {
+                ip = ip.MapToIPv4();
+            }
+
             if (System.Net.IPAddress.IsLoopback(ip)) return true;
 
             if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
@@ -576,6 +732,12 @@ namespace Listenarr.Api.Services
             }
 
             return false;
+        }
+
+        public void Dispose()
+        {
+            try { _httpClientNoRedirect.Dispose(); } catch { }
+            try { _httpClient.Dispose(); } catch { }
         }
     }
 }
