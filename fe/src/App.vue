@@ -1300,6 +1300,9 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   margin: 0;
   padding: 0;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
   min-height: 100dvh;
   background-color: #1a1a1a;
   color: white;
@@ -1567,6 +1570,8 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 /* App Layout */
 .app-layout {
   display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
   margin-top: var(--app-top-offset);
   min-height: calc(100dvh - var(--app-top-offset));
 }
@@ -1699,6 +1704,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   flex: 1;
   margin-left: 200px;
   background-color: #1a1a1a;
+  min-width: 0;
   min-height: calc(100dvh - var(--app-top-offset));
   width: calc(100vw - 217px);
 }

@@ -470,6 +470,7 @@ builder.Services.AddHttpClient("DirectDownload")
 // Compute default SQLite DB path (config/database/listenarr.db) relative to content root.
 // Allow tests to override the path via configuration to avoid shared DB state in CI.
 var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
+var hasExplicitSqliteDbPathOverride = !string.IsNullOrWhiteSpace(sqliteDbPathOverride);
 var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
     ? Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
     : (Path.IsPathRooted(sqliteDbPathOverride)
@@ -479,7 +480,7 @@ var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
 // In development, prefer the repository database path so `npm run dev` uses
 // `listenarr.api/config/database/listenarr.db` regardless of the resolved
 // ContentRootPath. This ensures developers see and edit the canonical DB.
-if (isDev && !isDocker)
+if (builder.Environment.IsDevelopment() && !isDocker && !hasExplicitSqliteDbPathOverride)
 {
     // Search ancestors from the content root for a directory that contains
     // the `listenarr.api/config` folder. This avoids duplicating `listenarr.api`
@@ -564,6 +565,10 @@ if (isDev && !isDocker)
         sqliteDbPath = devRepoDbFallback;
         Log.Logger.Information("[Startup] Development mode detected - forcing SQLite DB to repo path (fallback): {DevRepoDb}", devRepoDbFallback);
     }
+}
+else if (builder.Environment.IsDevelopment() && hasExplicitSqliteDbPathOverride)
+{
+    Log.Logger.Information("[Startup] Development mode detected but honoring explicit SQLite DB path override: {SqliteDbPathOverride}", sqliteDbPath);
 }
 // Ensure directory exists at startup so EF migrations can create the DB file there
 var sqliteDbDir = Path.GetDirectoryName(sqliteDbPath);
@@ -750,7 +755,6 @@ catch (Exception ex)
     // so developers can run `dotnet ef database update` manually if needed.
     Log.Logger.Error(ex, "[Startup] Failed to apply EF Core migrations at startup. You can run 'dotnet ef database update' manually to apply migrations.");
 }
-
 // Warn loudly when authentication is disabled. This mode is convenient for trusted LAN use
 // but unsafe for direct internet exposure without an external auth layer.
 try
