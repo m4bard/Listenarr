@@ -29,6 +29,9 @@ namespace Listenarr.Api.Controllers
         [HttpGet("info")]
         public async Task<IActionResult> GetInfo()
         {
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "ffmpeg/info");
+            if (gate != null) return gate;
+
             var path = await _ffmpegService.GetFfprobePathAsync(false);
             var baseDir = Path.Combine(Directory.GetCurrentDirectory(), "config", "ffmpeg");
             var licensePath = Path.Combine(baseDir, "LICENSE_NOTICE.txt");
@@ -44,6 +47,9 @@ namespace Listenarr.Api.Controllers
         [HttpPost("scan")]
         public async Task<IActionResult> RunFfprobe([FromBody] FfprobeScanRequest req)
         {
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "ffmpeg/scan");
+            if (gate != null) return gate;
+
             if (req == null || string.IsNullOrEmpty(req.FilePath)) return BadRequest(new { message = "FilePath is required" });
 
             var filePath = req.FilePath!;

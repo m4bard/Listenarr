@@ -146,7 +146,7 @@ namespace Listenarr.Api.Controllers
                 if (!string.IsNullOrEmpty(sessionToken))
                 {
                     await _sessionService.InvalidateSessionAsync(sessionToken);
-                    _logger.LogInformation("Session invalidated for token: {TokenPrefix}...", sessionToken[..8]);
+                    _logger.LogInformation("Session invalidated for token {TokenHash}", SecurityRequestUtils.HashSecretForLog(sessionToken));
                 }
                 else if (User?.Identity?.AuthenticationType == "ApiKey" || username == "ApiKey")
                 {

@@ -37,12 +37,71 @@ namespace Listenarr.Api.Controllers
         private readonly ListenArrDbContext _dbContext;
         private readonly ILogger<IndexersController> _logger;
         private readonly HttpClient _httpClient;
+        private readonly HttpClient _httpClientNoRedirect;
 
         public IndexersController(ListenArrDbContext dbContext, ILogger<IndexersController> logger, HttpClient httpClient)
         {
             _dbContext = dbContext;
             _logger = logger;
             _httpClient = httpClient;
+            _httpClientNoRedirect = httpClient;
+        }
+
+        private bool ShouldRedactIndexerSecretsForCaller()
+            => SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext);
+
+        private bool AllowPrivateOutboundTargetsForCaller()
+            => SecurityRequestUtils.IsLocalOrPrivateRequest(HttpContext) || SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(HttpContext);
+
+        private Indexer RedactIndexerForCaller(Indexer indexer)
+            => ShouldRedactIndexerSecretsForCaller() ? ApiResponseRedactor.RedactIndexer(indexer) : indexer;
+
+        private List<Indexer> RedactIndexersForCaller(IEnumerable<Indexer> indexers)
+            => ShouldRedactIndexerSecretsForCaller()
+                ? indexers.Select(ApiResponseRedactor.RedactIndexer).ToList()
+                : indexers.ToList();
+
+        private string? RedactMamIdForCaller(string? mamId)
+            => ShouldRedactIndexerSecretsForCaller() && !string.IsNullOrWhiteSpace(mamId)
+                ? ApiResponseRedactor.RedactedValue
+                : mamId;
+
+        private async Task<string?> ValidateOutboundUrlForCallerAsync(string url)
+        {
+            var allowPrivateTargets = AllowPrivateOutboundTargetsForCaller();
+            if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(url, out var reason, allowPrivateTargets))
+            {
+                return reason;
+            }
+
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                var dnsOk = await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(uri, _logger, allowPrivateTargets);
+                if (!dnsOk)
+                {
+                    return "DNS resolved to private or loopback address";
+                }
+            }
+
+            return null;
+        }
+
+        private async Task<HttpResponseMessage> SendValidatedAsync(
+            Func<Uri, HttpRequestMessage> requestFactory,
+            string url,
+            HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead,
+            CancellationToken cancellationToken = default)
+        {
+            var uri = new Uri(url);
+            var (response, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
+                requestFactory,
+                uri,
+                _httpClientNoRedirect,
+                _logger,
+                allowPrivateTargets: AllowPrivateOutboundTargetsForCaller(),
+                completionOption: completionOption,
+                cancellationToken: cancellationToken);
+            return response;
         }
 
         private async Task SaveTestResultAsync(Indexer indexer, bool persist, bool success, string? error)
@@ -89,7 +148,7 @@ namespace Listenarr.Api.Controllers
             {
                 await SaveTestResultAsync(indexer, persist, false, ex.Message);
                 _logger.LogWarning(ex, "Indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
-                return BadRequest(new { success = false, message = "Indexer test failed", error = ex.Message, indexer });
+                return BadRequest(new { success = false, message = "Indexer test failed", error = ex.Message, indexer = RedactIndexerForCaller(indexer) });
             }
         }
 
@@ -112,7 +171,7 @@ namespace Listenarr.Api.Controllers
                     if (string.IsNullOrWhiteSpace(indexer.ApiKey))
                     {
                         await SaveTestResultAsync(indexer, persist, false, "API key is required for Newznab/Torznab indexers");
-                        return BadRequest(new { success = false, message = "API key is required for Newznab/Torznab indexers", indexer });
+                        return BadRequest(new { success = false, message = "API key is required for Newznab/Torznab indexers", indexer = RedactIndexerForCaller(indexer) });
                     }
                     
                     // Use search endpoint (t=search) instead of capabilities (t=caps) because
@@ -123,21 +182,29 @@ namespace Listenarr.Api.Controllers
                     testUrl = testUrl + "&apikey=" + System.Net.WebUtility.UrlEncode(indexer.ApiKey);
                 }
 
-                var request = new HttpRequestMessage(HttpMethod.Get, testUrl);
                 // Ensure User-Agent is present even if the injected HttpClient was created without defaults
                 var version = typeof(IndexersController).Assembly.GetName().Version?.ToString() ?? "0.0.0";
                 var userAgent = $"Listenarr/{version} (+https://github.com/listenarrs/listenarr)";
-                request.Headers.UserAgent.ParseAdd(userAgent);
-                // For Newznab/Torznab, also add API key as header (some servers support both)
-                // For other indexers, add header if API key is provided
-                if (!string.IsNullOrEmpty(indexer.ApiKey))
-                {
-                    request.Headers.Add("X-Api-Key", indexer.ApiKey);
-                }
 
                 _logger.LogInformation("[IndexerTest] GET {Url} UA={UserAgent}", LogRedaction.SanitizeUrl(testUrl), LogRedaction.SanitizeText(userAgent));
 
-                var response = await _httpClient.SendAsync(request);
+                var blockedReason = await ValidateOutboundUrlForCallerAsync(testUrl);
+                if (!string.IsNullOrWhiteSpace(blockedReason))
+                {
+                    await SaveTestResultAsync(indexer, persist, false, $"Blocked outbound target: {blockedReason}");
+                    return BadRequest(new { success = false, message = $"Blocked outbound target: {blockedReason}", indexer = RedactIndexerForCaller(indexer) });
+                }
+
+                using var response = await SendValidatedAsync(currentUri =>
+                {
+                    var retryRequest = new HttpRequestMessage(HttpMethod.Get, currentUri);
+                    retryRequest.Headers.UserAgent.ParseAdd(userAgent);
+                    if (!string.IsNullOrEmpty(indexer.ApiKey))
+                    {
+                        retryRequest.Headers.Add("X-Api-Key", indexer.ApiKey);
+                    }
+                    return retryRequest;
+                }, testUrl);
 
                 _logger.LogInformation("[IndexerTest] {Name} responded {StatusCode}", LogRedaction.SanitizeText(indexer.Name), (int)response.StatusCode);
                 
@@ -146,13 +213,13 @@ namespace Listenarr.Api.Controllers
                     response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
                     await SaveTestResultAsync(indexer, persist, false, $"Authentication failed: HTTP {(int)response.StatusCode}");
-                    return BadRequest(new { success = false, message = "Authentication failed", status = (int)response.StatusCode, indexer });
+                    return BadRequest(new { success = false, message = "Authentication failed", status = (int)response.StatusCode, indexer = RedactIndexerForCaller(indexer) });
                 }
                 
                 if (!response.IsSuccessStatusCode)
                 {
                     await SaveTestResultAsync(indexer, persist, false, $"HTTP {(int)response.StatusCode}");
-                    return BadRequest(new { success = false, message = "Generic indexer test failed", status = (int)response.StatusCode, indexer });
+                    return BadRequest(new { success = false, message = "Generic indexer test failed", status = (int)response.StatusCode, indexer = RedactIndexerForCaller(indexer) });
                 }
 
                 // For Newznab/Torznab, parse XML response to check for error elements
@@ -171,18 +238,18 @@ namespace Listenarr.Api.Controllers
                         
                         var failureMessage = isAuthError ? $"Authentication failed: {errorMessage}" : errorMessage;
                         await SaveTestResultAsync(indexer, persist, false, failureMessage);
-                        return BadRequest(new { success = false, message = failureMessage, indexer });
+                        return BadRequest(new { success = false, message = failureMessage, indexer = RedactIndexerForCaller(indexer) });
                     }
                 }
 
                 await SaveTestResultAsync(indexer, persist, true, null);
-                return Ok(new { success = true, message = "Indexer authentication successful", indexer });
+                return Ok(new { success = true, message = "Indexer authentication successful", indexer = RedactIndexerForCaller(indexer) });
             }
             catch (Exception ex)
             {
                 await SaveTestResultAsync(indexer, persist, false, ex.Message);
                 _logger.LogWarning(ex, "Generic indexer test failed for {Name}", LogRedaction.SanitizeText(indexer.Name));
-                return BadRequest(new { success = false, message = "Indexer test failed", error = ex.Message, indexer });
+                return BadRequest(new { success = false, message = "Indexer test failed", error = ex.Message, indexer = RedactIndexerForCaller(indexer) });
             }
         }
 
@@ -242,7 +309,7 @@ namespace Listenarr.Api.Controllers
                 .ThenBy(i => i.Name)
                 .ToListAsync();
 
-            return Ok(indexers);
+            return Ok(RedactIndexersForCaller(indexers));
         }
 
         /// <summary>
@@ -257,7 +324,7 @@ namespace Listenarr.Api.Controllers
                 return NotFound(new { message = "Indexer not found" });
             }
 
-            return Ok(indexer);
+            return Ok(RedactIndexerForCaller(indexer));
         }
 
         /// <summary>
@@ -275,7 +342,7 @@ namespace Listenarr.Api.Controllers
             _logger.LogInformation("Created indexer '{Name}' (ID: {Id}, Type: {Type})",
                 indexer.Name, indexer.Id, indexer.Type);
 
-            return CreatedAtAction(nameof(GetById), new { id = indexer.Id }, indexer);
+            return CreatedAtAction(nameof(GetById), new { id = indexer.Id }, RedactIndexerForCaller(indexer));
         }
 
         /// <summary>
@@ -300,6 +367,11 @@ namespace Listenarr.Api.Controllers
             }
 
             var baseUrl = BuildProwlarrBaseUrl(request.Url, request.Port);
+            var blockedBaseUrlReason = await ValidateOutboundUrlForCallerAsync(baseUrl);
+            if (!string.IsNullOrWhiteSpace(blockedBaseUrlReason))
+            {
+                return BadRequest(new { message = $"Blocked Prowlarr target: {blockedBaseUrlReason}" });
+            }
             HttpResponseMessage response;
             string payload;
             try
@@ -455,7 +527,7 @@ namespace Listenarr.Api.Controllers
 
             _logger.LogInformation("Updated indexer '{Name}' (ID: {Id})", existing.Name, existing.Id);
 
-            return Ok(existing);
+            return Ok(RedactIndexerForCaller(existing));
         }
 
         /// <summary>
@@ -536,7 +608,9 @@ namespace Listenarr.Api.Controllers
                     LogRedaction.SanitizeText(indexer.Name), LogRedaction.SanitizeText(collection));
 
                 // Make HTTP request
-                var response = await _httpClient.GetAsync(testUrl);
+                using var response = await SendValidatedAsync(
+                    currentUri => new HttpRequestMessage(HttpMethod.Get, currentUri),
+                    testUrl);
                 response.EnsureSuccessStatusCode();
 
                 // Parse JSON response
@@ -565,7 +639,7 @@ namespace Listenarr.Api.Controllers
                     success = true,
                     message = $"Internet Archive connection successful for collection '{collection}'",
                     collection = collection,
-                    indexer
+                    indexer = RedactIndexerForCaller(indexer)
                 });
             }
             catch (Exception ex)
@@ -579,7 +653,7 @@ namespace Listenarr.Api.Controllers
                     success = false,
                     message = "Internet Archive test failed",
                     error = ex.Message,
-                    indexer
+                    indexer = RedactIndexerForCaller(indexer)
                 });
             }
         }
@@ -706,8 +780,8 @@ namespace Listenarr.Api.Controllers
                 {
                     success = true,
                     message = $"MyAnonamouse authentication successful with MAM ID '{mamId}'",
-                    mam_id = mamId,
-                    indexer
+                    mam_id = RedactMamIdForCaller(mamId),
+                    indexer = RedactIndexerForCaller(indexer)
                 });
             }
             catch (Exception ex)
@@ -721,7 +795,7 @@ namespace Listenarr.Api.Controllers
                     success = false,
                     message = "MyAnonamouse test failed",
                     error = ex.Message,
-                    indexer
+                    indexer = RedactIndexerForCaller(indexer)
                 });
             }
         }
@@ -732,6 +806,9 @@ namespace Listenarr.Api.Controllers
         [HttpPost("{id}/debug-search")]
         public async Task<IActionResult> DebugMyAnonamouseSearch(int id, [FromBody] JsonElement body)
         {
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "indexers/debug-search");
+            if (gate != null) return gate;
+
             var indexer = await _dbContext.Indexers.FindAsync(id);
             if (indexer == null) return NotFound(new { message = "Indexer not found" });
 
@@ -863,7 +940,7 @@ namespace Listenarr.Api.Controllers
             _logger.LogInformation("Toggled indexer '{Name}' to {State}",
                 indexer.Name, indexer.IsEnabled ? "enabled" : "disabled");
 
-            return Ok(indexer);
+            return Ok(RedactIndexerForCaller(indexer));
         }
 
         /// <summary>
@@ -878,7 +955,7 @@ namespace Listenarr.Api.Controllers
                 .ThenBy(i => i.Name)
                 .ToListAsync();
 
-            return Ok(indexers);
+            return Ok(RedactIndexersForCaller(indexers));
         }
 
         /// <summary>
@@ -957,10 +1034,12 @@ namespace Listenarr.Api.Controllers
 
             foreach (var endpoint in endpoints)
             {
-                var httpRequest = new HttpRequestMessage(HttpMethod.Get, endpoint);
-                httpRequest.Headers.Add("X-Api-Key", apiKey);
-
-                var response = await _httpClient.SendAsync(httpRequest);
+                var response = await SendValidatedAsync(currentUri =>
+                {
+                    var retryRequest = new HttpRequestMessage(HttpMethod.Get, currentUri);
+                    retryRequest.Headers.Add("X-Api-Key", apiKey);
+                    return retryRequest;
+                }, endpoint);
                 var body = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
@@ -968,6 +1047,7 @@ namespace Listenarr.Api.Controllers
                     return (response, body);
                 }
 
+                lastResponse?.Dispose();
                 lastResponse = response;
                 lastPayload = body;
 

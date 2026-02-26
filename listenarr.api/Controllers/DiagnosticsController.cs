@@ -31,6 +31,12 @@ namespace Listenarr.Api.Controllers
         [IgnoreAntiforgeryToken]
         public async Task<ActionResult<object>> TestNotification([FromBody] TestNotificationRequest req)
         {
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "diagnostics/test-notification");
+            if (gate is ObjectResult gateResult)
+            {
+                return StatusCode(gateResult.StatusCode ?? Microsoft.AspNetCore.Http.StatusCodes.Status403Forbidden, gateResult.Value);
+            }
+
             try
             {
                 if (req == null) return BadRequest(new { success = false, message = "Missing request body" });

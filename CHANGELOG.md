@@ -4,6 +4,60 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.2.52] - 2026-02-26
+
+### Changed
+- **Authentication-disabled UX & deployment guidance:** Listenarr now emits a clear startup warning in the backend logs and shows a persistent in-app banner when authentication is disabled, reinforcing that no-auth mode is intended for trusted LAN/VPN use and not direct internet exposure.
+- **Secret handling in API responses:** Centralized API response redaction for sensitive configuration/indexer payloads (startup config, application settings, API configs, download clients, and indexers) so remote unauthenticated callers receive masked values instead of raw secrets.
+- **Audiobook identifier model:** Introduced a canonical typed external identifier system for audiobooks (`ASIN`, `ISBN`, `OLID`) with legacy field compatibility (dual-read/dual-write behavior for existing `Asin`, `Isbn`, and `OpenLibraryId` fields during migration).
+- **Image loading pipeline (frontend):** Unified AudiobooksView image loading onto the protected image/blob pipeline so authenticated deployments no longer rely on direct `<img src="/api/images/...">` requests that cannot send auth headers.
+- **Audiobook detail & library view architecture:** Streamlined AudiobooksView/AudiobookDetailView behavior with safer shared image handling, consolidated selection logic, memoized status calculation, improved tab/hash/query sync, canonical detail-endpoint loading, and shared desktop/mobile action configuration.
+- **Metadata refresh behavior:** Metadata refresh is now an explicit identifier-driven “rescan metadata” workflow that performs patch-style updates (non-empty provider values overwrite existing values, blanks do not erase data).
+- **Description normalization:** Metadata descriptions are stripped/normalized from HTML while preserving readable text content for display and storage.
+- **Edit audiobook UX:** The Edit Audiobook modal now opens in the large size layout to better accommodate metadata and identifier editing.
+
+### Fixed
+- **Reported security issues:** Verified/fixed the previously reported issues where anonymous callers could retrieve startup API key material and create arbitrary admin users via `POST /api/account/register` (`isAdmin=true` abuse path).
+- **Startup config secret exposure:** Startup config responses now redact secrets (including SSL certificate password) for remote unauthenticated callers, and startup config save responses no longer echo raw secrets to untrusted callers.
+- **Identifier provenance spoofing:** `PUT /api/library/{id}/identifiers` now forces user-submitted identifiers to `Manual` source unless the row is an unchanged existing server-owned identifier (`Imported`/`Provider`), preventing provenance spoofing.
+- **Duplicate identifiers in UI:** Fixed duplicate identifier rows in the edit modal caused by legacy imported identifiers overlapping with canonical manual/provider identifiers (same normalized value now deduped in effective responses and cleanup-on-save flow).
+- **Metadata rescan leakage:** `rescan-metadata` failure responses now return a generic error body to callers instead of exposing attempted ASIN/ISBN lists (attempted IDs are retained only in debug logs).
+- **Metadata rescan abuse controls:** Added cooldown/rate limiting per audiobook + actor (IP/user) and caps on provider attempts per rescan to reduce abuse potential in no-auth deployments.
+- **Logging leaks:** Removed raw header dumps from session-auth logging, and replaced token/API key prefix logging with hashed fingerprints in auth middleware and logout logging.
+- **SSRF hardening gaps (outbound tests/webhooks):** Added DNS/private-IP/final-URI validation across notification sends and high-risk indexer outbound test/import paths; public callers can no longer use these routes to target localhost/private-network hosts.
+- **Debug/process endpoint exposure:** Restricted debug/diagnostic/process-control endpoints (library debug, FFmpeg, Discord bot control/diagnostics, diagnostics notification test, Prowlarr debug routes) to localhost/private-network callers or authenticated admin/API-key users.
+- **Image cache SSRF protections:** Hardened image downloading with DNS/private-IP checks and redirect validation to reduce SSRF risk in image caching/fetch flows.
+- **Audiobook cover recovery on cache miss:** Fixed `/api/images/{identifier}` fallback cases that returned empty/placeholder responses when cache files were missing but metadata providers could still supply a valid image.
+- **Audimeta fallback bug:** Fixed a fallback chain bug where Audimeta `Description` values were incorrectly treated as image URLs, blocking Audnexus/OpenLibrary image fallback.
+- **ASIN/author/ISBN fallback routing:** Tightened ISBN detection so author names/ASIN-like values are no longer misrouted into OpenLibrary ISBN lookups.
+- **Cache alias reuse for changed primary ASINs:** When a primary ASIN changes, `/api/images/{newAsin}` can now reuse a cached image stored under an alternate identifier instead of falling back to placeholder.
+- **Author image behavior:** Author cards no longer fall back to audiobook cover art; they now correctly show the placeholder when no author-specific image exists.
+- **Auth-required image loading in AudiobooksView:** Fixed 401 image failures caused by direct `<img>` requests in authenticated mode; images now load via authenticated fetch + blob URLs.
+- **Missing cover recovery (provider fallback):** When no local image exists and no cached file is present, Listenarr now properly reaches out to providers (Audimeta/Audnexus/OpenLibrary), caches the image, and returns it instead of a zero-size/placeholder response when recoverable.
+- **Genres after metadata refresh:** Fixed audiobook detail responses so refreshed metadata fields (including genres and other rescanned fields) are returned by the detail endpoint and visible after metadata rescan.
+- **Runtime formatting in AudiobookDetailView:** Fixed audiobook runtime display to treat stored runtime values as minutes (e.g., `1472` now renders as `24h 32m` instead of `0h 24m`).
+- **AudiobookDetail/AudiobooksView navigation mismatch:** Fixed status-click navigation and tab resolution issues between AudiobooksView and AudiobookDetailView (`downloads` mismatch vs supported detail tabs).
+- **Frontend test stability and warnings:** Fixed failing frontend tests (`AddNewView.spec.ts`, `AudiobooksView`, `AudiobookDetailView`, related suites) and cleaned up Vue test warnings introduced during refactors.
+- **API test determinism:** Stabilized test auth defaults in the API test factory so endpoint tests don’t inherit local auth-enabled config unexpectedly.
+
+### Added
+- **Typed audiobook external identifiers:** Added `AudiobookExternalIdentifier` entity/model/table and migration-backed persistence for multiple identifiers per audiobook (ASIN/ISBN/OLID) with normalization, primary marker support, source tracking (`manual/provider/imported`), and optional region support for ASINs.
+- **Identifier migration & backfill:** Added an EF Core migration to create the external identifiers table and backfill legacy ASIN/ISBN/OpenLibrary values into the new structure at startup migration time.
+- **Identifier management API:** Added `GET /api/library/{id}/identifiers` and `PUT /api/library/{id}/identifiers` to view/edit associated identifiers with validation, dedupe, and legacy-field synchronization.
+- **Identifier editing UI:** Added identifier editing in the Edit Audiobook modal (add/remove ASIN/ISBN/OLID, mark primary identifier, show source badges) and a full associated identifier list with primary indicator on the audiobook detail page.
+- **Metadata rescan endpoint and UI action:** Added `POST /api/library/{id}/rescan-metadata` plus a new “Rescan Metadata” action in AudiobookDetailView so users can repair metadata after adding/correcting identifiers.
+- **Metadata rescan image repair:** Metadata rescans now also attempt to cache/update the audiobook image when providers return a cover image URL.
+- **Cover recovery fallback expansion:** Added additional image fallback paths for cache-miss covers using local library identifiers (ISBN/OLID), alternate stored identifiers, and OpenLibrary title+author ISBN discovery when provider ASIN lookups fail.
+- **Security utility infrastructure:** Added shared security helpers for request trust evaluation, secret hashing, endpoint access gating, outbound request validation (URL/DNS/redirect/final URI checks), and reusable API response redaction.
+- **Regression coverage:** Added/updated tests covering image fallback chains, identifier deduplication/provenance handling, metadata rescan behavior/rate limits, and security redaction/hardening paths.
+
+### Removed
+- **Verbose sensitive logging:** Removed raw request-header dumps from session authentication logging on missing-token startupconfig requests.
+- **Public error detail leakage:** Removed detailed attempted identifier lists and attempt metadata from public `rescan-metadata` failure payloads (kept only in debug logs).
+- **Author image fallback to book covers:** Removed audiobook-cover fallback behavior for author cards so missing author images consistently use the placeholder image.
+- **Legacy duplicate identifier presentation:** Removed duplicate imported/manual identifier rows from effective identifier responses when a canonical identifier already exists for the same normalized value.
+
 ## [0.2.51] - 2026-02-23
 
 ### Fixed

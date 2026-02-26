@@ -58,6 +58,10 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var configs = await _configurationService.GetApiConfigurationsAsync();
+                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
+                {
+                    configs = configs.Select(ApiResponseRedactor.RedactApiConfiguration).ToList();
+                }
                 return Ok(configs);
             }
             catch (Exception ex)
@@ -84,6 +88,11 @@ namespace Listenarr.Api.Controllers
                 {
                     return NotFound();
                 }
+                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
+                {
+                    return Ok(ApiResponseRedactor.RedactApiConfiguration(config));
+                }
+
                 return Ok(config);
             }
             catch (Exception ex)
@@ -147,21 +156,12 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var configs = await _configurationService.GetDownloadClientConfigurationsAsync();
+                var redactSecrets = SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext);
                 // Redact client-local DownloadPath before returning to frontend
-                var response = configs.Select(c => new
-                {
-                    c.Id,
-                    c.Name,
-                    c.Type,
-                    c.Host,
-                    c.Port,
-                    c.Username,
-                    // Do not include DownloadPath - client should decide its local path
-                    c.UseSSL,
-                    c.IsEnabled,
-                    Settings = c.Settings,
-                    c.CreatedAt
-                }).ToList();
+                var response = configs
+                    .Select(c => redactSecrets ? ApiResponseRedactor.RedactDownloadClientConfiguration(c) : c)
+                    .Select(ApiResponseRedactor.ToDownloadClientSummaryResponse)
+                    .ToList();
 
                 return Ok(response);
             }
@@ -191,20 +191,10 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // Redact client-local DownloadPath before returning
-                var response = new
-                {
-                    config.Id,
-                    config.Name,
-                    config.Type,
-                    config.Host,
-                    config.Port,
-                    config.Username,
-                    // Do not include DownloadPath
-                    config.UseSSL,
-                    config.IsEnabled,
-                    Settings = config.Settings,
-                    config.CreatedAt
-                };
+                var responseConfig = SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext)
+                    ? ApiResponseRedactor.RedactDownloadClientConfiguration(config)
+                    : config;
+                var response = ApiResponseRedactor.ToDownloadClientDetailResponse(responseConfig);
 
                 return Ok(response);
             }
@@ -359,9 +349,40 @@ namespace Listenarr.Api.Controllers
                     }
                 }
 
+                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
+                {
+                    var scheme = config.UseSSL ? "https" : "http";
+                    var host = (config.Host ?? string.Empty).Trim();
+                    var baseUrl = string.IsNullOrWhiteSpace(host)
+                        ? string.Empty
+                        : $"{scheme}://{host}{(config.Port > 0 ? $":{config.Port}" : string.Empty)}/";
+
+                    if (!string.IsNullOrWhiteSpace(baseUrl))
+                    {
+                        if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(baseUrl, out var reason, allowPrivateTargets: false))
+                        {
+                            return BadRequest(new { success = false, message = $"Blocked download client test target: {reason}" });
+                        }
+
+                        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var targetUri))
+                        {
+                            var ok = await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(targetUri, _logger, allowPrivateTargets: false);
+                            if (!ok)
+                            {
+                                return BadRequest(new { success = false, message = "Blocked download client test target: DNS resolved to private or loopback address" });
+                            }
+                        }
+                    }
+                }
+
                 // Delegate to download service to perform protocol-specific lightweight tests
                 var (Success, Message, Client) = await _downloadService.TestDownloadClientAsync(config);
-                return Ok(new { success = Success, message = Message, client = Client });
+                var clientResponse = Client;
+                if (clientResponse != null && SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
+                {
+                    clientResponse = ApiResponseRedactor.RedactDownloadClientConfiguration(clientResponse);
+                }
+                return Ok(new { success = Success, message = Message, client = clientResponse });
             }
             catch (Exception ex)
             {
@@ -377,6 +398,11 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var settings = await _configurationService.GetApplicationSettingsAsync();
+                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
+                {
+                    return Ok(ApiResponseRedactor.RedactApplicationSettings(settings));
+                }
+
                 return Ok(settings);
             }
             catch (Exception ex)
@@ -402,9 +428,14 @@ namespace Listenarr.Api.Controllers
                 savedSettings.AdminPassword = null;
 
                 // Broadcast settings change to all connected clients (including Discord bot)
-                await _settingsHub.Clients.All.SendAsync("SettingsUpdated", savedSettings);
+                await _settingsHub.Clients.All.SendAsync("SettingsUpdated", ApiResponseRedactor.RedactApplicationSettings(savedSettings));
 
                 _logger.LogDebug("Application settings saved successfully and broadcasted via SignalR");
+                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
+                {
+                    return Ok(ApiResponseRedactor.RedactApplicationSettings(savedSettings));
+                }
+
                 return Ok(savedSettings);
             }
             catch (Exception ex)
@@ -432,19 +463,16 @@ namespace Listenarr.Api.Controllers
                 var rawAuth = config.AuthenticationRequired;
                 var authEnabled = rawAuth?.ToLowerInvariant() is "true" or "yes" or "1";
                 var isAuthenticated = User?.Identity?.IsAuthenticated ?? false;
-                var isAdmin = User?.IsInRole("Administrator") ?? false;
-                var remoteIp = HttpContext?.Connection?.RemoteIpAddress;
-                var isLocalRequest = remoteIp != null && System.Net.IPAddress.IsLoopback(remoteIp);
                 _logger.LogInformation($"[ConfigurationController] AuthenticationRequired config value: '{rawAuth}', authEnabled: {authEnabled}, user authenticated: {isAuthenticated}");
                 if (authEnabled && !isAuthenticated)
                 {
                     _logger.LogWarning("[ConfigurationController] Authentication is enabled and user is not authenticated. Returning 401.");
                     return Unauthorized();
                 }
-                // Do not expose API key to non-admin remote callers, even when auth is disabled.
-                if (!isLocalRequest && !isAdmin && !string.IsNullOrEmpty(config.ApiKey))
+                // Do not expose startup secrets to remote unauthenticated callers, even when auth is disabled.
+                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
                 {
-                    config.ApiKey = "REDACTED";
+                    config = ApiResponseRedactor.RedactStartupConfig(config);
                 }
                 _logger.LogInformation("[ConfigurationController] Returning startup config.");
                 return Ok(config);
@@ -471,6 +499,16 @@ namespace Listenarr.Api.Controllers
                 await _configurationService.SaveStartupConfigAsync(config);
                 // Return the saved config to confirm what was persisted
                 var savedConfig = await _configurationService.GetStartupConfigAsync();
+                if (savedConfig == null)
+                {
+                    return Ok(new StartupConfig());
+                }
+
+                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
+                {
+                    return Ok(ApiResponseRedactor.RedactStartupConfig(savedConfig));
+                }
+
                 return Ok(savedConfig);
             }
             catch (Exception ex)

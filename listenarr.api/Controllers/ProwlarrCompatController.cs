@@ -212,6 +212,8 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult PostDebugTest()
         {
+            var debugGate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "prowlarr/debug/test");
+            if (debugGate != null) return debugGate;
             var authGuard = RequireAuthenticatedIfEnabled();
             if (authGuard != null) return authGuard;
             Response.ContentType = "application/json";
@@ -1061,10 +1063,8 @@ namespace Listenarr.Api.Controllers
         [ApiExplorerSettings(IgnoreApi = true)]
         public async Task<IActionResult> DebugPublishIndexers([FromBody] System.Text.Json.JsonElement? payload)
         {
-            if (!(User?.Identity?.IsAuthenticated ?? false))
-            {
-                return Unauthorized();
-            }
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "prowlarr/debug/indexers/publish");
+            if (gate != null) return gate;
 
             // Build a small payload from optional incoming body or a default sample
             var created = 0;
@@ -1127,10 +1127,8 @@ namespace Listenarr.Api.Controllers
         [ApiExplorerSettings(IgnoreApi = true)]
         public IActionResult GetSettingsHubClients()
         {
-            if (!(User?.Identity?.IsAuthenticated ?? false))
-            {
-                return Unauthorized();
-            }
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "prowlarr/debug/settings/clients");
+            if (gate != null) return gate;
 
             try
             {

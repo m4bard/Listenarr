@@ -63,11 +63,11 @@ namespace Listenarr.Api.Middleware
 
                     if (!string.IsNullOrWhiteSpace(provided))
                     {
-                        // Log that a key was provided (mask the prefix only)
+                        // Log a stable non-reversible fingerprint for troubleshooting without exposing key material.
                         try
                         {
-                            var providedPrefix = provided.Length <= 8 ? provided : provided.Substring(0, 8);
-                            _logger?.LogDebug("ApiKeyMiddleware: provided API key prefix={ProvidedPrefix}", providedPrefix);
+                            var keyHash = SecurityRequestUtils.HashSecretForLog(provided);
+                            _logger?.LogDebug("ApiKeyMiddleware: API key provided ({KeyHash})", keyHash);
                         }
                         catch { }
 

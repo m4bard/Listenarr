@@ -2185,28 +2185,32 @@ defineExpose({
 
 <style scoped>
 .audiobooks-view {
-  margin-top: 60px; /* Add margin to account for fixed toolbar */
+  --audiobooks-toolbar-height: 60px;
+  --audiobooks-toolbar-offset: var(--audiobooks-toolbar-height);
   background-color: #1a1a1a;
-  min-height: calc(100vh - 120px);
+  margin-top: var(--audiobooks-toolbar-offset); /* Space for fixed local toolbar */
+  min-height: calc(
+    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset)
+  );
   --legend-height: 44px;
   position: relative;
 }
 
 @media (max-width: 1024px) {
   .audiobooks-view {
-    margin-top: 60px; /* Toolbar may wrap on tablet, add extra space */
+    margin-top: var(--audiobooks-toolbar-offset);
   }
 }
 
 @media (max-width: 768px) {
   .audiobooks-view {
-    margin-top: 60px; /* More space needed on mobile */
+    margin-top: var(--audiobooks-toolbar-offset);
   }
 }
 
 .toolbar {
   position: fixed;
-  top: 60px; /* Account for global header nav */
+  top: var(--app-top-offset, 60px); /* Account for global header + optional banner */
   left: 200px; /* Account for sidebar width */
   right: 0;
   z-index: 500; /* Below global nav (1000) but above content overlays */
@@ -2763,14 +2767,18 @@ defineExpose({
 }
 
 .audiobooks-scroll-container {
-  height: calc(100vh - 165px); /* Account for toolbar and header */
+  height: calc(
+    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset) - var(--legend-height) - 1px
+  );
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0 20px;
 }
 
 .audiobook-status-legend {
-  position: sticky;
+  position: fixed;
+  left: 200px;
+  right: 0;
   bottom: 0;
   min-height: var(--legend-height);
   display: flex;
@@ -2825,6 +2833,7 @@ defineExpose({
   }
 
   .audiobook-status-legend {
+    left: 0;
     padding: 8px 12px 12px;
     gap: 8px;
     flex-wrap: nowrap;
@@ -3453,7 +3462,9 @@ defineExpose({
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: calc(100vh - 164px);
+  height: calc(
+    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset) - var(--legend-height)
+  );
   color: #ccc;
   text-align: center;
 }

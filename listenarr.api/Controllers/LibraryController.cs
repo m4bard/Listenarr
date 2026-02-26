@@ -1086,6 +1086,9 @@ namespace Listenarr.Api.Controllers
         [HttpGet("{id}/files-debug")]
         public async Task<IActionResult> GetAudiobookFilesDebug(int id)
         {
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "library/files-debug");
+            if (gate != null) return gate;
+
             var files = await _dbContext.AudiobookFiles.Where(f => f.AudiobookId == id).ToListAsync();
             return Ok(files);
         }
@@ -1095,6 +1098,9 @@ namespace Listenarr.Api.Controllers
         [HttpGet("debug/json-invalid")]
         public async Task<IActionResult> GetInvalidJsonColumns()
         {
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "library/debug/json-invalid");
+            if (gate != null) return gate;
+
             // Helper to test first non-whitespace char
             static bool LooksLikeJson(string? s)
             {

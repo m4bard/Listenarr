@@ -18,6 +18,7 @@ namespace Listenarr.Api.Services
     public class NotificationService
     {
         private readonly HttpClient _httpClient;
+        private readonly HttpClient _httpClientNoRedirect;
         private readonly ILogger<NotificationService> _logger;
         private readonly IConfigurationService _configurationService;
         private readonly IHttpContextAccessor? _httpContextAccessor;
@@ -26,6 +27,7 @@ namespace Listenarr.Api.Services
         public NotificationService(HttpClient httpClient, ILogger<NotificationService> logger, IConfigurationService configurationService, INotificationPayloadBuilder payloadBuilder, IHttpContextAccessor? httpContextAccessor = null)
         {
             _httpClient = httpClient;
+            _httpClientNoRedirect = httpClient;
             _logger = logger;
             _configurationService = configurationService;
             _payloadBuilder = payloadBuilder ?? throw new ArgumentNullException(nameof(payloadBuilder));
@@ -34,6 +36,115 @@ namespace Listenarr.Api.Services
 
         // Compatibility shims removed — callers/tests should use NotificationPayloadBuilder directly.
 
+        private bool AllowPrivateWebhookTargetsForCurrentRequest()
+        {
+            var context = _httpContextAccessor?.HttpContext;
+            if (context == null)
+            {
+                return true;
+            }
+
+            return SecurityRequestUtils.IsLocalOrPrivateRequest(context)
+                   || SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context);
+        }
+
+        private async Task<HttpResponseMessage> PostValidatedAsync(string url, HttpContent content, CancellationToken cancellationToken = default)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = content
+            };
+
+            return await SendValidatedAsync(request, cancellationToken);
+        }
+
+        private async Task<HttpResponseMessage> SendValidatedAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+        {
+            if (request.RequestUri == null)
+            {
+                throw new InvalidOperationException("Outbound notification request URI is required.");
+            }
+
+            var allowPrivateTargets = AllowPrivateWebhookTargetsForCurrentRequest();
+            if (!OutboundRequestSecurity.TryValidateExternalHttpUri(request.RequestUri, out var uriReason, allowPrivateTargets))
+            {
+                throw new InvalidOperationException($"Blocked outbound URL: {uriReason}");
+            }
+
+            if (!await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(request.RequestUri, _logger, allowPrivateTargets))
+            {
+                throw new InvalidOperationException("Blocked outbound URL: DNS resolved to private or loopback address");
+            }
+
+            if (ReferenceEquals(_httpClientNoRedirect, _httpClient))
+            {
+                var directResponse = await _httpClient.SendAsync(request, cancellationToken);
+                var finalUri = directResponse.RequestMessage?.RequestUri ?? request.RequestUri;
+                if (!OutboundRequestSecurity.TryValidateExternalHttpUri(finalUri, out var finalReason, allowPrivateTargets))
+                {
+                    directResponse.Dispose();
+                    throw new InvalidOperationException($"Blocked final outbound URL: {finalReason}");
+                }
+
+                if (!await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(finalUri, _logger, allowPrivateTargets))
+                {
+                    directResponse.Dispose();
+                    throw new InvalidOperationException("Blocked final outbound URL: DNS resolved to private or loopback address");
+                }
+
+                return directResponse;
+            }
+
+            var bufferedContent = request.Content != null ? await request.Content.ReadAsByteArrayAsync(cancellationToken) : null;
+            var contentHeaderSnapshot = request.Content?.Headers
+                .Select(h => new KeyValuePair<string, IEnumerable<string>>(h.Key, h.Value.ToArray()))
+                .ToList();
+            var requestHeaderSnapshot = request.Headers
+                .Select(h => new KeyValuePair<string, IEnumerable<string>>(h.Key, h.Value.ToArray()))
+                .ToList();
+            var method = request.Method;
+            var version = request.Version;
+            var versionPolicy = request.VersionPolicy;
+
+            var (response, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
+                currentUri =>
+                {
+                    var retryRequest = new HttpRequestMessage(method, currentUri)
+                    {
+                        Version = version,
+                        VersionPolicy = versionPolicy
+                    };
+
+                    foreach (var header in requestHeaderSnapshot)
+                    {
+                        retryRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    }
+
+                    if (bufferedContent != null)
+                    {
+                        var retryContent = new ByteArrayContent(bufferedContent);
+                        if (contentHeaderSnapshot != null)
+                        {
+                            foreach (var header in contentHeaderSnapshot)
+                            {
+                                retryContent.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                            }
+                        }
+
+                        retryRequest.Content = retryContent;
+                    }
+
+                    return retryRequest;
+                },
+                request.RequestUri,
+                _httpClientNoRedirect,
+                _logger,
+                allowPrivateTargets: allowPrivateTargets,
+                cancellationToken: cancellationToken);
+
+            return response;
+        }
+
         /// <summary>
         /// Sends a notification to the webhook URL if configured.
         /// </summary>
@@ -41,7 +152,8 @@ namespace Listenarr.Api.Services
         {
             if (string.IsNullOrWhiteSpace(webhookUrl) || enabledTriggers == null || !enabledTriggers.Contains(trigger))
                 return;
-            if (!TryValidateWebhookTarget(webhookUrl, out var validationReason))
+            var allowPrivateWebhookTargets = AllowPrivateWebhookTargetsForCurrentRequest();
+            if (!TryValidateWebhookTarget(webhookUrl, out var validationReason, allowPrivateWebhookTargets))
             {
                 _logger.LogWarning("Blocked outbound notification target: {Reason}", validationReason);
                 return;
@@ -106,14 +218,14 @@ namespace Listenarr.Api.Services
                         multipartContent.Add(imageContent, "files[0]", attachment.Filename);
 
                         _logger.LogDebug("Posting multipart to {WebhookUrl} (attachment filename={Filename}, size={Size})", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()), attachment.Filename, attachment.ImageData?.Length ?? 0);
-                        var response = await _httpClient.PostAsync(webhookUrl, multipartContent);
+                        var response = await PostValidatedAsync(webhookUrl, multipartContent);
                         if (!response.IsSuccessStatusCode) await HandleFailedResponseAsync(response);
                     }
                     else
                     {
                         var discordJson = payloadObj.ToJsonString();
                         using var discordContent = new System.Net.Http.StringContent(discordJson, Encoding.UTF8, "application/json");
-                        var response = await _httpClient.PostAsync(webhookUrl, discordContent);
+                        var response = await PostValidatedAsync(webhookUrl, discordContent);
                         if (!response.IsSuccessStatusCode) await HandleFailedResponseAsync(response);
                     }
                 }
@@ -172,7 +284,7 @@ namespace Listenarr.Api.Services
 
                     _logger.LogInformation("Sending NTFY POST to {WebhookUrl} with headers {Headers} and body: {Body}", redactedUrl, headers, redactedRequestBody);
 
-                    var response = await _httpClient.SendAsync(request);
+                    var response = await SendValidatedAsync(request);
 
                     if (!response.IsSuccessStatusCode)
                     {
@@ -248,7 +360,7 @@ namespace Listenarr.Api.Services
 
                         // Post to the base path (without query) to comply with Pushover API expectations
                         var postUrl = uri.GetLeftPart(UriPartial.Path);
-                        var response = await _httpClient.PostAsync(postUrl, content);
+                        var response = await PostValidatedAsync(postUrl, content);
                         if (!response.IsSuccessStatusCode)
                         {
                             var respText = await TryReadContentAsync(response.Content);
@@ -313,7 +425,7 @@ namespace Listenarr.Api.Services
                         var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
                         _logger.LogInformation("Sending Telegram POST to {WebhookUrl} with body: {Body}", redactedUrl, AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment())));
 
-                        var response = await _httpClient.PostAsync(webhookUrl, content);
+                        var response = await PostValidatedAsync(webhookUrl, content);
                         if (!response.IsSuccessStatusCode)
                         {
                             var respText = await TryReadContentAsync(response.Content);
@@ -409,7 +521,7 @@ namespace Listenarr.Api.Services
                         var redactedBody = AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment()));
                         _logger.LogInformation("Sending Pushbullet POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
 
-                        var response = await _httpClient.SendAsync(request);
+                        var response = await SendValidatedAsync(request);
                         if (!response.IsSuccessStatusCode)
                         {
                             var respText = await TryReadContentAsync(response.Content);
@@ -470,7 +582,7 @@ namespace Listenarr.Api.Services
                     var redactedBody = AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     _logger.LogInformation("Sending Slack POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
 
-                    var response = await _httpClient.PostAsync(webhookUrl, content);
+                    var response = await PostValidatedAsync(webhookUrl, content);
                     if (!response.IsSuccessStatusCode)
                     {
                         var respText = await TryReadContentAsync(response.Content);
@@ -522,7 +634,7 @@ namespace Listenarr.Api.Services
                 var redactedBody = AggressiveRedact(LogRedaction.RedactText(defaultJson, LogRedaction.GetSensitiveValuesFromEnvironment()));
                 _logger.LogInformation("Sending Generic POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
 
-                var response = await _httpClient.PostAsync(webhookUrl, defaultContent);
+                var response = await PostValidatedAsync(webhookUrl, defaultContent);
                 if (!response.IsSuccessStatusCode)
                 {
                     await HandleFailedResponseAsync(response);
@@ -587,62 +699,9 @@ namespace Listenarr.Api.Services
             }
         }
 
-        private static bool TryValidateWebhookTarget(string webhookUrl, out string reason)
+        private static bool TryValidateWebhookTarget(string webhookUrl, out string reason, bool allowPrivateTargets = false)
         {
-            reason = string.Empty;
-            if (!Uri.TryCreate(webhookUrl, UriKind.Absolute, out var uri))
-            {
-                reason = "Invalid URL format";
-                return false;
-            }
-
-            if (!string.Equals(uri.Scheme, "http", StringComparison.OrdinalIgnoreCase)
-                && !string.Equals(uri.Scheme, "https", StringComparison.OrdinalIgnoreCase))
-            {
-                reason = $"Unsupported URL scheme '{uri.Scheme}'";
-                return false;
-            }
-
-            var host = uri.Host ?? string.Empty;
-            if (string.Equals(host, "localhost", StringComparison.OrdinalIgnoreCase) || host.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
-            {
-                reason = "Localhost or .local targets are not allowed";
-                return false;
-            }
-
-            if (IPAddress.TryParse(host, out var ip) && IsPrivateOrLoopback(ip))
-            {
-                reason = "Private or loopback IP targets are not allowed";
-                return false;
-            }
-
-            return true;
-        }
-
-        private static bool IsPrivateOrLoopback(IPAddress ip)
-        {
-            if (IPAddress.IsLoopback(ip)) return true;
-
-            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-            {
-                var b = ip.GetAddressBytes();
-                if (b[0] == 10) return true;
-                if (b[0] == 127) return true;
-                if (b[0] == 169 && b[1] == 254) return true;
-                if (b[0] == 172 && b[1] >= 16 && b[1] <= 31) return true;
-                if (b[0] == 192 && b[1] == 168) return true;
-                return false;
-            }
-
-            if (ip.AddressFamily == System.Net.Sockets.AddressFamily.InterNetworkV6)
-            {
-                if (ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal) return true;
-                var b = ip.GetAddressBytes();
-                if (b.Length > 0 && (b[0] & 0xFE) == 0xFC) return true; // fc00::/7
-                return false;
-            }
-
-            return false;
+            return OutboundRequestSecurity.TryValidateExternalHttpUrl(webhookUrl, out reason, allowPrivateTargets);
         }
     }
 }

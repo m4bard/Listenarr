@@ -42,18 +42,19 @@ namespace Listenarr.Api.Middleware
                 var sessionToken = ExtractSessionToken(context);
                 if (!string.IsNullOrEmpty(sessionToken))
                 {
-                    _logger.LogDebug("[SessionAuth] Incoming session token for {Path}: {TokenPrefix}...", path, sessionToken.Length > 8 ? sessionToken[..8] : sessionToken);
+                    var tokenHash = SecurityRequestUtils.HashSecretForLog(sessionToken);
+                    _logger.LogDebug("[SessionAuth] Incoming session token for {Path} ({TokenHash})", path, tokenHash);
                     try
                     {
                         var principal = await sessionService.GetSessionUserAsync(sessionToken);
                         if (principal != null)
                         {
                             context.User = principal;
-                            _logger.LogDebug("[SessionAuth] Session authentication successful for {Path}, token: {TokenPrefix}...", path, sessionToken.Length > 8 ? sessionToken[..8] : sessionToken);
+                            _logger.LogDebug("[SessionAuth] Session authentication successful for {Path} ({TokenHash})", path, tokenHash);
                         }
                         else
                         {
-                            _logger.LogDebug("[SessionAuth] Session token invalid or expired for {Path}: {TokenPrefix}...", path, sessionToken.Length > 8 ? sessionToken[..8] : sessionToken);
+                            _logger.LogDebug("[SessionAuth] Session token invalid or expired for {Path} ({TokenHash})", path, tokenHash);
                         }
                     }
                     catch (Exception ex)
@@ -63,7 +64,7 @@ namespace Listenarr.Api.Middleware
                 }
                 else if (path.Contains("startupconfig"))
                 {
-                    _logger.LogDebug("[SessionAuth] No session token found for {Path}. Headers: {Headers}", path, string.Join(", ", context.Request.Headers.Select(h => h.Key + ":" + h.Value)));
+                    _logger.LogDebug("[SessionAuth] No session token found for {Path}. HeaderCount={HeaderCount}", path, context.Request.Headers.Count);
                 }
             }
             else if (path.Contains("startupconfig"))

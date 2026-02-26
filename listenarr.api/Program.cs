@@ -751,6 +751,26 @@ catch (Exception ex)
     Log.Logger.Error(ex, "[Startup] Failed to apply EF Core migrations at startup. You can run 'dotnet ef database update' manually to apply migrations.");
 }
 
+// Warn loudly when authentication is disabled. This mode is convenient for trusted LAN use
+// but unsafe for direct internet exposure without an external auth layer.
+try
+{
+    using var authWarningScope = app.Services.CreateScope();
+    var configurationService = authWarningScope.ServiceProvider.GetService<IConfigurationService>();
+    var startupCfg = configurationService != null ? await configurationService.GetStartupConfigAsync() : null;
+    var authRaw = startupCfg?.AuthenticationRequired;
+    var authEnabled = authRaw?.Trim().ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
+    if (!authEnabled)
+    {
+        Log.Logger.Warning(
+            "[Startup] Authentication is DISABLED. Listenarr should only be exposed on a trusted LAN/VPN in this mode. If exposed to the internet, enable Listenarr authentication or enforce authentication at your reverse proxy.");
+    }
+}
+catch (Exception ex)
+{
+    Log.Logger.Debug(ex, "[Startup] Failed to evaluate authentication-enabled startup warning");
+}
+
 // Initialize the SignalR sink now that the hub context is available
 signalRSink.Initialize(app.Services.GetRequiredService<IHubContext<LogHub>>());
 
