@@ -510,6 +510,11 @@ import GlobalToast from '@/components/ui/GlobalToast.vue'
 import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
 import BrandLogo from '@/components/base/BrandLogo.vue'
+import {
+  SECURITY_WARNING_BANNER_PREF_EVENT,
+  SECURITY_WARNING_BANNER_PREF_KEY,
+  getSecurityWarningBannerHiddenPreference,
+} from '@/utils/securityWarningBannerPreference'
 
 
 const { notification, close: closeNotification } = useNotification()
@@ -519,6 +524,7 @@ const auth = useAuthStore()
 const authEnabled = ref(false)
 const startupConfigLoaded = ref(false)
 const securityWarningDismissed = ref(false)
+const securityWarningPermanentlyHidden = ref(getSecurityWarningBannerHiddenPreference())
 // Hover and persistence state for sidebar subnavs
 const hoverNav = ref<string | null>(null)
 const persistentNav = ref<string | null>(null)
@@ -542,6 +548,8 @@ onMounted(() => {
   } catch {
     isTouchDevice.value = false
   }
+
+  refreshSecurityWarningBannerPreference()
 })
 
 function onNavMouseEnter(name: string) {
@@ -1221,6 +1229,14 @@ onMounted(async () => {
   useEventListener(document, 'click', handleDocumentClick)
   useEventListener(document, 'click', handleSearchDocumentClick)
   useEventListener(document, 'click', handleNotificationDocumentClick)
+  useEventListener(window, 'storage', (event: StorageEvent) => {
+    if (event.key === SECURITY_WARNING_BANNER_PREF_KEY) {
+      refreshSecurityWarningBannerPreference()
+    }
+  })
+  useEventListener(window, SECURITY_WARNING_BANNER_PREF_EVENT, () => {
+    refreshSecurityWarningBannerPreference()
+  })
 })
 
 onUnmounted(() => {
@@ -1255,8 +1271,23 @@ const hideLayout = computed(() => {
   return !!(meta && meta.hideLayout)
 })
 
+const refreshSecurityWarningBannerPreference = () => {
+  const nextValue = getSecurityWarningBannerHiddenPreference()
+  const wasPermanentlyHidden = securityWarningPermanentlyHidden.value
+  securityWarningPermanentlyHidden.value = nextValue
+
+  if (wasPermanentlyHidden && !nextValue) {
+    securityWarningDismissed.value = false
+  }
+}
+
 const showSecurityWarningBanner = computed(
-  () => !hideLayout.value && startupConfigLoaded.value && !authEnabled.value && !securityWarningDismissed.value,
+  () =>
+    !hideLayout.value &&
+    startupConfigLoaded.value &&
+    !authEnabled.value &&
+    !securityWarningDismissed.value &&
+    !securityWarningPermanentlyHidden.value,
 )
 
 const dismissSecurityWarning = () => {

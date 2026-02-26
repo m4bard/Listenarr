@@ -77,57 +77,6 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        [HttpPost("register")]
-        [Authorize]
-        public async Task<IActionResult> Register([FromBody] RegisterRequest req)
-        {
-            if (string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
-            {
-                return BadRequest(new { message = "Username and password required" });
-            }
-
-            try
-            {
-                // Check if authentication is enabled
-                var cfg = _startupConfigService.GetConfig() ?? new StartupConfig();
-                var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
-                if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
-                {
-                    return Unauthorized();
-                }
-
-                // Only allow isAdmin=true if this is the first user
-                var userCount = await _userService.GetUsersCountAsync();
-                bool isAdmin = false;
-                if (userCount == 0)
-                {
-                    isAdmin = true; // First user is always admin
-                }
-                else
-                {
-                    // Only allow admin creation by existing admins (even if auth is disabled)
-                    if (req.IsAdmin)
-                    {
-                        var currentUser = authEnabled
-                            ? await _userService.GetByUsernameAsync(User.Identity?.Name ?? "")
-                            : null;
-                        if (currentUser == null || !currentUser.IsAdmin)
-                        {
-                            return Forbid();
-                        }
-                        isAdmin = true;
-                    }
-                }
-                var user = await _userService.CreateUserAsync(req.Username, req.Password, req.Email, isAdmin);
-                return Ok(new { id = user.Id, username = user.Username });
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to register user");
-                return BadRequest(new { message = ex.Message });
-            }
-        }
-
         [HttpPost("logout")]
         [AllowAnonymous]
         public async Task<IActionResult> Logout()
@@ -225,12 +174,5 @@ namespace Listenarr.Api.Controllers
         public bool RememberMe { get; set; }
     }
 
-    public class RegisterRequest
-    {
-        public string Username { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-        public string? Email { get; set; }
-        public bool IsAdmin { get; set; }
-    }
 }
 

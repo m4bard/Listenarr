@@ -44,7 +44,7 @@ namespace Listenarr.Api.Services
                 return true;
             }
 
-            return SecurityRequestUtils.IsLocalOrPrivateRequest(context)
+            return SecurityRequestUtils.IsLoopbackRequest(context)
                    || SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context);
         }
 

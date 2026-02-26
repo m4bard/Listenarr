@@ -7,6 +7,23 @@ namespace Listenarr.Api.Services;
 
 public static class SecurityRequestUtils
 {
+    public static bool IsLoopbackRequest(HttpContext? context)
+    {
+        var ip = context?.Connection?.RemoteIpAddress;
+        if (ip == null)
+        {
+            // TestServer and some internal calls may not populate RemoteIpAddress.
+            return true;
+        }
+
+        if (ip.IsIPv4MappedToIPv6)
+        {
+            ip = ip.MapToIPv4();
+        }
+
+        return IPAddress.IsLoopback(ip);
+    }
+
     public static bool IsLocalOrPrivateRequest(HttpContext? context)
     {
         var ip = context?.Connection?.RemoteIpAddress;
@@ -43,7 +60,10 @@ public static class SecurityRequestUtils
     }
 
     public static bool ShouldRedactSecretsForCaller(HttpContext? context)
-        => !IsLocalOrPrivateRequest(context) && !IsAuthenticatedAdminOrApiKey(context);
+        // Do not trust private-network source IPs as "local" for secret redaction decisions.
+        // In reverse-proxy/container setups the app may only see the proxy's private IP if
+        // forwarded headers are not explicitly trusted, which would otherwise bypass redaction.
+        => !IsLoopbackRequest(context) && !IsAuthenticatedAdminOrApiKey(context);
 
     public static string HashSecretForLog(string? secret, string prefix = "sha256")
     {

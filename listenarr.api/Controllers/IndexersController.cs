@@ -51,7 +51,7 @@ namespace Listenarr.Api.Controllers
             => SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext);
 
         private bool AllowPrivateOutboundTargetsForCaller()
-            => SecurityRequestUtils.IsLocalOrPrivateRequest(HttpContext) || SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(HttpContext);
+            => SecurityRequestUtils.IsLoopbackRequest(HttpContext) || SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(HttpContext);
 
         private Indexer RedactIndexerForCaller(Indexer indexer)
             => ShouldRedactIndexerSecretsForCaller() ? ApiResponseRedactor.RedactIndexer(indexer) : indexer;

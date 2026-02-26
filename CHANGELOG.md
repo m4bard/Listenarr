@@ -57,6 +57,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Public error detail leakage:** Removed detailed attempted identifier lists and attempt metadata from public `rescan-metadata` failure payloads (kept only in debug logs).
 - **Author image fallback to book covers:** Removed audiobook-cover fallback behavior for author cards so missing author images consistently use the placeholder image.
 - **Legacy duplicate identifier presentation:** Removed duplicate imported/manual identifier rows from effective identifier responses when a canonical identifier already exists for the same normalized value.
+- **api/account/register:** Removed because the app currently creates/updates admin credentials through SaveApplicationSettingsAsync() via Settings, but a user could start with "AuthenticationRequired": "true" in the config.json and no users exist and be locked out, but this is not a valid usecase.
 
 ## [0.2.51] - 2026-02-23
 

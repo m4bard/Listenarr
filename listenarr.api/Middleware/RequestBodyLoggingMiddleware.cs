@@ -81,7 +81,6 @@ namespace Listenarr.Api.Middleware
         {
             if (string.IsNullOrEmpty(path)) return false;
             return path.Contains("/account/login", StringComparison.OrdinalIgnoreCase)
-                || path.Contains("/account/register", StringComparison.OrdinalIgnoreCase)
                 || path.Contains("/configuration/startupconfig", StringComparison.OrdinalIgnoreCase)
                 || path.Contains("/apikey/", StringComparison.OrdinalIgnoreCase)
                 || path.Contains("/download-clients", StringComparison.OrdinalIgnoreCase);

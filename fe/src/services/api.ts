@@ -37,8 +37,6 @@ import { logger } from '@/utils/logger'
 import { getRegionFromLanguage } from '@/utils/languageMapping'
 import { errorTracking } from '@/services/errorTracking'
 import { getPlaceholderUrl } from '@/utils/placeholder'
-import { openLibraryService } from './openlibrary'
-import { mapOpenLibraryBookToSearchResult } from './openlibraryMap'
 
 // In development, use relative URLs (proxied by Vite to avoid CORS)
 // In production, prefer a configured VITE_API_BASE_URL but fall back to a relative '/api'
@@ -102,7 +100,7 @@ class ApiService {
     };
 
     // Attach Authorization or API key if needed
-    Object.assign(headers, this.buildAuthHeaders())
+    Object.assign(headers, this.buildAuthHeaders());
 
     // Attach antiforgery token for unsafe requests
     if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
