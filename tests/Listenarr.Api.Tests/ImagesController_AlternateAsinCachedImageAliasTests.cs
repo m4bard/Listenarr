@@ -82,8 +82,23 @@ namespace Listenarr.Api.Tests
             Assert.Equal(fullPath, fileResult.FileName);
             mockImageCache.Verify(m => m.DownloadAndCacheImageAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
 
-            try { File.Delete(fullPath); } catch { }
-            try { Directory.Delete(Path.Combine(tempRoot, "config"), true); } catch { }
+            try
+            {
+                File.Delete(fullPath);
+            }
+            catch (System.Exception)
+            {
+                // Best-effort test cleanup; ignore cleanup failures.
+            }
+
+            try
+            {
+                Directory.Delete(Path.Combine(tempRoot, "config"), true);
+            }
+            catch (System.Exception)
+            {
+                // Best-effort test cleanup; ignore cleanup failures.
+            }
         }
     }
 }

@@ -78,8 +78,23 @@ namespace Listenarr.Api.Tests
                 Assert.IsType<NotFoundObjectResult>(result);
             }
 
-            try { File.Delete(fullPath); } catch { }
-            try { Directory.Delete(Path.Combine(tempRoot, "config", "cache", "images", "temp"), true); } catch { }
+            try
+            {
+                File.Delete(fullPath);
+            }
+            catch (System.Exception)
+            {
+                // Best-effort test cleanup; ignore cleanup failures.
+            }
+
+            try
+            {
+                Directory.Delete(Path.Combine(tempRoot, "config", "cache", "images", "temp"), true);
+            }
+            catch (System.Exception)
+            {
+                // Best-effort test cleanup; ignore cleanup failures.
+            }
         }
     }
 }

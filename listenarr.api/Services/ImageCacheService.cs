@@ -689,7 +689,14 @@ namespace Listenarr.Api.Services
                 if (IsPlaceholderImage(bytes, mediaType))
                 {
                     _logger.LogInformation("Deleting placeholder/tiny cached image for {Identifier} in {Bucket}: {Path}", identifier, bucket, filePath);
-                    try { File.Delete(filePath); } catch { }
+                    try
+                    {
+                        File.Delete(filePath);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Failed deleting invalid cached image for {Identifier} in {Bucket}: {Path}", identifier, bucket, filePath);
+                    }
                     return false;
                 }
                 return true;
@@ -736,8 +743,23 @@ namespace Listenarr.Api.Services
 
         public void Dispose()
         {
-            try { _httpClientNoRedirect.Dispose(); } catch { }
-            try { _httpClient.Dispose(); } catch { }
+            try
+            {
+                _httpClientNoRedirect.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed disposing no-redirect HttpClient in ImageCacheService");
+            }
+
+            try
+            {
+                _httpClient.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed disposing HttpClient in ImageCacheService");
+            }
         }
     }
 }
