@@ -28,6 +28,8 @@ import type {
   RootFolder,
   QualityScore,
   StartupConfig,
+  AudiobookExternalIdentifier,
+  AudiobookExternalIdentifierInput,
 } from '@/types'
 import { getStartupConfigCached, getCachedStartupConfig } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -893,6 +895,43 @@ class ApiService {
 
   async getAudiobook(id: number): Promise<Audiobook> {
     return this.request<Audiobook>(`/library/${id}`)
+  }
+
+  async getAudiobookIdentifiers(
+    id: number,
+  ): Promise<{ audiobookId: number; identifiers: AudiobookExternalIdentifier[] }> {
+    return this.request<{ audiobookId: number; identifiers: AudiobookExternalIdentifier[] }>(
+      `/library/${id}/identifiers`,
+    )
+  }
+
+  async updateAudiobookIdentifiers(
+    id: number,
+    identifiers: AudiobookExternalIdentifierInput[],
+  ): Promise<{
+    message: string
+    audiobook: { id: number; asin?: string; isbn?: string[]; openLibraryId?: string }
+    identifiers: AudiobookExternalIdentifier[]
+  }> {
+    return this.request<{
+      message: string
+      audiobook: { id: number; asin?: string; isbn?: string[]; openLibraryId?: string }
+      identifiers: AudiobookExternalIdentifier[]
+    }>(`/library/${id}/identifiers`, {
+      method: 'PUT',
+      body: JSON.stringify({ identifiers }),
+    })
+  }
+
+  async rescanAudiobookMetadata(
+    id: number,
+  ): Promise<{ message: string; audiobookId: number; source?: string; asin?: string; region?: string }> {
+    return this.request<{ message: string; audiobookId: number; source?: string; asin?: string; region?: string }>(
+      `/library/${id}/rescan-metadata`,
+      {
+        method: 'POST',
+      },
+    )
   }
 
   async scanAudiobook(

@@ -246,6 +246,7 @@ namespace Listenarr.Api.Controllers
                             (!string.IsNullOrWhiteSpace(metadata.Narrator) ? new List<string> { metadata.Narrator! } : new List<string>()),
                 Isbn = metadata.Isbn ?? new List<string>(),
                 Asin = metadata.Asin,
+                ExternalIdentifiers = new List<AudiobookExternalIdentifier>(),
                 // Removed duplicate Publisher assignment
                 Language = metadata.Language,
                 Runtime = metadata.Runtime,
@@ -255,6 +256,8 @@ namespace Listenarr.Api.Controllers
                 Monitored = request.Monitored,  // Use custom monitored setting
                 BasePath = null  // Will be computed or set from custom destination below
             };
+
+            SyncImportedIdentifiersFromLegacyFields(audiobook);
 
             _logger.LogInformation("Created Audiobook entity: Title={Title}, Asin={Asin}, PublishYear={PublishYear}",
                 audiobook.Title, audiobook.Asin, audiobook.PublishYear);
@@ -559,6 +562,7 @@ namespace Listenarr.Api.Controllers
             var updated = await _dbContext.Audiobooks
                 .Include(a => a.QualityProfile)
                 .Include(a => a.Files)
+                .Include(a => a.ExternalIdentifiers)
                 .FirstOrDefaultAsync(a => a.Id == id);
 
             if (updated == null)
@@ -568,16 +572,31 @@ namespace Listenarr.Api.Controllers
             {
                 id = updated.Id,
                 title = updated.Title,
+                subtitle = updated.Subtitle,
                 authors = updated.Authors,
+                narrators = updated.Narrators,
                 description = updated.Description,
+                genres = updated.Genres,
+                isbn = updated.Isbn != null ? updated.Isbn.FirstOrDefault() : null,
+                isbns = updated.Isbn,
+                asin = updated.Asin,
                 openLibraryId = updated.OpenLibraryId,
+                identifiers = GetEffectiveIdentifiers(updated).Select(ToIdentifierResponse).ToList(),
                 imageUrl = updated.ImageUrl,
+                publishYear = updated.PublishYear,
+                publisher = updated.Publisher,
+                language = updated.Language,
                 filePath = updated.FilePath,
                 fileSize = updated.FileSize,
                 basePath = updated.BasePath,
                 runtime = updated.Runtime,
+                version = updated.Version,
+                @explicit = updated.Explicit,
+                abridged = updated.Abridged,
                 monitored = updated.Monitored,
                 quality = updated.Quality,
+                qualityProfileId = updated.QualityProfileId,
+                authorAsins = updated.AuthorAsins,
                 series = updated.Series,
                 seriesNumber = updated.SeriesNumber,
                 publishedDate = updated.PublishedDate,
@@ -607,6 +626,378 @@ namespace Listenarr.Api.Controllers
             };
 
             return Ok(audiobookDto);
+        }
+
+        [HttpGet("{id}/identifiers")]
+        public async Task<IActionResult> GetAudiobookIdentifiers(int id)
+        {
+            var audiobook = await _dbContext.Audiobooks
+                .Include(a => a.ExternalIdentifiers)
+                .FirstOrDefaultAsync(a => a.Id == id);
+
+            if (audiobook == null)
+            {
+                return NotFound(new { message = "Audiobook not found" });
+            }
+
+            var identifiers = GetEffectiveIdentifiers(audiobook)
+                .Select(ToIdentifierResponse)
+                .ToList();
+
+            return Ok(new
+            {
+                audiobookId = audiobook.Id,
+                identifiers
+            });
+        }
+
+        [HttpPut("{id}/identifiers")]
+        public async Task<IActionResult> ReplaceAudiobookIdentifiers(int id, [FromBody] ReplaceAudiobookIdentifiersRequest? request)
+        {
+            var audiobook = await _dbContext.Audiobooks
+                .Include(a => a.ExternalIdentifiers)
+                .FirstOrDefaultAsync(a => a.Id == id);
+
+            if (audiobook == null)
+            {
+                return NotFound(new { message = "Audiobook not found" });
+            }
+
+            var incoming = request?.Identifiers ?? new List<AudiobookIdentifierWriteItem>();
+            if (incoming.Count > 50)
+            {
+                return BadRequest(new { message = "Too many identifiers. Maximum is 50." });
+            }
+
+            var validationErrors = new List<object>();
+            var normalized = new List<AudiobookExternalIdentifier>();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var primaryCountByType = new Dictionary<AudiobookExternalIdentifierType, int>();
+            var now = DateTime.UtcNow;
+
+            for (var index = 0; index < incoming.Count; index++)
+            {
+                var item = incoming[index];
+                if (!Enum.IsDefined(typeof(AudiobookExternalIdentifierType), item.Type))
+                {
+                    validationErrors.Add(new { index, field = "type", error = "Unsupported identifier type." });
+                    continue;
+                }
+
+                if (!AudiobookIdentifierNormalizer.TryNormalize(item.Type, item.Value, out var normalizedValue, out var error))
+                {
+                    validationErrors.Add(new { index, field = "value", error = error ?? "Invalid identifier value." });
+                    continue;
+                }
+
+                var normalizedRegion = item.Type == AudiobookExternalIdentifierType.Asin
+                    ? AudiobookIdentifierNormalizer.NormalizeRegion(item.Region)
+                    : null;
+
+                var key = $"{item.Type}|{normalizedValue}|{normalizedRegion ?? string.Empty}";
+                if (!seen.Add(key))
+                {
+                    validationErrors.Add(new { index, field = "value", error = "Duplicate identifier." });
+                    continue;
+                }
+
+                if (item.IsPrimary)
+                {
+                    primaryCountByType.TryGetValue(item.Type, out var count);
+                    primaryCountByType[item.Type] = count + 1;
+                }
+
+                var source = item.Source ?? AudiobookExternalIdentifierSource.Manual;
+                if (!Enum.IsDefined(typeof(AudiobookExternalIdentifierSource), source))
+                {
+                    source = AudiobookExternalIdentifierSource.Manual;
+                }
+
+                normalized.Add(new AudiobookExternalIdentifier
+                {
+                    AudiobookId = audiobook.Id,
+                    Type = item.Type,
+                    ValueRaw = AudiobookIdentifierNormalizer.NormalizeRawValueForStorage(item.Value),
+                    ValueNormalized = normalizedValue,
+                    Region = normalizedRegion,
+                    IsPrimary = item.IsPrimary,
+                    Source = source,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+
+            foreach (var kvp in primaryCountByType.Where(kvp => kvp.Value > 1))
+            {
+                validationErrors.Add(new
+                {
+                    field = "isPrimary",
+                    type = kvp.Key,
+                    error = $"Only one primary identifier is allowed for type {kvp.Key}."
+                });
+            }
+
+            if (validationErrors.Count > 0)
+            {
+                return BadRequest(new { message = "Identifier validation failed.", errors = validationErrors });
+            }
+
+            // Ensure a primary ASIN exists when ASINs are present.
+            var asins = normalized.Where(i => i.Type == AudiobookExternalIdentifierType.Asin).ToList();
+            if (asins.Count > 0 && !asins.Any(i => i.IsPrimary))
+            {
+                asins[0].IsPrimary = true;
+            }
+
+            var olids = normalized.Where(i => i.Type == AudiobookExternalIdentifierType.OpenLibraryId).ToList();
+            if (olids.Count == 1)
+            {
+                olids[0].IsPrimary = true;
+            }
+
+            if (audiobook.ExternalIdentifiers != null && audiobook.ExternalIdentifiers.Count > 0)
+            {
+                _dbContext.AudiobookExternalIdentifiers.RemoveRange(audiobook.ExternalIdentifiers);
+            }
+
+            audiobook.ExternalIdentifiers = normalized;
+            SyncLegacyFieldsFromIdentifiers(audiobook);
+
+            await _dbContext.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Replaced identifiers for audiobook {AudiobookId} ({Title}). Count={Count}",
+                audiobook.Id,
+                audiobook.Title,
+                normalized.Count);
+
+            return Ok(new
+            {
+                message = "Audiobook identifiers updated successfully",
+                audiobook = new
+                {
+                    id = audiobook.Id,
+                    asin = audiobook.Asin,
+                    isbn = audiobook.Isbn,
+                    openLibraryId = audiobook.OpenLibraryId
+                },
+                identifiers = OrderIdentifiers(audiobook.ExternalIdentifiers).Select(ToIdentifierResponse).ToList()
+            });
+        }
+
+        [HttpPost("{id}/rescan-metadata")]
+        public async Task<IActionResult> RescanAudiobookMetadata(int id)
+        {
+            using var rescanScope = _scopeFactory.CreateScope();
+            var metadataService = rescanScope.ServiceProvider.GetService<IAudiobookMetadataService>();
+            var metadataConverters = rescanScope.ServiceProvider.GetService<Listenarr.Api.Services.Search.MetadataConverters>();
+
+            if (metadataService == null || metadataConverters == null)
+            {
+                _logger.LogError(
+                    "Metadata rescan services unavailable. MetadataService={HasMetadataService}, MetadataConverters={HasConverters}",
+                    metadataService != null,
+                    metadataConverters != null);
+                return StatusCode(500, new { message = "Metadata rescan services are not available." });
+            }
+
+            var audiobook = await _dbContext.Audiobooks
+                .Include(a => a.ExternalIdentifiers)
+                .FirstOrDefaultAsync(a => a.Id == id);
+
+            if (audiobook == null)
+            {
+                return NotFound(new { message = "Audiobook not found" });
+            }
+
+            var effectiveIdentifiers = GetEffectiveIdentifiers(audiobook);
+            var asinIdentifiers = effectiveIdentifiers
+                .Where(i => i.Type == AudiobookExternalIdentifierType.Asin)
+                .OrderByDescending(i => i.IsPrimary)
+                .ThenBy(i => i.Source)
+                .ThenBy(i => i.ValueNormalized)
+                .ToList();
+
+            var isbnIdentifiers = effectiveIdentifiers
+                .Where(i => i.Type == AudiobookExternalIdentifierType.Isbn)
+                .OrderByDescending(i => i.IsPrimary)
+                .ThenBy(i => i.Source)
+                .ThenBy(i => i.ValueNormalized)
+                .ToList();
+
+            if (!asinIdentifiers.Any() && !isbnIdentifiers.Any())
+            {
+                return BadRequest(new { message = "No ASIN or ISBN identifiers are available for metadata rescan." });
+            }
+
+            var triedAsinKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var triedAsins = new List<object>();
+            var triedIsbns = new List<string>();
+
+            AudimetaBookResponse? providerMetadata = null;
+            string? providerSource = null;
+            string? resolvedAsin = null;
+            string? resolvedRegion = null;
+
+            async Task<bool> TryMetadataLookupByAsinAsync(string asin, string? preferredRegion, string via)
+            {
+                if (!AudiobookIdentifierNormalizer.TryNormalize(
+                        AudiobookExternalIdentifierType.Asin,
+                        asin,
+                        out var normalizedAsin,
+                        out _))
+                {
+                    return false;
+                }
+
+                foreach (var region in EnumerateMetadataRescanRegions(preferredRegion))
+                {
+                    var regionValue = string.IsNullOrWhiteSpace(region) ? "us" : region!;
+                    var key = $"{normalizedAsin}|{regionValue}";
+                    if (!triedAsinKeys.Add(key))
+                    {
+                        continue;
+                    }
+
+                    triedAsins.Add(new { asin = normalizedAsin, region = regionValue, via });
+
+                    object? rawResult;
+                    try
+                    {
+                        rawResult = await metadataService.GetMetadataAsync(normalizedAsin, regionValue, cache: false);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "Metadata rescan lookup failed for audiobook {AudiobookId} ({Title}) ASIN {Asin} region {Region}",
+                            audiobook.Id,
+                            audiobook.Title,
+                            normalizedAsin,
+                            regionValue);
+                        continue;
+                    }
+
+                    if (!TryExtractMetadataLookupResult(rawResult, out var extractedMetadata, out var extractedSource) ||
+                        extractedMetadata == null)
+                    {
+                        continue;
+                    }
+
+                    providerMetadata = extractedMetadata;
+                    providerSource = extractedSource;
+                    resolvedAsin = string.IsNullOrWhiteSpace(extractedMetadata.Asin) ? normalizedAsin : extractedMetadata.Asin;
+                    resolvedRegion = regionValue;
+                    return true;
+                }
+
+                return false;
+            }
+
+            foreach (var asinIdentifier in asinIdentifiers)
+            {
+                var asinValue = FirstNonEmpty(asinIdentifier.ValueRaw, asinIdentifier.ValueNormalized);
+                if (string.IsNullOrWhiteSpace(asinValue)) continue;
+
+                if (await TryMetadataLookupByAsinAsync(asinValue, asinIdentifier.Region, "asin"))
+                {
+                    break;
+                }
+            }
+
+            if (providerMetadata == null)
+            {
+                var amazonAsinService = rescanScope.ServiceProvider.GetService<IAmazonAsinService>();
+                if (amazonAsinService == null)
+                {
+                    _logger.LogWarning("IAmazonAsinService not available for ISBN fallback during metadata rescan of audiobook {AudiobookId}", audiobook.Id);
+                }
+
+                foreach (var isbnIdentifier in isbnIdentifiers)
+                {
+                    var isbnValue = FirstNonEmpty(isbnIdentifier.ValueNormalized, isbnIdentifier.ValueRaw);
+                    if (string.IsNullOrWhiteSpace(isbnValue)) continue;
+
+                    if (!triedIsbns.Contains(isbnValue, StringComparer.OrdinalIgnoreCase))
+                    {
+                        triedIsbns.Add(isbnValue);
+                    }
+
+                    try
+                    {
+                        if (amazonAsinService == null)
+                        {
+                            continue;
+                        }
+
+                        var (success, asinFromIsbn, _) = await amazonAsinService.GetAsinFromIsbnAsync(isbnValue);
+                        if (!success || string.IsNullOrWhiteSpace(asinFromIsbn))
+                        {
+                            continue;
+                        }
+
+                        if (await TryMetadataLookupByAsinAsync(asinFromIsbn, null, "isbn"))
+                        {
+                            break;
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "Metadata rescan ASIN conversion failed for audiobook {AudiobookId} ISBN {Isbn}",
+                            audiobook.Id,
+                            isbnValue);
+                    }
+                }
+            }
+
+            if (providerMetadata == null || string.IsNullOrWhiteSpace(resolvedAsin))
+            {
+                return NotFound(new
+                {
+                    message = "No metadata found using the available identifiers.",
+                    triedAsins,
+                    triedIsbns
+                });
+            }
+
+            var convertedMetadata = metadataConverters.ConvertAudimetaToMetadata(
+                providerMetadata,
+                resolvedAsin,
+                string.IsNullOrWhiteSpace(providerSource) ? "Audible" : providerSource!);
+
+            var legacyIdentifierFieldsTouched = ApplyMetadataRescanPatch(audiobook, convertedMetadata);
+
+            if (!string.IsNullOrWhiteSpace(convertedMetadata.ImageUrl))
+            {
+                audiobook.ImageUrl = await MoveMetadataImageToLibraryStorageAsync(audiobook, convertedMetadata.ImageUrl)
+                    ?? convertedMetadata.ImageUrl;
+            }
+
+            if (legacyIdentifierFieldsTouched)
+            {
+                SyncImportedIdentifiersFromLegacyFields(audiobook);
+            }
+
+            await _dbContext.SaveChangesAsync();
+
+            _logger.LogInformation(
+                "Metadata rescan updated audiobook {AudiobookId} ({Title}) using {Source} ASIN {Asin} region {Region}",
+                audiobook.Id,
+                audiobook.Title,
+                providerSource ?? "unknown",
+                resolvedAsin,
+                resolvedRegion ?? "us");
+
+            return Ok(new
+            {
+                message = "Metadata rescanned successfully",
+                audiobookId = audiobook.Id,
+                source = providerSource,
+                asin = resolvedAsin,
+                region = resolvedRegion
+            });
         }
 
         // NOTE: Do not perform ad-hoc schema changes at runtime. Use EF Core migrations to modify the database schema.
@@ -839,6 +1230,8 @@ namespace Listenarr.Api.Controllers
                 return NotFound(new { message = "Audiobook not found" });
             }
 
+            var legacyIdentifierFieldsTouched = false;
+
             // Only update non-null properties to support partial updates
             if (updatedAudiobook.Title != null) existingAudiobook.Title = updatedAudiobook.Title;
             if (updatedAudiobook.Subtitle != null) existingAudiobook.Subtitle = updatedAudiobook.Subtitle;
@@ -851,9 +1244,21 @@ namespace Listenarr.Api.Controllers
             if (updatedAudiobook.Genres != null) existingAudiobook.Genres = updatedAudiobook.Genres;
             if (updatedAudiobook.Tags != null) existingAudiobook.Tags = updatedAudiobook.Tags;
             if (updatedAudiobook.Narrators != null) existingAudiobook.Narrators = updatedAudiobook.Narrators;
-            if (updatedAudiobook.Isbn != null) existingAudiobook.Isbn = updatedAudiobook.Isbn;
-            if (updatedAudiobook.Asin != null) existingAudiobook.Asin = updatedAudiobook.Asin;
-            if (updatedAudiobook.OpenLibraryId != null) existingAudiobook.OpenLibraryId = updatedAudiobook.OpenLibraryId;
+            if (updatedAudiobook.Isbn != null)
+            {
+                existingAudiobook.Isbn = updatedAudiobook.Isbn;
+                legacyIdentifierFieldsTouched = true;
+            }
+            if (updatedAudiobook.Asin != null)
+            {
+                existingAudiobook.Asin = updatedAudiobook.Asin;
+                legacyIdentifierFieldsTouched = true;
+            }
+            if (updatedAudiobook.OpenLibraryId != null)
+            {
+                existingAudiobook.OpenLibraryId = updatedAudiobook.OpenLibraryId;
+                legacyIdentifierFieldsTouched = true;
+            }
             if (updatedAudiobook.Publisher != null) existingAudiobook.Publisher = updatedAudiobook.Publisher;
             if (updatedAudiobook.Language != null) existingAudiobook.Language = updatedAudiobook.Language;
             if (updatedAudiobook.Runtime != null) existingAudiobook.Runtime = updatedAudiobook.Runtime;
@@ -904,6 +1309,11 @@ namespace Listenarr.Api.Controllers
             {
                 existingAudiobook.BasePath = updatedAudiobook.BasePath;
                 _logger.LogInformation("Updated BasePath for audiobook '{Title}' to: {BasePath}", LogRedaction.SanitizeText(existingAudiobook.Title), LogRedaction.SanitizeFilePath(updatedAudiobook.BasePath));
+            }
+
+            if (legacyIdentifierFieldsTouched)
+            {
+                SyncImportedIdentifiersFromLegacyFields(existingAudiobook);
             }
 
             await _repo.UpdateAsync(existingAudiobook);
@@ -2671,6 +3081,399 @@ namespace Listenarr.Api.Controllers
             var hash = sha1.ComputeHash(bytes);
             // Return first 16 hex characters for a compact identifier
             return BitConverter.ToString(hash).Replace("-", "").Substring(0, 16).ToLowerInvariant();
+        }
+
+        public sealed class AudiobookIdentifierWriteItem
+        {
+            public AudiobookExternalIdentifierType Type { get; set; }
+            public string Value { get; set; } = string.Empty;
+            public string? Region { get; set; }
+            public bool IsPrimary { get; set; }
+            public AudiobookExternalIdentifierSource? Source { get; set; }
+        }
+
+        public sealed class ReplaceAudiobookIdentifiersRequest
+        {
+            public List<AudiobookIdentifierWriteItem> Identifiers { get; set; } = new();
+        }
+
+        public sealed class AudiobookIdentifierResponseItem
+        {
+            public int Id { get; set; }
+            public AudiobookExternalIdentifierType Type { get; set; }
+            public string Value { get; set; } = string.Empty;
+            public string ValueNormalized { get; set; } = string.Empty;
+            public string? Region { get; set; }
+            public bool IsPrimary { get; set; }
+            public AudiobookExternalIdentifierSource Source { get; set; }
+            public DateTime CreatedAt { get; set; }
+            public DateTime UpdatedAt { get; set; }
+        }
+
+        private static AudiobookIdentifierResponseItem ToIdentifierResponse(AudiobookExternalIdentifier identifier)
+        {
+            return new AudiobookIdentifierResponseItem
+            {
+                Id = identifier.Id,
+                Type = identifier.Type,
+                Value = string.IsNullOrWhiteSpace(identifier.ValueRaw) ? identifier.ValueNormalized : identifier.ValueRaw,
+                ValueNormalized = identifier.ValueNormalized,
+                Region = identifier.Region,
+                IsPrimary = identifier.IsPrimary,
+                Source = identifier.Source,
+                CreatedAt = identifier.CreatedAt,
+                UpdatedAt = identifier.UpdatedAt
+            };
+        }
+
+        private static List<AudiobookExternalIdentifier> OrderIdentifiers(IEnumerable<AudiobookExternalIdentifier>? identifiers)
+        {
+            return (identifiers ?? Enumerable.Empty<AudiobookExternalIdentifier>())
+                .OrderBy(i => i.Type)
+                .ThenByDescending(i => i.IsPrimary)
+                .ThenBy(i => i.Source)
+                .ThenBy(i => i.ValueNormalized)
+                .ToList();
+        }
+
+        private static List<AudiobookExternalIdentifier> BuildLegacyBackfillIdentifiers(Audiobook audiobook, AudiobookExternalIdentifierSource source)
+        {
+            var now = DateTime.UtcNow;
+            var result = new List<AudiobookExternalIdentifier>();
+
+            if (!string.IsNullOrWhiteSpace(audiobook.Asin) &&
+                AudiobookIdentifierNormalizer.TryNormalize(AudiobookExternalIdentifierType.Asin, audiobook.Asin, out var normalizedAsin, out _))
+            {
+                result.Add(new AudiobookExternalIdentifier
+                {
+                    Type = AudiobookExternalIdentifierType.Asin,
+                    ValueRaw = AudiobookIdentifierNormalizer.NormalizeRawValueForStorage(audiobook.Asin),
+                    ValueNormalized = normalizedAsin,
+                    Region = null,
+                    IsPrimary = true,
+                    Source = source,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+
+            var seenIsbns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var isbn in audiobook.Isbn ?? new List<string>())
+            {
+                if (!AudiobookIdentifierNormalizer.TryNormalize(AudiobookExternalIdentifierType.Isbn, isbn, out var normalizedIsbn, out _))
+                {
+                    continue;
+                }
+
+                if (!seenIsbns.Add(normalizedIsbn)) continue;
+
+                result.Add(new AudiobookExternalIdentifier
+                {
+                    Type = AudiobookExternalIdentifierType.Isbn,
+                    ValueRaw = AudiobookIdentifierNormalizer.NormalizeRawValueForStorage(isbn),
+                    ValueNormalized = normalizedIsbn,
+                    Region = null,
+                    IsPrimary = false,
+                    Source = source,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+
+            if (!string.IsNullOrWhiteSpace(audiobook.OpenLibraryId) &&
+                AudiobookIdentifierNormalizer.TryNormalize(AudiobookExternalIdentifierType.OpenLibraryId, audiobook.OpenLibraryId, out var normalizedOlid, out _))
+            {
+                result.Add(new AudiobookExternalIdentifier
+                {
+                    Type = AudiobookExternalIdentifierType.OpenLibraryId,
+                    ValueRaw = AudiobookIdentifierNormalizer.NormalizeRawValueForStorage(audiobook.OpenLibraryId),
+                    ValueNormalized = normalizedOlid,
+                    Region = null,
+                    IsPrimary = true,
+                    Source = source,
+                    CreatedAt = now,
+                    UpdatedAt = now
+                });
+            }
+
+            return result;
+        }
+
+        private static string IdentifierTypeValueKey(AudiobookExternalIdentifier item)
+        {
+            return $"{item.Type}|{item.ValueNormalized}";
+        }
+
+        private static string IdentifierFullKey(AudiobookExternalIdentifier item)
+        {
+            return $"{item.Type}|{item.ValueNormalized}|{item.Region ?? string.Empty}";
+        }
+
+        private static List<AudiobookExternalIdentifier> GetEffectiveIdentifiers(Audiobook audiobook)
+        {
+            var merged = new List<AudiobookExternalIdentifier>();
+            var seenFull = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var seenTypeValue = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            void AddIfNew(AudiobookExternalIdentifier item)
+            {
+                if (string.IsNullOrWhiteSpace(item.ValueNormalized)) return;
+
+                var typeValueKey = IdentifierTypeValueKey(item);
+                if (item.Source == AudiobookExternalIdentifierSource.Imported && seenTypeValue.Contains(typeValueKey))
+                {
+                    // Imported identifiers are compatibility aliases; suppress them when a canonical
+                    // identifier with the same normalized value already exists (even if region differs).
+                    return;
+                }
+
+                var fullKey = IdentifierFullKey(item);
+                if (!seenFull.Add(fullKey)) return;
+                merged.Add(item);
+                seenTypeValue.Add(typeValueKey);
+            }
+
+            foreach (var existing in (audiobook.ExternalIdentifiers ?? new List<AudiobookExternalIdentifier>())
+                .OrderBy(i => i.Type)
+                .ThenByDescending(i => i.IsPrimary)
+                .ThenBy(i => i.Source == AudiobookExternalIdentifierSource.Imported ? 1 : 0)
+                .ThenBy(i => i.Source)
+                .ThenBy(i => i.ValueNormalized))
+            {
+                AddIfNew(existing);
+            }
+
+            foreach (var legacy in BuildLegacyBackfillIdentifiers(audiobook, AudiobookExternalIdentifierSource.Imported))
+            {
+                AddIfNew(legacy);
+            }
+
+            return OrderIdentifiers(merged);
+        }
+
+        private static void SyncLegacyFieldsFromIdentifiers(Audiobook audiobook)
+        {
+            var identifiers = OrderIdentifiers(audiobook.ExternalIdentifiers);
+
+            var primaryAsin = identifiers
+                .Where(i => i.Type == AudiobookExternalIdentifierType.Asin)
+                .OrderByDescending(i => i.IsPrimary)
+                .ThenBy(i => i.Source)
+                .FirstOrDefault();
+            audiobook.Asin = primaryAsin?.ValueNormalized;
+
+            audiobook.Isbn = identifiers
+                .Where(i => i.Type == AudiobookExternalIdentifierType.Isbn)
+                .Select(i => i.ValueNormalized)
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            var primaryOlid = identifiers
+                .Where(i => i.Type == AudiobookExternalIdentifierType.OpenLibraryId)
+                .OrderByDescending(i => i.IsPrimary)
+                .ThenBy(i => i.Source)
+                .FirstOrDefault();
+            audiobook.OpenLibraryId = primaryOlid?.ValueNormalized;
+        }
+
+        private static void SyncImportedIdentifiersFromLegacyFields(Audiobook audiobook)
+        {
+            audiobook.ExternalIdentifiers ??= new List<AudiobookExternalIdentifier>();
+
+            audiobook.ExternalIdentifiers = audiobook.ExternalIdentifiers
+                .Where(i => i.Source != AudiobookExternalIdentifierSource.Imported)
+                .ToList();
+
+            var existingTypeValueKeys = new HashSet<string>(
+                audiobook.ExternalIdentifiers
+                    .Where(i => !string.IsNullOrWhiteSpace(i.ValueNormalized))
+                    .Select(IdentifierTypeValueKey),
+                StringComparer.OrdinalIgnoreCase);
+            var seenImportedFullKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var imported = BuildLegacyBackfillIdentifiers(audiobook, AudiobookExternalIdentifierSource.Imported);
+            foreach (var item in imported)
+            {
+                if (string.IsNullOrWhiteSpace(item.ValueNormalized)) continue;
+                if (existingTypeValueKeys.Contains(IdentifierTypeValueKey(item))) continue;
+                if (!seenImportedFullKeys.Add(IdentifierFullKey(item))) continue;
+                audiobook.ExternalIdentifiers.Add(item);
+            }
+        }
+
+        private static IEnumerable<string> EnumerateMetadataRescanRegions(string? preferredRegion)
+        {
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            var ordered = new List<string>();
+            void AddOrdered(string? region)
+            {
+                var normalized = AudiobookIdentifierNormalizer.NormalizeRegion(region);
+                if (string.IsNullOrWhiteSpace(normalized)) return;
+                if (seen.Add(normalized)) ordered.Add(normalized);
+            }
+
+            AddOrdered(preferredRegion);
+            AddOrdered("us");
+            AddOrdered("uk");
+
+            if (ordered.Count == 0)
+            {
+                ordered.Add("us");
+            }
+
+            return ordered;
+        }
+
+        private static bool TryExtractMetadataLookupResult(
+            object? rawResult,
+            out AudimetaBookResponse? metadata,
+            out string? source)
+        {
+            metadata = null;
+            source = null;
+            if (rawResult == null) return false;
+
+            if (rawResult is AudimetaBookResponse direct)
+            {
+                metadata = direct;
+                return true;
+            }
+
+            var type = rawResult.GetType();
+            var metadataProp = type.GetProperty("metadata", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+            if (metadataProp != null)
+            {
+                var metadataValue = metadataProp.GetValue(rawResult);
+                if (metadataValue is AudimetaBookResponse audimeta)
+                {
+                    metadata = audimeta;
+                }
+                else if (metadataValue is JsonElement metadataElement && metadataElement.ValueKind == JsonValueKind.Object)
+                {
+                    try
+                    {
+                        metadata = metadataElement.Deserialize<AudimetaBookResponse>();
+                    }
+                    catch
+                    {
+                        metadata = null;
+                    }
+                }
+            }
+
+            var sourceProp = type.GetProperty("source", BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
+            if (sourceProp != null)
+            {
+                source = sourceProp.GetValue(rawResult)?.ToString();
+            }
+
+            return metadata != null;
+        }
+
+        private static bool ApplyMetadataRescanPatch(Audiobook audiobook, AudibleBookMetadata metadata)
+        {
+            var legacyIdentifierFieldsTouched = false;
+
+            if (!string.IsNullOrWhiteSpace(metadata.Title)) audiobook.Title = metadata.Title;
+            if (!string.IsNullOrWhiteSpace(metadata.Subtitle)) audiobook.Subtitle = metadata.Subtitle;
+            if (!string.IsNullOrWhiteSpace(metadata.PublishYear)) audiobook.PublishYear = metadata.PublishYear;
+            if (!string.IsNullOrWhiteSpace(metadata.PublishedDate)) audiobook.PublishedDate = metadata.PublishedDate;
+            if (!string.IsNullOrWhiteSpace(metadata.Series)) audiobook.Series = metadata.Series;
+            if (!string.IsNullOrWhiteSpace(metadata.SeriesNumber)) audiobook.SeriesNumber = metadata.SeriesNumber;
+            if (!string.IsNullOrWhiteSpace(metadata.Description)) audiobook.Description = metadata.Description;
+            if (!string.IsNullOrWhiteSpace(metadata.Publisher)) audiobook.Publisher = metadata.Publisher;
+            if (!string.IsNullOrWhiteSpace(metadata.Language)) audiobook.Language = metadata.Language;
+            if (metadata.Runtime.HasValue && metadata.Runtime.Value > 0) audiobook.Runtime = metadata.Runtime;
+            if (!string.IsNullOrWhiteSpace(metadata.Version)) audiobook.Version = metadata.Version;
+
+            var authors = NormalizeMetadataStringList(
+                (metadata.Authors != null && metadata.Authors.Any())
+                    ? metadata.Authors
+                    : (!string.IsNullOrWhiteSpace(metadata.Author) ? new List<string> { metadata.Author! } : null));
+            if (authors.Count > 0) audiobook.Authors = authors;
+
+            var narrators = NormalizeMetadataStringList(
+                (metadata.Narrators != null && metadata.Narrators.Any())
+                    ? metadata.Narrators
+                    : (!string.IsNullOrWhiteSpace(metadata.Narrator) ? new List<string> { metadata.Narrator! } : null));
+            if (narrators.Count > 0) audiobook.Narrators = narrators;
+
+            var genres = NormalizeMetadataStringList(metadata.Genres);
+            if (genres.Count > 0) audiobook.Genres = genres;
+
+            var isbns = NormalizeMetadataStringList(metadata.Isbn);
+            if (isbns.Count > 0)
+            {
+                audiobook.Isbn = isbns;
+                legacyIdentifierFieldsTouched = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(metadata.Asin))
+            {
+                audiobook.Asin = metadata.Asin;
+                legacyIdentifierFieldsTouched = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(metadata.OpenLibraryId))
+            {
+                audiobook.OpenLibraryId = metadata.OpenLibraryId;
+                legacyIdentifierFieldsTouched = true;
+            }
+
+            return legacyIdentifierFieldsTouched;
+        }
+
+        private async Task<string?> MoveMetadataImageToLibraryStorageAsync(Audiobook audiobook, string imageUrl)
+        {
+            if (string.IsNullOrWhiteSpace(imageUrl)) return null;
+
+            try
+            {
+                var imageKey = !string.IsNullOrWhiteSpace(audiobook.Asin)
+                    ? audiobook.Asin!
+                    : (audiobook.Isbn != null && audiobook.Isbn.Any(i => !string.IsNullOrWhiteSpace(i))
+                        ? "img-" + ComputeShortHash(audiobook.Isbn.First(i => !string.IsNullOrWhiteSpace(i)))
+                        : "img-" + ComputeShortHash($"{audiobook.Title}|{audiobook.Authors?.FirstOrDefault()}"));
+
+                var libraryImagePath = await _imageCacheService.MoveToLibraryStorageAsync(imageKey, imageUrl);
+                if (string.IsNullOrWhiteSpace(libraryImagePath))
+                {
+                    return null;
+                }
+
+                return "/" + libraryImagePath.TrimStart('/');
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Failed to move rescanned metadata image for audiobook {AudiobookId}", audiobook.Id);
+                return null;
+            }
+        }
+
+        private static List<string> NormalizeMetadataStringList(IEnumerable<string>? values)
+        {
+            if (values == null) return new List<string>();
+
+            return values
+                .Where(v => !string.IsNullOrWhiteSpace(v))
+                .Select(v => v.Trim())
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static string? FirstNonEmpty(params string?[] values)
+        {
+            foreach (var value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+
+            return null;
         }
 
         public class BulkDeleteRequest

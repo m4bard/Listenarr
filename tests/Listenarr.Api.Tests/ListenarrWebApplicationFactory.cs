@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using Listenarr.Api.Services;
+using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -39,6 +41,19 @@ namespace Listenarr.Api.Tests
 
             builder.ConfigureServices(services =>
             {
+                // Keep API integration tests deterministic regardless of a local config.json
+                // in the repo/environment. Individual tests can still override this with
+                // WithWebHostBuilder(...ConfigureServices(...)).
+                services.RemoveAll<IStartupConfigService>();
+                services.AddSingleton<IStartupConfigService>(_ =>
+                {
+                    var mock = new Mock<IStartupConfigService>();
+                    mock.Setup(s => s.GetConfig()).Returns(new StartupConfig { AuthenticationRequired = "false" });
+                    mock.Setup(s => s.ReloadAsync()).Returns(Task.CompletedTask);
+                    mock.Setup(s => s.SaveAsync(It.IsAny<StartupConfig>())).Returns(Task.CompletedTask);
+                    return mock.Object;
+                });
+
                 services.RemoveAll<IFfmpegService>();
                 services.AddSingleton<IFfmpegService>(_ =>
                 {

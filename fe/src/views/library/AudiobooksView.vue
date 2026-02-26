@@ -368,7 +368,7 @@
               <div class="row-click-target" @click="navigateToDetail(audiobook.id)" />
               <div
                 class="selection-checkbox"
-                @click.stop="handleCheckboxClick(audiobook, 0, $event)"
+                @click.stop="handleCheckboxClick(audiobook, $event)"
                 @mousedown.prevent
               >
                 <input
@@ -493,7 +493,7 @@
           >
             <div
               class="selection-checkbox"
-              @click.stop="handleCheckboxClick(audiobook, 0, $event)"
+              @click.stop="handleCheckboxClick(audiobook, $event)"
               @mousedown.prevent
             >
               <input
@@ -696,7 +696,7 @@ import { safeText } from '@/utils/textUtils'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { observeLazyImages } from '@/utils/lazyLoad'
 import { errorTracking } from '@/services/errorTracking'
-import { getCachedStartupConfig } from '@/services/startupConfigCache'
+import { isLikelyBackendImageUrl, useProtectedImages } from '@/composables/useProtectedImages'
 
 function getAuthorSortKey(author: string): string {
   const parts = author.trim().split(/\s+/)
@@ -734,6 +734,7 @@ const libraryStore = useLibraryStore()
 const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
 const downloadsStore = useDownloadsStore()
+const { getProtectedImageSrc, clearProtectedImages } = useProtectedImages()
 
 // Computed list after applying search, filters and sorting
 const searchQuery = ref('')
@@ -1051,46 +1052,6 @@ const audiobooks = computed(() => filteredAndSortedAudiobooks.value)
 const authorCoverOverrides = reactive<Record<string, string>>({})
 const authorCoverLoading = reactive<Record<string, boolean>>({})
 const authorImageLoaded = reactive<Record<string, boolean>>({})
-const protectedImageSrcMap = reactive<Record<string, string>>({})
-const protectedImageLoading = reactive<Record<string, boolean>>({})
-const protectedImageObjectUrls = new Set<string>()
-const protectedImageError = reactive<Record<string, boolean>>({})
-
-function revokeProtectedImageUrl(url: string | undefined) {
-  if (!url) return
-  if (!url.startsWith('blob:')) return
-  try {
-    URL.revokeObjectURL(url)
-  } catch {}
-  try {
-    protectedImageObjectUrls.delete(url)
-  } catch {}
-}
-
-function isLikelyBackendImage(url: string): boolean {
-  if (!url) return false
-  if (url.startsWith('/api/images/')) return true
-  if (url.includes('/api/images/')) return true
-  if (url.startsWith('/config/cache/images/')) return true
-  if (url.includes('/config/cache/images/')) return true
-  return false
-}
-
-function isAuthRequiredByConfig(): boolean {
-  try {
-    const cfg = getCachedStartupConfig() as Record<string, unknown> | null
-    if (!cfg) return false
-    const raw = cfg.authenticationRequired ?? cfg.AuthenticationRequired
-    if (typeof raw === 'boolean') return raw
-    if (typeof raw === 'string') {
-      const normalized = raw.trim().toLowerCase()
-      return normalized === 'true' || normalized === 'enabled'
-    }
-    return false
-  } catch {
-    return false
-  }
-}
 
 function isPlaceholderCoverUrl(url: string | undefined): boolean {
   const v = (url || '').trim()
@@ -1112,78 +1073,12 @@ function getBookImageUrl(book: Pick<Audiobook, 'imageUrl' | 'asin'> | null | und
   return raw || undefined
 }
 
-function getProtectedImageSrc(rawImageUrl: string | undefined, cacheKey: string): string {
-  if (!rawImageUrl) return getPlaceholderUrl()
-  const existing = protectedImageSrcMap[cacheKey]
-  if (existing) return existing
-  if (protectedImageError[cacheKey]) {
-    // For backend images, avoid permanent placeholder lock-in after a transient failure.
-    const retryResolved = apiService.getImageUrl(rawImageUrl)
-    if (!isLikelyBackendImage(retryResolved)) return getPlaceholderUrl()
-  }
-  if (!protectedImageLoading[cacheKey]) {
-    protectedImageLoading[cacheKey] = true
-    void (async () => {
-      try {
-        const resolved = apiService.getImageUrl(rawImageUrl)
-        if (!resolved) {
-          protectedImageError[cacheKey] = true
-          return
-        }
-
-        // If this isn't a backend-served image URL, use direct URL fallback.
-        if (!isLikelyBackendImage(resolved)) {
-          protectedImageSrcMap[cacheKey] = resolved
-          return
-        }
-
-        if (typeof apiService.fetchImageObjectUrl !== 'function') {
-          protectedImageSrcMap[cacheKey] = resolved
-          return
-        }
-
-        const objectUrl = await apiService.fetchImageObjectUrl(rawImageUrl)
-        if (!objectUrl) {
-          if (!isLikelyBackendImage(resolved) || !isAuthRequiredByConfig()) {
-            // In non-auth mode, direct URLs are fine and avoid blob churn.
-            protectedImageSrcMap[cacheKey] = resolved
-            delete protectedImageError[cacheKey]
-          } else {
-            protectedImageError[cacheKey] = true
-          }
-          return
-        }
-        const previous = protectedImageSrcMap[cacheKey]
-        if (previous && previous !== objectUrl) {
-          revokeProtectedImageUrl(previous)
-        }
-        protectedImageSrcMap[cacheKey] = objectUrl
-        delete protectedImageError[cacheKey]
-        if (objectUrl.startsWith('blob:')) {
-          protectedImageObjectUrls.add(objectUrl)
-        }
-      } catch {
-        const resolved = apiService.getImageUrl(rawImageUrl)
-        if (resolved && isLikelyBackendImage(resolved) && !isAuthRequiredByConfig()) {
-          protectedImageSrcMap[cacheKey] = resolved
-          delete protectedImageError[cacheKey]
-        } else {
-          protectedImageError[cacheKey] = true
-        }
-      } finally {
-        protectedImageLoading[cacheKey] = false
-      }
-    })()
-  }
-  return getPlaceholderUrl()
-}
-
 function getAuthorImageUrl(collection: { name: string; coverUrl?: string }) {
   const override = authorCoverOverrides[collection.name]
   if (override) return override
   const cover = collection.coverUrl?.trim()
   if (!cover || isPlaceholderCoverUrl(cover)) return undefined
-  if (isLikelyBackendImage(cover)) return cover
+  if (isLikelyBackendImageUrl(cover)) return cover
   if (cover.startsWith('http://') || cover.startsWith('https://')) return cover
   if (cover.startsWith('/')) return cover
   return undefined
@@ -1507,14 +1402,9 @@ function clearFilters() {
   selectedFilterId.value = null
 
   // Reset author image caches so images reload after clearing filters
-  Object.keys(authorCoverOverrides).forEach(k => delete authorCoverOverrides[k])
-  Object.keys(authorImageLoaded).forEach(k => delete authorImageLoaded[k])
-  Object.keys(protectedImageLoading).forEach(k => delete protectedImageLoading[k])
-  Object.keys(protectedImageError).forEach(k => delete protectedImageError[k])
-  Object.keys(protectedImageSrcMap).forEach((k) => {
-    revokeProtectedImageUrl(protectedImageSrcMap[k])
-    delete protectedImageSrcMap[k]
-  })
+  Object.keys(authorCoverOverrides).forEach((k) => delete authorCoverOverrides[k])
+  Object.keys(authorImageLoaded).forEach((k) => delete authorImageLoaded[k])
+  clearProtectedImages()
   nextTick(() => typeof observeLazyImages === 'function' && observeLazyImages())
 }
 const loading = computed(() => libraryStore.loading)
@@ -1636,15 +1526,15 @@ const showEditModal = ref(false)
 const editAudiobook = ref<Audiobook | null>(null)
 const lastClickedIndex = ref<number | null>(null)
 
+type AudiobookStatus = 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match'
+
 // Get the download status for an audiobook
 // Returns:
 // - 'downloading': Currently being downloaded (blue border)
 // - 'no-file': No file downloaded yet (red border)
 // - 'quality-mismatch': Has file but doesn't meet quality cutoff (blue border)
 // - 'quality-match': Has file and meets quality cutoff (green border)
-function getAudiobookStatus(
-  audiobook: Audiobook,
-): 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match' {
+function computeAudiobookStatusRaw(audiobook: Audiobook): AudiobookStatus {
   // Check if this audiobook is currently being downloaded
   const isDownloading = downloadsStore.activeDownloads.some((d) => d.audiobookId === audiobook.id)
   if (isDownloading) {
@@ -1762,6 +1652,19 @@ function getAudiobookStatus(
 
   // Otherwise at least one preferred-format file exists but doesn't meet cutoff
   return 'quality-mismatch'
+}
+
+const audiobookStatusById = computed(() => {
+  const map = new Map<number, AudiobookStatus>()
+  for (const book of libraryStore.audiobooks || []) {
+    if (!book?.id) continue
+    map.set(book.id, computeAudiobookStatusRaw(book))
+  }
+  return map
+})
+
+function getAudiobookStatus(audiobook: Audiobook): AudiobookStatus {
+  return audiobookStatusById.value.get(audiobook.id) ?? computeAudiobookStatusRaw(audiobook)
 }
 
 // Native loading="lazy" handles all image loading automatically - no custom code needed
@@ -1905,13 +1808,8 @@ onUnmounted(() => {
     authorCardObserver?.disconnect()
   } catch {}
   try {
-    for (const url of Array.from(protectedImageObjectUrls)) {
-      revokeProtectedImageUrl(url)
-    }
+    clearProtectedImages()
   } catch {}
-  Object.keys(protectedImageSrcMap).forEach((k) => delete protectedImageSrcMap[k])
-  Object.keys(protectedImageLoading).forEach((k) => delete protectedImageLoading[k])
-  Object.keys(protectedImageError).forEach((k) => delete protectedImageError[k])
   document.removeEventListener('click', handleClickOutside)
 })
 
@@ -1948,8 +1846,8 @@ function statusText(
 
 function openStatusDetails(audiobook: Audiobook) {
   try {
-    // Navigate to audiobook detail page and open the downloads tab
-    void router.push({ path: `/audiobooks/${audiobook.id}`, query: { tab: 'downloads' } })
+    // Navigate to audiobook detail page and open the history tab (legacy "downloads" intent)
+    void router.push({ path: `/audiobooks/${audiobook.id}`, query: { tab: 'history' }, hash: '#history' })
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'AudiobooksView',
@@ -2244,18 +2142,13 @@ async function handleEditSaved() {
   }
 }
 
-function handleCheckboxClick(audiobook: Audiobook, virtualIndex: number, event: MouseEvent) {
-  event.preventDefault() // Prevent browser text selection
-
-  // Get the actual index from the full audiobooks array
+function applyCheckboxSelection(audiobook: Audiobook, shiftKey: boolean) {
   const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
+  if (currentIndex < 0) return
 
-  if (event.shiftKey && lastClickedIndex.value !== null) {
-    // Shift+click: select range
+  if (shiftKey && lastClickedIndex.value !== null) {
     const startIndex = Math.min(lastClickedIndex.value, currentIndex)
     const endIndex = Math.max(lastClickedIndex.value, currentIndex)
-
-    // Clear current selection and select the range
     libraryStore.clearSelection()
     for (let i = startIndex; i <= endIndex; i++) {
       const book = audiobooks.value[i]
@@ -2263,53 +2156,23 @@ function handleCheckboxClick(audiobook: Audiobook, virtualIndex: number, event: 
       libraryStore.toggleSelection(book.id)
     }
   } else {
-    // Regular click: toggle selection
     libraryStore.toggleSelection(audiobook.id)
   }
 
-  // Update last clicked index
   lastClickedIndex.value = currentIndex
+}
+
+function handleCheckboxClick(audiobook: Audiobook, event: MouseEvent) {
+  event.preventDefault() // Prevent browser text selection
+  applyCheckboxSelection(audiobook, event.shiftKey)
 }
 
 function onCheckboxChange(audiobook: Audiobook, event: Event) {
-  // Handle native input change (e.g. mouse click)
-  const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
-
-  // Support Shift+click range selection when available
-  const shift = (event as MouseEvent | KeyboardEvent).shiftKey
-  if (shift && lastClickedIndex.value !== null) {
-    const startIndex = Math.min(lastClickedIndex.value, currentIndex)
-    const endIndex = Math.max(lastClickedIndex.value, currentIndex)
-    libraryStore.clearSelection()
-    for (let i = startIndex; i <= endIndex; i++) {
-      const book = audiobooks.value[i]
-      if (!book) continue
-      libraryStore.toggleSelection(book.id)
-    }
-  } else {
-    libraryStore.toggleSelection(audiobook.id)
-  }
-
-  lastClickedIndex.value = currentIndex
+  applyCheckboxSelection(audiobook, Boolean((event as MouseEvent | KeyboardEvent).shiftKey))
 }
 
 function handleCheckboxKeydown(audiobook: Audiobook, event: KeyboardEvent) {
-  // Handle keyboard spacebar toggle and support Shift+Space range selection
-  const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
-  if (event.shiftKey && lastClickedIndex.value !== null) {
-    const startIndex = Math.min(lastClickedIndex.value, currentIndex)
-    const endIndex = Math.max(lastClickedIndex.value, currentIndex)
-    libraryStore.clearSelection()
-    for (let i = startIndex; i <= endIndex; i++) {
-      const book = audiobooks.value[i]
-      if (!book) continue
-      libraryStore.toggleSelection(book.id)
-    }
-  } else {
-    libraryStore.toggleSelection(audiobook.id)
-  }
-
-  lastClickedIndex.value = currentIndex
+  applyCheckboxSelection(audiobook, event.shiftKey)
 }
 
 // Expose for testing

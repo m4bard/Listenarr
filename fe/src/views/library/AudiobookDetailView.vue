@@ -8,39 +8,32 @@
       </button>
       <div class="nav-actions">
         <div class="primary-actions">
-          <button class="nav-btn icon-button" @click="refresh" title="Refresh" aria-label="Refresh">
-            <PhArrowClockwise />
-          </button>
-
-          <!-- Manual Search button -->
-          <button class="nav-btn icon-button" @click="openManualSearch" title="Manual Search" aria-label="Manual Search">
-            <PhMagnifyingGlass />
-          </button>
-
-          <!-- Scan button now placed between Manual Search and Monitor; neutral filled grey by default -->
-          <button class="nav-btn icon-button" :disabled="scanning || scanQueued" @click="scanFiles"
-            :title="scanning ? 'Scanning...' : (scanQueued ? 'Scan queued' : 'Scan Folder')" aria-label="Scan Folder">
-            <PhSpinner v-if="scanning" class="ph-spin" />
-            <PhClock v-else-if="scanQueued" />
-            <PhFolderOpen v-else />
-          </button>
-
-          <button class="nav-btn icon-button primary" @click="toggleMonitored"
-            :title="audiobook.monitored ? 'Unmonitor' : 'Monitor'" :aria-pressed="audiobook.monitored"
-            aria-label="Toggle Monitor">
-            <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
+          <button
+            v-for="action in primaryTopActions"
+            :key="`primary-${action.key}`"
+            :class="['nav-btn', 'icon-button', action.desktopClass]"
+            :disabled="action.disabled"
+            @click="runTopAction(action)"
+            :title="action.title"
+            :aria-label="action.ariaLabel"
+            :aria-pressed="action.key === 'monitor' ? audiobook.monitored : undefined"
+          >
+            <component :is="action.icon" v-bind="action.iconProps || {}" :class="action.iconClass" />
           </button>
         </div>
 
         <!-- Desktop: show all actions inline -->
         <div class="secondary-actions tabs-desktop">
-          <button class="nav-btn icon-button primary" @click="openEditModal" title="Edit" aria-label="Edit">
-            <PhPencil />
-          </button>
-
-          <button class="nav-btn icon-button danger delete-btn" @click="confirmDelete" title="Delete"
-            aria-label="Delete">
-            <PhTrash />
+          <button
+            v-for="action in secondaryTopActions"
+            :key="`secondary-${action.key}`"
+            :class="['nav-btn', 'icon-button', action.desktopClass]"
+            :disabled="action.disabled"
+            @click="runTopAction(action)"
+            :title="action.title"
+            :aria-label="action.ariaLabel"
+          >
+            <component :is="action.icon" v-bind="action.iconProps || {}" :class="action.iconClass" />
           </button>
         </div>
 
@@ -52,52 +45,15 @@
             More
           </button>
           <div v-if="showMoreActions" class="more-dropdown" @click.stop>
-            <button class="dropdown-item" @click="
-              refresh();
-            showMoreActions = false
-              ">
-              <PhArrowClockwise />
-              <span>Refresh</span>
-            </button>
-            <button class="dropdown-item" @click="
-              toggleMonitored();
-            showMoreActions = false
-              ">
-              <PhBookmark :weight="audiobook.monitored ? 'fill' : 'regular'" />
-              <span>{{ audiobook.monitored ? 'Monitored' : 'Monitor' }}</span>
-            </button>
-            <button class="dropdown-item" @click="
-              openManualSearch();
-            showMoreActions = false
-              ">
-              <PhMagnifyingGlass />
-              <span>Manual Search</span>
-            </button>
-
-            <button class="dropdown-item" :disabled="scanning || scanQueued" @click="
-              scanFiles();
-            showMoreActions = false
-              ">
-              <PhFolderOpen />
-              <span>Scan Folder</span>
-            </button>
-
-
-
-            <button class="dropdown-item" @click="
-              openEditModal();
-            showMoreActions = false
-              ">
-              <PhPencil />
-              <span>Edit</span>
-            </button>
-
-            <button class="dropdown-item delete" @click="
-              confirmDelete();
-            showMoreActions = false
-              ">
-              <PhTrash />
-              <span>Delete</span>
+            <button
+              v-for="action in topActions"
+              :key="`more-${action.key}`"
+              :class="['dropdown-item', action.mobileClass]"
+              :disabled="action.disabled"
+              @click="runTopAction(action, true)"
+            >
+              <component :is="action.icon" v-bind="action.iconProps || {}" :class="action.iconClass" />
+              <span>{{ action.label }}</span>
             </button>
           </div>
         </div>
@@ -258,18 +214,28 @@
                 <a :href="audimetaSourceUrl" target="_blank" rel="noopener noreferrer">Audimeta</a>
               </span>
             </div>
-            <div class="detail-row" v-if="audiobook.asin">
-              <span class="label">ASIN:</span>
-              <span class="value">
-                <a v-if="audibleProductUrl" :href="audibleProductUrl" target="_blank" rel="noopener noreferrer">
-                  {{ audiobook.asin }}
-                </a>
-                <span v-else>{{ audiobook.asin }}</span>
-              </span>
+            <div class="detail-row detail-row-stacked" v-if="displayIdentifiers.length">
+              <span class="label">Associated IDs:</span>
+              <div class="value identifiers-list">
+                <div v-for="identifier in displayIdentifiers" :key="identifier.key" class="identifier-item">
+                  <span class="identifier-type">{{ identifier.typeLabel }}</span>
+                  <a
+                    v-if="identifier.href"
+                    :href="identifier.href"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="identifier-link"
+                  >
+                    {{ identifier.value }}
+                  </a>
+                  <span v-else class="identifier-link">{{ identifier.value }}</span>
+                  <span v-if="identifier.isPrimary" class="identifier-badge primary">Primary</span>
+                </div>
+              </div>
             </div>
-            <div class="detail-row" v-if="audiobook.isbn">
-              <span class="label">ISBN:</span>
-              <span class="value">{{ audiobook.isbn }}</span>
+            <div class="detail-row" v-else-if="audiobook.asin || audiobook.isbn || audiobook.openLibraryId">
+              <span class="label">Associated IDs:</span>
+              <span class="value">Unavailable</span>
             </div>
           </div>
 
@@ -494,7 +460,7 @@ import { getPlaceholderUrl } from '@/utils/placeholder'
 import { joinPaths, isAbsolutePath } from '@/utils/path'
 import { observeLazyImages, ensureVisibleImagesLoad } from '@/utils/lazyLoad'
 import { signalRService } from '@/services/signalr'
-import type { Audiobook, History, SearchResult } from '@/types'
+import type { Audiobook, AudiobookExternalIdentifier, History, SearchResult } from '@/types'
 import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
@@ -547,15 +513,18 @@ const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
 const { getProtectedImageSrc } = useProtectedImages()
 
+type DetailTab = 'details' | 'files' | 'history'
+
 const audiobook = ref<Audiobook | null>(null)
 const loading = ref(true)
 const error = ref<string | null>(null)
-const activeTab = ref('details')
+const activeTab = ref<DetailTab>('details')
 const showDeleteDialog = ref(false)
 const showManualSearchModal = ref(false)
 const deleting = ref(false)
 const showFullDescription = ref(false)
 const scanning = ref(false)
+const rescanningMetadata = ref(false)
 const scanQueued = ref(false)
 const scanJobId = ref<string | null>(null)
 const showEditModal = ref(false)
@@ -575,6 +544,115 @@ const mobileTabOptions = computed(() => [
   { value: 'history', label: 'History', icon: PhClockCounterClockwise },
 ])
 
+const topActions = computed<DetailTopAction[]>(() => [
+  {
+    key: 'refresh',
+    label: 'Refresh',
+    title: 'Refresh',
+    ariaLabel: 'Refresh',
+    icon: PhArrowClockwise,
+    desktopGroup: 'primary',
+    onClick: () => { void refresh() },
+  },
+  {
+    key: 'manual-search',
+    label: 'Manual Search',
+    title: 'Manual Search',
+    ariaLabel: 'Manual Search',
+    icon: PhMagnifyingGlass,
+    desktopGroup: 'primary',
+    onClick: openManualSearch,
+  },
+  {
+    key: 'scan',
+    label: scanning.value ? 'Scanning...' : scanQueued.value ? 'Scan queued' : 'Scan Folder',
+    title: scanning.value ? 'Scanning...' : scanQueued.value ? 'Scan queued' : 'Scan Folder',
+    ariaLabel: 'Scan Folder',
+    icon: scanning.value ? PhSpinner : scanQueued.value ? PhClock : PhFolderOpen,
+    iconClass: scanning.value ? 'ph-spin' : undefined,
+    disabled: scanning.value || scanQueued.value,
+    desktopGroup: 'primary',
+    onClick: () => { void scanFiles() },
+  },
+  {
+    key: 'monitor',
+    label: audiobook.value?.monitored ? 'Monitored' : 'Monitor',
+    title: audiobook.value?.monitored ? 'Unmonitor' : 'Monitor',
+    ariaLabel: 'Toggle Monitor',
+    icon: PhBookmark,
+    iconProps: { weight: audiobook.value?.monitored ? 'fill' : 'regular' },
+    desktopGroup: 'primary',
+    desktopClass: 'primary',
+    onClick: toggleMonitored,
+  },
+  {
+    key: 'edit',
+    label: 'Edit',
+    title: 'Edit',
+    ariaLabel: 'Edit',
+    icon: PhPencil,
+    desktopGroup: 'secondary',
+    desktopClass: 'primary',
+    onClick: openEditModal,
+  },
+  {
+    key: 'rescan-metadata',
+    label: rescanningMetadata.value ? 'Rescanning Metadata...' : 'Rescan Metadata',
+    title: rescanningMetadata.value ? 'Rescanning Metadata...' : 'Rescan Metadata',
+    ariaLabel: 'Rescan Metadata',
+    icon: rescanningMetadata.value ? PhSpinner : PhArrowClockwise,
+    iconClass: rescanningMetadata.value ? 'ph-spin' : undefined,
+    disabled: rescanningMetadata.value || !audiobook.value,
+    desktopGroup: 'secondary',
+    onClick: () => { void rescanMetadata() },
+  },
+  {
+    key: 'delete',
+    label: 'Delete',
+    title: 'Delete',
+    ariaLabel: 'Delete',
+    icon: PhTrash,
+    desktopGroup: 'secondary',
+    desktopClass: 'danger delete-btn',
+    mobileClass: 'delete',
+    onClick: confirmDelete,
+  },
+])
+
+const primaryTopActions = computed(() => topActions.value.filter((a) => a.desktopGroup === 'primary'))
+const secondaryTopActions = computed(() => topActions.value.filter((a) => a.desktopGroup === 'secondary'))
+
+function runTopAction(action: DetailTopAction, closeMoreMenu = false) {
+  action.onClick()
+  if (closeMoreMenu) {
+    showMoreActions.value = false
+  }
+}
+
+type DetailIdentifierItem = {
+  key: string
+  type: AudiobookExternalIdentifier['type']
+  typeLabel: string
+  value: string
+  href: string | null
+  isPrimary: boolean
+}
+
+type DetailTopAction = {
+  key: 'refresh' | 'manual-search' | 'scan' | 'monitor' | 'edit' | 'rescan-metadata' | 'delete'
+  label: string
+  title: string
+  ariaLabel: string
+  icon: Component
+  iconClass?: string
+  iconProps?: Record<string, unknown>
+  disabled?: boolean
+  desktopGroup: 'primary' | 'secondary'
+  desktopClass?: string
+  mobileClass?: string
+  onClick: () => void
+}
+
 
 
 const assignedProfileName = computed(() => {
@@ -585,16 +663,84 @@ const assignedProfileName = computed(() => {
   return p ? p.name : null
 })
 
+const primaryAsin = computed(() => {
+  const ids = audiobook.value?.identifiers || []
+  const explicitPrimary = ids.find((id) => id.type === 'Asin' && id.isPrimary && id.value?.trim())
+  if (explicitPrimary) return explicitPrimary.value.trim()
+
+  const firstAsin = ids.find((id) => id.type === 'Asin' && id.value?.trim())
+  if (firstAsin) return firstAsin.value.trim()
+
+  const legacy = (audiobook.value?.asin || '').trim()
+  return legacy || null
+})
+
 const audimetaSourceUrl = computed(() => {
-  const asin = audiobook.value?.asin
+  const asin = primaryAsin.value
   if (!asin) return null
   return `https://audimeta.de/book/${encodeURIComponent(asin)}`
 })
 
 const audibleProductUrl = computed(() => {
-  const asin = audiobook.value?.asin
+  const asin = primaryAsin.value
   if (!asin) return null
   return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
+})
+
+const displayIdentifiers = computed<DetailIdentifierItem[]>(() => {
+  const book = audiobook.value
+  if (!book) return []
+
+  const items: DetailIdentifierItem[] = []
+  const seen = new Set<string>()
+  let hasPrimaryAsin = false
+
+  const addIdentifier = (
+    type: AudiobookExternalIdentifier['type'],
+    rawValue: unknown,
+    isPrimary = false,
+  ) => {
+    const value = typeof rawValue === 'string' ? rawValue.trim() : ''
+    if (!value) return
+
+    const key = normalizeIdentifierKey(type, value)
+    if (seen.has(key)) return
+    seen.add(key)
+
+    if (type === 'Asin' && isPrimary) hasPrimaryAsin = true
+
+    items.push({
+      key,
+      type,
+      typeLabel: formatIdentifierType(type),
+      value,
+      href: getIdentifierHref(type, value),
+      isPrimary,
+    })
+  }
+
+  for (const identifier of book.identifiers || []) {
+    addIdentifier(identifier.type, identifier.value, Boolean(identifier.isPrimary))
+  }
+
+  if (book.asin) {
+    addIdentifier('Asin', book.asin, !hasPrimaryAsin)
+  }
+
+  for (const isbn of getLegacyIsbnValues(book.isbn as unknown)) {
+    addIdentifier('Isbn', isbn)
+  }
+
+  if (book.openLibraryId) {
+    addIdentifier('OpenLibraryId', book.openLibraryId)
+  }
+
+  return items.sort((a, b) => {
+    const orderDelta = getIdentifierSortOrder(a.type) - getIdentifierSortOrder(b.type)
+    if (orderDelta !== 0) return orderDelta
+    if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1
+    return a.value.localeCompare(b.value)
+  })
 })
 
 // Utility function to capitalize first letter
@@ -667,11 +813,87 @@ function sanitizePathComponent(s?: string): string {
   return s.replace(/[\\/:*?"<>|]/g, '_').trim() || 'Unknown'
 }
 
+function getLegacyIsbnValues(raw: unknown): string[] {
+  if (Array.isArray(raw)) {
+    return raw
+      .map((value) => (typeof value === 'string' ? value.trim() : ''))
+      .filter(Boolean)
+  }
+
+  if (typeof raw !== 'string') return []
+
+  return raw
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean)
+}
+
+function formatIdentifierType(type: AudiobookExternalIdentifier['type']): string {
+  if (type === 'Asin') return 'ASIN'
+  if (type === 'Isbn') return 'ISBN'
+  return 'Open Library'
+}
+
+function getIdentifierSortOrder(type: AudiobookExternalIdentifier['type']): number {
+  if (type === 'Asin') return 0
+  if (type === 'Isbn') return 1
+  return 2
+}
+
+function normalizeIdentifierKey(type: AudiobookExternalIdentifier['type'], value: string): string {
+  const normalizedValue = type === 'Isbn'
+    ? value.replace(/[-\s]/g, '').toUpperCase()
+    : value.trim().toUpperCase()
+  return `${type}:${normalizedValue}`
+}
+
+function getIdentifierHref(type: AudiobookExternalIdentifier['type'], value: string): string | null {
+  if (type === 'Asin') {
+    return `https://www.audible.com/pd/${encodeURIComponent(value)}`
+  }
+
+  if (type === 'OpenLibraryId') {
+    const trimmed = value.trim()
+    if (!trimmed) return null
+    if (/^https?:\/\//i.test(trimmed)) return trimmed
+    const normalized = trimmed.replace(/^\/+/, '')
+    return `https://openlibrary.org/books/${encodeURIComponent(normalized)}`
+  }
+
+  return null
+}
+
+function normalizeDetailTabCandidate(value: unknown): DetailTab | null {
+  if (typeof value !== 'string') return null
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'downloads') return 'history'
+  if (normalized === 'details' || normalized === 'files' || normalized === 'history') {
+    return normalized
+  }
+  return null
+}
+
+function syncActiveTabFromRoute() {
+  const fromQuery = normalizeDetailTabCandidate(route.query?.tab)
+  if (fromQuery) {
+    activeTab.value = fromQuery
+    return
+  }
+
+  const fromHash = normalizeDetailTabCandidate((route.hash || '').replace(/^#/, ''))
+  if (fromHash) {
+    activeTab.value = fromHash
+  }
+}
+
 // Watch for tab changes to load history when needed
 watch(activeTab, async (newTab) => {
   if (newTab === 'history' && audiobook.value && historyEntries.value.length === 0) {
     await loadHistory()
   }
+  try {
+    history.replaceState(null, '', `#${newTab}`)
+  } catch { }
 })
 
 // Handle dropdown tab change
@@ -684,6 +906,9 @@ watch(activeTab, async (newTab) => {
 let audiobookUpdateUnsub: (() => void) | null = null
 
 onMounted(async () => {
+  syncActiveTabFromRoute()
+  document.addEventListener('click', handleClickOutside)
+
   await loadAudiobook()
 
   // Setup lazy loading for images
@@ -742,19 +967,6 @@ onMounted(async () => {
   })
 })
 
-// If the URL contains a hash (#details/#files/#history) navigate to it
-onMounted(() => {
-  const hash = (route.hash || '').replace('#', '')
-  if (hash === 'details' || hash === 'files' || hash === 'history') {
-    activeTab.value = hash
-    // small timeout to allow DOM to render
-    // setTimeout(() => scrollToAnchor(hash), 150)
-  }
-
-  // Close test menu when clicking outside
-  document.addEventListener('click', handleClickOutside)
-})
-
 function handleClickOutside() {
   if (showMoreActions.value) {
     showMoreActions.value = false
@@ -768,15 +980,12 @@ onUnmounted(() => {
   } catch { }
 })
 
-// When the active tab changes update the hash and scroll
-watch(activeTab, (newTab) => {
-  if (!newTab) return
-  try {
-    history.replaceState(null, '', `#${newTab}`)
-  } catch { }
-  // Scroll to anchored section
-  // setTimeout(() => scrollToAnchor(newTab), 120)
-})
+watch(
+  () => [route.hash, route.query?.tab],
+  () => {
+    syncActiveTabFromRoute()
+  },
+)
 
 
 
@@ -786,26 +995,30 @@ async function loadAudiobook() {
 
   try {
     const id = parseInt(route.params.id as string)
+    let loadedBook: Audiobook | null = null
 
-    // If library is already loaded, find the audiobook
-    if (libraryStore.audiobooks.length > 0) {
-      const book = libraryStore.audiobooks.find((b) => b.id === id)
-      if (book) {
-        audiobook.value = book
-        await afterLoad()
-      } else {
-        error.value = 'Audiobook not found'
+    // Prefer the dedicated detail endpoint when available.
+    if (typeof apiService.getAudiobook === 'function') {
+      try {
+        loadedBook = await apiService.getAudiobook(id)
+      } catch (apiErr) {
+        logger.debug('Detail endpoint load failed, falling back to library store', apiErr)
       }
+    }
+
+    if (!loadedBook) {
+      // Fallback path for tests / older mocks / endpoint failures
+      if (libraryStore.audiobooks.length === 0) {
+        await libraryStore.fetchLibrary()
+      }
+      loadedBook = libraryStore.audiobooks.find((b) => b.id === id) || null
+    }
+
+    if (loadedBook) {
+      audiobook.value = loadedBook
+      await afterLoad()
     } else {
-      // Load library first
-      await libraryStore.fetchLibrary()
-      const book = libraryStore.audiobooks.find((b) => b.id === id)
-      if (book) {
-        audiobook.value = book
-        await afterLoad()
-      } else {
-        error.value = 'Audiobook not found'
-      }
+      error.value = 'Audiobook not found'
     }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to load audiobook'
@@ -822,6 +1035,7 @@ async function loadAudiobook() {
 // After loading audiobook, also fetch quality profiles so we can display the assigned profile
 async function afterLoad() {
   await loadQualityProfilesForDetail()
+  await loadIdentifiersForDetail()
   try {
     const img = audiobook.value?.imageUrl
     if (img) {
@@ -844,6 +1058,22 @@ async function loadQualityProfilesForDetail() {
   }
 }
 
+async function loadIdentifiersForDetail() {
+  const id = audiobook.value?.id
+  if (!id || typeof apiService.getAudiobookIdentifiers !== 'function') return
+
+  try {
+    const response = await apiService.getAudiobookIdentifiers(id)
+    if (!audiobook.value || audiobook.value.id !== id) return
+    audiobook.value = {
+      ...audiobook.value,
+      identifiers: Array.isArray(response?.identifiers) ? response.identifiers : [],
+    }
+  } catch (err) {
+    logger.debug('Failed to load audiobook identifiers for detail view', err)
+  }
+}
+
 function goBack() {
   router.push('/audiobooks')
 }
@@ -853,6 +1083,35 @@ async function refresh() {
   // Reload history if history tab is active
   if (activeTab.value === 'history') {
     await loadHistory()
+  }
+}
+
+async function rescanMetadata() {
+  if (!audiobook.value || rescanningMetadata.value) return
+
+  rescanningMetadata.value = true
+  const toast = useToast()
+  try {
+    const response = await apiService.rescanAudiobookMetadata(audiobook.value.id)
+    await loadAudiobook()
+
+    const details: string[] = []
+    if (response?.source) details.push(`Source: ${response.source}`)
+    if (response?.asin) details.push(`ASIN: ${response.asin}`)
+
+    toast.success(
+      'Metadata rescanned',
+      details.length > 0 ? details.join(' • ') : 'Audiobook metadata refreshed successfully.',
+    )
+  } catch (err) {
+    errorTracking.captureException(err as Error, {
+      component: 'AudiobookDetailView',
+      operation: 'rescanMetadata',
+      metadata: { audiobookId: audiobook.value?.id },
+    })
+    toast.error('Metadata rescan failed', err instanceof Error ? err.message : String(err))
+  } finally {
+    rescanningMetadata.value = false
   }
 }
 
@@ -1016,8 +1275,8 @@ async function handleEditSaved() {
 
 
 
-function formatRuntime(seconds: number): string {
-  const totalMinutes = Math.floor(seconds / 60)
+function formatRuntime(minutes: number): string {
+  const totalMinutes = Math.floor(minutes)
   const hours = Math.floor(totalMinutes / 60)
   const mins = totalMinutes % 60
   return `${hours}h ${mins}m`
@@ -1931,6 +2190,68 @@ function formatDate(dateString?: string): string {
   color: #fff;
   font-size: 14px;
   text-align: right;
+}
+
+.detail-row-stacked {
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.detail-row-stacked .label {
+  padding-top: 4px;
+}
+
+.detail-row-stacked .value {
+  text-align: right;
+}
+
+.identifiers-list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 70%;
+}
+
+.identifier-item {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.identifier-type {
+  color: #b3b3b3;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.identifier-link {
+  color: #fff;
+  font-size: 14px;
+  word-break: break-word;
+}
+
+a.identifier-link:hover {
+  color: var(--brand-300);
+}
+
+.identifier-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.identifier-badge.primary {
+  background: rgba(59, 130, 246, 0.16);
+  border: 1px solid rgba(59, 130, 246, 0.45);
+  color: #bfdbfe;
 }
 
 .genre-tags {
