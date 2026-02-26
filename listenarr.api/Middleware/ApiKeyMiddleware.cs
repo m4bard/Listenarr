@@ -52,7 +52,7 @@ namespace Listenarr.Api.Middleware
                             if (path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase))
                             {
                                 var qs = context.Request.Query;
-                                if (qs.ContainsKey("access_token")) provided = qs["access_token"].FirstOrDefault();
+                                if (qs.TryGetValue("access_token", out var accessTokenValues)) provided = accessTokenValues.FirstOrDefault();
                             }
                         }
                         catch (Exception ex)

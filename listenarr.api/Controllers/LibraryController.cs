@@ -3402,11 +3402,11 @@ namespace Listenarr.Api.Controllers
             var seenImportedFullKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             var imported = BuildLegacyBackfillIdentifiers(audiobook, AudiobookExternalIdentifierSource.Imported);
-            foreach (var item in imported)
+            foreach (var item in imported.Where(item =>
+                         !string.IsNullOrWhiteSpace(item.ValueNormalized) &&
+                         !existingTypeValueKeys.Contains(IdentifierTypeValueKey(item)) &&
+                         seenImportedFullKeys.Add(IdentifierFullKey(item))))
             {
-                if (string.IsNullOrWhiteSpace(item.ValueNormalized)) continue;
-                if (existingTypeValueKeys.Contains(IdentifierTypeValueKey(item))) continue;
-                if (!seenImportedFullKeys.Add(IdentifierFullKey(item))) continue;
                 audiobook.ExternalIdentifiers.Add(item);
             }
         }
@@ -3574,15 +3574,8 @@ namespace Listenarr.Api.Controllers
 
         private static string? FirstNonEmpty(params string?[] values)
         {
-            foreach (var value in values)
-            {
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    return value.Trim();
-                }
-            }
-
-            return null;
+            var first = values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v));
+            return first?.Trim();
         }
 
         private static bool TryConsumeMetadataRescanQuota(

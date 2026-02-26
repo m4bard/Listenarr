@@ -99,9 +99,9 @@ namespace Listenarr.Api.Middleware
                 if (path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase))
                 {
                     var qs = context.Request.Query;
-                    if (qs.ContainsKey("access_token"))
+                    if (qs.TryGetValue("access_token", out var accessTokenValues))
                     {
-                        var provided = qs["access_token"].FirstOrDefault();
+                        var provided = accessTokenValues.FirstOrDefault();
                         if (!string.IsNullOrEmpty(provided)) return provided;
                     }
                 }

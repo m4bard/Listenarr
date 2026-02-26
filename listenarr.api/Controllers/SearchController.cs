@@ -652,7 +652,7 @@ namespace Listenarr.Api.Controllers
             }
             catch (Exception ex)
             {
-                _logger.LogDebug(ex, "Failed to sanitize public search result for ASIN {Asin}", r?.Asin);
+                _logger.LogDebug(ex, "Failed to sanitize public search result for ASIN {Asin}", r.Asin);
             }
         }
 

@@ -7,7 +7,8 @@ class Program
     static int Main(string[] args)
     {
         var root = Directory.GetCurrentDirectory();
-        var dbPath = args.Length > 0 ? args[0] : Path.Combine(root, "listenarr.api", "config", "database", "listenarr.db");
+        var relativeDbPath = Path.Combine("listenarr.api", "config", "database", "listenarr.db");
+        var dbPath = args.Length > 0 ? args[0] : Path.Combine(root, relativeDbPath);
         if (!File.Exists(dbPath))
         {
             Console.Error.WriteLine($"Database not found: {dbPath}");

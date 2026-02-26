@@ -347,7 +347,7 @@ namespace Listenarr.Api.Controllers
                                     localAuthor = localBook.Authors?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
 
                                     // Collect identifiers from the new typed identifier model first.
-                                    foreach (var extId in localBook.ExternalIdentifiers ?? new List<AudiobookExternalIdentifier>())
+                                    foreach (var extId in localBook.ExternalIdentifiers ?? Enumerable.Empty<AudiobookExternalIdentifier>())
                                     {
                                         if (string.IsNullOrWhiteSpace(extId.ValueNormalized)) continue;
 
@@ -417,6 +417,10 @@ namespace Listenarr.Api.Controllers
                                 }
                             }
                         }
+                        catch (OperationCanceledException)
+                        {
+                            throw;
+                        }
                         catch (Exception ex)
                         {
                             _logger.LogDebug(ex, "Failed to seed image fallback metadata from local library record for {Identifier}", identifier);
@@ -448,6 +452,10 @@ namespace Listenarr.Api.Controllers
                                             relativePath);
                                         break;
                                     }
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
                                 }
                                 catch (Exception ex)
                                 {

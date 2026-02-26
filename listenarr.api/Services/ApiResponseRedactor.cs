@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Text.Json;
 using Listenarr.Domain.Models;
 
@@ -56,12 +57,9 @@ public static class ApiResponseRedactor
 
         if (clone.Webhooks != null)
         {
-            foreach (var webhook in clone.Webhooks)
+            foreach (var webhook in clone.Webhooks.Where(w => !string.IsNullOrWhiteSpace(w.Url)))
             {
-                if (!string.IsNullOrWhiteSpace(webhook.Url))
-                {
-                    webhook.Url = RedactedValue;
-                }
+                webhook.Url = RedactedValue;
             }
         }
 
