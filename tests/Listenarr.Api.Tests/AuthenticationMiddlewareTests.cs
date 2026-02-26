@@ -20,7 +20,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ProtectedEndpoint_Returns401_WhenUnauthenticated_AndAuthRequired()
         {
-            var client = _factory.WithWebHostBuilder(builder =>
+            using var client = _factory.WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
                 {
@@ -67,14 +67,15 @@ namespace Listenarr.Api.Tests
                 });
             }).CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-            var resp = await client.PostAsync("/api/configuration/apikey/generate-initial", new StringContent("{}", Encoding.UTF8, "application/json"));
+            using var content = new StringContent("{}", Encoding.UTF8, "application/json");
+            var resp = await client.PostAsync("/api/configuration/apikey/generate-initial", content);
             Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
         }
 
         [Fact]
         public async Task ProwlarrPostIndexers_Returns401_WhenUnauthenticated_AndAuthRequired()
         {
-            var client = _factory.WithWebHostBuilder(builder =>
+            using var client = _factory.WithWebHostBuilder(builder =>
             {
                 builder.ConfigureServices(services =>
                 {
@@ -85,7 +86,8 @@ namespace Listenarr.Api.Tests
                 });
             }).CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
 
-            var resp = await client.PostAsync("/api/v1/indexers", new StringContent("[]", Encoding.UTF8, "application/json"));
+            using var content = new StringContent("[]", Encoding.UTF8, "application/json");
+            var resp = await client.PostAsync("/api/v1/indexers", content);
             Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
         }
     }

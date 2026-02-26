@@ -669,7 +669,6 @@ namespace Listenarr.Api.Controllers
 
                                 if (normalizedTitleIsbns.Count > 0)
                                 {
-                                    candidateIsbn = normalizedTitleIsbns[0];
                                     _logger.LogInformation(
                                         "Derived {Count} OpenLibrary ISBN candidate(s) from local title/author for {Identifier}: Title={Title}, Author={Author}",
                                         normalizedTitleIsbns.Count,

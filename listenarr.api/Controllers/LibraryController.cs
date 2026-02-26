@@ -1113,6 +1113,12 @@ namespace Listenarr.Api.Controllers
                 return false;
             }
 
+            static string? TruncateSample(string? s)
+            {
+                if (s == null) return null;
+                return s.Length > 200 ? s.Substring(0, 200) : s;
+            }
+
             var problems = new Dictionary<string, object?>();
 
             // Helper to execute a raw SQL query and collect non-JSON samples for specified columns
@@ -1125,7 +1131,7 @@ namespace Listenarr.Api.Controllers
                     if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
 
                     using var cmd = conn.CreateCommand();
-                    var cols = string.Join(", ", new[] { keyColumn }.Concat(columns).Select(c => c));
+                    var cols = string.Join(", ", new[] { keyColumn }.Concat(columns));
                     cmd.CommandText = $"SELECT {cols} FROM {table}";
                     using var rdr = await cmd.ExecuteReaderAsync();
                     while (await rdr.ReadAsync())
@@ -1137,7 +1143,7 @@ namespace Listenarr.Api.Controllers
                             // If it doesn't even look like JSON, flag immediately
                             if (!LooksLikeJson(raw))
                             {
-                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "NotJson", Sample = raw!.Length > 200 ? raw.Substring(0, 200) : raw });
+                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "NotJson", Sample = TruncateSample(raw) });
                                 continue;
                             }
 
@@ -1155,14 +1161,14 @@ namespace Listenarr.Api.Controllers
                                         // Expect an array of objects
                                         if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
                                         {
-                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedArray", Sample = raw!.Length > 200 ? raw.Substring(0, 200) : raw });
+                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedArray", Sample = TruncateSample(raw) });
                                         }
                                         else
                                         {
                                             var first = root.EnumerateArray().FirstOrDefault();
                                             if (first.ValueKind != System.Text.Json.JsonValueKind.Object && !first.Equals(default(System.Text.Json.JsonElement)))
                                             {
-                                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ArrayNotObjects", Sample = raw!.Length > 200 ? raw.Substring(0, 200) : raw });
+                                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ArrayNotObjects", Sample = TruncateSample(raw) });
                                             }
                                         }
                                     }
@@ -1171,14 +1177,14 @@ namespace Listenarr.Api.Controllers
                                         // Expect an object/map
                                         if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
                                         {
-                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedObject", Sample = raw!.Length > 200 ? raw.Substring(0, 200) : raw });
+                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedObject", Sample = TruncateSample(raw) });
                                         }
                                     }
                                 }
                             }
                             catch (System.Text.Json.JsonException)
                             {
-                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ParseError", Sample = raw!.Length > 200 ? raw.Substring(0, 200) : raw });
+                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ParseError", Sample = TruncateSample(raw) });
                             }
                         }
                     }
@@ -1265,7 +1271,7 @@ namespace Listenarr.Api.Controllers
                                 var raw = scanRdr[col] == DBNull.Value ? null : scanRdr[col]?.ToString();
                                 if (!LooksLikeJson(raw))
                                 {
-                                    expanded.Add(new { Table = table + "." + col, Id = id, Issue = "NotJson", Sample = raw!.Length > 200 ? raw.Substring(0, 200) : raw });
+                                    expanded.Add(new { Table = table + "." + col, Id = id, Issue = "NotJson", Sample = TruncateSample(raw) });
                                     continue;
                                 }
 
@@ -1283,7 +1289,7 @@ namespace Listenarr.Api.Controllers
                                     }
                                     catch (System.Text.Json.JsonException je)
                                     {
-                                        expanded.Add(new { Table = table + "." + col, Id = id, Issue = "ParseError", Sample = raw!.Length > 200 ? raw.Substring(0, 200) : raw, Error = je.Message });
+                                        expanded.Add(new { Table = table + "." + col, Id = id, Issue = "ParseError", Sample = TruncateSample(raw), Error = je.Message });
                                     }
                                 }
                             }

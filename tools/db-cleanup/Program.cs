@@ -18,8 +18,6 @@ class Program
         File.Copy(dbPath, backup);
         Console.WriteLine($"Backup created: {backup}");
 
-        var cols = new[] { "Authors", "Genres", "Tags", "Narrators", "AuthorAsins", "Isbn" };
-
         // Prefer invoking the sqlite3 CLI to apply the normalization script so we avoid
         // managed native provider mismatches in different environments.
         string? sqlite3Path = null;

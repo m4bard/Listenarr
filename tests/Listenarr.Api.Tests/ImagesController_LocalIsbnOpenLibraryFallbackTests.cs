@@ -33,7 +33,8 @@ namespace Listenarr.Api.Tests
             mockMetadata.Setup(m => m.GetAudimetaMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>()))
                 .ReturnsAsync(new AudimetaBookResponse { ImageUrl = null, Isbn = null });
 
-            var audimetaMock = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
+            using var audimetaHttpClient = new System.Net.Http.HttpClient();
+            var audimetaMock = new Mock<AudimetaService>(audimetaHttpClient, Mock.Of<ILogger<AudimetaService>>());
             var audnexusMock = new Mock<IAudnexusService>();
             audnexusMock.Setup(a => a.GetBookMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>()))
                 .ReturnsAsync(new AudnexusBookResponse { Image = null, Isbn = null });
