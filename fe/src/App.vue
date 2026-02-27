@@ -517,6 +517,7 @@ import {
   getSecurityWarningBannerHiddenPreference,
 } from '@/utils/securityWarningBannerPreference'
 
+const STARTUP_CONFIG_UPDATED_EVENT = 'listenarr-startup-config-updated'
 
 const { notification, close: closeNotification } = useNotification()
 const { getProtectedImageSrc } = useProtectedImages()
@@ -989,6 +990,69 @@ watch(
   },
 )
 
+const parseAuthEnabledFromStartupConfig = (raw: unknown): boolean | null => {
+  if (typeof raw === 'boolean') return raw
+  if (typeof raw === 'string') {
+    const normalized = raw.toLowerCase().trim()
+    if (
+      normalized === 'enabled' ||
+      normalized === 'true' ||
+      normalized === 'yes' ||
+      normalized === '1'
+    )
+      return true
+    if (
+      normalized === 'disabled' ||
+      normalized === 'false' ||
+      normalized === 'no' ||
+      normalized === '0'
+    )
+      return false
+  }
+  return null
+}
+
+const refreshAuthPresentationFromStartupConfig = async (force: boolean = false) => {
+  try {
+    // Use cached startup-config helper so unauthenticated 401 is interpreted as
+    // "authentication required" instead of forcing authEnabled=false.
+    let cfg = await getStartupConfigCached(force ? 0 : 5000)
+    // If cache currently holds a transient failure (`null`), force a direct fetch once
+    // so we don't pin authEnabled=false for the whole session.
+    if (!cfg) {
+      try {
+        cfg = await apiService.getStartupConfig()
+      } catch (err) {
+        const status = (err as { status?: number } | null)?.status
+        if (status === 401) {
+          cfg = { authenticationRequired: true } as Record<string, unknown>
+        } else {
+          throw err
+        }
+      }
+    }
+    const obj = cfg as Record<string, unknown> | null
+    const raw = obj ? (obj['authenticationRequired'] ?? obj['AuthenticationRequired']) : undefined
+    const parsedAuthEnabled = parseAuthEnabledFromStartupConfig(raw)
+    // Only show the "auth disabled" banner when startup config explicitly says auth is off.
+    // Unknown/missing/transient states should not be treated as disabled.
+    authEnabled.value = parsedAuthEnabled ?? true
+    logger.debug('Startup config refreshed', { authEnabled: authEnabled.value, cfg, force })
+  } catch {
+    // Avoid false-positive no-auth warning banner when startup config fetch is transiently unavailable.
+    authEnabled.value = true
+  } finally {
+    startupConfigLoaded.value = true
+  }
+}
+
+watch(
+  () => auth.user.authenticated,
+  () => {
+    void refreshAuthPresentationFromStartupConfig(true)
+  },
+)
+
 // (notificationRef and click-outside handler are declared earlier)
 
 // Initialize: Subscribe to SignalR for real-time updates (NO POLLING!)
@@ -1190,27 +1254,7 @@ onMounted(async () => {
   startWantedBadgePolling()
 
   logger.info('✅ Real-time updates enabled - Activity badge updates automatically via SignalR!')
-  // Fetch startup config (do this regardless of auth so header/login visibility can be known)
-  try {
-    // Use cached startup-config helper so unauthenticated 401 is interpreted as
-    // "authentication required" instead of forcing authEnabled=false.
-    const cfg = await getStartupConfigCached()
-    // Accept both camelCase and PascalCase variants from backend (some responses use PascalCase)
-    const obj = cfg as Record<string, unknown> | null
-    const raw = obj ? (obj['authenticationRequired'] ?? obj['AuthenticationRequired']) : undefined
-    const v = raw as unknown
-    authEnabled.value =
-      typeof v === 'boolean'
-        ? v
-        : typeof v === 'string'
-          ? v.toLowerCase() === 'enabled' || v.toLowerCase() === 'true'
-          : false
-    logger.debug('Startup config fetched', { authEnabled: authEnabled.value, cfg })
-  } catch {
-    authEnabled.value = false
-  } finally {
-    startupConfigLoaded.value = true
-  }
+  await refreshAuthPresentationFromStartupConfig(true)
 
   // Fetch version from API
   try {
@@ -1239,6 +1283,9 @@ onMounted(async () => {
   })
   useEventListener(window, SECURITY_WARNING_BANNER_PREF_EVENT, () => {
     refreshSecurityWarningBannerPreference()
+  })
+  useEventListener(window, STARTUP_CONFIG_UPDATED_EVENT, () => {
+    void refreshAuthPresentationFromStartupConfig(true)
   })
 })
 

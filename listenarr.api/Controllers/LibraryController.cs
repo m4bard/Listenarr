@@ -120,12 +120,15 @@ namespace Listenarr.Api.Controllers
 
                 try
                 {
-                    var isAbsolute = Path.IsPathRooted(file.Path);
+                    var path = file.Path.Trim();
+                    var isAbsolute = Path.IsPathRooted(path);
                     var fullPath = isAbsolute
-                        ? file.Path
+                        ? path
                         : (!string.IsNullOrEmpty(audiobook.BasePath)
-                            ? Path.Combine(audiobook.BasePath, file.Path)
-                            : file.Path);
+                            ? Path.Combine(
+                                audiobook.BasePath,
+                                path.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                            : path);
 
                     if (System.IO.File.Exists(fullPath))
                     {

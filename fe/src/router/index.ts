@@ -135,6 +135,10 @@ export function preloadRoute(nameOrPath: string) {
 router.beforeEach(async (to, from, next) => {
   if (import.meta.env.CYPRESS) return next()
   const auth = useAuthStore()
+  const forceLogin =
+    to.name === 'login' &&
+    ((to.query.force as string | undefined) === '1' ||
+      (to.query.force as string | undefined) === 'true')
 
   logger.log('router', 'Navigation:', {
     from: from.fullPath,
@@ -192,6 +196,13 @@ router.beforeEach(async (to, from, next) => {
     // Authentication globally disabled: don't enforce requiresAuth.
     // Still prevent navigating to the login page when auth is disabled.
     if (to.name === 'login') {
+      // Allow explicitly forced login navigation (used right after enabling auth)
+      // to avoid race conditions where startup config propagation briefly reports
+      // authentication as disabled.
+      if (forceLogin && !auth.user.authenticated) {
+        logger.debug('[router] force login requested; allowing login route despite auth config')
+        return next()
+      }
       // Check if there's a redirect parameter - if so, honor it instead of going to home
       // Also check auth.redirectTo store as fallback (set during initial navigation attempts)
       const redirectPath = (to.query.redirect as string | undefined) || auth.redirectTo
