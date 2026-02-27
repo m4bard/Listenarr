@@ -421,7 +421,7 @@ namespace Listenarr.Api.Controllers
                         {
                             throw;
                         }
-                        catch (Exception ex)
+                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                         {
                             _logger.LogDebug(ex, "Failed to seed image fallback metadata from local library record for {Identifier}", identifier);
                         }
@@ -457,7 +457,7 @@ namespace Listenarr.Api.Controllers
                                 {
                                     throw;
                                 }
-                                catch (Exception ex)
+                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
                                     _logger.LogDebug(ex, "Failed probing alternate cached image identifier {AliasIdentifier} for {Identifier}", aliasIdentifier, identifier);
                                 }
@@ -493,7 +493,11 @@ namespace Listenarr.Api.Controllers
                                     }
                                 }
                             }
-                            catch (Exception ex)
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
                                 _logger.LogDebug(ex, "Audnexus ASIN lookup failed for {Identifier}", identifier);
                             }
@@ -520,7 +524,11 @@ namespace Listenarr.Api.Controllers
                                         }
                                     }
                                 }
-                                catch (Exception ex)
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
                                     _logger.LogDebug(ex, "Audimeta alternate ASIN lookup failed for {Identifier} via {AltAsin}", identifier, altAsin);
                                 }
@@ -537,7 +545,11 @@ namespace Listenarr.Api.Controllers
                                         }
                                     }
                                 }
-                                catch (Exception ex)
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
                                     _logger.LogDebug(ex, "Audnexus alternate ASIN lookup failed for {Identifier} via {AltAsin}", identifier, altAsin);
                                 }
@@ -625,7 +637,7 @@ namespace Listenarr.Api.Controllers
                                             _logger.LogDebug("Fallback metadata returned no image URL for {Identifier}", identifier);
                                         }
                                     }
-                                    catch (Exception ex)
+                                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                     {
                                         _logger.LogDebug(ex, "Failed to parse fallback metadata envelope for {Identifier}", identifier);
                                     }
@@ -635,7 +647,11 @@ namespace Listenarr.Api.Controllers
                                     _logger.LogDebug("GetMetadataAsync returned null for {Identifier}", identifier);
                                 }
                             }
-                            catch (Exception ex)
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
                                 _logger.LogDebug(ex, "Fallback metadata lookup failed for {Identifier}", identifier);
                             }
@@ -692,7 +708,11 @@ namespace Listenarr.Api.Controllers
                                     }
                                 }
                             }
-                            catch (Exception ex)
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
                                 _logger.LogDebug(ex, "OpenLibrary title/author ISBN fallback failed for {Identifier}", identifier);
                             }
@@ -721,7 +741,11 @@ namespace Listenarr.Api.Controllers
                                         }
                                     }
                                 }
-                                catch (Exception ex)
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
                                     _logger.LogDebug(ex, "Failed to lookup stored author ASIN for identifier {Identifier}", identifier);
                                 }
@@ -737,7 +761,11 @@ namespace Listenarr.Api.Controllers
                                     }
                                 }
                             }
-                            catch (Exception ex)
+                            catch (OperationCanceledException)
+                            {
+                                throw;
+                            }
+                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
                                 _logger.LogDebug(ex, "Audimeta author lookup failed for {Identifier}", identifier);
                             }
@@ -759,7 +787,11 @@ namespace Listenarr.Api.Controllers
                                                 _logger.LogInformation("Found author image from Audnexus (by ASIN) for identifier {Identifier}: {Url}", identifier, candidateUrl);
                                             }
                                         }
-                                        catch (Exception ex)
+                                        catch (OperationCanceledException)
+                                        {
+                                            throw;
+                                        }
+                                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                         {
                                             _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Identifier}", identifier);
                                         }
@@ -785,14 +817,22 @@ namespace Listenarr.Api.Controllers
                                                             _logger.LogInformation("Found author image from Audnexus by stored ASIN {Asin} for identifier {Identifier}: {Url}", authorAsin, identifier, candidateUrl);
                                                         }
                                                     }
-                                                    catch (Exception ex)
+                                                    catch (OperationCanceledException)
+                                                    {
+                                                        throw;
+                                                    }
+                                                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                                     {
                                                         _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Asin}", authorAsin);
                                                     }
                                                 }
                                             }
                                         }
-                                        catch (Exception ex)
+                                        catch (OperationCanceledException)
+                                        {
+                                            throw;
+                                        }
+                                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                         {
                                             _logger.LogDebug(ex, "Failed to lookup author ASINs in database for identifier {Identifier}", identifier);
                                         }
@@ -810,7 +850,11 @@ namespace Listenarr.Api.Controllers
                                         }
                                     }
                                 }
-                                catch (Exception ex)
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
                                     _logger.LogDebug(ex, "Audnexus author search failed for {Identifier}", identifier);
                                 }
@@ -837,7 +881,11 @@ namespace Listenarr.Api.Controllers
                                         }
                                     }
                                 }
-                                catch (Exception ex)
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
                                     _logger.LogWarning(ex, "Failed to download metadata-driven image for {Identifier} from {Url}", identifier, urlCandidate);
                                 }
@@ -845,7 +893,11 @@ namespace Listenarr.Api.Controllers
                         }
                         }
                     }
-                    catch (Exception ex)
+                    catch (OperationCanceledException)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                     {
                         _logger.LogDebug(ex, "Metadata-driven image download failed for {Identifier}", identifier);
                     }
@@ -872,7 +924,7 @@ namespace Listenarr.Api.Controllers
                                 return PhysicalFile(placeholderPath, "image/svg+xml");
                             }
                         }
-                        catch (Exception ex)
+                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                         {
                             _logger.LogDebug(ex, "Failed to serve placeholder for missing image {Identifier}", identifier);
                         }
@@ -917,7 +969,7 @@ namespace Listenarr.Api.Controllers
                             return PhysicalFile(placeholderPath, "image/svg+xml");
                         }
                     }
-                    catch (Exception ex)
+                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                     {
                         _logger.LogDebug(ex, "Failed to serve placeholder for missing file {Path}", fullPath);
                     }
@@ -1014,6 +1066,18 @@ namespace Listenarr.Api.Controllers
                 return trimmed;
             }
             return null;
+        }
+
+        private static bool IsRecoverableImageLookupException(Exception ex)
+        {
+            return ex is System.IO.IOException
+                or UnauthorizedAccessException
+                or InvalidOperationException
+                or ArgumentException
+                or FormatException
+                or UriFormatException
+                or System.Net.Http.HttpRequestException
+                or System.Text.Json.JsonException;
         }
 
         [HttpDelete("{identifier}")]
