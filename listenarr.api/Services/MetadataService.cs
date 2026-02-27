@@ -121,12 +121,18 @@ namespace Listenarr.Api.Services
                         var startInfo = new System.Diagnostics.ProcessStartInfo
                         {
                             FileName = ffprobeCmd,
-                            Arguments = $"-v quiet -print_format json -show_format -show_streams \"{filePath}\"",
                             RedirectStandardOutput = true,
                             RedirectStandardError = true,
                             UseShellExecute = false,
                             CreateNoWindow = true
                         };
+                        startInfo.ArgumentList.Add("-v");
+                        startInfo.ArgumentList.Add("quiet");
+                        startInfo.ArgumentList.Add("-print_format");
+                        startInfo.ArgumentList.Add("json");
+                        startInfo.ArgumentList.Add("-show_format");
+                        startInfo.ArgumentList.Add("-show_streams");
+                        startInfo.ArgumentList.Add(filePath);
 
                         if (_processRunner != null)
                         {

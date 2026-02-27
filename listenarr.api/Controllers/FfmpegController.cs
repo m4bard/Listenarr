@@ -6,6 +6,7 @@ using Microsoft.Extensions.Logging;
 using System.Diagnostics;
 using System.Text.Json;
 using System.Runtime.InteropServices;
+using System;
 
 public class FfprobeScanRequest { public string? FilePath { get; set; } }
 
@@ -52,7 +53,32 @@ namespace Listenarr.Api.Controllers
 
             if (req == null || string.IsNullOrEmpty(req.FilePath)) return BadRequest(new { message = "FilePath is required" });
 
-            var filePath = req.FilePath!;
+            var requestedPath = req.FilePath!;
+            if (Uri.TryCreate(requestedPath, UriKind.Absolute, out var uri) && !uri.IsFile)
+            {
+                return BadRequest(new { message = "Only local file paths are allowed" });
+            }
+
+            if (!Path.IsPathRooted(requestedPath))
+            {
+                return BadRequest(new { message = "FilePath must be an absolute path" });
+            }
+
+            string filePath;
+            try
+            {
+                filePath = Path.GetFullPath(requestedPath);
+            }
+            catch (Exception ex) when (ex is ArgumentException || ex is NotSupportedException || ex is PathTooLongException)
+            {
+                return BadRequest(new { message = "FilePath is invalid" });
+            }
+
+            if (!System.IO.File.Exists(filePath))
+            {
+                return NotFound(new { message = "File not found" });
+            }
+
             var ffprobeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe";
             var ffprobePath = Path.Combine(Directory.GetCurrentDirectory(), "config", "ffmpeg", ffprobeName);
 
@@ -63,12 +89,18 @@ namespace Listenarr.Api.Controllers
                 var startInfo = new ProcessStartInfo
                 {
                     FileName = ffprobePath,
-                    Arguments = $"-v quiet -print_format json -show_format -show_streams \"{filePath}\"",
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                     UseShellExecute = false,
                     CreateNoWindow = true
                 };
+                startInfo.ArgumentList.Add("-v");
+                startInfo.ArgumentList.Add("quiet");
+                startInfo.ArgumentList.Add("-print_format");
+                startInfo.ArgumentList.Add("json");
+                startInfo.ArgumentList.Add("-show_format");
+                startInfo.ArgumentList.Add("-show_streams");
+                startInfo.ArgumentList.Add(filePath);
 
                 if (_processRunner != null)
                 {
