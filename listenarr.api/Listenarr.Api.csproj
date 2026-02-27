@@ -43,6 +43,9 @@
     <Compile Remove="Services\PlaywrightPageFetcher.cs" />
     <Compile Remove="Services\PlaywrightInstaller.cs" />
     <Compile Remove="Services\PlaywrightInstallBackgroundService.cs" />
+    <!-- Prevent publish artifacts from being recompiled on subsequent builds/publishes. -->
+    <Compile Remove="publish\**\*.cs" />
+    <Compile Remove="publish/**/*.cs" />
   </ItemGroup>
 
   
