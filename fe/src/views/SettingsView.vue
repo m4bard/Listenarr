@@ -845,7 +845,8 @@ const saveSettings = async () => {
       const didDisableAuth = wasAuthEnabled && !authEnabled.value
       // Only persist authenticationRequired (lowercase) as string 'true'/'false'.
       // Remove any legacy AuthenticationRequired (uppercase) key from the outgoing config.
-      const { AuthenticationRequired, ...rest } = original
+      const rest = { ...original } as Record<string, unknown>
+      delete rest.AuthenticationRequired
       const newCfg: import('@/types').StartupConfig = {
         ...rest,
         authenticationRequired: authEnabled.value ? 'true' : 'false',
