@@ -120,15 +120,7 @@ namespace Listenarr.Api.Controllers
 
                 try
                 {
-                    var path = file.Path.Trim();
-                    var isAbsolute = Path.IsPathRooted(path);
-                    var fullPath = isAbsolute
-                        ? path
-                        : (!string.IsNullOrEmpty(audiobook.BasePath)
-                            ? Path.Combine(
-                                audiobook.BasePath,
-                                path.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
-                            : path);
+                    var fullPath = ResolvePathWithOptionalBase(audiobook.BasePath, file.Path);
 
                     if (System.IO.File.Exists(fullPath))
                     {
@@ -146,6 +138,29 @@ namespace Listenarr.Api.Controllers
             }
 
             return true;
+        }
+
+        private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            // Defensive check: if the candidate path is rooted, do not call Path.Combine
+            // because it would discard the base path argument.
+            return Path.IsPathRooted(relativePath)
+                ? relativePath
+                : Path.Combine(basePath, relativePath);
         }
 
         public class ScanRequest
@@ -1528,7 +1543,7 @@ namespace Listenarr.Api.Controllers
                     var imagePath = await _imageCacheService.GetCachedImagePathAsync(audiobook.Asin);
                     if (imagePath != null)
                     {
-                        var fullPath = Path.Combine(Directory.GetCurrentDirectory(), imagePath);
+                        var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
                         if (System.IO.File.Exists(fullPath))
                         {
                             System.IO.File.Delete(fullPath);
@@ -1558,7 +1573,7 @@ namespace Listenarr.Api.Controllers
                                 var imagePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
                                 if (!string.IsNullOrEmpty(imagePath))
                                 {
-                                    var fullPath = Path.Combine(Directory.GetCurrentDirectory(), imagePath);
+                                    var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
                                     if (System.IO.File.Exists(fullPath))
                                     {
                                         System.IO.File.Delete(fullPath);
@@ -1628,7 +1643,7 @@ namespace Listenarr.Api.Controllers
                                     var imagePath = await _imageCacheService.GetCachedImagePathAsync(audiobook.Asin);
                                     if (imagePath != null)
                                     {
-                                        var fullPath = Path.Combine(Directory.GetCurrentDirectory(), imagePath);
+                                        var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
                                         if (System.IO.File.Exists(fullPath))
                                         {
                                             System.IO.File.Delete(fullPath);
@@ -1656,7 +1671,7 @@ namespace Listenarr.Api.Controllers
                                                 var imagePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
                                                 if (!string.IsNullOrEmpty(imagePath))
                                                 {
-                                                    var fullPath = Path.Combine(Directory.GetCurrentDirectory(), imagePath);
+                                                    var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
                                                     if (System.IO.File.Exists(fullPath))
                                                     {
                                                         System.IO.File.Delete(fullPath);
@@ -3141,7 +3156,7 @@ namespace Listenarr.Api.Controllers
             var relative = _fileNamingService.ApplyNamingPattern(directoryPattern, variables, false);
 
             // Combine with root path
-            var combined = string.IsNullOrWhiteSpace(rootPath) ? relative : Path.Combine(rootPath, relative);
+            var combined = ResolvePathWithOptionalBase(rootPath, relative);
 
             return combined;
         }

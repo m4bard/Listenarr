@@ -937,7 +937,7 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // Build the full file path
-                var fullPath = Path.Combine(_environment.ContentRootPath, relativePath);
+                var fullPath = ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath);
 
                 if (!System.IO.File.Exists(fullPath))
                 {
@@ -1071,6 +1071,26 @@ namespace Listenarr.Api.Controllers
                 or System.Text.Json.JsonException;
         }
 
+        private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return Path.IsPathRooted(relativePath)
+                ? relativePath
+                : Path.Combine(basePath, relativePath);
+        }
+
         [HttpDelete("{identifier}")]
         public async Task<IActionResult> DeleteImage(string identifier)
         {
@@ -1088,7 +1108,7 @@ namespace Listenarr.Api.Controllers
                     return NotFound(new { message = "Image not found" });
                 }
 
-                var fullPath = Path.Combine(_environment.ContentRootPath, relativePath);
+                var fullPath = ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath);
 
                 if (System.IO.File.Exists(fullPath))
                 {
