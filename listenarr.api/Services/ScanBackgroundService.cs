@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.SignalR;
 using Listenarr.Api.Hubs;
@@ -84,8 +84,7 @@ namespace Listenarr.Api.Services
                                         var settings = await configService.GetApplicationSettingsAsync();
                                         scanRoot = settings.OutputPath;
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogWarning(ex, "Failed to read settings for scan job {JobId}", job.Id);
                                     }
                                 }
@@ -139,8 +138,7 @@ namespace Listenarr.Api.Services
                                         {
                                             await _hubContext.Clients.All.SendAsync("FilesRemoved", new { audiobookId = audiobook.Id, removed = removedFilesDto });
                                         }
-                                        catch (Exception ex)
-                                        {
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogDebug(ex, "Failed to broadcast FilesRemoved event for audiobook {AudiobookId}", audiobook.Id);
                                         }
                                     }
@@ -150,16 +148,14 @@ namespace Listenarr.Api.Services
                                         var audiobookDto = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(db, audiobook);
                                         await _hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDto);
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogDebug(ex, "Failed to broadcast AudiobookUpdate for audiobook {AudiobookId}", audiobook.Id);
                                     }
 
                                     try { _queue.UpdateJobStatus(job.Id, "Completed"); } catch { }
                                     try { await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Completed", found = 0, created = 0, completedAt = DateTime.UtcNow }); } catch { }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to remove audiobook files for missing BasePath (job {JobId})", job.Id);
                                     try { _queue.UpdateJobStatus(job.Id, "Failed", "BasePath missing"); } catch { }
                                     try { await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Failed", error = "BasePath missing", failedAt = DateTime.UtcNow }); } catch { }
@@ -201,8 +197,7 @@ namespace Listenarr.Api.Services
                                             if (!exts.Contains(ext, StringComparer.OrdinalIgnoreCase)) continue;
                                             candidates.Add(file);
                                         }
-                                        catch (Exception innerFileEx)
-                                        {
+                                        catch (Exception innerFileEx) when (innerFileEx is not OperationCanceledException && innerFileEx is not OutOfMemoryException && innerFileEx is not StackOverflowException) {
                                             _logger.LogDebug(innerFileEx, "Skipped file while scanning {Dir}", normalizedDir);
                                             continue;
                                         }
@@ -225,8 +220,7 @@ namespace Listenarr.Api.Services
                                     _logger.LogWarning(uaEx, "Access denied while enumerating directory for scan job {JobId}: {Dir}", job.Id, dir);
                                     continue;
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Unexpected error while enumerating directory for scan job {JobId}: {Dir}", job.Id, dir);
                                     continue;
                                 }
@@ -300,8 +294,7 @@ namespace Listenarr.Api.Services
                                     var created = await audioFileService.EnsureAudiobookFileAsync(audiobook.Id, filePath, "scan");
                                     if (created) createdFiles++;
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to add file {File} during scan job {JobId}", filePath, job.Id);
                                 }
                             }
@@ -368,8 +361,7 @@ namespace Listenarr.Api.Services
                                             };
                                             db.History.Add(historyEntry);
                                         }
-                                        catch (Exception ex)
-                                        {
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogWarning(ex, "Failed to remove AudiobookFile Id={Id} Path={Path}", rem.Id, rem.Path);
                                         }
                                     }
@@ -381,14 +373,12 @@ namespace Listenarr.Api.Services
                                     {
                                         await _hubContext.Clients.All.SendAsync("FilesRemoved", new { audiobookId = audiobook.Id, removed = removedFilesDto });
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogDebug(ex, "Failed to broadcast FilesRemoved event for audiobook {AudiobookId}", audiobook.Id);
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Failed to reconcile audiobook files after scan job {JobId}", job.Id);
                             }
 
@@ -419,8 +409,7 @@ namespace Listenarr.Api.Services
                                                     createdFiles++;
                                                 }
                                             }
-                                            catch (Exception ex)
-                                            {
+                                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                                 _logger.LogWarning(ex, "Failed to migrate legacy filePath for audiobook {AudiobookId}: {Path}", audiobook.Id, audiobook.FilePath);
                                             }
                                         }
@@ -457,8 +446,7 @@ namespace Listenarr.Api.Services
                                     await db.SaveChangesAsync();
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Failed to handle legacy filePath migration for audiobook {AudiobookId}", audiobook.Id);
                             }
 
@@ -489,8 +477,7 @@ namespace Listenarr.Api.Services
                                         await notificationService.SendNotificationAsync("book-available", availableData, settings.WebhookUrl, settings.EnabledNotificationTriggers);
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to send book-available notification for audiobook {AudiobookId} in background scan", audiobook.Id);
                                 }
                             }
@@ -510,8 +497,7 @@ namespace Listenarr.Api.Services
                                 try { _queue.UpdateJobStatus(job.Id, "Completed"); } catch { }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogError(ex, "Error processing scan job {JobId}", job.Id);
                             try { _queue.UpdateJobStatus(job.Id, "Failed", ex.Message); } catch { }
                             try { await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Failed", error = ex.Message, failedAt = DateTime.UtcNow }); } catch { }
@@ -522,8 +508,7 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogInformation("ScanBackgroundService cancellation requested");
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Unhandled error in ScanBackgroundService loop");
                 }
             }
@@ -626,4 +611,5 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 

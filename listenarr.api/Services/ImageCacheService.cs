@@ -195,8 +195,7 @@ namespace Listenarr.Api.Services
                     sem.Release();
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to download and cache image from {Url}", imageUrl);
                 return null;
             }
@@ -260,8 +259,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Image moved to library storage: {Identifier}", identifier);
                 return GetRelativePath(libraryPath);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to move image to library storage for {Identifier}", identifier);
                 return null;
             }
@@ -325,8 +323,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Author image moved to author storage: {Identifier}", identifier);
                 return GetRelativePath(authorPath);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to move author image to author storage for {Identifier}", identifier);
                 return null;
             }
@@ -413,16 +410,14 @@ namespace Listenarr.Api.Services
                         {
                             File.Delete(file);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Failed to delete cached file: {File}", file);
                         }
                     }
                     _logger.LogInformation("Temp cache cleared: {Count} files deleted", files.Length);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to clear temp cache");
             }
 
@@ -632,8 +627,7 @@ namespace Listenarr.Api.Services
                 _logger.LogWarning(ex, "Blocked image URL because DNS resolution failed for host {Host}", uri.Host);
                 return false;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Blocked image URL due to unexpected DNS validation error for host {Host}", uri.Host);
                 return false;
             }
@@ -693,16 +687,14 @@ namespace Listenarr.Api.Services
                     {
                         File.Delete(filePath);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed deleting invalid cached image for {Identifier} in {Bucket}: {Path}", identifier, bucket, filePath);
                     }
                     return false;
                 }
                 return true;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed validating cached image file for {Identifier}: {Path}", identifier, filePath);
                 return false;
             }
@@ -747,8 +739,7 @@ namespace Listenarr.Api.Services
             {
                 _httpClientNoRedirect.Dispose();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed disposing no-redirect HttpClient in ImageCacheService");
             }
 
@@ -756,10 +747,10 @@ namespace Listenarr.Api.Services
             {
                 _httpClient.Dispose();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed disposing HttpClient in ImageCacheService");
             }
         }
     }
 }
+

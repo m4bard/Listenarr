@@ -79,7 +79,7 @@ namespace Listenarr.Api.Controllers
                     if (!string.IsNullOrEmpty(pr.Stdout))
                     {
                         try { parsed = JsonSerializer.Deserialize<JsonElement>(pr.Stdout); }
-                        catch (Exception jex) { _logger.LogDebug(jex, "Failed to parse ffprobe JSON output for {File}", LogRedaction.SanitizeFilePath(filePath)); }
+                        catch (Exception jex) when (jex is not OperationCanceledException && jex is not OutOfMemoryException && jex is not StackOverflowException) { _logger.LogDebug(jex, "Failed to parse ffprobe JSON output for {File}", LogRedaction.SanitizeFilePath(filePath)); }
                     }
 
                     return Ok(new { ffprobePath, exitCode = pr.ExitCode, stdout = pr.Stdout, stderr = pr.Stderr, parsed });
@@ -95,11 +95,11 @@ namespace Listenarr.Api.Controllers
                 _logger.LogWarning(wex, "ffprobe execution failed for {File}", LogRedaction.SanitizeFilePath(filePath));
                 return StatusCode(500, new { message = "ffprobe execution failed", error = wex.Message });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error running ffprobe for {File}", LogRedaction.SanitizeFilePath(filePath));
                 return StatusCode(500, new { message = "Error running ffprobe", error = ex.Message });
             }
         }
     }
 }
+

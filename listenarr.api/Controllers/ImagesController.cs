@@ -113,8 +113,7 @@ namespace Listenarr.Api.Controllers
                         _logger.LogInformation("Downloaded image on demand for identifier: {Identifier}", identifier);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to download image on demand for identifier: {Identifier}", identifier);
                 }
             }
@@ -150,8 +149,7 @@ namespace Listenarr.Api.Controllers
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Pre-validation move attempt failed for identifier {Identifier}", identifier);
                     }
                 }
@@ -206,15 +204,13 @@ namespace Listenarr.Api.Controllers
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Failed to inspect candidate image attributes for identifier {Identifier}", identifier);
                                 relativePath = null;
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Failed to validate image path for identifier {Identifier}", identifier);
                         relativePath = null;
                     }
@@ -269,8 +265,7 @@ namespace Listenarr.Api.Controllers
                                                 _logger.LogWarning("Moved image file does not exist for identifier {Identifier}: {Path}", identifier, movedFull);
                                             }
                                         }
-                                        catch (Exception ex)
-                                        {
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogWarning(ex, "Failed to inspect moved image attributes for identifier {Identifier}", identifier);
                                         }
                                     }
@@ -279,15 +274,13 @@ namespace Listenarr.Api.Controllers
                                         _logger.LogWarning("Moved image path outside permitted directories for identifier {Identifier}: {Path}", identifier, movedFull);
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to validate moved image path for identifier {Identifier}", identifier);
                                 }
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Failed to move temp image to library for {Identifier}", identifier);
                     }
                 }
@@ -347,10 +340,9 @@ namespace Listenarr.Api.Controllers
                                     localAuthor = localBook.Authors?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a));
 
                                     // Collect identifiers from the new typed identifier model first.
-                                    foreach (var extId in localBook.ExternalIdentifiers ?? Enumerable.Empty<AudiobookExternalIdentifier>())
+                                    foreach (var extId in (localBook.ExternalIdentifiers ?? Enumerable.Empty<AudiobookExternalIdentifier>())
+                                        .Where(extId => !string.IsNullOrWhiteSpace(extId.ValueNormalized)))
                                     {
-                                        if (string.IsNullOrWhiteSpace(extId.ValueNormalized)) continue;
-
                                         switch (extId.Type)
                                         {
                                             case AudiobookExternalIdentifierType.Asin:
@@ -995,8 +987,7 @@ namespace Listenarr.Api.Controllers
                 // Return the image with caching headers
                 return PhysicalFile(fullPath, contentType, enableRangeProcessing: true);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error retrieving image for identifier: {Identifier}", identifier);
                 return StatusCode(500, new { message = "Error retrieving image" });
             }
@@ -1108,11 +1099,12 @@ namespace Listenarr.Api.Controllers
 
                 return NotFound(new { message = "Image file not found" });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error deleting image for identifier: {Identifier}", identifier);
                 return StatusCode(500, new { message = "Error deleting image" });
             }
         }
     }
 }
+
+

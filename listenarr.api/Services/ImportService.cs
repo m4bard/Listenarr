@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -87,8 +87,7 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("ImportSingleFile: Using audiobook metadata for naming (Download {DownloadId}): {Title} by {Artist}", downloadId, namingMetadata.Title, namingMetadata.Artist);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "ImportSingleFile: failed to load audiobook metadata for naming (Download {DownloadId})", downloadId);
                     }
                 }
@@ -113,8 +112,7 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("ImportSingleFile: merged extracted metadata for {File}", sourcePath);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "ImportSingleFile: failed to extract metadata from {File}, using defaults", sourcePath);
                     }
                 }
@@ -173,8 +171,7 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "ImportSingleFile: Failed to evaluate quality for {File}", sourcePath);
                     }
                 }
@@ -318,8 +315,7 @@ namespace Listenarr.Api.Services
                                 uniqueFinal = uniqueInitial;
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "ImportSingleFile: failed to rename {Source} -> {Dest}", uniqueInitial, uniqueFinal);
                             uniqueFinal = uniqueInitial; // fallback
                         }
@@ -331,16 +327,14 @@ namespace Listenarr.Api.Services
                     // Note: single-file imports do not register the audiobook file immediately here.
                     // Registration and any quality gating is handled by the caller (DownloadService)
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     result.Success = false;
                     result.Message = ex.Message;
                     _logger.LogWarning(ex, "ImportSingleFile: failed file operation for {File}", sourcePath);
                 }
 
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 result.Success = false;
                 result.Message = ex.Message;
                 _logger.LogWarning(ex, "ImportSingleFile: unexpected failure for {File}", sourcePath);
@@ -409,8 +403,7 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "ImportFilesFromDirectory: Failed to load audiobook for batch quality evaluation (DownloadId: {DownloadId})", downloadId);
                     }
                 }
@@ -445,8 +438,7 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogDebug(ex, "ImportFilesFromDirectory: Failed to evaluate quality for multi-file import {File}", file);
                             }
                         }
@@ -524,8 +516,7 @@ namespace Listenarr.Api.Services
                             // Ensure the directory exists (create if necessary)
                             Directory.CreateDirectory(destDirForFile);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             res.Success = false;
                             res.Message = "Destination directory does not exist and could not be created";
                             res.SkippedReason = destDirForFile;
@@ -641,8 +632,7 @@ namespace Listenarr.Api.Services
                                     uniqueFinal = uniqueInitial;
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed to apply naming/rename on multi-file import for {File}", uniqueInitial);
                                 uniqueFinal = uniqueInitial;
                             }
@@ -668,14 +658,12 @@ namespace Listenarr.Api.Services
                                 var created = await audioFileService.EnsureAudiobookFileAsync(audiobookId.Value, res.FinalPath, "download");
                                 res.WasRegisteredToAudiobook = created;
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed to create AudiobookFile for imported file {File}", file);
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         res.Success = false;
                         res.Message = ex.Message;
                         _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed processing file in directory import: {File}", file);
@@ -684,8 +672,7 @@ namespace Listenarr.Api.Services
                     results.Add(res);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed to import files from directory for download {DownloadId}", downloadId);
             }
 
@@ -878,3 +865,4 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
         }
     }
 }
+

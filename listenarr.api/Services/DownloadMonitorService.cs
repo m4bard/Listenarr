@@ -278,8 +278,7 @@ namespace Listenarr.Api.Services
 
                 _logger.LogDebug("Scheduled next poll for client {ClientId} at {Next} (interval {Interval}s)", clientId, next, interval);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to schedule next client poll for {ClientId}", clientId);
             }
         }
@@ -297,8 +296,7 @@ namespace Listenarr.Api.Services
                 _nextClientPoll.AddOrUpdate(clientId, next, (_, __) => next);
                 _logger.LogWarning("Scheduled next poll for client {ClientId} after failure in {Seconds}s (attempt {Attempt})", clientId, backoff, count);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to schedule next client poll on failure for {ClientId}", clientId);
             }
         }
@@ -320,8 +318,7 @@ namespace Listenarr.Api.Services
                     Directory.Move(sourceDir, destDir);
                     return true;
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Directory.Move attempt {Attempt}/{Max} failed: {Source} -> {Dest}", attempt + 1, maxAttempts, sourceDir, destDir);
 
                     // Dump a small directory listing sample for diagnostics
@@ -330,8 +327,7 @@ namespace Listenarr.Api.Services
                         var files = Directory.GetFiles(sourceDir, "*.*", SearchOption.AllDirectories);
                         _logger.LogWarning("Directory listing for {Source} (count={Count}), sample: {Sample}", sourceDir, files.Length, string.Join(", ", files.Take(5).Select(f => Path.GetFileName(f))));
                     }
-                    catch (Exception listEx)
-                    {
+                    catch (Exception listEx) when (listEx is not OperationCanceledException && listEx is not OutOfMemoryException && listEx is not StackOverflowException) {
                         _logger.LogDebug(listEx, "Failed to enumerate files in {Source} while diagnosing move failure", sourceDir);
                     }
 
@@ -355,8 +351,7 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("Skipping ACL diagnostics for {Source} (non-Windows OS)", sourceDir);
                         }
                     }
-                    catch (Exception aclEx)
-                    {
+                    catch (Exception aclEx) when (aclEx is not OperationCanceledException && aclEx is not OutOfMemoryException && aclEx is not StackOverflowException) {
                         _logger.LogDebug(aclEx, "Failed to read ACLs for {Source}", sourceDir);
                     }
 
@@ -385,8 +380,7 @@ namespace Listenarr.Api.Services
                     File.Move(sourceFile, destFile, true);
                     return true;
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "File.Move attempt {Attempt}/{Max} failed: {Source} -> {Dest}", attempt + 1, maxAttempts, sourceFile, destFile);
 
                     // Try opening the source file to detect locks
@@ -395,8 +389,7 @@ namespace Listenarr.Api.Services
                         using var stream = File.Open(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read);
                         _logger.LogDebug("Able to open source file for read during diagnostic: {File}", sourceFile);
                     }
-                    catch (Exception openEx)
-                    {
+                    catch (Exception openEx) when (openEx is not OperationCanceledException && openEx is not OutOfMemoryException && openEx is not StackOverflowException) {
                         _logger.LogWarning(openEx, "Failed to open source file for read (may be locked): {File}", sourceFile);
                     }
 
@@ -418,8 +411,7 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("Skipping file ACL diagnostics for {File} (non-Windows OS)", sourceFile);
                         }
                     }
-                    catch (Exception aclEx)
-                    {
+                    catch (Exception aclEx) when (aclEx is not OperationCanceledException && aclEx is not OutOfMemoryException && aclEx is not StackOverflowException) {
                         _logger.LogDebug(aclEx, "Failed to read file ACLs for {File}", sourceFile);
                     }
 
@@ -463,8 +455,7 @@ namespace Listenarr.Api.Services
                 }
                 _logger.LogInformation("DownloadMonitorService polling interval set to {Interval}s", _pollingInterval.TotalSeconds);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to read polling interval from settings, using default {Default}s", _pollingInterval.TotalSeconds);
             }
 
@@ -474,8 +465,7 @@ namespace Listenarr.Api.Services
                 {
                     await MonitorDownloadsAsync(stoppingToken);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error in Download Monitor Service");
                 }
 
@@ -596,8 +586,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Broadcasting candidate DownloadUpdate for {DownloadId}; isCandidate={IsCandidate}", dl.Id, isCandidate);
                 await _hubContext.Clients.All.SendAsync("DownloadUpdate", new[] { payload }, cancellationToken);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to broadcast candidate update for {DownloadId}", dl.Id);
             }
         }
@@ -656,8 +645,7 @@ namespace Listenarr.Api.Services
                             break;
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error polling download client {ClientId}", clientId);
                 }
             }
@@ -942,8 +930,7 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Failed to persist client paths for download {DownloadId}", dl.Id);
                             }
 
@@ -1001,8 +988,7 @@ namespace Listenarr.Api.Services
                                         await dbContext.SaveChangesAsync(cancellationToken);
                                         _logger.LogDebug("Updated download {DownloadId} status to Completed in database", dl.Id);
                                     }
-                                    catch (Exception ex2)
-                                    {
+                                    catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
                                         _logger.LogWarning(ex2, "Failed to update download {DownloadId} status to Completed", dl.Id);
                                     }
                                     
@@ -1026,8 +1012,7 @@ namespace Listenarr.Api.Services
                                         }
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogDebug(ex, "Failed to read application settings for stability window, falling back to default");
                                 }
 
@@ -1058,8 +1043,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Error processing download {DownloadId} while polling qBittorrent", dl.Id);
                         }
                     }
@@ -1067,8 +1051,7 @@ namespace Listenarr.Api.Services
                     // Schedule next poll now that this client's polling completed successfully
                     ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Error polling qBittorrent client {ClientName}", client.Name);
                     ScheduleNextClientPollOnFailure(client.Id);
                 }
@@ -1176,8 +1159,7 @@ namespace Listenarr.Api.Services
                         {
                             doc = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(respText)!;
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "PollTransmission failed to parse JSON response for client {ClientName}", client.Name);
                             _logger.LogInformation("PollTransmission early-return: invalid JSON response from client {ClientName}", client.Name);
                             return;
@@ -1304,8 +1286,7 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Error processing download {DownloadId} while polling Transmission", dl.Id);
                             }
                         }
@@ -1319,8 +1300,7 @@ namespace Listenarr.Api.Services
                     _logger.LogWarning("PollTransmission failed to establish session after retries for client {ClientName}", client.Name);
 
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Error polling Transmission client {ClientName}", client.Name);
                     ScheduleNextClientPollOnFailure(client.Id);
                 }
@@ -1419,8 +1399,7 @@ namespace Listenarr.Api.Services
                         previousAttempt: null,
                         cancellationToken);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to resolve import item for download {DownloadId}, using fallback path", download.Id);
                     resolvedItem = preliminaryItem;
                 }
@@ -1450,8 +1429,7 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         // Failing this diagnostic lookup shouldn't hide the underlying problem - fall through and log the error
                         _logger.LogDebug(ex, "Error while checking processing queue for download {DownloadId}", download.Id);
                     }
@@ -1472,8 +1450,7 @@ namespace Listenarr.Api.Services
                             initialDelay = Math.Max(1, appSettings.MissingSourceRetryInitialDelaySeconds);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to read application settings for missing-source retry, falling back to defaults");
                     }
 
@@ -1520,8 +1497,7 @@ namespace Listenarr.Api.Services
                             // Attempt finalization again; do not pass the original cancellation token to avoid accidental cancellation
                             await FinalizeDownloadAsync(download, clientPath, client, CancellationToken.None);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Scheduled retry for download {DownloadId} failed", download.Id);
                             try { _metrics.Increment("finalize.retry.scheduled.failed"); } catch { }
                         }
@@ -1587,8 +1563,7 @@ namespace Listenarr.Api.Services
                             destinationPath = FinalizePathHelper.BuildMultiFileDestination(settings, download, dirName);
                             _logger.LogDebug("Computed directory destination for multi-file release: {DestinationPath}", destinationPath);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Failed to compute destination folder for multi-file download, falling back to simple OutputPath destination");
                             destinationPath = Path.Combine(outRoot, dirName);
                         }
@@ -1646,8 +1621,7 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("Generated simple destination path: {DestinationPath}", destinationPath);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Failed to generate destination path for download {DownloadId}", download.Id);
 
                     // Fallback to simple path in output directory
@@ -1672,8 +1646,7 @@ namespace Listenarr.Api.Services
                         _logger.LogDebug("Created destination directory: {Directory}", destDir);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Failed to create destination directory for {DestinationPath}", destinationPath);
                     return;
                 }
@@ -1704,8 +1677,7 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("Marked download {DownloadId} as Completed (observed) and persisted DownloadPath: {DownloadPath}", download.Id, dbDownload.DownloadPath);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to persist observed completion for download {DownloadId}", download.Id);
                 }
 
@@ -1723,8 +1695,7 @@ namespace Listenarr.Api.Services
                         _logger.LogWarning("Download processing queue service not available; skipping enqueue for download {DownloadId}", download.Id);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Failed to enqueue download {DownloadId} for processing: {Source}", download.Id, sourceFile);
                     return;
                 }
@@ -1732,8 +1703,7 @@ namespace Listenarr.Api.Services
                 // Finalization step: processing work will update DB and broadcast when the processing job runs
                 _logger.LogDebug("Download {DownloadId} enqueued for processing; final DB update will occur during processing", download.Id);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "FinalizeDownloadAsync failed for download {DownloadId}: {Title}", download.Id, download.Title);
             }
         }
@@ -1863,8 +1833,7 @@ namespace Listenarr.Api.Services
                                         }
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Error updating SABnzbd queue progress for slot");
                                 }
                             }
@@ -2013,8 +1982,7 @@ namespace Listenarr.Api.Services
                                         }
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogDebug(ex, "Failed to read application settings for stability window, falling back to default");
                                 }
                                 if (!_completionCandidates.ContainsKey(dl.Id))
@@ -2031,8 +1999,7 @@ namespace Listenarr.Api.Services
                                         await dbContext.SaveChangesAsync(cancellationToken);
                                         _logger.LogDebug("Updated download {DownloadId} status to Completed in database", dl.Id);
                                     }
-                                    catch (Exception ex2)
-                                    {
+                                    catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
                                         _logger.LogWarning(ex2, "Failed to update download {DownloadId} status to Completed", dl.Id);
                                     }
                                     
@@ -2063,8 +2030,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Error processing download {DownloadId} while polling SABnzbd", dl.Id);
                         }
                     }
@@ -2072,8 +2038,7 @@ namespace Listenarr.Api.Services
                     // Schedule next poll now that this client's polling completed successfully
                     ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error polling SABnzbd client {ClientName}", client.Name);
                     ScheduleNextClientPollOnFailure(client.Id);
                 }
@@ -2205,8 +2170,7 @@ namespace Listenarr.Api.Services
                                                 }
                                             }
                                         }
-                                        catch (Exception ex)
-                                        {
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogWarning(ex, "Error updating NZBGet queue progress for group");
                                         }
                                     }
@@ -2360,8 +2324,7 @@ namespace Listenarr.Api.Services
                                         await dbContext.SaveChangesAsync(cancellationToken);
                                         _logger.LogDebug("Updated download {DownloadId} status to Completed in database", dl.Id);
                                     }
-                                    catch (Exception ex2)
-                                    {
+                                    catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
                                         _logger.LogWarning(ex2, "Failed to update download {DownloadId} status to Completed", dl.Id);
                                     }
                                     
@@ -2390,8 +2353,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Error processing download {DownloadId} while polling NZBGet", dl.Id);
                         }
                     }
@@ -2399,8 +2361,7 @@ namespace Listenarr.Api.Services
                     // Schedule next poll now that this client's polling completed successfully
                     ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error polling NZBGet client {ClientName}", client.Name);
                     ScheduleNextClientPollOnFailure(client.Id);
                 }
@@ -2511,8 +2472,7 @@ namespace Listenarr.Api.Services
                 _logger.LogDebug("Updated download {DownloadId} progress: {Progress:F1}%, Status: {Status}, Downloaded: {Downloaded:N0} bytes",
                     downloadId, progress, mappedStatus, downloadedSize);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error updating download progress for {DownloadId}", downloadId);
             }
         }
@@ -2569,8 +2529,7 @@ namespace Listenarr.Api.Services
             {
                 await BroadcastDownloadUpdatesAsync(new List<Download> { download }, cancellationToken);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to broadcast failed download update for {DownloadId}", download.Id);
             }
 
@@ -2586,8 +2545,7 @@ namespace Listenarr.Api.Services
                         download.Title ?? "Unknown",
                         failureMessage);
                 }
-                catch (Exception histEx)
-                {
+                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
                     _logger.LogDebug(histEx, "Failed to record download failure history for {DownloadId}", download.Id);
                 }
             }
@@ -2607,8 +2565,7 @@ namespace Listenarr.Api.Services
                     await gateway.RemoveAsync(client, clientItemId, deleteFiles: false, cancellationToken);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to remove failed download {DownloadId} from client {ClientName}", download.Id, client.Name);
             }
 
@@ -2626,8 +2583,7 @@ namespace Listenarr.Api.Services
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to auto-search after failed download {DownloadId}", download.Id);
                 }
             }
@@ -2647,8 +2603,7 @@ namespace Listenarr.Api.Services
                 using var scope = _serviceScopeFactory.CreateScope();
                 pushService = scope.ServiceProvider.GetService<Listenarr.Api.Services.DownloadPushService>();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Unable to resolve DownloadPushService (non-fatal)");
             }
 
@@ -2723,8 +2678,7 @@ namespace Listenarr.Api.Services
                         sanitized,
                         cancellationToken);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     // Log a friendly warning so operator can see broadcast failures
                     _logger.LogWarning(ex, "Failed to send DownloadUpdate to SignalR clients (Count={Count}, SampleIds={Ids})", sanitized.Count, sanitized.Select(s => s.id).Take(5).ToArray());
                 }
@@ -2763,8 +2717,7 @@ namespace Listenarr.Api.Services
                         sanitizedList,
                         cancellationToken);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to send DownloadsList to SignalR clients (Count={Count}, SampleIds={Ids})", sanitizedList.Count, sanitizedList.Select(s => s.id).Take(5).ToArray());
                 }
             }
@@ -2802,3 +2755,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

@@ -110,8 +110,7 @@ namespace Listenarr.Api.Services
                 {
                     return await _configurationService.GetApplicationSettingsAsync();
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to load application settings while building queue (non-fatal)");
                     return null;
                 }
@@ -186,8 +185,7 @@ namespace Listenarr.Api.Services
 
                             mappedFiltered.Add(queueItem);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "Error mapping filtered queue item to Listenarr download");
                             mappedFiltered.Add(queueItem);
                         }
@@ -269,8 +267,7 @@ namespace Listenarr.Api.Services
                                         orphanedDownload.Id, orphanedDownload.Title, client.Name);
                                     try { _metrics.Increment("download.purged.count"); } catch { }
                                 }
-                                catch (Exception exRemove)
-                                {
+                                catch (Exception exRemove) when (exRemove is not OperationCanceledException && exRemove is not OutOfMemoryException && exRemove is not StackOverflowException) {
                                     _logger.LogWarning(exRemove, "Failed to purge orphaned download {DownloadId} from repository, continuing", orphanedDownload.Id);
                                 }
                             }
@@ -278,13 +275,11 @@ namespace Listenarr.Api.Services
                             _logger.LogInformation("Attempted purge of {Count} orphaned download records from {ClientName}", toPurge.Count, client.Name);
                         }
                     }
-                    catch (Exception purgeEx)
-                    {
+                    catch (Exception purgeEx) when (purgeEx is not OperationCanceledException && purgeEx is not OutOfMemoryException && purgeEx is not StackOverflowException) {
                         _logger.LogError(purgeEx, "Error purging orphaned downloads for client {ClientName}", client.Name);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error getting queue from download client {ClientName}", client.Name);
                 }
             }
@@ -332,8 +327,7 @@ namespace Listenarr.Api.Services
                         existingIds.Add(d.Id);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Error while appending completed external downloads to queue (non-fatal)");
                 }
             }
@@ -362,3 +356,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

@@ -120,15 +120,13 @@ public class AsinCandidateCollector
                             collection.AsinToOpenLibrary[book.Key] = book;
                         }
                     }
-                    catch (Exception exConvert)
-                    {
+                    catch (Exception exConvert) when (exConvert is not OperationCanceledException && exConvert is not OutOfMemoryException && exConvert is not StackOverflowException) {
                         _logger.LogWarning(exConvert, "Failed to convert OpenLibrary book to SearchResult: {Title}", book.Title);
                     }
                 }
             }
         }
-        catch (Exception exOL)
-        {
+        catch (Exception exOL) when (exOL is not OperationCanceledException && exOL is not OutOfMemoryException && exOL is not StackOverflowException) {
             _logger.LogWarning(exOL, "OpenLibrary augmentation failed: {Message}", exOL.Message);
         }
     }
@@ -145,3 +143,4 @@ public class AsinCandidateCollection
     public Dictionary<string, OpenLibraryBook> AsinToOpenLibrary { get; } = new Dictionary<string, OpenLibraryBook>(StringComparer.OrdinalIgnoreCase);
     public List<SearchResult> OpenLibraryDerivedResults { get; } = new List<SearchResult>();
 }
+

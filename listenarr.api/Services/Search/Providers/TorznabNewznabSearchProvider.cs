@@ -76,8 +76,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
             _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, results.Count);
             return results;
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error searching Torznab/Newznab indexer {Name}", indexer.Name);
             return new List<IndexerSearchResult>();
         }
@@ -372,8 +371,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                             }
                                         }
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogDebug(ex, "Failed to scrape comments page for {Title}", result.Title);
                                     }
                                 }
@@ -538,8 +536,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                         _logger.LogWarning("Skipping result '{Title}' - no download link found", result.Title);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error parsing indexer result item");
                 }
             }
@@ -562,8 +559,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                 }
             }
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error parsing Torznab XML response from {IndexerName}", indexer.Name);
         }
 
@@ -645,3 +641,4 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
         return null;
     }
 }
+

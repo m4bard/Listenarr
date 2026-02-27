@@ -50,10 +50,10 @@ static class DeleteDownloadsProgram
             Log.Logger.Information("Done.");
             return 0;
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             Log.Logger.Error(ex, "Error while deleting downloads");
             return 1;
         }
     }
 }
+

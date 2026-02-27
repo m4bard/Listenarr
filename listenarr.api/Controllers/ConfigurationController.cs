@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -64,8 +64,7 @@ namespace Listenarr.Api.Controllers
                 }
                 return Ok(configs);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error retrieving API configurations");
                 return StatusCode(500, "Internal server error");
             }
@@ -95,8 +94,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(config);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error retrieving API configuration {Id}", id);
                 return StatusCode(500, "Internal server error");
             }
@@ -116,8 +114,7 @@ namespace Listenarr.Api.Controllers
                 var id = await _configurationService.SaveApiConfigurationAsync(config);
                 return Ok(new { id });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error saving API configuration");
                 return StatusCode(500, "Internal server error");
             }
@@ -137,8 +134,7 @@ namespace Listenarr.Api.Controllers
                 var deleted = await _configurationService.DeleteApiConfigurationAsync(id);
                 return Ok(deleted);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error deleting API configuration {Id}", id);
                 return StatusCode(500, "Internal server error");
             }
@@ -165,8 +161,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(response);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error retrieving download client configurations");
                 return StatusCode(500, "Internal server error");
             }
@@ -198,8 +193,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(response);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error retrieving download client configuration {Id}", id);
                 return StatusCode(500, "Internal server error");
             }
@@ -279,8 +273,7 @@ namespace Listenarr.Api.Controllers
                 var id = await _configurationService.SaveDownloadClientConfigurationAsync(config!);
                 return Ok(new { id });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error saving download client configuration");
                 return StatusCode(500, "Internal server error");
             }
@@ -294,8 +287,7 @@ namespace Listenarr.Api.Controllers
                 var deleted = await _configurationService.DeleteDownloadClientConfigurationAsync(id);
                 return Ok(deleted);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error deleting download client configuration {Id}", id);
                 return StatusCode(500, "Internal server error");
             }
@@ -384,8 +376,7 @@ namespace Listenarr.Api.Controllers
                 }
                 return Ok(new { success = Success, message = Message, client = clientResponse });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error testing download client configuration");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
@@ -405,8 +396,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(settings);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error retrieving application settings");
                 return StatusCode(500, "Internal server error");
             }
@@ -438,8 +428,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(savedSettings);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error saving application settings");
                 return StatusCode(500, new { error = "Failed to save application settings", message = ex.Message });
             }
@@ -477,8 +466,7 @@ namespace Listenarr.Api.Controllers
                 _logger.LogInformation("[ConfigurationController] Returning startup config.");
                 return Ok(config);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error retrieving startup configuration");
                 return StatusCode(500, "Internal server error");
             }
@@ -511,8 +499,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(savedConfig);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error saving startup configuration");
                 return StatusCode(500, "Internal server error");
             }
@@ -538,8 +525,7 @@ namespace Listenarr.Api.Controllers
                 await _configurationService.SaveStartupConfigAsync(current);
                 return Ok(new { apiKey = newKey });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error regenerating API key");
                 return StatusCode(500, "Internal server error");
             }
@@ -582,8 +568,7 @@ namespace Listenarr.Api.Controllers
                 await _configurationService.SaveStartupConfigAsync(current);
                 return Ok(new { apiKey = newKey });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error generating initial API key");
                 return StatusCode(500, "Internal server error");
             }
@@ -630,12 +615,12 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(new { success = true, message = "Test notification sent successfully" });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error sending test notification");
                 return StatusCode(500, new { success = false, message = "Failed to send test notification", error = ex.Message });
             }
         }
     }
 }
+
 

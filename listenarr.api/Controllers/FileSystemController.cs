@@ -109,8 +109,7 @@ public class FileSystemController : ControllerBase
                 Items = directories.OrderByDescending(d => d.IsDirectory).ThenBy(d => d.Name).ToList()
             };
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error browsing directory: {Path}", path);
             return StatusCode(500, new { error = "Error browsing directory" });
         }
@@ -160,8 +159,7 @@ public class FileSystemController : ControllerBase
                          "Directory is valid"
             };
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error validating path: {Path}", path);
             return new FileSystemValidateResponse
             {
@@ -260,8 +258,7 @@ public class FileSystemController : ControllerBase
                     : "⚠️ Moving across volumes will break hardlinks and create independent copies"
             });
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error checking volume for paths: {Source} -> {Dest}", sourcePath, destPath);
             return Ok(new VolumeCheckResponse
             {
@@ -304,3 +301,4 @@ public class VolumeCheckResponse
     public string? DestVolume { get; set; }
     public string? Message { get; set; }
 }
+

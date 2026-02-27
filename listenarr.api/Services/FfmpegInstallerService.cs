@@ -123,8 +123,7 @@ namespace Listenarr.Api.Services
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Error while reading startup ffmpeg provider config");
                 }
 
@@ -226,8 +225,7 @@ namespace Listenarr.Api.Services
                         }
                         await TryDeleteFileAsync(tmpFile);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Managed extraction failed, attempting fallback to system tar for {Tmp}", tmpFile);
                         try
                         {
@@ -353,15 +351,13 @@ namespace Listenarr.Api.Services
                                     File.Move(chosen, dest);
                                     _logger.LogInformation("Moved ffprobe from {Src} to {Dest}", chosen, dest);
                                 }
-                                catch (Exception mvEx)
-                                {
+                                catch (Exception mvEx) when (mvEx is not OperationCanceledException && mvEx is not OutOfMemoryException && mvEx is not StackOverflowException) {
                                     try
                                     {
                                         File.Copy(chosen, dest, overwrite: true);
                                         _logger.LogInformation("Copied ffprobe from {Src} to {Dest} (move failed: {Err})", chosen, dest, mvEx.Message);
                                     }
-                                    catch (Exception cpEx)
-                                    {
+                                    catch (Exception cpEx) when (cpEx is not OperationCanceledException && cpEx is not OutOfMemoryException && cpEx is not StackOverflowException) {
                                         _logger.LogWarning(cpEx, "Failed to copy ffprobe from {Src} to {Dest}", chosen, dest);
                                     }
                                 }
@@ -394,8 +390,7 @@ namespace Listenarr.Api.Services
                                 catch { /* best effort */ }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Failed to move or copy ffprobe candidate {Src} to {Dest}", chosen, ffprobePath);
                         }
                     }
@@ -404,8 +399,7 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("No ffprobe binary found in extracted files under {BaseDir}", baseDir);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Non-fatal error while locating/copying ffprobe from extracted files");
                 }
 
@@ -415,8 +409,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("ffprobe installed to {Path}", ffprobePath);
                 return ffprobePath;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to download or install ffprobe");
                 return null;
             }
@@ -521,8 +514,7 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "GitHub asset discovery failed for repo {Repo}", repo);
             }
 
@@ -570,3 +562,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

@@ -43,8 +43,7 @@ namespace Listenarr.Api.Services
                         var changed = await ctx.Database.ExecuteSqlRawAsync(update, cancellationToken);
                         _logger.LogInformation("StartupDbNormalizer: normalized column {Column}, rows changed: {Changes}", col, changed);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "StartupDbNormalizer: failed to normalize column {Column}", col);
                     }
                 }
@@ -55,8 +54,7 @@ namespace Listenarr.Api.Services
             {
                 // shutdown requested - ignore
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "StartupDbNormalizer: unexpected error while running normalization");
             }
         }
@@ -64,3 +62,4 @@ namespace Listenarr.Api.Services
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
+

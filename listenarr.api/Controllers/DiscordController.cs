@@ -1,4 +1,4 @@
-﻿using Listenarr.Api.Services;
+using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -61,8 +61,7 @@ namespace Listenarr.Api.Controllers
                         return BadRequest(new { success = false, message = "Invalid bot token (unauthorized)" });
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to call /users/@me for diagnostics");
                 }
 
@@ -110,8 +109,7 @@ namespace Listenarr.Api.Controllers
                 _logger.LogWarning("Discord token validation returned {Status}: {Body}", meRespCheck.StatusCode, LogRedaction.RedactText(meCheckBody, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { token })));
                 return StatusCode(500, new { success = false, message = "Failed to validate bot token", status = (int)meRespCheck.StatusCode, body = meCheckBody });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error checking Discord status");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
@@ -165,8 +163,7 @@ namespace Listenarr.Api.Controllers
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Discord register-commands: failed to call /users/@me");
                 }
 
@@ -246,8 +243,7 @@ namespace Listenarr.Api.Controllers
                 _logger.LogWarning("Register commands returned {Status}: {Body}", resp.StatusCode, LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { token })));
                 return StatusCode((int)resp.StatusCode, new { success = false, message = "Failed to register commands", body });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error registering Discord commands");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
@@ -300,8 +296,7 @@ namespace Listenarr.Api.Controllers
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to run diagnostics before starting bot");
                 }
 
@@ -316,8 +311,7 @@ namespace Listenarr.Api.Controllers
                     return StatusCode(500, new { success = false, message = "Failed to start bot" });
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error starting Discord bot");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
@@ -350,8 +344,7 @@ namespace Listenarr.Api.Controllers
                     return StatusCode(500, new { success = false, message = "Failed to stop bot" });
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error stopping Discord bot");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
@@ -372,8 +365,7 @@ namespace Listenarr.Api.Controllers
                 var isRunning = await _botService.IsBotRunningAsync();
                 return Ok(new { success = true, status, isRunning });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error getting Discord bot status");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
@@ -423,8 +415,7 @@ namespace Listenarr.Api.Controllers
                         nodeError = (nodeError ?? string.Empty) + " (timed out)";
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     nodeError = ex.Message;
                 }
 
@@ -440,12 +431,12 @@ namespace Listenarr.Api.Controllers
                     nodeError
                 });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error running Discord diagnostics");
                 return StatusCode(500, new { success = false, message = ex.Message });
             }
         }
     }
 }
+
 

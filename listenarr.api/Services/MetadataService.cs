@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -79,8 +79,7 @@ namespace Listenarr.Api.Services
 
                 return ParseAudnexusResponse(audnexusData);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, $"Error fetching metadata for title: {title}, artist: {artist}");
                 return null;
             }
@@ -217,8 +216,7 @@ namespace Listenarr.Api.Services
 
                                     return metadata;
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogDebug(ex, "Failed parsing ffprobe JSON for file: {File}", filePath);
                                 }
                             }
@@ -226,8 +224,7 @@ namespace Listenarr.Api.Services
 
                         return null;
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogInformation(ex, "ffprobe not available or failed for file: {File}", filePath);
                         return null;
                     }
@@ -249,8 +246,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation($"Extracted basic metadata from file: {filePath}");
                 return fallback;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, $"Error extracting metadata from file: {filePath}");
                 return new AudioMetadata();
             }
@@ -264,8 +260,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation($"Applied metadata to file: {filePath}");
                 await Task.CompletedTask;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, $"Error applying metadata to file: {filePath}");
             }
         }
@@ -281,8 +276,7 @@ namespace Listenarr.Api.Services
                 }
                 return null;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, $"Error downloading cover art from: {coverArtUrl}");
                 return null;
             }
@@ -321,3 +315,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

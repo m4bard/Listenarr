@@ -1,4 +1,4 @@
-﻿using Listenarr.Domain.Models;
+using Listenarr.Domain.Models;
 using Listenarr.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
@@ -114,8 +114,7 @@ namespace Listenarr.Api.Controllers
                 var responseAuthType = authEnabled ? "session" : "none";
                 return Ok(new { message = "Logged out successfully", authType = responseAuthType });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error during logout for user: {Username} (AuthType: {AuthType})", username, authType);
                 return StatusCode(500, new { message = "Error during logout", error = ex.Message });
             }
@@ -175,4 +174,5 @@ namespace Listenarr.Api.Controllers
     }
 
 }
+
 

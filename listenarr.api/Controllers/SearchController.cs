@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -96,8 +96,7 @@ namespace Listenarr.Api.Controllers
                         r.ImageUrl = $"/api/images/{r.Asin}";
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to normalize image for search result ASIN {Asin}", r?.Asin);
                 }
             }
@@ -195,8 +194,7 @@ namespace Listenarr.Api.Controllers
                                     r.ImageUrl = $"/api/images/{r.Asin}";
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r?.Asin);
                             }
                         }
@@ -243,8 +241,7 @@ namespace Listenarr.Api.Controllers
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Failed to normalize ISBN in advanced search");
                         return BadRequest("Invalid ISBN format");
                     }
@@ -265,13 +262,11 @@ namespace Listenarr.Api.Controllers
                     }
                     // Debug: log incoming advanced parameters for diagnostics
                     try { _logger.LogInformation("[DBG] Advanced search request: Author='{Author}', Title='{Title}', Isbn='{Isbn}', Asin='{Asin}', Query='{Query}', Region='{Region}', Language='{Language}'", req.Author, req.Title, req.Isbn, req.Asin, req.Query, region, language); }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         System.Diagnostics.Debug.WriteLine($"SearchController advanced-search info logging failed: {ex.Message}");
                     }
                     try { _logger.LogDebug("[DBG] Advanced params: Title='{Title}', Author='{Author}', Isbn='{Isbn}'", req.Title, req.Author, req.Isbn); }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         System.Diagnostics.Debug.WriteLine($"SearchController advanced-search debug logging failed: {ex.Message}");
                     }
 
@@ -307,8 +302,7 @@ namespace Listenarr.Api.Controllers
                                             else md.ImageUrl = $"/api/images/{md.Asin}?url={Uri.EscapeDataString(md.ImageUrl)}";
                                         }
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogWarning(ex, "Failed to normalize image for ASIN metadata {Asin}", md?.Asin);
                                     }
                                 }
@@ -321,8 +315,7 @@ namespace Listenarr.Api.Controllers
                             }
                             // If audimeta didn't return a record, fall through to unified search below
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Audimeta lookup failed for ASIN {Asin} in advanced search; falling back to unified search", req.Asin);
                         }
                     }
@@ -406,8 +399,7 @@ namespace Listenarr.Api.Controllers
                                                     }
                                                     if (string.IsNullOrWhiteSpace(chosenAsin) && !string.IsNullOrWhiteSpace(elAsin)) chosenAsin = elAsin;
                                                 }
-                                                catch (Exception ex)
-                                                {
+                                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                                     _logger.LogDebug(ex, "Failed to parse audimeta series candidate element for series '{Series}'", req.Series);
                                                 }
                                             }
@@ -421,8 +413,7 @@ namespace Listenarr.Api.Controllers
                                             }
                                         }
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogDebug(ex, "Failed to extract series ASIN from audimeta series search result for '{SeriesName}'", req.Series);
                                     }
                                 }
@@ -442,8 +433,7 @@ namespace Listenarr.Api.Controllers
                                         var resp = JsonSerializer.Deserialize<List<Listenarr.Api.Services.AudimetaSearchResult>>(json, opts);
                                         books = resp;
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogDebug(ex, "Failed to deserialize audimeta series books list for series ASIN {SeriesAsin}", seriesAsin);
                                     }
                                     if (books == null)
@@ -453,8 +443,7 @@ namespace Listenarr.Api.Controllers
                                             var respEnv = JsonSerializer.Deserialize<Listenarr.Api.Services.AudimetaSearchResponse>(json, opts);
                                             books = respEnv?.Results;
                                         }
-                                        catch (Exception ex)
-                                        {
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogDebug(ex, "Failed to deserialize audimeta series books envelope for series ASIN {SeriesAsin}", seriesAsin);
                                         }
                                     }
@@ -491,8 +480,7 @@ namespace Listenarr.Api.Controllers
                                                 SanitizeResultForPublicApi(sr, region);
                                                 converted.Add(sr);
                                             }
-                                            catch (Exception ex)
-                                            {
+                                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                                 _logger.LogWarning(ex, "Failed converting audimeta series book to SearchResult for ASIN {Asin}", book.Asin);
                                             }
                                         }
@@ -520,8 +508,7 @@ namespace Listenarr.Api.Controllers
                                                             if (!string.IsNullOrWhiteSpace(downloaded)) md.ImageUrl = $"/api/images/{md.Asin}";
                                                         }
                                                     }
-                                                    catch (Exception ex)
-                                                    {
+                                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                                         _logger.LogWarning(ex, "Failed to normalize image for series metadata ASIN {Asin}", md?.Asin);
                                                     }
                                                 }
@@ -534,8 +521,7 @@ namespace Listenarr.Api.Controllers
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Failed to perform series lookup for '{Series}' in advanced search; falling back to unified search", req.Series);
                         }
                     }
@@ -557,8 +543,7 @@ namespace Listenarr.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(req.Asin)) queryParts.Add($"ASIN:{req.Asin}");
                     var query = queryParts.Count > 0 ? string.Join(" ", queryParts) : (req.Query ?? string.Empty);
                     try { _logger.LogInformation("Advanced search request composed parts={Parts} -> query='{Query}'", string.Join("|", queryParts), LogRedaction.SanitizeText(query)); }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         System.Diagnostics.Debug.WriteLine($"SearchController composed-query logging failed: {ex.Message}");
                     }
                     // Respect optional pagination/candidate caps from the client
@@ -596,8 +581,7 @@ namespace Listenarr.Api.Controllers
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Failed to normalize image for result with ASIN {Asin}", r.Asin);
                             }
                         }
@@ -621,8 +605,7 @@ namespace Listenarr.Api.Controllers
                                 results = results.Where(r => !string.IsNullOrWhiteSpace(r.Series) && r.Series.IndexOf(seriesFilter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "Failed to apply series filter '{Series}' to advanced author search results", req.Series);
                         }
                     }
@@ -632,8 +615,7 @@ namespace Listenarr.Api.Controllers
                     return Ok(flatMapped);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error parsing search request body");
                 return BadRequest("Invalid search request");
             }
@@ -650,8 +632,7 @@ namespace Listenarr.Api.Controllers
                     r.ProductUrl = $"https://www.amazon.com/dp/{r.Asin}";
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to sanitize public search result for ASIN {Asin}", r.Asin);
             }
         }
@@ -668,8 +649,7 @@ namespace Listenarr.Api.Controllers
                     aud = await _metadataService.GetAudimetaMetadataAsync(md.Asin, region, true);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to retrieve audimeta metadata for ASIN {Asin}", md?.Asin);
             }
 
@@ -699,8 +679,7 @@ namespace Listenarr.Api.Controllers
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to normalize audimeta image for {Asin}", aud.Asin);
                 }
 
@@ -866,8 +845,7 @@ namespace Listenarr.Api.Controllers
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to ensure cached image for {Asin}", r?.Asin);
                 }
             }
@@ -963,8 +941,7 @@ namespace Listenarr.Api.Controllers
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Failed to ensure cached image for search result ASIN {Asin}", r?.Asin);
                         }
                     }
@@ -976,8 +953,7 @@ namespace Listenarr.Api.Controllers
                 }
                 return Ok(response);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error performing search for query: {Query}", query);
                 return StatusCode(500, "Internal server error");
             }
@@ -1000,15 +976,13 @@ namespace Listenarr.Api.Controllers
             {
                 // Debug: log raw incoming query to help integration-test diagnostics
                 try { _logger.LogDebug("[DEBUG] IntelligentSearch called with query='{Query}'", query ?? "<null>"); }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     System.Diagnostics.Debug.WriteLine($"SearchController IntelligentSearch debug logging failed: {ex.Message}");
                 }
 
                 // Also emit a warning-level log so test output captures the value
                 try { _logger.LogWarning("[DBG] IntelligentSearch called with query='{Query}'", query ?? "<null>"); }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     System.Diagnostics.Debug.WriteLine($"SearchController IntelligentSearch warning logging failed: {ex.Message}");
                 }
 
@@ -1044,8 +1018,7 @@ namespace Listenarr.Api.Controllers
                                 if (!string.IsNullOrWhiteSpace(downloaded)) r.ImageUrl = $"/api/images/{r.Asin}";
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r?.Asin);
                         }
                     }
@@ -1053,8 +1026,7 @@ namespace Listenarr.Api.Controllers
                 _logger.LogInformation("IntelligentSearch returning {Count} results for query: {Query}", results?.Count ?? 0, LogRedaction.SanitizeText(query));
                 return Ok(results ?? new List<MetadataSearchResult>());
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error performing intelligent search for query: {Query}", LogRedaction.SanitizeText(query));
                 return StatusCode(500, "Internal server error");
             }
@@ -1070,8 +1042,7 @@ namespace Listenarr.Api.Controllers
                 if (res == null) return NotFound();
                 return Ok(res);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error proxying audimeta series search for name {Name}", name);
                 return StatusCode(500, "Internal server error");
             }
@@ -1087,8 +1058,7 @@ namespace Listenarr.Api.Controllers
                 if (res == null) return NotFound();
                 return Ok(res);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error proxying audimeta series books for ASIN {Asin}", asin);
                 return StatusCode(500, "Internal server error");
             }
@@ -1129,8 +1099,7 @@ namespace Listenarr.Api.Controllers
                 _logger.LogInformation("IndexersSearch returning {Count} results for query: {Query}", results.Count, LogRedaction.SanitizeText(query));
                 return Ok(results);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching indexers for query: {Query}", LogRedaction.SanitizeText(query));
                 return StatusCode(500, "Internal server error");
             }
@@ -1144,8 +1113,7 @@ namespace Listenarr.Api.Controllers
                 var isConnected = await _searchService.TestApiConnectionAsync(apiId);
                 return Ok(isConnected);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error testing API connection for {ApiId}", apiId);
                 return StatusCode(500, "Internal server error");
             }
@@ -1172,8 +1140,7 @@ namespace Listenarr.Api.Controllers
         //var fuzzyThreshold = double.TryParse(Request.Query["fuzzyThreshold"], out var ft) ? Math.Clamp(ft, 0.0, 1.0) : 0.7;
         //         return Ok(results);
         //     }
-        //     catch (Exception ex)
-        //     {
+        //     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) //     {
         //         _logger.LogError(ex, "Error searching indexers for query: {Query}", query);
         //         return StatusCode(500, "Internal server error");
         //     }
@@ -1203,8 +1170,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(result);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching audimeta for query: {Query}", query);
                 return StatusCode(500, "Internal server error");
             }
@@ -1262,8 +1228,7 @@ namespace Listenarr.Api.Controllers
                             return Ok(new List<object> { metadataObj });
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Audimeta lookup failed for ASIN {Asin}, trying other configured metadata sources", asin);
                     }
 
@@ -1277,8 +1242,7 @@ namespace Listenarr.Api.Controllers
                         }
                         _logger.LogWarning("Metadata lookup returned null for ASIN {Asin}, falling back to intelligent search", asin);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Metadata lookup failed for ASIN {Asin}, falling back to intelligent search", asin);
                     }
 
@@ -1328,8 +1292,7 @@ namespace Listenarr.Api.Controllers
                             sourceUrl = "https://www.amazon.com"
                         });
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Failed to convert search result for title: {Title}", searchResult.Title);
                         continue;
                     }
@@ -1338,8 +1301,7 @@ namespace Listenarr.Api.Controllers
                 _logger.LogInformation("Successfully fetched {Count} enriched results for title search: {Query}", results.Count, query);
                 return Ok(results);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error performing title search for query: {Query}", query);
                 return StatusCode(500, "Internal server error");
             }
@@ -1410,11 +1372,11 @@ namespace Listenarr.Api.Controllers
                 _logger.LogInformation("SearchByApi returning {Count} results for apiId: {ApiId}", results.Count, apiId);
                 return Ok(results);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching API {ApiId} for query: {Query}", apiId, query);
                 return StatusCode(500, "Internal server error");
             }
         }
     }
 }
+

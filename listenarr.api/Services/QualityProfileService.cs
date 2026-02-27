@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -235,8 +235,7 @@ namespace Listenarr.Api.Services
                 score.SmartScore = composite.Total;
                 score.SmartScoreBreakdown = composite.Breakdown.ToDictionary(kv => kv.Key, kv => (int)Math.Round(kv.Value));
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to compute composite smart score for search result {Id}", searchResult.Id);
             }
 
@@ -501,4 +500,5 @@ internal class ApiLocalQualityProfileRepository : Listenarr.Application.Reposito
         return await _db.Audiobooks.CountAsync(a => a.QualityProfileId == profileId);
     }
 }
+
 

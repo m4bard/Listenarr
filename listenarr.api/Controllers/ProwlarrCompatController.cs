@@ -23,8 +23,7 @@ namespace Listenarr.Api.Controllers
                 var cfg = _startupConfigService.GetConfig();
                 if (cfg != null) return cfg;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger?.LogDebug(ex, "ProwlarrCompat: Failed to load startup config from IStartupConfigService; falling back");
             }
 
@@ -36,8 +35,7 @@ namespace Listenarr.Api.Controllers
                 {
                     return configService.GetStartupConfigAsync().GetAwaiter().GetResult();
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger?.LogDebug(ex, "ProwlarrCompat: Failed to load startup config from IConfigurationService; falling back to default");
                 }
             }
@@ -466,8 +464,7 @@ namespace Listenarr.Api.Controllers
                     var redacted = LogRedaction.RedactText(raw, LogRedaction.GetSensitiveValuesFromEnvironment());
                     _logger?.LogInformation("Prowlarr indexer update payload body: {Payload}", redacted);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     System.Diagnostics.Debug.WriteLine($"ProwlarrCompatController payload logging failed (PUT indexer): {ex.Message}");
                 }
 
@@ -673,8 +670,7 @@ namespace Listenarr.Api.Controllers
                     var apiKeyCompare = indexer.ApiKey ?? string.Empty;
                     await CleanupDuplicateIndexersAsync(normalizedUrl, apiKeyCompare);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger?.LogWarning(ex, "Failed to dedupe indexers after update for {Id}", indexer.Id);
                 }
 
@@ -697,8 +693,7 @@ namespace Listenarr.Api.Controllers
                             _logger?.LogDebug("Suppressing update toast for indexer {Id} since it was created recently", indexer.Id);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger?.LogDebug(ex, "Failed to evaluate recent-create toast suppression for Prowlarr indexer {Id}", indexer.Id);
                     }
 
@@ -800,8 +795,7 @@ namespace Listenarr.Api.Controllers
                 _dbContext.Indexers.RemoveRange(remove);
                 await _dbContext.SaveChangesAsync();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger?.LogWarning(ex, "Failed to cleanup duplicate indexers for {Url}", normalizedUrl);
             }
         }
@@ -827,8 +821,7 @@ namespace Listenarr.Api.Controllers
                     var redacted = LogRedaction.RedactText(raw, LogRedaction.GetSensitiveValuesFromEnvironment());
                     _logger?.LogInformation("Prowlarr indexers payload body: {Payload}", redacted);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     System.Diagnostics.Debug.WriteLine($"ProwlarrCompatController payload logging failed (POST indexers): {ex.Message}");
                 }
 
@@ -998,8 +991,7 @@ namespace Listenarr.Api.Controllers
                             var apiKey = ci.ApiKey ?? string.Empty;
                             await CleanupDuplicateIndexersAsync(normalizedUrl, apiKey);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger?.LogWarning(ex, "Failed to dedupe indexers for {Name}", ci.Name);
                         }
                     }
@@ -1029,8 +1021,7 @@ namespace Listenarr.Api.Controllers
                             _logger?.LogDebug("Suppressing batch import toast due to recent identical message");
                         }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger?.LogWarning(ex, "Failed to publish indexer import notification");
                         }
                     }
@@ -1107,8 +1098,7 @@ namespace Listenarr.Api.Controllers
                         created = indexers.Count;
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger?.LogDebug(ex, "Failed parsing debug indexers publish payload");
                 }
             }
@@ -1132,8 +1122,7 @@ namespace Listenarr.Api.Controllers
                 var message = names.Length > 0 ? $"Imported {created} indexer(s): {string.Join(", ", names)}" : $"Imported {created} indexer(s) successfully";
                 await _toastService.PublishNotificationAsync("Indexers", message, icon: null, timeoutMs: 8000);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger?.LogWarning(ex, "Failed to publish debug indexer notification");
             }
 
@@ -1157,8 +1146,7 @@ namespace Listenarr.Api.Controllers
                 var clients = Listenarr.Api.Hubs.SettingsHub.ConnectedClientIds.ToArray();
                 return Ok(new { connected = clients.Length, clients });
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger?.LogWarning(ex, "Failed to retrieve SettingsHub clients");
                 return StatusCode(500, new { error = "Failed to retrieve clients" });
             }
@@ -1185,8 +1173,7 @@ namespace Listenarr.Api.Controllers
                 var redacted = LogRedaction.RedactText(raw, LogRedaction.GetSensitiveValuesFromEnvironment());
                 _logger?.LogInformation("Prowlarr indexer payload body: {Payload}", redacted);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 System.Diagnostics.Debug.WriteLine($"ProwlarrCompatController payload logging failed (single indexer POST): {ex.Message}");
             }
 
@@ -1346,3 +1333,4 @@ namespace Listenarr.Api.Controllers
         private record FieldDto(string Name, object? Value);
     }
 }
+

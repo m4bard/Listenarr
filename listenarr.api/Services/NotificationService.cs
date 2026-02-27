@@ -164,8 +164,7 @@ namespace Listenarr.Api.Services
             {
                 string body = string.Empty;
                 try { body = await response.Content.ReadAsStringAsync(); }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to read notification response body for diagnostic logging");
                 }
 
@@ -244,11 +243,11 @@ namespace Listenarr.Api.Services
                 // Intentional broad catch: notification delivery failures must never propagate to callers.
                 // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-                catch (Exception ex)
-#pragma warning restore CA1031
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
                 {
                     _logger.LogError(ex, "Error sending Discord notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                 }
+#pragma warning restore CA1031
 
             }
 
@@ -452,12 +451,12 @@ namespace Listenarr.Api.Services
                 // Intentional broad catch: notification delivery failures must never propagate to callers.
                 // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-                catch (Exception ex)
-#pragma warning restore CA1031
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
                 {
                     _logger.LogError(ex, "Error sending Telegram notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
                 }
+#pragma warning restore CA1031
             }
 
             // Pushbullet (https://docs.pushbullet.com/#pushes)
@@ -548,12 +547,12 @@ namespace Listenarr.Api.Services
                 // Intentional broad catch: notification delivery failures must never propagate to callers.
                 // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-                catch (Exception ex)
-#pragma warning restore CA1031
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
                 {
                     _logger.LogError(ex, "Error sending Pushbullet notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
                 }
+#pragma warning restore CA1031
             }
 
             // Slack Incoming Webhooks (https://api.slack.com/messaging/webhooks)
@@ -608,12 +607,12 @@ namespace Listenarr.Api.Services
                 // Intentional broad catch: notification delivery failures must never propagate to callers.
                 // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-                catch (Exception ex)
-#pragma warning restore CA1031
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
                 {
                     _logger.LogError(ex, "Error sending Slack notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
                 }
+#pragma warning restore CA1031
             }
 
             // Generic webhook fallback: send the full JSON payload produced by the payload builder
@@ -655,11 +654,11 @@ namespace Listenarr.Api.Services
             // Intentional broad catch: notification delivery failures must never propagate to callers.
             // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-            catch (Exception ex)
-#pragma warning restore CA1031
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
             {
                 _logger.LogError(ex, "Error sending notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
             }
+#pragma warning restore CA1031
         }
 
         // Ensure that any sensitive environment-derived values are redacted even if they were missed
@@ -678,8 +677,7 @@ namespace Listenarr.Api.Services
                         var esc = System.Text.RegularExpressions.Regex.Escape(s);
                         result = System.Text.RegularExpressions.Regex.Replace(result, esc, "<redacted>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         System.Diagnostics.Debug.WriteLine($"NotificationService.AggressiveRedact regex replace failed: {ex.Message}");
                     }
                 }
@@ -699,8 +697,7 @@ namespace Listenarr.Api.Services
             {
                 return await content.ReadAsStringAsync();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Could not read HTTP content for diagnostic logging");
                 return string.Empty;
             }
@@ -712,3 +709,7 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
+
+
+

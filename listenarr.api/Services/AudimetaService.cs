@@ -35,8 +35,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Fetching books for author ASIN {AuthorAsin}: {Url}", authorAsin, url);
                 return await ExecuteSearchAsync(url, $"authorAsin:{authorAsin} page {page}");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error fetching books for author ASIN {AuthorAsin}", authorAsin);
                 return null;
             }
@@ -64,8 +63,7 @@ namespace Listenarr.Api.Services
                 var obj = JsonSerializer.Deserialize<object>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 return obj;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching audimeta.de series for name {Name}", name);
                 return null;
             }
@@ -92,8 +90,7 @@ namespace Listenarr.Api.Services
                 var obj = JsonSerializer.Deserialize<object>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 return obj;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error fetching audimeta.de series books for ASIN {Asin}", seriesAsin);
                 return null;
             }
@@ -122,8 +119,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Successfully fetched metadata for ASIN {Asin} from audimeta.de", asin);
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error fetching metadata from audimeta.de for ASIN {Asin}", asin);
                 return null;
             }
@@ -292,8 +288,7 @@ namespace Listenarr.Api.Services
                 var finalList = filtered.ToList();
                 return new AudimetaSearchResponse { Results = finalList, TotalResults = finalList.Count };
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error executing author-based search for: {Title} / {Author}", title, author);
                 return null;
             }
@@ -391,8 +386,7 @@ namespace Listenarr.Api.Services
                     return doc.Results?.FirstOrDefault();
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to lookup author {Author}", author);
                 return null;
             }
@@ -563,8 +557,7 @@ namespace Listenarr.Api.Services
 
                 return null;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching audimeta.de for: {SearchTerm}", searchTerm);
                 return null;
             }
@@ -583,8 +576,7 @@ namespace Listenarr.Api.Services
                 _logger.LogWarning(ex, "Audimeta request timed out for URL: {Url}", url);
                 return null;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error performing Audimeta HTTP request for URL: {Url}", url);
                 return null;
             }
@@ -720,3 +712,4 @@ namespace Listenarr.Api.Services
     public class AuthorLookupItem { public string? Asin { get; set; } public string? Name { get; set; } public string? Image { get; set; } public string? Region { get; set; } }
     public class AuthorLookupEnvelope { public string? Asin { get; set; } public List<AuthorLookupItem>? Results { get; set; } }
 }
+

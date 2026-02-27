@@ -182,8 +182,7 @@ namespace Listenarr.Api.Services
 
                 return null;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex,
                     "Error during hash retrieval (retry {RetryCount}): Title={Title}, Client={Client}",
                     query.RetryCount + 1, query.Title, client.Name);
@@ -306,3 +305,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

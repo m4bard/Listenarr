@@ -41,8 +41,7 @@ namespace Listenarr.Api.Services
                     {
                         await _hubContext.Clients.All.SendAsync("FfmpegInstallStatus", new { status = "Installed", path }, cancellationToken: stoppingToken);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to broadcast ffprobe install success message");
                     }
                 }
@@ -53,8 +52,7 @@ namespace Listenarr.Api.Services
                     {
                         await _hubContext.Clients.All.SendAsync("FfmpegInstallStatus", new { status = "NotInstalled" }, cancellationToken: stoppingToken);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to broadcast ffprobe install failure message");
                     }
                 }
@@ -63,8 +61,7 @@ namespace Listenarr.Api.Services
             {
                 // Shutdown requested
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error while attempting background ffprobe installation");
                 try
                 {
@@ -75,3 +72,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

@@ -59,9 +59,9 @@ static class QueryUsersProgram
                 Log.Information("No users found in database.");
             }
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             Log.Error(ex, "Error querying users database");
         }
     }
 }
+

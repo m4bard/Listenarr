@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -53,8 +53,7 @@ namespace Listenarr.Api.Services
             {
                 await ResetStuckJobsAsync(stoppingToken);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to reset stuck jobs on startup");
             }
 
@@ -68,8 +67,7 @@ namespace Listenarr.Api.Services
                     await ProcessQueueAsync(stoppingToken);
                     await ProcessRetryJobsAsync(stoppingToken);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error processing download queue");
                 }
 
@@ -123,8 +121,7 @@ namespace Listenarr.Api.Services
                     _logger.LogInformation("Job {JobId} for download {DownloadId} finished with status {Status}", job.Id, job.DownloadId, job.Status);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to process job {JobId} for download {DownloadId}: {Error}",
                     job.Id, job.DownloadId, ex.Message);
 
@@ -261,8 +258,7 @@ namespace Listenarr.Api.Services
                                     resolvedPath = translated;
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogDebug(ex, "Path mapping failed for {Path}", resolvedPath);
                             }
                         }
@@ -278,14 +274,12 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("Resolved path does not exist yet for download {DownloadId}: {Path}", dl.Id, resolvedPath);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to consider completed download {DownloadId} for enqueue", dl.Id);
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error while enqueuing completed downloads");
             }
         }
@@ -335,8 +329,7 @@ namespace Listenarr.Api.Services
                             job.SourcePath = localPath;
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         job.AddLogEntry($"Path mapping failed: {ex.Message}");
                     }
                 }
@@ -428,8 +421,7 @@ namespace Listenarr.Api.Services
                                     job.AddLogEntry($"Using audiobook metadata for naming: {namingMetadata.Title} by {namingMetadata.Artist}");
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 job.AddLogEntry($"Failed to retrieve audiobook metadata: {ex.Message}");
                             }
                         }
@@ -450,8 +442,7 @@ namespace Listenarr.Api.Services
                                 var last = exists ? File.GetLastWriteTimeUtc(sourcePath).ToString("o") : "(not found)";
                                 job.AddLogEntry($"Operation pre-check: sourceExists={exists}, size={(size.HasValue ? size.ToString() : "(n/a)")}, lastWriteUtc={last}");
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 job.AddLogEntry($"Failed to collect source diagnostics: {ex.Message}");
                             }
                             var extractedMetadata = await metadataService.ExtractFileMetadataAsync(sourcePath);
@@ -487,8 +478,7 @@ namespace Listenarr.Api.Services
                                 job.AddLogEntry($"Merged extracted metadata: {metadata.Title} by {metadata.Artist}");
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             job.AddLogEntry($"Failed to extract metadata: {ex.Message}");
                         }
                     }
@@ -598,8 +588,7 @@ namespace Listenarr.Api.Services
                                 }
                                 forcedFilename = sb.ToString();
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 job.AddLogEntry($"Failed to sanitize forced filename: {ex.Message}");
                             }
 
@@ -626,8 +615,7 @@ namespace Listenarr.Api.Services
                             job.AddLogEntry($"Warning: destination dir is a root path: {destDirForCheck}");
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         job.AddLogEntry($"Failed to inspect destination directory: {ex.Message}");
                     }
                 }
@@ -669,8 +657,7 @@ namespace Listenarr.Api.Services
                                 sourceSize = new FileInfo(sourcePath).Length;
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             job.AddLogEntry($"Failed to read source file size: {ex.Message}");
                         }
 
@@ -883,8 +870,7 @@ namespace Listenarr.Api.Services
                                         throw new IOException("Destination size mismatch after file operation");
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     // If verifying size fails for any reason, record and surface the error
                                     job.AddLogEntry($"Failed to verify destination size: {ex.Message}");
                                     job.ErrorMessage = ex.Message;
@@ -895,8 +881,7 @@ namespace Listenarr.Api.Services
                             job.AddLogEntry($"Verified destination: {destinationPath} (size: {new FileInfo(destinationPath).Length})");
                             job.DestinationPath = destinationPath;
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             // Ensure the error is recorded on the job so it surfaces in the queue stats/logs
                             job.AddLogEntry($"File operation failed: {ex.Message}");
                             job.ErrorMessage = ex.Message;
@@ -949,17 +934,16 @@ namespace Listenarr.Api.Services
                             job.AddLogEntry($"Enqueued scan job {jobId} for audiobook {dl.AudiobookId} path={job.DestinationPath}");
                             _logger.LogInformation("Enqueued scan job {JobId} for audiobook {AudiobookId} after processing download {DownloadId}", jobId, dl.AudiobookId, job.DownloadId);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             job.AddLogEntry($"Failed to enqueue scan job: {ex.Message}");
                         }
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 job.AddLogEntry($"Failed to attempt enqueueing scan job: {ex.Message}");
             }
         }
     }
 }
+

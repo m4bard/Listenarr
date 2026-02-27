@@ -115,8 +115,7 @@ public class AsinEnricher
                                 asinsNeedingFallback.Add(asin);
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Failed to convert OpenLibrary metadata for ASIN {Asin}", asin);
                         }
 
@@ -193,8 +192,7 @@ public class AsinEnricher
                     _logger.LogInformation("Metadata enrichment cancelled for ASIN {Asin}", asin);
                     throw;
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Metadata enrichment failed for ASIN {Asin}", asin);
                 }
                 finally
@@ -220,3 +218,4 @@ public record EnrichmentResult(
     List<SearchResult> EnrichedResults,
     List<string> AsinsNeedingFallback,
     ConcurrentDictionary<string, string> CandidateDropReasons);
+

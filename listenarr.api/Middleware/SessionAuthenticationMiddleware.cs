@@ -57,8 +57,7 @@ namespace Listenarr.Api.Middleware
                             _logger.LogDebug("[SessionAuth] Session token invalid or expired for {Path} ({TokenHash})", path, tokenHash);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogError(ex, "[SessionAuth] Error during session authentication for {Path}", path);
                     }
                 }
@@ -115,3 +114,4 @@ namespace Listenarr.Api.Middleware
         }
     }
 }
+

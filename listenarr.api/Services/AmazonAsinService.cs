@@ -85,8 +85,7 @@ namespace Listenarr.Api.Services
 
                 return (false, null, "ASIN not found for ISBN");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to resolve ASIN from ISBN {Isbn}", isbn);
                 return (false, null, "Lookup failed");
             }
@@ -135,8 +134,7 @@ namespace Listenarr.Api.Services
                             }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed retrying Amazon URL as US domain");
                 }
             }
@@ -285,11 +283,11 @@ namespace Listenarr.Api.Services
                 var verified = await TryVerifyAsinAsync(asin, isbn, ct);
                 return (verified.Success, verified.MatchesIsbn, null);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "VerifyAsinContainsIsbnAsync failed for {Asin}", asin);
                 return (false, false, ex.Message);
             }
         }
     }
 }
+

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -421,8 +421,7 @@ namespace Listenarr.Api.Services
                     _logger.LogInformation("Found {Count} results from indexer {Name}", indexerResults.Count, indexer.Name);
                     return indexerResults;
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error searching indexer {Name} for query: {Query}", indexer.Name, query);
                     return new List<IndexerSearchResult>();
                 }
@@ -605,8 +604,7 @@ namespace Listenarr.Api.Services
                                 }
                                 // Do not stop aggregating based on candidateLimit for audimeta
                             }
-                            catch (Exception exPage)
-                            {
+                            catch (Exception exPage) when (exPage is not OperationCanceledException && exPage is not OutOfMemoryException && exPage is not StackOverflowException) {
                                 _logger.LogDebug(exPage, "Failed fetching audimeta author page {Page} for author {Author}", page, parsedAuthor);
                                 break;
                             }
@@ -685,8 +683,7 @@ namespace Listenarr.Api.Services
                                     break;
                                 }
                             }
-                            catch (Exception exPage)
-                            {
+                            catch (Exception exPage) when (exPage is not OperationCanceledException && exPage is not OutOfMemoryException && exPage is not StackOverflowException) {
                                 _logger.LogDebug(exPage, "Failed fetching audimeta author page {Page} for author {Author}", page, parsedAuthor);
                                 break;
                             }
@@ -749,8 +746,7 @@ namespace Listenarr.Api.Services
                                             break; // stop scanning once we found the ISBN match
                                         }
                                     }
-                                    catch (Exception exMeta)
-                                    {
+                                    catch (Exception exMeta) when (exMeta is not OperationCanceledException && exMeta is not OutOfMemoryException && exMeta is not StackOverflowException) {
                                         _logger.LogDebug(exMeta, "Failed fetching audimeta metadata for ASIN {Asin} while scanning for ISBN", c.Asin);
                                     }
                                 }
@@ -792,8 +788,7 @@ namespace Listenarr.Api.Services
                                     sr.MetadataSource = "Audimeta";
                                     converted.Add(sr);
                                 }
-                                catch (Exception exMetaConv)
-                                {
+                                catch (Exception exMetaConv) when (exMetaConv is not OperationCanceledException && exMetaConv is not OutOfMemoryException && exMetaConv is not StackOverflowException) {
                                     _logger.LogDebug(exMetaConv, "Failed converting audimeta data for ASIN {Asin}", book.Asin);
                                 }
                             }
@@ -876,8 +871,7 @@ namespace Listenarr.Api.Services
                         }
                     }
                 }
-                catch (Exception exAudimetaFirst)
-                {
+                catch (Exception exAudimetaFirst) when (exAudimetaFirst is not OperationCanceledException && exAudimetaFirst is not OutOfMemoryException && exAudimetaFirst is not StackOverflowException) {
                     _logger.LogWarning(exAudimetaFirst, "Audimeta-first attempt failed; falling back to provider searches for query: {Query}", query);
                 }
 
@@ -906,8 +900,7 @@ namespace Listenarr.Api.Services
                         skipOpenLibrary = !appSettings.EnableOpenLibrarySearch;
                     }
                 }
-                catch (Exception exAppSettings)
-                {
+                catch (Exception exAppSettings) when (exAppSettings is not OperationCanceledException && exAppSettings is not OutOfMemoryException && exAppSettings is not StackOverflowException) {
                     _logger.LogDebug(exAppSettings, "Failed to load application search settings, falling back to defaults");
                 }
 
@@ -1011,14 +1004,12 @@ namespace Listenarr.Api.Services
                             var enrichedDump = string.Join(" | ", enrichedDumpList);
                             _logger.LogInformation("Enriched list after OpenLibrary merge ({Count}): {Dump}", enrichedList.Count, enrichedDump);
                         }
-                        catch (Exception exDump2)
-                        {
+                        catch (Exception exDump2) when (exDump2 is not OperationCanceledException && exDump2 is not OutOfMemoryException && exDump2 is not StackOverflowException) {
                             _logger.LogDebug(exDump2, "Failed to create enrichedList dump after OpenLibrary merge");
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to merge OpenLibrary-derived results into enriched list");
                 }
 
@@ -1036,8 +1027,7 @@ namespace Listenarr.Api.Services
                         containmentScore = ComputeContainmentScore(r, query ?? string.Empty);
                         fuzzyScore = ComputeFuzzySimilarity((r.Title ?? string.Empty) + " " + (r.Artist ?? string.Empty), query ?? string.Empty);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to compute containment/fuzzy scores for ASIN {Asin}", r.Asin);
                     }
 
@@ -1239,8 +1229,7 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("Final ASIN dispositions for query '{Query}': {Entries}", query, string.Join(", ", finalAsinEntries));
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to compute final ASIN dispositions for query: {Query}", query);
                 }
 
@@ -1251,8 +1240,7 @@ namespace Listenarr.Api.Services
                     var dump = string.Join(" | ", dumpList);
                     _logger.LogInformation("Final results dump for query {Query}: {Dump}", query, dump);
                 }
-                catch (Exception exDump)
-                {
+                catch (Exception exDump) when (exDump is not OperationCanceledException && exDump is not OutOfMemoryException && exDump is not StackOverflowException) {
                     _logger.LogDebug(exDump, "Failed to create final results dump for query: {Query}", query);
                 }
 
@@ -1264,8 +1252,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Intelligent search cancelled by request for query: {Query}", query);
                 return results;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error during intelligent search for query: {Query}", query);
                 return results;
             }
@@ -1431,14 +1418,12 @@ namespace Listenarr.Api.Services
                         if (Math.Abs(delta) < 0.01)
                             break;
                     }
-                    catch (Exception imgEx)
-                    {
+                    catch (Exception imgEx) when (imgEx is not OperationCanceledException && imgEx is not OutOfMemoryException && imgEx is not StackOverflowException) {
                         _logger.LogDebug(imgEx, "Failed to measure image dimensions for cover {Url}", url);
                         continue;
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to fetch cover image for id {Id}", cid);
                     continue;
                 }
@@ -1551,8 +1536,7 @@ namespace Listenarr.Api.Services
                 var idxResults = await SearchIndexerAsync(indexer, query, category, req);
                 return idxResults.Select(r => SearchResultConverters.ToSearchResult(r)).ToList();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, $"Error searching indexer {apiId} for query: {query}");
                 return new List<SearchResult>();
             }
@@ -1595,8 +1579,7 @@ namespace Listenarr.Api.Services
                 var idxResults = await SearchIndexerAsync(indexer, query, category, request);
                 return idxResults;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, $"Error searching indexer {apiId} for query: {query}");
                 return new List<Listenarr.Domain.Models.IndexerSearchResult>();
             }
@@ -1690,8 +1673,7 @@ namespace Listenarr.Api.Services
                 var response = await _httpClient.GetAsync(apiConfig.BaseUrl);
                 return response.IsSuccessStatusCode;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, $"Error testing API connection for {apiId}");
                 return false;
             }
@@ -1753,8 +1735,7 @@ namespace Listenarr.Api.Services
                     return new List<IndexerSearchResult>();
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching indexer {Name}", indexer.Name);
                 return new List<IndexerSearchResult>();
             }
@@ -1789,8 +1770,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, results.Count);
                 return results;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching Torznab/Newznab indexer {Name}", indexer.Name);
                 return new List<IndexerSearchResult>();
             }
@@ -2064,8 +2044,7 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch (Exception exMam)
-                    {
+                    catch (Exception exMam) when (exMam is not OperationCanceledException && exMam is not OutOfMemoryException && exMam is not StackOverflowException) {
                         _logger.LogDebug(exMam, "Failed to persist updated mam_id from MyAnonamouse response");
                     }
 
@@ -2084,8 +2063,7 @@ namespace Listenarr.Api.Services
                             await EnrichMyAnonamouseResultsAsync(indexer, results, enrichTop, mamId, httpClientToUse);
                         }
                     }
-                    catch (Exception exEnrich)
-                    {
+                    catch (Exception exEnrich) when (exEnrich is not OperationCanceledException && exEnrich is not OutOfMemoryException && exEnrich is not StackOverflowException) {
                         _logger.LogWarning(exEnrich, "MyAnonamouse enrichment step failed");
                     }
                 }
@@ -2097,8 +2075,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
                 return results;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching MyAnonamouse indexer {Name}", indexer.Name);
                 return new List<IndexerSearchResult>();
             }
@@ -2126,8 +2103,7 @@ namespace Listenarr.Api.Services
                 {
                     doc = JsonDocument.Parse(jsonResponse);
                 }
-                catch (Exception)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     // Attempt to extract a JSON array from an HTML-wrapped response or stray text
                     var start = jsonResponse.IndexOf('[');
                     var end = jsonResponse.LastIndexOf(']');
@@ -2138,9 +2114,8 @@ namespace Listenarr.Api.Services
                         {
                             doc = JsonDocument.Parse(sub);
                         }
-                        catch (Exception ex)
-                        {
-                            _logger.LogWarning(ex, "Failed to parse extracted JSON array from MyAnonamouse response");
+                        catch (Exception parseEx) when (parseEx is not OperationCanceledException && parseEx is not OutOfMemoryException && parseEx is not StackOverflowException) {
+                            _logger.LogWarning(parseEx, "Failed to parse extracted JSON array from MyAnonamouse response");
                             return results;
                         }
                     }
@@ -2220,14 +2195,12 @@ namespace Listenarr.Api.Services
                             var fields = string.Join(", ", firstItem.EnumerateObject().Select(p => $"{p.Name}={p.Value}"));
                             _logger.LogInformation("First MyAnonamouse result fields: {Fields}", LogRedaction.RedactText(fields, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
                         }
-                        catch (Exception exFields)
-                        {
+                        catch (Exception exFields) when (exFields is not OperationCanceledException && exFields is not OutOfMemoryException && exFields is not StackOverflowException) {
                             _logger.LogDebug(exFields, "Failed to enumerate fields of first MyAnonamouse item");
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to produce preview of first MyAnonamouse item");
                 }
 
@@ -2244,8 +2217,7 @@ namespace Listenarr.Api.Services
                                 var propertyNames = item.EnumerateObject().Select(p => p.Name).ToList();
                                 _logger.LogInformation("MyAnonamouse result #{Index} has properties: {Properties}", _mamDebugIndex, string.Join(", ", propertyNames));
                             }
-                            catch (Exception exNames)
-                            {
+                            catch (Exception exNames) when (exNames is not OperationCanceledException && exNames is not OutOfMemoryException && exNames is not StackOverflowException) {
                                 _logger.LogDebug(exNames, "Failed to enumerate property names for MyAnonamouse result #{Index}", _mamDebugIndex);
                             }
                         }
@@ -2385,8 +2357,7 @@ namespace Listenarr.Api.Services
                                 {
                                     publishDate = DateTime.ParseExact(addedStr, "yyyy-MM-dd HH:mm:ss", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.AssumeUniversal).ToLocalTime();
                                 }
-                                catch (Exception)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     // ignore and fallback to other fields below
                                 }
                             }
@@ -2502,8 +2473,7 @@ namespace Listenarr.Api.Services
                                     }
                                     author = string.Join(", ", authors.Where(a => !string.IsNullOrEmpty(a)));
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to parse author JSON for search result");
                                 }
                             }
@@ -2526,8 +2496,7 @@ namespace Listenarr.Api.Services
                                     }
                                     narrator = string.Join(", ", narrators.Where(n => !string.IsNullOrEmpty(n)));
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to parse narrator JSON for search result");
                                 }
                             }
@@ -2775,8 +2744,7 @@ namespace Listenarr.Api.Services
 
                             _logger.LogDebug("MyAnonamouse parsed item #{Index} link-disposition: magnet={MagnetPresent}, torrent={TorrentPresent}, nzb={NzbPresent}", _mamDebugIndex, !string.IsNullOrEmpty(result.MagnetLink), !string.IsNullOrEmpty(result.TorrentUrl), !string.IsNullOrEmpty(result.NzbUrl));
                         }
-                        catch (Exception exLink)
-                        {
+                        catch (Exception exLink) when (exLink is not OperationCanceledException && exLink is not OutOfMemoryException && exLink is not StackOverflowException) {
                             _logger.LogDebug(exLink, "Failed to detect links for MyAnonamouse item {Id}", id);
                         }
 
@@ -2856,8 +2824,7 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogDebug(ex, "Failed to extract bracketed flags from filename for MyAnonamouse item {Id}", id);
                             }
                         }
@@ -2884,8 +2851,7 @@ namespace Listenarr.Api.Services
                                     _mamDebugIndex, result.Id, result.Title, result.Size, result.Seeders, result.TorrentUrl ?? "", result.Artist ?? "", result.Album ?? "", result.Category ?? "", result.Source ?? "", result.Grabs, result.Files, result.PublishedDate);
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "Failed to write debug log for constructed MyAnonamouse SearchResult");
                         }
 
@@ -2908,8 +2874,7 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception ex2)
-                            {
+                            catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
                                 _logger.LogDebug(ex2, "Failed to append filename flags to title for MyAnonamouse item {Id}", id);
                             }
                         }
@@ -2917,14 +2882,12 @@ namespace Listenarr.Api.Services
 
                         results.Add(result);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Failed to parse MyAnonamouse result item");
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to parse MyAnonamouse response");
             }
 
@@ -3064,8 +3027,7 @@ namespace Listenarr.Api.Services
                         
                         _logger.LogDebug("Enriched MyAnonamouse result {Id}: grabs={Grabs}, files={Files}, format={Format}, language={Language}", r.Id, r.Grabs, r.Files, r.Format, r.Language);
                     }
-                    catch (Exception exParse)
-                    {
+                    catch (Exception exParse) when (exParse is not OperationCanceledException && exParse is not OutOfMemoryException && exParse is not StackOverflowException) {
                         _logger.LogDebug(exParse, "Failed to parse MyAnonamouse detail JSON for {Id}", r.Id);
                         return;
                     }
@@ -3078,14 +3040,12 @@ namespace Listenarr.Api.Services
                             var entryOptions = new Microsoft.Extensions.Caching.Memory.MemoryCacheEntryOptions() { SlidingExpiration = TimeSpan.FromHours(1) };
                             _cache.Set(cacheKey, (object)new IndexerSearchResult { Grabs = r.Grabs, Files = r.Files, Format = r.Format, Language = r.Language }, entryOptions);
                         }
-                        catch (Exception exCache)
-                        {
+                        catch (Exception exCache) when (exCache is not OperationCanceledException && exCache is not OutOfMemoryException && exCache is not StackOverflowException) {
                             _logger.LogDebug(exCache, "Failed to set enrichment cache for {Key}", cacheKey);
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to enrich MyAnonamouse result {Id}", r.Id);
                 }
                 finally
@@ -3256,8 +3216,7 @@ namespace Listenarr.Api.Services
                                 collection = parsedCollection;
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Failed to parse Internet Archive settings, using default collection");
                     }
                 }
@@ -3285,8 +3244,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Internet Archive returned {Count} results", searchResults.Count);
                 return searchResults;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error searching Internet Archive indexer {Name}", indexer.Name);
                 return new List<IndexerSearchResult>();
             }
@@ -3400,21 +3358,18 @@ namespace Listenarr.Api.Services
                             var detectedLang = ParseLanguageFromText(title ?? string.Empty);
                             if (!string.IsNullOrEmpty(detectedLang)) iaResult.Language = detectedLang;
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "Failed to parse language from title: {Title}", title);
                         }
 
                         results.Add(iaResult);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogError(ex, "Error processing Internet Archive item");
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error parsing Internet Archive response");
             }
 
@@ -3492,8 +3447,7 @@ namespace Listenarr.Api.Services
                 // Return the highest priority (lowest priority number) audio file
                 return audioFiles.OrderBy(f => f.Priority).ThenByDescending(f => f.Size).FirstOrDefault();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error parsing Internet Archive metadata for {Identifier}", identifier);
                 return null;
             }
@@ -3727,8 +3681,7 @@ namespace Listenarr.Api.Services
                                                 }
                                             }
                                         }
-                                        catch (Exception ex)
-                                        {
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogDebug(ex, "Failed to scrape comments page for {Title}", result.Title);
                                         }
                                     }
@@ -3885,8 +3838,7 @@ namespace Listenarr.Api.Services
                             _logger.LogWarning("Skipping result '{Title}' - no download link found", result.Title);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogError(ex, "Error parsing indexer result item");
                     }
                 }
@@ -3909,8 +3861,7 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error parsing Torznab XML response from {IndexerName}", indexer.Name);
             }
 
@@ -4290,4 +4241,5 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 

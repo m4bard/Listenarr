@@ -226,8 +226,7 @@ public class MetadataConverters
                     _logger.LogDebug("Started background image cache for ASIN {Asin}", asin);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", asin);
             }
         }
@@ -373,8 +372,7 @@ public class MetadataConverters
                     _logger.LogDebug("Started background image cache for ASIN {Asin}", asin);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", asin);
             }
         }
@@ -440,3 +438,4 @@ public class MetadataConverters
         return result;
     }
 }
+

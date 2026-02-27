@@ -68,8 +68,7 @@ namespace Listenarr.Api.Middleware
 
                     context.Request.Body.Seek(0, SeekOrigin.Begin);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to log request body for {Method} {Path}", method, context.Request.Path);
                 }
             }
@@ -109,3 +108,4 @@ namespace Listenarr.Api.Middleware
         }
     }
 }
+
