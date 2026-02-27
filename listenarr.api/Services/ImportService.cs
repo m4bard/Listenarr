@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -87,8 +87,7 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("ImportSingleFile: Using audiobook metadata for naming (Download {DownloadId}): {Title} by {Artist}", downloadId, namingMetadata.Title, namingMetadata.Artist);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "ImportSingleFile: failed to load audiobook metadata for naming (Download {DownloadId})", downloadId);
                     }
                 }
@@ -113,8 +112,7 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("ImportSingleFile: merged extracted metadata for {File}", sourcePath);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "ImportSingleFile: failed to extract metadata from {File}, using defaults", sourcePath);
                     }
                 }
@@ -159,7 +157,9 @@ namespace Listenarr.Api.Services
                                         if (IsQualityBetter(q, bestExisting, abProfile)) bestExisting = q;
                                     }
                                 }
-                                catch { }
+                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                             }
 
                             var candidateQuality = DetermineQualityFromMetadata(metadata, sourcePath);
@@ -173,8 +173,7 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "ImportSingleFile: Failed to evaluate quality for {File}", sourcePath);
                     }
                 }
@@ -222,7 +221,9 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch { /* ignore */ }
+                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { /* ignore */ 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
                 }
                 else if (!string.IsNullOrWhiteSpace(folderPattern))
                 {
@@ -260,7 +261,7 @@ namespace Listenarr.Api.Services
                 if (!patternAllowsSubfolders)
                 {
                     try { filename = Path.GetFileName(filename); }
-                    catch { filename = Path.GetFileName(sourcePath); }
+                    catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { filename = Path.GetFileName(sourcePath); }
                 }
 
                 var destinationPath = Path.Combine(basePathForFile, filename);
@@ -318,8 +319,7 @@ namespace Listenarr.Api.Services
                                 uniqueFinal = uniqueInitial;
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "ImportSingleFile: failed to rename {Source} -> {Dest}", uniqueInitial, uniqueFinal);
                             uniqueFinal = uniqueInitial; // fallback
                         }
@@ -331,16 +331,14 @@ namespace Listenarr.Api.Services
                     // Note: single-file imports do not register the audiobook file immediately here.
                     // Registration and any quality gating is handled by the caller (DownloadService)
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     result.Success = false;
                     result.Message = ex.Message;
                     _logger.LogWarning(ex, "ImportSingleFile: failed file operation for {File}", sourcePath);
                 }
 
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 result.Success = false;
                 result.Message = ex.Message;
                 _logger.LogWarning(ex, "ImportSingleFile: unexpected failure for {File}", sourcePath);
@@ -405,12 +403,13 @@ namespace Listenarr.Api.Services
                                         if (IsQualityBetter(q, bestExisting, abProfile)) bestExisting = q;
                                     }
                                 }
-                                catch { }
+                                catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "ImportFilesFromDirectory: Failed to load audiobook for batch quality evaluation (DownloadId: {DownloadId})", downloadId);
                     }
                 }
@@ -423,7 +422,7 @@ namespace Listenarr.Api.Services
                         var candidateMetadata = (AudioMetadata?)null;
                         if (_metadataService != null)
                         {
-                            try { candidateMetadata = await _metadataService.ExtractFileMetadataAsync(file); } catch { candidateMetadata = null; }
+                            try { candidateMetadata = await _metadataService.ExtractFileMetadataAsync(file); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { candidateMetadata = null; }
                         }
 
                         var candidateQuality = DetermineQualityFromMetadata(candidateMetadata, file);
@@ -445,8 +444,7 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogDebug(ex, "ImportFilesFromDirectory: Failed to evaluate quality for multi-file import {File}", file);
                             }
                         }
@@ -462,7 +460,7 @@ namespace Listenarr.Api.Services
                                 abForNaming = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
                                 if (abForNaming != null && !string.IsNullOrWhiteSpace(abForNaming.BasePath)) destDirForFile = abForNaming.BasePath;
                             }
-                            catch { destDirForFile = string.Empty; }
+                            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { destDirForFile = string.Empty; }
                         }
                         if (string.IsNullOrWhiteSpace(destDirForFile)) destDirForFile = settings.OutputPath ?? "./completed";
 
@@ -524,8 +522,7 @@ namespace Listenarr.Api.Services
                             // Ensure the directory exists (create if necessary)
                             Directory.CreateDirectory(destDirForFile);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             res.Success = false;
                             res.Message = "Destination directory does not exist and could not be created";
                             res.SkippedReason = destDirForFile;
@@ -568,8 +565,7 @@ namespace Listenarr.Api.Services
                                 }
                                 filename = sb.ToString();
                             }
-                            catch
-                            {
+                            catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) {
                                 filename = Path.GetFileName(filename);
                             }
                         }
@@ -641,8 +637,7 @@ namespace Listenarr.Api.Services
                                     uniqueFinal = uniqueInitial;
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed to apply naming/rename on multi-file import for {File}", uniqueInitial);
                                 uniqueFinal = uniqueInitial;
                             }
@@ -668,14 +663,12 @@ namespace Listenarr.Api.Services
                                 var created = await audioFileService.EnsureAudiobookFileAsync(audiobookId.Value, res.FinalPath, "download");
                                 res.WasRegisteredToAudiobook = created;
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed to create AudiobookFile for imported file {File}", file);
                             }
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         res.Success = false;
                         res.Message = ex.Message;
                         _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed processing file in directory import: {File}", file);
@@ -684,8 +677,7 @@ namespace Listenarr.Api.Services
                     results.Add(res);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed to import files from directory for download {DownloadId}", downloadId);
             }
 
@@ -768,8 +760,7 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
             }
             return Task.FromResult(true);
         }
-        catch
-        {
+        catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) {
             return Task.FromResult(false);
         }
     }
@@ -783,8 +774,7 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
             File.Copy(sourceFile, destFile, true);
             return Task.FromResult(true);
         }
-        catch
-        {
+        catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) {
             return Task.FromResult(false);
         }
     }
@@ -811,15 +801,13 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
                 }
                 return Task.FromResult(true);
             }
-            catch
-            {
+            catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) {
                 // Fallback to copy
                 File.Copy(sourceFile, destFile, true);
                 return Task.FromResult(true);
             }
         }
-        catch
-        {
+        catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) {
             return Task.FromResult(false);
         }
     }
@@ -839,16 +827,14 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
             Directory.Move(sourceDir, destDir);
             return Task.FromResult(true);
         }
-        catch
-        {
+        catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) {
             try
             {
                 var ok = CopyDirectoryAsync(sourceDir, destDir).GetAwaiter().GetResult();
                 if (ok) Directory.Delete(sourceDir, true);
                 return Task.FromResult(ok);
             }
-            catch
-            {
+            catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) {
                 return Task.FromResult(false);
             }
         }
@@ -863,18 +849,17 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
             File.Move(sourceFile, destFile);
             return Task.FromResult(true);
         }
-        catch
-        {
+        catch (Exception caughtEx_14) when (caughtEx_14 is not OperationCanceledException && caughtEx_14 is not OutOfMemoryException && caughtEx_14 is not StackOverflowException) {
             try
             {
                 File.Copy(sourceFile, destFile, true);
                 File.Delete(sourceFile);
                 return Task.FromResult(true);
             }
-            catch
-            {
+            catch (Exception caughtEx_15) when (caughtEx_15 is not OperationCanceledException && caughtEx_15 is not OutOfMemoryException && caughtEx_15 is not StackOverflowException) {
                 return Task.FromResult(false);
             }
         }
     }
 }
+

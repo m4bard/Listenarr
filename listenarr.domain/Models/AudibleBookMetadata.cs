@@ -35,7 +35,7 @@ namespace Listenarr.Domain.Models
         public List<string>? Genres { get; set; }
         public List<string>? Tags { get; set; }
         public List<string>? Narrators { get; set; }
-        public string? Isbn { get; set; }
+        public List<string> Isbn { get; set; } = new();
         // OpenLibrary identifier when metadata originates from OpenLibrary
         public string? OpenLibraryId { get; set; }
         // (Asin moved to top to be the canonical ASIN property)

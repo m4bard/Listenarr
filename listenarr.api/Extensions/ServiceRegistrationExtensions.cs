@@ -260,8 +260,7 @@ namespace Listenarr.Api.Extensions
                 {
                     return System.Text.Json.JsonSerializer.Deserialize<T>(prop.GetRawText()) ?? defaultValue;
                 }
-                catch
-                {
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                     return defaultValue;
                 }
             }

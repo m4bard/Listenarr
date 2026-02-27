@@ -1290,8 +1290,9 @@ onMounted(async () => {
 
 <style scoped>
 .settings-page {
+  --settings-toolbar-height: 60px;
   position: relative;
-  top: 60px;
+  top: var(--settings-toolbar-height);
   padding: 2rem;
   background-color: #1a1a1a;
 }
@@ -1370,7 +1371,7 @@ onMounted(async () => {
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
   min-height: 500px;
-  margin-top: 60px; /* Add margin to account for fixed toolbar */
+  margin-top: var(--settings-toolbar-height); /* Add margin to account for fixed toolbar */
 }
 
 /* Ensure consistent ordering for settings card actions: edit -> secondary -> delete */
@@ -1461,7 +1462,7 @@ onMounted(async () => {
 /* Settings Toolbar */
 .settings-toolbar {
   position: fixed;
-  top: 60px; /* Account for global header nav */
+  top: var(--app-top-offset, 60px); /* Account for global header + optional banner */
   left: 200px; /* Account for sidebar width */
   right: 0;
   z-index: 99; /* Below global nav (1000) but above content */

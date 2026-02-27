@@ -46,22 +46,21 @@ namespace Listenarr.Api.Services
                         if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir)) Directory.CreateDirectory(destDir);
                         entry.WriteToFile(destPath, new ExtractionOptions() { ExtractFullPath = true, Overwrite = true });
                     }
-                    catch (Exception exEntry)
-                    {
+                    catch (Exception exEntry) when (exEntry is not OperationCanceledException && exEntry is not OutOfMemoryException && exEntry is not StackOverflowException) {
                         _logger.LogDebug(exEntry, "ArchiveExtractor: failed to extract entry {Entry} from archive {Archive}", entry.Key, archivePath);
                     }
                 }
 
                 return await Task.FromResult(tmp);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "ArchiveExtractor: failed to extract archive {Archive}", archivePath);
                 return null;
             }
         }
     }
 }
+
 
 
 

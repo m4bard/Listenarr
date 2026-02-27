@@ -61,8 +61,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogDebug(tce, "Transmission test timed out for client {ClientId}", LogRedaction.SanitizeText(client?.Id ?? client?.Name ?? client?.Type));
                 return (false, "Transmission: connection timed out");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Transmission test failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id ?? client?.Name ?? client?.Type));
                 return (false, "Transmission: connection failed");
             }
@@ -148,8 +147,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Transmission AddAsync returning null - torrent may not have been added");
                 return null;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to add torrent to Transmission for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
                 throw;
             }
@@ -188,8 +186,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Transmission failed to remove torrent {Id}: {Message}", LogRedaction.SanitizeText(id), LogRedaction.SanitizeText(errorMsg));
                 return false;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error removing torrent {Id} from Transmission", LogRedaction.SanitizeText(id));
                 return false;
             }
@@ -230,14 +227,12 @@ namespace Listenarr.Api.Services.Adapters
                         var queueItem = await MapTorrentAsync(client, torrent, ct);
                         items.Add(queueItem);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to map Transmission torrent entry (non-fatal)");
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to retrieve Transmission queue for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -287,14 +282,12 @@ namespace Listenarr.Api.Services.Adapters
                         var downloadClientItem = await MapToDownloadClientItemAsync(client, torrent, ct);
                         items.Add(downloadClientItem);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to map Transmission torrent entry (non-fatal)");
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to retrieve Transmission items for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -377,8 +370,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error resolving import item for Transmission torrent {TorrentId}", item.DownloadId);
                 return result;
             }
@@ -463,8 +455,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error resolving import item for Transmission torrent {TorrentId}", queueItem.Id);
                 return result;
             }
@@ -530,8 +521,7 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     localPath = await _pathMappingService.TranslatePathAsync(client.Id, downloadDir);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to translate Transmission path '{Path}' for client {ClientName}", LogRedaction.SanitizeFilePath(downloadDir), LogRedaction.SanitizeText(client.Name ?? client.Id));
                 }
             }
@@ -795,3 +785,4 @@ namespace Listenarr.Api.Services.Adapters
         }
     }
 }
+

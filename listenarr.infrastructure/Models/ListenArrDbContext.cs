@@ -7,6 +7,7 @@ namespace Listenarr.Infrastructure.Models
     public class ListenArrDbContext : DbContext
     {
         public DbSet<Audiobook> Audiobooks { get; set; }
+        public DbSet<AudiobookExternalIdentifier> AudiobookExternalIdentifiers { get; set; }
         public DbSet<AudiobookFile> AudiobookFiles { get; set; }
         public DbSet<MoveJob> MoveJobs { get; set; }
         public DbSet<ApplicationSettings> ApplicationSettings { get; set; }

@@ -60,8 +60,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(result);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", asin);
                 return StatusCode(500, $"Error fetching metadata: {ex.Message}");
             }
@@ -95,8 +94,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(result);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error fetching audimeta metadata for ASIN: {Asin}", asin);
                 return StatusCode(500, "Internal server error");
             }
@@ -152,13 +150,11 @@ namespace Listenarr.Api.Controllers
                                         }
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to probe DB/image cache for previously-missing author: {Author}", normalizedName);
                                 }
                             }
-                            catch (Exception ex)
-                            {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Failed to probe DB/image cache for previously-missing author: {Author}", normalizedName);
                             }
 
@@ -209,8 +205,7 @@ namespace Listenarr.Api.Controllers
                         if (!string.IsNullOrWhiteSpace(cached)) cached = "/" + cached.TrimStart('/');
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to cache author image for {Author}", name);
                 }
 
@@ -232,8 +227,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(result);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error looking up author: {Name}", name);
                 return StatusCode(500, "Internal server error");
             }
@@ -249,3 +243,4 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
+

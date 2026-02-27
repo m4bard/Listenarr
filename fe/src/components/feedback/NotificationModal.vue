@@ -13,7 +13,7 @@
 
         <div class="notification-content">
           <h3 v-if="title">{{ title }}</h3>
-          <p v-if="message" v-html="message"></p>
+          <p v-if="message">{{ stripHtmlAndNormalize(message) }}</p>
           <slot />
         </div>
 
@@ -24,6 +24,8 @@
 </template>
 
 <script setup lang="ts">
+import { stripHtmlAndNormalize } from '@/utils/textUtils'
+
 const props = defineProps({
   visible: { type: Boolean, default: false },
   title: { type: String, default: '' },
@@ -105,6 +107,7 @@ function onClose() {
   margin: 0;
   line-height: 1.5;
   color: #cccccc;
+  white-space: pre-wrap;
 }
 
 .notification-close {

@@ -35,7 +35,7 @@ public class MetadataConverters
             Description = audimetaData.Description,
             Genres = audimetaData.Genres?.Select(g => g.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
             Language = audimetaData.Language,
-            Isbn = audimetaData.Isbn,
+            Isbn = !string.IsNullOrWhiteSpace(audimetaData.Isbn) ? new List<string> { audimetaData.Isbn! } : new List<string>(),
             ImageUrl = audimetaData.ImageUrl,
             Abridged = audimetaData.BookFormat?.Contains("abridged", StringComparison.OrdinalIgnoreCase) ?? false,
             Explicit = audimetaData.Explicit ?? false
@@ -101,10 +101,10 @@ public class MetadataConverters
             Authors = audnexusData.Authors?.Select(a => a.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
             Narrators = audnexusData.Narrators?.Select(n => n.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
             Publisher = audnexusData.PublisherName,
-            Description = audnexusData.Description ?? audnexusData.Summary,
+            Description = !string.IsNullOrWhiteSpace(audnexusData.Summary) ? audnexusData.Summary : audnexusData.Description,
             Genres = audnexusData.Genres?.Select(g => g.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
             Language = audnexusData.Language,
-            Isbn = audnexusData.Isbn,
+            Isbn = !string.IsNullOrWhiteSpace(audnexusData.Isbn) ? new List<string> { audnexusData.Isbn! } : new List<string>(),
             ImageUrl = audnexusData.Image,
             Abridged = audnexusData.FormatType?.Contains("abridged", StringComparison.OrdinalIgnoreCase) ?? false,
             Explicit = audnexusData.IsAdult ?? false
@@ -226,8 +226,7 @@ public class MetadataConverters
                     _logger.LogDebug("Started background image cache for ASIN {Asin}", asin);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", asin);
             }
         }
@@ -293,7 +292,7 @@ public class MetadataConverters
             SeriesNumber = metadata.SeriesNumber,
             ImageUrl = imageUrl,
             Asin = asin,
-            Isbn = metadata.Isbn,
+            Isbn = metadata.Isbn ?? new List<string>(),
             Genres = genreList,
             ProductUrl = productUrl
         };
@@ -373,8 +372,7 @@ public class MetadataConverters
                     _logger.LogDebug("Started background image cache for ASIN {Asin}", asin);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", asin);
             }
         }
@@ -427,7 +425,7 @@ public class MetadataConverters
             SeriesNumber = metadata.SeriesNumber,
             ImageUrl = imageUrl,
             Asin = asin,
-            Isbn = metadata.Isbn,
+            Isbn = metadata.Isbn ?? new List<string>(),
             Genres = genreList,
             ProductUrl = productUrl,
             IsEnriched = true,
@@ -440,3 +438,4 @@ public class MetadataConverters
         return result;
     }
 }
+

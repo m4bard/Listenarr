@@ -56,8 +56,7 @@ namespace Listenarr.Api.Services
                             job.SourcePath = translated;
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         job.AddLogEntry($"Path mapping failed: {ex.Message}");
                     }
                 }
@@ -153,8 +152,7 @@ namespace Listenarr.Api.Services
                                     throw new IOException("Hardlink failed");
                             }
                         }
-                        catch
-                        {
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                             File.Copy(sourcePath, uniqueDest, true);
                         }
                     }
@@ -180,8 +178,7 @@ namespace Listenarr.Api.Services
                 await downloadService.ProcessCompletedDownloadAsync(job.DownloadId, job.DestinationPath);
                 job.AddLogEntry($"Updated download record with final path: {job.DestinationPath}");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 job.AddLogEntry($"File operation failed: {ex.Message}");
                 job.ErrorMessage = ex.Message;
                 _logger.LogError(ex, "File operation failed for job {JobId}", job.Id);
@@ -190,3 +187,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

@@ -76,8 +76,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
             _logger.LogInformation("Indexer {Name} returned {Count} results", indexer.Name, results.Count);
             return results;
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error searching Torznab/Newznab indexer {Name}", indexer.Name);
             return new List<IndexerSearchResult>();
         }
@@ -271,7 +270,9 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                     var parsedLang = ParseLanguageFromText(value ?? string.Empty);
                                     if (!string.IsNullOrEmpty(parsedLang)) result.Language = parsedLang;
                                 }
-                                catch { }
+                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                                 break;
                             case "language":
                                 // Some indexers use numeric language IDs (e.g., 1 -> ENG)
@@ -287,7 +288,9 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                         var pl = ParseLanguageFromText(value ?? string.Empty);
                                         if (!string.IsNullOrEmpty(pl)) result.Language = pl;
                                     }
-                                    catch { }
+                                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                                 break;
                             case "grabs":
@@ -307,7 +310,9 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                         var dt = DateTimeOffset.FromUnixTimeSeconds(unixSec).UtcDateTime;
                                         result.PublishedDate = dt.ToString("o");
                                     }
-                                    catch { }
+                                    catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                                 else if (DateTime.TryParse(value, out var udt))
                                 {
@@ -372,8 +377,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                             }
                                         }
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogDebug(ex, "Failed to scrape comments page for {Title}", result.Title);
                                     }
                                 }
@@ -492,7 +496,9 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                             var lang = ParseLanguageFromText(result.Title + " " + (description ?? string.Empty));
                             if (!string.IsNullOrEmpty(lang)) result.Language = lang;
                         }
-                        catch { /* Non-critical */ }
+                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { /* Non-critical */ 
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        }
                     }
 
                     // Extract author from title if possible (common format: "Author - Title")
@@ -538,8 +544,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                         _logger.LogWarning("Skipping result '{Title}' - no download link found", result.Title);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error parsing indexer result item");
                 }
             }
@@ -562,8 +567,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                 }
             }
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error parsing Torznab XML response from {IndexerName}", indexer.Name);
         }
 
@@ -645,3 +649,4 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
         return null;
     }
 }
+

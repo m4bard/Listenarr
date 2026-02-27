@@ -130,8 +130,7 @@ namespace Listenarr.Api.Services
 
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Pipeline execution failed for {DownloadId}", download.DownloadId);
                 result.CompletedAt = DateTime.UtcNow;
                 result.Success = false;
@@ -207,8 +206,7 @@ namespace Listenarr.Api.Services
                 _logger.LogDebug("Check phase passed for {DownloadId}", download.DownloadId);
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error in check phase for {DownloadId}", download.DownloadId);
                 result.ErrorMessage = ex.Message;
                 return result;
@@ -256,8 +254,7 @@ namespace Listenarr.Api.Services
                 _logger.LogDebug("Import phase passed for {DownloadId}", download.DownloadId);
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error in import phase for {DownloadId}", download.DownloadId);
                 result.ErrorMessage = ex.Message;
                 return result;
@@ -310,8 +307,7 @@ namespace Listenarr.Api.Services
                 _logger.LogDebug("Verify phase passed for {DownloadId}", download.DownloadId);
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error in verify phase for {DownloadId}", download.DownloadId);
                 result.ErrorMessage = ex.Message;
                 return result;
@@ -355,3 +351,4 @@ namespace Listenarr.Api.Services
         public string? ImportedPath { get; set; }
     }
 }
+

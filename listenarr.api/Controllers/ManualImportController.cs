@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc;
 using System.Text.RegularExpressions;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
@@ -76,8 +76,7 @@ public class ManualImportController : ControllerBase
 
             return Ok(new { items });
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error previewing manual import for path {Path}", path);
             return StatusCode(500, new { error = "Failed to preview import" });
         }
@@ -134,8 +133,7 @@ public class ManualImportController : ControllerBase
 
             return BadRequest(new { error = "No items to import" });
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error starting manual import");
             return StatusCode(500, new { error = "Failed to start import" });
         }
@@ -232,8 +230,7 @@ public class ManualImportController : ControllerBase
                     _logger.LogDebug("Unique destination changed from {Old} to {New}", preUniquePath, destinationPath);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to generate unique destination filename for manual import: {Destination}", destinationPath);
             }
 
@@ -266,7 +263,14 @@ public class ManualImportController : ControllerBase
                     _logger.LogDebug("Added destination to usedDestinations: {Destination}, total count now: {Count}", destinationPath, usedDestinations.Count);
                 }
             }
-            catch { }
+            catch (ArgumentException ex)
+            {
+                _logger.LogDebug(ex, "Failed tracking used destination during manual import for {Destination}", destinationPath);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogDebug(ex, "Failed tracking used destination during manual import for {Destination}", destinationPath);
+            }
             // After a successful move/copy, enqueue a focused scan for the matched audiobook
             try
             {
@@ -280,7 +284,15 @@ public class ManualImportController : ControllerBase
                     _logger.LogDebug("IScanQueueService not available - skipping enqueue of focused scan for audiobook {AudiobookId}", audiobook.Id);
                 }
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException ex)
+            {
+                _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", audiobook.Id);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", audiobook.Id);
+            }
+            catch (OperationCanceledException ex)
             {
                 _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", audiobook.Id);
             }
@@ -294,8 +306,7 @@ public class ManualImportController : ControllerBase
                 AudiobookTitle = audiobook.Title
             };
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogError(ex, "Error importing file {FilePath}", item.FullPath);
             return new ManualImportResult
             {
@@ -326,8 +337,7 @@ public class ManualImportController : ControllerBase
                 isCustomBasePath = !string.Equals(baseFull, configuredFull, StringComparison.OrdinalIgnoreCase);
             }
         }
-        catch
-        {
+        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
             isCustomBasePath = !string.IsNullOrWhiteSpace(basePath) && !string.IsNullOrWhiteSpace(configuredOutput)
                 && !string.Equals(basePath, configuredOutput, StringComparison.OrdinalIgnoreCase);
         }
@@ -482,4 +492,5 @@ public class ManualImportResult
     public string? AudiobookTitle { get; set; }
     public string? Error { get; set; }
 }
+
 

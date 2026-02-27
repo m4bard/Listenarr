@@ -49,8 +49,8 @@ namespace Listenarr.Api.Middleware
                     return;
                 }
 
-                // Allow some public endpoints without antiforgery (startup config reads, token request itself, login/register)
-                if (path.StartsWith("/api/antiforgery") || path.StartsWith("/api/account/login") || path.StartsWith("/api/account/register") || path.StartsWith("/api/account/logout") || path.StartsWith("/api/startupconfig") || path.StartsWith("/api/configuration/startupconfig") || path.StartsWith("/hubs/")
+                // Allow some public endpoints without antiforgery (startup config reads, token request itself, login/logout)
+                if (path.StartsWith("/api/antiforgery") || path.StartsWith("/api/account/login") || path.StartsWith("/api/account/logout") || path.StartsWith("/api/configuration/startupconfig") || path.StartsWith("/hubs/")
                     // Also allow Prowlarr-compatible indexer endpoints and system status
                     || path.StartsWith("/api/v1/indexer") || path.StartsWith("/api/v1/system"))
                 {
@@ -82,7 +82,9 @@ namespace Listenarr.Api.Middleware
                                 cookiePrefix = cookieVal.Length <= 8 ? cookieVal : cookieVal.Substring(0, 8);
                             }
                         }
-                        catch { /* ignore cookie read errors */ }
+                        catch (Exception cookieEx) when (cookieEx is not OperationCanceledException && cookieEx is not OutOfMemoryException && cookieEx is not StackOverflowException) {
+                            _logger?.LogDebug(cookieEx, "Failed reading antiforgery cookie prefix for diagnostics");
+                        }
 
                         var headerPrefix = string.Empty;
                         if (!string.IsNullOrEmpty(hdr))
@@ -96,7 +98,7 @@ namespace Listenarr.Api.Middleware
                         bool principalAuthenticated = false;
                         string? principalNameMask = null;
                         int principalClaims = 0;
-                        string? sessionToken = context.Request.Headers["Authorization"].FirstOrDefault();
+                        var hasAuthorizationHeader = !string.IsNullOrWhiteSpace(context.Request.Headers["Authorization"].FirstOrDefault());
                         try
                         {
                             var user = context.User;
@@ -108,11 +110,15 @@ namespace Listenarr.Api.Middleware
                                 if (!string.IsNullOrEmpty(pname)) principalNameMask = pname.Length <= 8 ? pname : pname.Substring(0, 8);
                             }
                         }
-                        catch { }
+                        catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
+                            _logger?.LogDebug(ex2, "Failed capturing principal diagnostics during antiforgery validation failure");
+                        }
 
-                        _logger?.LogWarning(ex, "Antiforgery validation failed. Method={Method}, Path={Path}, HeaderLength={HeaderLength}, CookieNames={CookieNames}, HeaderPrefix={HeaderPrefix}, CookiePrefix={CookiePrefix}, PrefixesEqual={PrefixesEqual}, PrincipalAuthenticated={PrincipalAuthenticated}, PrincipalNameMask={PrincipalNameMask}, PrincipalClaims={PrincipalClaims}, SessionToken={SessionToken}", method, path, hdrLen, cookieNames, headerPrefix, cookiePrefix, equalPrefixes, principalAuthenticated, principalNameMask, principalClaims, sessionToken);
+                        _logger?.LogWarning(ex, "Antiforgery validation failed. Method={Method}, Path={Path}, HeaderLength={HeaderLength}, CookieNames={CookieNames}, HeaderPrefix={HeaderPrefix}, CookiePrefix={CookiePrefix}, PrefixesEqual={PrefixesEqual}, PrincipalAuthenticated={PrincipalAuthenticated}, PrincipalNameMask={PrincipalNameMask}, PrincipalClaims={PrincipalClaims}, HasAuthorizationHeader={HasAuthorizationHeader}", method, path, hdrLen, cookieNames, headerPrefix, cookiePrefix, equalPrefixes, principalAuthenticated, principalNameMask, principalClaims, hasAuthorizationHeader);
                     }
-                    catch { /* ignore logging errors */ }
+                    catch (Exception logEx) when (logEx is not OperationCanceledException && logEx is not OutOfMemoryException && logEx is not StackOverflowException) {
+                        System.Diagnostics.Debug.WriteLine($"AntiforgeryValidationMiddleware logging failed: {logEx.Message}");
+                    }
 
                     context.Response.StatusCode = StatusCodes.Status400BadRequest;
                     await context.Response.WriteAsJsonAsync(new { message = "Invalid or missing CSRF token" });
@@ -124,3 +130,4 @@ namespace Listenarr.Api.Middleware
         }
     }
 }
+

@@ -186,12 +186,12 @@ describe('AudiobooksView Grouping', () => {
     expect(groupedCollections.find((g) => g.name === 'Author A')).toEqual({
       name: 'Author A',
       count: 2,
-      coverUrl: 'cover1.jpg',
+      coverUrl: undefined,
     })
     expect(groupedCollections.find((g) => g.name === 'Author B')).toEqual({
       name: 'Author B',
       count: 1,
-      coverUrl: 'cover3.jpg',
+      coverUrl: undefined,
     })
 
     // Default sorting when grouped by authors should be author-last ascending

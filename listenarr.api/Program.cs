@@ -109,6 +109,14 @@ else
 
 // repoRoot fallback used in other path computations later
 var repoRoot = projectDir ?? AppContext.BaseDirectory;
+// dotnet test hosts are typically `testhost` and may not always set
+// ASPNETCORE_ENVIRONMENT=Test; detect this explicitly to keep tests isolated.
+var processName = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? string.Empty);
+var isLikelyTestHost =
+    string.Equals(processName, "testhost", StringComparison.OrdinalIgnoreCase) ||
+    string.Equals(Environment.GetEnvironmentVariable("LISTENARR_TEST_MODE"), "true", StringComparison.OrdinalIgnoreCase) ||
+    !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VSTEST_SESSION_ID")) ||
+    !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DOTNET_TEST_RUNNER"));
 
 // Configure Serilog for structured logging, file rotation and SignalR broadcasting
 var logFilePath = Path.Combine(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
@@ -134,7 +142,12 @@ try
             Console.WriteLine($"[Listenarr] Created default configuration at '{externalConfigAbsolute}'. Edit this file to customize app settings.");
         }
 }
-catch (Exception ex)
+catch (Exception ex) when (
+    ex is IOException
+    || ex is UnauthorizedAccessException
+    || ex is System.Security.SecurityException
+    || ex is ArgumentException
+    || ex is NotSupportedException)
 {
     // Do not fail startup on inability to write sample config; just log to console and continue
     Console.WriteLine($"[Listenarr] Warning: failed to create default config '{externalConfigRelative}': {ex.Message}");
@@ -205,7 +218,7 @@ if (!args?.Any(arg => arg.StartsWith("--urls")) ?? true)
 // If running as an integration test host, allow the test-side partial to apply any
 // additional registrations (for example AddListenarrPersistence so IDbContextFactory<>
 // is available to hosted/background services during tests).
-if (builder.Environment.IsEnvironment("Test"))
+if (builder.Environment.IsEnvironment("Test") || isLikelyTestHost)
 {
     ApplyTestHostPatches(builder);
 }
@@ -217,6 +230,9 @@ builder.Services.AddControllers()
         // Only ignore null values (not empty strings or zeros) to reduce payload size while preserving meaningful empty values
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
     });
+
+// Required for [Authorize] / role policies used by controllers.
+builder.Services.AddAuthorization();
 
 // Add SignalR for real-time updates
 builder.Services.AddSignalR()
@@ -467,16 +483,29 @@ builder.Services.AddHttpClient("DirectDownload")
 // Compute default SQLite DB path (config/database/listenarr.db) relative to content root.
 // Allow tests to override the path via configuration to avoid shared DB state in CI.
 var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
+var hasExplicitSqliteDbPathOverride = !string.IsNullOrWhiteSpace(sqliteDbPathOverride);
 var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
     ? Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
     : (Path.IsPathRooted(sqliteDbPathOverride)
         ? sqliteDbPathOverride
         : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
 
+// Safety guard: test hosts must never write to the repository DB path.
+if (builder.Environment.IsEnvironment("Test") || isLikelyTestHost)
+{
+    var repoDbPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db"));
+    var resolvedSqlitePath = Path.GetFullPath(sqliteDbPath);
+    if (string.Equals(resolvedSqlitePath, repoDbPath, StringComparison.OrdinalIgnoreCase))
+    {
+        sqliteDbPath = Path.Combine(Path.GetTempPath(), "listenarr-tests", "program-main", $"listenarr-{Guid.NewGuid():N}.db");
+        Log.Logger.Warning("[Startup] Test environment attempted to use repo sqlite path; forcing isolated test DB path: {SqliteDbPath}", sqliteDbPath);
+    }
+}
+
 // In development, prefer the repository database path so `npm run dev` uses
 // `listenarr.api/config/database/listenarr.db` regardless of the resolved
 // ContentRootPath. This ensures developers see and edit the canonical DB.
-if (isDev && !isDocker)
+if (builder.Environment.IsDevelopment() && !isDocker && !hasExplicitSqliteDbPathOverride && !isLikelyTestHost)
 {
     // Search ancestors from the content root for a directory that contains
     // the `listenarr.api/config` folder. This avoids duplicating `listenarr.api`
@@ -562,6 +591,10 @@ if (isDev && !isDocker)
         Log.Logger.Information("[Startup] Development mode detected - forcing SQLite DB to repo path (fallback): {DevRepoDb}", devRepoDbFallback);
     }
 }
+else if (builder.Environment.IsDevelopment() && hasExplicitSqliteDbPathOverride)
+{
+    Log.Logger.Information("[Startup] Development mode detected but honoring explicit SQLite DB path override: {SqliteDbPathOverride}", sqliteDbPath);
+}
 // Ensure directory exists at startup so EF migrations can create the DB file there
 var sqliteDbDir = Path.GetDirectoryName(sqliteDbPath);
 if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))
@@ -601,6 +634,8 @@ if (!disableHostedServices)
     builder.Services.AddListenarrHostedServices(builder.Configuration);
 }
 
+// Startup DB normalizer: run once at startup to idempotently normalize legacy JSON columns
+builder.Services.AddHostedService<Listenarr.Api.Services.StartupDbNormalizer>();
 // External request options (Prefer US domain / optional US proxy)
 builder.Services.Configure<Listenarr.Api.Services.ExternalRequestOptions>(builder.Configuration.GetSection("ExternalRequests"));
 
@@ -653,7 +688,12 @@ builder.Services.AddSwaggerGen(options =>
             options.IncludeXmlComments(xmlPath);
         }
     }
-    catch (Exception ex)
+    catch (Exception ex) when (
+        ex is IOException
+        || ex is UnauthorizedAccessException
+        || ex is System.Xml.XmlException
+        || ex is InvalidOperationException
+        || ex is ArgumentException)
     {
         Log.Logger.Warning("[WARNING] Failed to include XML comments in Swagger: {Message}", ex.Message);
     }
@@ -739,11 +779,30 @@ try
     ctx.Database.Migrate();
     Log.Logger.Information("[Startup] EF Core migrations applied successfully");
 }
-catch (Exception ex)
+catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
 {
     // Do not fail startup if migrations cannot be applied; surface the error in logs
     // so developers can run `dotnet ef database update` manually if needed.
     Log.Logger.Error(ex, "[Startup] Failed to apply EF Core migrations at startup. You can run 'dotnet ef database update' manually to apply migrations.");
+}
+// Warn loudly when authentication is disabled. This mode is convenient for trusted LAN use
+// but unsafe for direct internet exposure without an external auth layer.
+try
+{
+    using var authWarningScope = app.Services.CreateScope();
+    var configurationService = authWarningScope.ServiceProvider.GetService<IConfigurationService>();
+    var startupCfg = configurationService != null ? await configurationService.GetStartupConfigAsync() : null;
+    var authRaw = startupCfg?.AuthenticationRequired;
+    var authEnabled = authRaw?.Trim().ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
+    if (!authEnabled)
+    {
+        Log.Logger.Warning(
+            "[Startup] Authentication is DISABLED. Listenarr should only be exposed on a trusted LAN/VPN in this mode. If exposed to the internet, enable Listenarr authentication or enforce authentication at your reverse proxy.");
+    }
+}
+catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+{
+    Log.Logger.Debug(ex, "[Startup] Failed to evaluate authentication-enabled startup warning");
 }
 
 // Initialize the SignalR sink now that the hub context is available
@@ -809,8 +868,9 @@ app.MapGet("/placeholder.svg", async context =>
 
         context.Response.StatusCode = 404;
     }
-    catch
+    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
     {
+        Log.Logger.Debug(ex, "Failed to serve fallback placeholder image");
         context.Response.StatusCode = 500;
     }
 });

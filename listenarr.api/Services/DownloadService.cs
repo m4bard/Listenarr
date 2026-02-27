@@ -172,8 +172,7 @@ namespace Listenarr.Api.Services
 
                 return Task.FromResult<System.Collections.Generic.List<string>?>(null);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to retrieve cached announces for download {DownloadId} (non-fatal)", downloadId);
                 return Task.FromResult<System.Collections.Generic.List<string>?>(null);
             }
@@ -252,8 +251,7 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch (Exception syncEx)
-                    {
+                    catch (Exception syncEx) when (syncEx is not OperationCanceledException && syncEx is not OutOfMemoryException && syncEx is not StackOverflowException) {
                         _logger.LogDebug(syncEx, "Failed to synchronize status into scoped ListenArrDbContext (non-fatal)");
                     }
                 }
@@ -266,8 +264,7 @@ namespace Listenarr.Api.Services
                     await _completedDownloadProcessor.ProcessCompletedDownloadAsync(downloadId, finalPath);
                     _logger.LogInformation("CompletedDownloadProcessor finished for download {DownloadId}", downloadId);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Failed to process completed download removal for {DownloadId}", downloadId);
                 }
 
@@ -291,21 +288,18 @@ namespace Listenarr.Api.Services
                                 await clientProxy.SendCoreAsync("QueueUpdate", new object[] { currentQueue }, System.Threading.CancellationToken.None);
                             }
                         }
-                        catch (Exception exInner)
-                        {
+                        catch (Exception exInner) when (exInner is not OperationCanceledException && exInner is not OutOfMemoryException && exInner is not StackOverflowException) {
                             _logger.LogDebug(exInner, "Direct SendCoreAsync for QueueUpdate failed (non-fatal)");
                         }
 
                         _logger.LogInformation("Broadcasted QueueUpdate after processing download {DownloadId}", downloadId);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to broadcast QueueUpdate after processing download {DownloadId}", downloadId);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Unexpected error in ProcessCompletedDownloadAsync for {DownloadId}", downloadId);
             }
         }
@@ -328,8 +322,7 @@ namespace Listenarr.Api.Services
                 var (success, message) = await _clientGateway.TestConnectionAsync(client);
                 return (success, message, client);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error during TestDownloadClientAsync for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, ex.Message, client);
             }
@@ -582,8 +575,7 @@ namespace Listenarr.Api.Services
                         protocol);
                     _logger.LogInformation("Recorded grabbed event in history for download {DownloadId}", downloadId);
                 }
-                catch (Exception histEx)
-                {
+                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
                     _logger.LogWarning(histEx, "Failed to record grabbed event in history for download {DownloadId} (non-critical)", downloadId);
                 }
             }
@@ -723,8 +715,7 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to trigger immediate queue update (non-fatal)");
             }
 
@@ -859,8 +850,7 @@ namespace Listenarr.Api.Services
                             mamId = newMam;
                         }
                     }
-                    catch (Exception exMam)
-                    {
+                    catch (Exception exMam) when (exMam is not OperationCanceledException && exMam is not OutOfMemoryException && exMam is not StackOverflowException) {
                         _logger.LogDebug(exMam, "Failed to persist updated mam_id from MyAnonamouse redirect response");
                     }
 
@@ -980,8 +970,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
                         }
-                        catch (Exception rex2)
-                        {
+                        catch (Exception rex2) when (rex2 is not OperationCanceledException && rex2 is not OutOfMemoryException && rex2 is not StackOverflowException) {
                             _logger.LogDebug(rex2, "Failed to rewrite numeric IPs inside torrent (non-fatal)");
                         }
 
@@ -1017,21 +1006,18 @@ namespace Listenarr.Api.Services
                                             }
                                         }
                                     }
-                                    catch (Exception subEx)
-                                    {
+                                    catch (Exception subEx) when (subEx is not OperationCanceledException && subEx is not OutOfMemoryException && subEx is not StackOverflowException) {
                                         _logger.LogDebug(subEx, "Non-fatal failure while attempting to rewrite announce URL {Ann} for '{Title}'", ann, searchResult.Title);
                                     }
                                 }
                             }
                         }
-                        catch (Exception rex3)
-                        {
+                        catch (Exception rex3) when (rex3 is not OperationCanceledException && rex3 is not OutOfMemoryException && rex3 is not StackOverflowException) {
                             _logger.LogDebug(rex3, "Failed to rewrite announce hosts inside torrent (non-fatal)");
                         }
                     }
                 }
-                catch (Exception rex)
-                {
+                catch (Exception rex) when (rex is not OperationCanceledException && rex is not OutOfMemoryException && rex is not StackOverflowException) {
                     _logger.LogDebug(rex, "Failed to rewrite torrent tracker hosts (non-fatal)");
                 }
 
@@ -1071,8 +1057,7 @@ namespace Listenarr.Api.Services
 
                                 updatedAnnounces.Add(newAnn);
                             }
-                            catch (Exception inner)
-                            {
+                            catch (Exception inner) when (inner is not OperationCanceledException && inner is not OutOfMemoryException && inner is not StackOverflowException) {
                                 _logger.LogDebug(inner, "Non-fatal failure while attempting to append mam_id to announce {Ann} for '{Title}'", ann, searchResult.Title);
                                 updatedAnnounces.Add(ann);
                             }
@@ -1082,8 +1067,7 @@ namespace Listenarr.Api.Services
                             _logger.LogInformation("Appended mam_id to MyAnonamouse announce URLs for '{Title}' - count={Count}", searchResult.Title, updatedAnnounces.Count);
                     }
                 }
-                catch (Exception exAppend)
-                {
+                catch (Exception exAppend) when (exAppend is not OperationCanceledException && exAppend is not OutOfMemoryException && exAppend is not StackOverflowException) {
                     _logger.LogDebug(exAppend, "Failed to append mam_id to MyAnonamouse announces (non-fatal)");
                 }
 
@@ -1101,8 +1085,7 @@ namespace Listenarr.Api.Services
                         _cache.Set(cacheKey + ":name", searchResult.TorrentFileName ?? "download.torrent", new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromMinutes(30) });
                         _logger.LogInformation("Cached MyAnonamouse torrent bytes and filename to memory for download {DownloadId}", downloadId);
                     }
-                    catch (Exception cex)
-                    {
+                    catch (Exception cex) when (cex is not OperationCanceledException && cex is not OutOfMemoryException && cex is not StackOverflowException) {
                         _logger.LogDebug(cex, "Failed to place cached MyAnonamouse torrent into memory cache (non-fatal)");
                     }
                 }
@@ -1122,20 +1105,17 @@ namespace Listenarr.Api.Services
                             _cache.Set(cacheKey + ":announces", announces, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromMinutes(30) });
                             _logger.LogInformation("Cached MyAnonamouse torrent announces to memory for download {DownloadId}", downloadId);
                         }
-                        catch (Exception cexAnn)
-                        {
+                        catch (Exception cexAnn) when (cexAnn is not OperationCanceledException && cexAnn is not OutOfMemoryException && cexAnn is not StackOverflowException) {
                             _logger.LogDebug(cexAnn, "Failed to place cached MyAnonamouse announces into memory cache (non-fatal)");
                         }
                     }
                 }
-                catch (Exception exAnn)
-                {
+                catch (Exception exAnn) when (exAnn is not OperationCanceledException && exAnn is not OutOfMemoryException && exAnn is not StackOverflowException) {
                     _logger.LogDebug(exAnn, "Failed to extract announce URLs from cached torrent (non-fatal)");
                 }
                 response.Dispose();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to cache MyAnonamouse torrent for '{Title}'", searchResult.Title);
             }
         }
@@ -1429,8 +1409,7 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("No announce/URL entries detected in cached torrent for '{Title}'", result.Title);
                         }
                     }
-                    catch (Exception exAnn)
-                    {
+                    catch (Exception exAnn) when (exAnn is not OperationCanceledException && exAnn is not OutOfMemoryException && exAnn is not StackOverflowException) {
                         _logger.LogDebug(exAnn, "Failed to extract announce URLs from torrent for diagnostics (non-fatal)");
                     }
 
@@ -1648,8 +1627,7 @@ namespace Listenarr.Api.Services
                     throw new Exception($"Transmission RPC error: {errorMsg}");
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to send torrent to Transmission");
                 throw;
             }
@@ -1695,8 +1673,7 @@ namespace Listenarr.Api.Services
 
                 throw new Exception($"Failed to get Transmission session ID: {response.StatusCode}");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to get Transmission session ID");
                 throw;
             }
@@ -1826,8 +1803,7 @@ namespace Listenarr.Api.Services
 
                 _logger.LogInformation("Successfully added NZB to SABnzbd with ID: {DownloadId}", downloadId);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to send NZB to SABnzbd");
                 throw;
             }
@@ -1965,8 +1941,7 @@ namespace Listenarr.Api.Services
 
                 _logger.LogInformation("Successfully added NZB to NZBGet with ID: {NzbId}", nzbId);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to send NZB to NZBGet");
                 throw;
             }
@@ -2019,8 +1994,7 @@ namespace Listenarr.Api.Services
                     return (updatedUrl, indexer.ApiKey);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to append indexer API key to NZB URL for {Title}", result.Title);
             }
 
@@ -2128,8 +2102,7 @@ namespace Listenarr.Api.Services
                 {
                     return await _configurationService.GetApplicationSettingsAsync();
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to load application settings while building queue (non-fatal)");
                     return null;
                 }
@@ -2148,8 +2121,7 @@ namespace Listenarr.Api.Services
                         {
                             clientQueue = await _clientGateway.GetQueueAsync(client);
                         }
-                        catch (Exception gwEx)
-                        {
+                        catch (Exception gwEx) when (gwEx is not OperationCanceledException && gwEx is not OutOfMemoryException && gwEx is not StackOverflowException) {
                             _logger.LogWarning(gwEx, "Client gateway failed to retrieve queue for {ClientName}, falling back to legacy implementation", client.Name ?? client.Id);
                             clientQueue = await GetQueueFallbackAsync(client);
                         }
@@ -2249,8 +2221,7 @@ namespace Listenarr.Api.Services
                                             _logger.LogInformation("Persisted torrent hash {Hash} to database for download {DownloadId}", originalClientId, matchedDownload.Id);
                                         }
                                     }
-                                    catch (Exception dbEx)
-                                    {
+                                    catch (Exception dbEx) when (dbEx is not OperationCanceledException && dbEx is not OutOfMemoryException && dbEx is not StackOverflowException) {
                                         _logger.LogWarning(dbEx, "Failed to persist torrent hash for download {DownloadId}", matchedDownload.Id);
                                     }
                                 }
@@ -2272,8 +2243,7 @@ namespace Listenarr.Api.Services
 
                             mappedFiltered.Add(queueItem);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Error processing queue item {QueueId}, including anyway", queueItem.Id);
                             mappedFiltered.Add(queueItem);
                         }
@@ -2427,7 +2397,9 @@ namespace Listenarr.Api.Services
                                                     if (!string.IsNullOrEmpty(d.DownloadClientId) && 
                                                         historyItems.Any(h => h.Id.Equals(d.DownloadClientId, StringComparison.OrdinalIgnoreCase)))
                                                     {
-                                                        try { _metrics.Increment("download.purge.skipped.history.nzbid_match"); } catch { }
+                                                        try { _metrics.Increment("download.purge.skipped.history.nzbid_match"); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                        }
                                                         return false;
                                                     }
 
@@ -2435,31 +2407,35 @@ namespace Listenarr.Api.Services
                                                     if (!string.IsNullOrEmpty(d.Title) && 
                                                         historyItems.Any(h => !string.IsNullOrEmpty(h.Name) && IsMatchingTitle(d.Title, h.Name)))
                                                     {
-                                                        try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch { }
+                                                        try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                        }
                                                         return false;
                                                     }
 
                                                     // No match in history -> eligible to purge
                                                     return true;
                                                 }
-                                                catch
-                                                {
+                                                catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                                                     // If anything goes wrong, be conservative and avoid purging this download
                                                     return false;
                                                 }
                                             }).ToList();
                                         }
-                                        catch (Exception hx)
-                                        {
+                                        catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
                                             _logger.LogWarning(hx, "Error while fetching NZBGet history for client {ClientName}, skipping purge for safety", client.Name);
-                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch { }
+                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
+                                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                            }
                                             toPurge = new List<Download>();
                                         }
                                     }
                                     else
                                     {
                                         _logger.LogWarning("DownloadClientGateway not available for client {ClientName}, skipping purge for safety", client.Name);
-                                        try { _metrics.Increment("download.purge.skipped.history.gateway_unavailable"); } catch { }
+                                        try { _metrics.Increment("download.purge.skipped.history.gateway_unavailable"); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
                                         toPurge = new List<Download>();
                                     }
                                 }
@@ -2506,29 +2482,31 @@ namespace Listenarr.Api.Services
                                                                 // If the DB record stores the nzo id directly as the DownloadClientId, skip purging
                                                                 if (!string.IsNullOrEmpty(d.DownloadClientId) && historySlots.Any(h => h.nzo.Equals(d.DownloadClientId, StringComparison.OrdinalIgnoreCase)))
                                                                 {
-                                                                    try { _metrics.Increment("download.purge.skipped.history.nzo_match"); } catch { }
+                                                                    try { _metrics.Increment("download.purge.skipped.history.nzo_match"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { 
+                                                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                                    }
                                                                     return false;
                                                                 }
 
                                                                 // Match by title similarity against history name entries -> skip purging
                                                                 if (!string.IsNullOrEmpty(d.Title) && historySlots.Any(h => !string.IsNullOrEmpty(h.name) && IsMatchingTitle(d.Title, h.name)))
                                                                 {
-                                                                    try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch { }
+                                                                    try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { 
+                                                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                                    }
                                                                     return false;
                                                                 }
 
                                                                 // No match in history -> eligible to purge
                                                                 return true;
                                                             }
-                                                            catch
-                                                            {
+                                                            catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) {
                                                                 // If anything goes wrong, be conservative and avoid purging this download
                                                                 return false;
                                                             }
                                                         }).ToList();
                                                     }
-                                                    catch (Exception hx)
-                                                    {
+                                                    catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
                                                         _logger.LogWarning(hx, "Failed to parse SABnzbd history for client {ClientName}, skipping purge for safety", client.Name);
                                                         // Keep toPurge as orphanedDownloads but bail out of purging below
                                                     }
@@ -2537,28 +2515,32 @@ namespace Listenarr.Api.Services
                                             else
                                             {
                                                 _logger.LogWarning("Failed to fetch SABnzbd history for client {ClientName}: {StatusCode}", client.Name, historyResp.StatusCode);
-                                                try { _metrics.Increment("download.purge.skipped.history.fetch_failed"); } catch { }
+                                                try { _metrics.Increment("download.purge.skipped.history.fetch_failed"); } catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { 
+                                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                }
                                                 // skip purging when we couldn't confirm history to avoid accidental deletions
                                                 toPurge = new List<Download>();
                                             }
                                         }
-                                        catch (Exception hx)
-                                        {
+                                        catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
                                             _logger.LogWarning(hx, "Error while fetching SABnzbd history for client {ClientName}, skipping purge for safety", client.Name);
-                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch { }
+                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { 
+                                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                            }
                                             toPurge = new List<Download>();
                                         }
                                     }
                                     else
                                     {
                                         _logger.LogWarning("SABnzbd client {ClientName} missing apiKey in settings, skipping orphan purge for safety", client.Name);
-                                        try { _metrics.Increment("download.purge.skipped.history.missing_api_key"); } catch { }
+                                        try { _metrics.Increment("download.purge.skipped.history.missing_api_key"); } catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
                                         toPurge = new List<Download>();
                                     }
                                 }
                             }
-                            catch (Exception hx)
-                            {
+                            catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
                                 _logger.LogWarning(hx, "Unexpected error while checking history before purge for client {ClientName}, skipping purge for safety", client.Name);
                                 toPurge = new List<Download>();
                             }
@@ -2575,7 +2557,9 @@ namespace Listenarr.Api.Services
                                     purgeScopedDbContext.Downloads.Remove(trackedDownload);
                                     _logger.LogInformation("Purged orphaned download record: {DownloadId} '{Title}' (no longer exists in {ClientName} queue)",
                                         orphanedDownload.Id, orphanedDownload.Title, client.Name);
-                                    try { _metrics.Increment("download.purged.count"); } catch { }
+                                    try { _metrics.Increment("download.purged.count"); } catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                             }
 
@@ -2584,13 +2568,11 @@ namespace Listenarr.Api.Services
                                 toPurge.Count, client.Name);
                         }
                     }
-                    catch (Exception purgeEx)
-                    {
+                    catch (Exception purgeEx) when (purgeEx is not OperationCanceledException && purgeEx is not OutOfMemoryException && purgeEx is not StackOverflowException) {
                         _logger.LogError(purgeEx, "Error purging orphaned downloads for client {ClientName}", client.Name);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error getting queue from download client {ClientName}", client.Name);
                 }
             }
@@ -2640,8 +2622,7 @@ namespace Listenarr.Api.Services
                         existingIds.Add(d.Id);
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Error while appending completed external downloads to queue (non-fatal)");
                 }
             }
@@ -2811,8 +2792,7 @@ namespace Listenarr.Api.Services
 
                 return removedFromClient;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error removing from queue: {DownloadId}", downloadId);
                 return false;
             }
@@ -3001,8 +2981,7 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error getting qBittorrent queue - client may be unreachable");
             }
 
@@ -3025,15 +3004,13 @@ namespace Listenarr.Api.Services
                 // or replaced with a more maintainable version in a subsequent change.
                 return await GetQBittorrentQueueAsync(client);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Incremental qBittorrent sync failed, falling back to full fetch");
                 try
                 {
                     return await GetQBittorrentQueueAsync(client);
                 }
-                catch (Exception inner)
-                {
+                catch (Exception inner) when (inner is not OperationCanceledException && inner is not OutOfMemoryException && inner is not StackOverflowException) {
                     _logger.LogWarning(inner, "Fallback full fetch also failed for qBittorrent client {ClientName}", client.Name);
                     return new List<QueueItem>();
                 }
@@ -3073,8 +3050,7 @@ namespace Listenarr.Api.Services
                 await ctx.SaveChangesAsync();
                 return id;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "DownloadDirectlyAsync: failed to create DDL download record");
                 return Guid.NewGuid().ToString();
             }
@@ -3087,7 +3063,9 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogInformation("LogDownloadHistory: audiobook={Title}, source={Source}, result={ResultTitle}", audiobook?.Title, source, result?.Title);
             }
-            catch { }
+            catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) { 
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+            }
             await Task.CompletedTask;
         }
 
@@ -3097,8 +3075,7 @@ namespace Listenarr.Api.Services
             {
                 return AreTitlesSimilar(titleA ?? string.Empty, titleB ?? string.Empty);
             }
-            catch
-            {
+            catch (Exception caughtEx_14) when (caughtEx_14 is not OperationCanceledException && caughtEx_14 is not OutOfMemoryException && caughtEx_14 is not StackOverflowException) {
                 return false;
             }
         }
@@ -3158,7 +3135,7 @@ namespace Listenarr.Api.Services
                 
                 return dist <= threshold;
             }
-            catch { return false; }
+            catch (Exception caughtEx_15) when (caughtEx_15 is not OperationCanceledException && caughtEx_15 is not OutOfMemoryException && caughtEx_15 is not StackOverflowException) { return false; }
         }
 
         private string NormalizeTitle(string s)
@@ -3230,14 +3207,12 @@ namespace Listenarr.Api.Services
                             _logger.LogWarning("Item {DownloadId} still exists in {ClientName} queue after removal attempt", downloadId, client.Name ?? client.Id);
                             return false;
                         }
-                        catch (Exception queueEx)
-                        {
+                        catch (Exception queueEx) when (queueEx is not OperationCanceledException && queueEx is not OutOfMemoryException && queueEx is not StackOverflowException) {
                             _logger.LogWarning(queueEx, "Failed to verify queue status for {DownloadId} on {ClientName}, assuming removal failed", downloadId, client.Name ?? client.Id);
                             return false;
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "RemoveFromClientAsync: Exception removing {DownloadId} from {Client}: {Message}", 
                             LogRedaction.SanitizeText(downloadId), LogRedaction.SanitizeText(client.Name ?? client.Id), ex.Message);
                         
@@ -3254,8 +3229,7 @@ namespace Listenarr.Api.Services
                                 return true;
                             }
                         }
-                        catch (Exception queueEx)
-                        {
+                        catch (Exception queueEx) when (queueEx is not OperationCanceledException && queueEx is not OutOfMemoryException && queueEx is not StackOverflowException) {
                             _logger.LogDebug(queueEx, "Failed to verify queue after exception for {DownloadId}", downloadId);
                         }
                         
@@ -3266,8 +3240,7 @@ namespace Listenarr.Api.Services
                 // Fallback conservative behavior when no gateway is available
                 return false;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "RemoveFromClientAsync fallback failed for client {Client}", client?.Name ?? client?.Id);
                 return false;
             }
@@ -3331,7 +3304,9 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogDebug("CleanupOldTempFiles called (noop)");
             }
-            catch { }
+            catch (Exception caughtEx_16) when (caughtEx_16 is not OperationCanceledException && caughtEx_16 is not OutOfMemoryException && caughtEx_16 is not StackOverflowException) { 
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+            }
         }
 
         // Overload used by TempFileCleanupService to specify retention window in hours
@@ -3343,7 +3318,10 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogDebug("CleanupOldTempFiles called with hours={Hours} (noop)", hours);
             }
-            catch { }
+            catch (Exception caughtEx_17) when (caughtEx_17 is not OperationCanceledException && caughtEx_17 is not OutOfMemoryException && caughtEx_17 is not StackOverflowException) { 
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+            }
         }
     }
 }
+

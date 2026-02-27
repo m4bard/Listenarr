@@ -32,12 +32,32 @@ namespace Listenarr.Api.Services
 
         public async Task<Audiobook?> GetByAsinAsync(string asin)
         {
-            return await _db.Audiobooks.FirstOrDefaultAsync(a => a.Asin == asin);
+            var normalizedAsin = NormalizeAsin(asin);
+            if (string.IsNullOrWhiteSpace(normalizedAsin)) return null;
+
+            return await _db.Audiobooks
+                .Include(a => a.ExternalIdentifiers)
+                .FirstOrDefaultAsync(a =>
+                    (a.Asin != null && a.Asin.ToUpper() == normalizedAsin) ||
+                    (a.ExternalIdentifiers != null && a.ExternalIdentifiers.Any(i =>
+                        i.Type == AudiobookExternalIdentifierType.Asin &&
+                        i.ValueNormalized == normalizedAsin)));
         }
 
         public async Task<Audiobook?> GetByIsbnAsync(string isbn)
         {
-            return await _db.Audiobooks.FirstOrDefaultAsync(a => a.Isbn == isbn);
+            var normalizedIsbn = NormalizeIsbn(isbn);
+            if (string.IsNullOrWhiteSpace(normalizedIsbn)) return null;
+
+            var audiobooks = await _db.Audiobooks
+                .Include(a => a.ExternalIdentifiers)
+                .ToListAsync();
+
+            return audiobooks.FirstOrDefault(a =>
+                (a.Isbn != null && a.Isbn.Any(i => NormalizeIsbn(i) == normalizedIsbn)) ||
+                (a.ExternalIdentifiers != null && a.ExternalIdentifiers.Any(i =>
+                    i.Type == AudiobookExternalIdentifierType.Isbn &&
+                    string.Equals(i.ValueNormalized, normalizedIsbn, StringComparison.OrdinalIgnoreCase))));
         }
 
         public async Task<Audiobook?> GetByIdAsync(int id)
@@ -46,6 +66,7 @@ namespace Listenarr.Api.Services
             return await _db.Audiobooks
                 .Include(a => a.QualityProfile)
                 .Include(a => a.Files)
+                .Include(a => a.ExternalIdentifiers)
                 .FirstOrDefaultAsync(a => a.Id == id);
         }
 
@@ -66,9 +87,9 @@ namespace Listenarr.Api.Services
                     audiobook.BasePath = existing.BasePath;
                 }
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // If anything goes wrong reading existing record, fall back to update behavior
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             _db.Audiobooks.Update(audiobook);
@@ -139,6 +160,18 @@ namespace Listenarr.Api.Services
             }
 
             return null;
+        }
+
+        private static string NormalizeAsin(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        }
+
+        private static string NormalizeIsbn(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
         }
     }
 }

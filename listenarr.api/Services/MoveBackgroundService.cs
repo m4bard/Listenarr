@@ -1,4 +1,4 @@
-﻿using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Hosting;
 using System.Threading;
 using System.Threading.Tasks;
 using System;
@@ -158,8 +158,7 @@ namespace Listenarr.Api.Services
                                         File.SetLastWriteTimeUtc(destPath, lastWrite);
                                         File.SetCreationTimeUtc(destPath, creation);
                                     }
-                                    catch (Exception attrEx)
-                                    {
+                                    catch (Exception attrEx) when (attrEx is not OperationCanceledException && attrEx is not OutOfMemoryException && attrEx is not StackOverflowException) {
                                         _logger.LogDebug(attrEx, "Non-fatal: failed to preserve attributes for {File}", entry);
                                     }
 
@@ -189,8 +188,7 @@ namespace Listenarr.Api.Services
                                         await db.SaveChangesAsync(stoppingToken);
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to increment AttemptCount for job {JobId}", job.Id);
                                 }
 
@@ -243,15 +241,13 @@ namespace Listenarr.Api.Services
                                             }
                                         }
                                     }
-                                    catch (Exception innerEx)
-                                    {
+                                    catch (Exception innerEx) when (innerEx is not OperationCanceledException && innerEx is not OutOfMemoryException && innerEx is not StackOverflowException) {
                                         _logger.LogDebug(innerEx, "Non-fatal: failed to update ImageUrl after move for audiobook {AudiobookId}", audiobook.Id);
                                     }
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "Non-fatal: error while attempting to preserve ImageUrl for audiobook {AudiobookId}", audiobook.Id);
                         }
 
@@ -280,8 +276,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "Non-fatal: failed to update FilePath after move for audiobook {AudiobookId}", audiobook.Id);
                         }
 
@@ -342,8 +337,7 @@ namespace Listenarr.Api.Services
                                         await historyRepo.UpdateAsync(historyEntry);
                                     }
                                 }
-                                catch (Exception notifyEx)
-                                {
+                                catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException) {
                                     _logger.LogWarning(notifyEx, "Failed to send move notification for {JobId}", job.Id);
                                 }
 
@@ -366,8 +360,7 @@ namespace Listenarr.Api.Services
                                         _logger.LogDebug("Sent toast notification for move job {JobId}", job.Id);
                                     }
                                 }
-                                catch (Exception toastEx)
-                                {
+                                catch (Exception toastEx) when (toastEx is not OperationCanceledException && toastEx is not OutOfMemoryException && toastEx is not StackOverflowException) {
                                     _logger.LogDebug(toastEx, "Failed to send toast notification for move job {JobId}", job.Id);
                                 }
 
@@ -395,20 +388,17 @@ namespace Listenarr.Api.Services
                                                 _logger.LogInformation("Broadcasted full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}", audiobook.Id, job.Id);
                                             }
                                         }
-                                        catch (Exception ex)
-                                        {
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogWarning(ex, "Failed to broadcast full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}", audiobook.Id, job.Id);
                                         }
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogWarning(ex, "Failed to enqueue scan or broadcast AudiobookUpdate after move job {JobId}", job.Id);
                                 }
                             }
                         }
-                        catch (Exception historyEx)
-                        {
+                        catch (Exception historyEx) when (historyEx is not OperationCanceledException && historyEx is not OutOfMemoryException && historyEx is not StackOverflowException) {
                             _logger.LogWarning(historyEx, "Failed to add history entry or send notifications for move job {JobId}", job.Id);
                         }
 
@@ -416,10 +406,11 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, source, target);
                         // Completed move job — status updated and broadcasted where configured
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         // Cleanup any temp dir
-                        try { if (Directory.Exists(tempName)) Directory.Delete(tempName, true); } catch { }
+                        try { if (Directory.Exists(tempName)) Directory.Delete(tempName, true); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        }
 
                         // Increment attempt count for the job on failure
                         try
@@ -432,8 +423,7 @@ namespace Listenarr.Api.Services
                                 await db.SaveChangesAsync(stoppingToken);
                             }
                         }
-                        catch (Exception attEx)
-                        {
+                        catch (Exception attEx) when (attEx is not OperationCanceledException && attEx is not OutOfMemoryException && attEx is not StackOverflowException) {
                             _logger.LogWarning(attEx, "Failed to increment AttemptCount for job {JobId} after failure", job.Id);
                         }
 
@@ -472,14 +462,12 @@ namespace Listenarr.Api.Services
                                         _logger.LogDebug("Sent toast notification for failed move job {JobId}", job.Id);
                                     }
                                 }
-                                catch (Exception toastEx)
-                                {
+                                catch (Exception toastEx) when (toastEx is not OperationCanceledException && toastEx is not OutOfMemoryException && toastEx is not StackOverflowException) {
                                     _logger.LogDebug(toastEx, "Failed to send toast notification for failed move job {JobId}", job.Id);
                                 }
                             }
                         }
-                        catch (Exception historyEx)
-                        {
+                        catch (Exception historyEx) when (historyEx is not OperationCanceledException && historyEx is not OutOfMemoryException && historyEx is not StackOverflowException) {
                             _logger.LogWarning(historyEx, "Failed to add history entry for failed move job {JobId}", job.Id);
                         }
 
@@ -492,13 +480,15 @@ namespace Listenarr.Api.Services
                 {
                     break;
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Unexpected error processing move job {JobId}", job.Id);
-                    try { _moveQueue.UpdateJobStatus(job.Id, "Failed", ex.Message); } catch { }
+                    try { _moveQueue.UpdateJobStatus(job.Id, "Failed", ex.Message); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
                 }
             }
         }
     }
 }
+
 

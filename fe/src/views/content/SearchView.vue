@@ -228,6 +228,7 @@ onMounted(async () => {
 
 const fetchRawDebug = async (q: string) => {
   try {
+    // Use canonical /search/quick endpoint for debug
     const results = await apiService.intelligentSearch(q || 'Harry')
     rawDebugResults.value = results as unknown[]
     try {

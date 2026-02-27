@@ -40,7 +40,7 @@ namespace Listenarr.Api.Services
                 Asin = audiobook.Asin,
                 Isbn = audiobook.Isbn,
                 Language = audiobook.Language,
-                Genres = audiobook.Genres?.ToArray(),
+                Genres = audiobook.Genres,
                 Tags = audiobook.Tags?.ToArray(),
                 Description = audiobook.Description,
                 PublishYear = audiobook.PublishYear,

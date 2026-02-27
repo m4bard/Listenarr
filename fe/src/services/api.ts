@@ -28,6 +28,8 @@ import type {
   RootFolder,
   QualityScore,
   StartupConfig,
+  AudiobookExternalIdentifier,
+  AudiobookExternalIdentifierInput,
 } from '@/types'
 import { getStartupConfigCached, getCachedStartupConfig } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -58,246 +60,111 @@ class ApiService {
   private tokenReadyPromise: Promise<void> | null = null;
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
 
+  private buildAuthHeaders(): Record<string, string> {
+    const headers: Record<string, string> = {}
+    try {
+      const sc = getCachedStartupConfig()
+      const rawAuth = sc?.authenticationRequired ?? sc?.AuthenticationRequired
+      const authEnabled =
+        typeof rawAuth === 'boolean'
+          ? rawAuth
+          : typeof rawAuth === 'string'
+            ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
+            : false
+
+      if (authEnabled) {
+        const sessionToken = sessionTokenManager.getToken()
+        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`
+      } else {
+        const apiKey = sc?.apiKey
+        if (apiKey) headers['X-Api-Key'] = apiKey
+      }
+    } catch {}
+    return headers
+  }
+
 
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-      // Await tokenReadyPromise before any unsafe request to guarantee fresh token
-      const method = (options.method || 'GET').toString().toUpperCase();
-      if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) && this.tokenReadyPromise) {
-        logger.debug('[ApiService] Awaiting tokenReadyPromise before unsafe request');
-        await this.tokenReadyPromise;
-        this.tokenReadyPromise = null;
+    // Await tokenReadyPromise before any unsafe request to guarantee fresh token
+    const method = (options.method || 'GET').toString().toUpperCase();
+    if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && this.tokenReadyPromise) {
+      logger.debug('[ApiService] Awaiting tokenReadyPromise before unsafe request');
+      await this.tokenReadyPromise;
+      this.tokenReadyPromise = null;
+    }
+    const url = `${API_BASE_URL}${endpoint}`;
+
+    // Build headers
+    const headers: Record<string, string> = {
+      ...(options.headers ? (options.headers as Record<string, string>) : {}),
+    };
+
+    // Attach Authorization or API key if needed
+    Object.assign(headers, this.buildAuthHeaders());
+
+    // Attach antiforgery token for unsafe requests
+    if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
+      if (this.antiforgeryToken) {
+        headers['X-XSRF-TOKEN'] = this.antiforgeryToken;
       }
-    const url = `${API_BASE_URL}${endpoint}`
+    }
+
+    // Always send JSON for POST/PUT unless overridden
+    if (["POST", "PUT", "PATCH"].includes(method) && !headers['Content-Type'] && options.body && typeof options.body === 'string') {
+      headers['Content-Type'] = 'application/json';
+    }
 
     const config: RequestInit = {
-      headers: {
-        'Content-Type': 'application/json',
-        ...options.headers,
-      },
-      credentials: 'include',
       ...options,
+      headers,
+      credentials: 'include',
+    };
+
+    let resp: Response;
+    try {
+      resp = await fetch(url, config);
+    } catch (err) {
+      logger.error('[ApiService] Network error', err);
+      throw new Error('Network error');
     }
 
-    // Attach session token if available
-    const sessionToken = sessionTokenManager.getToken()
-    if (sessionToken) {
-      const hdrs = config.headers as Record<string, string> | undefined
-      config.headers = { ...(hdrs || {}), Authorization: `Bearer ${sessionToken}` }
+    if (resp.status === 401) {
+      // Unauthorized: clear session token and antiforgery token
+      sessionTokenManager.clearToken();
+      this.antiforgeryToken = null;
+      this.antiforgeryTokenSession = null;
+      // Optionally, trigger a global logout or redirect
+      throw Object.assign(new Error('Unauthorized'), { status: 401 });
+    }
+
+    if (resp.status === 429) {
+      // Too many requests
+      const body = await resp.json().catch(() => ({}));
+      const retryAfter = body?.retryAfterSeconds ?? parseInt(resp.headers.get('Retry-After') || '0');
+      const err: ErrorWithStatus = new Error('Too many requests');
+      err.status = 429;
+      err.retryAfter = retryAfter;
+      throw err;
+    }
+
+    if (!resp.ok) {
+      const text = await resp.text().catch(() => '');
+      const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
+      err.status = resp.status;
+      err.body = text;
+      throw err;
+    }
+
+    // Try to parse JSON, fallback to text if not JSON
+    const contentType = resp.headers.get('content-type') || '';
+    if (contentType.includes('application/json')) {
+      return await resp.json();
+    } else if (contentType.startsWith('text/')) {
+      return (await resp.text()) as unknown as T;
+    } else if ((resp as any).blob) {
+      return (await resp.blob()) as unknown as T;
     } else {
-      // Only attach API key if authentication is disabled
-      try {
-        const sc = await getStartupConfigCached(2000)
-        const apiKey = sc?.apiKey
-        const rawAuth =
-          sc?.authenticationRequired ??
-          (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-        const authEnabled =
-          typeof rawAuth === 'boolean'
-            ? rawAuth
-            : typeof rawAuth === 'string'
-              ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-              : false
-        if (apiKey && !authEnabled) {
-          const hdrs = config.headers as Record<string, string> | undefined
-          config.headers = { ...(hdrs || {}), 'X-Api-Key': apiKey }
-        }
-      } catch {}
-    }
-
-    // Auto-attach antiforgery token for unsafe HTTP methods when not already provided.
-    try {
-      const method = (config.method || 'GET').toString().toUpperCase()
-      if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
-        // Only attach if header not already set
-        const hdrs = config.headers as Record<string, string> | undefined
-        if (!hdrs || !hdrs['X-XSRF-TOKEN']) {
-          // Use cached antiforgery token if available and session matches
-          const sessionToken = sessionTokenManager.getToken() || null;
-          if (
-            this.antiforgeryToken &&
-            this.antiforgeryTokenSession === sessionToken
-          ) {
-            config.headers = {
-              ...(config.headers as Record<string, string>),
-              'X-XSRF-TOKEN': this.antiforgeryToken,
-            }
-          } else {
-            // Fetch and cache new token for this session
-            const token = await this.fetchAntiforgeryToken(
-              sessionToken ? { Authorization: `Bearer ${sessionToken}` } : undefined
-            )
-            if (token) {
-              this.antiforgeryToken = token;
-              this.antiforgeryTokenSession = sessionToken;
-              config.headers = {
-                ...(config.headers as Record<string, string>),
-                'X-XSRF-TOKEN': token,
-              }
-            }
-          }
-        }
-      }
-    } catch (e) {
-      logger.debug('[ApiService] failed to fetch CSRF token', e)
-    }
-
-    try {
-      // Debug: log outbound request details in development
-      logger.debug('[ApiService] request', { url, config })
-
-      const response = await fetch(url, config)
-
-      if (!response.ok) {
-        const respText = await response.text().catch(() => '')
-
-        // If the server returns 401, redirect to login (don't surface raw 401 errors to the UI)
-        if (response.status === 401) {
-          // Avoid redirecting to the login page for certain API routes
-          // (e.g., Audible endpoints) so the UI can handle 401 and show
-          // a helpful message instead of performing a full-page redirect.
-          const audibleEndpoints = [
-            '/search/audible-library',
-            '/search/audible-catalog',
-            '/audible-auth',
-          ]
-          if (endpoint && audibleEndpoints.some((e) => endpoint.startsWith(e))) {
-            const err = new Error(`HTTP error! status: 401 - ${respText}`) as ErrorWithStatus
-            err.status = 401
-            err.body = respText
-            throw err
-          }
-
-          // Avoid causing a SPA redirect loop when the app is trying to fetch
-          // the startup configuration during router boot. Let callers (router/auth)
-          // handle 401 for that specific endpoint instead of performing a navigation
-          // here which can trigger nested navigation during beforeEach.
-          if (endpoint && endpoint.startsWith('/configuration/startupconfig')) {
-            const err = new Error(`HTTP error! status: 401 - ${respText}`) as ErrorWithStatus
-            err.status = 401
-            err.body = respText
-            throw err
-          }
-
-          // Sanitize redirect to avoid open-redirects or unsafe values
-          try {
-            const { normalizeRedirect } = await import('@/utils/redirect')
-            const current = window.location.pathname + window.location.search + window.location.hash
-            const safe = normalizeRedirect(current)
-            if (!current.startsWith('/login')) {
-              logger.debug('[ApiService] 401 received, redirecting to login', { current, safe })
-
-              // Persist the safe redirect in sessionStorage as a fallback in case the
-              // query parameter gets lost or sanitized during navigation. This helps
-              // recover the intended SPA destination after login.
-              try {
-                sessionStorage.setItem('listenarr_pending_redirect', safe)
-              } catch {}
-
-              // Perform a full-page redirect to the login route with a safe redirect query.
-              // Avoid dynamic importing the router here to prevent circular imports and
-              // Vite chunking warnings. SPA navigation will still work after login via the
-              // redirect query parameter.
-              window.location.href = `/login?redirect=${encodeURIComponent(safe)}`
-
-              // stop further processing by throwing a specific error
-              throw new Error('Redirecting to login')
-            }
-          } catch {
-            // fallback to a safe redirect to root
-            window.location.href = '/login?redirect=%2F'
-            throw new Error('Redirecting to login')
-          }
-        }
-
-        // If this looks like a missing/invalid CSRF token, try to fetch a fresh
-        // antiforgery token and retry the request once before surfacing the error.
-        if (response.status === 400 && /csrf|anti.?forgery|invalid or missing/i.test(respText)) {
-          try {
-            // First, attempt to fetch a fresh token using the request's headers (if present)
-            let freshToken = await this.fetchAntiforgeryToken(config.headers as Record<string, string> | undefined)
-            logger.debug('[ApiService] CSRF retry - fetched token?', {
-              freshTokenExists: !!freshToken,
-              freshTokenLength: freshToken ? freshToken.length : 0,
-            })
-
-            // If we didn't get a token, or the retry failed, attempt once more using
-            // explicitly constructed headers that ensure both Authorization and
-            // X-Api-Key (when available) are present. This helps in races where a
-            // non-blocking startup prefetch created an anonymous token before
-            // startup configuration (API key) was available.
-            if (!freshToken) {
-              try {
-                const explicitHeaders: Record<string, string> = { ...(config.headers as Record<string, string> | undefined) || {} }
-                try {
-                  const sess = sessionTokenManager.getToken()
-                  if (sess && !explicitHeaders['Authorization']) explicitHeaders['Authorization'] = `Bearer ${sess}`
-                } catch {}
-                try {
-                  const sc = await getStartupConfigCached(2000)
-                  const apiKey = sc?.apiKey
-                  if (apiKey && !explicitHeaders['X-Api-Key']) explicitHeaders['X-Api-Key'] = apiKey
-                } catch {}
-
-                logger.debug('[ApiService] CSRF retry - attempting explicit token fetch', { explicitHeaders })
-                freshToken = await this.fetchAntiforgeryToken(explicitHeaders)
-                logger.debug('[ApiService] CSRF retry - explicit fetched token?', { freshTokenExists: !!freshToken, freshTokenLength: freshToken ? freshToken.length : 0 })
-              } catch (e) {
-                logger.debug('[ApiService] CSRF explicit retry failed', e)
-              }
-            }
-
-            if (freshToken) {
-              const retryConfig: RequestInit = {
-                ...config,
-                headers: {
-                  ...((config.headers as Record<string, string>) || {}),
-                  'X-XSRF-TOKEN': freshToken,
-                },
-              }
-              logger.debug('[ApiService] CSRF retry - retryConfig.headers', {
-                headersPreview: { ...retryConfig.headers, 'X-XSRF-TOKEN': '[redacted]' },
-              })
-              const retryResp = await fetch(url, retryConfig)
-              if (retryResp.ok) {
-                const retryText = await retryResp.text()
-                if (!retryText || retryText.trim().length === 0) return null as T
-                return JSON.parse(retryText) as T
-              }
-              // If retry failed, prefer showing the retry response body for clarity
-              const retryBody = await retryResp.text().catch(() => '')
-              const retryErr = new Error(
-                `HTTP error! status: ${retryResp.status} - ${retryBody}`,
-              ) as ErrorWithStatus
-              retryErr.status = retryResp.status
-              retryErr.body = retryBody
-              throw retryErr
-            }
-          } catch (retryErr) {
-            logger.debug('[ApiService] CSRF retry failed', retryErr)
-            // fall through to throw original error if retry fails
-          }
-        }
-
-        const err = new Error(`HTTP error! status: ${response.status} - ${respText}`)
-        const typedErr = err as Error & { status?: number; body?: string }
-        typedErr.status = response.status
-        typedErr.body = respText
-        throw err
-      }
-
-      // Handle empty responses (204 No Content or empty body)
-      const text = await response.text()
-      if (!text || text.trim().length === 0) {
-        return null as T
-      }
-
-      return JSON.parse(text) as T
-    } catch (error) {
-      // Enhanced logging for browser console to capture connection failures
-      try {
-        logger.error('[ApiService] request failed', { url, options: config, error })
-      } catch {}
-      throw error
+      return (await resp.text()) as unknown as T;
     }
   }
 
@@ -417,13 +284,7 @@ class ApiService {
     return resp ?? { totalResults: 0, results: [] }
   }
 
-  async getAudimetaMetadata(
-    asin: string,
-    region: string = 'us',
-    cache: boolean = true,
-  ): Promise<AudimetaBookResponse> {
-    return this.request(`/search/audimeta/${asin}?region=${region}&cache=${cache}`)
-  }
+
 
   async getAuthorLookup(
     name: string,
@@ -437,13 +298,7 @@ class ApiService {
     }
   }
 
-  async getMetadata(
-    asin: string,
-    region: string = 'us',
-    cache: boolean = true,
-  ): Promise<{ metadata: AudimetaBookResponse; source: string; sourceUrl: string }> {
-    return this.request(`/search/metadata/${asin}?region=${region}&cache=${cache}`)
-  }
+
 
   async searchByTitle(
     query: string,
@@ -910,11 +765,29 @@ class ApiService {
 
   // Startup configuration (read + write) — backend exposes under /configuration/startupconfig
   async getStartupConfig(): Promise<import('@/types').StartupConfig> {
-    // Make a direct fetch here to avoid calling `request()` which itself uses
-    // `getStartupConfigCached()` (would cause a recursion / loop).
+    // Only send Bearer token if authentication is enabled, so API key is not redacted for unauthenticated users when auth is disabled.
+    let authEnabled = false;
+    try {
+      const cached = getCachedStartupConfig();
+      const rawAuth = cached?.authenticationRequired ?? cached?.AuthenticationRequired;
+      authEnabled = typeof rawAuth === 'boolean'
+        ? rawAuth
+        : typeof rawAuth === 'string'
+          ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
+          : false;
+    } catch {}
+
+    const headers: Record<string, string> = {};
+    if (authEnabled) {
+      const sessionToken = sessionTokenManager.getToken();
+      if (sessionToken) {
+        headers['Authorization'] = `Bearer ${sessionToken}`;
+      }
+    }
     const resp = await fetch(`${API_BASE_URL}/configuration/startupconfig`, {
       method: 'GET',
       credentials: 'include',
+      headers,
     });
     if (!resp.ok) {
       throw new Error(`Failed to fetch startup config: ${resp.status}`)
@@ -934,8 +807,6 @@ class ApiService {
     }
 
 
-
-  // ...existing code...
 
   // Regenerate server-side API key. Returns the new API key in the response.
   async regenerateApiKey(): Promise<{ apiKey: string }> {
@@ -1024,6 +895,43 @@ class ApiService {
     return this.request<Audiobook>(`/library/${id}`)
   }
 
+  async getAudiobookIdentifiers(
+    id: number,
+  ): Promise<{ audiobookId: number; identifiers: AudiobookExternalIdentifier[] }> {
+    return this.request<{ audiobookId: number; identifiers: AudiobookExternalIdentifier[] }>(
+      `/library/${id}/identifiers`,
+    )
+  }
+
+  async updateAudiobookIdentifiers(
+    id: number,
+    identifiers: AudiobookExternalIdentifierInput[],
+  ): Promise<{
+    message: string
+    audiobook: { id: number; asin?: string; isbn?: string[]; openLibraryId?: string }
+    identifiers: AudiobookExternalIdentifier[]
+  }> {
+    return this.request<{
+      message: string
+      audiobook: { id: number; asin?: string; isbn?: string[]; openLibraryId?: string }
+      identifiers: AudiobookExternalIdentifier[]
+    }>(`/library/${id}/identifiers`, {
+      method: 'PUT',
+      body: JSON.stringify({ identifiers }),
+    })
+  }
+
+  async rescanAudiobookMetadata(
+    id: number,
+  ): Promise<{ message: string; audiobookId: number; source?: string; asin?: string; region?: string }> {
+    return this.request<{ message: string; audiobookId: number; source?: string; asin?: string; region?: string }>(
+      `/library/${id}/rescan-metadata`,
+      {
+        method: 'POST',
+      },
+    )
+  }
+
   async scanAudiobook(
     id: number,
     path?: string,
@@ -1075,16 +983,12 @@ class ApiService {
   }
 
   async bulkRemoveFromLibrary(
-    ids: number[],
-  ): Promise<{ message: string; deletedCount: number; deletedImagesCount: number; ids: number[] }> {
-    return this.request<{
-      message: string
-      deletedCount: number
-      deletedImagesCount: number
-      ids: number[]
-    }>('/library/delete-bulk', {
-      method: 'POST',
-      body: JSON.stringify({ ids }),
+    id: number,
+    mapping: Partial<RemotePathMapping>,
+  ): Promise<RemotePathMapping> {
+    return this.request<RemotePathMapping>(`/remotepathmappings/${id}`, {
+      method: 'PUT',
+      body: JSON.stringify({ ...mapping, id }),
     })
   }
 
@@ -1205,14 +1109,6 @@ class ApiService {
             const identifier = asinMatch[1]
             let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
             const params = new URLSearchParams()
-            const sessionToken = sessionTokenManager.getToken()
-            if (sessionToken) {
-              params.append('access_token', sessionToken)
-            } else {
-              const cfg = getCachedStartupConfig()
-              const apiKey = cfg?.apiKey
-              if (apiKey) params.append('access_token', apiKey)
-            }
             params.append('url', imageUrl)
             const query = params.toString()
             if (query) url += `?${query}`
@@ -1229,14 +1125,6 @@ class ApiService {
               const identifier = base
               let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
               const params = new URLSearchParams()
-              const sessionToken = sessionTokenManager.getToken()
-              if (sessionToken) {
-                params.append('access_token', sessionToken)
-              } else {
-                const cfg = getCachedStartupConfig()
-                const apiKey = cfg?.apiKey
-                if (apiKey) params.append('access_token', apiKey)
-              }
               params.append('url', imageUrl)
               const query = params.toString()
               if (query) url += `?${query}`
@@ -1258,21 +1146,7 @@ class ApiService {
         // Extract filename (with extension) and strip extension to use as identifier
         const filename = libMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
-
-        // Append session token if available (for authenticated users)
-        const sessionToken = sessionTokenManager.getToken()
-        if (sessionToken) {
-          url += `?access_token=${encodeURIComponent(sessionToken)}`
-        } else {
-          // Fallback to API key if no session token (for non-authenticated access)
-          const cfg = getCachedStartupConfig()
-          const apiKey = cfg?.apiKey
-          if (apiKey) {
-            url += `?access_token=${encodeURIComponent(apiKey)}`
-          }
-        }
-        return url
+        return `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
       }
     } catch (e) {
       // fall back to default behavior below on any error
@@ -1286,46 +1160,74 @@ class ApiService {
       if (authorMatch && authorMatch[1]) {
         const filename = authorMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
-
-        const sessionToken = sessionTokenManager.getToken()
-        if (sessionToken) {
-          url += `?access_token=${encodeURIComponent(sessionToken)}`
-        } else {
-          const cfg = getCachedStartupConfig()
-          const apiKey = cfg?.apiKey
-          if (apiKey) {
-            url += `?access_token=${encodeURIComponent(apiKey)}`
-          }
-        }
-        return url
+        return `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
       }
     } catch (e) {
       logger.debug('[ApiService] getImageUrl authors-detect error', e)
     }
 
-    // Convert other relative URLs to absolute and append access_token
-    const absolute = `${BACKEND_BASE_URL}${imageUrl}`
-    try {
-      // Try session token first (for authenticated users)
-      const sessionToken = sessionTokenManager.getToken()
-      if (sessionToken) {
-        const sep = absolute.includes('?') ? '&' : '?'
-        return `${absolute}${sep}access_token=${encodeURIComponent(sessionToken)}`
-      }
+    // Convert other relative URLs to absolute (no query-string auth tokens).
+    return `${BACKEND_BASE_URL}${imageUrl}`
+  }
 
-      // Fallback to API key if no session token
-      const cfg = getCachedStartupConfig()
-      const apiKey = cfg?.apiKey
-      if (apiKey) {
-        const sep = absolute.includes('?') ? '&' : '?'
-        return `${absolute}${sep}access_token=${encodeURIComponent(apiKey)}`
+  async fetchImageObjectUrl(imageUrl: string | undefined): Promise<string> {
+    if (!imageUrl) return ''
+    const resolved = this.getImageUrl(imageUrl)
+    if (!resolved) return ''
+
+    // Prefer direct same-origin backend image URLs only when auth is not in
+    // play. In authenticated mode, <img src="/api/images/..."> cannot attach
+    // Authorization headers and will fail with 401.
+    try {
+      if (typeof window !== 'undefined') {
+        const parsed = new URL(resolved, window.location.origin)
+        if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/api/images/')) {
+          const cfg = getCachedStartupConfig() as Record<string, unknown> | null
+          const rawAuth = cfg?.authenticationRequired ?? cfg?.AuthenticationRequired
+          const authRequired =
+            typeof rawAuth === 'boolean'
+              ? rawAuth
+              : typeof rawAuth === 'string'
+                ? rawAuth.trim().toLowerCase() === 'enabled' || rawAuth.trim().toLowerCase() === 'true'
+                : false
+          const hasSessionToken = !!sessionTokenManager.getToken()
+          if (!authRequired && !hasSessionToken) {
+            return `${parsed.pathname}${parsed.search}`
+          }
+        }
       }
     } catch {
-      // ignore and return plain absolute URL
+      // If URL parsing fails, continue with existing fetch->blob behavior below.
     }
 
-    return absolute
+    // Keep external URLs as-is; auth headers/cors may not be accepted cross-origin.
+    if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
+      try {
+        const u = new URL(resolved)
+        if (typeof window !== 'undefined' && u.origin !== window.location.origin) {
+          return resolved
+        }
+      } catch {
+        // If URL parsing fails, fall through and try fetch anyway.
+      }
+    }
+
+    const headers: Record<string, string> = {
+      ...this.buildAuthHeaders(),
+    }
+
+    const resp = await fetch(resolved, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    })
+
+    if (!resp.ok) {
+      throw new Error(`Image request failed with status ${resp.status}`)
+    }
+
+    const blob = await resp.blob()
+    return URL.createObjectURL(blob)
   }
 
   // Expose a lightweight cache for image metadata candidates (tests and UI may seed/read this)
@@ -1351,32 +1253,33 @@ class ApiService {
       if (cached && Array.isArray(cached.urls) && cached.urls.length > 0) {
         candidates = cached.urls.slice()
       } else {
-        // Query audimeta first, then fallback to backend metadata (audnexus)
-        try {
-          const am = await this.getAudimetaMetadata(id, 'us', true)
-          if (am && (am as any).imageUrl) candidates.push((am as any).imageUrl)
-        } catch {}
-        try {
-          const mm = await this.getMetadata(id, 'us', true)
-          if (mm && (mm as any).metadata && (mm as any).metadata.imageUrl)
-            candidates.push((mm as any).metadata.imageUrl)
-        } catch {}
-
-        // Cache the discovered candidates for future calls (even if empty)
+        // Deprecated metadata endpoints removed; skip dynamic candidate discovery
+        // Cache empty candidates for future calls
         this.metadataUrlCache.set(id, { urls: candidates, fetchedAt: Date.now() })
+      }
+
+      const requestConfig: RequestInit = {
+        method: 'GET',
+        headers: {
+          ...this.buildAuthHeaders(),
+        },
+        credentials: 'include',
       }
 
       // Try each candidate by asking backend to fetch and cache it via /api/images/{id}?url=...
       for (const url of candidates) {
         try {
-          const resp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}?url=${encodeURIComponent(url)}`)
+          const resp = await fetch(
+            `${API_BASE_URL}/images/${encodeURIComponent(id)}?url=${encodeURIComponent(url)}`,
+            requestConfig,
+          )
           if ((resp as any).ok) return true
         } catch {}
       }
 
       // As a fallback, check the base image endpoint (maybe already cached)
       try {
-        const baseResp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}`)
+        const baseResp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}`, requestConfig)
         if ((baseResp as any).ok) return true
       } catch {}
 
@@ -1840,6 +1743,9 @@ class ApiService {
 }
 
 export const apiService = new ApiService()
+
+// Compatibility export for legacy code expecting apiService.search
+export const search = apiService.advancedSearch.bind(apiService);
 
 // Export individual indexer functions for convenience
 export const getIndexers = () => apiService.getIndexers()

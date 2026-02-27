@@ -358,6 +358,29 @@ export interface AudibleBookMetadata {
   qualityProfileId?: number
 }
 
+export type AudiobookExternalIdentifierType = 'Asin' | 'Isbn' | 'OpenLibraryId'
+export type AudiobookExternalIdentifierSource = 'Provider' | 'Imported' | 'Manual'
+
+export interface AudiobookExternalIdentifier {
+  id: number
+  type: AudiobookExternalIdentifierType
+  value: string
+  valueNormalized: string
+  region?: string | null
+  isPrimary: boolean
+  source: AudiobookExternalIdentifierSource
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface AudiobookExternalIdentifierInput {
+  type: AudiobookExternalIdentifierType
+  value: string
+  region?: string | null
+  isPrimary?: boolean
+  source?: AudiobookExternalIdentifierSource
+}
+
 export interface Audiobook {
   id: number
   title: string
@@ -403,6 +426,7 @@ export interface Audiobook {
   qualityProfileId?: number
   // Optional list of author ASINs (populated by backend when available)
   authorAsins?: string[]
+  identifiers?: AudiobookExternalIdentifier[]
   // Server-computed flag indicating if this audiobook is wanted (monitored and missing files)
   wanted?: boolean
 }
@@ -744,4 +768,3 @@ export interface SearchResponse {
   metadataResults: MetadataSearchResult[]
   totalCount: number
 }
-

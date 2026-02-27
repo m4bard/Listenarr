@@ -71,8 +71,7 @@ namespace Listenarr.Api.Services
                     _pollingInterval = TimeSpan.FromSeconds(settings.PollingIntervalSeconds);
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to load polling interval from settings, using default");
             }
 
@@ -95,8 +94,7 @@ namespace Listenarr.Api.Services
                 {
                     await ProcessCompletedDownloadsAsync(stoppingToken);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error in CompletedDownloadHandlingService");
                 }
 
@@ -205,8 +203,7 @@ namespace Listenarr.Api.Services
                             await downloadService.ProcessCompletedDownloadAsync(download.Id, contentPath);
                             _logger.LogInformation("Successfully triggered import for completed download {DownloadId}", download.Id);
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogError(ex, "Failed to process completed download {DownloadId}", download.Id);
                         }
 
@@ -215,8 +212,7 @@ namespace Listenarr.Api.Services
                             _processingDownloads.Remove(download.Id);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogError(ex, "Error processing completed download {DownloadId}", download.Id);
                         lock (_processingLock)
                         {
@@ -225,10 +221,10 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error in CompletedDownloadHandlingService");
             }
         }
     }
 }
+

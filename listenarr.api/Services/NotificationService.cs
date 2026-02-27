@@ -18,6 +18,7 @@ namespace Listenarr.Api.Services
     public class NotificationService
     {
         private readonly HttpClient _httpClient;
+        private readonly HttpClient _httpClientNoRedirect;
         private readonly ILogger<NotificationService> _logger;
         private readonly IConfigurationService _configurationService;
         private readonly IHttpContextAccessor? _httpContextAccessor;
@@ -26,6 +27,7 @@ namespace Listenarr.Api.Services
         public NotificationService(HttpClient httpClient, ILogger<NotificationService> logger, IConfigurationService configurationService, INotificationPayloadBuilder payloadBuilder, IHttpContextAccessor? httpContextAccessor = null)
         {
             _httpClient = httpClient;
+            _httpClientNoRedirect = httpClient;
             _logger = logger;
             _configurationService = configurationService;
             _payloadBuilder = payloadBuilder ?? throw new ArgumentNullException(nameof(payloadBuilder));
@@ -34,6 +36,115 @@ namespace Listenarr.Api.Services
 
         // Compatibility shims removed — callers/tests should use NotificationPayloadBuilder directly.
 
+        private bool AllowPrivateWebhookTargetsForCurrentRequest()
+        {
+            var context = _httpContextAccessor?.HttpContext;
+            if (context == null)
+            {
+                return true;
+            }
+
+            return SecurityRequestUtils.IsLoopbackRequest(context)
+                   || SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context);
+        }
+
+        private async Task<HttpResponseMessage> PostValidatedAsync(string url, HttpContent content, CancellationToken cancellationToken = default)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Post, url)
+            {
+                Content = content
+            };
+
+            return await SendValidatedAsync(request, cancellationToken);
+        }
+
+        private async Task<HttpResponseMessage> SendValidatedAsync(HttpRequestMessage request, CancellationToken cancellationToken = default)
+        {
+            if (request.RequestUri == null)
+            {
+                throw new InvalidOperationException("Outbound notification request URI is required.");
+            }
+
+            var allowPrivateTargets = AllowPrivateWebhookTargetsForCurrentRequest();
+            if (!OutboundRequestSecurity.TryValidateExternalHttpUri(request.RequestUri, out var uriReason, allowPrivateTargets))
+            {
+                throw new InvalidOperationException($"Blocked outbound URL: {uriReason}");
+            }
+
+            if (!await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(request.RequestUri, _logger, allowPrivateTargets))
+            {
+                throw new InvalidOperationException("Blocked outbound URL: DNS resolved to private or loopback address");
+            }
+
+            if (ReferenceEquals(_httpClientNoRedirect, _httpClient))
+            {
+                var directResponse = await _httpClient.SendAsync(request, cancellationToken);
+                var finalUri = directResponse.RequestMessage?.RequestUri ?? request.RequestUri;
+                if (!OutboundRequestSecurity.TryValidateExternalHttpUri(finalUri, out var finalReason, allowPrivateTargets))
+                {
+                    directResponse.Dispose();
+                    throw new InvalidOperationException($"Blocked final outbound URL: {finalReason}");
+                }
+
+                if (!await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(finalUri, _logger, allowPrivateTargets))
+                {
+                    directResponse.Dispose();
+                    throw new InvalidOperationException("Blocked final outbound URL: DNS resolved to private or loopback address");
+                }
+
+                return directResponse;
+            }
+
+            var bufferedContent = request.Content != null ? await request.Content.ReadAsByteArrayAsync(cancellationToken) : null;
+            var contentHeaderSnapshot = request.Content?.Headers
+                .Select(h => new KeyValuePair<string, IEnumerable<string>>(h.Key, h.Value.ToArray()))
+                .ToList();
+            var requestHeaderSnapshot = request.Headers
+                .Select(h => new KeyValuePair<string, IEnumerable<string>>(h.Key, h.Value.ToArray()))
+                .ToList();
+            var method = request.Method;
+            var version = request.Version;
+            var versionPolicy = request.VersionPolicy;
+
+            var (response, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
+                currentUri =>
+                {
+                    var retryRequest = new HttpRequestMessage(method, currentUri)
+                    {
+                        Version = version,
+                        VersionPolicy = versionPolicy
+                    };
+
+                    foreach (var header in requestHeaderSnapshot)
+                    {
+                        retryRequest.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                    }
+
+                    if (bufferedContent != null)
+                    {
+                        var retryContent = new ByteArrayContent(bufferedContent);
+                        if (contentHeaderSnapshot != null)
+                        {
+                            foreach (var header in contentHeaderSnapshot)
+                            {
+                                retryContent.Headers.TryAddWithoutValidation(header.Key, header.Value);
+                            }
+                        }
+
+                        retryRequest.Content = retryContent;
+                    }
+
+                    return retryRequest;
+                },
+                request.RequestUri,
+                _httpClientNoRedirect,
+                _logger,
+                allowPrivateTargets: allowPrivateTargets,
+                cancellationToken: cancellationToken);
+
+            return response;
+        }
+
         /// <summary>
         /// Sends a notification to the webhook URL if configured.
         /// </summary>
@@ -41,12 +152,21 @@ namespace Listenarr.Api.Services
         {
             if (string.IsNullOrWhiteSpace(webhookUrl) || enabledTriggers == null || !enabledTriggers.Contains(trigger))
                 return;
+            var allowPrivateWebhookTargets = AllowPrivateWebhookTargetsForCurrentRequest();
+            if (!TryValidateWebhookTarget(webhookUrl, out var validationReason, allowPrivateWebhookTargets))
+            {
+                _logger.LogWarning("Blocked outbound notification target: {Reason}", validationReason);
+                return;
+            }
 
             // Helper to handle a non-successful response consistently
             async Task HandleFailedResponseAsync(HttpResponseMessage response)
             {
                 string body = string.Empty;
-                try { body = await response.Content.ReadAsStringAsync(); } catch { }
+                try { body = await response.Content.ReadAsStringAsync(); }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    _logger.LogDebug(ex, "Failed to read notification response body for diagnostic logging");
+                }
 
                 var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
                 var redactedBody = LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment());
@@ -101,14 +221,14 @@ namespace Listenarr.Api.Services
                         multipartContent.Add(imageContent, "files[0]", attachment.Filename);
 
                         _logger.LogDebug("Posting multipart to {WebhookUrl} (attachment filename={Filename}, size={Size})", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()), attachment.Filename, attachment.ImageData?.Length ?? 0);
-                        var response = await _httpClient.PostAsync(webhookUrl, multipartContent);
+                        var response = await PostValidatedAsync(webhookUrl, multipartContent);
                         if (!response.IsSuccessStatusCode) await HandleFailedResponseAsync(response);
                     }
                     else
                     {
                         var discordJson = payloadObj.ToJsonString();
                         using var discordContent = new System.Net.Http.StringContent(discordJson, Encoding.UTF8, "application/json");
-                        var response = await _httpClient.PostAsync(webhookUrl, discordContent);
+                        var response = await PostValidatedAsync(webhookUrl, discordContent);
                         if (!response.IsSuccessStatusCode) await HandleFailedResponseAsync(response);
                     }
                 }
@@ -123,11 +243,11 @@ namespace Listenarr.Api.Services
                 // Intentional broad catch: notification delivery failures must never propagate to callers.
                 // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-                catch (Exception ex)
-#pragma warning restore CA1031
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
                 {
                     _logger.LogError(ex, "Error sending Discord notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                 }
+#pragma warning restore CA1031
 
             }
 
@@ -167,7 +287,7 @@ namespace Listenarr.Api.Services
 
                     _logger.LogInformation("Sending NTFY POST to {WebhookUrl} with headers {Headers} and body: {Body}", redactedUrl, headers, redactedRequestBody);
 
-                    var response = await _httpClient.SendAsync(request);
+                    var response = await SendValidatedAsync(request);
 
                     if (!response.IsSuccessStatusCode)
                     {
@@ -243,7 +363,7 @@ namespace Listenarr.Api.Services
 
                         // Post to the base path (without query) to comply with Pushover API expectations
                         var postUrl = uri.GetLeftPart(UriPartial.Path);
-                        var response = await _httpClient.PostAsync(postUrl, content);
+                        var response = await PostValidatedAsync(postUrl, content);
                         if (!response.IsSuccessStatusCode)
                         {
                             var respText = await TryReadContentAsync(response.Content);
@@ -308,7 +428,7 @@ namespace Listenarr.Api.Services
                         var redactedUrl = LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment());
                         _logger.LogInformation("Sending Telegram POST to {WebhookUrl} with body: {Body}", redactedUrl, AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment())));
 
-                        var response = await _httpClient.PostAsync(webhookUrl, content);
+                        var response = await PostValidatedAsync(webhookUrl, content);
                         if (!response.IsSuccessStatusCode)
                         {
                             var respText = await TryReadContentAsync(response.Content);
@@ -331,12 +451,12 @@ namespace Listenarr.Api.Services
                 // Intentional broad catch: notification delivery failures must never propagate to callers.
                 // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-                catch (Exception ex)
-#pragma warning restore CA1031
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
                 {
                     _logger.LogError(ex, "Error sending Telegram notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
                 }
+#pragma warning restore CA1031
             }
 
             // Pushbullet (https://docs.pushbullet.com/#pushes)
@@ -353,8 +473,7 @@ namespace Listenarr.Api.Services
                         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
                         token = query["token"] ?? query["access_token"];
                     }
-                    catch
-                    {
+                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                         // support pushbullet://TOKEN format
                         if (webhookUrl.StartsWith("pushbullet://", StringComparison.OrdinalIgnoreCase))
                         {
@@ -404,7 +523,7 @@ namespace Listenarr.Api.Services
                         var redactedBody = AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment()));
                         _logger.LogInformation("Sending Pushbullet POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
 
-                        var response = await _httpClient.SendAsync(request);
+                        var response = await SendValidatedAsync(request);
                         if (!response.IsSuccessStatusCode)
                         {
                             var respText = await TryReadContentAsync(response.Content);
@@ -427,12 +546,12 @@ namespace Listenarr.Api.Services
                 // Intentional broad catch: notification delivery failures must never propagate to callers.
                 // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-                catch (Exception ex)
-#pragma warning restore CA1031
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
                 {
                     _logger.LogError(ex, "Error sending Pushbullet notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
                 }
+#pragma warning restore CA1031
             }
 
             // Slack Incoming Webhooks (https://api.slack.com/messaging/webhooks)
@@ -465,7 +584,7 @@ namespace Listenarr.Api.Services
                     var redactedBody = AggressiveRedact(LogRedaction.RedactText(json, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     _logger.LogInformation("Sending Slack POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
 
-                    var response = await _httpClient.PostAsync(webhookUrl, content);
+                    var response = await PostValidatedAsync(webhookUrl, content);
                     if (!response.IsSuccessStatusCode)
                     {
                         var respText = await TryReadContentAsync(response.Content);
@@ -487,12 +606,12 @@ namespace Listenarr.Api.Services
                 // Intentional broad catch: notification delivery failures must never propagate to callers.
                 // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-                catch (Exception ex)
-#pragma warning restore CA1031
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
                 {
                     _logger.LogError(ex, "Error sending Slack notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     return;
                 }
+#pragma warning restore CA1031
             }
 
             // Generic webhook fallback: send the full JSON payload produced by the payload builder
@@ -517,7 +636,7 @@ namespace Listenarr.Api.Services
                 var redactedBody = AggressiveRedact(LogRedaction.RedactText(defaultJson, LogRedaction.GetSensitiveValuesFromEnvironment()));
                 _logger.LogInformation("Sending Generic POST to {WebhookUrl} with body: {Body}", redactedUrl, redactedBody);
 
-                var response = await _httpClient.PostAsync(webhookUrl, defaultContent);
+                var response = await PostValidatedAsync(webhookUrl, defaultContent);
                 if (!response.IsSuccessStatusCode)
                 {
                     await HandleFailedResponseAsync(response);
@@ -534,11 +653,11 @@ namespace Listenarr.Api.Services
             // Intentional broad catch: notification delivery failures must never propagate to callers.
             // OperationCanceledException is already handled above. All other failures are logged and swallowed.
 #pragma warning disable CA1031
-            catch (Exception ex)
-#pragma warning restore CA1031
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) 
             {
                 _logger.LogError(ex, "Error sending notification to {WebhookUrl}", LogRedaction.RedactText(webhookUrl, LogRedaction.GetSensitiveValuesFromEnvironment()));
             }
+#pragma warning restore CA1031
         }
 
         // Ensure that any sensitive environment-derived values are redacted even if they were missed
@@ -557,12 +676,14 @@ namespace Listenarr.Api.Services
                         var esc = System.Text.RegularExpressions.Regex.Escape(s);
                         result = System.Text.RegularExpressions.Regex.Replace(result, esc, "<redacted>", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
                     }
-                    catch { }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        System.Diagnostics.Debug.WriteLine($"NotificationService.AggressiveRedact regex replace failed: {ex.Message}");
+                    }
                 }
 
                 return result;
             }
-            catch { return input; }
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { return input; }
         }
 
         // Safely attempt to read the content of an HttpContent instance. If reading
@@ -575,11 +696,19 @@ namespace Listenarr.Api.Services
             {
                 return await content.ReadAsStringAsync();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Could not read HTTP content for diagnostic logging");
                 return string.Empty;
             }
         }
+
+        private static bool TryValidateWebhookTarget(string webhookUrl, out string reason, bool allowPrivateTargets = false)
+        {
+            return OutboundRequestSecurity.TryValidateExternalHttpUrl(webhookUrl, out reason, allowPrivateTargets);
+        }
     }
 }
+
+
+
+
