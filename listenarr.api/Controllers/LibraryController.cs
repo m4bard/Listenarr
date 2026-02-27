@@ -98,6 +98,53 @@ namespace Listenarr.Api.Controllers
             _rootFolderService = rootFolderService;
         }
 
+        private bool ComputeWantedFlag(Audiobook audiobook)
+        {
+            if (!audiobook.Monitored)
+            {
+                return false;
+            }
+
+            var files = audiobook.Files;
+            if (files == null || files.Count == 0)
+            {
+                return true;
+            }
+
+            foreach (var file in files)
+            {
+                if (string.IsNullOrWhiteSpace(file.Path))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var isAbsolute = Path.IsPathRooted(file.Path);
+                    var fullPath = isAbsolute
+                        ? file.Path
+                        : (!string.IsNullOrEmpty(audiobook.BasePath)
+                            ? Path.Combine(audiobook.BasePath, file.Path)
+                            : file.Path);
+
+                    if (System.IO.File.Exists(fullPath))
+                    {
+                        return false;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Failed to evaluate file path while computing wanted flag for audiobook {AudiobookId}, file {FileId}. Treating file as missing.",
+                        audiobook.Id,
+                        file.Id);
+                }
+            }
+
+            return true;
+        }
+
         public class ScanRequest
         {
             public string? Path { get; set; }
@@ -588,13 +635,7 @@ namespace Listenarr.Api.Controllers
                     source = f.Source,
                     createdAt = f.CreatedAt
                 }).ToList(),
-                wanted = a.Monitored && (a.Files == null || !a.Files.Any() || !a.Files.Any(f =>
-                {
-                    if (string.IsNullOrEmpty(f.Path)) return false;
-                    var isAbsolute = System.IO.Path.IsPathRooted(f.Path);
-                    var fullPath = isAbsolute ? f.Path : (!string.IsNullOrEmpty(a.BasePath) ? System.IO.Path.Combine(a.BasePath, f.Path) : f.Path);
-                    return System.IO.File.Exists(fullPath);
-                }))
+                wanted = ComputeWantedFlag(a)
             });
 
             return Ok(dto);
@@ -682,13 +723,7 @@ namespace Listenarr.Api.Controllers
                     source = f.Source,
                     createdAt = f.CreatedAt
                 }).ToList(),
-                wanted = updated.Monitored && (updated.Files == null || !updated.Files.Any() || !updated.Files.Any(f =>
-                {
-                    if (string.IsNullOrEmpty(f.Path)) return false;
-                    var isAbsolute = System.IO.Path.IsPathRooted(f.Path);
-                    var fullPath = isAbsolute ? f.Path : (!string.IsNullOrEmpty(updated.BasePath) ? System.IO.Path.Combine(updated.BasePath, f.Path) : f.Path);
-                    return System.IO.File.Exists(fullPath);
-                }))
+                wanted = ComputeWantedFlag(updated)
             };
 
             return Ok(audiobookDto);

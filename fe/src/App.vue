@@ -498,6 +498,7 @@ import { useNotification } from '@/composables/useNotification'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useAuthStore } from '@/stores/auth'
 import { apiService } from '@/services/api'
+import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { handleImageError } from '@/utils/imageFallback'
 import { Pill } from '@/components/base'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -1191,7 +1192,9 @@ onMounted(async () => {
   logger.info('✅ Real-time updates enabled - Activity badge updates automatically via SignalR!')
   // Fetch startup config (do this regardless of auth so header/login visibility can be known)
   try {
-    const cfg = await apiService.getStartupConfig()
+    // Use cached startup-config helper so unauthenticated 401 is interpreted as
+    // "authentication required" instead of forcing authEnabled=false.
+    const cfg = await getStartupConfigCached()
     // Accept both camelCase and PascalCase variants from backend (some responses use PascalCase)
     const obj = cfg as Record<string, unknown> | null
     const raw = obj ? (obj['authenticationRequired'] ?? obj['AuthenticationRequired']) : undefined
