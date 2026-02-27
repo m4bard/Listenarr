@@ -1,5 +1,7 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
@@ -15,6 +17,20 @@ namespace Listenarr.Api.Tests
 {
     public class ListenarrWebApplicationFactory : WebApplicationFactory<Program>
     {
+        private static readonly ConcurrentDictionary<string, byte> DbFilesToCleanup = new(StringComparer.OrdinalIgnoreCase);
+        private static readonly object CleanupSync = new();
+        private static bool _isProcessExitCleanupHooked;
+
+        private string? _sqliteDbPath;
+        private string? _sqliteDbRootDir;
+        private bool _disposed;
+
+        public ListenarrWebApplicationFactory()
+        {
+            Environment.SetEnvironmentVariable("LISTENARR_TEST_MODE", "true");
+            EnsureProcessExitCleanupHook();
+        }
+
         protected override void ConfigureWebHost(IWebHostBuilder builder)
         {
             // Use "Test" environment (matches GitHub Actions ASPNETCORE_ENVIRONMENT=Test)
@@ -22,16 +38,17 @@ namespace Listenarr.Api.Tests
 
             builder.ConfigureAppConfiguration((context, config) =>
             {
-                var dbPath = Path.Combine(Path.GetTempPath(), "listenarr-tests", $"listenarr-{Guid.NewGuid():N}.db");
-                var dbDir = Path.GetDirectoryName(dbPath);
-                if (!string.IsNullOrWhiteSpace(dbDir) && !Directory.Exists(dbDir))
+                if (string.IsNullOrWhiteSpace(_sqliteDbPath))
                 {
-                    Directory.CreateDirectory(dbDir);
+                    _sqliteDbRootDir = Path.Combine(Path.GetTempPath(), "listenarr-tests", $"host-{Guid.NewGuid():N}");
+                    Directory.CreateDirectory(_sqliteDbRootDir);
+                    _sqliteDbPath = Path.Combine(_sqliteDbRootDir, "listenarr.db");
+                    RegisterDbPathForCleanup(_sqliteDbPath);
                 }
 
                 var overrides = new Dictionary<string, string?>
                 {
-                    ["Listenarr:SqliteDbPath"] = dbPath,
+                    ["Listenarr:SqliteDbPath"] = _sqliteDbPath,
                     ["Playwright:Enabled"] = "false",
                     ["Listenarr:DisableHostedServices"] = "true"
                 };
@@ -66,6 +83,108 @@ namespace Listenarr.Api.Tests
                     return ffmpegMock.Object;
                 });
             });
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            if (_disposed) return;
+
+            if (disposing)
+            {
+                CleanupInstanceDbFiles();
+            }
+
+            _disposed = true;
+            base.Dispose(disposing);
+        }
+
+        private static void EnsureProcessExitCleanupHook()
+        {
+            lock (CleanupSync)
+            {
+                if (_isProcessExitCleanupHooked) return;
+                AppDomain.CurrentDomain.ProcessExit += (_, _) => CleanupRegisteredDbFiles();
+                _isProcessExitCleanupHooked = true;
+            }
+        }
+
+        private static void RegisterDbPathForCleanup(string dbPath)
+        {
+            if (string.IsNullOrWhiteSpace(dbPath)) return;
+            DbFilesToCleanup.TryAdd(dbPath, 0);
+        }
+
+        private static void CleanupRegisteredDbFiles()
+        {
+            foreach (var dbPath in DbFilesToCleanup.Keys)
+            {
+                TryDeleteDbWithCompanions(dbPath);
+                TryDeleteParentDirectoryIfEmpty(Path.GetDirectoryName(dbPath));
+            }
+        }
+
+        private void CleanupInstanceDbFiles()
+        {
+            if (!string.IsNullOrWhiteSpace(_sqliteDbPath))
+            {
+                TryDeleteDbWithCompanions(_sqliteDbPath);
+            }
+
+            if (!string.IsNullOrWhiteSpace(_sqliteDbRootDir))
+            {
+                try
+                {
+                    if (Directory.Exists(_sqliteDbRootDir))
+                    {
+                        Directory.Delete(_sqliteDbRootDir, recursive: true);
+                    }
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    Debug.WriteLine($"Failed to delete test sqlite root directory '{_sqliteDbRootDir}': {ex.Message}");
+                }
+            }
+        }
+
+        private static void TryDeleteDbWithCompanions(string dbPath)
+        {
+            TryDeleteFile(dbPath);
+            TryDeleteFile($"{dbPath}-wal");
+            TryDeleteFile($"{dbPath}-shm");
+        }
+
+        private static void TryDeleteFile(string? filePath)
+        {
+            if (string.IsNullOrWhiteSpace(filePath)) return;
+
+            try
+            {
+                if (File.Exists(filePath))
+                {
+                    File.Delete(filePath);
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                Debug.WriteLine($"Failed to delete test sqlite file '{filePath}': {ex.Message}");
+            }
+        }
+
+        private static void TryDeleteParentDirectoryIfEmpty(string? directoryPath)
+        {
+            if (string.IsNullOrWhiteSpace(directoryPath)) return;
+
+            try
+            {
+                if (Directory.Exists(directoryPath) && Directory.GetFileSystemEntries(directoryPath).Length == 0)
+                {
+                    Directory.Delete(directoryPath);
+                }
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                Debug.WriteLine($"Failed to delete test sqlite directory '{directoryPath}': {ex.Message}");
+            }
         }
     }
 }

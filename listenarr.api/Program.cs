@@ -109,6 +109,14 @@ else
 
 // repoRoot fallback used in other path computations later
 var repoRoot = projectDir ?? AppContext.BaseDirectory;
+// dotnet test hosts are typically `testhost` and may not always set
+// ASPNETCORE_ENVIRONMENT=Test; detect this explicitly to keep tests isolated.
+var processName = Path.GetFileNameWithoutExtension(Environment.ProcessPath ?? string.Empty);
+var isLikelyTestHost =
+    string.Equals(processName, "testhost", StringComparison.OrdinalIgnoreCase) ||
+    string.Equals(Environment.GetEnvironmentVariable("LISTENARR_TEST_MODE"), "true", StringComparison.OrdinalIgnoreCase) ||
+    !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("VSTEST_SESSION_ID")) ||
+    !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DOTNET_TEST_RUNNER"));
 
 // Configure Serilog for structured logging, file rotation and SignalR broadcasting
 var logFilePath = Path.Combine(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
@@ -210,7 +218,7 @@ if (!args?.Any(arg => arg.StartsWith("--urls")) ?? true)
 // If running as an integration test host, allow the test-side partial to apply any
 // additional registrations (for example AddListenarrPersistence so IDbContextFactory<>
 // is available to hosted/background services during tests).
-if (builder.Environment.IsEnvironment("Test"))
+if (builder.Environment.IsEnvironment("Test") || isLikelyTestHost)
 {
     ApplyTestHostPatches(builder);
 }
@@ -482,10 +490,22 @@ var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
         ? sqliteDbPathOverride
         : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
 
+// Safety guard: test hosts must never write to the repository DB path.
+if (builder.Environment.IsEnvironment("Test") || isLikelyTestHost)
+{
+    var repoDbPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db"));
+    var resolvedSqlitePath = Path.GetFullPath(sqliteDbPath);
+    if (string.Equals(resolvedSqlitePath, repoDbPath, StringComparison.OrdinalIgnoreCase))
+    {
+        sqliteDbPath = Path.Combine(Path.GetTempPath(), "listenarr-tests", "program-main", $"listenarr-{Guid.NewGuid():N}.db");
+        Log.Logger.Warning("[Startup] Test environment attempted to use repo sqlite path; forcing isolated test DB path: {SqliteDbPath}", sqliteDbPath);
+    }
+}
+
 // In development, prefer the repository database path so `npm run dev` uses
 // `listenarr.api/config/database/listenarr.db` regardless of the resolved
 // ContentRootPath. This ensures developers see and edit the canonical DB.
-if (builder.Environment.IsDevelopment() && !isDocker && !hasExplicitSqliteDbPathOverride)
+if (builder.Environment.IsDevelopment() && !isDocker && !hasExplicitSqliteDbPathOverride && !isLikelyTestHost)
 {
     // Search ancestors from the content root for a directory that contains
     // the `listenarr.api/config` folder. This avoids duplicating `listenarr.api`
