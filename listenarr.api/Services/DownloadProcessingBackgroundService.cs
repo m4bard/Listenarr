@@ -493,7 +493,9 @@ namespace Listenarr.Api.Services
                         var dbgVars = $"Author={(metadataForNaming.Artist ?? "(null)")}, Series={(metadataForNaming.Series ?? "(null)")}, Title={(metadataForNaming.Title ?? "(null)")}";
                         job.AddLogEntry($"Resolved naming metadata: {dbgVars}");
                     }
-                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
 
                     // Record the resolved naming metadata on the job for diagnostics
                     try
@@ -502,6 +504,7 @@ namespace Listenarr.Api.Services
                     }
                     catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                         // ignore logging errors
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
                     // For processing jobs, compute the appropriate destination directory first.
                     // If the download is linked to an audiobook and the audiobook has a BasePath,
@@ -536,7 +539,9 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
+                    catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
 
                     // Now generate a tentative path using the filename-only or relative pattern
                     // so we can compute the destination directory. We'll not actually apply the
@@ -698,13 +703,19 @@ namespace Listenarr.Api.Services
                                         var diagDestDir = Path.GetDirectoryName(uniqueDest) ?? string.Empty;
                                         job.AddLogEntry($"Copy destination dir exists={Directory.Exists(diagDestDir)} PathRoot={(string.IsNullOrEmpty(diagDestDir) ? "(n/a)" : Path.GetPathRoot(diagDestDir) ?? "(no-root)")}");
                                     }
-                                    catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { }
-                                    try { _metrics?.Increment("processing.move_unauthorized"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { }
+                                    catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
+                                    try { _metrics?.Increment("processing.move_unauthorized"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                     try
                                     {
                                         job.AddLogEntry($"Process identity: {Environment.UserDomainName}\\{Environment.UserName}");
                                     }
-                                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { }
+                                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                     job.ErrorMessage = uae.Message;
                                     job.ScheduleRetry();
                                     return;
@@ -715,7 +726,9 @@ namespace Listenarr.Api.Services
                                     if (msg.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 || ioex.HResult == unchecked((int)0x80070020))
                                     {
                                         job.AddLogEntry($"Copy failed due to sharing violation (file locked): {ioex.Message}");
-                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { }
+                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
                                         job.ErrorMessage = ioex.Message;
                                         job.ScheduleRetry();
                                         return;
@@ -777,7 +790,9 @@ namespace Listenarr.Api.Services
                                     if (msg.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 || ioex.HResult == unchecked((int)0x80070020))
                                     {
                                         job.AddLogEntry($"Hardlink failed due to sharing violation (file locked): {ioex.Message}");
-                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { }
+                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
                                         job.ErrorMessage = ioex.Message;
                                         job.ScheduleRetry();
                                         return;
@@ -819,13 +834,19 @@ namespace Listenarr.Api.Services
                                         var diagDestDir = Path.GetDirectoryName(uniqueDest) ?? string.Empty;
                                         job.AddLogEntry($"Move destination dir exists={Directory.Exists(diagDestDir)} PathRoot={(string.IsNullOrEmpty(diagDestDir) ? "(n/a)" : Path.GetPathRoot(diagDestDir) ?? "(no-root)")}");
                                     }
-                                    catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { }
-                                    try { _metrics?.Increment("processing.move_unauthorized"); } catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { }
+                                    catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
+                                    try { _metrics?.Increment("processing.move_unauthorized"); } catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                     try
                                     {
                                         job.AddLogEntry($"Process identity: {Environment.UserDomainName}\\{Environment.UserName}");
                                     }
-                                    catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) { }
+                                    catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                     job.ErrorMessage = uae.Message;
                                     job.ScheduleRetry();
                                     return;
@@ -836,7 +857,9 @@ namespace Listenarr.Api.Services
                                     if (msg.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 || ioex.HResult == unchecked((int)0x80070020))
                                     {
                                         job.AddLogEntry($"Move failed due to sharing violation (file locked): {ioex.Message}");
-                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_14) when (caughtEx_14 is not OperationCanceledException && caughtEx_14 is not OutOfMemoryException && caughtEx_14 is not StackOverflowException) { }
+                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_14) when (caughtEx_14 is not OperationCanceledException && caughtEx_14 is not OutOfMemoryException && caughtEx_14 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
                                         job.ErrorMessage = ioex.Message;
                                         job.ScheduleRetry();
                                         return;

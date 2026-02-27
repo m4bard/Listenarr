@@ -157,7 +157,9 @@ namespace Listenarr.Api.Services
                                         if (IsQualityBetter(q, bestExisting, abProfile)) bestExisting = q;
                                     }
                                 }
-                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                             }
 
                             var candidateQuality = DetermineQualityFromMetadata(metadata, sourcePath);
@@ -219,7 +221,9 @@ namespace Listenarr.Api.Services
                             }
                         }
                     }
-                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { /* ignore */ }
+                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { /* ignore */ 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
                 }
                 else if (!string.IsNullOrWhiteSpace(folderPattern))
                 {
@@ -399,7 +403,9 @@ namespace Listenarr.Api.Services
                                         if (IsQualityBetter(q, bestExisting, abProfile)) bestExisting = q;
                                     }
                                 }
-                                catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { }
+                                catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                             }
                         }
                     }

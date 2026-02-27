@@ -2988,6 +2988,7 @@ namespace Listenarr.Api.Controllers
                     || jsonElementConvertEx is OverflowException)
                 {
                     // continue to other conversion attempts
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
             }
 

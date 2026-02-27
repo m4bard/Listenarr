@@ -269,7 +269,9 @@ namespace Listenarr.Api.Services
                                     {
                                         if (!string.IsNullOrWhiteSpace(tempDirExtracted) && System.IO.Directory.Exists(tempDirExtracted))
                                         {
-                                            try { System.IO.Directory.Delete(tempDirExtracted, true); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                                            try { System.IO.Directory.Delete(tempDirExtracted, true); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                            }
                                         }
                                     }
                                 }
@@ -361,7 +363,9 @@ namespace Listenarr.Api.Services
                                 {
                                     if (!string.IsNullOrWhiteSpace(tempExtractDir) && System.IO.Directory.Exists(tempExtractDir))
                                     {
-                                        try { System.IO.Directory.Delete(tempExtractDir, true); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                                        try { System.IO.Directory.Delete(tempExtractDir, true); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
                                     }
                                 }
                             }

@@ -451,10 +451,12 @@ namespace Listenarr.Api.Services
                     catch (JsonException)
                     {
                         // Malformed JSON — ignore and fall through to returning original list
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
                     catch (NotSupportedException)
                     {
                         // Unsupported JSON shape — ignore and fall through
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
                 }
             }

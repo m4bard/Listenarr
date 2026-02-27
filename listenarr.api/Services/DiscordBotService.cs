@@ -175,7 +175,9 @@ namespace Listenarr.Api.Services
                         {
                             _botProcess.EnableRaisingEvents = true;
                         }
-                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        }
 
                         _botProcess.Exited += (sender, e) =>
                         {
@@ -187,10 +189,14 @@ namespace Listenarr.Api.Services
                                     {
                                         _logger.LogInformation("Discord bot process exited with code: {ExitCode}", exitedProc.ExitCode);
                                     }
-                                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                             }
-                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
+                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                            }
 
                             // Clear the process reference so it can be restarted
                             lock (_processLock)

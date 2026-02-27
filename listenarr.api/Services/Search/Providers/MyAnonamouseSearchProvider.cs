@@ -671,7 +671,9 @@ namespace Listenarr.Api.Services.Search.Providers
                                 {
                                     mamIdLocal = Uri.UnescapeDataString(mamIdLocal);
                                 }
-                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                                 downloadUrl += $"?mam_id={Uri.EscapeDataString(mamIdLocal)}";
                             }
                             _logger.LogDebug("Built downloadUrl from dlHash for '{Title}': {Url}", title, downloadUrl);
@@ -687,7 +689,9 @@ namespace Listenarr.Api.Services.Search.Providers
                                 {
                                     mamIdLocal = Uri.UnescapeDataString(mamIdLocal);
                                 }
-                                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                                 downloadUrl = $"{baseUrl}/tor/download.php?tid={torrentId}&mam_id={Uri.EscapeDataString(mamIdLocal)}";
                             }
                             else

@@ -160,6 +160,7 @@ namespace Listenarr.Api.Controllers
                         catch (System.Text.Json.JsonException)
                         {
                             // ignore parse errors
+                                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                         }
                     }
                 }

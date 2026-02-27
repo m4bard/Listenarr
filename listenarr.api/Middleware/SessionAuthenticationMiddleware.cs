@@ -107,6 +107,7 @@ namespace Listenarr.Api.Middleware
             }
             catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // ignore any query-parsing issues and fall through to null
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             return null;

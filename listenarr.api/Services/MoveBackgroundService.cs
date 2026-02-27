@@ -408,7 +408,9 @@ namespace Listenarr.Api.Services
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         // Cleanup any temp dir
-                        try { if (Directory.Exists(tempName)) Directory.Delete(tempName, true); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                        try { if (Directory.Exists(tempName)) Directory.Delete(tempName, true); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        }
 
                         // Increment attempt count for the job on failure
                         try
@@ -480,7 +482,9 @@ namespace Listenarr.Api.Services
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Unexpected error processing move job {JobId}", job.Id);
-                    try { _moveQueue.UpdateJobStatus(job.Id, "Failed", ex.Message); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                    try { _moveQueue.UpdateJobStatus(job.Id, "Failed", ex.Message); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
                 }
             }
         }

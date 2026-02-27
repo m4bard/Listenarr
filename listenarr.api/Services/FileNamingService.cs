@@ -91,6 +91,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // ignore logging errors
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             string relativePath;
@@ -179,6 +180,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                 // If paths are invalid, fall back to configured folder pattern
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             // Helper to pick the first non-empty value
@@ -232,6 +234,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                 // ignore logging errors
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             string relativePath;

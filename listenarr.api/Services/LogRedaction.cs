@@ -42,7 +42,9 @@ namespace Listenarr.Api.Services
                     // Use Regex.Replace with escaped secret for robust, case-insensitive replacement
                     redacted = Regex.Replace(redacted, Regex.Escape(s), "<redacted>", RegexOptions.IgnoreCase);
                 }
-                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                }
             }
 
             // If there are known secrets in the environment but none were replaced (edge cases),
@@ -88,7 +90,9 @@ namespace Listenarr.Api.Services
                     var v = Environment.GetEnvironmentVariable(k);
                     if (!string.IsNullOrEmpty(v)) vals.Add(v!);
                 }
-                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                }
             }
 
             return vals;

@@ -74,7 +74,9 @@ namespace Listenarr.Api.Services
                 using var scope = serviceScopeFactory.CreateScope();
                 memCache = scope.ServiceProvider.GetService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+            }
 
             if (memCache == null)
             {
@@ -260,7 +262,9 @@ namespace Listenarr.Api.Services
                         interval = custom;
                     }
                 }
-                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                }
 
                 // If no active downloads for client, back off to a longer interval
                 if (activeDownloadsForClient == 0)
@@ -1460,8 +1464,12 @@ namespace Listenarr.Api.Services
                     {
                         _logger.LogError("Unable to locate source file for download {DownloadId} after {Attempts} attempts. Resolved path: {SourcePath}, FinalPath={FinalPath}, DownloadPath={DownloadPath}",
                             download.Id, attempts, sourceFile, download.FinalPath, download.DownloadPath);
-                        try { _metrics.Increment("finalize.failed.file_not_found"); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { }
-                        try { _metrics.Increment("finalize.retry.exhausted"); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { }
+                        try { _metrics.Increment("finalize.failed.file_not_found"); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        }
+                        try { _metrics.Increment("finalize.retry.exhausted"); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { 
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        }
                         // Reset retry tracking if we have exhausted attempts
                         _missingSourceRetryAttempts.TryRemove(download.Id, out _);
                         _missingSourceRetryScheduled.TryRemove(download.Id, out _);
@@ -1485,7 +1493,9 @@ namespace Listenarr.Api.Services
                     var delaySeconds = initialDelay * (int)Math.Pow(2, Math.Max(0, currentAttempt - 1));
                     _logger.LogInformation("Source not found for download {DownloadId}. Scheduling retry #{Attempt} in {Delay}s (resolved path: {SourcePath})", download.Id, currentAttempt, delaySeconds, sourceFile);
 
-                    try { _metrics.Increment("finalize.retry.scheduled"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { }
+                    try { _metrics.Increment("finalize.retry.scheduled"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
 
                     // Fire-and-forget retry task. Use a safe small delay and then attempt finalize again.
                     _ = Task.Run(async () =>
@@ -1498,7 +1508,9 @@ namespace Listenarr.Api.Services
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogWarning(ex, "Scheduled retry for download {DownloadId} failed", download.Id);
-                            try { _metrics.Increment("finalize.retry.scheduled.failed"); } catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { }
+                            try { _metrics.Increment("finalize.retry.scheduled.failed"); } catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { 
+                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                            }
                         }
                         finally
                         {
@@ -1514,10 +1526,14 @@ namespace Listenarr.Api.Services
                 {
                     if (_missingSourceRetryAttempts.TryGetValue(download.Id, out var prevAttempts) && prevAttempts > 0)
                     {
-                        try { _metrics.Increment("finalize.retry.success"); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { }
+                        try { _metrics.Increment("finalize.retry.success"); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { 
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        }
                     }
                 }
-                catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { }
+                catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { 
+                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                }
 
                 // Clear any retry tracking since we've located the file successfully
                 _missingSourceRetryAttempts.TryRemove(download.Id, out _);
@@ -1782,7 +1798,9 @@ namespace Listenarr.Api.Services
                                                     return v;
                                             }
                                         }
-                                        catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { }
+                                        catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
 
                                         return 0.0;
                                     }
@@ -1961,7 +1979,9 @@ namespace Listenarr.Api.Services
                                         _metrics.Increment("sabnzbd.history.match.title_contains");
                                     }
                                 }
-                                catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { }
+                                catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                                 _logger.LogInformation("Found completed SABnzbd download: {DownloadTitle} -> {CompletedName} at {Path}",
                                     dl.Title, matchingItem.Name, matchingItem.Path);
 

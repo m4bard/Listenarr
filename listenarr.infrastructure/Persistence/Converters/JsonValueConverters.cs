@@ -75,6 +75,7 @@ namespace Listenarr.Infrastructure.Persistence.Converters
                         }
                         catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
                             // Fall through to the default attempt below
+                                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                         }
                     }
                 }
@@ -84,6 +85,7 @@ namespace Listenarr.Infrastructure.Persistence.Converters
             }
             catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {
                 // Ignore deserialization errors and fall back to creating new instance
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             try { return Activator.CreateInstance<T>()!; }

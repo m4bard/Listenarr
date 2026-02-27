@@ -129,7 +129,9 @@ namespace Listenarr.Api.Services
                                 // Dispose only if we created a dedicated client here (unlikely when using factory)
                                 if (usClient != null && usClient != _httpClient && (_httpClientFactory == null || usClient != _httpClientFactory.CreateClient("us")))
                                 {
-                                    try { usClient.Dispose(); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                                    try { usClient.Dispose(); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                             }
                     }
@@ -235,6 +237,7 @@ namespace Listenarr.Api.Services
                 }
                 catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
                     // ignore parsing errors and fall through to partial success
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
 
                 // At least we loaded a product page, consider it a partial success (but not matching ISBN)

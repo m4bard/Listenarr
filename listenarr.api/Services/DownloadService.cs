@@ -2397,7 +2397,9 @@ namespace Listenarr.Api.Services
                                                     if (!string.IsNullOrEmpty(d.DownloadClientId) && 
                                                         historyItems.Any(h => h.Id.Equals(d.DownloadClientId, StringComparison.OrdinalIgnoreCase)))
                                                     {
-                                                        try { _metrics.Increment("download.purge.skipped.history.nzbid_match"); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                                                        try { _metrics.Increment("download.purge.skipped.history.nzbid_match"); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                        }
                                                         return false;
                                                     }
 
@@ -2405,7 +2407,9 @@ namespace Listenarr.Api.Services
                                                     if (!string.IsNullOrEmpty(d.Title) && 
                                                         historyItems.Any(h => !string.IsNullOrEmpty(h.Name) && IsMatchingTitle(d.Title, h.Name)))
                                                     {
-                                                        try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                                                        try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                        }
                                                         return false;
                                                     }
 
@@ -2420,14 +2424,18 @@ namespace Listenarr.Api.Services
                                         }
                                         catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
                                             _logger.LogWarning(hx, "Error while fetching NZBGet history for client {ClientName}, skipping purge for safety", client.Name);
-                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { }
+                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
+                                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                            }
                                             toPurge = new List<Download>();
                                         }
                                     }
                                     else
                                     {
                                         _logger.LogWarning("DownloadClientGateway not available for client {ClientName}, skipping purge for safety", client.Name);
-                                        try { _metrics.Increment("download.purge.skipped.history.gateway_unavailable"); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { }
+                                        try { _metrics.Increment("download.purge.skipped.history.gateway_unavailable"); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
                                         toPurge = new List<Download>();
                                     }
                                 }
@@ -2474,14 +2482,18 @@ namespace Listenarr.Api.Services
                                                                 // If the DB record stores the nzo id directly as the DownloadClientId, skip purging
                                                                 if (!string.IsNullOrEmpty(d.DownloadClientId) && historySlots.Any(h => h.nzo.Equals(d.DownloadClientId, StringComparison.OrdinalIgnoreCase)))
                                                                 {
-                                                                    try { _metrics.Increment("download.purge.skipped.history.nzo_match"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { }
+                                                                    try { _metrics.Increment("download.purge.skipped.history.nzo_match"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { 
+                                                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                                    }
                                                                     return false;
                                                                 }
 
                                                                 // Match by title similarity against history name entries -> skip purging
                                                                 if (!string.IsNullOrEmpty(d.Title) && historySlots.Any(h => !string.IsNullOrEmpty(h.name) && IsMatchingTitle(d.Title, h.name)))
                                                                 {
-                                                                    try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { }
+                                                                    try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { 
+                                                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                                    }
                                                                     return false;
                                                                 }
 
@@ -2503,21 +2515,27 @@ namespace Listenarr.Api.Services
                                             else
                                             {
                                                 _logger.LogWarning("Failed to fetch SABnzbd history for client {ClientName}: {StatusCode}", client.Name, historyResp.StatusCode);
-                                                try { _metrics.Increment("download.purge.skipped.history.fetch_failed"); } catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { }
+                                                try { _metrics.Increment("download.purge.skipped.history.fetch_failed"); } catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { 
+                                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                                }
                                                 // skip purging when we couldn't confirm history to avoid accidental deletions
                                                 toPurge = new List<Download>();
                                             }
                                         }
                                         catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
                                             _logger.LogWarning(hx, "Error while fetching SABnzbd history for client {ClientName}, skipping purge for safety", client.Name);
-                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { }
+                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { 
+                                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                            }
                                             toPurge = new List<Download>();
                                         }
                                     }
                                     else
                                     {
                                         _logger.LogWarning("SABnzbd client {ClientName} missing apiKey in settings, skipping orphan purge for safety", client.Name);
-                                        try { _metrics.Increment("download.purge.skipped.history.missing_api_key"); } catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { }
+                                        try { _metrics.Increment("download.purge.skipped.history.missing_api_key"); } catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { 
+                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                        }
                                         toPurge = new List<Download>();
                                     }
                                 }
@@ -2539,7 +2557,9 @@ namespace Listenarr.Api.Services
                                     purgeScopedDbContext.Downloads.Remove(trackedDownload);
                                     _logger.LogInformation("Purged orphaned download record: {DownloadId} '{Title}' (no longer exists in {ClientName} queue)",
                                         orphanedDownload.Id, orphanedDownload.Title, client.Name);
-                                    try { _metrics.Increment("download.purged.count"); } catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { }
+                                    try { _metrics.Increment("download.purged.count"); } catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                             }
 
@@ -3043,7 +3063,9 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogInformation("LogDownloadHistory: audiobook={Title}, source={Source}, result={ResultTitle}", audiobook?.Title, source, result?.Title);
             }
-            catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) { }
+            catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) { 
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+            }
             await Task.CompletedTask;
         }
 
@@ -3282,7 +3304,9 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogDebug("CleanupOldTempFiles called (noop)");
             }
-            catch (Exception caughtEx_16) when (caughtEx_16 is not OperationCanceledException && caughtEx_16 is not OutOfMemoryException && caughtEx_16 is not StackOverflowException) { }
+            catch (Exception caughtEx_16) when (caughtEx_16 is not OperationCanceledException && caughtEx_16 is not OutOfMemoryException && caughtEx_16 is not StackOverflowException) { 
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+            }
         }
 
         // Overload used by TempFileCleanupService to specify retention window in hours
@@ -3294,7 +3318,9 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogDebug("CleanupOldTempFiles called with hours={Hours} (noop)", hours);
             }
-            catch (Exception caughtEx_17) when (caughtEx_17 is not OperationCanceledException && caughtEx_17 is not OutOfMemoryException && caughtEx_17 is not StackOverflowException) { }
+            catch (Exception caughtEx_17) when (caughtEx_17 is not OperationCanceledException && caughtEx_17 is not OutOfMemoryException && caughtEx_17 is not StackOverflowException) { 
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+            }
         }
     }
 }

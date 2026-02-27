@@ -272,7 +272,9 @@ namespace Listenarr.Api.Services
                                 matched.Add(c);
                             }
                         }
-                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        }
                     }
 
                     filtered = matched;
@@ -489,7 +491,9 @@ namespace Listenarr.Api.Services
                                     var entries = dropped.Select(r => string.Format("{0} :: {1} :: {2}", r.Asin ?? "<no-asin>", r.Title ?? "<no-title>", GetPodcastFilterReason(r) ?? "podcast_detected")).ToList();
                                     _logger.LogInformation("Audimeta search removed {Count} items due to podcast heuristics: {Entries}", dropped.Count, string.Join(" | ", entries));
                                 }
-                                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                             }
 
                             if (filtered.Any()) return new AudimetaSearchResponse { Results = filtered, TotalResults = filtered.Count };
@@ -521,7 +525,9 @@ namespace Listenarr.Api.Services
                                     var entries = dropped.Select(r => string.Format("{0} :: {1} :: {2}", r.Asin ?? "<no-asin>", r.Title ?? "<no-title>", GetPodcastFilterReason(r) ?? "podcast_detected")).ToList();
                                     _logger.LogInformation("Audimeta search removed {Count} items due to podcast heuristics: {Entries}", dropped.Count, string.Join(" | ", entries));
                                 }
-                                catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
+                                catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                             }
 
                             envelope.Results = envelope.Results.Where(r => !SearchResultIndicatesPodcast(r)).ToList();

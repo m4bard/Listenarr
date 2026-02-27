@@ -608,7 +608,9 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
+                            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                            }
                         }
                         else
                         {
@@ -623,7 +625,9 @@ namespace Listenarr.Api.Services
                                     if (!string.IsNullOrWhiteSpace(url)) candidates.Add(url);
                                 }
                             }
-                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
+                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                            }
                         }
                     }
 
@@ -967,7 +971,9 @@ namespace Listenarr.Api.Services
                         // Also handle cases where parentheses are missing: trailing 'Author,' etc.
                         author = System.Text.RegularExpressions.Regex.Replace(author, @",?\s*Author[,\s]*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
                     }
-                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { }
+                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
 
                     if (!string.IsNullOrWhiteSpace(author))
                     {
@@ -1034,7 +1040,9 @@ namespace Listenarr.Api.Services
                                             foreach (var prop in root.EnumerateObject()) candidates.Add(prop.Name);
                                         }
                                     }
-                                    catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { }
+                                    catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                                 else if (src.Contains(","))
                                 {
@@ -1045,7 +1053,9 @@ namespace Listenarr.Api.Services
                                             var u = part.Trim().Split(' ')[0]; if (!string.IsNullOrWhiteSpace(u)) candidates.Add(u);
                                         }
                                     }
-                                    catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { }
+                                    catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                                 else
                                 {
@@ -1070,7 +1080,9 @@ namespace Listenarr.Api.Services
                             image = chosen;
                         }
                     }
-                    catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { }
+                    catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { 
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    }
 
                     // Parse details table / audible product details
                     try
@@ -1142,7 +1154,9 @@ namespace Listenarr.Api.Services
                                             if (!string.IsNullOrWhiteSpace(tdText)) language = tdText;
                                         }
                                     }
-                                    catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { }
+                                    catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { 
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
                                 }
                             }
                         }

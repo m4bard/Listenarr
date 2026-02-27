@@ -60,6 +60,7 @@ namespace Listenarr.Api.Services
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
                 // Shutdown requested
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error while attempting background ffprobe installation");
@@ -67,7 +68,9 @@ namespace Listenarr.Api.Services
                 {
                     await _hubContext.Clients.All.SendAsync("FfmpegInstallStatus", new { status = "Error" });
                 }
-                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                }
             }
         }
     }
