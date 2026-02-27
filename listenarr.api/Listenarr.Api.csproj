@@ -2,8 +2,8 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <Version>0.2.51</Version>
-    <AssemblyVersion>0.2.51</AssemblyVersion>
+    <Version>0.2.52</Version>
+    <AssemblyVersion>0.2.52</AssemblyVersion>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>  
@@ -43,7 +43,7 @@
     <Compile Remove="Services\PlaywrightPageFetcher.cs" />
     <Compile Remove="Services\PlaywrightInstaller.cs" />
     <Compile Remove="Services\PlaywrightInstallBackgroundService.cs" />
-    <!-- Prevent publish artifacts from being recompiled on subsequent builds/publishes. -->
+    
     <Compile Remove="publish\**\*.cs" />
     <Compile Remove="publish/**/*.cs" />
   </ItemGroup>
