@@ -16,9 +16,7 @@ public partial class Program
         var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
         var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
             ? Path.Combine(Path.GetTempPath(), "listenarr-tests", "program-testing", $"listenarr-{Guid.NewGuid():N}.db")
-            : (Path.IsPathRooted(sqliteDbPathOverride)
-                ? sqliteDbPathOverride
-                : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
+            : Path.GetFullPath(sqliteDbPathOverride, builder.Environment.ContentRootPath);
         var sqliteDbDir = Path.GetDirectoryName(sqliteDbPath);
         if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))
         {
