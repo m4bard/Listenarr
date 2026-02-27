@@ -20,7 +20,7 @@ namespace Listenarr.Infrastructure.Persistence.Converters
             if (string.IsNullOrWhiteSpace(json))
             {
                 try { return Activator.CreateInstance<T>()!; }
-                catch { return default!; }
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { return default!; }
             }
 
             // Quick heuristic: check first non-whitespace character to avoid attempting
@@ -32,14 +32,14 @@ namespace Listenarr.Infrastructure.Persistence.Converters
             if (trimmed.Length == 0)
             {
                 try { return Activator.CreateInstance<T>()!; }
-                catch { return default!; }
+                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { return default!; }
             }
 
             var first = trimmed[0];
             if (first != '{' && first != '[' && first != '"' && first != 't' && first != 'f' && first != 'n' && first != '-' && !char.IsDigit(first))
             {
                 try { return Activator.CreateInstance<T>()!; }
-                catch { return default!; }
+                catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { return default!; }
             }
 
             try
@@ -73,8 +73,7 @@ namespace Listenarr.Infrastructure.Persistence.Converters
                             var desWrapped = JsonSerializer.Deserialize<T>(wrappedJson);
                             if (desWrapped != null) return desWrapped;
                         }
-                        catch
-                        {
+                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
                             // Fall through to the default attempt below
                         }
                     }
@@ -83,13 +82,12 @@ namespace Listenarr.Infrastructure.Persistence.Converters
                 var des = JsonSerializer.Deserialize<T>(json);
                 if (des != null) return des;
             }
-            catch
-            {
+            catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {
                 // Ignore deserialization errors and fall back to creating new instance
             }
 
             try { return Activator.CreateInstance<T>()!; }
-            catch { return default!; }
+            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { return default!; }
         }
     }
 

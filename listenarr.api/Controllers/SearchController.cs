@@ -879,7 +879,7 @@ namespace Listenarr.Api.Controllers
                             query = query ?? string.Empty;
                         }
                     }
-                    catch { query = query ?? string.Empty; }
+                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { query = query ?? string.Empty; }
                 }
 
                 var searchResults = await _searchService.SearchAsync(query, category, apiIds, sortBy, sortDirection);

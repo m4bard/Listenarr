@@ -65,8 +65,7 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // Swallow parsing errors; this helper is best-effort
             }
 
@@ -88,8 +87,7 @@ namespace Listenarr.Api.Services
                 node["mam_id"] = mamId;
                 return node.ToJsonString();
             }
-            catch
-            {
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                 var obj = new System.Text.Json.Nodes.JsonObject();
                 obj["mam_id"] = mamId;
                 return obj.ToJsonString();
@@ -111,8 +109,7 @@ namespace Listenarr.Api.Services
                     container.Add(wwwUri, new Cookie("mam_id", mamId));
                 }
             }
-            catch
-            {
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                 // Ignore malformed host
             }
 
@@ -529,8 +526,7 @@ namespace Listenarr.Api.Services
                 inStream.Position = 0;
                 ScanElement();
             }
-            catch
-            {
+            catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
                 // best-effort, swallow errors
             }
 
@@ -547,8 +543,7 @@ if (resultSet.Count == 0)
                                 resultSet.Add(v);
                     }
                 }
-                catch
-                {
+                catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {
                     // ignore
                 }
             }

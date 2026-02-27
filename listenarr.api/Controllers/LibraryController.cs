@@ -1208,35 +1208,37 @@ namespace Listenarr.Api.Controllers
                             // Try parsing to get root token info for more specific diagnostics
                             try
                             {
-                                if (!string.IsNullOrWhiteSpace(raw))
+                                if (string.IsNullOrWhiteSpace(raw))
                                 {
-                                    using var doc = System.Text.Json.JsonDocument.Parse(raw);
-                                    var root = doc.RootElement;
+                                    continue;
+                                }
 
-                                    // Heuristic checks for known columns
-                                    if (table == "QualityProfiles" && col == "Qualities")
+                                using var doc = System.Text.Json.JsonDocument.Parse(raw);
+                                var root = doc.RootElement;
+
+                                // Heuristic checks for known columns
+                                if (table == "QualityProfiles" && col == "Qualities")
+                                {
+                                    // Expect an array of objects
+                                    if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
                                     {
-                                        // Expect an array of objects
-                                        if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
+                                        results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedArray", Sample = TruncateSample(raw) });
+                                    }
+                                    else
+                                    {
+                                        var first = root.EnumerateArray().FirstOrDefault();
+                                        if (first.ValueKind != System.Text.Json.JsonValueKind.Object && !first.Equals(default(System.Text.Json.JsonElement)))
                                         {
-                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedArray", Sample = TruncateSample(raw) });
-                                        }
-                                        else
-                                        {
-                                            var first = root.EnumerateArray().FirstOrDefault();
-                                            if (first.ValueKind != System.Text.Json.JsonValueKind.Object && !first.Equals(default(System.Text.Json.JsonElement)))
-                                            {
-                                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ArrayNotObjects", Sample = TruncateSample(raw) });
-                                            }
+                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ArrayNotObjects", Sample = TruncateSample(raw) });
                                         }
                                     }
-                                    else if (table == "Downloads" && col == "Metadata")
+                                }
+                                else if (table == "Downloads" && col == "Metadata")
+                                {
+                                    // Expect an object/map
+                                    if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
                                     {
-                                        // Expect an object/map
-                                        if (root.ValueKind != System.Text.Json.JsonValueKind.Object)
-                                        {
-                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedObject", Sample = TruncateSample(raw) });
-                                        }
+                                        results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedObject", Sample = TruncateSample(raw) });
                                     }
                                 }
                             }
@@ -1981,13 +1983,35 @@ namespace Listenarr.Api.Controllers
                         var roots = await _rootFolderService.GetAllAsync();
                         foreach (var r in roots)
                         {
-                            try { allowedRoots.Add(Path.GetFullPath(r.Path)); } catch { }
+                            try
+                            {
+                                allowedRoots.Add(Path.GetFullPath(r.Path));
+                            }
+                            catch (Exception rootPathEx) when (
+                                rootPathEx is ArgumentException
+                                || rootPathEx is NotSupportedException
+                                || rootPathEx is PathTooLongException
+                                || rootPathEx is System.Security.SecurityException)
+                            {
+                                _logger.LogDebug(rootPathEx, "Skipping invalid root folder path during scan allowlist build: {RootPath}", r.Path);
+                            }
                         }
                     }
 
                     if (!string.IsNullOrEmpty(settings?.OutputPath))
                     {
-                        try { allowedRoots.Add(Path.GetFullPath(settings.OutputPath)); } catch { }
+                        try
+                        {
+                            allowedRoots.Add(Path.GetFullPath(settings.OutputPath));
+                        }
+                        catch (Exception outputPathEx) when (
+                            outputPathEx is ArgumentException
+                            || outputPathEx is NotSupportedException
+                            || outputPathEx is PathTooLongException
+                            || outputPathEx is System.Security.SecurityException)
+                        {
+                            _logger.LogDebug(outputPathEx, "Skipping invalid output path during scan allowlist build: {OutputPath}", settings.OutputPath);
+                        }
                     }
 
                     if (allowedRoots.Count == 0)
@@ -2459,9 +2483,14 @@ namespace Listenarr.Api.Controllers
                         return BadRequest(new { message = "Source and target paths are identical; nothing to move." });
                     }
                 }
-                catch
+                catch (Exception normalizeEx) when (
+                    normalizeEx is ArgumentException
+                    || normalizeEx is NotSupportedException
+                    || normalizeEx is PathTooLongException
+                    || normalizeEx is System.Security.SecurityException)
                 {
                     // Ignore errors normalizing paths; background worker will fail if invalid
+                    _logger.LogDebug(normalizeEx, "Unable to normalize move paths for audiobook {AudiobookId}", id);
                 }
 
                 var jobId = await _moveQueueService.EnqueueMoveAsync(id, final, sourcePath);
@@ -2953,7 +2982,10 @@ namespace Listenarr.Api.Controllers
                     // Fall back to raw string
                     return je.GetRawText();
                 }
-                catch
+                catch (Exception jsonElementConvertEx) when (
+                    jsonElementConvertEx is InvalidOperationException
+                    || jsonElementConvertEx is FormatException
+                    || jsonElementConvertEx is OverflowException)
                 {
                     // continue to other conversion attempts
                 }
@@ -2979,7 +3011,11 @@ namespace Listenarr.Api.Controllers
             {
                 return Convert.ChangeType(value, underlying);
             }
-            catch
+            catch (Exception changeTypeEx) when (
+                changeTypeEx is InvalidCastException
+                || changeTypeEx is FormatException
+                || changeTypeEx is OverflowException
+                || changeTypeEx is ArgumentException)
             {
                 // Final fallback: attempt parse from string
                 var str = value.ToString();
@@ -3110,9 +3146,15 @@ namespace Listenarr.Api.Controllers
 
                     currentPath = parent;
                 }
-                catch
+                catch (Exception traversalEx) when (
+                    traversalEx is IOException
+                    || traversalEx is UnauthorizedAccessException
+                    || traversalEx is System.Security.SecurityException
+                    || traversalEx is ArgumentException
+                    || traversalEx is NotSupportedException)
                 {
                     // If we can't access the directory, stop here
+                    _logger.LogDebug(traversalEx, "Stopping common-base-path ascent at {Path} due to traversal error", currentPath);
                     break;
                 }
             }
@@ -3482,7 +3524,11 @@ namespace Listenarr.Api.Controllers
                     {
                         metadata = metadataElement.Deserialize<AudimetaBookResponse>();
                     }
-                    catch
+                    catch (JsonException)
+                    {
+                        metadata = null;
+                    }
+                    catch (NotSupportedException)
                     {
                         metadata = null;
                     }

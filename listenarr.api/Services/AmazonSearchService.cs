@@ -97,8 +97,7 @@ namespace Listenarr.Api.Services
                     IsAudiobook = true // Assume true since we're searching in Audible category
                 };
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 return null;
             }
         }
@@ -609,7 +608,7 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch { }
+                            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
                         }
                         else
                         {
@@ -624,7 +623,7 @@ namespace Listenarr.Api.Services
                                     if (!string.IsNullOrWhiteSpace(url)) candidates.Add(url);
                                 }
                             }
-                            catch { }
+                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
                         }
                     }
 
@@ -748,7 +747,7 @@ namespace Listenarr.Api.Services
                     var height = BinaryPrimitives.ReadInt32BigEndian(data.AsSpan(20, 4));
                     return (width, height);
                 }
-                catch { return null; }
+                catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { return null; }
             }
 
             // GIF
@@ -760,7 +759,7 @@ namespace Listenarr.Api.Services
                     var height = BitConverter.ToUInt16(data, 8);
                     return ((int)width, (int)height);
                 }
-                catch { return null; }
+                catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { return null; }
             }
 
             // JPEG
@@ -781,7 +780,7 @@ namespace Listenarr.Api.Services
                             var width = (data[offset + 7] << 8) + data[offset + 8];
                             return (width, height);
                         }
-                        catch { return null; }
+                        catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { return null; }
                     }
                     else
                     {
@@ -968,7 +967,7 @@ namespace Listenarr.Api.Services
                         // Also handle cases where parentheses are missing: trailing 'Author,' etc.
                         author = System.Text.RegularExpressions.Regex.Replace(author, @",?\s*Author[,\s]*$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase).Trim();
                     }
-                    catch { }
+                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { }
 
                     if (!string.IsNullOrWhiteSpace(author))
                     {
@@ -1035,7 +1034,7 @@ namespace Listenarr.Api.Services
                                             foreach (var prop in root.EnumerateObject()) candidates.Add(prop.Name);
                                         }
                                     }
-                                    catch { }
+                                    catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { }
                                 }
                                 else if (src.Contains(","))
                                 {
@@ -1046,7 +1045,7 @@ namespace Listenarr.Api.Services
                                             var u = part.Trim().Split(' ')[0]; if (!string.IsNullOrWhiteSpace(u)) candidates.Add(u);
                                         }
                                     }
-                                    catch { }
+                                    catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { }
                                 }
                                 else
                                 {
@@ -1071,7 +1070,7 @@ namespace Listenarr.Api.Services
                             image = chosen;
                         }
                     }
-                    catch { }
+                    catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { }
 
                     // Parse details table / audible product details
                     try
@@ -1143,7 +1142,7 @@ namespace Listenarr.Api.Services
                                             if (!string.IsNullOrWhiteSpace(tdText)) language = tdText;
                                         }
                                     }
-                                    catch { }
+                                    catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { }
                                 }
                             }
                         }

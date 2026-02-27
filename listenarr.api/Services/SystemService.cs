@@ -577,8 +577,7 @@ namespace Listenarr.Api.Services
                     Source = "Application"
                 };
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 return null;
             }
         }

@@ -152,8 +152,7 @@ namespace Listenarr.Api.Services
                                     throw new IOException("Hardlink failed");
                             }
                         }
-                        catch
-                        {
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                             File.Copy(sourcePath, uniqueDest, true);
                         }
                     }

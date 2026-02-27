@@ -134,7 +134,12 @@ try
             Console.WriteLine($"[Listenarr] Created default configuration at '{externalConfigAbsolute}'. Edit this file to customize app settings.");
         }
 }
-catch (Exception ex)
+catch (Exception ex) when (
+    ex is IOException
+    || ex is UnauthorizedAccessException
+    || ex is System.Security.SecurityException
+    || ex is ArgumentException
+    || ex is NotSupportedException)
 {
     // Do not fail startup on inability to write sample config; just log to console and continue
     Console.WriteLine($"[Listenarr] Warning: failed to create default config '{externalConfigRelative}': {ex.Message}");
@@ -663,7 +668,12 @@ builder.Services.AddSwaggerGen(options =>
             options.IncludeXmlComments(xmlPath);
         }
     }
-    catch (Exception ex)
+    catch (Exception ex) when (
+        ex is IOException
+        || ex is UnauthorizedAccessException
+        || ex is System.Xml.XmlException
+        || ex is InvalidOperationException
+        || ex is ArgumentException)
     {
         Log.Logger.Warning("[WARNING] Failed to include XML comments in Swagger: {Message}", ex.Message);
     }
@@ -749,7 +759,7 @@ try
     ctx.Database.Migrate();
     Log.Logger.Information("[Startup] EF Core migrations applied successfully");
 }
-catch (Exception ex)
+catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
 {
     // Do not fail startup if migrations cannot be applied; surface the error in logs
     // so developers can run `dotnet ef database update` manually if needed.
@@ -770,7 +780,7 @@ try
             "[Startup] Authentication is DISABLED. Listenarr should only be exposed on a trusted LAN/VPN in this mode. If exposed to the internet, enable Listenarr authentication or enforce authentication at your reverse proxy.");
     }
 }
-catch (Exception ex)
+catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
 {
     Log.Logger.Debug(ex, "[Startup] Failed to evaluate authentication-enabled startup warning");
 }
@@ -838,8 +848,9 @@ app.MapGet("/placeholder.svg", async context =>
 
         context.Response.StatusCode = 404;
     }
-    catch
+    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
     {
+        Log.Logger.Debug(ex, "Failed to serve fallback placeholder image");
         context.Response.StatusCode = 500;
     }
 });

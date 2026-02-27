@@ -79,7 +79,7 @@ public static class SecurityRequestUtils
             var hex = Convert.ToHexString(bytes);
             return $"{prefix}:{hex[..12]}";
         }
-        catch
+        catch (CryptographicException)
         {
             return $"{prefix}:error";
         }

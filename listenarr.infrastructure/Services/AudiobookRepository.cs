@@ -87,8 +87,7 @@ namespace Listenarr.Api.Services
                     audiobook.BasePath = existing.BasePath;
                 }
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // If anything goes wrong reading existing record, fall back to update behavior
             }
 

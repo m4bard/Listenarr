@@ -473,8 +473,7 @@ namespace Listenarr.Api.Services
                         var query = System.Web.HttpUtility.ParseQueryString(uri.Query);
                         token = query["token"] ?? query["access_token"];
                     }
-                    catch
-                    {
+                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                         // support pushbullet://TOKEN format
                         if (webhookUrl.StartsWith("pushbullet://", StringComparison.OrdinalIgnoreCase))
                         {
@@ -684,7 +683,7 @@ namespace Listenarr.Api.Services
 
                 return result;
             }
-            catch { return input; }
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { return input; }
         }
 
         // Safely attempt to read the content of an HttpContent instance. If reading

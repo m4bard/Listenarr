@@ -74,7 +74,7 @@ namespace Listenarr.Infrastructure
                     dir = dir.Parent;
                 }
             }
-            catch { /* ignore and return null */ }
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { /* ignore and return null */ }
 
             return null;
         }

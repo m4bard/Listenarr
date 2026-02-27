@@ -80,7 +80,7 @@ namespace Listenarr.Api.Services
                 {
                     errText = string.IsNullOrEmpty(errText) ? ex.ToString() : errText + "\n" + ex.ToString();
                 }
-                catch { errText = ex.Message; }
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { errText = ex.Message; }
 
                 // Redact sensitive values from the collected output before returning
                 var sensitiveFromEnvEx = LogRedaction.GetSensitiveValuesFromEnvironment();

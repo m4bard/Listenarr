@@ -263,8 +263,7 @@ namespace Listenarr.Api.Controllers
                                 }
                             }
                         }
-                        catch
-                        {
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                             // Non-fatal: if Settings isn't a dictionary or unexpected structure, ignore and proceed
                         }
                     }
@@ -334,8 +333,7 @@ namespace Listenarr.Api.Controllers
                                 }
                             }
                         }
-                        catch
-                        {
+                        catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                             // Non-fatal; continue with whatever settings were provided.
                         }
                     }

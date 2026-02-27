@@ -93,8 +93,7 @@ namespace Listenarr.Api.Controllers
                 _lastToastTimes[indexerId] = now;
                 return true;
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // Fallback to sending toast if anything goes wrong with suppression logic
                 return true;
             }
@@ -114,8 +113,7 @@ namespace Listenarr.Api.Controllers
                 _lastToastMessages[key] = now;
                 return true;
             }
-            catch
-            {
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                 return true;
             }
         }
@@ -141,8 +139,7 @@ namespace Listenarr.Api.Controllers
                 var fi = FileVersionInfo.GetVersionInfo(asm?.Location ?? string.Empty);
                 return fi?.ProductVersion ?? fi?.FileVersion ?? "unknown";
             }
-            catch
-            {
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                 return "unknown";
             }
         }
@@ -706,12 +703,12 @@ namespace Listenarr.Api.Controllers
                         {
                             sendByIndexer = ShouldSendToastForIndexer(indexer.Id, toastMessage);
                         }
-                        catch { sendByIndexer = true; }
+                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { sendByIndexer = true; }
                         try
                         {
                             sendByMessage = ShouldSendToastForMessage(toastMessage);
                         }
-                        catch { sendByMessage = true; }
+                        catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { sendByMessage = true; }
 
                         _logger?.LogDebug("Toast suppression check for indexer {Id}: byIndexer={ByIndexer}, byMessage={ByMessage}", indexer.Id, sendByIndexer, sendByMessage);
 
@@ -1260,8 +1257,7 @@ namespace Listenarr.Api.Controllers
                 var normalized = $"{uri.Scheme}://{uri.Host}{port}{path}";
                 return normalized.TrimEnd('/');
             }
-            catch
-            {
+            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) {
                 return url?.TrimEnd('/') ?? string.Empty;
             }
         }

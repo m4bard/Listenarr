@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -346,8 +346,7 @@ namespace Listenarr.Api.Controllers
                 
                 return null;
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // If we can't parse the XML, assume no error element
                 return null;
             }

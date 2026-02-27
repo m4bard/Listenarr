@@ -270,7 +270,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                     var parsedLang = ParseLanguageFromText(value ?? string.Empty);
                                     if (!string.IsNullOrEmpty(parsedLang)) result.Language = parsedLang;
                                 }
-                                catch { }
+                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
                                 break;
                             case "language":
                                 // Some indexers use numeric language IDs (e.g., 1 -> ENG)
@@ -286,7 +286,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                         var pl = ParseLanguageFromText(value ?? string.Empty);
                                         if (!string.IsNullOrEmpty(pl)) result.Language = pl;
                                     }
-                                    catch { }
+                                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
                                 }
                                 break;
                             case "grabs":
@@ -306,7 +306,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                         var dt = DateTimeOffset.FromUnixTimeSeconds(unixSec).UtcDateTime;
                                         result.PublishedDate = dt.ToString("o");
                                     }
-                                    catch { }
+                                    catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
                                 }
                                 else if (DateTime.TryParse(value, out var udt))
                                 {
@@ -490,7 +490,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                             var lang = ParseLanguageFromText(result.Title + " " + (description ?? string.Empty));
                             if (!string.IsNullOrEmpty(lang)) result.Language = lang;
                         }
-                        catch { /* Non-critical */ }
+                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { /* Non-critical */ }
                     }
 
                     // Extract author from title if possible (common format: "Author - Title")

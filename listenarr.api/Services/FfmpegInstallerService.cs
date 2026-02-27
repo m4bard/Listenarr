@@ -42,8 +42,7 @@ namespace Listenarr.Api.Services
                     if (File.Exists(path)) File.Delete(path);
                     return;
                 }
-                catch
-                {
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                     if (i == retries - 1) return;
                     try { await Task.Delay(delayMs, cancellationToken); } catch (OperationCanceledException) { return; }
                 }
@@ -155,7 +154,7 @@ namespace Listenarr.Api.Services
                     computedHash = hashHex;
                     _logger.LogInformation("Downloaded ffprobe archive SHA256={Hash}", hashHex);
                 }
-                catch { /* non-fatal */ }
+                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { /* non-fatal */ }
 
                 var expected = GetChecksumForPlatform();
                 if (string.IsNullOrEmpty(expected) && !string.IsNullOrEmpty(discoveredChecksum))
@@ -178,10 +177,10 @@ namespace Listenarr.Api.Services
                                 var parsed = ParseChecksumFileForAsset(content, Path.GetFileName(downloadUrl));
                                 if (!string.IsNullOrEmpty(parsed)) { expected = parsed; break; }
                             }
-                            catch { }
+                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
                         }
                     }
-                    catch { }
+                    catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { }
                 }
 
                 if (!string.IsNullOrEmpty(expected) && !string.IsNullOrEmpty(computedHash) && !string.Equals(expected, computedHash, StringComparison.OrdinalIgnoreCase))
@@ -250,7 +249,7 @@ namespace Listenarr.Api.Services
                                 await TryDeleteFileAsync(tmpFile);
                             }
                         }
-                        catch { /* best-effort */ }
+                        catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { /* best-effort */ }
                     }
                 }
                 else
@@ -286,10 +285,10 @@ namespace Listenarr.Api.Services
                                     _logger.LogWarning("IProcessRunner is not available; skipping system 'chmod' fallback for {Candidate}", cand);
                                 }
                             }
-                            catch { /* best effort */ }
+                            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { /* best effort */ }
                         }
                     }
-                    catch { /* best effort */ }
+                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { /* best effort */ }
                 }
 
                 try
@@ -342,7 +341,7 @@ namespace Listenarr.Api.Services
                                 // If destination already exists, remove to allow move
                                 if (File.Exists(dest))
                                 {
-                                    try { File.Delete(dest); } catch { /* best-effort */ }
+                                    try { File.Delete(dest); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { /* best-effort */ }
                                 }
 
                                 // Attempt to move the file into the baseDir root. If move fails (cross-volume), fall back to copy.
@@ -387,7 +386,7 @@ namespace Listenarr.Api.Services
                                         _logger.LogWarning("IProcessRunner is not available; skipping system 'chmod' fallback for {Dest}", dest);
                                     }
                                 }
-                                catch { /* best effort */ }
+                                catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { /* best effort */ }
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -491,7 +490,7 @@ namespace Listenarr.Api.Services
                                     var c = await (await _httpClient.GetAsync(url)).Content.ReadAsStringAsync();
                                     if (!string.IsNullOrEmpty(c)) checksumContent = c;
                                 }
-                                catch { }
+                                catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { }
                             }
                         }
 

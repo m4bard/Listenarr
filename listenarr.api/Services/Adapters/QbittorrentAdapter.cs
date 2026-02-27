@@ -163,7 +163,7 @@ namespace Listenarr.Api.Services.Adapters
                             else
                             {
                                 var body = string.Empty;
-                                try { body = await loginResp.Content.ReadAsStringAsync(ct); } catch { }
+                                try { body = await loginResp.Content.ReadAsStringAsync(ct); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
                                 var redacted = LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
                                 _logger.LogWarning("qBittorrent TestConnection: login failed with status {Status} for client {ClientId} - {Body}", loginResp.StatusCode, LogRedaction.SanitizeText(client.Id), redacted);
                                 return (false, "qBittorrent: Connection to download client successful but could not authenticate. Please check username/password.");
@@ -195,7 +195,7 @@ namespace Listenarr.Api.Services.Adapters
                     {
                         if (disposeHttp)
                         {
-                            try { http?.Dispose(); } catch { }
+                            try { http?.Dispose(); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
                         }
                     }
                 }

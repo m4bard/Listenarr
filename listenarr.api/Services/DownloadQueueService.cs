@@ -146,7 +146,7 @@ namespace Listenarr.Api.Services
                                         }
                                     }
                                 }
-                                catch { hashMatch = false; }
+                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { hashMatch = false; }
                             }
 
                             var titleMatch = false;
@@ -157,7 +157,7 @@ namespace Listenarr.Api.Services
                                     titleMatch = AreTitlesSimilar(download.Title, queueItem.Title);
                                 }
                             }
-                            catch { titleMatch = false; }
+                            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { titleMatch = false; }
 
                             var clientMatch = download.DownloadClientId == client.Id;
                             var overallMatch = clientMatch && (idMatch || hashMatch || titleMatch);
@@ -265,7 +265,7 @@ namespace Listenarr.Api.Services
                                     await _downloadRepository.RemoveAsync(orphanedDownload.Id);
                                     _logger.LogInformation("Purged orphaned download record: {DownloadId} '{Title}' (no longer exists in {ClientName} queue)",
                                         orphanedDownload.Id, orphanedDownload.Title, client.Name);
-                                    try { _metrics.Increment("download.purged.count"); } catch { }
+                                    try { _metrics.Increment("download.purged.count"); } catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
                                 }
                                 catch (Exception exRemove) when (exRemove is not OperationCanceledException && exRemove is not OutOfMemoryException && exRemove is not StackOverflowException) {
                                     _logger.LogWarning(exRemove, "Failed to purge orphaned download {DownloadId} from repository, continuing", orphanedDownload.Id);
@@ -344,7 +344,7 @@ namespace Listenarr.Api.Services
                 var Bn = NormalizeTitle(b);
                 return An.Contains(Bn) || Bn.Contains(An) || An == Bn;
             }
-            catch { return false; }
+            catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { return false; }
         }
 
         private string NormalizeTitle(string s)

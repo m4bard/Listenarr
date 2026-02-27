@@ -67,7 +67,7 @@ namespace Listenarr.Api.Services
                 {
                     await _hubContext.Clients.All.SendAsync("FfmpegInstallStatus", new { status = "Error" });
                 }
-                catch { }
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
             }
         }
     }

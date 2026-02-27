@@ -81,8 +81,7 @@ namespace Listenarr.Api.Services
                 if (job != null) _jobs[id] = job;
                 return job != null;
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 job = null;
                 return false;
             }

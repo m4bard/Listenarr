@@ -42,7 +42,7 @@ static class DeleteDownloadsProgram
                     cmd2.ExecuteNonQuery();
                     Log.Logger.Information("Reset sqlite_sequence for Downloads (if it existed).");
                 }
-                catch { }
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
             }
 
             tx.Commit();

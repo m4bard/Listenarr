@@ -1,4 +1,4 @@
-﻿using AsyncKeyedLock;
+using AsyncKeyedLock;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
@@ -82,7 +82,7 @@ public class RemotePathMappingService : IRemotePathMappingService
             "Created remote path mapping {MappingId} for client {ClientId}: {RemotePath} -> {LocalPath}",
             mapping.Id, mapping.DownloadClientId, mapping.RemotePath, mapping.LocalPath);
         // Evict cache for this client so subsequent lookups refresh
-        try { _cache.Remove($"rpm_client_{mapping.DownloadClientId}"); } catch { }
+        try { _cache.Remove($"rpm_client_{mapping.DownloadClientId}"); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
 
         return mapping;
     }
@@ -110,7 +110,7 @@ public class RemotePathMappingService : IRemotePathMappingService
             "Updated remote path mapping {MappingId} for client {ClientId}: {RemotePath} -> {LocalPath}",
             mapping.Id, mapping.DownloadClientId, mapping.RemotePath, mapping.LocalPath);
         // Evict cache for this client so subsequent lookups refresh
-        try { _cache.Remove($"rpm_client_{mapping.DownloadClientId}"); } catch { }
+        try { _cache.Remove($"rpm_client_{mapping.DownloadClientId}"); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
 
         return existing;
     }
@@ -130,7 +130,7 @@ public class RemotePathMappingService : IRemotePathMappingService
             "Deleted remote path mapping {MappingId} for client {ClientId}",
             id, mapping.DownloadClientId);
         // Evict cache for this client
-        try { _cache.Remove($"rpm_client_{mapping.DownloadClientId}"); } catch { }
+        try { _cache.Remove($"rpm_client_{mapping.DownloadClientId}"); } catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { }
 
         return true;
     }

@@ -129,7 +129,7 @@ namespace Listenarr.Api.Services
                                 // Dispose only if we created a dedicated client here (unlikely when using factory)
                                 if (usClient != null && usClient != _httpClient && (_httpClientFactory == null || usClient != _httpClientFactory.CreateClient("us")))
                                 {
-                                    try { usClient.Dispose(); } catch { }
+                                    try { usClient.Dispose(); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
                                 }
                             }
                     }
@@ -152,8 +152,7 @@ namespace Listenarr.Api.Services
                     return true;
                 return false;
             }
-            catch
-            {
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                 return false;
             }
         }
@@ -174,8 +173,7 @@ namespace Listenarr.Api.Services
                 }
                 return url;
             }
-            catch
-            {
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                 return url;
             }
         }
@@ -235,16 +233,14 @@ namespace Listenarr.Api.Services
                             return (true, true);
                     }
                 }
-                catch
-                {
+                catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
                     // ignore parsing errors and fall through to partial success
                 }
 
                 // At least we loaded a product page, consider it a partial success (but not matching ISBN)
                 return (true, false);
             }
-            catch
-            {
+            catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {
                 return (false, false);
             }
         }

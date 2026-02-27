@@ -104,7 +104,7 @@ foreach (var (table, key, cols) in checks)
                 }
             }
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
         {
             list.Add(new { Table = table + "." + col, Id = "<query-failed>", Issue = "QueryError", Sample = ex.Message });
         }

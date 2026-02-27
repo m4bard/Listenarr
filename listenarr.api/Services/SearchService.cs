@@ -499,7 +499,7 @@ namespace Listenarr.Api.Services
                 string? parsedAuthor = parsed.ContainsKey("AUTHOR:") ? parsed["AUTHOR:"] : null;
                 string? parsedTitle = parsed.ContainsKey("TITLE:") ? parsed["TITLE:"] : null;
 
-                try { _logger.LogInformation("Parsed prefixes: ASIN={Asin}, ISBN={Isbn}, AUTHOR={Author}, TITLE={Title}", parsedAsin, parsedIsbn, parsedAuthor, parsedTitle); } catch {}
+                try { _logger.LogInformation("Parsed prefixes: ASIN={Asin}, ISBN={Isbn}, AUTHOR={Author}, TITLE={Title}", parsedAsin, parsedIsbn, parsedAuthor, parsedTitle); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {}
 
                 // Determine search type (priority: ASIN > ISBN > AUTHOR+TITLE > AUTHOR > TITLE)
                 if (!string.IsNullOrEmpty(parsedAsin)) searchType = "ASIN";
@@ -509,7 +509,7 @@ namespace Listenarr.Api.Services
                 else if (!string.IsNullOrEmpty(parsedTitle)) searchType = "TITLE";
                 else searchType = null;
 
-                try { _logger.LogInformation("[DBG] Determined searchType='{SearchType}'", searchType); } catch {}
+                try { _logger.LogInformation("[DBG] Determined searchType='{SearchType}'", searchType); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {}
 
                 // Build a fallback actualQuery by removing the recognized prefix ranges
                 if (foundRanges.Any())
@@ -656,7 +656,7 @@ namespace Listenarr.Api.Services
                     // AUTHOR + TITLE: prefer author endpoint then filter by title/isbn to ensure consistent Audimeta enrichment
                     if (searchType == "AUTHOR_TITLE" && !string.IsNullOrWhiteSpace(parsedAuthor))
                     {
-                        try { _logger.LogInformation("Entering AUTHOR_TITLE branch: author='{Author}', title='{Title}', isbn='{Isbn}'", parsedAuthor, parsedTitle, parsedIsbn); } catch {}
+                        try { _logger.LogInformation("Entering AUTHOR_TITLE branch: author='{Author}', title='{Title}', isbn='{Isbn}'", parsedAuthor, parsedTitle, parsedIsbn); } catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {}
                         // Aggregate author pages up to candidateLimit to enrich matching
                         var aggregated = new List<AudimetaSearchResult>();
                         int page = 1;
@@ -701,7 +701,7 @@ namespace Listenarr.Api.Services
                             _logger.LogInformation("Deduplicated AUTHOR_TITLE results for '{Author}': {OriginalCount} -> {DeduplicatedCount}", parsedAuthor, aggregated.Count, deduplicated.Count);
                             
                             var converted = new List<SearchResult>();
-                            try { _logger.LogInformation("Audimeta author lookup returned {Count} aggregated results for author '{Author}'", deduplicated.Count, parsedAuthor); } catch {}
+                            try { _logger.LogInformation("Audimeta author lookup returned {Count} aggregated results for author '{Author}'", deduplicated.Count, parsedAuthor); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {}
 
                             // Use the lightweight author/books results to perform title filtering
                             // and avoid fetching detailed metadata for every ASIN. Only fetch
@@ -730,7 +730,7 @@ namespace Listenarr.Api.Services
                                 // Limit how many author results to scan for ISBNs to avoid huge loads
                                 var isbnScanLimit = Math.Min(200, Math.Max(50, candidateLimit));
                                 var scanCandidates = aggregated.Where(r => !string.IsNullOrWhiteSpace(r.Asin)).Take(isbnScanLimit).ToList();
-                                try { _logger.LogInformation("Scanning up to {Limit} author candidates for ISBN {Isbn}", scanCandidates.Count, isbn); } catch {}
+                                try { _logger.LogInformation("Scanning up to {Limit} author candidates for ISBN {Isbn}", scanCandidates.Count, isbn); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {}
                                 foreach (var c in scanCandidates)
                                 {
                                     if (string.IsNullOrWhiteSpace(c.Asin)) continue;
@@ -752,7 +752,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
 
-                            try { _logger.LogInformation("[DBG] authorFiltered count after language/title/isbn filtering: {Count}", authorFiltered.Count()); } catch {}
+                            try { _logger.LogInformation("[DBG] authorFiltered count after language/title/isbn filtering: {Count}", authorFiltered.Count()); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) {}
 
                             // Convert filtered lightweight results; if we collected detailed
                             // metadata for some ASINs (e.g., ISBN scan), prefer that for enrichment.
@@ -986,7 +986,7 @@ namespace Listenarr.Api.Services
                             if (!duplicate)
                             {
                                 enrichedList.Add(ol);
-                                try { candidateDropReasons[(!string.IsNullOrWhiteSpace(ol.Asin) ? ol.Asin : ol.Id)] = "enriched_from_openlibrary"; } catch { }
+                                try { candidateDropReasons[(!string.IsNullOrWhiteSpace(ol.Asin) ? ol.Asin : ol.Id)] = "enriched_from_openlibrary"; } catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { }
                                 _logger.LogInformation("Added OpenLibrary-derived enriched result: Title='{Title}', Artist='{Artist}'", ol.Title, ol.Artist);
                             }
                             else
@@ -1035,7 +1035,7 @@ namespace Listenarr.Api.Services
                     var scoredResult = _searchResultScorer.ScoreResult(r, query ?? string.Empty, containmentScore, fuzzyScore);
                     
                     // Attach computed score to the SearchResult so callers / UI can inspect it
-                    try { r.Score = (int)Math.Round(scoredResult.Score * 100.0); } catch { }
+                    try { r.Score = (int)Math.Round(scoredResult.Score * 100.0); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { }
 
                     scored.Add(scoredResult);
                 }
@@ -1153,7 +1153,7 @@ namespace Listenarr.Api.Services
                         // If already accepted in the final results, mark as accepted
                         if (results.Any(r => string.Equals(r.Asin, asin, StringComparison.OrdinalIgnoreCase)))
                         {
-                            try { candidateDropReasons[asin] = "accepted"; } catch { }
+                            try { candidateDropReasons[asin] = "accepted"; } catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { }
                             finalAsinEntries.Add($"{asin}:accepted");
                             continue;
                         }
@@ -1165,7 +1165,7 @@ namespace Listenarr.Api.Services
                             // Author/publisher requirement
                             if (requireAuthorAndPublisher && (string.IsNullOrWhiteSpace(enrichedCandidate.Artist) || string.IsNullOrWhiteSpace(enrichedCandidate.Publisher)))
                             {
-                                try { candidateDropReasons[asin] = "author_publisher_missing"; } catch { }
+                                try { candidateDropReasons[asin] = "author_publisher_missing"; } catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { }
                                 finalAsinEntries.Add($"{asin}:author_publisher_missing");
                                 continue;
                             }
@@ -1173,7 +1173,7 @@ namespace Listenarr.Api.Services
                             // Title noise or unlikely audiobook
                             if (SearchValidation.IsTitleNoise(enrichedCandidate.Title) || !SearchValidation.IsLikelyAudiobook(enrichedCandidate))
                             {
-                                try { candidateDropReasons[asin] = "filtered_title_or_not_likely"; } catch { }
+                                try { candidateDropReasons[asin] = "filtered_title_or_not_likely"; } catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { }
                                 finalAsinEntries.Add($"{asin}:filtered_title_or_not_likely");
                                 continue;
                             }
@@ -1186,7 +1186,7 @@ namespace Listenarr.Api.Services
                                 containment = ComputeContainmentScore(enrichedCandidate, query ?? string.Empty);
                                 fuzzy = ComputeFuzzySimilarity((enrichedCandidate.Title ?? string.Empty) + " " + (enrichedCandidate.Artist ?? string.Empty), query ?? string.Empty);
                             }
-                            catch { }
+                            catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { }
 
                             if (string.Equals(containmentMode, "Strict", StringComparison.OrdinalIgnoreCase))
                             {
@@ -1194,7 +1194,7 @@ namespace Listenarr.Api.Services
                                 var hay = string.Join(" ", new[] { enrichedCandidate.Title, enrichedCandidate.Artist, enrichedCandidate.Album, enrichedCandidate.Description, enrichedCandidate.Publisher, enrichedCandidate.Narrator, enrichedCandidate.Language, enrichedCandidate.Series }.Where(s => !string.IsNullOrEmpty(s))).ToLowerInvariant();
                                 if (string.IsNullOrEmpty(hay) || hay.IndexOf(query ?? string.Empty, StringComparison.OrdinalIgnoreCase) < 0)
                                 {
-                                    try { candidateDropReasons[asin] = "containment_failed_strict"; } catch { }
+                                    try { candidateDropReasons[asin] = "containment_failed_strict"; } catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) { }
                                     finalAsinEntries.Add($"{asin}:containment_failed_strict");
                                     continue;
                                 }
@@ -1203,14 +1203,14 @@ namespace Listenarr.Api.Services
                             {
                                 if (containment < 0.4 && fuzzy < fuzzyThreshold)
                                 {
-                                    try { candidateDropReasons[asin] = "containment_failed_relaxed"; } catch { }
+                                    try { candidateDropReasons[asin] = "containment_failed_relaxed"; } catch (Exception caughtEx_14) when (caughtEx_14 is not OperationCanceledException && caughtEx_14 is not OutOfMemoryException && caughtEx_14 is not StackOverflowException) { }
                                     finalAsinEntries.Add($"{asin}:containment_failed_relaxed");
                                     continue;
                                 }
                             }
 
                             // If none of the above matched, mark as filtered by post-scoring rules
-                            try { candidateDropReasons[asin] = "filtered_post_scoring"; } catch { }
+                            try { candidateDropReasons[asin] = "filtered_post_scoring"; } catch (Exception caughtEx_15) when (caughtEx_15 is not OperationCanceledException && caughtEx_15 is not OutOfMemoryException && caughtEx_15 is not StackOverflowException) { }
                             finalAsinEntries.Add($"{asin}:filtered_post_scoring");
                             continue;
                         }
@@ -1218,7 +1218,7 @@ namespace Listenarr.Api.Services
                         // If we reached here, the ASIN never got enriched nor scraped successfully
                         if (!candidateDropReasons.ContainsKey(asin))
                         {
-                            try { candidateDropReasons[asin] = "no_metadata_and_no_scrape"; } catch { }
+                            try { candidateDropReasons[asin] = "no_metadata_and_no_scrape"; } catch (Exception caughtEx_16) when (caughtEx_16 is not OperationCanceledException && caughtEx_16 is not OutOfMemoryException && caughtEx_16 is not StackOverflowException) { }
                         }
                         finalAsinEntries.Add($"{asin}:{candidateDropReasons.GetValueOrDefault(asin)}");
                     }
@@ -1457,8 +1457,7 @@ namespace Listenarr.Api.Services
 
                 return totalMinutes > 0 ? totalMinutes : null;
             }
-            catch
-            {
+            catch (Exception caughtEx_17) when (caughtEx_17 is not OperationCanceledException && caughtEx_17 is not OutOfMemoryException && caughtEx_17 is not StackOverflowException) {
                 return null;
             }
         }
@@ -1707,8 +1706,7 @@ namespace Listenarr.Api.Services
                         var baseUri = new Uri(baseUrl.StartsWith("http", StringComparison.OrdinalIgnoreCase) ? baseUrl : "https://" + baseUrl);
                         fallbackName = baseUri.Host;
                     }
-                    catch
-                    {
+                    catch (Exception caughtEx_18) when (caughtEx_18 is not OperationCanceledException && caughtEx_18 is not OutOfMemoryException && caughtEx_18 is not StackOverflowException) {
                         fallbackName = "Indexer";
                     }
                 }
@@ -2592,8 +2590,7 @@ namespace Listenarr.Api.Services
                                 {
                                     mamIdLocal = Uri.UnescapeDataString(mamIdLocal);
                                 }
-                                catch
-                                {
+                                catch (Exception caughtEx_19) when (caughtEx_19 is not OperationCanceledException && caughtEx_19 is not OutOfMemoryException && caughtEx_19 is not StackOverflowException) {
                                     // If unescape fails for any reason, fall back to original value
                                 }
 
@@ -2919,7 +2916,7 @@ namespace Listenarr.Api.Services
                             if (!string.IsNullOrEmpty(found)) return found;
                         }
                     }
-                    catch { /* ignore malformed inner values */ }
+                    catch (Exception caughtEx_20) when (caughtEx_20 is not OperationCanceledException && caughtEx_20 is not OutOfMemoryException && caughtEx_20 is not StackOverflowException) { /* ignore malformed inner values */ }
                 }
             }
             else if (element.ValueKind == JsonValueKind.Array)
@@ -3151,8 +3148,7 @@ namespace Listenarr.Api.Services
                 var u = new Uri(url);
                 return u.Host;
             }
-            catch
-            {
+            catch (Exception caughtEx_21) when (caughtEx_21 is not OperationCanceledException && caughtEx_21 is not OutOfMemoryException && caughtEx_21 is not StackOverflowException) {
                 return rawUrl ?? "Indexer";
             }
         }
@@ -3580,7 +3576,7 @@ namespace Listenarr.Api.Services
                                         var parsedLang = ParseLanguageFromText(value ?? string.Empty);
                                         if (!string.IsNullOrEmpty(parsedLang)) result.Language = parsedLang;
                                     }
-                                    catch { }
+                                    catch (Exception caughtEx_22) when (caughtEx_22 is not OperationCanceledException && caughtEx_22 is not OutOfMemoryException && caughtEx_22 is not StackOverflowException) { }
                                     break;
                                 case "language":
                                     // Some indexers use numeric language IDs (e.g., 1 -> ENG)
@@ -3596,7 +3592,7 @@ namespace Listenarr.Api.Services
                                             var pl = ParseLanguageFromText(value ?? string.Empty);
                                             if (!string.IsNullOrEmpty(pl)) result.Language = pl;
                                         }
-                                        catch { }
+                                        catch (Exception caughtEx_23) when (caughtEx_23 is not OperationCanceledException && caughtEx_23 is not OutOfMemoryException && caughtEx_23 is not StackOverflowException) { }
                                     }
                                     break;
                                 case "grabs":
@@ -3616,7 +3612,7 @@ namespace Listenarr.Api.Services
                                             var dt = DateTimeOffset.FromUnixTimeSeconds(unixSec).UtcDateTime;
                                             result.PublishedDate = dt.ToString("o");
                                         }
-                                        catch { }
+                                        catch (Exception caughtEx_24) when (caughtEx_24 is not OperationCanceledException && caughtEx_24 is not OutOfMemoryException && caughtEx_24 is not StackOverflowException) { }
                                     }
                                     else if (DateTime.TryParse(value, out var udt))
                                     {
@@ -3800,7 +3796,7 @@ namespace Listenarr.Api.Services
                                 var lang = ParseLanguageFromText(result.Title + " " + (description ?? string.Empty));
                                 if (!string.IsNullOrEmpty(lang)) result.Language = lang;
                             }
-                            catch { /* Non-critical */ }
+                            catch (Exception caughtEx_25) when (caughtEx_25 is not OperationCanceledException && caughtEx_25 is not OutOfMemoryException && caughtEx_25 is not StackOverflowException) { /* Non-critical */ }
                         }
 
                         // Extract author from title if possible (common format: "Author - Title")

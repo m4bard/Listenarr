@@ -760,8 +760,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 return totalSeconds;
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 return 0;
             }
         }
@@ -787,8 +786,7 @@ namespace Listenarr.Api.Services.Adapters
                     _ => 0
                 };
             }
-            catch
-            {
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                 return 0;
             }
         }

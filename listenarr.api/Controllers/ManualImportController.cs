@@ -337,8 +337,7 @@ public class ManualImportController : ControllerBase
                 isCustomBasePath = !string.Equals(baseFull, configuredFull, StringComparison.OrdinalIgnoreCase);
             }
         }
-        catch
-        {
+        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
             isCustomBasePath = !string.IsNullOrWhiteSpace(basePath) && !string.IsNullOrWhiteSpace(configuredOutput)
                 && !string.Equals(basePath, configuredOutput, StringComparison.OrdinalIgnoreCase);
         }

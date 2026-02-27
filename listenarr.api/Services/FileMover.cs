@@ -51,7 +51,10 @@ namespace Listenarr.Api.Services
                         var files = Directory.GetFiles(sourceDir, "*.*", SearchOption.AllDirectories);
                         _logger.LogWarning("Directory listing sample: {Sample}", string.Join(", ", files.Take(5).Select(f => Path.GetFileName(f))));
                     }
-                    catch (Exception diagEx) when (diagEx is not OperationCanceledException && diagEx is not OutOfMemoryException && diagEx is not StackOverflowException) { }
+                    catch (Exception diagEx) when (diagEx is not OperationCanceledException && diagEx is not OutOfMemoryException && diagEx is not StackOverflowException)
+                    {
+                        _logger.LogDebug(diagEx, "Failed to collect directory listing diagnostics for {Source}", sourceDir);
+                    }
 
                     try
                     {
@@ -62,7 +65,10 @@ namespace Listenarr.Api.Services
                             _logger.LogWarning("Directory owner: {Owner}", owner);
                         }
                     }
-                    catch (Exception ownerEx) when (ownerEx is not OperationCanceledException && ownerEx is not OutOfMemoryException && ownerEx is not StackOverflowException) { }
+                    catch (Exception ownerEx) when (ownerEx is not OperationCanceledException && ownerEx is not OutOfMemoryException && ownerEx is not StackOverflowException)
+                    {
+                        _logger.LogDebug(ownerEx, "Failed to resolve directory owner diagnostics for {Source}", sourceDir);
+                    }
 
                     if (attempt < _options.MaxRetries - 1)
                     {
@@ -76,7 +82,11 @@ namespace Listenarr.Api.Services
             try
             {
                 CopyDirRecursive(sourceDir, destDir);
-                try { Directory.Delete(sourceDir, true); } catch { }
+                try { Directory.Delete(sourceDir, true); }
+                catch (Exception deleteEx) when (deleteEx is not OperationCanceledException && deleteEx is not OutOfMemoryException && deleteEx is not StackOverflowException)
+                {
+                    _logger.LogDebug(deleteEx, "Failed deleting source directory after copy fallback for {Source}", sourceDir);
+                }
                 return true;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -136,7 +146,10 @@ namespace Listenarr.Api.Services
                         using var stream = File.Open(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read);
                         _logger.LogDebug("Able to open source file for read during diagnostic: {File}", sourceFile);
                     }
-                    catch (Exception diagEx) when (diagEx is not OperationCanceledException && diagEx is not OutOfMemoryException && diagEx is not StackOverflowException) { }
+                    catch (Exception diagEx) when (diagEx is not OperationCanceledException && diagEx is not OutOfMemoryException && diagEx is not StackOverflowException)
+                    {
+                        _logger.LogDebug(diagEx, "Failed to collect file diagnostics for {Source}", sourceFile);
+                    }
 
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
@@ -146,7 +159,10 @@ namespace Listenarr.Api.Services
                             var owner = fileSec.GetOwner(typeof(NTAccount))?.ToString() ?? "unknown";
                             _logger.LogWarning("File owner for {File}: {Owner}", sourceFile, owner);
                         }
-                        catch (Exception ownerEx) when (ownerEx is not OperationCanceledException && ownerEx is not OutOfMemoryException && ownerEx is not StackOverflowException) { }
+                        catch (Exception ownerEx) when (ownerEx is not OperationCanceledException && ownerEx is not OutOfMemoryException && ownerEx is not StackOverflowException)
+                        {
+                            _logger.LogDebug(ownerEx, "Failed to resolve file owner diagnostics for {Source}", sourceFile);
+                        }
                     }
 
                     if (attempt < _options.MaxRetries - 1)
@@ -161,7 +177,11 @@ namespace Listenarr.Api.Services
             try
             {
                 File.Copy(sourceFile, destFile, true);
-                try { File.Delete(sourceFile); } catch { }
+                try { File.Delete(sourceFile); }
+                catch (Exception deleteEx) when (deleteEx is not OperationCanceledException && deleteEx is not OutOfMemoryException && deleteEx is not StackOverflowException)
+                {
+                    _logger.LogDebug(deleteEx, "Failed deleting source file after copy fallback for {Source}", sourceFile);
+                }
                 return true;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

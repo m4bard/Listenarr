@@ -713,7 +713,7 @@ namespace Listenarr.Api.Services
             };
         }
 
-        private static bool IsPlaceholderImage(byte[] data, string? mediaType)
+        private bool IsPlaceholderImage(byte[] data, string? mediaType)
         {
             if (data == null || data.Length == 0) return true;
             if (!string.IsNullOrWhiteSpace(mediaType) && mediaType.Contains("gif", StringComparison.OrdinalIgnoreCase) && data.Length < 2048)
@@ -725,9 +725,12 @@ namespace Listenarr.Api.Services
                 if (info != null && (info.Width <= 1 || info.Height <= 1))
                     return true;
             }
-            catch
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // If dimensions can't be detected, keep existing behavior and allow caching.
+                // We do not treat undecodable images as placeholders because some valid images
+                // may not be recognized by Identify for edge codecs/content.
+                _logger.LogDebug(ex, "Failed to inspect image dimensions for placeholder detection");
             }
 
             return false;

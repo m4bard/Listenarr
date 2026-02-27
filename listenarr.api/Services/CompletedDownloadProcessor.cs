@@ -269,7 +269,7 @@ namespace Listenarr.Api.Services
                                     {
                                         if (!string.IsNullOrWhiteSpace(tempDirExtracted) && System.IO.Directory.Exists(tempDirExtracted))
                                         {
-                                            try { System.IO.Directory.Delete(tempDirExtracted, true); } catch { }
+                                            try { System.IO.Directory.Delete(tempDirExtracted, true); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { }
                                         }
                                     }
                                 }
@@ -361,7 +361,7 @@ namespace Listenarr.Api.Services
                                 {
                                     if (!string.IsNullOrWhiteSpace(tempExtractDir) && System.IO.Directory.Exists(tempExtractDir))
                                     {
-                                        try { System.IO.Directory.Delete(tempExtractDir, true); } catch { }
+                                        try { System.IO.Directory.Delete(tempExtractDir, true); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { }
                                     }
                                 }
                             }
@@ -442,8 +442,7 @@ namespace Listenarr.Api.Services
                                                 candidateBitrate = meta?.Bitrate;
                                             }
                                         }
-                                        catch
-                                        {
+                                        catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                                             candidateBitrate = null;
                                         }
 
@@ -460,8 +459,7 @@ namespace Listenarr.Api.Services
                                                 if (existing.Any()) maxExistingBitrate = existing.Max();
                                             }
                                         }
-                                        catch
-                                        {
+                                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
                                             maxExistingBitrate = null;
                                         }
 
