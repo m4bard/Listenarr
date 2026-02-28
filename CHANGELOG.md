@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.53] - 2026-02-27
+
+### Fixed
+- **Security banner state when auth is enabled:** Fixed a frontend state bug where unauthenticated `401` responses from `GET /api/configuration/startupconfig` were interpreted as `auth disabled`, causing the no-auth security banner to remain visible even when authentication was enabled.
+- **`GET /api/library` wanted-flag path evaluation:** Hardened wanted-flag file checks to safely handle invalid/problematic file paths without throwing, preventing endpoint-level `500` responses in production data edge cases.
+- **`GET /api/library` legacy ISBN materialization crash:** Fixed a production-only crash path where legacy non-array/invalid JSON values in `Audiobooks.Isbn` could fail EF materialization (`Invalid token type`) and return `500`.
+
+### Changed
+- **Audiobook EF mapping resiliency:** Updated `Audiobook.Isbn` persistence mapping to use the resilient JSON value converter/comparer pattern already used by other JSON-backed list fields (`Authors`, `Genres`, `Tags`, `Narrators`, `AuthorAsins`).
+
+### Added
+- **Regression coverage for library resilience:** Added API integration coverage that simulates legacy ISBN text data and verifies `GET /api/library` remains successful.
+
 ## [0.2.52] - 2026-02-26
 
 ### Changed

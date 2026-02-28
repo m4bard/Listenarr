@@ -81,6 +81,8 @@ namespace Listenarr.Api.Services
 
             if (!string.IsNullOrEmpty(settings.OutputPath))
             {
+                var outputPath = settings.OutputPath;
+
                 // Simplified destination computation: use fileNamingService when available otherwise fallback
                 var ext = Path.GetExtension(sourcePath);
                 string generatedPath;
@@ -98,16 +100,31 @@ namespace Listenarr.Api.Services
                         metadata.Album = download.Album ?? string.Empty;
                     }
 
-                    generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, settings.OutputPath ?? string.Empty, null, null, ext);
+                    generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, outputPath, null, null, ext);
                 }
                 else
                 {
                     generatedPath = Path.GetFileName(sourcePath);
                 }
 
-                destinationPath = Path.IsPathRooted(generatedPath)
-                    ? generatedPath
-                    : Path.Combine(settings.OutputPath ?? string.Empty, generatedPath);
+                if (Path.IsPathRooted(generatedPath))
+                {
+                    destinationPath = generatedPath;
+                }
+                else
+                {
+                    var outputRoot = outputPath;
+                    var relativeGeneratedPath = generatedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    if (string.IsNullOrWhiteSpace(outputRoot))
+                    {
+                        destinationPath = relativeGeneratedPath;
+                    }
+                    else
+                    {
+                        var normalizedOutputRoot = outputRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        destinationPath = normalizedOutputRoot + Path.DirectorySeparatorChar + relativeGeneratedPath;
+                    }
+                }
             }
 
             // Ensure unique destination and perform move/copy

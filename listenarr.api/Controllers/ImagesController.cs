@@ -173,7 +173,7 @@ namespace Listenarr.Api.Controllers
                     _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", identifier, relativePath);
                     try
                     {
-                        var candidateFull = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, relativePath));
+                        var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath));
                         var imagesRoot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "cache", "images"));
                         var imagesRootConfig = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "config", "cache", "images"));
                         var wwwroot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "wwwroot"));
@@ -238,7 +238,7 @@ namespace Listenarr.Api.Controllers
                                 // Validate moved path as well
                                 try
                                 {
-                                    var movedFull = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, moved));
+                                    var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_environment.ContentRootPath, moved));
                                     var imagesRoot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "cache", "images"));
                                     var imagesRootConfig = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "config", "cache", "images"));
                                     var wwwroot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "wwwroot"));
@@ -937,7 +937,7 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // Build the full file path
-                var fullPath = Path.Combine(_environment.ContentRootPath, relativePath);
+                var fullPath = ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath);
 
                 if (!System.IO.File.Exists(fullPath))
                 {
@@ -1071,6 +1071,32 @@ namespace Listenarr.Api.Controllers
                 or System.Text.Json.JsonException;
         }
 
+        private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
+
         [HttpDelete("{identifier}")]
         public async Task<IActionResult> DeleteImage(string identifier)
         {
@@ -1088,7 +1114,7 @@ namespace Listenarr.Api.Controllers
                     return NotFound(new { message = "Image not found" });
                 }
 
-                var fullPath = Path.Combine(_environment.ContentRootPath, relativePath);
+                var fullPath = ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath);
 
                 if (System.IO.File.Exists(fullPath))
                 {

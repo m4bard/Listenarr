@@ -868,7 +868,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 // Construct output path
                 var outputPath = !string.IsNullOrEmpty(subfolder) 
-                    ? System.IO.Path.Combine(savePath, subfolder)
+                    ? CombineWithOptionalBase(savePath, subfolder)
                     : savePath;
 
                 // Apply remote path mapping
@@ -992,7 +992,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 // Construct output path
                 var outputPath = !string.IsNullOrEmpty(subfolder) 
-                    ? System.IO.Path.Combine(savePath, subfolder)
+                    ? CombineWithOptionalBase(savePath, subfolder)
                     : savePath;
 
                 // ✅ Apply remote path mapping
@@ -1005,6 +1005,32 @@ namespace Listenarr.Api.Services.Adapters
             }
 
             return result;
+        }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
     }
 }

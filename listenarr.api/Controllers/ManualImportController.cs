@@ -414,7 +414,7 @@ public class ManualImportController : ControllerBase
 
             relativePath = string.IsNullOrWhiteSpace(folderRelative)
                 ? fileRelative
-                : Path.Combine(folderRelative, fileRelative);
+                : CombineWithOptionalBase(folderRelative, fileRelative);
         }
 
         // Ensure it has the correct extension
@@ -425,7 +425,33 @@ public class ManualImportController : ControllerBase
 
         return string.IsNullOrWhiteSpace(basePath)
             ? relativePath
-            : Path.Combine(basePath, relativePath);
+            : CombineWithOptionalBase(basePath, relativePath);
+    }
+
+    private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+    {
+        var normalizedPath = candidatePath.Trim();
+
+        if (string.IsNullOrEmpty(normalizedPath))
+        {
+            return normalizedPath;
+        }
+
+        if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+        {
+            return normalizedPath;
+        }
+
+        var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (Path.IsPathRooted(relativePath))
+        {
+            return relativePath;
+        }
+
+        var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        return string.IsNullOrEmpty(normalizedBasePath)
+            ? relativePath
+            : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
     }
 
     private static string FormatSize(long bytes)

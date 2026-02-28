@@ -646,7 +646,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // For NZBGet, construct OutputPath from destDir + title
             var contentPath = !string.IsNullOrEmpty(destDir) && !string.IsNullOrEmpty(title)
-                ? Path.Combine(destDir, title)
+                ? CombineWithOptionalBase(destDir, title)
                 : (destDir ?? string.Empty);
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
@@ -739,7 +739,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // For NZBGet, construct ContentPath from destDir + title
             var contentPath = !string.IsNullOrEmpty(destDir) && !string.IsNullOrEmpty(title)
-                ? Path.Combine(destDir, title)
+                ? CombineWithOptionalBase(destDir, title)
                 : destDir;
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? _pathMappingService.TranslatePathAsync(client.Id, contentPath).GetAwaiter().GetResult()
@@ -1085,6 +1085,32 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning(ex, "Error resolving import item for NZBGet download {NzbId}", queueItem.Id);
                 return result;
             }
+        }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
     }
 }

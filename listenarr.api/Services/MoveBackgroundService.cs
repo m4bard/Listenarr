@@ -126,7 +126,7 @@ namespace Listenarr.Api.Services
                         foreach (var entry in entries)
                         {
                             var rel = Path.GetRelativePath(source, entry);
-                            var destPath = Path.Combine(copyDest, rel);
+                            var destPath = CombineWithOptionalBase(copyDest, rel);
 
                             if (Directory.Exists(entry))
                             {
@@ -225,11 +225,13 @@ namespace Listenarr.Api.Services
                                 {
                                     try
                                     {
-                                        var fullImagePath = Path.IsPathRooted(imageUrl) ? Path.GetFullPath(imageUrl) : Path.GetFullPath(Path.Combine(source, imageUrl));
+                                        var fullImagePath = Path.IsPathRooted(imageUrl)
+                                            ? Path.GetFullPath(imageUrl)
+                                            : Path.GetFullPath(CombineWithOptionalBase(source, imageUrl));
                                         if (fullImagePath.StartsWith(source, StringComparison.OrdinalIgnoreCase))
                                         {
                                             var rel = Path.GetRelativePath(source, fullImagePath);
-                                            var newImagePath = Path.GetFullPath(Path.Combine(target, rel));
+                                            var newImagePath = Path.GetFullPath(CombineWithOptionalBase(target, rel));
 
                                             // Only update if the new file actually exists after move
                                             if (System.IO.File.Exists(newImagePath))
@@ -258,12 +260,12 @@ namespace Listenarr.Api.Services
                             {
                                 var fullFilePath = Path.IsPathRooted(audiobook.FilePath)
                                     ? Path.GetFullPath(audiobook.FilePath)
-                                    : Path.GetFullPath(Path.Combine(source, audiobook.FilePath));
+                                    : Path.GetFullPath(CombineWithOptionalBase(source, audiobook.FilePath));
 
                                 if (fullFilePath.StartsWith(source, StringComparison.OrdinalIgnoreCase))
                                 {
                                     var rel = Path.GetRelativePath(source, fullFilePath);
-                                    var newFilePath = Path.GetFullPath(Path.Combine(target, rel));
+                                    var newFilePath = Path.GetFullPath(CombineWithOptionalBase(target, rel));
 
                                     // Only update if the new file actually exists after move
                                     if (System.IO.File.Exists(newFilePath))
@@ -487,6 +489,32 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
+        }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
     }
 }

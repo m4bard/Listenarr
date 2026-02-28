@@ -29,7 +29,8 @@ export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfi
       .catch((err) => {
         logger.debug('[startupConfigCache] Error fetching config:', err)
         // If 401 Unauthorized, treat as 'authentication required' for SPA logic
-        if (err && typeof err.message === 'string' && err.message.includes('401')) {
+        const status = (err as { status?: number } | null)?.status
+        if (status === 401) {
           const fallback: Partial<StartupConfig> = { authenticationRequired: true }
           _cache = fallback as StartupConfig
           _cacheTs = Date.now()

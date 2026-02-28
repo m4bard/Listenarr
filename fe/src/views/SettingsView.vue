@@ -325,6 +325,8 @@ import { useRoute, useRouter } from 'vue-router'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
 import { useConfigurationStore } from '@/stores/configuration'
+import { useAuthStore } from '@/stores/auth'
+import { sessionTokenManager } from '@/utils/sessionToken'
 import type {
   ApiConfiguration,
   DownloadClientConfiguration,
@@ -358,6 +360,8 @@ import {
 } from '@phosphor-icons/vue'
 import { useToast } from '@/services/toastService'
 
+const STARTUP_CONFIG_UPDATED_EVENT = 'listenarr-startup-config-updated'
+
 // Generate UUID v4 compatible across all browsers
 function generateUUID(): string {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
@@ -370,6 +374,7 @@ function generateUUID(): string {
 const route = useRoute()
 const router = useRouter()
 const configStore = useConfigurationStore()
+const auth = useAuthStore()
 const toast = useToast()
 // Debug environment markers (Vitest exposes import.meta.vitest / import.meta.env.VITEST)
 logger.debug(
@@ -819,15 +824,38 @@ const saveSettings = async () => {
     // If user toggled the authEnabled, attempt to save to startup config
     try {
       const original = startupConfig.value || {}
+      const originalObj = original as Record<string, unknown>
+      const previousRawAuth =
+        originalObj['authenticationRequired'] ?? originalObj['AuthenticationRequired']
+      const wasAuthEnabled =
+        typeof previousRawAuth === 'boolean'
+          ? previousRawAuth
+          : typeof previousRawAuth === 'string'
+            ? (() => {
+                const normalized = previousRawAuth.toLowerCase().trim()
+                return (
+                  normalized === 'enabled' ||
+                  normalized === 'true' ||
+                  normalized === 'yes' ||
+                  normalized === '1'
+                )
+              })()
+            : false
+      const didEnableAuth = !wasAuthEnabled && authEnabled.value
+      const didDisableAuth = wasAuthEnabled && !authEnabled.value
       // Only persist authenticationRequired (lowercase) as string 'true'/'false'.
       // Remove any legacy AuthenticationRequired (uppercase) key from the outgoing config.
-      const { AuthenticationRequired, ...rest } = original
+      const rest = { ...original } as Record<string, unknown>
+      delete rest.AuthenticationRequired
       const newCfg: import('@/types').StartupConfig = {
         ...rest,
         authenticationRequired: authEnabled.value ? 'true' : 'false',
       }
+      let startupConfigSaved = false
       try {
         await apiService.saveStartupConfig(newCfg)
+        startupConfig.value = newCfg
+        startupConfigSaved = true
         toast.success('Startup config', 'Startup configuration saved (config.json)')
       } catch {
         // If server can't persist startup config (e.g., permission denied), offer a fallback download of the config JSON
@@ -854,6 +882,40 @@ const saveSettings = async () => {
             'Startup config',
             'Also failed to prepare a download. Edit config/config.json on the host to make the change persistent.',
           )
+        }
+      }
+      // If authentication has just been enabled and persistence succeeded, ensure we
+      // immediately send unauthenticated sessions to login instead of waiting for
+      // next navigation.
+      if (startupConfigSaved) {
+        try {
+          window.dispatchEvent(new Event(STARTUP_CONFIG_UPDATED_EVENT))
+        } catch {}
+      }
+      if (startupConfigSaved && didDisableAuth) {
+        // Auth was just disabled: clear stale local session state immediately.
+        try {
+          sessionTokenManager.clearToken()
+        } catch {}
+        auth.user.authenticated = false
+        auth.redirectTo = null
+        try {
+          await apiService.ensureAntiforgeryForCurrentAuth()
+        } catch {}
+      }
+      if (startupConfigSaved && didEnableAuth) {
+        try {
+          await auth.loadCurrentUser()
+        } catch {}
+        if (!auth.user.authenticated) {
+          const redirect = router.currentRoute.value.fullPath || '/settings'
+          toast.info('Authentication enabled', 'Please log in to continue.')
+          try {
+            await router.push({ name: 'login', query: { redirect, force: '1' } })
+          } catch {
+            window.location.href = `/login?redirect=${encodeURIComponent(redirect)}&force=1`
+          }
+          return
         }
       }
     } catch {

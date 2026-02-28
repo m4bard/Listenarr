@@ -98,6 +98,77 @@ namespace Listenarr.Api.Controllers
             _rootFolderService = rootFolderService;
         }
 
+        private bool ComputeWantedFlag(Audiobook audiobook)
+        {
+            if (!audiobook.Monitored)
+            {
+                return false;
+            }
+
+            var files = audiobook.Files;
+            if (files == null || files.Count == 0)
+            {
+                return true;
+            }
+
+            foreach (var file in files)
+            {
+                if (string.IsNullOrWhiteSpace(file.Path))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var fullPath = ResolvePathWithOptionalBase(audiobook.BasePath, file.Path);
+
+                    if (System.IO.File.Exists(fullPath))
+                    {
+                        return false;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(
+                        ex,
+                        "Failed to evaluate file path while computing wanted flag for audiobook {AudiobookId}, file {FileId}. Treating file as missing.",
+                        audiobook.Id,
+                        file.Id);
+                }
+            }
+
+            return true;
+        }
+
+        private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            // Defensive check: if the candidate path is rooted, do not call Path.Combine
+            // because it would discard the base path argument.
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
+
         public class ScanRequest
         {
             public string? Path { get; set; }
@@ -588,13 +659,7 @@ namespace Listenarr.Api.Controllers
                     source = f.Source,
                     createdAt = f.CreatedAt
                 }).ToList(),
-                wanted = a.Monitored && (a.Files == null || !a.Files.Any() || !a.Files.Any(f =>
-                {
-                    if (string.IsNullOrEmpty(f.Path)) return false;
-                    var isAbsolute = System.IO.Path.IsPathRooted(f.Path);
-                    var fullPath = isAbsolute ? f.Path : (!string.IsNullOrEmpty(a.BasePath) ? System.IO.Path.Combine(a.BasePath, f.Path) : f.Path);
-                    return System.IO.File.Exists(fullPath);
-                }))
+                wanted = ComputeWantedFlag(a)
             });
 
             return Ok(dto);
@@ -682,13 +747,7 @@ namespace Listenarr.Api.Controllers
                     source = f.Source,
                     createdAt = f.CreatedAt
                 }).ToList(),
-                wanted = updated.Monitored && (updated.Files == null || !updated.Files.Any() || !updated.Files.Any(f =>
-                {
-                    if (string.IsNullOrEmpty(f.Path)) return false;
-                    var isAbsolute = System.IO.Path.IsPathRooted(f.Path);
-                    var fullPath = isAbsolute ? f.Path : (!string.IsNullOrEmpty(updated.BasePath) ? System.IO.Path.Combine(updated.BasePath, f.Path) : f.Path);
-                    return System.IO.File.Exists(fullPath);
-                }))
+                wanted = ComputeWantedFlag(updated)
             };
 
             return Ok(audiobookDto);
@@ -1490,7 +1549,7 @@ namespace Listenarr.Api.Controllers
                     var imagePath = await _imageCacheService.GetCachedImagePathAsync(audiobook.Asin);
                     if (imagePath != null)
                     {
-                        var fullPath = Path.Combine(Directory.GetCurrentDirectory(), imagePath);
+                        var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
                         if (System.IO.File.Exists(fullPath))
                         {
                             System.IO.File.Delete(fullPath);
@@ -1520,7 +1579,7 @@ namespace Listenarr.Api.Controllers
                                 var imagePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
                                 if (!string.IsNullOrEmpty(imagePath))
                                 {
-                                    var fullPath = Path.Combine(Directory.GetCurrentDirectory(), imagePath);
+                                    var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
                                     if (System.IO.File.Exists(fullPath))
                                     {
                                         System.IO.File.Delete(fullPath);
@@ -1590,7 +1649,7 @@ namespace Listenarr.Api.Controllers
                                     var imagePath = await _imageCacheService.GetCachedImagePathAsync(audiobook.Asin);
                                     if (imagePath != null)
                                     {
-                                        var fullPath = Path.Combine(Directory.GetCurrentDirectory(), imagePath);
+                                        var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
                                         if (System.IO.File.Exists(fullPath))
                                         {
                                             System.IO.File.Delete(fullPath);
@@ -1618,7 +1677,7 @@ namespace Listenarr.Api.Controllers
                                                 var imagePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
                                                 if (!string.IsNullOrEmpty(imagePath))
                                                 {
-                                                    var fullPath = Path.Combine(Directory.GetCurrentDirectory(), imagePath);
+                                                    var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
                                                     if (System.IO.File.Exists(fullPath))
                                                     {
                                                         System.IO.File.Delete(fullPath);
@@ -3103,7 +3162,7 @@ namespace Listenarr.Api.Controllers
             var relative = _fileNamingService.ApplyNamingPattern(directoryPattern, variables, false);
 
             // Combine with root path
-            var combined = string.IsNullOrWhiteSpace(rootPath) ? relative : Path.Combine(rootPath, relative);
+            var combined = ResolvePathWithOptionalBase(rootPath, relative);
 
             return combined;
         }

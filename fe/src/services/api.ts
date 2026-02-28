@@ -31,7 +31,7 @@ import type {
   AudiobookExternalIdentifier,
   AudiobookExternalIdentifierInput,
 } from '@/types'
-import { getStartupConfigCached, getCachedStartupConfig } from './startupConfigCache'
+import { getStartupConfigCached, getCachedStartupConfig, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { logger } from '@/utils/logger'
 import { getRegionFromLanguage } from '@/utils/languageMapping'
@@ -165,6 +165,15 @@ class ApiService {
       return (await resp.blob()) as unknown as T;
     } else {
       return (await resp.text()) as unknown as T;
+    }
+  }
+
+  private async refreshStartupConfigCache(): Promise<void> {
+    resetStartupConfigCache()
+    try {
+      await getStartupConfigCached(0)
+    } catch {
+      // Best effort only; callers should not fail if refresh cannot complete.
     }
   }
 
@@ -765,7 +774,8 @@ class ApiService {
 
   // Startup configuration (read + write) — backend exposes under /configuration/startupconfig
   async getStartupConfig(): Promise<import('@/types').StartupConfig> {
-    // Only send Bearer token if authentication is enabled, so API key is not redacted for unauthenticated users when auth is disabled.
+    // Prefer session auth when a token exists, even when startup-config cache is cold.
+    // This avoids false 401s immediately after cache reset (login/logout/settings save).
     let authEnabled = false;
     try {
       const cached = getCachedStartupConfig();
@@ -778,11 +788,12 @@ class ApiService {
     } catch {}
 
     const headers: Record<string, string> = {};
-    if (authEnabled) {
-      const sessionToken = sessionTokenManager.getToken();
-      if (sessionToken) {
-        headers['Authorization'] = `Bearer ${sessionToken}`;
-      }
+    const sessionToken = sessionTokenManager.getToken();
+    if (sessionToken) {
+      headers['Authorization'] = `Bearer ${sessionToken}`;
+    } else if (authEnabled) {
+      // Auth is expected to be enabled, but no token is available yet.
+      // Leave headers empty so backend can return a typed 401.
     }
     const resp = await fetch(`${API_BASE_URL}/configuration/startupconfig`, {
       method: 'GET',
@@ -790,7 +801,11 @@ class ApiService {
       headers,
     });
     if (!resp.ok) {
-      throw new Error(`Failed to fetch startup config: ${resp.status}`)
+      const body = await resp.text().catch(() => '')
+      const err: ErrorWithStatus = new Error(`Failed to fetch startup config: ${resp.status}`)
+      err.status = resp.status
+      err.body = body
+      throw err
     }
     return await resp.json();
   }
@@ -800,10 +815,12 @@ class ApiService {
      * @param config The StartupConfig object to save
      */
     async saveStartupConfig(config: import('@/types').StartupConfig): Promise<{ success: boolean; message?: string }> {
-      return this.request<{ success: boolean; message?: string }>('/configuration/startupconfig', {
+      const result = await this.request<{ success: boolean; message?: string }>('/configuration/startupconfig', {
         method: 'POST',
         body: JSON.stringify(config),
       });
+      await this.refreshStartupConfigCache()
+      return result
     }
 
 
@@ -1687,6 +1704,8 @@ class ApiService {
     } else {
       throw new Error('Login succeeded but expected session token or auth type not received');
     }
+
+    await this.refreshStartupConfigCache()
   }
 
   // Public helper to fetch antiforgery token for the current auth state.
@@ -1722,6 +1741,7 @@ class ApiService {
       this.antiforgeryToken = null;
       this.antiforgeryTokenSession = null;
       logger.debug('[ApiService] Session token cleared')
+      await this.refreshStartupConfigCache()
       // Prefetch antiforgery token for anonymous principal after logout
       try {
         await this.fetchAntiforgeryToken()
