@@ -6,7 +6,7 @@ using System.Text.Json;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     public class DiscordController : ControllerBase
     {
         private readonly IConfigurationService _configurationService;

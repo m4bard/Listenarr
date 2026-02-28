@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -27,7 +27,7 @@ using Listenarr.Infrastructure.Models;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/history")]
+    [Route("api/v{version:apiVersion}/history")]
     public class HistoryController : ControllerBase
     {
         private readonly ListenArrDbContext _dbContext;

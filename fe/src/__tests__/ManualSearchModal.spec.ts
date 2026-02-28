@@ -96,7 +96,7 @@ describe('ManualSearchModal.vue', () => {
     await nextTick()
 
     // Debug: show rendered HTML to investigate missing anchor
-    // eslint-disable-next-line no-console
+     
     console.log(wrapper.html())
     const anchor = wrapper.find('a.title-text')
     expect(anchor.exists()).toBe(true)

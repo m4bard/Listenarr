@@ -12,7 +12,7 @@ import { logger } from '@/utils/logger'
 const API_BASE_URL = import.meta.env.DEV
   ? 'http://localhost:4545'
   : import.meta.env.VITE_API_BASE_URL
-    ? import.meta.env.VITE_API_BASE_URL.replace('/api', '')
+    ? import.meta.env.VITE_API_BASE_URL.replace(/\/api(?:\/v\d+(?:\.\d+)?)?$/, '')
     : ''
 
 type DownloadUpdateCallback = (downloads: Download[]) => void

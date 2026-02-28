@@ -1,11 +1,11 @@
 import { onUnmounted, reactive } from 'vue'
 import { apiService } from '@/services/api'
 import { getCachedStartupConfig } from '@/services/startupConfigCache'
+import { isApiImagesUrl } from '@/services/apiBase'
 
 export function isLikelyBackendImageUrl(url: string): boolean {
   if (!url) return false
-  if (url.startsWith('/api/images/')) return true
-  if (url.includes('/api/images/')) return true
+  if (isApiImagesUrl(url)) return true
   if (url.startsWith('/config/cache/images/')) return true
   if (url.includes('/config/cache/images/')) return true
   return false
@@ -158,15 +158,18 @@ export function useProtectedImages() {
   function isAuthRequiredByConfig(): boolean {
     try {
       const cfg = getCachedStartupConfig() as Record<string, unknown> | null
-      if (!cfg) return false
+      // If config is not loaded yet, default to protected mode to avoid
+      // issuing unauthenticated <img src="/api/..."> requests that can fail
+      // and get stuck on placeholders.
+      if (!cfg) return true
       const raw = cfg.authenticationRequired ?? cfg.AuthenticationRequired
       if (typeof raw === 'boolean') return raw
       if (typeof raw === 'string') {
         const normalized = raw.trim().toLowerCase()
         return normalized === 'true' || normalized === 'enabled'
       }
-      return false
+      return true
     } catch {
-      return false
+      return true
     }
   }

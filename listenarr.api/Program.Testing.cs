@@ -23,13 +23,11 @@ public partial class Program
             Directory.CreateDirectory(sqliteDbDir);
         }
 
-        // Disable Playwright installations during tests to avoid invoking external tools (npx/pwsh),
-        // disable hosted services, and enforce the isolated sqlite path before Program.cs computes
-        // persistence registrations.
+        // Disable hosted services and enforce the isolated sqlite path before Program.cs
+        // computes persistence registrations.
         var inMemory = new Dictionary<string, string?>()
         {
             ["Listenarr:SqliteDbPath"] = sqliteDbPath,
-            ["Playwright:Enabled"] = "false",
             ["Listenarr:DisableHostedServices"] = "true"
         };
         builder.Configuration.AddInMemoryCollection(inMemory);

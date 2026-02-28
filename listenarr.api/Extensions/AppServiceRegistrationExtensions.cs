@@ -33,7 +33,7 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<IFfmpegService, FfmpegInstallerService>();
             // Service to accept client-pushed download updates and maintain recent-push cache
             services.AddSingleton<DownloadPushService>();
-            services.AddScoped<IAmazonAsinService, AmazonAsinService>();
+            services.AddScoped<IAsinLookupService, AsinLookupService>();
             // Notification service for webhook notifications (typed HttpClient so a HttpClient is injected)
             services.AddHttpClient<NotificationService>();
             // Also register the concrete NotificationService type in the container so constructors

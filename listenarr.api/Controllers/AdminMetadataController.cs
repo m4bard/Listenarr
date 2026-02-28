@@ -8,7 +8,7 @@ using Listenarr.Infrastructure.Models;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/admin")]
+    [Route("api/v{version:apiVersion}/admin")]
     public class AdminMetadataController : ControllerBase
     {
         private readonly ListenArrDbContext _db;

@@ -172,7 +172,7 @@ router.beforeEach(async (to, from, next) => {
       (startupConfig as StartupConfig & { AuthenticationRequired?: string | boolean })
         ?.AuthenticationRequired
     logger.debug('[router] startupConfig raw authRequired:', raw)
-    let v = raw
+    const v = raw
     if (v === undefined || v === null) {
       logger.debug('[router] authRequiredConfig: value undefined/null, returning false')
       return false

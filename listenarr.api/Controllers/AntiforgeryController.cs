@@ -7,7 +7,7 @@ using System.Linq;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     public class AntiforgeryController : ControllerBase
     {
         private readonly IAntiforgery _antiforgery;

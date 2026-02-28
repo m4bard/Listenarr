@@ -22,6 +22,7 @@ namespace Listenarr.Api.Middleware
         {
             var method = context.Request.Method;
             var path = context.Request.Path.Value ?? string.Empty;
+            var normalizedApiPath = NormalizeApiVersionedPath(path);
             _logger?.LogDebug("AntiforgeryMiddleware: incoming request {Method} {Path}", method, path);
 
             // Only validate for unsafe HTTP methods
@@ -50,9 +51,14 @@ namespace Listenarr.Api.Middleware
                 }
 
                 // Allow some public endpoints without antiforgery (startup config reads, token request itself, login/logout)
-                if (path.StartsWith("/api/antiforgery") || path.StartsWith("/api/account/login") || path.StartsWith("/api/account/logout") || path.StartsWith("/api/configuration/startupconfig") || path.StartsWith("/hubs/")
+                if (normalizedApiPath.StartsWith("/api/antiforgery", StringComparison.OrdinalIgnoreCase)
+                    || normalizedApiPath.StartsWith("/api/account/login", StringComparison.OrdinalIgnoreCase)
+                    || normalizedApiPath.StartsWith("/api/account/logout", StringComparison.OrdinalIgnoreCase)
+                    || normalizedApiPath.StartsWith("/api/configuration/startupconfig", StringComparison.OrdinalIgnoreCase)
+                    || path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase)
                     // Also allow Prowlarr-compatible indexer endpoints and system status
-                    || path.StartsWith("/api/v1/indexer") || path.StartsWith("/api/v1/system"))
+                    || path.StartsWith("/api/v1/indexer", StringComparison.OrdinalIgnoreCase)
+                    || path.StartsWith("/api/v1/system", StringComparison.OrdinalIgnoreCase))
                 {
                     _logger?.LogDebug("AntiforgeryMiddleware: path is whitelisted, skipping antiforgery validation");
                     await _next(context);
@@ -127,6 +133,24 @@ namespace Listenarr.Api.Middleware
             }
 
             await _next(context);
+        }
+
+        private static string NormalizeApiVersionedPath(string path)
+        {
+            // Convert /api/v1/... (or /api/v1.0/...) -> /api/... for legacy path checks.
+            if (!path.StartsWith("/api/v", StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+
+            var versionStart = "/api/v".Length;
+            var slashAfterVersion = path.IndexOf('/', versionStart);
+            if (slashAfterVersion <= 0)
+            {
+                return path;
+            }
+
+            return "/api" + path[slashAfterVersion..];
         }
     }
 }

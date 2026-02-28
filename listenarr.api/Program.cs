@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  *
@@ -26,9 +26,12 @@ using System.Linq;
 using Listenarr.Api.Middleware;
 using System.Net;
 using Listenarr.Infrastructure.Models;
+using Asp.Versioning;
+using Asp.Versioning.ApiExplorer;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.OpenApi.Models;
 using Serilog;
 using Serilog.Events;
 using Polly;
@@ -229,6 +232,34 @@ builder.Services.AddControllers()
         options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
         // Only ignore null values (not empty strings or zeros) to reduce payload size while preserving meaningful empty values
         options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+    });
+
+var defaultApiVersion = new ApiVersion(1, 0);
+builder.Services
+    .AddApiVersioning(options =>
+    {
+        options.DefaultApiVersion = defaultApiVersion;
+        options.AssumeDefaultVersionWhenUnspecified = true;
+        options.ReportApiVersions = true;
+        options.ApiVersionReader = new UrlSegmentApiVersionReader();
+    })
+    .AddMvc(options =>
+    {
+        // Apply v1 to all controllers so we get versioned API explorer metadata
+        // without having to annotate every controller class.
+        foreach (var controllerType in typeof(Program).Assembly.GetTypes()
+                     .Where(t =>
+                         !t.IsAbstract
+                         && t.Name.EndsWith("Controller", StringComparison.OrdinalIgnoreCase)
+                         && typeof(Microsoft.AspNetCore.Mvc.ControllerBase).IsAssignableFrom(t)))
+        {
+            options.Conventions.Controller(controllerType).HasApiVersion(defaultApiVersion);
+        }
+    })
+    .AddApiExplorer(options =>
+    {
+        options.GroupNameFormat = "'v'VVV";
+        options.SubstituteApiVersionInUrl = true;
     });
 
 // Required for [Authorize] / role policies used by controllers.
@@ -682,6 +713,84 @@ if (builder.Environment.IsDevelopment())
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
+    var swaggerDescription = string.Join(Environment.NewLine, new[]
+    {
+        "REST API for Listenarr audiobook management and automation.",
+        "Versioning: URL segment format `/api/v1/...` (current version: v1).",
+        "",
+        "Authentication quick start:",
+        "1. Click `Authorize` and enter one credential (you do not need all schemes).",
+        "2. Session token flow:",
+        "   - Call `POST /api/v1/Account/login` with `{ \"username\": \"...\", \"password\": \"...\", \"rememberMe\": false }`.",
+        "   - Copy `sessionToken` from the 200 response when `authType` is `session`.",
+        "   - Use `SessionBearer` (`Bearer <sessionToken>`) or `SessionTokenHeader` (`<sessionToken>`).",
+        "3. API key flow:",
+        "   - Listenarr auto-generates an API key on first run.",
+        "   - Read the current key from `GET /api/v1/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+        "   - Rotate the key with `POST /api/v1/Configuration/apikey/regenerate` (Administrator required).",
+        "   - `POST /api/v1/Configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
+        "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
+    });
+
+    options.SwaggerDoc("v1", new OpenApiInfo
+    {
+        Title = "Listenarr API",
+        Version = "v1",
+        Description = swaggerDescription
+    });
+
+    options.AddSecurityDefinition("SessionBearer", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.Http,
+        Scheme = "bearer",
+        BearerFormat = "JWT",
+        Description = string.Join(Environment.NewLine, new[]
+        {
+            "Use `Authorization: Bearer <sessionToken>`.",
+            "Get `sessionToken` from `POST /api/v1/Account/login` using username/password credentials."
+        })
+    });
+
+    options.AddSecurityDefinition("SessionTokenHeader", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Name = "X-Session-Token",
+        Description = string.Join(Environment.NewLine, new[]
+        {
+            "Use `X-Session-Token: <sessionToken>`.",
+            "Get `sessionToken` from `POST /api/v1/Account/login` using username/password credentials."
+        })
+    });
+
+    options.AddSecurityDefinition("ApiKeyHeader", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Name = "X-Api-Key",
+        Description = string.Join(Environment.NewLine, new[]
+        {
+            "Use `X-Api-Key: <apiKey>`.",
+            "API keys are auto-generated on first run.",
+            "Read the current key from `GET /api/v1/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+            "Regenerate with `POST /api/v1/Configuration/apikey/regenerate` (Administrator required)."
+        })
+    });
+
+    options.AddSecurityDefinition("ApiKeyAuthorization", new OpenApiSecurityScheme
+    {
+        Type = SecuritySchemeType.ApiKey,
+        In = ParameterLocation.Header,
+        Name = "Authorization",
+        Description = string.Join(Environment.NewLine, new[]
+        {
+            "Use `Authorization: ApiKey <apiKey>`.",
+            "API keys are auto-generated on first run.",
+            "Read the current key from `GET /api/v1/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+            "Regenerate with `POST /api/v1/Configuration/apikey/regenerate` (Administrator required)."
+        })
+    });
+
     // Try to include XML comments if available
     try
     {
@@ -701,17 +810,29 @@ builder.Services.AddSwaggerGen(options =>
     {
         Log.Logger.Warning("[WARNING] Failed to include XML comments in Swagger: {Message}", ex.Message);
     }
-    // Use full type names for schema Ids (replace '+' from nested types with '.') to
+    // Use full type names for schema Ids (replace "+" from nested types with ".") to
     // avoid collisions between nested controller DTOs and top-level DTOs that share
     // the same simple type name (e.g. TranslatePathRequest).
     options.CustomSchemaIds(type => (type.FullName ?? type.Name).Replace('+', '.'));
+    options.OperationFilter<GlobalApiDocumentationOperationFilter>();
 
-        // Resolve conflicting actions (ambiguous HTTP method actions) by selecting the first
-        // description. This prevents Swagger generation failures when multiple action descriptors
-        // map to similar routes. If more complex disambiguation is needed in future, refine here.
-        options.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+    // Resolve conflicting actions (ambiguous HTTP method actions) by selecting the first
+    // description. This prevents Swagger generation failures when multiple action descriptors
+    // map to similar routes. If more complex disambiguation is needed in future, refine here.
+    options.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
+    options.DocInclusionPredicate((docName, apiDescription) =>
+    {
+        // For now we expose v1 docs; include explicit v1 descriptions plus
+        // ungrouped descriptions as fallback to keep docs non-breaking.
+        var groupName = apiDescription.GroupName;
+        if (string.IsNullOrWhiteSpace(groupName))
+        {
+            return string.Equals(docName, "v1", StringComparison.OrdinalIgnoreCase);
+        }
+
+        return string.Equals(groupName, docName, StringComparison.OrdinalIgnoreCase);
     });
-
+});
 // whether the cookie is marked secure by forwarding the original scheme (X-Forwarded-Proto).
 // Override via configuration: Antiforgery:Cookie:SecurePolicy = None|SameAsRequest|Always
 var antiforgeryCookiePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
@@ -825,8 +946,17 @@ if (args is not null && args.Contains("--query-users"))
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
 {
+    var apiVersionDescriptionProvider = app.Services.GetRequiredService<IApiVersionDescriptionProvider>();
     app.UseSwagger();
-    app.UseSwaggerUI();
+    app.UseSwaggerUI(options =>
+    {
+        foreach (var description in apiVersionDescriptionProvider.ApiVersionDescriptions)
+        {
+            options.SwaggerEndpoint(
+                $"/swagger/{description.GroupName}/swagger.json",
+                $"Listenarr API {description.GroupName.ToUpperInvariant()}");
+        }
+    });
 }
 
 // Use forwarded headers middleware (must be early in pipeline)

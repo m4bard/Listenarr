@@ -8,7 +8,7 @@ using System;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/rootfolders")]
+    [Route("api/v{version:apiVersion}/rootfolders")]
     public class RootFoldersController : ControllerBase
     {
         private readonly IRootFolderService _service;

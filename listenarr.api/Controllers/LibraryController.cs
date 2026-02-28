@@ -39,7 +39,7 @@ using System.Text;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/library")]
+    [Route("api/v{version:apiVersion}/library")]
     public class LibraryController : ControllerBase
     {
         private const int MetadataRescanCooldownSeconds = 15;
@@ -1084,10 +1084,10 @@ namespace Listenarr.Api.Controllers
 
             if (providerMetadata == null)
             {
-                var amazonAsinService = rescanScope.ServiceProvider.GetService<IAmazonAsinService>();
-                if (amazonAsinService == null)
+                var asinLookupService = rescanScope.ServiceProvider.GetService<IAsinLookupService>();
+                if (asinLookupService == null)
                 {
-                    _logger.LogWarning("IAmazonAsinService not available for ISBN fallback during metadata rescan of audiobook {AudiobookId}", audiobook.Id);
+                    _logger.LogWarning("IAsinLookupService not available for ISBN fallback during metadata rescan of audiobook {AudiobookId}", audiobook.Id);
                 }
 
                 foreach (var isbnIdentifier in isbnIdentifiers)
@@ -1108,13 +1108,13 @@ namespace Listenarr.Api.Controllers
                             break;
                         }
 
-                        if (amazonAsinService == null)
+                        if (asinLookupService == null)
                         {
                             continue;
                         }
 
                         isbnConversionAttempts++;
-                        var (success, asinFromIsbn, _) = await amazonAsinService.GetAsinFromIsbnAsync(isbnValue);
+                        var (success, asinFromIsbn, _) = await asinLookupService.GetAsinFromIsbnAsync(isbnValue);
                         if (!success || string.IsNullOrWhiteSpace(asinFromIsbn))
                         {
                             continue;

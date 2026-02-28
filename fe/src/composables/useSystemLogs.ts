@@ -4,6 +4,7 @@ import type { LogEntry } from '@/types'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { logger } from '@/utils/logger'
+import { API_BASE_PATH, API_ORIGIN } from '@/services/apiBase'
 
 /**
  * Composable for real-time system logs via SignalR
@@ -51,11 +52,7 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
         }
       }
 
-      // Get API base URL - SignalR needs direct backend connection in dev
-      const apiBaseUrl = import.meta.env.DEV
-        ? 'http://localhost:4545' // In dev, SignalR connects directly to backend (bypasses Vite proxy)
-        : import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || ''
-      const hubUrl = `${apiBaseUrl}/hubs/logs`
+      const hubUrl = `${API_ORIGIN}/hubs/logs`
 
       // Create SignalR connection
       connection.value = new signalR.HubConnectionBuilder()
@@ -126,12 +123,7 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
 
   const loadInitialLogs = async () => {
     try {
-      // Use the same base URL logic as the SignalR connection
-      const apiBaseUrl = import.meta.env.DEV
-        ? 'http://localhost:4545'
-        : import.meta.env.VITE_API_BASE_URL?.replace('/api', '') || ''
-
-      const response = await fetch(`${apiBaseUrl}/api/system/logs?limit=100`)
+      const response = await fetch(`${API_ORIGIN}${API_BASE_PATH}/system/logs?limit=100`)
       if (response.ok) {
         const initialLogs = (await response.json()) as LogEntry[]
         // Sort by timestamp descending (newest first)

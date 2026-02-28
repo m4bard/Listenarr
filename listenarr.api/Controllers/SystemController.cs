@@ -24,7 +24,7 @@ using Microsoft.AspNetCore.Authorization;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     public class SystemController : ControllerBase
     {
         private readonly ISystemService _systemService;

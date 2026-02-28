@@ -16,7 +16,7 @@ describe('SearchSettingsSection', () => {
 
     const checks = wrapper.findAll('input[type="checkbox"]')
     await checks[0].setValue(true)
-    let last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    const last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.enableOpenLibrarySearch).toBe(true)
 
   })

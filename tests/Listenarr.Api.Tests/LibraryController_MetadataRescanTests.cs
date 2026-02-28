@@ -56,7 +56,7 @@ namespace Listenarr.Api.Tests
                     sourceUrl = "https://audimeta.de"
                 });
 
-            var amazonAsinMock = new Mock<IAmazonAsinService>();
+            var asinLookupMock = new Mock<IAsinLookupService>();
 
             var factory = _factory.WithWebHostBuilder(builder =>
             {
@@ -65,8 +65,8 @@ namespace Listenarr.Api.Tests
                     services.RemoveAll<IAudiobookMetadataService>();
                     services.AddSingleton(metadataMock.Object);
 
-                    services.RemoveAll<IAmazonAsinService>();
-                    services.AddSingleton(amazonAsinMock.Object);
+                    services.RemoveAll<IAsinLookupService>();
+                    services.AddSingleton(asinLookupMock.Object);
                 });
             });
 
@@ -149,7 +149,7 @@ namespace Listenarr.Api.Tests
             }
 
             metadataMock.Verify(m => m.GetMetadataAsync("B0TESTASIN", "us", false), Times.Once);
-            amazonAsinMock.Verify(
+            asinLookupMock.Verify(
                 a => a.GetAsinFromIsbnAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }

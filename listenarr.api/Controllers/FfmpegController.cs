@@ -13,7 +13,7 @@ public class FfprobeScanRequest { public string? FilePath { get; set; } }
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/ffmpeg")]
+    [Route("api/v{version:apiVersion}/ffmpeg")]
     public class FfmpegController : ControllerBase
     {
         private readonly IFfmpegService _ffmpegService;

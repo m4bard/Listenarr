@@ -58,7 +58,6 @@
           <div
             v-for="item in visibleWanted"
             :key="item.id"
-            v-memo="[item.id, item.monitored, item.filePath, hasActiveDownload(item)]"
             class="wanted-item"
           >
             <div class="wanted-poster">

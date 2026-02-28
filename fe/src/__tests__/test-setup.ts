@@ -32,7 +32,7 @@ import { vi } from 'vitest'
 
 // Diagnostic: help locate failures during test setup in CI/local runs
 try {
-  // eslint-disable-next-line no-console
+   
   console.log('[test-setup] initializing test setup')
 } catch {}
 
@@ -352,7 +352,7 @@ try {
   // absolute pathname or return an empty string so tests don't crash during stacktrace
   // or source-map processing.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
+     
     const _fs = require('fs') as typeof import('fs')
     const _origRead = _fs.readFile.bind(_fs)
     const _origReadSync = _fs.readFileSync.bind(_fs)

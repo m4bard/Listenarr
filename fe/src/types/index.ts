@@ -323,6 +323,8 @@ export interface StartupConfig {
   authenticationRequired?: string | boolean
   // PascalCase variant is accepted for compatibility with some server responses
   AuthenticationRequired?: string | boolean
+  apiVersion?: string | number
+  ApiVersion?: string | number
   sslCertPath?: string
   sslCertPassword?: string
 }

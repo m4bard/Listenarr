@@ -455,6 +455,7 @@ import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { apiService, ensureImageCached } from '@/services/api'
+import { isApiImagesUrl } from '@/services/apiBase'
 import { handleImageError } from '@/utils/imageFallback'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { joinPaths, isAbsolutePath } from '@/utils/path'
@@ -679,12 +680,6 @@ const audimetaSourceUrl = computed(() => {
   const asin = primaryAsin.value
   if (!asin) return null
   return `https://audimeta.de/book/${encodeURIComponent(asin)}`
-})
-
-const audibleProductUrl = computed(() => {
-  const asin = primaryAsin.value
-  if (!asin) return null
-  return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
 })
 
 const displayIdentifiers = computed<DetailIdentifierItem[]>(() => {
@@ -1040,7 +1035,7 @@ async function afterLoad() {
     const img = audiobook.value?.imageUrl
     if (img) {
       const url = apiService.getImageUrl(img)
-      if (url && url.includes('/api/images/')) {
+      if (url && isApiImagesUrl(url)) {
         // fire-and-forget: ensure backend cached copy exists for this image
         void ensureImageCached(url).catch(() => { })
       }

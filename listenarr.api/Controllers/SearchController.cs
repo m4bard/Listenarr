@@ -30,7 +30,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     public class SearchController : ControllerBase
     {
         private readonly ISearchService _searchService;

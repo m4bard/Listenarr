@@ -9,7 +9,7 @@ using Microsoft.Extensions.Caching.Memory;
 namespace Listenarr.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v{version:apiVersion}/[controller]")]
 public class DownloadsController : ControllerBase
 {
     private readonly ListenArrDbContext _dbContext;

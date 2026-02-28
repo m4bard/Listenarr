@@ -23,7 +23,7 @@ using Listenarr.Api.Services;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     public class QualityProfileController : ControllerBase
     {
         private readonly IQualityProfileService _qualityProfileService;

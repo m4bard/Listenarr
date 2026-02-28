@@ -22,6 +22,7 @@ namespace Listenarr.Api.Middleware
         {
             var method = context.Request.Method;
             var path = context.Request.Path.Value ?? string.Empty;
+            var normalizedApiPath = NormalizeApiVersionedPath(path);
             _logger?.LogDebug("AuthenticationEnforcer: incoming request {Method} {Path}", method, path);
 
             var cfg = _startupConfigService.GetConfig();
@@ -33,7 +34,7 @@ namespace Listenarr.Api.Middleware
             }
 
             // Log logout requests specifically and include masked principal diagnostics
-            if (path.StartsWith("/api/account/logout"))
+            if (normalizedApiPath.StartsWith("/api/account/logout", StringComparison.OrdinalIgnoreCase))
             {
                 try
                 {
@@ -70,14 +71,16 @@ namespace Listenarr.Api.Middleware
             }
 
             // Allow some public paths used by SPA and startup (swagger/ui, antiforgery token, and account login)
-            if (path.StartsWith("/swagger") || path.StartsWith("/api/antiforgery") || path.StartsWith("/api/account/login"))
+            if (path.StartsWith("/swagger", StringComparison.OrdinalIgnoreCase)
+                || normalizedApiPath.StartsWith("/api/antiforgery", StringComparison.OrdinalIgnoreCase)
+                || normalizedApiPath.StartsWith("/api/account/login", StringComparison.OrdinalIgnoreCase))
             {
                 await _next(context);
                 return;
             }
 
             // The startup config endpoint should only be public when authentication is not required
-            if (path.StartsWith("/api/configuration/startupconfig") && !authRequired)
+            if (normalizedApiPath.StartsWith("/api/configuration/startupconfig", StringComparison.OrdinalIgnoreCase) && !authRequired)
             {
                 await _next(context);
                 return;
@@ -100,6 +103,24 @@ namespace Listenarr.Api.Middleware
             }
 
             await _next(context);
+        }
+
+        private static string NormalizeApiVersionedPath(string path)
+        {
+            // Convert /api/v1/... (or /api/v1.0/...) -> /api/... for legacy path checks.
+            if (!path.StartsWith("/api/v", StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+
+            var versionStart = "/api/v".Length;
+            var slashAfterVersion = path.IndexOf('/', versionStart);
+            if (slashAfterVersion <= 0)
+            {
+                return path;
+            }
+
+            return "/api" + path[slashAfterVersion..];
         }
     }
 }

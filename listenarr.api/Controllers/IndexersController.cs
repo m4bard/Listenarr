@@ -31,7 +31,7 @@ using Listenarr.Infrastructure.Models;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/indexers")]
+    [Route("api/v{version:apiVersion}/indexers")]
     public class IndexersController : ControllerBase
     {
         private readonly ListenArrDbContext _dbContext;

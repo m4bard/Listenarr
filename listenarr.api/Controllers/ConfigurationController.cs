@@ -26,7 +26,7 @@ using Microsoft.AspNetCore.SignalR;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     public class ConfigurationController : ControllerBase
     {
         private readonly IConfigurationService _configurationService;
@@ -449,6 +449,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var config = await _configurationService.GetStartupConfigAsync() ?? new StartupConfig();
+                config.ApiVersion = NormalizeApiVersionString(config.ApiVersion) ?? NormalizeApiVersionString(GetRequestedApiVersion()) ?? "1";
                 var rawAuth = config.AuthenticationRequired;
                 var authEnabled = rawAuth?.ToLowerInvariant() is "true" or "yes" or "1";
                 var isAuthenticated = User?.Identity?.IsAuthenticated ?? false;
@@ -484,6 +485,7 @@ namespace Listenarr.Api.Controllers
         {
             try
             {
+                config.ApiVersion = NormalizeApiVersionString(config.ApiVersion) ?? NormalizeApiVersionString(GetRequestedApiVersion()) ?? "1";
                 await _configurationService.SaveStartupConfigAsync(config);
                 // Return the saved config to confirm what was persisted
                 var savedConfig = await _configurationService.GetStartupConfigAsync();
@@ -491,6 +493,7 @@ namespace Listenarr.Api.Controllers
                 {
                     return Ok(new StartupConfig());
                 }
+                savedConfig.ApiVersion = NormalizeApiVersionString(savedConfig.ApiVersion) ?? NormalizeApiVersionString(GetRequestedApiVersion()) ?? "1";
 
                 if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
                 {
@@ -503,6 +506,40 @@ namespace Listenarr.Api.Controllers
                 _logger.LogError(ex, "Error saving startup configuration");
                 return StatusCode(500, "Internal server error");
             }
+        }
+
+        private string? GetRequestedApiVersion()
+        {
+            try
+            {
+                if (RouteData?.Values?.TryGetValue("version", out var versionObj) == true)
+                {
+                    var value = versionObj?.ToString();
+                    if (!string.IsNullOrWhiteSpace(value)) return value;
+                }
+            }
+            catch { }
+
+            return null;
+        }
+
+        private static string? NormalizeApiVersionString(string? version)
+        {
+            if (string.IsNullOrWhiteSpace(version)) return null;
+            var trimmed = version.Trim();
+            if (trimmed.StartsWith('v') || trimmed.StartsWith('V'))
+            {
+                trimmed = trimmed[1..];
+            }
+
+            // Normalize equivalent forms like 1.0 / 1.0.0 to just 1.
+            if (System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^\d+(?:\.0+)+$"))
+            {
+                var major = trimmed.Split('.')[0];
+                return string.IsNullOrWhiteSpace(major) ? null : major;
+            }
+
+            return trimmed;
         }
 
         // Regenerate API key (requires authentication)

@@ -1,5 +1,6 @@
 import { apiService } from './api'
 import { logger } from '@/utils/logger'
+import { applyApiVersionFromStartupConfig } from './apiBase'
 
 type StartupConfig = import('@/types').StartupConfig
 
@@ -12,7 +13,8 @@ export let fetchCount = 0
 export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfig | null> {
   const now = Date.now()
   // If we have a cached value, check if it's a 401 fallback and use a longer TTL
-  const isAuthRequired = _cache && typeof _cache === 'object' && (_cache as any).authenticationRequired === true
+  const cacheObj = _cache as Record<string, unknown> | null
+  const isAuthRequired = !!(cacheObj && cacheObj.authenticationRequired === true)
   const effectiveTtl = isAuthRequired ? 300000 : ttlMs // 5 minutes for 401, else normal TTL
   if (_cacheTs !== 0 && now - _cacheTs <= effectiveTtl) return _cache
 
@@ -22,6 +24,7 @@ export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfi
       .getStartupConfig()
       .then((cfg) => {
         logger.debug('[startupConfigCache] Raw config response:', cfg)
+        applyApiVersionFromStartupConfig(cfg)
         _cache = cfg
         _cacheTs = Date.now()
         return cfg
