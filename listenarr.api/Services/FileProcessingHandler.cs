@@ -81,6 +81,8 @@ namespace Listenarr.Api.Services
 
             if (!string.IsNullOrEmpty(settings.OutputPath))
             {
+                var outputPath = settings.OutputPath;
+
                 // Simplified destination computation: use fileNamingService when available otherwise fallback
                 var ext = Path.GetExtension(sourcePath);
                 string generatedPath;
@@ -98,7 +100,7 @@ namespace Listenarr.Api.Services
                         metadata.Album = download.Album ?? string.Empty;
                     }
 
-                    generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, settings.OutputPath ?? string.Empty, null, null, ext);
+                    generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, outputPath, null, null, ext);
                 }
                 else
                 {
@@ -111,7 +113,7 @@ namespace Listenarr.Api.Services
                 }
                 else
                 {
-                    var outputRoot = settings.OutputPath ?? string.Empty;
+                    var outputRoot = outputPath;
                     var relativeGeneratedPath = generatedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                     if (string.IsNullOrWhiteSpace(outputRoot))
                     {
