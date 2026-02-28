@@ -38,7 +38,7 @@
 
             <div v-if="book.description" class="detail-section">
               <h4>Description</h4>
-              <div class="description" v-html="book.description"></div>
+              <div class="description">{{ stripHtmlAndNormalize(book.description) }}</div>
             </div>
 
             <div class="detail-section" id="add-library-desc">
@@ -248,6 +248,7 @@ import { useRootFoldersStore } from '@/stores/rootFolders'
 import { PhX, PhSpinner, PhPlus, PhImage } from '@phosphor-icons/vue' 
 import { toForward, normalizeForCompare } from '@/utils/path' 
 import { formatDate } from '@/utils/searchResultFormatting'
+import { stripHtmlAndNormalize } from '@/utils/textUtils'
 
 interface Props {
   visible: boolean
@@ -466,7 +467,7 @@ const seedPreview = async () => {
     if (props.book?.asin) {
       metadataLoading.value = true
       try {
-        const resp = await apiService.getMetadata(props.book.asin, 'us', true)
+        const resp = await apiService.getAudibleMetadata<any>(props.book.asin)
         if (resp && resp.metadata) {
           const enrichedMeta = mapAudimetaToAudible(resp.metadata, resp.source)
           // Sanitize seriesNumber to filter out the string "null"
@@ -824,6 +825,7 @@ const capitalizeFirst = (str: string): string => {
   color: #ccc;
   line-height: 1.6;
   margin: 0;
+  white-space: pre-wrap;
 }
 
 .detail-grid {

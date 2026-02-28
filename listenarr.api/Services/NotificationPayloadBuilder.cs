@@ -386,8 +386,7 @@ namespace Listenarr.Api.Services
                         logInfo?.Invoke($"Failed to download image for notification: {absoluteImageUrl} - HTTP {imageResponse.StatusCode}");
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     logDebug?.Invoke(ex, $"Error downloading image for notification from {absoluteImageUrl}: {ex.Message}");
                 }
             }
@@ -578,3 +577,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

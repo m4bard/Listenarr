@@ -8,6 +8,14 @@
         <CheckboxCard v-model="authEnabledComputed" title="Enable login screen" description="Toggle to enable the login screen. This setting reflects the server's AuthenticationRequired value from config.json. Changes here are local and will not modify server files — edit config/config.json on the host to persist." />
       </div>
 
+      <div class="form-group checkbox-group">
+        <CheckboxCard
+          v-model="hideNoAuthSecurityBanner"
+          title="Hide no-auth security warning banner"
+          description="Permanently hide the top warning banner on this browser when authentication is disabled. This applies immediately and does not require Save."
+        />
+      </div>
+
       <FormRow v-if="authEnabledComputed" label="Admin Account Management" help="To set or change the admin password, enter a new password and save settings. The username and password are configured in config/config.json.">
         <div class="admin-credentials">
           <input :value="settings.adminUsername" @input="e => updateField('adminUsername', (e.target as HTMLInputElement).value)" type="text" placeholder="Admin username" class="admin-input" />
@@ -23,13 +31,17 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import type { ApplicationSettings, StartupConfig } from '@/types'
 import { PhUserCircle } from '@phosphor-icons/vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 import PasswordInput from '@/components/form/PasswordInput.vue'
 import ApiKeyControl from '@/components/form/ApiKeyControl.vue'
 import FormRow from '@/components/settings/FormRow.vue'
+import {
+  getSecurityWarningBannerHiddenPreference,
+  setSecurityWarningBannerHiddenPreference,
+} from '@/utils/securityWarningBannerPreference'
 
 const props = defineProps<{
   settings: Partial<ApplicationSettings>
@@ -45,6 +57,16 @@ const emit = defineEmits<{
 const authEnabledComputed = computed({
   get: () => props.authEnabled,
   set: (v: boolean) => emit('update:authEnabled', v),
+})
+
+const hideNoAuthSecurityBanner = ref(false)
+
+onMounted(() => {
+  hideNoAuthSecurityBanner.value = getSecurityWarningBannerHiddenPreference()
+})
+
+watch(hideNoAuthSecurityBanner, (value) => {
+  setSecurityWarningBannerHiddenPreference(value)
 })
 
 function updateField(field: keyof ApplicationSettings, value: unknown) {

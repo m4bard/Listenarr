@@ -63,7 +63,7 @@
           >
             <div class="wanted-poster">
               <img
-                :src="apiService.getImageUrl(item.imageUrl) || getPlaceholderUrl()"
+                :src="getProtectedImageSrc(item.imageUrl, `wanted-${item.id}`, getPlaceholderUrl())"
                 :alt="item.title"
                 loading="lazy"
                 decoding="async"
@@ -198,8 +198,10 @@ import {
 } from '@phosphor-icons/vue'
 import { logger } from '@/utils/logger'
 import { useDownloadsStore } from '@/stores/downloads'
+import { useProtectedImages } from '@/composables/useProtectedImages'
 
 const downloadsStore = useDownloadsStore()
+const { getProtectedImageSrc } = useProtectedImages()
 
 const libraryStore = useLibraryStore()
 

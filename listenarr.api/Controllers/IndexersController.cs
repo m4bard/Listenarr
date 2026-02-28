@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -37,12 +37,71 @@ namespace Listenarr.Api.Controllers
         private readonly ListenArrDbContext _dbContext;
         private readonly ILogger<IndexersController> _logger;
         private readonly HttpClient _httpClient;
+        private readonly HttpClient _httpClientNoRedirect;
 
         public IndexersController(ListenArrDbContext dbContext, ILogger<IndexersController> logger, HttpClient httpClient)
         {
             _dbContext = dbContext;
             _logger = logger;
             _httpClient = httpClient;
+            _httpClientNoRedirect = httpClient;
+        }
+
+        private bool ShouldRedactIndexerSecretsForCaller()
+            => SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext);
+
+        private bool AllowPrivateOutboundTargetsForCaller()
+            => SecurityRequestUtils.IsLoopbackRequest(HttpContext) || SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(HttpContext);
+
+        private Indexer RedactIndexerForCaller(Indexer indexer)
+            => ShouldRedactIndexerSecretsForCaller() ? ApiResponseRedactor.RedactIndexer(indexer) : indexer;
+
+        private List<Indexer> RedactIndexersForCaller(IEnumerable<Indexer> indexers)
+            => ShouldRedactIndexerSecretsForCaller()
+                ? indexers.Select(ApiResponseRedactor.RedactIndexer).ToList()
+                : indexers.ToList();
+
+        private string? RedactMamIdForCaller(string? mamId)
+            => ShouldRedactIndexerSecretsForCaller() && !string.IsNullOrWhiteSpace(mamId)
+                ? ApiResponseRedactor.RedactedValue
+                : mamId;
+
+        private async Task<string?> ValidateOutboundUrlForCallerAsync(string url)
+        {
+            var allowPrivateTargets = AllowPrivateOutboundTargetsForCaller();
+            if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(url, out var reason, allowPrivateTargets))
+            {
+                return reason;
+            }
+
+            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+            {
+                var dnsOk = await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(uri, _logger, allowPrivateTargets);
+                if (!dnsOk)
+                {
+                    return "DNS resolved to private or loopback address";
+                }
+            }
+
+            return null;
+        }
+
+        private async Task<HttpResponseMessage> SendValidatedAsync(
+            Func<Uri, HttpRequestMessage> requestFactory,
+            string url,
+            HttpCompletionOption completionOption = HttpCompletionOption.ResponseContentRead,
+            CancellationToken cancellationToken = default)
+        {
+            var uri = new Uri(url);
+            var (response, _) = await OutboundRequestSecurity.SendWithValidatedRedirectsAsync(
+                requestFactory,
+                uri,
+                _httpClientNoRedirect,
+                _logger,
+                allowPrivateTargets: AllowPrivateOutboundTargetsForCaller(),
+                completionOption: completionOption,
+                cancellationToken: cancellationToken);
+            return response;
         }
 
         private async Task SaveTestResultAsync(Indexer indexer, bool persist, bool success, string? error)
@@ -85,12 +144,48 @@ namespace Listenarr.Api.Controllers
                     _ => await TestGenericIndexer(indexer, persist)
                 };
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
-                await SaveTestResultAsync(indexer, persist, false, ex.Message);
                 _logger.LogWarning(ex, "Indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
-                return BadRequest(new { success = false, message = "Indexer test failed", error = ex.Message, indexer });
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
             }
+            catch (TaskCanceledException ex)
+            {
+                _logger.LogWarning(ex, "Indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+            catch (UriFormatException ex)
+            {
+                _logger.LogWarning(ex, "Indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+            catch (System.Net.CookieException ex)
+            {
+                _logger.LogWarning(ex, "Indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+        }
+
+        private async Task<IActionResult> BuildIndexerTestBadRequestAsync(Indexer indexer, bool persist, string message, Exception ex)
+        {
+            await SaveTestResultAsync(indexer, persist, false, ex.Message);
+            return BadRequest(new
+            {
+                success = false,
+                message,
+                error = ex.Message,
+                indexer = RedactIndexerForCaller(indexer)
+            });
         }
 
         private async Task<IActionResult> TestGenericIndexer(Indexer indexer, bool persist)
@@ -112,7 +207,7 @@ namespace Listenarr.Api.Controllers
                     if (string.IsNullOrWhiteSpace(indexer.ApiKey))
                     {
                         await SaveTestResultAsync(indexer, persist, false, "API key is required for Newznab/Torznab indexers");
-                        return BadRequest(new { success = false, message = "API key is required for Newznab/Torznab indexers", indexer });
+                        return BadRequest(new { success = false, message = "API key is required for Newznab/Torznab indexers", indexer = RedactIndexerForCaller(indexer) });
                     }
                     
                     // Use search endpoint (t=search) instead of capabilities (t=caps) because
@@ -123,21 +218,29 @@ namespace Listenarr.Api.Controllers
                     testUrl = testUrl + "&apikey=" + System.Net.WebUtility.UrlEncode(indexer.ApiKey);
                 }
 
-                var request = new HttpRequestMessage(HttpMethod.Get, testUrl);
                 // Ensure User-Agent is present even if the injected HttpClient was created without defaults
                 var version = typeof(IndexersController).Assembly.GetName().Version?.ToString() ?? "0.0.0";
                 var userAgent = $"Listenarr/{version} (+https://github.com/listenarrs/listenarr)";
-                request.Headers.UserAgent.ParseAdd(userAgent);
-                // For Newznab/Torznab, also add API key as header (some servers support both)
-                // For other indexers, add header if API key is provided
-                if (!string.IsNullOrEmpty(indexer.ApiKey))
-                {
-                    request.Headers.Add("X-Api-Key", indexer.ApiKey);
-                }
 
                 _logger.LogInformation("[IndexerTest] GET {Url} UA={UserAgent}", LogRedaction.SanitizeUrl(testUrl), LogRedaction.SanitizeText(userAgent));
 
-                var response = await _httpClient.SendAsync(request);
+                var blockedReason = await ValidateOutboundUrlForCallerAsync(testUrl);
+                if (!string.IsNullOrWhiteSpace(blockedReason))
+                {
+                    await SaveTestResultAsync(indexer, persist, false, $"Blocked outbound target: {blockedReason}");
+                    return BadRequest(new { success = false, message = $"Blocked outbound target: {blockedReason}", indexer = RedactIndexerForCaller(indexer) });
+                }
+
+                using var response = await SendValidatedAsync(currentUri =>
+                {
+                    var retryRequest = new HttpRequestMessage(HttpMethod.Get, currentUri);
+                    retryRequest.Headers.UserAgent.ParseAdd(userAgent);
+                    if (!string.IsNullOrEmpty(indexer.ApiKey))
+                    {
+                        retryRequest.Headers.Add("X-Api-Key", indexer.ApiKey);
+                    }
+                    return retryRequest;
+                }, testUrl);
 
                 _logger.LogInformation("[IndexerTest] {Name} responded {StatusCode}", LogRedaction.SanitizeText(indexer.Name), (int)response.StatusCode);
                 
@@ -146,13 +249,13 @@ namespace Listenarr.Api.Controllers
                     response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
                     await SaveTestResultAsync(indexer, persist, false, $"Authentication failed: HTTP {(int)response.StatusCode}");
-                    return BadRequest(new { success = false, message = "Authentication failed", status = (int)response.StatusCode, indexer });
+                    return BadRequest(new { success = false, message = "Authentication failed", status = (int)response.StatusCode, indexer = RedactIndexerForCaller(indexer) });
                 }
                 
                 if (!response.IsSuccessStatusCode)
                 {
                     await SaveTestResultAsync(indexer, persist, false, $"HTTP {(int)response.StatusCode}");
-                    return BadRequest(new { success = false, message = "Generic indexer test failed", status = (int)response.StatusCode, indexer });
+                    return BadRequest(new { success = false, message = "Generic indexer test failed", status = (int)response.StatusCode, indexer = RedactIndexerForCaller(indexer) });
                 }
 
                 // For Newznab/Torznab, parse XML response to check for error elements
@@ -171,18 +274,37 @@ namespace Listenarr.Api.Controllers
                         
                         var failureMessage = isAuthError ? $"Authentication failed: {errorMessage}" : errorMessage;
                         await SaveTestResultAsync(indexer, persist, false, failureMessage);
-                        return BadRequest(new { success = false, message = failureMessage, indexer });
+                        return BadRequest(new { success = false, message = failureMessage, indexer = RedactIndexerForCaller(indexer) });
                     }
                 }
 
                 await SaveTestResultAsync(indexer, persist, true, null);
-                return Ok(new { success = true, message = "Indexer authentication successful", indexer });
+                return Ok(new { success = true, message = "Indexer authentication successful", indexer = RedactIndexerForCaller(indexer) });
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
-                await SaveTestResultAsync(indexer, persist, false, ex.Message);
                 _logger.LogWarning(ex, "Generic indexer test failed for {Name}", LogRedaction.SanitizeText(indexer.Name));
-                return BadRequest(new { success = false, message = "Indexer test failed", error = ex.Message, indexer });
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.LogWarning(ex, "Generic indexer test failed for {Name}", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Generic indexer test failed for {Name}", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+            catch (UriFormatException ex)
+            {
+                _logger.LogWarning(ex, "Generic indexer test failed for {Name}", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Generic indexer test failed for {Name}", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Indexer test failed", ex);
             }
         }
 
@@ -224,8 +346,7 @@ namespace Listenarr.Api.Controllers
                 
                 return null;
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // If we can't parse the XML, assume no error element
                 return null;
             }
@@ -242,7 +363,7 @@ namespace Listenarr.Api.Controllers
                 .ThenBy(i => i.Name)
                 .ToListAsync();
 
-            return Ok(indexers);
+            return Ok(RedactIndexersForCaller(indexers));
         }
 
         /// <summary>
@@ -257,7 +378,7 @@ namespace Listenarr.Api.Controllers
                 return NotFound(new { message = "Indexer not found" });
             }
 
-            return Ok(indexer);
+            return Ok(RedactIndexerForCaller(indexer));
         }
 
         /// <summary>
@@ -275,7 +396,7 @@ namespace Listenarr.Api.Controllers
             _logger.LogInformation("Created indexer '{Name}' (ID: {Id}, Type: {Type})",
                 indexer.Name, indexer.Id, indexer.Type);
 
-            return CreatedAtAction(nameof(GetById), new { id = indexer.Id }, indexer);
+            return CreatedAtAction(nameof(GetById), new { id = indexer.Id }, RedactIndexerForCaller(indexer));
         }
 
         /// <summary>
@@ -300,13 +421,33 @@ namespace Listenarr.Api.Controllers
             }
 
             var baseUrl = BuildProwlarrBaseUrl(request.Url, request.Port);
+            var blockedBaseUrlReason = await ValidateOutboundUrlForCallerAsync(baseUrl);
+            if (!string.IsNullOrWhiteSpace(blockedBaseUrlReason))
+            {
+                return BadRequest(new { message = $"Blocked Prowlarr target: {blockedBaseUrlReason}" });
+            }
             HttpResponseMessage response;
             string payload;
             try
             {
                 (response, payload) = await FetchProwlarrIndexersAsync(baseUrl, request.ApiKey.Trim());
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "Failed to reach Prowlarr at {Url}", LogRedaction.SanitizeUrl(baseUrl));
+                return StatusCode(502, new { message = "Failed to reach Prowlarr API" });
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.LogWarning(ex, "Failed to reach Prowlarr at {Url}", LogRedaction.SanitizeUrl(baseUrl));
+                return StatusCode(502, new { message = "Failed to reach Prowlarr API" });
+            }
+            catch (UriFormatException ex)
+            {
+                _logger.LogWarning(ex, "Failed to reach Prowlarr at {Url}", LogRedaction.SanitizeUrl(baseUrl));
+                return StatusCode(502, new { message = "Failed to reach Prowlarr API" });
+            }
+            catch (InvalidOperationException ex)
             {
                 _logger.LogWarning(ex, "Failed to reach Prowlarr at {Url}", LogRedaction.SanitizeUrl(baseUrl));
                 return StatusCode(502, new { message = "Failed to reach Prowlarr API" });
@@ -455,7 +596,7 @@ namespace Listenarr.Api.Controllers
 
             _logger.LogInformation("Updated indexer '{Name}' (ID: {Id})", existing.Name, existing.Id);
 
-            return Ok(existing);
+            return Ok(RedactIndexerForCaller(existing));
         }
 
         /// <summary>
@@ -536,7 +677,9 @@ namespace Listenarr.Api.Controllers
                     LogRedaction.SanitizeText(indexer.Name), LogRedaction.SanitizeText(collection));
 
                 // Make HTTP request
-                var response = await _httpClient.GetAsync(testUrl);
+                using var response = await SendValidatedAsync(
+                    currentUri => new HttpRequestMessage(HttpMethod.Get, currentUri),
+                    testUrl);
                 response.EnsureSuccessStatusCode();
 
                 // Parse JSON response
@@ -546,12 +689,12 @@ namespace Listenarr.Api.Controllers
                 // Validate response structure
                 if (!jsonDoc.RootElement.TryGetProperty("response", out var responseProperty))
                 {
-                    throw new Exception("Invalid response format: missing 'response' property");
+                    throw new InvalidOperationException("Invalid response format: missing 'response' property");
                 }
 
                 if (!responseProperty.TryGetProperty("docs", out var docsProperty))
                 {
-                    throw new Exception("Invalid response format: missing 'docs' property");
+                    throw new InvalidOperationException("Invalid response format: missing 'docs' property");
                 }
 
                 // Update indexer with success
@@ -565,22 +708,33 @@ namespace Listenarr.Api.Controllers
                     success = true,
                     message = $"Internet Archive connection successful for collection '{collection}'",
                     collection = collection,
-                    indexer
+                    indexer = RedactIndexerForCaller(indexer)
                 });
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
-                await SaveTestResultAsync(indexer, persist, false, ex.Message);
-
                 _logger.LogWarning(ex, "Internet Archive indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
-
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "Internet Archive test failed",
-                    error = ex.Message,
-                    indexer
-                });
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Internet Archive test failed", ex);
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.LogWarning(ex, "Internet Archive indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Internet Archive test failed", ex);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Internet Archive indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Internet Archive test failed", ex);
+            }
+            catch (UriFormatException ex)
+            {
+                _logger.LogWarning(ex, "Internet Archive indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Internet Archive test failed", ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Internet Archive indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+                return await BuildIndexerTestBadRequestAsync(indexer, persist, "Internet Archive test failed", ex);
             }
         }
 
@@ -612,7 +766,7 @@ namespace Listenarr.Api.Controllers
 
                 if (string.IsNullOrEmpty(mamId))
                 {
-                    throw new Exception("MAM ID is required for MyAnonamouse");
+                    throw new InvalidOperationException("MAM ID is required for MyAnonamouse");
                 }
 
                 // Build test URL (mam_id is sent as a cookie)
@@ -667,7 +821,14 @@ namespace Listenarr.Api.Controllers
                         cookieContainer.Add(wwwUri, new System.Net.Cookie("mam_id", mamId));
                     }
                 }
-                catch { }
+                catch (UriFormatException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to add www host alias cookie for MyAnonamouse test request to {Host}", baseUri.Host);
+                }
+                catch (System.Net.CookieException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to add www host alias cookie for MyAnonamouse test request to {Host}", baseUri.Host);
+                }
 
                 // Create HttpClientHandler with cookies
                 var handler = new HttpClientHandler
@@ -693,7 +854,7 @@ namespace Listenarr.Api.Controllers
                 // Validate response (MyAnonamouse returns JSON with data array)
                 if (!jsonDoc.RootElement.TryGetProperty("data", out _))
                 {
-                    throw new Exception("Invalid response format: missing 'data' property");
+                    throw new InvalidOperationException("Invalid response format: missing 'data' property");
                 }
 
                 // Update indexer with success
@@ -706,24 +867,49 @@ namespace Listenarr.Api.Controllers
                 {
                     success = true,
                     message = $"MyAnonamouse authentication successful with MAM ID '{mamId}'",
-                    mam_id = mamId,
-                    indexer
+                    mam_id = RedactMamIdForCaller(mamId),
+                    indexer = RedactIndexerForCaller(indexer)
                 });
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
             {
-                await SaveTestResultAsync(indexer, persist, false, ex.Message);
-
-                _logger.LogWarning(ex, "MyAnonamouse indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
-
-                return BadRequest(new
-                {
-                    success = false,
-                    message = "MyAnonamouse test failed",
-                    error = ex.Message,
-                    indexer
-                });
+                return await BuildMamTestFailureResultAsync(indexer, persist, ex);
             }
+            catch (TaskCanceledException ex)
+            {
+                return await BuildMamTestFailureResultAsync(indexer, persist, ex);
+            }
+            catch (UriFormatException ex)
+            {
+                return await BuildMamTestFailureResultAsync(indexer, persist, ex);
+            }
+            catch (System.Net.CookieException ex)
+            {
+                return await BuildMamTestFailureResultAsync(indexer, persist, ex);
+            }
+            catch (JsonException ex)
+            {
+                return await BuildMamTestFailureResultAsync(indexer, persist, ex);
+            }
+            catch (InvalidOperationException ex)
+            {
+                return await BuildMamTestFailureResultAsync(indexer, persist, ex);
+            }
+        }
+
+        private async Task<IActionResult> BuildMamTestFailureResultAsync(Indexer indexer, bool persist, Exception ex)
+        {
+            await SaveTestResultAsync(indexer, persist, false, ex.Message);
+
+            _logger.LogWarning(ex, "MyAnonamouse indexer '{Name}' test failed", LogRedaction.SanitizeText(indexer.Name));
+
+            return BadRequest(new
+            {
+                success = false,
+                message = "MyAnonamouse test failed",
+                error = ex.Message,
+                indexer = RedactIndexerForCaller(indexer)
+            });
         }
 
         /// <summary>
@@ -732,6 +918,9 @@ namespace Listenarr.Api.Controllers
         [HttpPost("{id}/debug-search")]
         public async Task<IActionResult> DebugMyAnonamouseSearch(int id, [FromBody] JsonElement body)
         {
+            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "indexers/debug-search");
+            if (gate != null) return gate;
+
             var indexer = await _dbContext.Indexers.FindAsync(id);
             if (indexer == null) return NotFound(new { message = "Indexer not found" });
 
@@ -753,7 +942,10 @@ namespace Listenarr.Api.Controllers
                         if (doc.RootElement.TryGetProperty("mam_id", out var mamIdProperty))
                             mamId = mamIdProperty.GetString() ?? string.Empty;
                     }
-                    catch { }
+                    catch (JsonException ex)
+                    {
+                        _logger.LogDebug(ex, "Failed parsing AdditionalSettings JSON for indexer {Id} during debug search", id);
+                    }
                 }
 
                 if (string.IsNullOrEmpty(mamId))
@@ -803,7 +995,14 @@ namespace Listenarr.Api.Controllers
                         cookieContainer.Add(wwwUri, new System.Net.Cookie("mam_id", mamId));
                     }
                 }
-                catch { }
+                catch (UriFormatException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to add www host alias cookie for MyAnonamouse debug search request to {Host}", baseUri.Host);
+                }
+                catch (System.Net.CookieException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to add www host alias cookie for MyAnonamouse debug search request to {Host}", baseUri.Host);
+                }
 
                 var handler = new HttpClientHandler { CookieContainer = cookieContainer, UseCookies = true };
                 using var client = new HttpClient(handler);
@@ -833,11 +1032,50 @@ namespace Listenarr.Api.Controllers
                         parsed = System.Text.Json.JsonSerializer.Deserialize<List<SearchResult>>(json, options) ?? new List<SearchResult>();
                     }
                 }
-                catch { }
+                catch (HttpRequestException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to evaluate local parsed search results for indexer {Id}", indexer.Id);
+                }
+                catch (TaskCanceledException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to evaluate local parsed search results for indexer {Id}", indexer.Id);
+                }
+                catch (JsonException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to evaluate local parsed search results for indexer {Id}", indexer.Id);
+                }
+                catch (UriFormatException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to evaluate local parsed search results for indexer {Id}", indexer.Id);
+                }
+                catch (InvalidOperationException ex)
+                {
+                    _logger.LogDebug(ex, "Failed to evaluate local parsed search results for indexer {Id}", indexer.Id);
+                }
 
                 return Ok(new { success = true, status = (int)response.StatusCode, raw, parsedCount = parsed.Count, parsed });
             }
-            catch (Exception ex)
+            catch (HttpRequestException ex)
+            {
+                _logger.LogWarning(ex, "MyAnonamouse debug search failed for indexer {Id}", id);
+                return BadRequest(new { success = false, error = ex.Message });
+            }
+            catch (TaskCanceledException ex)
+            {
+                _logger.LogWarning(ex, "MyAnonamouse debug search failed for indexer {Id}", id);
+                return BadRequest(new { success = false, error = ex.Message });
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "MyAnonamouse debug search failed for indexer {Id}", id);
+                return BadRequest(new { success = false, error = ex.Message });
+            }
+            catch (UriFormatException ex)
+            {
+                _logger.LogWarning(ex, "MyAnonamouse debug search failed for indexer {Id}", id);
+                return BadRequest(new { success = false, error = ex.Message });
+            }
+            catch (InvalidOperationException ex)
             {
                 _logger.LogWarning(ex, "MyAnonamouse debug search failed for indexer {Id}", id);
                 return BadRequest(new { success = false, error = ex.Message });
@@ -863,7 +1101,7 @@ namespace Listenarr.Api.Controllers
             _logger.LogInformation("Toggled indexer '{Name}' to {State}",
                 indexer.Name, indexer.IsEnabled ? "enabled" : "disabled");
 
-            return Ok(indexer);
+            return Ok(RedactIndexerForCaller(indexer));
         }
 
         /// <summary>
@@ -878,7 +1116,7 @@ namespace Listenarr.Api.Controllers
                 .ThenBy(i => i.Name)
                 .ToListAsync();
 
-            return Ok(indexers);
+            return Ok(RedactIndexersForCaller(indexers));
         }
 
         /// <summary>
@@ -957,10 +1195,12 @@ namespace Listenarr.Api.Controllers
 
             foreach (var endpoint in endpoints)
             {
-                var httpRequest = new HttpRequestMessage(HttpMethod.Get, endpoint);
-                httpRequest.Headers.Add("X-Api-Key", apiKey);
-
-                var response = await _httpClient.SendAsync(httpRequest);
+                var response = await SendValidatedAsync(currentUri =>
+                {
+                    var retryRequest = new HttpRequestMessage(HttpMethod.Get, currentUri);
+                    retryRequest.Headers.Add("X-Api-Key", apiKey);
+                    return retryRequest;
+                }, endpoint);
                 var body = await response.Content.ReadAsStringAsync();
 
                 if (response.IsSuccessStatusCode)
@@ -968,6 +1208,7 @@ namespace Listenarr.Api.Controllers
                     return (response, body);
                 }
 
+                lastResponse?.Dispose();
                 lastResponse = response;
                 lastPayload = body;
 

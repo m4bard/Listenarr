@@ -111,8 +111,7 @@ namespace Listenarr.Api.Services.Adapters
                                         _logger.LogDebug("qBittorrent TestConnection: login succeeded but no Set-Cookie header present for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                                     }
                                 }
-                                catch (Exception ex)
-                                {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                     _logger.LogDebug(ex, "qBittorrent TestConnection: unable to inspect login response headers for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                                 }
 
@@ -154,8 +153,7 @@ namespace Listenarr.Api.Services.Adapters
                                                 return (true, "Successfully connected to qBittorrent.");
                                         }
                                     }
-                                    catch (Exception ex)
-                                    {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogDebug(ex, "qBittorrent TestConnection: fallback local login attempt failed for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                                     }
                                 }
@@ -165,14 +163,15 @@ namespace Listenarr.Api.Services.Adapters
                             else
                             {
                                 var body = string.Empty;
-                                try { body = await loginResp.Content.ReadAsStringAsync(ct); } catch { }
+                                try { body = await loginResp.Content.ReadAsStringAsync(ct); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                }
                                 var redacted = LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
                                 _logger.LogWarning("qBittorrent TestConnection: login failed with status {Status} for client {ClientId} - {Body}", loginResp.StatusCode, LogRedaction.SanitizeText(client.Id), redacted);
                                 return (false, "qBittorrent: Connection to download client successful but could not authenticate. Please check username/password.");
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "qBittorrent TestConnection login attempt failed");
                             return (false, "Connection failed.");
                         }
@@ -198,7 +197,9 @@ namespace Listenarr.Api.Services.Adapters
                     {
                         if (disposeHttp)
                         {
-                            try { http?.Dispose(); } catch { }
+                            try { http?.Dispose(); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                            }
                         }
                     }
                 }
@@ -207,8 +208,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogDebug(tce, "qBittorrent TestConnection timed out");
                 return (false, "Connection timed out.");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "qBittorrent TestConnection failed");
                 return (false, "Connection failed.");
             }
@@ -300,8 +300,7 @@ namespace Listenarr.Api.Services.Adapters
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "Failed to parse qBittorrent 'before' torrents list (non-fatal)");
                         }
                     }
@@ -392,8 +391,7 @@ namespace Listenarr.Api.Services.Adapters
                                 }
                             }
                         }
-                        catch (Exception ex)
-                        {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                             _logger.LogDebug(ex, "Failed to parse qBittorrent 'after' torrents list (non-fatal)");
                         }
                     }
@@ -408,8 +406,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Unable to determine torrent hash after adding to qBittorrent for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                 return null;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "qBittorrent AddAsync failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id));
                 throw;
             }
@@ -466,8 +463,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogInformation("Removed torrent {Id} from qBittorrent (deleteFiles={DeleteFiles})", LogRedaction.SanitizeText(id), deleteFiles);
                 return true;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error removing torrent from qBittorrent: {Id}", LogRedaction.SanitizeText(id));
                 return false;
             }
@@ -608,8 +604,7 @@ namespace Listenarr.Api.Services.Adapters
                     });
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error getting qBittorrent queue - client may be unreachable");
             }
 
@@ -764,8 +759,7 @@ namespace Listenarr.Api.Services.Adapters
                     });
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error getting qBittorrent items - client may be unreachable");
             }
 
@@ -873,25 +867,19 @@ namespace Listenarr.Api.Services.Adapters
                 // In both cases, construct the full content path so the import targets the
                 // correct file/folder rather than the entire save_path directory.
                 var pathParts = fileName.Split('/');
-                string outputPath;
-                if (pathParts.Length > 1)
-                {
-                    // Multi-file torrent: use the top-level subfolder
-                    outputPath = System.IO.Path.Combine(savePath, pathParts[0]);
-                }
-                else
-                {
-                    // Single-file torrent: use the full file path
-                    outputPath = System.IO.Path.Combine(savePath, fileName);
-                }
+                var subfolder = pathParts.Length > 1 ? pathParts[0] : string.Empty;
+
+                // Construct output path
+                var outputPath = !string.IsNullOrEmpty(subfolder) 
+                    ? CombineWithOptionalBase(savePath, subfolder)
+                    : savePath;
 
                 // Apply remote path mapping
                 result.OutputPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
                 
                 _logger.LogInformation("Resolved import path for {Hash}: {Path}", hash, result.OutputPath);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error resolving import item for torrent {Hash}", hash);
             }
 
@@ -1006,29 +994,50 @@ namespace Listenarr.Api.Services.Adapters
                 // In both cases, construct the full content path so the import targets the
                 // correct file/folder rather than the entire save_path directory.
                 var pathParts = fileName.Split('/');
-                string outputPath;
-                if (pathParts.Length > 1)
-                {
-                    // Multi-file torrent: use the top-level subfolder
-                    outputPath = System.IO.Path.Combine(savePath, pathParts[0]);
-                }
-                else
-                {
-                    // Single-file torrent: use the full file path
-                    outputPath = System.IO.Path.Combine(savePath, fileName);
-                }
+                var subfolder = pathParts.Length > 1 ? pathParts[0] : string.Empty;
+
+                // Construct output path
+                var outputPath = !string.IsNullOrEmpty(subfolder) 
+                    ? CombineWithOptionalBase(savePath, subfolder)
+                    : savePath;
 
                 // ✅ Apply remote path mapping
                 result.ContentPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
                 
                 _logger.LogInformation("Resolved import path for {Hash}: {Path}", hash, result.ContentPath);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error resolving import item for torrent {Hash}", hash);
             }
 
             return result;
         }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
     }
 }
+

@@ -56,8 +56,7 @@ namespace Listenarr.Api.Services
                             job.SourcePath = translated;
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         job.AddLogEntry($"Path mapping failed: {ex.Message}");
                     }
                 }
@@ -82,6 +81,8 @@ namespace Listenarr.Api.Services
 
             if (!string.IsNullOrEmpty(settings.OutputPath))
             {
+                var outputPath = settings.OutputPath;
+
                 // Simplified destination computation: use fileNamingService when available otherwise fallback
                 var ext = Path.GetExtension(sourcePath);
                 string generatedPath;
@@ -99,16 +100,31 @@ namespace Listenarr.Api.Services
                         metadata.Album = download.Album ?? string.Empty;
                     }
 
-                    generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, settings.OutputPath ?? string.Empty, null, null, ext);
+                    generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, outputPath, null, null, ext);
                 }
                 else
                 {
                     generatedPath = Path.GetFileName(sourcePath);
                 }
 
-                destinationPath = Path.IsPathRooted(generatedPath)
-                    ? generatedPath
-                    : Path.Combine(settings.OutputPath ?? string.Empty, generatedPath);
+                if (Path.IsPathRooted(generatedPath))
+                {
+                    destinationPath = generatedPath;
+                }
+                else
+                {
+                    var outputRoot = outputPath;
+                    var relativeGeneratedPath = generatedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    if (string.IsNullOrWhiteSpace(outputRoot))
+                    {
+                        destinationPath = relativeGeneratedPath;
+                    }
+                    else
+                    {
+                        var normalizedOutputRoot = outputRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        destinationPath = normalizedOutputRoot + Path.DirectorySeparatorChar + relativeGeneratedPath;
+                    }
+                }
             }
 
             // Ensure unique destination and perform move/copy
@@ -153,8 +169,7 @@ namespace Listenarr.Api.Services
                                     throw new IOException("Hardlink failed");
                             }
                         }
-                        catch
-                        {
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                             File.Copy(sourcePath, uniqueDest, true);
                         }
                     }
@@ -180,8 +195,7 @@ namespace Listenarr.Api.Services
                 await downloadService.ProcessCompletedDownloadAsync(job.DownloadId, job.DestinationPath);
                 job.AddLogEntry($"Updated download record with final path: {job.DestinationPath}");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 job.AddLogEntry($"File operation failed: {ex.Message}");
                 job.ErrorMessage = ex.Message;
                 _logger.LogError(ex, "File operation failed for job {JobId}", job.Id);
@@ -190,3 +204,4 @@ namespace Listenarr.Api.Services
         }
     }
 }
+

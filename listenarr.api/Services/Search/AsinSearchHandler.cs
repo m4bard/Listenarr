@@ -68,8 +68,7 @@ public class AsinSearchHandler
                 _logger.LogInformation("Audimeta.de returned no data for ASIN {Asin}", asin);
             }
         }
-        catch (Exception ex)
-        {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
             _logger.LogDebug(ex, "Failed to get metadata from Audimeta.de for ASIN {Asin}", asin);
         }
 
@@ -97,8 +96,7 @@ public class AsinSearchHandler
                         }
                     }
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to get metadata from {Source} for ASIN {Asin}", source.Name, asin);
                 }
             }
@@ -155,3 +153,4 @@ public class AsinSearchHandler
         return new List<SearchResult>();
     }
 }
+

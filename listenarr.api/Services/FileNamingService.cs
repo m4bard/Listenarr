@@ -1,4 +1,4 @@
-﻿using System.Text;
+using System.Text;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Models;
 
@@ -89,9 +89,9 @@ namespace Listenarr.Api.Services
                 var dbg = string.Join(", ", variables.Select(kv => $"{kv.Key}='{kv.Value}'"));
                 _logger.LogInformation("FileNamingService variables: {Vars}", dbg);
             }
-            catch
-            {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // ignore logging errors
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             string relativePath;
@@ -127,7 +127,7 @@ namespace Listenarr.Api.Services
 
                 relativePath = string.IsNullOrWhiteSpace(folderRelative)
                     ? fileRelative
-                    : Path.Combine(folderRelative, fileRelative);
+                    : CombineWithOptionalBase(folderRelative, fileRelative);
             }
 
             // Ensure it has the correct extension
@@ -139,7 +139,7 @@ namespace Listenarr.Api.Services
             // Combine with output path if configured
             var fullPath = string.IsNullOrWhiteSpace(outputPath)
                 ? relativePath
-                : Path.Combine(outputPath, relativePath);
+                : CombineWithOptionalBase(outputPath, relativePath);
 
             _logger.LogInformation("Generated file path: {FilePath}", fullPath);
             return fullPath;
@@ -178,9 +178,9 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch
-            {
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                 // If paths are invalid, fall back to configured folder pattern
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             // Helper to pick the first non-empty value
@@ -232,9 +232,9 @@ namespace Listenarr.Api.Services
                 var dbg = string.Join(", ", variables.Select(kv => $"{kv.Key}='{kv.Value}'"));
                 _logger.LogInformation("FileNamingService variables (custom outputPath): {Vars}", dbg);
             }
-            catch
-            {
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                 // ignore logging errors
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             string relativePath;
@@ -270,7 +270,7 @@ namespace Listenarr.Api.Services
 
                 relativePath = string.IsNullOrWhiteSpace(folderRelative)
                     ? fileRelative
-                    : Path.Combine(folderRelative, fileRelative);
+                    : CombineWithOptionalBase(folderRelative, fileRelative);
             }
 
             // Ensure it has the correct extension
@@ -282,7 +282,7 @@ namespace Listenarr.Api.Services
             // Combine with the provided output path
             var fullPath = string.IsNullOrWhiteSpace(outputPath)
                 ? relativePath
-                : Path.Combine(outputPath, relativePath);
+                : CombineWithOptionalBase(outputPath, relativePath);
 
             _logger.LogInformation("Generated file path with custom output path: {FilePath}", fullPath);
             return fullPath;
@@ -345,8 +345,8 @@ namespace Listenarr.Api.Services
             result = Regex.Replace(result, @"[\(\[\{]\s*" + EmptySentinel + @"\s*[\)\]\}]", string.Empty);
 
             // Remove common separators adjacent to the sentinel (e.g. " - __EMPTY_VAR__" or "__EMPTY_VAR__ - ")
-            result = Regex.Replace(result, @"\s*[-â€“â€”:_]\s*" + EmptySentinel, string.Empty);
-            result = Regex.Replace(result, EmptySentinel + @"\s*[-â€“â€”:_]\s*", string.Empty);
+            result = Regex.Replace(result, @"\s*[-–—:_]\s*" + EmptySentinel, string.Empty);
+            result = Regex.Replace(result, EmptySentinel + @"\s*[-–—:_]\s*", string.Empty);
 
             // Remove sentinel next to slashes
             result = Regex.Replace(result, @"/?" + EmptySentinel + @"/?", "/");
@@ -432,6 +432,32 @@ namespace Listenarr.Api.Services
             }
 
             return result;
+        }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
     }
 }

@@ -1,7 +1,29 @@
 <template>
-  <div id="app">
+  <div id="app" :style="appShellCssVars">
+    <div
+      v-if="showSecurityWarningBanner"
+      class="security-warning-banner"
+      role="status"
+      aria-live="polite"
+    >
+      <span class="security-warning-text">
+        Authentication is disabled. This mode is intended for trusted local networks only. If this
+        app is exposed to the internet, enable Listenarr authentication or protect it with reverse
+        proxy authentication.
+      </span>
+      <button
+        class="security-warning-dismiss"
+        type="button"
+        @click="dismissSecurityWarning"
+        aria-label="Dismiss security warning"
+        title="Dismiss"
+      >
+        <PhX />
+      </button>
+    </div>
+
     <!-- Top Navigation Bar -->
-    <header v-if="!hideLayout" class="top-nav">
+    <header v-if="!hideLayout" class="top-nav" :class="{ 'auth-warning-visible': showSecurityWarningBanner }">
       <div class="nav-brand">
         <RouterLink to="/" class="brand-link" @click="closeMobileMenu">
           <div class="brand-logo-wrap" aria-hidden="true"><BrandLogo /></div>
@@ -60,7 +82,7 @@
                 <div style="display: flex; align-items: center; gap: 10px">
                   <img
                     v-if="s.imageUrl"
-                    :src="apiService.getImageUrl(s.imageUrl) || getPlaceholderUrl()"
+                    :src="getProtectedImageSrc(s.imageUrl, `app-suggestion-${s.id}`, getPlaceholderUrl())"
                     @error="handleImageError"
                     alt="cover"
                     class="result-thumb"
@@ -169,9 +191,22 @@
       </div>
     </header>
 
-    <div :class="['app-layout', { 'no-top': hideLayout }]">
+    <div
+      :class="[
+        'app-layout',
+        {
+          'no-top': hideLayout,
+          'auth-warning-visible': showSecurityWarningBanner,
+        },
+      ]"
+    >
       <!-- Sidebar Navigation -->
-      <aside v-if="!hideLayout" class="sidebar" :class="{ open: mobileMenuOpen }" ref="sidebarRef">
+      <aside
+        v-if="!hideLayout"
+        class="sidebar"
+        :class="{ open: mobileMenuOpen, 'auth-warning-visible': showSecurityWarningBanner }"
+        ref="sidebarRef"
+      >
         <nav class="sidebar-nav">
           <div class="nav-section">
             <RouterLink
@@ -463,9 +498,11 @@ import { useNotification } from '@/composables/useNotification'
 import { useDownloadsStore } from '@/stores/downloads'
 import { useAuthStore } from '@/stores/auth'
 import { apiService } from '@/services/api'
+import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { handleImageError } from '@/utils/imageFallback'
 import { Pill } from '@/components/base'
 import { getPlaceholderUrl } from '@/utils/placeholder'
+import { useProtectedImages } from '@/composables/useProtectedImages'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
 import type { QueueItem } from '@/types'
@@ -474,12 +511,22 @@ import GlobalToast from '@/components/ui/GlobalToast.vue'
 import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
 import BrandLogo from '@/components/base/BrandLogo.vue'
+import {
+  SECURITY_WARNING_BANNER_PREF_EVENT,
+  SECURITY_WARNING_BANNER_PREF_KEY,
+  getSecurityWarningBannerHiddenPreference,
+} from '@/utils/securityWarningBannerPreference'
 
+const STARTUP_CONFIG_UPDATED_EVENT = 'listenarr-startup-config-updated'
 
 const { notification, close: closeNotification } = useNotification()
+const { getProtectedImageSrc } = useProtectedImages()
 const downloadsStore = useDownloadsStore()
 const auth = useAuthStore()
 const authEnabled = ref(false)
+const startupConfigLoaded = ref(false)
+const securityWarningDismissed = ref(false)
+const securityWarningPermanentlyHidden = ref(getSecurityWarningBannerHiddenPreference())
 // Hover and persistence state for sidebar subnavs
 const hoverNav = ref<string | null>(null)
 const persistentNav = ref<string | null>(null)
@@ -503,6 +550,8 @@ onMounted(() => {
   } catch {
     isTouchDevice.value = false
   }
+
+  refreshSecurityWarningBannerPreference()
 })
 
 function onNavMouseEnter(name: string) {
@@ -941,6 +990,69 @@ watch(
   },
 )
 
+const parseAuthEnabledFromStartupConfig = (raw: unknown): boolean | null => {
+  if (typeof raw === 'boolean') return raw
+  if (typeof raw === 'string') {
+    const normalized = raw.toLowerCase().trim()
+    if (
+      normalized === 'enabled' ||
+      normalized === 'true' ||
+      normalized === 'yes' ||
+      normalized === '1'
+    )
+      return true
+    if (
+      normalized === 'disabled' ||
+      normalized === 'false' ||
+      normalized === 'no' ||
+      normalized === '0'
+    )
+      return false
+  }
+  return null
+}
+
+const refreshAuthPresentationFromStartupConfig = async (force: boolean = false) => {
+  try {
+    // Use cached startup-config helper so unauthenticated 401 is interpreted as
+    // "authentication required" instead of forcing authEnabled=false.
+    let cfg = await getStartupConfigCached(force ? 0 : 5000)
+    // If cache currently holds a transient failure (`null`), force a direct fetch once
+    // so we don't pin authEnabled=false for the whole session.
+    if (!cfg) {
+      try {
+        cfg = await apiService.getStartupConfig()
+      } catch (err) {
+        const status = (err as { status?: number } | null)?.status
+        if (status === 401) {
+          cfg = { authenticationRequired: true } as Record<string, unknown>
+        } else {
+          throw err
+        }
+      }
+    }
+    const obj = cfg as Record<string, unknown> | null
+    const raw = obj ? (obj['authenticationRequired'] ?? obj['AuthenticationRequired']) : undefined
+    const parsedAuthEnabled = parseAuthEnabledFromStartupConfig(raw)
+    // Only show the "auth disabled" banner when startup config explicitly says auth is off.
+    // Unknown/missing/transient states should not be treated as disabled.
+    authEnabled.value = parsedAuthEnabled ?? true
+    logger.debug('Startup config refreshed', { authEnabled: authEnabled.value, cfg, force })
+  } catch {
+    // Avoid false-positive no-auth warning banner when startup config fetch is transiently unavailable.
+    authEnabled.value = true
+  } finally {
+    startupConfigLoaded.value = true
+  }
+}
+
+watch(
+  () => auth.user.authenticated,
+  () => {
+    void refreshAuthPresentationFromStartupConfig(true)
+  },
+)
+
 // (notificationRef and click-outside handler are declared earlier)
 
 // Initialize: Subscribe to SignalR for real-time updates (NO POLLING!)
@@ -1142,23 +1254,7 @@ onMounted(async () => {
   startWantedBadgePolling()
 
   logger.info('✅ Real-time updates enabled - Activity badge updates automatically via SignalR!')
-  // Fetch startup config (do this regardless of auth so header/login visibility can be known)
-  try {
-    const cfg = await apiService.getStartupConfig()
-    // Accept both camelCase and PascalCase variants from backend (some responses use PascalCase)
-    const obj = cfg as Record<string, unknown> | null
-    const raw = obj ? (obj['authenticationRequired'] ?? obj['AuthenticationRequired']) : undefined
-    const v = raw as unknown
-    authEnabled.value =
-      typeof v === 'boolean'
-        ? v
-        : typeof v === 'string'
-          ? v.toLowerCase() === 'enabled' || v.toLowerCase() === 'true'
-          : false
-    logger.debug('Startup config fetched', { authEnabled: authEnabled.value, cfg })
-  } catch {
-    authEnabled.value = false
-  }
+  await refreshAuthPresentationFromStartupConfig(true)
 
   // Fetch version from API
   try {
@@ -1180,6 +1276,17 @@ onMounted(async () => {
   useEventListener(document, 'click', handleDocumentClick)
   useEventListener(document, 'click', handleSearchDocumentClick)
   useEventListener(document, 'click', handleNotificationDocumentClick)
+  useEventListener(window, 'storage', (event: StorageEvent) => {
+    if (event.key === SECURITY_WARNING_BANNER_PREF_KEY) {
+      refreshSecurityWarningBannerPreference()
+    }
+  })
+  useEventListener(window, SECURITY_WARNING_BANNER_PREF_EVENT, () => {
+    refreshSecurityWarningBannerPreference()
+  })
+  useEventListener(window, STARTUP_CONFIG_UPDATED_EVENT, () => {
+    void refreshAuthPresentationFromStartupConfig(true)
+  })
 })
 
 onUnmounted(() => {
@@ -1214,6 +1321,41 @@ const hideLayout = computed(() => {
   return !!(meta && meta.hideLayout)
 })
 
+const refreshSecurityWarningBannerPreference = () => {
+  const nextValue = getSecurityWarningBannerHiddenPreference()
+  const wasPermanentlyHidden = securityWarningPermanentlyHidden.value
+  securityWarningPermanentlyHidden.value = nextValue
+
+  if (wasPermanentlyHidden && !nextValue) {
+    securityWarningDismissed.value = false
+  }
+}
+
+const showSecurityWarningBanner = computed(
+  () =>
+    !hideLayout.value &&
+    startupConfigLoaded.value &&
+    !authEnabled.value &&
+    !securityWarningDismissed.value &&
+    !securityWarningPermanentlyHidden.value,
+)
+
+const dismissSecurityWarning = () => {
+  securityWarningDismissed.value = true
+}
+
+const appShellCssVars = computed(() => {
+  const topNavHeightPx = 60
+  const bannerHeightPx = showSecurityWarningBanner.value ? 44 : 0
+  const topOffsetPx = hideLayout.value ? 0 : topNavHeightPx + bannerHeightPx
+
+  return {
+    '--top-nav-height': `${topNavHeightPx}px`,
+    '--security-banner-height': `${bannerHeightPx}px`,
+    '--app-top-offset': `${topOffsetPx}px`,
+  } as Record<string, string>
+})
+
 // Note: Backend connection indicator was moved to the System view.
 </script>
 
@@ -1233,10 +1375,16 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 
 <style scoped>
 #app {
+  --top-nav-height: 60px;
+  --security-banner-height: 0px;
+  --app-top-offset: var(--top-nav-height);
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   margin: 0;
   padding: 0;
-  min-height: calc(100vh - 60px);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 100dvh;
   background-color: #1a1a1a;
   color: white;
 }
@@ -1246,15 +1394,70 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   background-color: #2a2a2a;
   border-bottom: 1px solid #3a3a3a;
   padding: 0 1rem;
-  height: 60px;
+  height: var(--top-nav-height);
   display: flex;
   justify-content: space-between;
   align-items: center;
   position: fixed;
-  top: 0;
+  top: var(--security-banner-height);
   left: 0;
   right: 0;
   z-index: 1000;
+}
+
+.top-nav.auth-warning-visible {
+  top: var(--security-banner-height);
+}
+
+.security-warning-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1002;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: linear-gradient(180deg, #5f2a1b 0%, #4a2116 100%);
+  border-bottom: 1px solid rgba(255, 183, 77, 0.28);
+  color: #ffd8a8;
+  padding: 0 1rem;
+  font-size: 0.9rem;
+  line-height: 1.3;
+}
+
+.security-warning-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.security-warning-dismiss {
+  flex: 0 0 auto;
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 216, 168, 0.22);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.security-warning-dismiss:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 216, 168, 0.35);
+}
+
+.security-warning-dismiss:focus-visible {
+  outline: 2px solid rgba(255, 216, 168, 0.5);
+  outline-offset: 1px;
 }
 
 .nav-brand {
@@ -1448,12 +1651,15 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 /* App Layout */
 .app-layout {
   display: flex;
-  margin-top: 60px;
-  min-height: calc(100vh - 60px);
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-top: var(--app-top-offset);
+  min-height: calc(100dvh - var(--app-top-offset));
 }
 
 .app-layout.no-top {
   margin-top: 0;
+  min-height: 100dvh;
 }
 
 /* Sidebar */
@@ -1463,9 +1669,13 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   border-right: 1px solid #3a3a3a;
   position: fixed;
   left: 0;
-  top: 60px;
+  top: var(--app-top-offset);
   bottom: 0;
   overflow-y: auto;
+}
+
+.sidebar.auth-warning-visible {
+  top: var(--app-top-offset);
 }
 
 .sidebar-nav {
@@ -1575,7 +1785,8 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   flex: 1;
   margin-left: 200px;
   background-color: #1a1a1a;
-  min-height: calc(100vh - 60px);
+  min-width: 0;
+  min-height: calc(100dvh - var(--app-top-offset));
   width: calc(100vw - 217px);
 }
 
@@ -1585,8 +1796,8 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   display: flex;
   align-items: center;
   justify-content: center;
-  /* Account for the fixed 60px top nav so content centers in remaining viewport */
-  min-height: calc(100vh - 60px);
+  /* Account for the current fixed top chrome (nav + optional security banner). */
+  min-height: calc(100dvh - var(--app-top-offset));
 }
 
 .fullpage-wrapper {
@@ -1660,7 +1871,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   /* Backdrop for slide-out sidebar on mobile */
   .sidebar-backdrop {
     position: fixed;
-    top: 60px; /* below fixed top-nav */
+    top: var(--app-top-offset); /* below fixed top chrome */
     left: 0;
     right: 0;
     bottom: 0;

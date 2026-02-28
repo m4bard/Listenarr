@@ -61,12 +61,15 @@
       <slot name="series">
         <div
           v-if="
-            (book.searchResult?.series && book.searchResult.series.length > 0) ||
-            (book.searchResult?.seriesNumber && book.searchResult.seriesNumber.length > 0) ||
-            (book.seriesList && book.seriesList.length > 0)
+            (typeof book.searchResult?.series === 'string' && book.searchResult.series.trim().length > 0) ||
+            (Array.isArray(book.seriesList) && book.seriesList.some(s => typeof s === 'string' && s.trim().length > 0))
           "
           class="result-series"
         >
+          <!-- Debug output: log series and seriesList values -->
+          <pre style="font-size:10px;color:#888;background:#f9f9f9;padding:2px 4px;margin-bottom:2px;">
+            series: {{ JSON.stringify(book.searchResult?.series) }} | seriesList: {{ JSON.stringify(book.seriesList) }}
+          </pre>
           <span
             class="series-badge"
             :title="book.searchResult?.seriesList?.length ? book.searchResult.seriesList.join(', ') : `${book.searchResult?.series}${book.searchResult?.seriesNumber ? ` #${book.searchResult.seriesNumber}` : ''}`"

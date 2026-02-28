@@ -351,3 +351,49 @@ export const normalizeResultMetadata = (
   primaryId: getPrimaryId(result),
   isAudimeta: isAudimetaSource(result),
 })
+
+/**
+ * Safely return an optional string value from loosely-shaped API responses.
+ * If the value is an array, returns the first non-empty string. If it's an
+ * object, attempts to coerce a meaningful string. Otherwise returns undefined.
+ */
+export const getOptionalString = (val: unknown): string | undefined => {
+  if (val === undefined || val === null) return undefined
+  if (Array.isArray(val)) {
+    for (const v of val) {
+      if (typeof v === 'string' && v.trim()) return v.trim()
+    }
+    return undefined
+  }
+  if (typeof val === 'string') return val.trim() || undefined
+  if (typeof val === 'object') {
+    try {
+      const obj = val as Record<string, unknown>
+      // Common patterns: { value: '...' } or { text: '...' }
+      if (typeof obj['value'] === 'string' && obj['value'].trim()) return obj['value'].trim()
+      if (typeof obj['text'] === 'string' && obj['text'].trim()) return obj['text'].trim()
+      // Fallback to JSON string
+      const s = JSON.stringify(obj)
+      return s === '{}' ? undefined : s
+    } catch {
+      return undefined
+    }
+  }
+  return String(val)
+}
+
+/**
+ * Heuristic check whether an OpenLibrary-style book object is addable via
+ * the Add New flow. Requires a title and at least one ISBN (string) present.
+ */
+export const canAddOpenLibraryResult = (book: unknown): boolean => {
+  if (!book || typeof book !== 'object') return false
+  const b = book as Record<string, unknown>
+  const title = (b['title'] ?? b['Title']) as unknown
+  if (!title || (typeof title === 'string' && !title.trim())) return false
+  const isbn = b['isbn'] ?? b['ISBN']
+  if (!isbn) return false
+  if (Array.isArray(isbn) && isbn.length > 0 && typeof isbn[0] === 'string' && isbn[0].trim()) return true
+  if (typeof isbn === 'string' && isbn.trim()) return true
+  return false
+}

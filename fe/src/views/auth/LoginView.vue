@@ -2,7 +2,6 @@
   <div class="login-page">
     <div class="login-card" role="main" aria-labelledby="login-title">
       <img :src="logoUrl" alt="Listenarr" class="login-logo" />
-      <h2 id="login-title" class="title">Sign in</h2>
 
       <form class="login-form" @submit.prevent="onSubmit" aria-live="polite">
         <div class="form-row">
@@ -208,6 +207,7 @@ export default defineComponent({
 .form-row {
   display: flex;
   flex-direction: column;
+  gap: 0.5rem;
 }
 
 .form-row:has(.btn-primary) {
@@ -222,6 +222,14 @@ export default defineComponent({
   font-weight: 600;
   border-radius: 8px;
   text-align: center;
+  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  transform: none;
+}
+
+.login-form .form-row .btn-primary:hover:not(:disabled),
+.login-form .form-row .btn-primary:active:not(:disabled),
+.login-form .form-row .btn-primary:disabled {
+  transform: none;
 }
 
 .login-form .form-row .btn-primary span {
@@ -229,7 +237,7 @@ export default defineComponent({
 }
 
 .form-label {
-  margin-bottom: 0.5rem;
+  margin-bottom: 0;
   color: #ccc;
   font-size: 0.9rem;
 }
@@ -302,8 +310,8 @@ export default defineComponent({
 
 .spinner {
   display: inline-block;
-  width: 14px;
-  height: 14px;
+  width: 26px !important;
+  height: 20px;
   border: 2px solid rgba(255, 255, 255, 0.15);
   border-top-color: white;
   border-radius: 50%;

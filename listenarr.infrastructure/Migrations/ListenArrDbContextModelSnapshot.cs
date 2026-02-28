@@ -229,7 +229,7 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Property<string>("ImageUrl")
                         .HasColumnType("TEXT");
 
-                    b.Property<string>("Isbn")
+                    b.PrimitiveCollection<string>("Isbn")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Language")
@@ -292,6 +292,61 @@ namespace Listenarr.Infrastructure.Migrations
                     b.HasIndex("QualityProfileId");
 
                     b.ToTable("Audiobooks");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Models.AudiobookExternalIdentifier", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Region")
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Type")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("UpdatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ValueNormalized")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("ValueRaw")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AudiobookId");
+
+                    b.HasIndex("Type", "ValueNormalized");
+
+                    b.HasIndex("AudiobookId", "Type", "IsPrimary");
+
+                    b.HasIndex("Type", "ValueNormalized", "Region");
+
+                    b.ToTable("AudiobookExternalIdentifiers", (string)null);
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Models.AudiobookFile", b =>
@@ -1037,6 +1092,15 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Navigation("QualityProfile");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Models.AudiobookExternalIdentifier", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Models.Audiobook", null)
+                        .WithMany("ExternalIdentifiers")
+                        .HasForeignKey("AudiobookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Models.AudiobookFile", b =>
                 {
                     b.HasOne("Listenarr.Domain.Models.Audiobook", "Audiobook")
@@ -1050,6 +1114,8 @@ namespace Listenarr.Infrastructure.Migrations
 
             modelBuilder.Entity("Listenarr.Domain.Models.Audiobook", b =>
                 {
+                    b.Navigation("ExternalIdentifiers");
+
                     b.Navigation("Files");
                 });
 #pragma warning restore 612, 618

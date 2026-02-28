@@ -186,7 +186,7 @@
               <div
                 class="audiobook-poster-container author-poster"
                 :data-author-name="collection.name"
-                :data-author-has-cover="getAuthorImageUrl(collection) ? '1' : ''"
+                :data-author-has-cover="authorHasSpecificCoverMap[collection.name] ? '1' : ''"
               >
                 <div class="series-count-badge">{{ collection.count }}</div>
                 <div
@@ -197,8 +197,12 @@
                   v-if="getAuthorImageUrl(collection)"
                   class="audiobook-poster author-cover lazy-img"
                   :class="{ loaded: authorImageLoaded[collection.name] }"
-                  :data-src="apiService.getImageUrl(getAuthorImageUrl(collection))"
-                  :src="getPlaceholderUrl()"
+                  :src="
+                    getProtectedImageSrc(
+                      getAuthorImageUrl(collection),
+                      `author:${collection.name}:${getAuthorImageUrl(collection) || ''}`,
+                    ) || getPlaceholderUrl()
+                  "
                   :alt="collection.name"
                   loading="lazy"
                   decoding="async"
@@ -238,7 +242,12 @@
                     <div
                       class="series-single-bg"
                       :style="{
-                        backgroundImage: `url(${apiService.getImageUrl(collection.coverUrls[0]) || getPlaceholderUrl()})`,
+                        backgroundImage: `url(${
+                          getProtectedImageSrc(
+                            collection.coverUrls[0],
+                            `series-bg:${collection.name}:${collection.coverUrls[0] || ''}`,
+                          ) || getPlaceholderUrl()
+                        })`,
                       }"
                     />
                     <div
@@ -247,7 +256,10 @@
                     >
                       <img
                         :src="
-                          apiService.getImageUrl(collection.coverUrls[0]) || getPlaceholderUrl()
+                          getProtectedImageSrc(
+                            collection.coverUrls[0],
+                            `series:${collection.name}:0:${collection.coverUrls[0] || ''}`,
+                          ) || getPlaceholderUrl()
                         "
                         :alt="`${collection.name} Cover`"
                         class="series-cover-image centered"
@@ -269,7 +281,12 @@
                       :style="getCoverStyle(index, collection.coverUrls.length)"
                     >
                       <img
-                        :src="apiService.getImageUrl(coverUrl) || getPlaceholderUrl()"
+                        :src="
+                          getProtectedImageSrc(
+                            coverUrl,
+                            `series:${collection.name}:${index}:${coverUrl || ''}`,
+                          ) || getPlaceholderUrl()
+                        "
                         :alt="`${collection.name} Cover`"
                         class="series-cover-image"
                         loading="lazy"
@@ -351,7 +368,7 @@
               <div class="row-click-target" @click="navigateToDetail(audiobook.id)" />
               <div
                 class="selection-checkbox"
-                @click.stop="handleCheckboxClick(audiobook, 0, $event)"
+                @click.stop="handleCheckboxClick(audiobook, $event)"
                 @mousedown.prevent
               >
                 <input
@@ -363,7 +380,12 @@
               </div>
               <div class="audiobook-poster-container" :class="{ 'show-details': showItemDetails }">
                 <img
-                  :src="apiService.getImageUrl(audiobook.imageUrl) || getPlaceholderUrl()"
+                  :src="
+                    getProtectedImageSrc(
+                      getBookImageUrl(audiobook),
+                      `book:${audiobook.id}:${getBookImageUrl(audiobook) || ''}`,
+                    ) || getPlaceholderUrl()
+                  "
                   :alt="audiobook.title"
                   class="audiobook-poster"
                   loading="lazy"
@@ -471,7 +493,7 @@
           >
             <div
               class="selection-checkbox"
-              @click.stop="handleCheckboxClick(audiobook, 0, $event)"
+              @click.stop="handleCheckboxClick(audiobook, $event)"
               @mousedown.prevent
             >
               <input
@@ -483,7 +505,12 @@
             </div>
             <img
               class="list-thumb"
-              :src="apiService.getImageUrl(audiobook.imageUrl) || getPlaceholderUrl()"
+              :src="
+                getProtectedImageSrc(
+                  getBookImageUrl(audiobook),
+                  `book:${audiobook.id}:${getBookImageUrl(audiobook) || ''}`,
+                ) || getPlaceholderUrl()
+              "
               :alt="audiobook.title"
               loading="lazy"
               decoding="async"
@@ -669,6 +696,7 @@ import { safeText } from '@/utils/textUtils'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { observeLazyImages } from '@/utils/lazyLoad'
 import { errorTracking } from '@/services/errorTracking'
+import { isLikelyBackendImageUrl, useProtectedImages } from '@/composables/useProtectedImages'
 
 function getAuthorSortKey(author: string): string {
   const parts = author.trim().split(/\s+/)
@@ -706,6 +734,7 @@ const libraryStore = useLibraryStore()
 const configStore = useConfigurationStore()
 const rootFoldersStore = useRootFoldersStore()
 const downloadsStore = useDownloadsStore()
+const { getProtectedImageSrc, clearProtectedImages } = useProtectedImages()
 
 // Computed list after applying search, filters and sorting
 const searchQuery = ref('')
@@ -1024,12 +1053,34 @@ const authorCoverOverrides = reactive<Record<string, string>>({})
 const authorCoverLoading = reactive<Record<string, boolean>>({})
 const authorImageLoaded = reactive<Record<string, boolean>>({})
 
+function isPlaceholderCoverUrl(url: string | undefined): boolean {
+  const v = (url || '').trim()
+  if (!v) return true
+  return (
+    v === '/placeholder.svg' ||
+    v === 'placeholder.svg' ||
+    v.endsWith('/placeholder.svg') ||
+    v.includes('/placeholder.svg?')
+  )
+}
+
+function getBookImageUrl(book: Pick<Audiobook, 'imageUrl' | 'asin'> | null | undefined): string | undefined {
+  if (!book) return undefined
+  const raw = (book.imageUrl || '').trim()
+  if (raw && !isPlaceholderCoverUrl(raw)) return raw
+  const asin = (book.asin || '').trim()
+  if (asin) return `/api/images/${encodeURIComponent(asin)}`
+  return raw || undefined
+}
+
 function getAuthorImageUrl(collection: { name: string; coverUrl?: string }) {
   const override = authorCoverOverrides[collection.name]
   if (override) return override
-  if (collection.coverUrl && collection.coverUrl.includes('/config/cache/images/authors/')) {
-    return collection.coverUrl
-  }
+  const cover = collection.coverUrl?.trim()
+  if (!cover || isPlaceholderCoverUrl(cover)) return undefined
+  if (isLikelyBackendImageUrl(cover)) return cover
+  if (cover.startsWith('http://') || cover.startsWith('https://')) return cover
+  if (cover.startsWith('/')) return cover
   return undefined
 }
 
@@ -1067,7 +1118,7 @@ async function ensureAuthorCover(authorName: string) {
     if (info.cachedPath) {
       authorCoverOverrides[authorName] = info.cachedPath
     } else if (info.asin) {
-      authorCoverOverrides[authorName] = `/config/cache/images/authors/${info.asin}.jpg`
+      authorCoverOverrides[authorName] = `/api/images/${encodeURIComponent(info.asin)}`
     }
     try {
       await nextTick()
@@ -1158,7 +1209,7 @@ const groupedCollections = computed(() => {
           if (!cover) {
             try {
               const asin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
-              if (asin) cover = `/config/cache/images/authors/${asin}.jpg`
+              if (asin) cover = `/api/images/${encodeURIComponent(asin)}`
             } catch {}
           }
 
@@ -1169,15 +1220,16 @@ const groupedCollections = computed(() => {
       }
       const group = groups.get(key)!
       group.count++
-      // For authors: if no explicit author cover is available yet, use the
-      // first book's cover as a sensible fallback so the UI and tests show
-      // a representative image for the author collection.
-      if (groupBy.value === 'authors' && !group.coverUrl && book.imageUrl) {
-        group.coverUrl = book.imageUrl
+      const bookCover = getBookImageUrl(book)
+      if (groupBy.value === 'authors') {
+        try {
+          const authorAsin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
+          if (authorAsin) group.coverUrl = `/api/images/${encodeURIComponent(authorAsin)}`
+        } catch {}
       }
       if (groupBy.value === 'series' && group.coverUrls && group.coverUrls.length < 8) {
-        if (book.imageUrl && !group.coverUrls.includes(book.imageUrl)) {
-          group.coverUrls.push(book.imageUrl)
+        if (bookCover && !group.coverUrls.includes(bookCover)) {
+          group.coverUrls.push(bookCover)
         }
       }
     }
@@ -1211,6 +1263,20 @@ const groupedCollections = computed(() => {
       break
   }
   return vals
+})
+
+const authorHasSpecificCoverMap = computed<Record<string, boolean>>(() => {
+  const map: Record<string, boolean> = {}
+  for (const [name, cover] of Object.entries(authorCoverOverrides)) {
+    if (name && cover) map[name] = true
+  }
+  for (const book of filteredAndSortedAudiobooks.value) {
+    const name = book.authors?.[0]
+    if (!name) continue
+    const authorAsin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
+    if (authorAsin) map[name] = true
+  }
+  return map
 })
 
 let authorCardObserver: IntersectionObserver | null = null
@@ -1336,8 +1402,9 @@ function clearFilters() {
   selectedFilterId.value = null
 
   // Reset author image caches so images reload after clearing filters
-  Object.keys(authorCoverOverrides).forEach(k => delete authorCoverOverrides[k])
-  Object.keys(authorImageLoaded).forEach(k => delete authorImageLoaded[k])
+  Object.keys(authorCoverOverrides).forEach((k) => delete authorCoverOverrides[k])
+  Object.keys(authorImageLoaded).forEach((k) => delete authorImageLoaded[k])
+  clearProtectedImages()
   nextTick(() => typeof observeLazyImages === 'function' && observeLazyImages())
 }
 const loading = computed(() => libraryStore.loading)
@@ -1459,15 +1526,15 @@ const showEditModal = ref(false)
 const editAudiobook = ref<Audiobook | null>(null)
 const lastClickedIndex = ref<number | null>(null)
 
+type AudiobookStatus = 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match'
+
 // Get the download status for an audiobook
 // Returns:
 // - 'downloading': Currently being downloaded (blue border)
 // - 'no-file': No file downloaded yet (red border)
 // - 'quality-mismatch': Has file but doesn't meet quality cutoff (blue border)
 // - 'quality-match': Has file and meets quality cutoff (green border)
-function getAudiobookStatus(
-  audiobook: Audiobook,
-): 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match' {
+function computeAudiobookStatusRaw(audiobook: Audiobook): AudiobookStatus {
   // Check if this audiobook is currently being downloaded
   const isDownloading = downloadsStore.activeDownloads.some((d) => d.audiobookId === audiobook.id)
   if (isDownloading) {
@@ -1587,6 +1654,19 @@ function getAudiobookStatus(
   return 'quality-mismatch'
 }
 
+const audiobookStatusById = computed(() => {
+  const map = new Map<number, AudiobookStatus>()
+  for (const book of libraryStore.audiobooks || []) {
+    if (!book?.id) continue
+    map.set(book.id, computeAudiobookStatusRaw(book))
+  }
+  return map
+})
+
+function getAudiobookStatus(audiobook: Audiobook): AudiobookStatus {
+  return audiobookStatusById.value.get(audiobook.id) ?? computeAudiobookStatusRaw(audiobook)
+}
+
 // Native loading="lazy" handles all image loading automatically - no custom code needed
 
 function handleClickOutside(event: Event) {
@@ -1595,6 +1675,11 @@ function handleClickOutside(event: Event) {
     showGroupMenu.value = false
   }
 }
+
+let resizeObserver: ResizeObserver | null = null
+let stopVisibleRangeWatch: (() => void) | null = null
+let stopViewModeWatch: (() => void) | null = null
+let stopPersistViewModeWatch: (() => void) | null = null
 
 onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
@@ -1655,7 +1740,7 @@ onMounted(async () => {
     }
 
     // Re-run observer when visible range changes (virtual scrolling)
-    watch(
+    stopVisibleRangeWatch = watch(
       () => visibleRange.value,
       async () => {
         await nextTick()
@@ -1671,7 +1756,7 @@ onMounted(async () => {
     )
 
     // Add resize observer to recalculate on window resize
-    const resizeObserver = new ResizeObserver(() => {
+    resizeObserver = new ResizeObserver(() => {
       // Guard against null - element may be unmounted during navigation
       if (!scrollContainer.value) return
       recalcItemsPerRow()
@@ -1680,7 +1765,7 @@ onMounted(async () => {
     resizeObserver.observe(scrollContainer.value)
 
     // Watch for view mode changes to recalc item layout
-    const stopWatch = watch(viewMode, async () => {
+    stopViewModeWatch = watch(viewMode, async () => {
       recalcItemsPerRow()
       // wait a tick for layout to update then recalc range
       await nextTick()
@@ -1688,25 +1773,44 @@ onMounted(async () => {
     })
 
     // Persist view mode whenever it changes
-    const stopPersist = watch(viewMode, (v) => {
+    stopPersistViewModeWatch = watch(viewMode, (v) => {
       try {
         localStorage.setItem(VIEWMODE_KEY, v)
       } catch {
         /* ignore */
       }
     })
-
-    // Clean up observer when component unmounts
-    onUnmounted(() => {
-      resizeObserver.disconnect()
-      stopWatch()
-      stopPersist()
-      try {
-        authorCardObserver?.disconnect()
-      } catch {}
-      document.removeEventListener('click', handleClickOutside)
-    })
   }
+})
+
+onUnmounted(() => {
+  try {
+    resizeObserver?.disconnect()
+  } catch {}
+  resizeObserver = null
+
+  try {
+    stopVisibleRangeWatch?.()
+  } catch {}
+  stopVisibleRangeWatch = null
+
+  try {
+    stopViewModeWatch?.()
+  } catch {}
+  stopViewModeWatch = null
+
+  try {
+    stopPersistViewModeWatch?.()
+  } catch {}
+  stopPersistViewModeWatch = null
+
+  try {
+    authorCardObserver?.disconnect()
+  } catch {}
+  try {
+    clearProtectedImages()
+  } catch {}
+  document.removeEventListener('click', handleClickOutside)
 })
 
 async function loadQualityProfiles() {
@@ -1742,8 +1846,8 @@ function statusText(
 
 function openStatusDetails(audiobook: Audiobook) {
   try {
-    // Navigate to audiobook detail page and open the downloads tab
-    void router.push({ path: `/audiobooks/${audiobook.id}`, query: { tab: 'downloads' } })
+    // Navigate to audiobook detail page and open the history tab (legacy "downloads" intent)
+    void router.push({ path: `/audiobooks/${audiobook.id}`, query: { tab: 'history' }, hash: '#history' })
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'AudiobooksView',
@@ -2038,18 +2142,13 @@ async function handleEditSaved() {
   }
 }
 
-function handleCheckboxClick(audiobook: Audiobook, virtualIndex: number, event: MouseEvent) {
-  event.preventDefault() // Prevent browser text selection
-
-  // Get the actual index from the full audiobooks array
+function applyCheckboxSelection(audiobook: Audiobook, shiftKey: boolean) {
   const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
+  if (currentIndex < 0) return
 
-  if (event.shiftKey && lastClickedIndex.value !== null) {
-    // Shift+click: select range
+  if (shiftKey && lastClickedIndex.value !== null) {
     const startIndex = Math.min(lastClickedIndex.value, currentIndex)
     const endIndex = Math.max(lastClickedIndex.value, currentIndex)
-
-    // Clear current selection and select the range
     libraryStore.clearSelection()
     for (let i = startIndex; i <= endIndex; i++) {
       const book = audiobooks.value[i]
@@ -2057,53 +2156,23 @@ function handleCheckboxClick(audiobook: Audiobook, virtualIndex: number, event: 
       libraryStore.toggleSelection(book.id)
     }
   } else {
-    // Regular click: toggle selection
     libraryStore.toggleSelection(audiobook.id)
   }
 
-  // Update last clicked index
   lastClickedIndex.value = currentIndex
+}
+
+function handleCheckboxClick(audiobook: Audiobook, event: MouseEvent) {
+  event.preventDefault() // Prevent browser text selection
+  applyCheckboxSelection(audiobook, event.shiftKey)
 }
 
 function onCheckboxChange(audiobook: Audiobook, event: Event) {
-  // Handle native input change (e.g. mouse click)
-  const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
-
-  // Support Shift+click range selection when available
-  const shift = (event as MouseEvent | KeyboardEvent).shiftKey
-  if (shift && lastClickedIndex.value !== null) {
-    const startIndex = Math.min(lastClickedIndex.value, currentIndex)
-    const endIndex = Math.max(lastClickedIndex.value, currentIndex)
-    libraryStore.clearSelection()
-    for (let i = startIndex; i <= endIndex; i++) {
-      const book = audiobooks.value[i]
-      if (!book) continue
-      libraryStore.toggleSelection(book.id)
-    }
-  } else {
-    libraryStore.toggleSelection(audiobook.id)
-  }
-
-  lastClickedIndex.value = currentIndex
+  applyCheckboxSelection(audiobook, Boolean((event as MouseEvent | KeyboardEvent).shiftKey))
 }
 
 function handleCheckboxKeydown(audiobook: Audiobook, event: KeyboardEvent) {
-  // Handle keyboard spacebar toggle and support Shift+Space range selection
-  const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
-  if (event.shiftKey && lastClickedIndex.value !== null) {
-    const startIndex = Math.min(lastClickedIndex.value, currentIndex)
-    const endIndex = Math.max(lastClickedIndex.value, currentIndex)
-    libraryStore.clearSelection()
-    for (let i = startIndex; i <= endIndex; i++) {
-      const book = audiobooks.value[i]
-      if (!book) continue
-      libraryStore.toggleSelection(book.id)
-    }
-  } else {
-    libraryStore.toggleSelection(audiobook.id)
-  }
-
-  lastClickedIndex.value = currentIndex
+  applyCheckboxSelection(audiobook, event.shiftKey)
 }
 
 // Expose for testing
@@ -2116,28 +2185,32 @@ defineExpose({
 
 <style scoped>
 .audiobooks-view {
-  margin-top: 60px; /* Add margin to account for fixed toolbar */
+  --audiobooks-toolbar-height: 60px;
+  --audiobooks-toolbar-offset: var(--audiobooks-toolbar-height);
   background-color: #1a1a1a;
-  min-height: calc(100vh - 120px);
+  margin-top: var(--audiobooks-toolbar-offset); /* Space for fixed local toolbar */
+  min-height: calc(
+    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset)
+  );
   --legend-height: 44px;
   position: relative;
 }
 
 @media (max-width: 1024px) {
   .audiobooks-view {
-    margin-top: 60px; /* Toolbar may wrap on tablet, add extra space */
+    margin-top: var(--audiobooks-toolbar-offset);
   }
 }
 
 @media (max-width: 768px) {
   .audiobooks-view {
-    margin-top: 60px; /* More space needed on mobile */
+    margin-top: var(--audiobooks-toolbar-offset);
   }
 }
 
 .toolbar {
   position: fixed;
-  top: 60px; /* Account for global header nav */
+  top: var(--app-top-offset, 60px); /* Account for global header + optional banner */
   left: 200px; /* Account for sidebar width */
   right: 0;
   z-index: 500; /* Below global nav (1000) but above content overlays */
@@ -2694,14 +2767,18 @@ defineExpose({
 }
 
 .audiobooks-scroll-container {
-  height: calc(100vh - 165px); /* Account for toolbar and header */
+  height: calc(
+    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset) - var(--legend-height) - 1px
+  );
   overflow-y: auto;
   overflow-x: hidden;
   padding: 0 20px;
 }
 
 .audiobook-status-legend {
-  position: sticky;
+  position: fixed;
+  left: 200px;
+  right: 0;
   bottom: 0;
   min-height: var(--legend-height);
   display: flex;
@@ -2756,6 +2833,7 @@ defineExpose({
   }
 
   .audiobook-status-legend {
+    left: 0;
     padding: 8px 12px 12px;
     gap: 8px;
     flex-wrap: nowrap;
@@ -3384,7 +3462,9 @@ defineExpose({
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  height: calc(100vh - 164px);
+  height: calc(
+    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset) - var(--legend-height)
+  );
   color: #ccc;
   text-align: center;
 }

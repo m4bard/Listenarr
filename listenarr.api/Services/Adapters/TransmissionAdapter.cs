@@ -61,8 +61,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogDebug(tce, "Transmission test timed out for client {ClientId}", LogRedaction.SanitizeText(client?.Id ?? client?.Name ?? client?.Type));
                 return (false, "Transmission: connection timed out");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Transmission test failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id ?? client?.Name ?? client?.Type));
                 return (false, "Transmission: connection failed");
             }
@@ -148,8 +147,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Transmission AddAsync returning null - torrent may not have been added");
                 return null;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to add torrent to Transmission for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
                 throw;
             }
@@ -188,8 +186,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Transmission failed to remove torrent {Id}: {Message}", LogRedaction.SanitizeText(id), LogRedaction.SanitizeText(errorMsg));
                 return false;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error removing torrent {Id} from Transmission", LogRedaction.SanitizeText(id));
                 return false;
             }
@@ -230,14 +227,12 @@ namespace Listenarr.Api.Services.Adapters
                         var queueItem = await MapTorrentAsync(client, torrent, ct);
                         items.Add(queueItem);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to map Transmission torrent entry (non-fatal)");
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to retrieve Transmission queue for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -287,14 +282,12 @@ namespace Listenarr.Api.Services.Adapters
                         var downloadClientItem = await MapToDownloadClientItemAsync(client, torrent, ct);
                         items.Add(downloadClientItem);
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to map Transmission torrent entry (non-fatal)");
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to retrieve Transmission items for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -364,7 +357,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Transmission stores files as: downloadDir/name
-                var contentPath = Path.Combine(downloadDir, name);
+                var contentPath = CombineWithOptionalBase(downloadDir, name);
                 
                 // Apply path mapping
                 var localContentPath = await _pathMappingService.TranslatePathAsync(client.Id, contentPath);
@@ -377,8 +370,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error resolving import item for Transmission torrent {TorrentId}", item.DownloadId);
                 return result;
             }
@@ -450,7 +442,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Transmission stores files as: downloadDir/name
-                var contentPath = Path.Combine(downloadDir, name);
+                var contentPath = CombineWithOptionalBase(downloadDir, name);
                 
                 // Apply path mapping
                 var localContentPath = await _pathMappingService.TranslatePathAsync(client.Id, contentPath);
@@ -463,8 +455,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error resolving import item for Transmission torrent {TorrentId}", queueItem.Id);
                 return result;
             }
@@ -530,8 +521,7 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     localPath = await _pathMappingService.TranslatePathAsync(client.Id, downloadDir);
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to translate Transmission path '{Path}' for client {ClientName}", LogRedaction.SanitizeFilePath(downloadDir), LogRedaction.SanitizeText(client.Name ?? client.Id));
                 }
             }
@@ -540,7 +530,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // For Transmission, construct ContentPath from downloadDir + name
             var contentPath = !string.IsNullOrEmpty(downloadDir) && !string.IsNullOrEmpty(name)
-                ? Path.Combine(downloadDir, name)
+                ? CombineWithOptionalBase(downloadDir, name)
                 : downloadDir;
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
@@ -614,7 +604,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // For Transmission, construct OutputPath from downloadDir + name
             var contentPath = !string.IsNullOrEmpty(downloadDir) && !string.IsNullOrEmpty(name)
-                ? Path.Combine(downloadDir, name)
+                ? CombineWithOptionalBase(downloadDir, name)
                 : downloadDir;
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
@@ -758,6 +748,32 @@ namespace Listenarr.Api.Services.Adapters
             return $"{scheme}://{client.Host}:{client.Port}/transmission/rpc";
         }
 
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
+
         private static AuthenticationHeaderValue? BuildAuthHeader(DownloadClientConfiguration client)
         {
             if (string.IsNullOrWhiteSpace(client.Username))
@@ -795,3 +811,4 @@ namespace Listenarr.Api.Services.Adapters
         }
     }
 }
+

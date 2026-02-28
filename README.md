@@ -40,9 +40,14 @@ Listenarr is a fast, feature-rich, cross-platform audiobook management server. B
 
 To see what's coming up, check out our [Roadmap](#roadmap)! If you have a suggestion or feature request, please submit them in [Discussions](https://github.com/Listenarrs/Listenarr/discussions)
 
+## Notice
+
+> [!WARNING]
+> Listenarr is being actively developed and should be considered **beta software**. There may be security exploits despite best efforts. Expose this software to the internet at your own risk. The platform may be subject to changes as it is being built out. You may experience data loss and need to restart. The Listenarr team strives to avoid any data loss, but please maintain backups of important data.
+
 ## Disclaimer
 
-This app is coded with AI assistance. I started this because my wife (an avid audiobook listener) was plowing multiple series and I wanted an automated way for her to request, download, and listen to new audiobooks. I am a front-end developer and I don't know C#, so I took this as an opportunity to learn and started this project.
+This app is coded with AI assistance. I started this because my wife (an avid audiobook listener) was reading through multiple series quickly and I wanted an automated way for her to request, download, and listen to new audiobooks. I am a front-end developer and I don't know C#, so I took this as an opportunity to learn and started this project.
 
 > [!NOTE]  
 > This is just a fun a side project that solved a need for me; it is not my main priority. I will choose my work, family, and mental health before this project.
@@ -295,10 +300,6 @@ All builds are CI-first: `dotnet publish` automatically builds the frontend and 
 ## Feature Requests
 
 Got a great idea? Throw it up on [Discussions](https://github.com/Listenarrs/Listenarr/discussions) or vote on another idea. Many great features in Listenarr are driven by our community.
-
-## Notice
-
-⚠️ Listenarr is being actively developed and should be considered **beta software**. The platform may be subject to changes as it is being built out. You may experience data loss and need to restart. The Listenarr team strives to avoid any data loss, but please maintain backups of important data.
 
 ## Technology Stack
 

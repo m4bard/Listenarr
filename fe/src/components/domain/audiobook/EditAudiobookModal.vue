@@ -1,5 +1,5 @@
 <template>
-  <Modal :visible="isOpen" size="md" @close="close">
+  <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
       <ModalHeader :title="`Editing ${audiobook?.title || 'Audiobook'}`" @close="close" :icon="PhPencil" />
     </template>
@@ -141,6 +141,105 @@
             </div>
           </div>
 
+          <!-- External Identifiers -->
+          <div class="form-group">
+            <label class="form-label">
+              <PhLink></PhLink>
+              Identifiers
+            </label>
+            <div class="form-control-card">
+              <div class="identifier-list">
+                <div
+                  v-for="(identifier, index) in formData.identifiers"
+                  :key="identifier.localKey"
+                  class="identifier-row"
+                >
+                  <select
+                    v-model="identifier.type"
+                    class="form-select identifier-type"
+                    @change="onIdentifierTypeChanged(index)"
+                  >
+                    <option value="Asin">ASIN</option>
+                    <option value="Isbn">ISBN</option>
+                    <option value="OpenLibraryId">OpenLibrary ID</option>
+                  </select>
+
+                  <input
+                    v-model="identifier.value"
+                    type="text"
+                    class="form-input identifier-value"
+                    :placeholder="
+                      identifier.type === 'Asin'
+                        ? 'B0XXXXXXXX'
+                        : identifier.type === 'Isbn'
+                          ? '978... / 0...'
+                          : 'OL12345M'
+                    "
+                  />
+
+                  <input
+                    v-if="identifier.type === 'Asin'"
+                    v-model="identifier.region"
+                    type="text"
+                    class="form-input identifier-region"
+                    placeholder="region"
+                    maxlength="8"
+                  />
+                  <div v-else class="identifier-region identifier-region--spacer"></div>
+
+                  <label class="identifier-primary">
+                    <input
+                      type="checkbox"
+                      :checked="identifier.isPrimary"
+                      @change="setPrimaryIdentifier(index)"
+                    />
+                    Primary
+                  </label>
+
+                  <span class="identifier-source">{{ identifier.source }}</span>
+
+                  <button
+                    type="button"
+                    class="icon-btn btn-secondary btn-remove-identifier"
+                    @click="removeIdentifier(index)"
+                    title="Remove identifier"
+                    aria-label="Remove identifier"
+                  >
+                    <PhX :size="16"></PhX>
+                  </button>
+                </div>
+
+                <div v-if="formData.identifiers.length === 0" class="identifiers-empty">
+                  No identifiers added yet
+                </div>
+              </div>
+
+              <div class="identifier-actions">
+                <button type="button" class="btn btn-secondary btn-sm" @click="addIdentifier('Asin')">
+                  <PhPlus :size="14"></PhPlus>
+                  Add ASIN
+                </button>
+                <button type="button" class="btn btn-secondary btn-sm" @click="addIdentifier('Isbn')">
+                  <PhPlus :size="14"></PhPlus>
+                  Add ISBN
+                </button>
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  @click="addIdentifier('OpenLibraryId')"
+                >
+                  <PhPlus :size="14"></PhPlus>
+                  Add OLID
+                </button>
+              </div>
+
+              <p class="help-text">
+                Add alternate or corrected identifiers to improve metadata and cover lookup. ASINs may
+                include a region. Only one primary identifier is allowed per type.
+              </p>
+            </div>
+          </div>
+
           <!-- Content Flags -->
           <div class="form-group form-group--compact">
             <label class="form-label">
@@ -210,8 +309,27 @@ import { useToast } from '@/services/toastService'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
-import type { Audiobook, QualityProfile } from '@/types'
-import { PhX, PhPencil, PhSpinner, PhCheck, PhFolder, PhPlus, PhInfo, PhEye, PhStar, PhTag } from '@phosphor-icons/vue' 
+import type {
+  Audiobook,
+  QualityProfile,
+  AudiobookExternalIdentifier,
+  AudiobookExternalIdentifierInput,
+  AudiobookExternalIdentifierType,
+  AudiobookExternalIdentifierSource,
+} from '@/types'
+import {
+  PhX,
+  PhPencil,
+  PhSpinner,
+  PhCheck,
+  PhFolder,
+  PhPlus,
+  PhInfo,
+  PhEye,
+  PhStar,
+  PhTag,
+  PhLink,
+} from '@phosphor-icons/vue'
 import { useConfigurationStore } from '@/stores/configuration'
 import RootFolderSelect from '@/components/form/RootFolderSelect.vue'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
@@ -246,10 +364,20 @@ interface FormData {
   monitored: boolean
   qualityProfileId: number | null
   tags: string[]
+  identifiers: EditableIdentifierRow[]
   abridged: boolean
   explicit: boolean
   basePath?: string | null
   relativePath?: string | null
+}
+
+interface EditableIdentifierRow {
+  localKey: string
+  type: AudiobookExternalIdentifierType
+  value: string
+  region?: string | null
+  isPrimary: boolean
+  source: AudiobookExternalIdentifierSource
 }
 
 const props = defineProps<Props>()
@@ -273,6 +401,7 @@ const saving = ref(false)
 const newTag = ref('')
 const editingDestination = ref(false)
 const toast = useToast()
+const originalIdentifierRows = ref<EditableIdentifierRow[]>([])
 
 // Minimal custom path behaviour: extra helpers removed to keep UI streamlined
 
@@ -280,6 +409,7 @@ const formData = ref<FormData>({
   monitored: true,
   qualityProfileId: null,
   tags: [],
+  identifiers: [],
   abridged: false,
   explicit: false,
   basePath: null,
@@ -422,10 +552,14 @@ const hasChanges = computed(() => {
 
   const basePathChanged = (props.audiobook?.basePath || '') !== (combinedBasePath() || '')
 
+  const identifiersChanged = serializeIdentifierRows(formData.value.identifiers) !==
+    serializeIdentifierRows(originalIdentifierRows.value)
+
   return (
     formData.value.monitored !== Boolean(props.audiobook.monitored) ||
     formData.value.qualityProfileId !== (props.audiobook.qualityProfileId ?? null) ||
     tagsChanged ||
+    identifiersChanged ||
     formData.value.abridged !== Boolean(props.audiobook.abridged) ||
     formData.value.explicit !== Boolean(props.audiobook.explicit) ||
     basePathChanged
@@ -480,6 +614,7 @@ async function initializeForm() {
     monitored: Boolean(props.audiobook.monitored),
     qualityProfileId: props.audiobook.qualityProfileId ?? null,
     tags: [...(props.audiobook.tags || [])],
+    identifiers: [],
     abridged: Boolean(props.audiobook.abridged),
     explicit: Boolean(props.audiobook.explicit),
     basePath: props.audiobook.basePath ?? null,
@@ -556,11 +691,13 @@ async function initializeForm() {
     // If the audiobook has a stored basePath we must use that value from the DB
     // and must not overwrite it with metadata-derived previews. Only when there
     // is no basePath present could we consider a preview (not applied here).
+    await loadIdentifiers()
     return
   } catch (err) {
     // Non-fatal: any error deriving relative path from stored basePath
     logger.debug('Preview path unavailable:', err)
   }
+  await loadIdentifiers()
 }
 
 import { toForward, trimTrailingSlash, normalizeForCompare, isAbsolutePath, stripRootPrefix } from '@/utils/path'
@@ -719,6 +856,9 @@ async function handleSave() {
 
   saving.value = true
   try {
+    const identifiersChanged = serializeIdentifierRows(formData.value.identifiers) !==
+      serializeIdentifierRows(originalIdentifierRows.value)
+
     // Build update payload with current form values
     const updates: Partial<Audiobook> = {
       monitored: formData.value.monitored,
@@ -728,7 +868,6 @@ async function handleSave() {
     }
 
     // If user changed destination/base path, include the combined root+relative value in updates
-    const combined = combinedBasePath()
     if ((combined || '') !== (props.audiobook.basePath || '')) {
       ; (updates as Partial<Audiobook>).basePath = combined ?? undefined
     }
@@ -741,8 +880,26 @@ async function handleSave() {
       updates.qualityProfileId = formData.value.qualityProfileId
     }
 
-    // Call single update API
-    await apiService.updateAudiobook(props.audiobook.id, updates)
+    const hasNonIdentifierChanges =
+      formData.value.monitored !== Boolean(props.audiobook.monitored) ||
+      formData.value.qualityProfileId !== (props.audiobook.qualityProfileId ?? null) ||
+      JSON.stringify([...formData.value.tags].sort()) !==
+        JSON.stringify([...(props.audiobook.tags || [])].sort()) ||
+      formData.value.abridged !== Boolean(props.audiobook.abridged) ||
+      formData.value.explicit !== Boolean(props.audiobook.explicit) ||
+      ((combined || '') !== (props.audiobook.basePath || ''))
+
+    if (hasNonIdentifierChanges) {
+      await apiService.updateAudiobook(props.audiobook.id, updates)
+    }
+
+    if (identifiersChanged) {
+      await apiService.updateAudiobookIdentifiers(
+        props.audiobook.id,
+        formData.value.identifiers.map(toIdentifierWritePayload),
+      )
+      originalIdentifierRows.value = cloneIdentifierRows(formData.value.identifiers)
+    }
 
     // If base path changed, either update DB without moving or enqueue server-side move and show progress via SignalR
     if ((combined || '') !== (props.audiobook.basePath || '')) {
@@ -809,6 +966,106 @@ async function handleSave() {
   }
 }
 
+async function loadIdentifiers() {
+  if (!props.audiobook) return
+
+  try {
+    const response = await apiService.getAudiobookIdentifiers(props.audiobook.id)
+    const rows = (response.identifiers || []).map(mapIdentifierToEditableRow)
+    formData.value.identifiers = rows
+    originalIdentifierRows.value = cloneIdentifierRows(rows)
+  } catch (error) {
+    logger.debug('Failed to load audiobook identifiers', error)
+    formData.value.identifiers = []
+    originalIdentifierRows.value = []
+  }
+}
+
+function createIdentifierRow(type: AudiobookExternalIdentifierType): EditableIdentifierRow {
+  return {
+    localKey: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    type,
+    value: '',
+    region: type === 'Asin' ? 'us' : null,
+    isPrimary: false,
+    source: 'Manual',
+  }
+}
+
+function mapIdentifierToEditableRow(identifier: AudiobookExternalIdentifier): EditableIdentifierRow {
+  return {
+    localKey: `id-${identifier.id}`,
+    type: identifier.type,
+    value: identifier.value || identifier.valueNormalized,
+    region: identifier.region ?? null,
+    isPrimary: Boolean(identifier.isPrimary),
+    source: identifier.source || 'Manual',
+  }
+}
+
+function cloneIdentifierRows(rows: EditableIdentifierRow[]): EditableIdentifierRow[] {
+  return rows.map((row) => ({ ...row }))
+}
+
+function serializeIdentifierRows(rows: EditableIdentifierRow[]): string {
+  const normalized = rows
+    .map((row) => ({
+      type: row.type,
+      value: (row.value || '').trim(),
+      region: row.type === 'Asin' ? (row.region || '').trim().toLowerCase() : '',
+      isPrimary: Boolean(row.isPrimary),
+      source: row.source || 'Manual',
+    }))
+    .sort((a, b) => {
+      const ka = `${a.type}|${a.value.toLowerCase()}|${a.region}|${a.isPrimary ? '1' : '0'}|${a.source}`
+      const kb = `${b.type}|${b.value.toLowerCase()}|${b.region}|${b.isPrimary ? '1' : '0'}|${b.source}`
+      return ka.localeCompare(kb)
+    })
+  return JSON.stringify(normalized)
+}
+
+function addIdentifier(type: AudiobookExternalIdentifierType) {
+  formData.value.identifiers.push(createIdentifierRow(type))
+}
+
+function removeIdentifier(index: number) {
+  formData.value.identifiers.splice(index, 1)
+}
+
+function onIdentifierTypeChanged(index: number) {
+  const row = formData.value.identifiers[index]
+  if (!row) return
+  if (row.type !== 'Asin') {
+    row.region = null
+  } else if (!row.region) {
+    row.region = 'us'
+  }
+  if (row.isPrimary) {
+    setPrimaryIdentifier(index)
+  }
+}
+
+function setPrimaryIdentifier(index: number) {
+  const row = formData.value.identifiers[index]
+  if (!row) return
+  const type = row.type
+  formData.value.identifiers.forEach((r, i) => {
+    if (r.type === type) {
+      r.isPrimary = i === index
+    }
+  })
+}
+
+function toIdentifierWritePayload(row: EditableIdentifierRow): AudiobookExternalIdentifierInput {
+  return {
+    type: row.type,
+    value: row.value,
+    region: row.type === 'Asin' ? (row.region || null) : null,
+    isPrimary: Boolean(row.isPrimary),
+    source: row.source || 'Manual',
+  }
+}
+
 function addTag() {
   const tag = newTag.value.trim()
   if (tag && !formData.value.tags.includes(tag)) {
@@ -868,6 +1125,100 @@ function close() {
 .form-group {
   display: flex;
   flex-direction: column;
+}
+
+.identifier-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.identifier-row {
+  display: grid;
+  grid-template-columns: 9.5rem minmax(0, 1fr) 5.5rem auto auto auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.identifier-type {
+  min-width: 0;
+}
+
+.identifier-value {
+  min-width: 0;
+}
+
+.identifier-region {
+  min-width: 0;
+}
+
+.identifier-region--spacer {
+  height: 0;
+}
+
+.identifier-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  color: #d4d4d4;
+  white-space: nowrap;
+}
+
+.identifier-source {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 4.5rem;
+  padding: 0.2rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid #3b3b3b;
+  background: #222;
+  color: #bfbfbf;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+}
+
+.identifier-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.identifier-actions .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.identifiers-empty {
+  color: #9b9b9b;
+  font-size: 0.9rem;
+  padding: 0.25rem 0;
+}
+
+.btn-remove-identifier {
+  justify-self: end;
+}
+
+@media (max-width: 900px) {
+  .identifier-row {
+    grid-template-columns: 1fr;
+    gap: 0.4rem;
+    padding: 0.5rem;
+    border: 1px solid #333;
+    border-radius: 8px;
+    background: #202020;
+  }
+
+  .identifier-region--spacer {
+    display: none;
+  }
+
+  .btn-remove-identifier {
+    justify-self: start;
+  }
 }
 
 .info-section {

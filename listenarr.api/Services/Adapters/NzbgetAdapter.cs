@@ -87,8 +87,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogDebug(tce, "NZBGet test timed out for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, "NZBGet: connection timed out");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "NZBGet test failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, "NZBGet: connection failed");
             }
@@ -253,8 +252,7 @@ namespace Listenarr.Api.Services.Adapters
                 // Return the NZBID so it can be stored and used for removal later
                 return queueId.ToString();
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to add NZB via XML-RPC");
                 throw;
             }
@@ -349,8 +347,7 @@ namespace Listenarr.Api.Services.Adapters
                         }
                     }
                 }
-                catch (Exception histEx)
-                {
+                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
                     _logger.LogDebug(histEx, "Failed to search NZBGet history for download {Id}", LogRedaction.SanitizeText(id));
                 }
             }
@@ -373,8 +370,7 @@ namespace Listenarr.Api.Services.Adapters
                     return true;
                 }
             }
-            catch (Exception histEx)
-            {
+            catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
                 _logger.LogDebug(histEx, "Could not remove {Id} from NZBGet history (may not be in history)", LogRedaction.SanitizeText(id));
             }
 
@@ -394,8 +390,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("NZBGet reported failure when removing {Id} from both history and queue", LogRedaction.SanitizeText(id));
                 return false;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error removing NZB {Id} from NZBGet", LogRedaction.SanitizeText(id));
                 return false;
             }
@@ -427,14 +422,12 @@ namespace Listenarr.Api.Services.Adapters
                             items.Add(queueItem);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to map NZBGet queue item (non-fatal)");
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to retrieve NZBGet queue for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -480,8 +473,7 @@ namespace Listenarr.Api.Services.Adapters
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to fetch NZBGet history for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -517,14 +509,12 @@ namespace Listenarr.Api.Services.Adapters
                             items.Add(downloadClientItem);
                         }
                     }
-                    catch (Exception ex)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to map NZBGet queue item (non-fatal)");
                     }
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to retrieve NZBGet items for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -603,8 +593,7 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Download {Id} not found in NZBGet history", item.DownloadId);
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error resolving import item for NZBGet download {Id}", item.DownloadId);
                 return result;
             }
@@ -657,7 +646,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // For NZBGet, construct OutputPath from destDir + title
             var contentPath = !string.IsNullOrEmpty(destDir) && !string.IsNullOrEmpty(title)
-                ? Path.Combine(destDir, title)
+                ? CombineWithOptionalBase(destDir, title)
                 : (destDir ?? string.Empty);
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
@@ -743,15 +732,14 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     localPath = _pathMappingService.TranslatePathAsync(client.Id, destDir).GetAwaiter().GetResult();
                 }
-                catch (Exception ex)
-                {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Failed to translate NZBGet path '{Path}' for client {ClientName}", LogRedaction.SanitizeFilePath(destDir), LogRedaction.SanitizeText(client.Name ?? client.Id));
                 }
             }
 
             // For NZBGet, construct ContentPath from destDir + title
             var contentPath = !string.IsNullOrEmpty(destDir) && !string.IsNullOrEmpty(title)
-                ? Path.Combine(destDir, title)
+                ? CombineWithOptionalBase(destDir, title)
                 : destDir;
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? _pathMappingService.TranslatePathAsync(client.Id, contentPath).GetAwaiter().GetResult()
@@ -987,8 +975,7 @@ namespace Listenarr.Api.Services.Adapters
                 
                 return contentBytes;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to download NZB content from {Url}", LogRedaction.SanitizeUrl(nzbUrl));
                 throw new InvalidOperationException($"Unable to retrieve NZB content from {nzbUrl}");
             }
@@ -1094,11 +1081,37 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Download {NzbId} not found in NZBGet history", queueItem.Id);
                 return result;
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Error resolving import item for NZBGet download {NzbId}", queueItem.Id);
                 return result;
             }
         }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
     }
 }
+

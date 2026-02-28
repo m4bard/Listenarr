@@ -1,4 +1,4 @@
-﻿using Listenarr.Domain.Models;
+using Listenarr.Domain.Models;
 using System.Text.Json;
 using Serilog;
 
@@ -184,8 +184,7 @@ namespace Listenarr.Api.Services
                     _logger.LogInformation("Auto-generated API key for existing configuration");
                 }
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to load startup config from {Path}", _configPath);
                 _config = new StartupConfig();
             }
@@ -216,8 +215,7 @@ namespace Listenarr.Api.Services
                 SaveConfigFile(config);
                 _logger.LogInformation("[StartupConfigService] Successfully saved config to {Path}", _configPath);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "[StartupConfigService] Exception while saving config to {Path}", _configPath);
                 // Revert in-memory config on failure
                 try
@@ -291,8 +289,7 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Default config.json created at {Path}", _configPath);
                 _logger.LogInformation("Authentication is DISABLED by default. Set 'AuthenticationRequired' to 'true' in config.json to enable secure login.");
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to save default config to {Path}", _configPath);
             }
         }
@@ -320,12 +317,13 @@ namespace Listenarr.Api.Services
                 File.WriteAllText(_configPath, json);
                 _logger.LogInformation("[StartupConfigService] File.WriteAllText succeeded for {Path}", _configPath);
             }
-            catch (Exception ex)
-            {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "[StartupConfigService] File.WriteAllText failed for {Path}", _configPath);
                 throw;
             }
         }
     }
 }
+
+
 

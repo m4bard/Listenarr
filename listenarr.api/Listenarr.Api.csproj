@@ -2,8 +2,8 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
   <PropertyGroup>
-    <Version>0.2.51</Version>
-    <AssemblyVersion>0.2.51</AssemblyVersion>
+    <Version>0.2.53</Version>
+    <AssemblyVersion>0.2.53</AssemblyVersion>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>  
@@ -43,6 +43,9 @@
     <Compile Remove="Services\PlaywrightPageFetcher.cs" />
     <Compile Remove="Services\PlaywrightInstaller.cs" />
     <Compile Remove="Services\PlaywrightInstallBackgroundService.cs" />
+    
+    <Compile Remove="publish\**\*.cs" />
+    <Compile Remove="publish/**/*.cs" />
   </ItemGroup>
 
   

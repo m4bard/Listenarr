@@ -46,7 +46,7 @@ export const useSearchStore = defineStore('search', () => {
         await apiService.ensureAntiforgeryForCurrentAuth()
       } catch {}
 
-      // Default to intelligent (Amazon + Audible enrichment) search for unified searches
+      // Use canonical intelligentSearch endpoint for quick search
       const response: SearchResult[] = await apiService.intelligentSearch(
         query,
         category,

@@ -10,8 +10,8 @@
           <!-- Book Image -->
           <div class="book-image">
             <img
-              v-if="book.imageUrl"
-              :src="apiService.getImageUrl(book.imageUrl)"
+              v-if="coverImageUrl"
+              :src="coverImageUrl"
               :alt="book.title"
               loading="lazy"
               @error="handleImageError"
@@ -39,7 +39,7 @@
 
             <div v-if="book.description" class="detail-section">
               <h4>Description</h4>
-              <div class="description" v-html="book.description"></div>
+              <div class="description">{{ stripHtmlAndNormalize(book.description) }}</div>
             </div>
 
             <div class="detail-section">
@@ -178,6 +178,8 @@ import { getQualityProfiles, apiService } from '@/services/api'
 import { handleImageError } from '@/utils/imageFallback'
 import { useLibraryStore } from '@/stores/library'
 import { PhX, PhImage, PhStar, PhCheck, PhPlus } from '@phosphor-icons/vue'
+import { stripHtmlAndNormalize } from '@/utils/textUtils'
+import { useProtectedImages } from '@/composables/useProtectedImages'
 import { Modal, ModalBody, ModalHeader } from '@/components/feedback'
 import {
   formatDate,
@@ -197,6 +199,7 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+const { getProtectedImageSrc } = useProtectedImages()
 
 const qualityProfiles = ref<QualityProfile[]>([])
 const selectedQualityProfileId = ref<number | null>(null)
@@ -217,6 +220,14 @@ const isAdded = computed(() => {
     return false
   }
 })
+
+const coverImageUrl = computed(() =>
+  getProtectedImageSrc(
+    props.book?.imageUrl,
+    `details-modal-${props.book?.asin || props.book?.openLibraryId || props.book?.title || 'unknown'}`,
+    '',
+  ),
+)
 
 const assignedProfileName = computed(() => {
   const id = props.book?.qualityProfileId
@@ -535,6 +546,7 @@ watch(
   color: #ccc;
   line-height: 1.6;
   margin: 0;
+  white-space: pre-wrap;
 }
 
 .detail-grid {

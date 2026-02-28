@@ -138,7 +138,7 @@
 
           <img
             class="list-thumb"
-            :src="apiService.getImageUrl(audiobook.imageUrl) || getPlaceholderUrl()"
+            :src="getProtectedImageSrc(audiobook.imageUrl, `collection-${audiobook.id}`, getPlaceholderUrl())"
             :alt="audiobook.title"
             loading="lazy"
             decoding="async"
@@ -253,7 +253,7 @@
           <div class="collection-cover">
             <img
               v-if="audiobook.imageUrl"
-              :src="apiService.getImageUrl(audiobook.imageUrl) || getPlaceholderUrl()"
+              :src="getProtectedImageSrc(audiobook.imageUrl, `collection-${audiobook.id}`, getPlaceholderUrl())"
               :alt="audiobook.title"
               loading="lazy"
               decoding="async"
@@ -391,12 +391,14 @@ import CustomSelect from '@/components/form/CustomSelect.vue'
 import { EmptyState, LoadingState } from '@/components/base'
 import type { Audiobook } from '@/types'
 import { safeText } from '@/utils/textUtils'
+import { useProtectedImages } from '@/composables/useProtectedImages'
 
 const route = useRoute()
 const router = useRouter()
 const libraryStore = useLibraryStore()
 const configStore = useConfigurationStore()
 const downloadsStore = useDownloadsStore()
+const { getProtectedImageSrc } = useProtectedImages()
 
 const type = computed(() => route.params.type as string)
 const name = computed(() => decodeURIComponent(route.params.name as string))
