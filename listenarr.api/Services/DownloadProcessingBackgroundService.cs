@@ -596,12 +596,30 @@ namespace Listenarr.Api.Services
                                 job.AddLogEntry($"Failed to sanitize forced filename: {ex.Message}");
                             }
 
-                            destinationPath = Path.Combine(outputRoot, forcedFilename);
+                            var relativeForcedFilename = forcedFilename.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                            if (string.IsNullOrWhiteSpace(outputRoot))
+                            {
+                                destinationPath = relativeForcedFilename;
+                            }
+                            else
+                            {
+                                var normalizedOutputRoot = outputRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                                destinationPath = normalizedOutputRoot + Path.DirectorySeparatorChar + relativeForcedFilename;
+                            }
                             job.AddLogEntry($"Pattern does not allow subfolders. Forced filename-only destination: {destinationPath}");
                         }
                         else
                         {
-                            destinationPath = Path.Combine(outputRoot, generatedPath);
+                            var relativeGeneratedPath = generatedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                            if (string.IsNullOrWhiteSpace(outputRoot))
+                            {
+                                destinationPath = relativeGeneratedPath;
+                            }
+                            else
+                            {
+                                var normalizedOutputRoot = outputRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                                destinationPath = normalizedOutputRoot + Path.DirectorySeparatorChar + relativeGeneratedPath;
+                            }
                         }
                     }
 

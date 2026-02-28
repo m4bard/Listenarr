@@ -105,9 +105,24 @@ namespace Listenarr.Api.Services
                     generatedPath = Path.GetFileName(sourcePath);
                 }
 
-                destinationPath = Path.IsPathRooted(generatedPath)
-                    ? generatedPath
-                    : Path.Combine(settings.OutputPath ?? string.Empty, generatedPath);
+                if (Path.IsPathRooted(generatedPath))
+                {
+                    destinationPath = generatedPath;
+                }
+                else
+                {
+                    var outputRoot = settings.OutputPath ?? string.Empty;
+                    var relativeGeneratedPath = generatedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                    if (string.IsNullOrWhiteSpace(outputRoot))
+                    {
+                        destinationPath = relativeGeneratedPath;
+                    }
+                    else
+                    {
+                        var normalizedOutputRoot = outputRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                        destinationPath = normalizedOutputRoot + Path.DirectorySeparatorChar + relativeGeneratedPath;
+                    }
+                }
             }
 
             // Ensure unique destination and perform move/copy

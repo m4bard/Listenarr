@@ -217,7 +217,7 @@ namespace Listenarr.Api.Services
                             var folderRelative = _fileNamingService.ApplyNamingPattern(folderPattern, variables, treatAsFilename: false);
                             if (!string.IsNullOrWhiteSpace(folderRelative))
                             {
-                                basePathForFile = Path.Combine(basePathForFile ?? string.Empty, folderRelative);
+                                basePathForFile = CombineWithOptionalBase(basePathForFile, folderRelative);
                             }
                         }
                     }
@@ -230,7 +230,7 @@ namespace Listenarr.Api.Services
                     var folderRelative = _fileNamingService.ApplyNamingPattern(folderPattern, variables, treatAsFilename: false);
                     if (!string.IsNullOrWhiteSpace(folderRelative))
                     {
-                        basePathForFile = Path.Combine(basePathForFile ?? string.Empty, folderRelative);
+                        basePathForFile = CombineWithOptionalBase(basePathForFile, folderRelative);
                     }
                 }
 
@@ -264,7 +264,7 @@ namespace Listenarr.Api.Services
                     catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { filename = Path.GetFileName(sourcePath); }
                 }
 
-                var destinationPath = Path.Combine(basePathForFile, filename);
+                var destinationPath = CombineWithOptionalBase(basePathForFile, filename);
 
                 // Ensure destination directory exists
                 var destDir = Path.GetDirectoryName(destinationPath) ?? string.Empty;
@@ -500,7 +500,7 @@ namespace Listenarr.Api.Services
                             var folderRelative = _fileNamingService.ApplyNamingPattern(folderPattern, variablesForFile, treatAsFilename: false);
                             if (!string.IsNullOrWhiteSpace(folderRelative))
                             {
-                                destDirForFile = Path.Combine(destDirForFile ?? string.Empty, folderRelative);
+                                destDirForFile = CombineWithOptionalBase(destDirForFile, folderRelative);
                             }
                         }
 
@@ -570,7 +570,7 @@ namespace Listenarr.Api.Services
                             }
                         }
 
-                        var destPathForFile = Path.Combine(destDirForFile, filename);
+                        var destPathForFile = CombineWithOptionalBase(destDirForFile, filename);
 
                         // After generating the target filename, we'll still place the file into
                         // the destination directory first (original filename) then apply
@@ -690,6 +690,32 @@ namespace Listenarr.Api.Services
             return ImportSingleFileAsync(downloadId, audiobookId, sourcePath, settings, ct);
         }
 
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
+
         // Local helpers - copy from DownloadService's helpers for parity
         private static string DetermineQualityFromMetadata(AudioMetadata? metadata, string path)
         {
@@ -753,7 +779,11 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
             foreach (var file in Directory.GetFiles(sourceDir, "*", SearchOption.AllDirectories))
             {
                 var rel = Path.GetRelativePath(sourceDir, file);
-                var dest = Path.Combine(destDir, rel);
+                var normalizedDestDir = destDir.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var relativePath = rel.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                var dest = string.IsNullOrEmpty(normalizedDestDir)
+                    ? relativePath
+                    : normalizedDestDir + Path.DirectorySeparatorChar + relativePath;
                 var d = Path.GetDirectoryName(dest);
                 if (!string.IsNullOrEmpty(d) && !Directory.Exists(d)) Directory.CreateDirectory(d);
                 File.Copy(file, dest, true);

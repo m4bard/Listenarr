@@ -2911,7 +2911,9 @@ namespace Listenarr.Api.Services
                                     var relativeName = normalizedName.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
                                     localContentPath = Path.IsPathRooted(relativeName)
                                         ? relativeName
-                                        : Path.Combine(localPath, relativeName);
+                                        : localPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                                            + Path.DirectorySeparatorChar
+                                            + relativeName;
                                 }
                             }
                             else if (!string.IsNullOrWhiteSpace(localPath))
