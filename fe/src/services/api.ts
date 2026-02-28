@@ -862,7 +862,7 @@ class ApiService {
 
   // Audible Metadata API
   async getAudibleMetadata<T>(asin: string): Promise<T> {
-    return this.request<T>(`/audible/metadata/${asin}`)
+    return this.request<T>(`/metadata/${asin}`)
   }
 
   // Library API

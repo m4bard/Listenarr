@@ -397,7 +397,7 @@ describe('File Naming Patterns - Import E2E', () => {
         }
       }).as('browseFiles')
 
-      cy.intercept('POST', '/api/audible/metadata*', {
+      cy.intercept('GET', '/api/metadata/*', {
         statusCode: 200,
         body: {
           title: 'Project Hail Mary',
@@ -448,7 +448,7 @@ describe('File Naming Patterns - Import E2E', () => {
         }
       }).as('browseMultiFiles')
 
-      cy.intercept('POST', '/api/audible/metadata*', {
+      cy.intercept('GET', '/api/metadata/*', {
         statusCode: 200,
         body: {
           title: 'The Way of Kings',

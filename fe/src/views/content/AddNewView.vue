@@ -2245,14 +2245,49 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       logger.debug('Fetching metadata for ASIN:', asin)
       toast.info('Fetching metadata', `Getting book details from configured sources...`)
       const response = await apiService.getAudibleMetadata<any>(asin)
-      const audimetaData = response.metadata
-      logger.debug(`Metadata fetched from ${response.source}:`, audimetaData)
-      toast.success('Metadata retrieved', `Book details fetched from ${response.source}`)
+      const audimetaData = (response?.metadata ?? response) as Record<string, any> | undefined
+      const metadataSource = response?.source || book.metadataSource || 'configured metadata source'
+      logger.debug(`Metadata fetched from ${metadataSource}:`, audimetaData)
 
       // Store the metadata source in the book object so it shows in the UI
-      book.metadataSource = response.source
+      book.metadataSource = metadataSource
 
-      const publishedDate = audimetaData.publishDate || audimetaData.releaseDate
+      if (!audimetaData || typeof audimetaData !== 'object') {
+        logger.warn('Metadata payload missing/invalid; falling back to selected result data', {
+          asin,
+          responseType: typeof audimetaData,
+        })
+        const result = book.searchResult
+        const fallbackMetadata: AudibleBookMetadata = {
+          asin: asin || '',
+          title: result?.title || book.title || 'Unknown Title',
+          subtitle: result?.subtitle,
+          authors: result?.artist ? [result.artist] : (Array.isArray(book.author_name)
+            ? book.author_name.filter((a): a is string => typeof a === 'string')
+            : (typeof book.author_name === 'string' ? [book.author_name] : [])),
+          narrators: result?.narrator ? [result.narrator] : [],
+          publisher: result?.publisher,
+          publishedDate: result?.publishedDate || (book.first_publish_year ? String(book.first_publish_year) : undefined),
+          description: result?.description,
+          imageUrl: result?.imageUrl,
+          runtime: result?.runtime || result?.lengthMinutes || undefined,
+          language: result?.language,
+          genres: Array.isArray(result?.genres) ? result.genres : [],
+          series: result?.series,
+          seriesNumber: result?.seriesNumber,
+          abridged: false,
+          isbn: undefined,
+          source: metadataSource,
+          openLibraryId: result?.id || undefined,
+        }
+        toast.warning('Metadata unavailable', 'Using search result details to continue.')
+        await addToLibrary(fallbackMetadata)
+        return
+      }
+
+      toast.success('Metadata retrieved', `Book details fetched from ${metadataSource}`)
+
+      const publishedDate = audimetaData.releaseDate || audimetaData.publishDate || audimetaData.publishedDate
 
       const metadata: AudibleBookMetadata = {
         asin: audimetaData.asin || asin || '',
@@ -2282,9 +2317,12 @@ const selectTitleResult = async (book: TitleSearchResult) => {
           : undefined,
         seriesList: (audimetaData.series?.map((s: any) => s.name).filter((n: any): n is string => !!n) as string[]) || [],    
         seriesNumber: audimetaData.series?.[0]?.position || undefined, // Extract position from primary series
-        abridged: audimetaData.bookFormat?.toLowerCase().includes('abridged') || false,
+        abridged:
+          typeof audimetaData.bookFormat === 'string'
+            ? audimetaData.bookFormat.toLowerCase().includes('abridged')
+            : false,
         isbn: audimetaData.isbn,
-        source: response.source,
+        source: metadataSource,
         openLibraryId: book.searchResult?.id || undefined,
       }
 

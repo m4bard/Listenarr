@@ -311,6 +311,10 @@ builder.Services.AddHttpClient();
 // Add named HttpClient for download operations (qBittorrent, Transmission, etc.)
 // Prevents socket exhaustion by reusing connections
 builder.Services.AddHttpClient("DownloadClient")
+    .ConfigureHttpClient(client =>
+    {
+        client.Timeout = TimeSpan.FromSeconds(30);
+    })
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
     {
         AutomaticDecompression = System.Net.DecompressionMethods.All,
