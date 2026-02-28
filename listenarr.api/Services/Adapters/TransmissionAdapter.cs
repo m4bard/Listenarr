@@ -357,7 +357,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Transmission stores files as: downloadDir/name
-                var contentPath = Path.Combine(downloadDir, name);
+                var contentPath = CombineWithOptionalBase(downloadDir, name);
                 
                 // Apply path mapping
                 var localContentPath = await _pathMappingService.TranslatePathAsync(client.Id, contentPath);
@@ -442,7 +442,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Transmission stores files as: downloadDir/name
-                var contentPath = Path.Combine(downloadDir, name);
+                var contentPath = CombineWithOptionalBase(downloadDir, name);
                 
                 // Apply path mapping
                 var localContentPath = await _pathMappingService.TranslatePathAsync(client.Id, contentPath);
@@ -530,7 +530,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // For Transmission, construct ContentPath from downloadDir + name
             var contentPath = !string.IsNullOrEmpty(downloadDir) && !string.IsNullOrEmpty(name)
-                ? Path.Combine(downloadDir, name)
+                ? CombineWithOptionalBase(downloadDir, name)
                 : downloadDir;
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
@@ -604,7 +604,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // For Transmission, construct OutputPath from downloadDir + name
             var contentPath = !string.IsNullOrEmpty(downloadDir) && !string.IsNullOrEmpty(name)
-                ? Path.Combine(downloadDir, name)
+                ? CombineWithOptionalBase(downloadDir, name)
                 : downloadDir;
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
@@ -746,6 +746,29 @@ namespace Listenarr.Api.Services.Adapters
         {
             var scheme = client.UseSSL ? "https" : "http";
             return $"{scheme}://{client.Host}:{client.Port}/transmission/rpc";
+        }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            return Path.Combine(basePath, relativePath);
         }
 
         private static AuthenticationHeaderValue? BuildAuthHeader(DownloadClientConfiguration client)

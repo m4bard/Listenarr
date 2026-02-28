@@ -158,9 +158,12 @@ namespace Listenarr.Api.Controllers
 
             // Defensive check: if the candidate path is rooted, do not call Path.Combine
             // because it would discard the base path argument.
-            return Path.IsPathRooted(relativePath)
-                ? relativePath
-                : Path.Combine(basePath, relativePath);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            return Path.Combine(basePath, relativePath);
         }
 
         public class ScanRequest

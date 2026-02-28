@@ -49,6 +49,45 @@ namespace Listenarr.Api.Services
             }
         }
 
+        private static bool TryBuildPathUnderRoot(string rootPath, string entryPath, out string resolvedPath)
+        {
+            resolvedPath = string.Empty;
+
+            if (string.IsNullOrWhiteSpace(rootPath) || string.IsNullOrWhiteSpace(entryPath))
+            {
+                return false;
+            }
+
+            var normalizedRoot = Path.GetFullPath(rootPath)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            var normalizedEntry = entryPath
+                .Replace('\\', Path.DirectorySeparatorChar)
+                .Replace('/', Path.DirectorySeparatorChar)
+                .Trim();
+
+            if (string.IsNullOrWhiteSpace(normalizedEntry))
+            {
+                return false;
+            }
+
+            normalizedEntry = normalizedEntry.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(normalizedEntry))
+            {
+                return false;
+            }
+
+            var candidatePath = Path.GetFullPath(Path.Combine(normalizedRoot, normalizedEntry));
+            if (!candidatePath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
+                && !string.Equals(candidatePath, normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            resolvedPath = candidatePath;
+            return true;
+        }
+
         /// <summary>
         /// Return the ffprobe path if it exists in the configured bundled directory. This method
         /// does NOT attempt to download or install ffprobe.
@@ -199,10 +238,16 @@ namespace Listenarr.Api.Services
                 if (downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || downloadUrl.EndsWith(".ffmpeg.zip", StringComparison.OrdinalIgnoreCase))
                 {
                     using var archive = SharpCompress.Archives.Zip.ZipArchive.Open(tmpFile);
+                    var baseRoot = Path.GetFullPath(baseDir);
                     foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
                     {
-                        var key = entry.Key.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-                        var outPath = Path.Combine(baseDir, key);
+                        var entryPath = entry.Key ?? string.Empty;
+                        if (!TryBuildPathUnderRoot(baseRoot, entryPath, out var outPath))
+                        {
+                            _logger.LogWarning("Skipping archive entry outside extraction root: {Entry}", entryPath);
+                            continue;
+                        }
+
                         Directory.CreateDirectory(Path.GetDirectoryName(outPath) ?? baseDir);
                         entry.WriteToFile(outPath, new ExtractionOptions() { ExtractFullPath = true, Overwrite = true });
                         _logger.LogDebug("Extracted archive entry to {OutPath}", outPath);
@@ -216,11 +261,18 @@ namespace Listenarr.Api.Services
                         using var stream = File.OpenRead(tmpFile);
                         var readerOptions = new ReaderOptions { LeaveStreamOpen = false };
                         using var reader = ReaderFactory.Open(stream, readerOptions);
+                        var baseRoot = Path.GetFullPath(baseDir);
                         while (reader.MoveToNextEntry())
                         {
                             if (!reader.Entry.IsDirectory)
                             {
-                                var outPath = Path.Combine(baseDir, reader.Entry.Key.Replace('/', Path.DirectorySeparatorChar));
+                                var entryPath = reader.Entry.Key ?? string.Empty;
+                                if (!TryBuildPathUnderRoot(baseRoot, entryPath, out var outPath))
+                                {
+                                    _logger.LogWarning("Skipping archive entry outside extraction root: {Entry}", entryPath);
+                                    continue;
+                                }
+
                                 Directory.CreateDirectory(Path.GetDirectoryName(outPath) ?? baseDir);
                                 using var entryStream = reader.OpenEntryStream();
                                 await using var outFs = File.Create(outPath);

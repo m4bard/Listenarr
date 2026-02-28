@@ -2901,7 +2901,18 @@ namespace Listenarr.Api.Services
                         {
                             if (!string.IsNullOrWhiteSpace(localPath) && !string.IsNullOrWhiteSpace(name))
                             {
-                                localContentPath = Path.Combine(localPath, name);
+                                var normalizedName = name.Trim();
+                                if (Path.IsPathRooted(normalizedName))
+                                {
+                                    localContentPath = normalizedName;
+                                }
+                                else
+                                {
+                                    var relativeName = normalizedName.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                                    localContentPath = Path.IsPathRooted(relativeName)
+                                        ? relativeName
+                                        : Path.Combine(localPath, relativeName);
+                                }
                             }
                             else if (!string.IsNullOrWhiteSpace(localPath))
                             {

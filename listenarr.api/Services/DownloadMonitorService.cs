@@ -969,7 +969,7 @@ namespace Listenarr.Api.Services
                                 var completionPath = !string.IsNullOrEmpty(matched.ContentPath)
                                     ? matched.ContentPath
                                     : (!string.IsNullOrEmpty(matched.SavePath) && !string.IsNullOrEmpty(matched.Name)
-                                        ? Path.Combine(matched.SavePath, matched.Name)
+                                        ? CombineWithOptionalBase(matched.SavePath, matched.Name)
                                         : matched.SavePath);
 
                                 _logger.LogInformation("qBittorrent torrent {TorrentName} detected as complete. Using path: {CompletionPath}",
@@ -2749,6 +2749,29 @@ namespace Listenarr.Api.Services
                    oldDownload.DownloadedSize != newDownload.DownloadedSize ||
                    oldDownload.ErrorMessage != newDownload.ErrorMessage ||
                    oldDownload.CompletedAt != newDownload.CompletedAt;
+        }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            return Path.Combine(basePath, relativePath);
         }
 
         private Download CloneDownload(Download download)

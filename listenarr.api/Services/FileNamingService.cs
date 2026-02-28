@@ -127,7 +127,7 @@ namespace Listenarr.Api.Services
 
                 relativePath = string.IsNullOrWhiteSpace(folderRelative)
                     ? fileRelative
-                    : Path.Combine(folderRelative, fileRelative);
+                    : CombineWithOptionalBase(folderRelative, fileRelative);
             }
 
             // Ensure it has the correct extension
@@ -139,7 +139,7 @@ namespace Listenarr.Api.Services
             // Combine with output path if configured
             var fullPath = string.IsNullOrWhiteSpace(outputPath)
                 ? relativePath
-                : Path.Combine(outputPath, relativePath);
+                : CombineWithOptionalBase(outputPath, relativePath);
 
             _logger.LogInformation("Generated file path: {FilePath}", fullPath);
             return fullPath;
@@ -270,7 +270,7 @@ namespace Listenarr.Api.Services
 
                 relativePath = string.IsNullOrWhiteSpace(folderRelative)
                     ? fileRelative
-                    : Path.Combine(folderRelative, fileRelative);
+                    : CombineWithOptionalBase(folderRelative, fileRelative);
             }
 
             // Ensure it has the correct extension
@@ -282,7 +282,7 @@ namespace Listenarr.Api.Services
             // Combine with the provided output path
             var fullPath = string.IsNullOrWhiteSpace(outputPath)
                 ? relativePath
-                : Path.Combine(outputPath, relativePath);
+                : CombineWithOptionalBase(outputPath, relativePath);
 
             _logger.LogInformation("Generated file path with custom output path: {FilePath}", fullPath);
             return fullPath;
@@ -432,6 +432,29 @@ namespace Listenarr.Api.Services
             }
 
             return result;
+        }
+
+        private static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            var normalizedPath = candidatePath.Trim();
+
+            if (string.IsNullOrEmpty(normalizedPath))
+            {
+                return normalizedPath;
+            }
+
+            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return normalizedPath;
+            }
+
+            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            return Path.Combine(basePath, relativePath);
         }
     }
 }

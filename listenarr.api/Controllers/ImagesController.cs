@@ -1086,9 +1086,12 @@ namespace Listenarr.Api.Controllers
             }
 
             var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return Path.IsPathRooted(relativePath)
-                ? relativePath
-                : Path.Combine(basePath, relativePath);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            return Path.Combine(basePath, relativePath);
         }
 
         [HttpDelete("{identifier}")]
