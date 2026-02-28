@@ -1027,7 +1027,10 @@ namespace Listenarr.Api.Services.Adapters
                 return relativePath;
             }
 
-            return Path.Combine(basePath, relativePath);
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
     }
 }

@@ -77,7 +77,8 @@ namespace Listenarr.Api.Services
                 return false;
             }
 
-            var candidatePath = Path.GetFullPath(Path.Combine(normalizedRoot, normalizedEntry));
+            var candidatePath = Path.GetFullPath(
+                normalizedRoot + Path.DirectorySeparatorChar + normalizedEntry);
             if (!candidatePath.StartsWith(normalizedRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
                 && !string.Equals(candidatePath, normalizedRoot, StringComparison.OrdinalIgnoreCase))
             {

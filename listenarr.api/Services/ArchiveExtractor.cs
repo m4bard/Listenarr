@@ -61,7 +61,10 @@ namespace Listenarr.Api.Services
                             continue;
                         }
 
-                        var destPath = Path.GetFullPath(Path.Combine(tmpRoot, relativeEntryPath));
+                        var combinedPath = tmpRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                            + Path.DirectorySeparatorChar
+                            + relativeEntryPath;
+                        var destPath = Path.GetFullPath(combinedPath);
                         if (!destPath.StartsWith(tmpRoot + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)
                             && !string.Equals(destPath, tmpRoot, StringComparison.OrdinalIgnoreCase))
                         {
