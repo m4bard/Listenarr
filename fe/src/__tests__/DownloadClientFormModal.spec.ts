@@ -62,7 +62,7 @@ describe('DownloadClientFormModal', () => {
 
   it('test button on modal uses current input values (no ID sent)', async () => {
     const api = await import('@/services/api')
-    ;(api.testDownloadClient as any) = vi.fn(async (config: any) => ({ success: true, message: 'ok', client: config }))
+    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({ success: true, message: 'ok', client: config }))
 
     const wrapper = mount(DownloadClientFormModal, {
       global: { plugins: [createPinia()] },
@@ -95,8 +95,8 @@ describe('DownloadClientFormModal', () => {
     expect(testButton.exists()).toBe(true)
     await testButton.trigger('click')
 
-    expect((api.testDownloadClient as any)).toHaveBeenCalled()
-    const calledWith = (api.testDownloadClient as any).mock.calls[0][0]
+    expect((api.testDownloadClient as unknown)).toHaveBeenCalled()
+    const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
     expect(calledWith.host).toBe('edited.local')
     // ID should NOT be sent when testing modal inputs to avoid DB fallback
     expect(calledWith.id).toBeUndefined()
@@ -104,7 +104,7 @@ describe('DownloadClientFormModal', () => {
 
   it('modal prepopulates password from DB and uses empty password when cleared', async () => {
     const api = await import('@/services/api')
-    ;(api.testDownloadClient as any) = vi.fn(async (config: any) => ({ success: true, message: 'ok', client: config }))
+    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({ success: true, message: 'ok', client: config }))
 
     const wrapper = mount(DownloadClientFormModal, {
       global: { plugins: [createPinia()] },
@@ -134,15 +134,15 @@ describe('DownloadClientFormModal', () => {
     expect(passwordComponent.props('modelValue')).toBe('dbpass')
 
     // clear the password input by emitting v-model update
-    await (passwordComponent.vm as any).$emit('update:modelValue', '')
+    await (passwordComponent.vm as unknown).$emit('update:modelValue', '')
     await nextTick()
 
     // click Test
     const testButton = wrapper.find('button.btn-info')
     await testButton.trigger('click')
 
-    expect((api.testDownloadClient as any)).toHaveBeenCalled()
-    const calledWith = (api.testDownloadClient as any).mock.calls[0][0]
+    expect((api.testDownloadClient as unknown)).toHaveBeenCalled()
+    const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
     // Because we omit the id, server will NOT pull DB password; we should send empty password
     expect(calledWith.password).toBe('')
   })

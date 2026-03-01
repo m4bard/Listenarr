@@ -219,7 +219,7 @@ namespace Listenarr.Api.Services
                             {
                                 var imageUrl = audiobook.ImageUrl;
 
-                                // Only attempt to rewrite file-system paths (skip /api/images/ or URLs)
+                                // Only attempt to rewrite file-system paths (skip /api/v1/images/ or URLs)
                                 bool looksLikeFsPath = Path.IsPathRooted(imageUrl) || imageUrl.StartsWith(source, StringComparison.OrdinalIgnoreCase) || imageUrl.StartsWith(source.Replace(Path.DirectorySeparatorChar, '/'), StringComparison.OrdinalIgnoreCase);
                                 if (looksLikeFsPath)
                                 {

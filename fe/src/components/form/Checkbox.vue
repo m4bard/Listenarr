@@ -8,8 +8,8 @@
 </template>
 
 <script setup lang="ts">
-const props = defineProps({ modelValue: { type: Boolean, default: false } })
-const emit = defineEmits(['update:modelValue'])
+defineOptions({ name: 'FormCheckbox' })
+defineProps({ modelValue: { type: Boolean, default: false } })
 </script>
 
 <style scoped>

@@ -47,6 +47,10 @@ namespace Listenarr.Api.Extensions
 
             // Generic named client used by legacy code paths for downloads
             services.AddHttpClient("DownloadClient")
+                .ConfigureHttpClient(client =>
+                {
+                    client.Timeout = TimeSpan.FromSeconds(30);
+                })
                 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                 {
                     AutomaticDecompression = DecompressionMethods.All,

@@ -20,14 +20,12 @@ import type {
   SearchSortBy,
   SearchSortDirection,
   AudimetaSearchResponse,
-  AudimetaBookResponse,
   AudibleBookMetadata,
   ManualImportPreviewResponse,
   ManualImportRequest,
   ManualImportResult,
   RootFolder,
   QualityScore,
-  StartupConfig,
   AudiobookExternalIdentifier,
   AudiobookExternalIdentifierInput,
 } from '@/types'
@@ -36,21 +34,26 @@ import { sessionTokenManager } from '@/utils/sessionToken'
 import { logger } from '@/utils/logger'
 import { getRegionFromLanguage } from '@/utils/languageMapping'
 import { errorTracking } from '@/services/errorTracking'
-import { getPlaceholderUrl } from '@/utils/placeholder'
+import {
+  applyApiVersionFromStartupConfig,
+  API_BASE_PATH,
+  API_BASE_URL,
+  API_IMAGES_PATH_PREFIX,
+  API_ORIGIN,
+  EFFECTIVE_API_BASE,
+} from './apiBase'
 
-// In development, use relative URLs (proxied by Vite to avoid CORS)
-// In production, prefer a configured VITE_API_BASE_URL but fall back to a relative '/api'
-const API_BASE_URL = import.meta.env.DEV ? '/api' : import.meta.env.VITE_API_BASE_URL || '/api'
+const getApiImageOrigin = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
+const getApiImagesBaseUrl = (): string => `${getApiImageOrigin()}${API_BASE_PATH}/images`
+const ABSOLUTE_URL_REGEX = /^https?:\/\//i
 
-// In Node test environments (Vitest), fetch does not accept bare-relative URLs.
-// Create an effective absolute base when running without `window` so tests can
-// call fetch('/api/...') by using 'http://localhost' as the origin.
-const EFFECTIVE_API_BASE = typeof window === 'undefined' && API_BASE_URL.startsWith('/')
-  ? `http://localhost${API_BASE_URL}`
-  : API_BASE_URL
-
-// Backend base (origin) used to build absolute image URLs or websocket origins
-const BACKEND_BASE_URL = import.meta.env.DEV ? '' : API_BASE_URL.replace('/api', '')
+const buildApiRequestUrl = (endpoint: string): string => {
+  const raw = (endpoint || '').trim()
+  if (!raw) return API_BASE_URL
+  if (ABSOLUTE_URL_REGEX.test(raw)) return raw
+  const normalized = raw.startsWith('/') ? raw : `/${raw}`
+  return `${API_BASE_URL}${normalized}`
+}
 
 type ErrorWithStatus = Error & { status?: number; body?: string; retryAfter?: number }
 
@@ -58,6 +61,7 @@ class ApiService {
   private antiforgeryToken: string | null = null;
   private antiforgeryTokenSession: string | null = null;
   private tokenReadyPromise: Promise<void> | null = null;
+  private imageBlobFetchInFlight = new Map<string, Promise<Blob>>();
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
 
   private buildAuthHeaders(): Record<string, string> {
@@ -72,10 +76,13 @@ class ApiService {
             ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
             : false
 
-      if (authEnabled) {
-        const sessionToken = sessionTokenManager.getToken()
-        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`
-      } else {
+      // Always prefer the session token when present, even before startup
+      // config cache is populated. This prevents early authenticated requests
+      // (especially protected image fetches) from being sent without auth.
+      const sessionToken = sessionTokenManager.getToken()
+      if (sessionToken) {
+        headers['Authorization'] = `Bearer ${sessionToken}`
+      } else if (!authEnabled) {
         const apiKey = sc?.apiKey
         if (apiKey) headers['X-Api-Key'] = apiKey
       }
@@ -92,7 +99,7 @@ class ApiService {
       await this.tokenReadyPromise;
       this.tokenReadyPromise = null;
     }
-    const url = `${API_BASE_URL}${endpoint}`;
+    const url = buildApiRequestUrl(endpoint);
 
     // Build headers
     const headers: Record<string, string> = {
@@ -147,6 +154,81 @@ class ApiService {
       throw err;
     }
 
+    // If an unsafe request failed with a CSRF error, fetch a fresh antiforgery
+    // token and retry. We allow two refresh attempts to handle stale cached
+    // tokens that were issued for a prior auth principal.
+    if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && resp.status === 400) {
+      let text = await resp.text().catch(() => '')
+      const looksLikeCsrfFailure = /csrf|xsrf|antiforgery/i.test(text)
+      if (looksLikeCsrfFailure) {
+        const tokenHeaders: Record<string, string> = {}
+        if (headers['Authorization']) tokenHeaders['Authorization'] = headers['Authorization']
+        if (headers['X-Api-Key']) tokenHeaders['X-Api-Key'] = headers['X-Api-Key']
+        if (headers['x-api-key']) tokenHeaders['x-api-key'] = headers['x-api-key']
+
+        let retryAttempts = 0
+        while (retryAttempts < 2) {
+          retryAttempts += 1
+          const refreshedToken = await this.fetchAntiforgeryToken(tokenHeaders)
+          if (!refreshedToken) break
+
+          headers['X-XSRF-TOKEN'] = refreshedToken
+          const retryConfig: RequestInit = {
+            ...config,
+            headers,
+          }
+
+          try {
+            resp = await fetch(url, retryConfig)
+          } catch (err) {
+            logger.error('[ApiService] Network error during CSRF retry', err)
+            throw new Error('Network error')
+          }
+
+          if (resp.status === 401) {
+            sessionTokenManager.clearToken();
+            this.antiforgeryToken = null;
+            this.antiforgeryTokenSession = null;
+            throw Object.assign(new Error('Unauthorized'), { status: 401 });
+          }
+
+          if (resp.status === 429) {
+            const body = await resp.json().catch(() => ({}));
+            const retryAfter = body?.retryAfterSeconds ?? parseInt(resp.headers.get('Retry-After') || '0');
+            const err: ErrorWithStatus = new Error('Too many requests');
+            err.status = 429;
+            err.retryAfter = retryAfter;
+            throw err;
+          }
+
+          if (resp.ok) {
+            break
+          }
+
+          if (resp.status !== 400) {
+            break
+          }
+
+          text = await resp.text().catch(() => '')
+          if (!/csrf|xsrf|antiforgery/i.test(text)) {
+            break
+          }
+        }
+
+        if (!resp.ok) {
+          const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
+          err.status = resp.status;
+          err.body = text;
+          throw err;
+        }
+      } else {
+        const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
+        err.status = resp.status;
+        err.body = text;
+        throw err;
+      }
+    }
+
     if (!resp.ok) {
       const text = await resp.text().catch(() => '');
       const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
@@ -161,10 +243,8 @@ class ApiService {
       return await resp.json();
     } else if (contentType.startsWith('text/')) {
       return (await resp.text()) as unknown as T;
-    } else if ((resp as any).blob) {
-      return (await resp.blob()) as unknown as T;
     } else {
-      return (await resp.text()) as unknown as T;
+      return (await resp.blob()) as unknown as T;
     }
   }
 
@@ -458,60 +538,6 @@ class ApiService {
     ])
   }
 
-  async searchAudibleLibrary(query?: string, language?: string): Promise<SearchResult[]> {
-    const queryParams = new URLSearchParams()
-    if (query) queryParams.append('query', query)
-    if (language) queryParams.append('language', language)
-
-    const url = `/search/audible-library${queryParams.toString() ? '?' + queryParams.toString() : ''}`
-    return this.request(url)
-  }
-
-  async searchAudibleCatalog(
-    query?: string,
-    title?: string,
-    author?: string,
-    language?: string,
-  ): Promise<SearchResult[]> {
-    const queryParams = new URLSearchParams()
-    if (query) queryParams.append('query', query)
-    if (title) queryParams.append('title', title)
-    if (author) queryParams.append('author', author)
-    if (language) queryParams.append('language', language)
-
-    const url = `/search/audible-catalog${queryParams.toString() ? '?' + queryParams.toString() : ''}`
-    return this.request(url)
-  }
-
-  async getAudibleAuthStatus(): Promise<{ authenticated: boolean; identityFile?: string }> {
-    return this.request('/audible-auth/status')
-  }
-
-  async startAudibleExternalLogin(
-    locale: string = 'us',
-    deviceName: string = 'Listenarr',
-  ): Promise<{ loginUrl: string; message?: string }> {
-    return this.request('/audible-auth/external-login-start', {
-      method: 'POST',
-      body: JSON.stringify({ locale, deviceName }),
-    })
-  }
-
-  async completeAudibleExternalLogin(
-    responseUrl: string,
-    locale?: string,
-    deviceName?: string,
-  ): Promise<unknown> {
-    return this.request<unknown>('/audible-auth/external-login-complete', {
-      method: 'POST',
-      body: JSON.stringify({ responseUrl, locale, deviceName }),
-    })
-  }
-
-  async logoutAudible(): Promise<unknown> {
-    return this.request<unknown>('/audible-auth/logout', { method: 'POST' })
-  }
-
   // Downloads API
   async getDownloads(): Promise<Download[]> {
     return this.request<Download[]>('/downloads')
@@ -646,7 +672,7 @@ class ApiService {
   }
 
   async testDownloadClient(
-    config: DownloadClientConfiguration,
+    config: Partial<DownloadClientConfiguration>,
   ): Promise<{ success: boolean; message: string; client?: DownloadClientConfiguration }> {
     return this.request<{
       success: boolean
@@ -807,7 +833,9 @@ class ApiService {
       err.body = body
       throw err
     }
-    return await resp.json();
+    const config = await resp.json()
+    applyApiVersionFromStartupConfig(config)
+    return config
   }
 
     /**
@@ -851,23 +879,48 @@ class ApiService {
     return res
   }
 
-  // Amazon ASIN lookup
+  // ISBN -> ASIN lookup
   async getAsinFromIsbn(
     isbn: string,
   ): Promise<{ success: boolean; asin?: string; error?: string }> {
     return this.request<{ success: boolean; asin?: string; error?: string }>(
-      `/amazon/asin-from-isbn/${encodeURIComponent(isbn)}`,
+      `/metadata/asin-from-isbn/${encodeURIComponent(isbn)}`,
     )
   }
 
   // Audible Metadata API
   async getAudibleMetadata<T>(asin: string): Promise<T> {
-    return this.request<T>(`/audible/metadata/${asin}`)
+    return this.request<T>(`/metadata/${asin}`)
   }
 
   // Library API
   async getLibrary(): Promise<Audiobook[]> {
     return this.request<Audiobook[]>('/library')
+  }
+
+  private normalizeMetadataForApi(
+    metadata: AudibleBookMetadata,
+  ): Omit<AudibleBookMetadata, 'isbn'> & { isbn?: string[] } {
+    const rawIsbn = (metadata as unknown as { isbn?: unknown }).isbn
+    const normalizedIsbn = Array.isArray(rawIsbn)
+      ? rawIsbn
+          .map((v) => (typeof v === 'string' ? v.trim() : String(v ?? '').trim()))
+          .filter((v) => v.length > 0)
+      : typeof rawIsbn === 'string' && rawIsbn.trim().length > 0
+        ? [rawIsbn.trim()]
+        : []
+
+    const normalized: Omit<AudibleBookMetadata, 'isbn'> & { isbn?: string[] } = {
+      ...(metadata as Omit<AudibleBookMetadata, 'isbn'>),
+    }
+
+    if (normalizedIsbn.length > 0) {
+      normalized.isbn = normalizedIsbn
+    } else {
+      delete (normalized as Record<string, unknown>).isbn
+    }
+
+    return normalized
   }
 
   async addToLibrary(
@@ -880,8 +933,9 @@ class ApiService {
       destinationPath?: string
     },
   ): Promise<{ message: string; audiobook: Audiobook }> {
+    const normalizedMetadata = this.normalizeMetadataForApi(metadata)
     const request = {
-      metadata,
+      metadata: normalizedMetadata,
       monitored: options?.monitored ?? true,
       qualityProfileId: options?.qualityProfileId,
       autoSearch: options?.autoSearch ?? false,
@@ -898,7 +952,8 @@ class ApiService {
     metadata: AudibleBookMetadata,
     destinationRoot?: string,
   ): Promise<{ fullPath: string; relativePath: string; root?: string }> {
-    const body = { metadata, destinationRoot }
+    const normalizedMetadata = this.normalizeMetadataForApi(metadata)
+    const body = { metadata: normalizedMetadata, destinationRoot }
     return this.request<{ fullPath: string; relativePath: string; root?: string }>(
       '/library/preview-path',
       {
@@ -1083,11 +1138,12 @@ class ApiService {
   // Helper to convert relative image URLs to absolute
   getImageUrl(imageUrl: string | undefined): string {
     if (!imageUrl) return ''
+
     // If already absolute URL, return as is
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       // Prefer serving images from the backend image cache when referencing
       // known vendor/product links (Amazon/Audible) or common CDN hosts. Try
-      // to extract an ASIN-like identifier and map to our `/api/images/{id}`
+      // to extract an ASIN-like identifier and map to our image endpoint
       // endpoint. Fall back to the original URL only if extraction fails.
       try {
         const parsed = new URL(imageUrl)
@@ -1124,7 +1180,7 @@ class ApiService {
           }
           if (asinMatch && asinMatch[1]) {
             const identifier = asinMatch[1]
-            let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
+            let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
             const params = new URLSearchParams()
             params.append('url', imageUrl)
             const query = params.toString()
@@ -1140,7 +1196,7 @@ class ApiService {
             const base = fname.replace(/\.[^.]+$/, '')
             if (base && base.length >= 10 && base.length <= 12) {
               const identifier = base
-              let url = `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
+              let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
               const params = new URLSearchParams()
               params.append('url', imageUrl)
               const query = params.toString()
@@ -1163,7 +1219,7 @@ class ApiService {
         // Extract filename (with extension) and strip extension to use as identifier
         const filename = libMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        return `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
+        return `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
       }
     } catch (e) {
       // fall back to default behavior below on any error
@@ -1177,14 +1233,14 @@ class ApiService {
       if (authorMatch && authorMatch[1]) {
         const filename = authorMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        return `${BACKEND_BASE_URL}/api/images/${encodeURIComponent(identifier)}`
+        return `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
       }
     } catch (e) {
       logger.debug('[ApiService] getImageUrl authors-detect error', e)
     }
 
     // Convert other relative URLs to absolute (no query-string auth tokens).
-    return `${BACKEND_BASE_URL}${imageUrl}`
+    return `${getApiImageOrigin()}${imageUrl}`
   }
 
   async fetchImageObjectUrl(imageUrl: string | undefined): Promise<string> {
@@ -1193,12 +1249,12 @@ class ApiService {
     if (!resolved) return ''
 
     // Prefer direct same-origin backend image URLs only when auth is not in
-    // play. In authenticated mode, <img src="/api/images/..."> cannot attach
+    // play. In authenticated mode, <img src="/api/vX/images/..."> cannot attach
     // Authorization headers and will fail with 401.
     try {
       if (typeof window !== 'undefined') {
         const parsed = new URL(resolved, window.location.origin)
-        if (parsed.origin === window.location.origin && parsed.pathname.startsWith('/api/images/')) {
+        if (parsed.origin === window.location.origin && parsed.pathname.startsWith(API_IMAGES_PATH_PREFIX)) {
           const cfg = getCachedStartupConfig() as Record<string, unknown> | null
           const rawAuth = cfg?.authenticationRequired ?? cfg?.AuthenticationRequired
           const authRequired =
@@ -1206,7 +1262,7 @@ class ApiService {
               ? rawAuth
               : typeof rawAuth === 'string'
                 ? rawAuth.trim().toLowerCase() === 'enabled' || rawAuth.trim().toLowerCase() === 'true'
-                : false
+                : true
           const hasSessionToken = !!sessionTokenManager.getToken()
           if (!authRequired && !hasSessionToken) {
             return `${parsed.pathname}${parsed.search}`
@@ -1229,21 +1285,38 @@ class ApiService {
       }
     }
 
-    const headers: Record<string, string> = {
-      ...this.buildAuthHeaders(),
+    let blobPromise = this.imageBlobFetchInFlight.get(resolved)
+    if (!blobPromise) {
+      const headers: Record<string, string> = {
+        ...this.buildAuthHeaders(),
+      }
+
+      blobPromise = (async () => {
+        const resp = await fetch(resolved, {
+          method: 'GET',
+          headers,
+          credentials: 'include',
+        })
+
+        if (!resp.ok) {
+          throw new Error(`Image request failed with status ${resp.status}`)
+        }
+
+        return await resp.blob()
+      })()
+
+      this.imageBlobFetchInFlight.set(resolved, blobPromise)
     }
 
-    const resp = await fetch(resolved, {
-      method: 'GET',
-      headers,
-      credentials: 'include',
-    })
-
-    if (!resp.ok) {
-      throw new Error(`Image request failed with status ${resp.status}`)
+    let blob: Blob
+    try {
+      blob = await blobPromise
+    } finally {
+      if (this.imageBlobFetchInFlight.get(resolved) === blobPromise) {
+        this.imageBlobFetchInFlight.delete(resolved)
+      }
     }
 
-    const blob = await resp.blob()
     return URL.createObjectURL(blob)
   }
 
@@ -1259,8 +1332,8 @@ class ApiService {
    */
   async ensureImageCached(path: string): Promise<boolean> {
     try {
-      // Expect path like '/api/images/{id}' optionally with query string
-      const m = String(path).match(/\/api\/images\/([^\?\/]+)/)
+      // Expect path like '/api/vX/images/{id}' optionally with query string
+      const m = String(path).match(/\/api(?:\/v\d+(?:\.\d+)?)?\/images\/([^\?\/]+)/)
       if (!m || !m[1]) return false
       const id = decodeURIComponent(m[1])
 
@@ -1283,25 +1356,25 @@ class ApiService {
         credentials: 'include',
       }
 
-      // Try each candidate by asking backend to fetch and cache it via /api/images/{id}?url=...
+      // Try each candidate by asking backend to fetch and cache it via /api/vX/images/{id}?url=...
       for (const url of candidates) {
         try {
           const resp = await fetch(
             `${API_BASE_URL}/images/${encodeURIComponent(id)}?url=${encodeURIComponent(url)}`,
             requestConfig,
           )
-          if ((resp as any).ok) return true
+          if (resp.ok) return true
         } catch {}
       }
 
       // As a fallback, check the base image endpoint (maybe already cached)
       try {
         const baseResp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}`, requestConfig)
-        if ((baseResp as any).ok) return true
+        if (baseResp.ok) return true
       } catch {}
 
       return false
-    } catch (e) {
+    } catch {
       return false
     }
   }
@@ -1562,7 +1635,7 @@ class ApiService {
     })
   }
 
-  // Antiforgery token for SPA (calls our new /api/antiforgery/token endpoint)
+  // Antiforgery token for SPA (calls /api/vX/antiforgery/token endpoint)
   async fetchAntiforgeryToken(headersToUse?: Record<string, string>): Promise<string | null> {
     try {
       // If the caller provides headers, use them as the base.
@@ -1662,7 +1735,7 @@ class ApiService {
       // Clear antiforgery token cache BEFORE setting session token
       this.antiforgeryToken = null;
       this.antiforgeryTokenSession = null;
-      sessionTokenManager.setToken(responseData.sessionToken);
+      sessionTokenManager.setToken(responseData.sessionToken, { persistent: rememberMe });
       logger.debug('[ApiService] Session token received and stored');
       if (typeof window !== 'undefined') {
         try { window.localStorage.removeItem('listenarr_csrf_token'); } catch {}
@@ -1817,8 +1890,7 @@ export const scoreSearchResults = (profileId: number, searchResults: SearchResul
 
 // Download client helpers
 export const testDownloadClient = (config: Partial<DownloadClientConfiguration>) =>
-  // The backend test endpoint accepts partial client objects (no id) — cast to any for the lower-level call
-  apiService.testDownloadClient(config as any)
+  apiService.testDownloadClient(config)
 
 // Audimeta helpers
 // ...existing code...

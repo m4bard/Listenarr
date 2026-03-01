@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Mock } from 'vitest'
 import { mount } from '@vue/test-utils' 
@@ -117,11 +117,11 @@ describe('SettingsView', () => {
     // Access internal setup state to check showPassword directly (more reliable in VTU)
     const setupState = vm.$?.setupState ?? vm.$setup ?? (vm as unknown as SetupState)
     // initial value should be false
-    expect((setupState.showPassword as any)?.value ?? (setupState.showPassword as any)).toBe(false)
+    expect((setupState.showPassword as unknown)?.value ?? (setupState.showPassword as unknown)).toBe(false)
     // Toggle via exposed function
     vm.toggleShowPassword?.()
     await wrapper.vm.$nextTick()
-    expect((setupState.showPassword as any)?.value ?? (setupState.showPassword as any)).toBe(true)
+    expect((setupState.showPassword as unknown)?.value ?? (setupState.showPassword as unknown)).toBe(true)
   })
 
   // Note: legacy "Prefer US domain" setting was removed from the UI;
@@ -195,7 +195,7 @@ describe('SettingsView', () => {
     // Prepare configuration store with a single disabled client
     const { useConfigurationStore } = await import('@/stores/configuration')
     const cfgStore = useConfigurationStore()
-    cfgStore.downloadClientConfigurations = [] as any
+    cfgStore.downloadClientConfigurations = [] as unknown
     cfgStore.downloadClientConfigurations.push({
       id: 'client-1',
       name: 'Test Client',
@@ -205,14 +205,14 @@ describe('SettingsView', () => {
       isEnabled: false,
       useSSL: false,
       downloadPath: '',
-    } as any)
+    } as unknown)
 
     // Prevent load from overwriting our test data
     cfgStore.loadDownloadClientConfigurations = vi.fn(async () => {})
 
     cfgStore.saveDownloadClientConfiguration = vi.fn(async (c: Partial<DownloadClient>) => {
       // Simulate backend saving (no-op)
-      cfgStore.downloadClientConfigurations[0] = c as any
+      cfgStore.downloadClientConfigurations[0] = c as unknown
       return Promise.resolve()
     })
 

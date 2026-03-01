@@ -25,7 +25,7 @@ import { PhEye, PhEyeSlash } from '@phosphor-icons/vue'
 // are applied only to the inner <input> when bound via $attrs.
 defineOptions({ inheritAttrs: false })
 
-const props = withDefaults(defineProps<{ modelValue?: string }>(), { modelValue: '' })
+withDefaults(defineProps<{ modelValue?: string }>(), { modelValue: '' })
 const emit = defineEmits<{ (e: 'update:modelValue', v: string): void }>()
 
 const show = ref(false)

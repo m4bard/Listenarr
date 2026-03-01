@@ -1,20 +1,22 @@
 import { onUnmounted, reactive } from 'vue'
 import { apiService } from '@/services/api'
 import { getCachedStartupConfig } from '@/services/startupConfigCache'
+import { isApiImagesUrl } from '@/services/apiBase'
 
 export function isLikelyBackendImageUrl(url: string): boolean {
   if (!url) return false
-  if (url.startsWith('/api/images/')) return true
-  if (url.includes('/api/images/')) return true
+  if (isApiImagesUrl(url)) return true
   if (url.startsWith('/config/cache/images/')) return true
   if (url.includes('/config/cache/images/')) return true
   return false
 }
 
 export function useProtectedImages() {
+  const BACKEND_RETRY_COOLDOWN_MS = 30000
   const protectedImageSrcMap = reactive<Record<string, string>>({})
   const protectedImageLoading = reactive<Record<string, boolean>>({})
   const protectedImageError = reactive<Record<string, boolean>>({})
+  const protectedImageErrorAt = reactive<Record<string, number>>({})
   const protectedImageSourceMap = reactive<Record<string, string>>({})
   const protectedImageObjectUrls = new Set<string>()
 
@@ -35,6 +37,7 @@ export function useProtectedImages() {
     delete protectedImageSrcMap[cacheKey]
     delete protectedImageLoading[cacheKey]
     delete protectedImageError[cacheKey]
+    delete protectedImageErrorAt[cacheKey]
   }
 
   function clearProtectedImages() {
@@ -49,6 +52,9 @@ export function useProtectedImages() {
     }
     for (const key of Object.keys(protectedImageError)) {
       delete protectedImageError[key]
+    }
+    for (const key of Object.keys(protectedImageErrorAt)) {
+      delete protectedImageErrorAt[key]
     }
     for (const key of Object.keys(protectedImageSourceMap)) {
       delete protectedImageSourceMap[key]
@@ -69,7 +75,14 @@ export function useProtectedImages() {
     if (existing) return existing
     if (protectedImageError[safeKey]) {
       const retryResolved = apiService.getImageUrl(rawImageUrl)
-      if (!isLikelyBackendImageUrl(retryResolved)) return fallback
+      if (!retryResolved) return fallback
+      const isBackendRetry = isLikelyBackendImageUrl(retryResolved)
+      const lastFailure = protectedImageErrorAt[safeKey] ?? 0
+      if (isBackendRetry && Date.now() - lastFailure < BACKEND_RETRY_COOLDOWN_MS) {
+        return fallback
+      }
+      delete protectedImageError[safeKey]
+      delete protectedImageErrorAt[safeKey]
     }
 
     const resolvedImmediate = apiService.getImageUrl(rawImageUrl)
@@ -112,8 +125,10 @@ export function useProtectedImages() {
             if (!isLikelyBackendImageUrl(resolved) || !isAuthRequiredByConfig()) {
               protectedImageSrcMap[safeKey] = resolved
               delete protectedImageError[safeKey]
+              delete protectedImageErrorAt[safeKey]
             } else {
               protectedImageError[safeKey] = true
+              protectedImageErrorAt[safeKey] = Date.now()
             }
             return
           }
@@ -125,6 +140,7 @@ export function useProtectedImages() {
 
           protectedImageSrcMap[safeKey] = objectUrl
           delete protectedImageError[safeKey]
+          delete protectedImageErrorAt[safeKey]
           if (objectUrl.startsWith('blob:')) {
             protectedImageObjectUrls.add(objectUrl)
           }
@@ -133,8 +149,10 @@ export function useProtectedImages() {
           if (resolved && isLikelyBackendImageUrl(resolved) && !isAuthRequiredByConfig()) {
             protectedImageSrcMap[safeKey] = resolved
             delete protectedImageError[safeKey]
+            delete protectedImageErrorAt[safeKey]
           } else {
             protectedImageError[safeKey] = true
+            protectedImageErrorAt[safeKey] = Date.now()
           }
         } finally {
           protectedImageLoading[safeKey] = false
@@ -158,15 +176,18 @@ export function useProtectedImages() {
   function isAuthRequiredByConfig(): boolean {
     try {
       const cfg = getCachedStartupConfig() as Record<string, unknown> | null
-      if (!cfg) return false
+      // If config is not loaded yet, default to protected mode to avoid
+      // issuing unauthenticated <img src="/api/..."> requests that can fail
+      // and get stuck on placeholders.
+      if (!cfg) return true
       const raw = cfg.authenticationRequired ?? cfg.AuthenticationRequired
       if (typeof raw === 'boolean') return raw
       if (typeof raw === 'string') {
         const normalized = raw.trim().toLowerCase()
         return normalized === 'true' || normalized === 'enabled'
       }
-      return false
+      return true
     } catch {
-      return false
+      return true
     }
   }

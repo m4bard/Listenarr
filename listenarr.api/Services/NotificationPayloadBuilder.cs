@@ -30,7 +30,7 @@ namespace Listenarr.Api.Services
         private const int MAX_FIELD_VALUE = 1024;
         private const int MAX_EMBED_TOTAL = 6000;
 
-        public static JsonNode CreateDiscordPayload(string trigger, object data, string? startupBaseUrl)
+        public static JsonNode CreateDiscordPayload(string trigger, object data, string? startupBaseUrl, string? apiVersion = null)
         {
             // The implementation mirrors the previous logic in NotificationService.CreateDiscordPayload.
             JsonNode? node = data == null ? null : JsonSerializer.SerializeToNode(data);
@@ -100,7 +100,7 @@ namespace Listenarr.Api.Services
             string? thumbnailUrl = null;
             if (!string.IsNullOrWhiteSpace(asin) && !string.IsNullOrWhiteSpace(startupBaseUrl))
             {
-                thumbnailUrl = startupBaseUrl.TrimEnd('/') + $"/api/images/{Uri.EscapeDataString(asin)}";
+                thumbnailUrl = startupBaseUrl.TrimEnd('/') + ApiVersionPathBuilder.BuildImagePath(asin, fallbackVersion: apiVersion);
             }
 
             if (!string.IsNullOrWhiteSpace(imageUrl))
@@ -250,7 +250,7 @@ namespace Listenarr.Api.Services
             return payload;
         }
 
-        public static async Task<(JsonObject payload, AttachmentInfo? attachment)> CreateDiscordPayloadWithAttachmentAsync(string trigger, object data, string? startupBaseUrl, HttpClient httpClient, IHttpContextAccessor? httpContextAccessor = null, Action<string>? logInfo = null, Action<Exception, string>? logDebug = null)
+        public static async Task<(JsonObject payload, AttachmentInfo? attachment)> CreateDiscordPayloadWithAttachmentAsync(string trigger, object data, string? startupBaseUrl, HttpClient httpClient, IHttpContextAccessor? httpContextAccessor = null, Action<string>? logInfo = null, Action<Exception, string>? logDebug = null, string? apiVersion = null)
         {
             // Implementation mirrors previous CreateDiscordPayloadWithAttachmentAsync but kept here to centralize payload logic.
             JsonNode? node = data == null ? null : JsonSerializer.SerializeToNode(data);
@@ -319,7 +319,7 @@ namespace Listenarr.Api.Services
             string? thumbnailUrl = null;
             if (!string.IsNullOrWhiteSpace(asin) && !string.IsNullOrWhiteSpace(startupBaseUrl))
             {
-                thumbnailUrl = startupBaseUrl.TrimEnd('/') + $"/api/images/{Uri.EscapeDataString(asin)}";
+                thumbnailUrl = startupBaseUrl.TrimEnd('/') + ApiVersionPathBuilder.BuildImagePath(asin, fallbackVersion: apiVersion);
             }
 
             if (!string.IsNullOrWhiteSpace(imageUrl))

@@ -6,7 +6,7 @@
 
 <script setup lang="ts">
 import { ref } from 'vue'
-const props = defineProps({
+defineProps({
   submitting: { type: Boolean, default: false },
 })
 const emit = defineEmits(['submit'])
@@ -14,12 +14,6 @@ const formEl = ref<HTMLFormElement | null>(null)
 
 function onSubmit() {
   emit('submit')
-}
-
-// Expose a programmatic submit if parent wants to call it
-// e.g., const f = ref(); f.value?.submit()
-const submit = () => {
-  formEl.value?.dispatchEvent(new Event('submit', { cancelable: true }))
 }
 
 // Note: we intentionally do not call defineExpose here to avoid test-environment issues.

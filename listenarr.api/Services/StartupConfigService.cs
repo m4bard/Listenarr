@@ -259,6 +259,7 @@ namespace Listenarr.Api.Services
                 InstanceName = "Listenarr",
                 SyslogPort = null,
                 AnalyticsEnabled = false,
+                ApiVersion = "1",
                 SslCertPath = null,
                 SslCertPassword = null,
                 Ffmpeg = new FfmpegConfig

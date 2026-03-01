@@ -625,16 +625,7 @@ const close = () => {
   emit('close')
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const openMatchDialog = (item: PreviewItem) => {
-  matchTarget.value = item
-  matchSelection.value =
-    library.value && library.value.length > 0 && library.value[0] && library.value[0].id
-      ? library.value[0].id
-      : null
-  showMatch.value = true
-}
-
+ 
 const closeMatch = () => {
   showMatch.value = false
   matchTarget.value = null
@@ -656,9 +647,6 @@ const allSelected = computed(
 const setAllSelected = (value: boolean) => {
   previewItems.value.forEach((i) => (i.selected = Boolean(value)))
 }
-
-// backwards-compatible alias (if other code referenced toggleSelectAll)
-const toggleSelectAll = (ev: Event) => setAllSelected((ev.target as HTMLInputElement).checked) 
 
 const getItemIssues = (item: PreviewItem): string[] => {
   const issues: string[] = []

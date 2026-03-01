@@ -44,8 +44,9 @@
 
 <script setup lang="ts">
 import { computed, ref, onMounted, onUnmounted, watch, nextTick, useSlots } from 'vue'
+import type { VNode } from 'vue'
 
-defineOptions({ inheritAttrs: false })
+defineOptions({ name: 'BaseModal', inheritAttrs: false })
 
 const props = defineProps({
   visible: { type: Boolean, required: true },
@@ -65,32 +66,50 @@ const sizeClass = computed(() => {
 
 const contentRef = ref<HTMLElement | null>(null)
 const ariaLabelledBy = ref<string | undefined>(undefined)
+let modalObserver: MutationObserver | null = null
 
 // Synchronously inspect slot VNodes to decide whether to render default wrappers.
 const slots = useSlots()
 
-function vnodeHasDataAttr(nodes: any[] | undefined, attr: string): boolean {
+function asVNodes(value: unknown): VNode[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(
+    (entry): entry is VNode => typeof entry === 'object' && entry !== null && 'type' in entry,
+  )
+}
+
+function getTypeName(node: VNode): string | undefined {
+  const type = node.type
+  if (typeof type === 'object' && type !== null) {
+    const componentType = type as { name?: string; __name?: string }
+    return componentType.name || componentType.__name
+  }
+  return undefined
+}
+
+function vnodeHasDataAttr(nodes: readonly VNode[] | undefined, attr: string): boolean {
   if (!nodes) return false
-  for (const n of nodes) {
-    if (!n) continue
+  for (const node of nodes) {
+    if (!node) continue
 
     // If this VNode is a component that we know provides body/footer, treat as true.
-    const typeName = n.type && (n.type.name || n.type.__name || (n.type as any).name)
+    const typeName = getTypeName(node)
     if (typeName === 'ModalBody' || typeName === 'ModalForm') return attr === 'data-modal-body'
     if (typeName === 'ModalFooter') return attr === 'data-modal-footer'
 
-    const props = n.props || {}
-    if (props && props[attr]) return true
+    const vnodeProps = (node.props as Record<string, unknown> | null) ?? null
+    if (vnodeProps && vnodeProps[attr] !== undefined) return true
 
     // deep check children (text/array slots etc.)
-    if (Array.isArray(n.children)) {
-      if (vnodeHasDataAttr(n.children as any[], attr)) return true
+    const childNodes = asVNodes(node.children)
+    if (childNodes.length > 0 && vnodeHasDataAttr(childNodes, attr)) {
+      return true
     }
 
     // some slots wrap VNode in .children or component.subTree
-    if (n.component && n.component.subTree) {
-      const sub = (n.component.subTree as any).children
-      if (Array.isArray(sub) && vnodeHasDataAttr(sub, attr)) return true
+    const subTreeChildren = asVNodes(node.component?.subTree?.children)
+    if (subTreeChildren.length > 0 && vnodeHasDataAttr(subTreeChildren, attr)) {
+      return true
     }
   }
   return false
@@ -131,17 +150,17 @@ onMounted(() => {
     detectCustomRegions()
     // observe mutations to update detection (e.g., slot content changes)
     if (contentRef.value) {
-      const mo = new MutationObserver(() => detectCustomRegions())
-      mo.observe(contentRef.value, { childList: true, subtree: true })
-      ;(contentRef.value as any).__modalObserver = mo
+      modalObserver = new MutationObserver(() => detectCustomRegions())
+      modalObserver.observe(contentRef.value, { childList: true, subtree: true })
     }
   })
   document.addEventListener('keydown', onKeyDown)
 })
 onUnmounted(() => {
   document.removeEventListener('keydown', onKeyDown)
-  if (contentRef.value && (contentRef.value as any).__modalObserver) {
-    ;(contentRef.value as any).__modalObserver.disconnect()
+  if (modalObserver) {
+    modalObserver.disconnect()
+    modalObserver = null
   }
 })
 

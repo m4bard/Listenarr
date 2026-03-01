@@ -3,6 +3,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, beforeEach, expect, vi } from 'vitest'
 import WantedView from '@/views/content/WantedView.vue'
 import { useLibraryStore } from '@/stores/library'
+import { API_BASE_PATH } from '@/services/apiBase'
 
 // Mock api service ensureImageCached and getImageUrl (and other helpers used by stores)
 vi.mock('@/services/api', () => ({
@@ -25,12 +26,13 @@ describe('WantedView image recache behavior', () => {
   it('calls ensureImageCached for visible wanted items on mount', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
+    const imageBasePath = `${API_BASE_PATH}/images`
 
     const store = useLibraryStore()
     store.audiobooks = [
-      { id: 1, title: 'Book 1', monitored: true, files: [], imageUrl: '/api/images/ASIN1' },
-      { id: 2, title: 'Book 2', monitored: true, files: [], imageUrl: '/api/images/ASIN2' },
-    ] as unknown as any
+      { id: 1, title: 'Book 1', monitored: true, files: [], imageUrl: `${imageBasePath}/ASIN1` },
+      { id: 2, title: 'Book 2', monitored: true, files: [], imageUrl: `${imageBasePath}/ASIN2` },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
 
     // Prevent fetchLibrary from running during mount
     store.fetchLibrary = vi.fn(async () => undefined)
@@ -44,6 +46,6 @@ describe('WantedView image recache behavior', () => {
     const img = wrapper.find('img')
     expect(img.exists()).toBe(true)
     const src = img.attributes('src') || ''
-    expect(src).toContain('/api/images/ASIN1')
+    expect(src).toContain(`${imageBasePath}/ASIN1`)
   })
 })

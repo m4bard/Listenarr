@@ -27,7 +27,7 @@ namespace Listenarr.Api.Controllers;
 /// Used to translate file paths when download clients are in different containers/systems.
 /// </summary>
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v{version:apiVersion}/[controller]")]
 public class RemotePathMappingsController : ControllerBase
 {
     private readonly IRemotePathMappingService _mappingService;

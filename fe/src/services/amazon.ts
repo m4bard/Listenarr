@@ -10,7 +10,7 @@ export const amazonService = {
   async getAsinFromIsbn(isbn: string): Promise<AsinLookupResponse> {
     try {
       const data = await apiService['request']<AsinLookupResponse>(
-        `/amazon/asin-from-isbn/${encodeURIComponent(isbn)}`,
+        `/metadata/asin-from-isbn/${encodeURIComponent(isbn)}`,
       )
       return data
     } catch (error) {

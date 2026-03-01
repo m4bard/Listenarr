@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 // Import the real ApiService at test time (some tests mock the module globally)
-let apiService: any
+let apiService: unknown
 
 // Spies for toast methods
 const info = vi.fn()
@@ -12,7 +12,7 @@ vi.mock('@/services/toastService', () => ({
 }))
 
 describe('ApiService CSRF retry', () => {
-  let fetchMock: any
+  let fetchMock: unknown
 
   beforeEach(() => {
     info.mockClear()
@@ -72,7 +72,7 @@ describe('ApiService CSRF retry', () => {
 
     // Verify the retry request included the refreshed token in headers
     // Find any fetch call that targeted our test endpoint and had the token header
-    const calls = (fetchMock as any).mock.calls as Array<any[]>
+    const calls = (fetchMock as unknown).mock.calls as Array<unknown[]>
 
     // Verify the antiforgery token fetch used the original request's API key header
     const tokenFetchCall = calls.find((c) => {

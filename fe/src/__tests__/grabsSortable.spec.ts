@@ -1,23 +1,23 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import * as apiModule from '@/services/api'
 const { apiService } = apiModule
 
 // Ensure instance method exists for legacy spies used in tests
-if (!(apiService as any).getEnabledIndexers) {
-  ;(apiService as any).getEnabledIndexers = async () => []
+if (!(apiService as unknown).getEnabledIndexers) {
+  ;(apiService as unknown).getEnabledIndexers = async () => []
 }
-if (!(apiService as any).searchByApi) {
-  ;(apiService as any).searchByApi = async () => []
+if (!(apiService as unknown).searchByApi) {
+  ;(apiService as unknown).searchByApi = async () => []
 }
-if (!(apiService as any).getDefaultQualityProfile) {
-  ;(apiService as any).getDefaultQualityProfile = async () => ({ id: 1 })
+if (!(apiService as unknown).getDefaultQualityProfile) {
+  ;(apiService as unknown).getDefaultQualityProfile = async () => ({ id: 1 })
 }
-if (!(apiService as any).scoreSearchResults) {
-  ;(apiService as any).scoreSearchResults = async () => []
+if (!(apiService as unknown).scoreSearchResults) {
+  ;(apiService as unknown).scoreSearchResults = async () => []
 }
 
 describe('ManualSearchModal - grabs sorting', () => {
@@ -57,7 +57,7 @@ describe('ManualSearchModal - grabs sorting', () => {
   it('header is clickable to set Grabs sort', async () => {
     // Mock instance methods on apiService so component calls succeed
     vi.spyOn(apiService, 'getEnabledIndexers').mockResolvedValue([
-      { id: 1, name: 'Test', implementation: 'Test', additionalSettings: null } as any,
+      { id: 1, name: 'Test', implementation: 'Test', additionalSettings: null } as unknown,
     ])
     vi.spyOn(apiService, 'searchByApi').mockResolvedValue([
       ({
@@ -68,7 +68,7 @@ describe('ManualSearchModal - grabs sorting', () => {
         publishDate: new Date().toISOString(),
         indexer: 'Test',
         indexerId: 1,
-      } as any),
+      } as unknown),
       ({
         guid: '2',
         title: 'B',
@@ -77,7 +77,7 @@ describe('ManualSearchModal - grabs sorting', () => {
         publishDate: new Date().toISOString(),
         indexer: 'Test',
         indexerId: 1,
-      } as any),
+      } as unknown),
       ({
         guid: '3',
         title: 'C',
@@ -86,10 +86,10 @@ describe('ManualSearchModal - grabs sorting', () => {
         publishDate: new Date().toISOString(),
         indexer: 'Test',
         indexerId: 1,
-      } as any),
-    ] as any)
-    vi.spyOn(apiService, 'getDefaultQualityProfile').mockResolvedValue({ id: 1 } as any)
-    vi.spyOn(apiService, 'scoreSearchResults').mockResolvedValue([] as any) 
+      } as unknown),
+    ] as unknown)
+    vi.spyOn(apiService, 'getDefaultQualityProfile').mockResolvedValue({ id: 1 } as unknown)
+    vi.spyOn(apiService, 'scoreSearchResults').mockResolvedValue([] as unknown) 
 
     const wrapper = mount(ManualSearchModal, {
       props: { isOpen: false, audiobook: { id: 1, title: 'Test', authors: [] } },
@@ -136,7 +136,7 @@ describe('ManualSearchModal - grabs sorting', () => {
   it('header is clickable to set Language sort and toggles order', async () => {
     // Mock instance methods on apiService so component calls succeed
     vi.spyOn(apiService, 'getEnabledIndexers').mockResolvedValue([
-      { id: 1, name: 'Test', implementation: 'Test', additionalSettings: null } as any,
+      { id: 1, name: 'Test', implementation: 'Test', additionalSettings: null } as unknown,
     ])
     vi.spyOn(apiService, 'searchByApi').mockResolvedValue([
       ({
@@ -148,7 +148,7 @@ describe('ManualSearchModal - grabs sorting', () => {
         language: 'Spanish',
         indexer: 'Test',
         indexerId: 1,
-      } as any),
+      } as unknown),
       ({
         guid: '2',
         title: 'B',
@@ -158,7 +158,7 @@ describe('ManualSearchModal - grabs sorting', () => {
         language: 'English',
         indexer: 'Test',
         indexerId: 1,
-      } as any),
+      } as unknown),
       ({
         guid: '3',
         title: 'C',
@@ -168,10 +168,10 @@ describe('ManualSearchModal - grabs sorting', () => {
         language: 'French',
         indexer: 'Test',
         indexerId: 1,
-      } as any),
-    ] as any)
-    vi.spyOn(apiService, 'getDefaultQualityProfile').mockResolvedValue({ id: 1 } as any)
-    vi.spyOn(apiService, 'scoreSearchResults').mockResolvedValue([] as any) 
+      } as unknown),
+    ] as unknown)
+    vi.spyOn(apiService, 'getDefaultQualityProfile').mockResolvedValue({ id: 1 } as unknown)
+    vi.spyOn(apiService, 'scoreSearchResults').mockResolvedValue([] as unknown) 
 
     const wrapper = mount(ManualSearchModal, {
       props: { isOpen: false, audiobook: { id: 1, title: 'Test', authors: [] } },

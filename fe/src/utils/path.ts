@@ -50,7 +50,7 @@ export function stripRootPrefix(root: string, value: string): string | null {
         return useBackslash ? rel.replace(/\//g, '\\\\') : rel
       }
     }
-  } catch (err) {
+  } catch {
     // noop — fall through to null
   }
 
@@ -65,4 +65,3 @@ export function joinPaths(root: string | null | undefined, relative: string | nu
   const combined = rel ? `${r}/${rel}` : r
   return useBackslash ? combined.replace(/\//g, '\\') : combined
 }
-

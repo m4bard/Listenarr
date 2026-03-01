@@ -116,7 +116,7 @@ export default defineComponent({
                 // Redirect to main app if authentication is not required
                 await router.replace({ name: 'home' })
               }
-            } catch (e) {
+            } catch {
               // If config fetch fails, show error (optional: could retry or show fallback UI)
               error.value = 'Failed to load configuration.'
             }

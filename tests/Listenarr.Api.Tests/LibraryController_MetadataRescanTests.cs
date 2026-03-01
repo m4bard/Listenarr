@@ -56,7 +56,7 @@ namespace Listenarr.Api.Tests
                     sourceUrl = "https://audimeta.de"
                 });
 
-            var amazonAsinMock = new Mock<IAmazonAsinService>();
+            var asinLookupMock = new Mock<IAsinLookupService>();
 
             var factory = _factory.WithWebHostBuilder(builder =>
             {
@@ -65,8 +65,8 @@ namespace Listenarr.Api.Tests
                     services.RemoveAll<IAudiobookMetadataService>();
                     services.AddSingleton(metadataMock.Object);
 
-                    services.RemoveAll<IAmazonAsinService>();
-                    services.AddSingleton(amazonAsinMock.Object);
+                    services.RemoveAll<IAsinLookupService>();
+                    services.AddSingleton(asinLookupMock.Object);
                 });
             });
 
@@ -139,7 +139,7 @@ namespace Listenarr.Api.Tests
                     i.ValueNormalized == "9781234567897");
             }
 
-            var detailResponse = await client.GetAsync($"/api/library/{audiobookId}");
+            var detailResponse = await client.GetAsync($"/api/v1/library/{audiobookId}");
             detailResponse.EnsureSuccessStatusCode();
             using (var detailJson = JsonDocument.Parse(await detailResponse.Content.ReadAsStringAsync()))
             {
@@ -149,7 +149,7 @@ namespace Listenarr.Api.Tests
             }
 
             metadataMock.Verify(m => m.GetMetadataAsync("B0TESTASIN", "us", false), Times.Once);
-            amazonAsinMock.Verify(
+            asinLookupMock.Verify(
                 a => a.GetAsinFromIsbnAsync(It.IsAny<string>(), It.IsAny<CancellationToken>()),
                 Times.Never);
         }
@@ -287,14 +287,14 @@ namespace Listenarr.Api.Tests
         private static async Task<HttpResponseMessage> PostRescanAsync(HttpClient client, int audiobookId)
         {
             var csrfToken = await GetAntiforgeryTokenAsync(client);
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/library/{audiobookId}/rescan-metadata");
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"/api/v1/library/{audiobookId}/rescan-metadata");
             request.Headers.Add("X-XSRF-TOKEN", csrfToken);
             return await client.SendAsync(request);
         }
 
         private static async Task<string> GetAntiforgeryTokenAsync(HttpClient client)
         {
-            var tokenResponse = await client.GetAsync("/api/antiforgery/token");
+            var tokenResponse = await client.GetAsync("/api/v1/antiforgery/token");
             tokenResponse.EnsureSuccessStatusCode();
             using var tokenJson = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
             var csrfToken = tokenJson.RootElement.GetProperty("token").GetString();

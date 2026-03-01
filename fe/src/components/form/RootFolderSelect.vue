@@ -22,9 +22,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
-import { PhSpinner, PhInfo } from '@phosphor-icons/vue'
+import { PhSpinner } from '@phosphor-icons/vue'
 
 const NULL_VALUE = '__null__'
 const CUSTOM_VALUE = '__custom__'
@@ -44,10 +44,6 @@ onMounted(() => {
   // Ensure root folders are loaded for selection
   void store.load()
 })
-const isCustom = computed(() => {
-  return (props.customPath && props.customPath.length > 0) || selectValueComputed.value === CUSTOM_VALUE
-})
-
 const selectValueComputed = computed(() => {
   if (props.customPath && props.customPath.length > 0) return CUSTOM_VALUE
   // Treat explicit 0 as Custom sentinel

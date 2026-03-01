@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, type PropType, type Component } from 'vue'
+import { type PropType, type Component } from 'vue'
 import { PhX } from '@phosphor-icons/vue'
 
 const props = defineProps({
@@ -34,8 +34,6 @@ const props = defineProps({
   iconLabel: { type: String, required: false },
   headingId: { type: String, required: false },
 })
-
-const emit = defineEmits(['close'])
 
 // generate an id if none provided - stable per component instance
 const internalId = `modal-heading-${Math.random().toString(36).slice(2, 9)}`

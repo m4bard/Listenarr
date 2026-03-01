@@ -15,7 +15,7 @@
 import { Modal } from '@/components/feedback'
 import { stripHtmlAndNormalize } from '@/utils/textUtils'
 
-const props = defineProps({
+defineProps({
   modelValue: { type: Boolean, required: true },
   title: { type: String, default: '' },
   message: { type: String, default: '' },

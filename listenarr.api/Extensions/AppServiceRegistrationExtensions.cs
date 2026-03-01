@@ -33,7 +33,7 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<IFfmpegService, FfmpegInstallerService>();
             // Service to accept client-pushed download updates and maintain recent-push cache
             services.AddSingleton<DownloadPushService>();
-            services.AddScoped<IAmazonAsinService, AmazonAsinService>();
+            services.AddScoped<IAsinLookupService, AsinLookupService>();
             // Notification service for webhook notifications (typed HttpClient so a HttpClient is injected)
             services.AddHttpClient<NotificationService>();
             // Also register the concrete NotificationService type in the container so constructors
@@ -108,6 +108,7 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<Listenarr.Api.Services.IHubBroadcaster>(sp =>
                 (Listenarr.Api.Services.IHubBroadcaster)sp.GetRequiredService<Listenarr.Application.Services.IHubBroadcaster>());
             // Always register session service, but it will check config internally
+            services.AddScoped<SessionService>();
             services.AddScoped<ISessionService, ConditionalSessionService>();
 
             // Scan queue & background workers registrations are left in Program.cs (hosted services)

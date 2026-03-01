@@ -381,7 +381,6 @@ import {
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useDownloadsStore } from '@/stores/downloads'
-import { apiService } from '@/services/api'
 import { errorTracking } from '@/services/errorTracking'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'

@@ -52,7 +52,7 @@ describe('ManualSearchModal.vue', () => {
 
   // Helper to set `results` on the component instance in a way that works
   // whether the component exposes a ref (`.value`) or an unwrapped array.
-  const setResultsOnVm = (vm: any, r: unknown) => {
+  const setResultsOnVm = (vm: unknown, r: unknown) => {
     if (vm && vm.results && typeof vm.results === 'object' && 'value' in vm.results) {
       vm.results.value = r
     } else if (vm) {
@@ -68,16 +68,6 @@ describe('ManualSearchModal.vue', () => {
     const vm = wrapper.vm as unknown as {
       results: ManualSearchResult[]
       qualityScores?: QualityScoresMap
-    }
-
-    // Set a usenet-style result where id is an informational URL that should be used for the title link
-    // Support both raw arrays and refs (test runner may expose refs differently)
-    const setResults = (r: unknown) => {
-      if (vm && (vm as any).results && typeof (vm as any).results === 'object' && 'value' in (vm as any).results) {
-        ;(vm as any).results.value = r
-      } else if (vm) {
-        ;(vm as any).results = r
-      }
     }
 
     setResultsOnVm(vm, [
@@ -96,7 +86,7 @@ describe('ManualSearchModal.vue', () => {
     await nextTick()
 
     // Debug: show rendered HTML to investigate missing anchor
-    // eslint-disable-next-line no-console
+     
     console.log(wrapper.html())
     const anchor = wrapper.find('a.title-text')
     expect(anchor.exists()).toBe(true)

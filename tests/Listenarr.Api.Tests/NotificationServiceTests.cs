@@ -56,7 +56,7 @@ namespace Listenarr.Api.Tests
             Assert.True(embed.ContainsKey("thumbnail"));
             Assert.NotNull(embed["thumbnail"]);
             var thumb = embed["thumbnail"]!.AsObject();
-            Assert.Equal("https://listenarr.example.com/api/images/B00TEST", thumb["url"]?.ToString());
+            Assert.Equal("https://listenarr.example.com/api/v1/images/B00TEST", thumb["url"]?.ToString());
         }
     }
 
@@ -167,7 +167,7 @@ namespace Listenarr.Api.Tests
             {
                 title = "Relative Image Book",
                 authors = new[] { "Author" },
-                imageUrl = "/api/images/B123RELATIVE"
+                imageUrl = "/api/v1/images/B123RELATIVE"
             };
             var baseUrl = "https://listenarr.example.com";
 
@@ -186,7 +186,7 @@ namespace Listenarr.Api.Tests
             Assert.True(embed.ContainsKey("thumbnail"));
             Assert.NotNull(embed["thumbnail"]);
             var image = embed["thumbnail"]!.AsObject();
-            Assert.Equal("https://listenarr.example.com/api/images/B123RELATIVE", image["url"]?.ToString());
+            Assert.Equal("https://listenarr.example.com/api/v1/images/B123RELATIVE", image["url"]?.ToString());
         }
     }
 
@@ -228,7 +228,7 @@ namespace Listenarr.Api.Tests
             var embed = obj["embeds"]!.AsArray()[0]!.AsObject();
             Assert.True(embed.ContainsKey("thumbnail"));
             var thumb = embed["thumbnail"]!.AsObject();
-            Assert.Equal("https://listenarr.example.com/api/images/B123DERIVE", thumb["url"]?.ToString());
+            Assert.Equal("https://listenarr.example.com/api/v1/images/B123DERIVE", thumb["url"]?.ToString());
         }
 
         [Fact]
@@ -434,7 +434,7 @@ namespace Listenarr.Api.Tests
                 title = "Attachment Test Book",
                 authors = new[] { "Attach Author" },
                 asin = "BATTACH",
-                imageUrl = "https://listenarr.example.com/api/images/BATTACH.jpg"
+                imageUrl = "https://listenarr.example.com/api/v1/images/BATTACH.jpg"
             };
             var webhookUrl = "https://discord.com/api/webhooks/test-attach";
             var enabledTriggers = new List<string> { trigger };

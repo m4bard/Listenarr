@@ -47,17 +47,17 @@ describe('EditAudiobookModal move options', () => {
     await new Promise((r) => setTimeout(r, 200))
 
     // Ensure there is a detectable change: set an explicit custom root and flip monitored
-    ;(wrapper.vm as any).selectedRootId = 0
-    ;(wrapper.vm as any).customRootPath = 'C:\\root\\New Author\\New Book'
-    ;(wrapper.vm as any).formData.monitored = false
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
+    ;(wrapper.vm as unknown).formData.monitored = false
     await wrapper.vm.$nextTick()
 
     // Start save flow and resolve the in-component confirmation promise by
     // calling the module-scoped resolver if it was created. This avoids
     // relying on modal rendering in jsdom.
-    const savePromise = (wrapper.vm as any).handleSave()
+    const savePromise = (wrapper.vm as unknown).handleSave()
     await new Promise((r) => setTimeout(r, 10))
-    const resolver = (wrapper.vm as any).moveConfirmResolver
+    const resolver = (wrapper.vm as unknown).moveConfirmResolver
     if (resolver) resolver({ proceed: true, moveFiles: false, deleteEmptySource: false })
     await savePromise
     // Allow async work to settle
@@ -78,16 +78,16 @@ describe('EditAudiobookModal move options', () => {
     await new Promise((r) => setTimeout(r, 200))
 
     // Ensure there is a detectable change: set an explicit custom root and flip monitored
-    ;(wrapper.vm as any).selectedRootId = 0
-    ;(wrapper.vm as any).customRootPath = 'C:\\root\\New Author\\New Book'
-    ;(wrapper.vm as any).formData.monitored = false
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\root\\New Author\\New Book'
+    ;(wrapper.vm as unknown).formData.monitored = false
     await wrapper.vm.$nextTick()
 
     // Start save flow and resolve the in-component confirmation promise to
     // simulate the user choosing to move files now.
-    const savePromise2 = (wrapper.vm as any).handleSave()
+    const savePromise2 = (wrapper.vm as unknown).handleSave()
     await new Promise((r) => setTimeout(r, 10))
-    const resolver2 = (wrapper.vm as any).moveConfirmResolver
+    const resolver2 = (wrapper.vm as unknown).moveConfirmResolver
     if (resolver2) resolver2({ proceed: true, moveFiles: true, deleteEmptySource: true })
     await savePromise2
 

@@ -8,7 +8,7 @@ using System.ComponentModel.DataAnnotations;
 namespace Listenarr.Api.Controllers;
 
 [ApiController]
-[Route("api/library/manual-import")]
+[Route("api/v{version:apiVersion}/library/manual-import")]
 public class ManualImportController : ControllerBase
 {
     private readonly ILogger<ManualImportController> _logger;

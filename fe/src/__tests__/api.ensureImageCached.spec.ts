@@ -1,96 +1,87 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { API_BASE_PATH } from '@/services/apiBase'
 
 // Ensure we use the actual implementation (test-setup globally mocks /services/api)
 vi.unmock('../services/api')
 import { apiService as svc } from '../services/api'
 
-describe('ApiService.ensureImageCached metadata flow', () => {
+type FetchCall = [RequestInfo | URL, RequestInit?]
+type FetchLikeMock = { mock: { calls: FetchCall[] } }
+type ApiServiceWithCache = typeof svc & {
+  metadataUrlCache: Map<string, { urls: string[]; fetchedAt: number }>
+}
+
+describe('ApiService.ensureImageCached', () => {
+  const imageBasePath = `${API_BASE_PATH}/images`
+
   beforeEach(() => {
     vi.restoreAllMocks()
+    ;(svc as ApiServiceWithCache).metadataUrlCache.clear()
   })
 
   afterEach(() => {
     vi.resetAllMocks()
   })
 
-  it('uses Audimeta image when available and triggers backend fetch', async () => {
-    // Arrange
-    // Stub getImageUrl to return the same local images path
-    vi.spyOn(svc, 'getImageUrl').mockImplementation((url?: string) => url || '')
+  it('uses cached candidate URLs to trigger backend cache fetches', async () => {
+    ;(svc as ApiServiceWithCache).metadataUrlCache.set('ASIN000001', {
+      urls: ['https://audimeta.covers/cover1.jpg'],
+      fetchedAt: Date.now(),
+    })
 
-    // Stub audimeta response
-    vi.spyOn(svc, 'getAudimetaMetadata').mockResolvedValue({ imageUrl: 'https://audimeta.covers/cover1.jpg' } as any)
-
-    // Mock fetch: initial resolved URL missing -> 404, candidate audimeta triggers OK
-    const fetchMock = vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const s = String(input)
-      if (s.includes('/api/images/ASIN000001?url=') && s.includes('audimeta.covers')) {
+      if (s.includes(`${imageBasePath}/ASIN000001?url=`) && s.includes('audimeta.covers')) {
         return { ok: true, status: 200 }
-      }
-      if (s.endsWith('/api/images/ASIN000001')) {
-        return { ok: false, status: 404 }
       }
       return { ok: false, status: 404 }
     }))
 
-    // Act
-    const ok = await svc.ensureImageCached('/api/images/ASIN000001')
+    const ok = await svc.ensureImageCached(`${imageBasePath}/ASIN000001`)
 
-    // Assert
     expect(ok).toBe(true)
-    expect(svc.getAudimetaMetadata).toHaveBeenCalledWith('ASIN000001', 'us', true)
-    expect((globalThis.fetch as unknown as any).mock.calls.some((c) => String(c[0]).includes('audimeta.covers'))).toBe(true)
+    const fetchCalls = (globalThis.fetch as unknown as FetchLikeMock).mock.calls
+    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000001?url=`))).toBe(true)
   })
 
-  it('falls back to metadata (Audnexus) when Audimeta returns nothing', async () => {
-    vi.spyOn(svc, 'getImageUrl').mockImplementation((url?: string) => url || '')
-
-    vi.spyOn(svc, 'getAudimetaMetadata').mockResolvedValue({} as any)
-    vi.spyOn(svc, 'getMetadata').mockResolvedValue({ metadata: { imageUrl: 'https://audnexus.covers/cover2.jpg' }, source: 'audnexus', sourceUrl: '' } as any)
-
-    const fetchMock = vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+  it('falls back to base image endpoint when no candidate URLs are cached', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const s = String(input)
-      if (s.includes('/api/images/ASIN000002?url=') && s.includes('audnexus.covers')) {
+      if (s.endsWith(`${imageBasePath}/ASIN000002`)) {
         return { ok: true, status: 200 }
-      }
-      if (s.endsWith('/api/images/ASIN000002')) {
-        return { ok: false, status: 404 }
       }
       return { ok: false, status: 404 }
     }))
 
-    const ok = await svc.ensureImageCached('/api/images/ASIN000002')
+    const ok = await svc.ensureImageCached(`${imageBasePath}/ASIN000002`)
 
     expect(ok).toBe(true)
-    expect(svc.getAudimetaMetadata).toHaveBeenCalled()
-    expect(svc.getMetadata).toHaveBeenCalledWith('ASIN000002', 'us', true)
-    expect((globalThis.fetch as unknown as any).mock.calls.some((c) => String(c[0]).includes('audnexus.covers'))).toBe(true)
+    const fetchCalls = (globalThis.fetch as unknown as FetchLikeMock).mock.calls
+    expect(fetchCalls.some((c) => String(c[0]).endsWith(`${imageBasePath}/ASIN000002`))).toBe(true)
   })
 
-  it('uses cached candidate urls and avoids repeated metadata lookups', async () => {
-    vi.spyOn(svc, 'getImageUrl').mockImplementation((url?: string) => url || '')
+  it('returns false when candidate and base endpoints both fail', async () => {
+    ;(svc as ApiServiceWithCache).metadataUrlCache.set('ASIN000003', {
+      urls: ['https://cached.example/cover3.jpg'],
+      fetchedAt: Date.now(),
+    })
 
-    // Seed the cache manually
-    ;(svc as any).metadataUrlCache.set('ASIN000003', { urls: ['https://cached.example/cover3.jpg'], fetchedAt: Date.now() })
-
-    // Ensure metadata methods would throw if called
-    vi.spyOn(svc, 'getAudimetaMetadata').mockImplementation(() => { throw new Error('should not call') })
-    vi.spyOn(svc, 'getMetadata').mockImplementation(() => { throw new Error('should not call') })
-
-    const fetchMock = vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const s = String(input)
-      if (s.includes('/api/images/ASIN000003?url=') && s.includes('cached.example')) {
-        return { ok: true, status: 200 }
+      if (s.includes(`${imageBasePath}/ASIN000003?url=`)) {
+        return { ok: false, status: 404 }
       }
-      if (s.endsWith('/api/images/ASIN000003')) {
+      if (s.endsWith(`${imageBasePath}/ASIN000003`)) {
         return { ok: false, status: 404 }
       }
       return { ok: false, status: 404 }
     }))
 
-    const ok = await svc.ensureImageCached('/api/images/ASIN000003')
-    expect(ok).toBe(true)
-    expect(svc.getAudimetaMetadata).not.toHaveBeenCalled()
-    expect(svc.getMetadata).not.toHaveBeenCalled()
+    const ok = await svc.ensureImageCached(`${imageBasePath}/ASIN000003`)
+
+    expect(ok).toBe(false)
+    const fetchCalls = (globalThis.fetch as unknown as FetchLikeMock).mock.calls
+    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000003?url=`))).toBe(true)
+    expect(fetchCalls.some((c) => String(c[0]).endsWith(`${imageBasePath}/ASIN000003`))).toBe(true)
   })
 })

@@ -87,7 +87,7 @@ describe('searchResultFormatting', () => {
     it('returns empty string for falsy input', () => {
       expect(capitalizeLanguage('')).toBe('')
       expect(capitalizeLanguage(undefined)).toBe('')
-      expect(capitalizeLanguage(null as any)).toBe('')
+      expect(capitalizeLanguage(null as unknown)).toBe('')
     })
   })
 
@@ -130,7 +130,7 @@ describe('searchResultFormatting', () => {
     it('returns undefined for empty/falsy input', () => {
       expect(getYearFromDate('')).toBeUndefined()
       expect(getYearFromDate(undefined)).toBeUndefined()
-      expect(getYearFromDate(null as any)).toBeUndefined()
+      expect(getYearFromDate(null as unknown)).toBeUndefined()
     })
 
     it('handles edge cases', () => {

@@ -14,10 +14,7 @@
 import type { ApplicationSettings } from '@/types'
 import { PhGlobe } from '@phosphor-icons/vue'
 
-const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
-const emit = defineEmits<{
-  'update:settings': [value: Partial<ApplicationSettings>]
-}>()
+defineProps<{ settings: Partial<ApplicationSettings> }>()
 </script>
 
 <style scoped>

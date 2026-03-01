@@ -469,6 +469,10 @@ namespace Listenarr.Api.Services
                 {
                     await MonitorDownloadsAsync(stoppingToken);
                 }
+                catch (TaskCanceledException ex) when (!stoppingToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning(ex, "Download monitor HTTP request timed out; continuing background polling loop");
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error in Download Monitor Service");
                 }
@@ -493,6 +497,21 @@ namespace Listenarr.Api.Services
             }
             catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                 appSettings = new ApplicationSettings();
+            }
+
+            HashSet<string> enabledClientIds;
+            try
+            {
+                var configuredClients = await configService.GetDownloadClientConfigurationsAsync();
+                enabledClientIds = configuredClients
+                    .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
+                    .Select(c => c.Id)
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to load download client configurations; skipping external client polling for this cycle");
+                enabledClientIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             }
 
             // Get all active downloads from database
@@ -521,13 +540,40 @@ namespace Listenarr.Api.Services
             // Only poll download clients if there are active downloads
             if (activeDownloads.Any())
             {
-                var clientDownloads = activeDownloads.Where(d => d.DownloadClientId != "DDL").ToList();
+                var clientDownloads = activeDownloads
+                    .Where(d => !string.Equals(d.DownloadClientId, "DDL", StringComparison.OrdinalIgnoreCase) &&
+                                !string.IsNullOrWhiteSpace(d.DownloadClientId))
+                    .ToList();
 
                 _logger.LogInformation("Client downloads (non-DDL): {Count}", clientDownloads.Count);
                 if (clientDownloads.Any())
                 {
-                    _logger.LogInformation("Calling PollDownloadClientsAsync with {Count} downloads", clientDownloads.Count);
-                    await PollDownloadClientsAsync(clientDownloads, configService, dbContext, appSettings, cancellationToken);
+                    if (enabledClientIds.Count == 0)
+                    {
+                        _logger.LogInformation("No enabled download clients configured; skipping client polling");
+                    }
+                    else
+                    {
+                        var pollableClientDownloads = clientDownloads
+                            .Where(d => enabledClientIds.Contains(d.DownloadClientId))
+                            .ToList();
+
+                        var skippedOrphanCount = clientDownloads.Count - pollableClientDownloads.Count;
+                        if (skippedOrphanCount > 0)
+                        {
+                            _logger.LogDebug("Skipping {Count} active downloads with missing/disabled client configuration", skippedOrphanCount);
+                        }
+
+                        if (pollableClientDownloads.Any())
+                        {
+                            _logger.LogInformation("Calling PollDownloadClientsAsync with {Count} downloads", pollableClientDownloads.Count);
+                            await PollDownloadClientsAsync(pollableClientDownloads, configService, dbContext, appSettings, cancellationToken);
+                        }
+                        else
+                        {
+                            _logger.LogInformation("No active downloads mapped to enabled download clients; skipping client polling");
+                        }
+                    }
                 }
                 else
                 {
@@ -647,6 +693,11 @@ namespace Listenarr.Api.Services
                             await PollNZBGetAsync(client, clientGroup.ToList(), dbContext, appSettings, cancellationToken);
                             break;
                     }
+                }
+                catch (TaskCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+                {
+                    _logger.LogWarning(ex, "Timeout polling download client {ClientId}; will retry on next schedule", clientId);
+                    ScheduleNextClientPollOnFailure(clientId);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error polling download client {ClientId}", clientId);
@@ -2106,7 +2157,7 @@ namespace Listenarr.Api.Services
 
                     var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/jsonrpc";
 
-                    using var http = new HttpClient();
+                    using var http = _httpClientFactory.CreateClient("nzbget");
 
                     // Add basic auth if credentials provided
                     if (!string.IsNullOrEmpty(client.Username))

@@ -6,7 +6,7 @@ using Microsoft.Extensions.Caching.Memory;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/metadata")]
+    [Route("api/v{version:apiVersion}/metadata")]
     public class MetadataController : ControllerBase
     {
         private readonly IAudiobookMetadataService _metadataService;
@@ -15,6 +15,7 @@ namespace Listenarr.Api.Controllers
         private readonly IImageCacheService _imageCacheService;
         private readonly IMemoryCache _cache;
         private readonly IAudiobookRepository _audiobookRepository;
+        private readonly IAsinLookupService _asinLookupService;
 
         public MetadataController(
             IAudiobookMetadataService metadataService,
@@ -22,6 +23,7 @@ namespace Listenarr.Api.Controllers
             IImageCacheService imageCacheService,
             IMemoryCache cache,
             IAudiobookRepository audiobookRepository,
+            IAsinLookupService asinLookupService,
             ILogger<MetadataController> logger)
         {
             _metadataService = metadataService;
@@ -29,6 +31,7 @@ namespace Listenarr.Api.Controllers
             _imageCacheService = imageCacheService;
             _cache = cache;
             _audiobookRepository = audiobookRepository;
+            _asinLookupService = asinLookupService;
             _logger = logger;
         }
 
@@ -98,6 +101,23 @@ namespace Listenarr.Api.Controllers
                 _logger.LogError(ex, "Error fetching audimeta metadata for ASIN: {Asin}", asin);
                 return StatusCode(500, "Internal server error");
             }
+        }
+
+        /// <summary>
+        /// Resolve an ASIN from an ISBN value.
+        /// </summary>
+        [HttpGet("asin-from-isbn/{isbn}")]
+        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        public async Task<IActionResult> GetAsinFromIsbn(string isbn, CancellationToken ct)
+        {
+            var result = await _asinLookupService.GetAsinFromIsbnAsync(isbn, ct);
+            if (!result.Success)
+            {
+                return NotFound(new { success = false, error = result.Error ?? "ASIN not found" });
+            }
+
+            return Ok(new { success = true, asin = result.Asin });
         }
 
         /// <summary>

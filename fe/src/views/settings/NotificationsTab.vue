@@ -238,7 +238,7 @@
                       v-for="t in ['book-added','book-downloading','book-available','book-completed']"
                       :key="t"
                       :modelValue="webhookForm.triggers.includes(t)"
-                      @update:modelValue="v => onToggleTrigger(t, v)"
+                      @update:modelValue="onToggleTriggerValue(t, $event)"
                       :title="formatTriggerName(t)"
                     >
                       <template #default>
@@ -553,6 +553,10 @@ const onToggleTrigger = (trigger: string, enabled: boolean) => {
   if (!enabled && idx !== -1) webhookForm.triggers.splice(idx, 1)
 }
 
+const onToggleTriggerValue = (trigger: string, value: boolean) => {
+  onToggleTrigger(trigger, value)
+}
+
 const onServiceTypeChange = () => {
   validateWebhookField('type')
 }
@@ -626,7 +630,7 @@ const editWebhook = (webhook: (typeof webhooks.value)[0]) => {
         webhookForm.telegramBotToken = tokenVal
         // clear URL field for token-based editing
         webhookForm.url = ''
-      } catch (e) {
+      } catch {
         webhookForm.telegramChatId = ''
         webhookForm.telegramBotToken = ''
       }
@@ -639,7 +643,7 @@ const editWebhook = (webhook: (typeof webhooks.value)[0]) => {
         webhookForm.pushoverUserKey = user || ''
         // keep only base path in the url field
         webhookForm.url = u.origin + u.pathname
-      } catch (e) {
+      } catch {
         webhookForm.pushoverApiToken = ''
         webhookForm.pushoverUserKey = ''
       }
@@ -656,7 +660,7 @@ const editWebhook = (webhook: (typeof webhooks.value)[0]) => {
           webhookForm.pushbulletAccessToken = token || ''
           // keep only base path in the url field
           webhookForm.url = u.origin + u.pathname
-        } catch (e) {
+        } catch {
           // fallback: support pushbullet://TOKEN format
           if (webhook.url.startsWith('pushbullet://')) {
             webhookForm.pushbulletAccessToken = webhook.url.substring('pushbullet://'.length)
@@ -664,11 +668,11 @@ const editWebhook = (webhook: (typeof webhooks.value)[0]) => {
           }
         }
       }
-    } catch (e) {
+    } catch {
       // ignore
     }
 
-  } catch (e) {
+  } catch {
     webhookForm.telegramChatId = ''
   }
   resetWebhookFormErrors()
@@ -701,7 +705,7 @@ const saveWebhook = async () => {
           const u = new URL(finalUrl)
           u.searchParams.set('chat_id', webhookForm.telegramChatId.trim())
           finalUrl = u.toString()
-        } catch (e) {
+        } catch {
           const sep = finalUrl.includes('?') ? '&' : '?'
           finalUrl = `${finalUrl}${sep}chat_id=${encodeURIComponent(webhookForm.telegramChatId.trim())}`
         }
@@ -780,13 +784,13 @@ const executeDeleteWebhook = async () => {
     webhooks.value = webhooks.value.filter((w) => w.id !== webhookToDelete.value!.id)
     toast.success('Webhook', 'Webhook deleted successfully')
     await persistWebhooks()
-  } catch (e) {
-    errorTracking.captureException(e as Error, {
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
       component: 'NotificationsTab',
       operation: 'executeDeleteWebhook',
     })
     toast.error('Delete failed', 'Failed to delete webhook')
-    throw e
+    throw error
   } finally {
     webhookToDelete.value = null
   }

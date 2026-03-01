@@ -245,7 +245,6 @@ import { ref, computed, watch } from 'vue'
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
 import {
   PhMagnifyingGlass,
-  PhX,
   PhSpinner,
   PhArrowClockwise,
   PhArrowUp,
@@ -442,8 +441,8 @@ async function search() {
     const searchPromises = enabledIndexers.map(async (indexer) => {
       try {
         // Map MyAnonamouse indexer options (if present on the indexer) to searchByApi opts so backend can apply them
-        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-        let opts: any = undefined
+         
+        let opts: Parameters<typeof apiService.searchByApi>[3] = undefined
         if (indexer.implementation === 'MyAnonamouse') {
           try {
             const settings = indexer.additionalSettings
@@ -469,8 +468,8 @@ async function search() {
           }
         }
 
-        /* eslint-disable-next-line @typescript-eslint/no-explicit-any */
-        const indexerResultsRaw: any[] = await apiService.searchByApi(
+         
+        const indexerResultsRaw: unknown[] = await apiService.searchByApi(
           indexer.id.toString(),
           query,
           undefined,
@@ -801,35 +800,6 @@ function getVisibleScoreValue(resultId: string): number | undefined {
 function getVisibleScoreClass(resultId: string): string {
   const val = getVisibleScoreValue(resultId) ?? 0
   return getScoreClass(val)
-}
-
-// Return the best available external link for a search result
-function getResultLink(result: SearchResult): string | undefined {
-  if (!result) return undefined
-  const r = result as unknown as Record<string, unknown>
-  const src = getSourceType(result)
-
-  if (src === 'nzb' || src === 'usenet') {
-    // For Usenet results prefer the ID URL if it is a URL (some indexers populate guid as an informational link),
-    // otherwise fall back to the indexer/details page (resultUrl / sourceLink / productUrl) before the NZB download.
-    if (typeof r.id === 'string' && /^(https?:)?\/\//.test(r.id)) return r.id as string
-    if (typeof r.resultUrl === 'string' && (r.resultUrl as string).trim().length > 0)
-      return r.resultUrl as string
-    if (result.productUrl) return result.productUrl
-    if (typeof r.sourceLink === 'string' && (r.sourceLink as string).trim().length > 0)
-      return r.sourceLink as string
-    if (result.nzbUrl) return result.nzbUrl
-    return undefined
-  }
-
-  // Torrent / DDL fallback behavior
-  if (typeof r.resultUrl === 'string' && (r.resultUrl as string).trim().length > 0)
-    return r.resultUrl as string
-  if (result.productUrl) return result.productUrl
-  if (result.torrentUrl) return result.torrentUrl
-  if (result.nzbUrl) return result.nzbUrl
-  if (result.magnetLink) return result.magnetLink
-  return undefined
 }
 
 function getScoreClass(score: number): string {

@@ -35,7 +35,7 @@ import { PhSortAscending, PhSortDescending, PhArrowUp, PhArrowDown } from '@phos
 const props = withDefaults(
   defineProps<{
     modelValue?: string | null
-    options?: Array<{ value: string; label: string; icon?: any }>
+    options?: Array<{ value: string; label: string; icon?: unknown }>
     sortOrder?: 'asc' | 'desc'
     currentValue?: string | null
     active?: boolean

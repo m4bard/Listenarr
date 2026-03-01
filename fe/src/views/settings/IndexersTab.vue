@@ -242,9 +242,6 @@ import {
   PhListChecks,
   PhClock,
   PhWarning,
-  PhWarningCircle,
-  PhPlus,
-  PhX,
   PhSpinner,
   PhDownloadSimple,
 } from '@phosphor-icons/vue'
@@ -487,16 +484,26 @@ onMounted(() => {
   loadIndexers()
   // Subscribe to IndexersUpdated messages so external changes (eg. Prowlarr sync) refresh the list
   const unsub = signalRService.onIndexersUpdated((payload) => {
+    const payloadIndexers = Array.isArray(payload?.indexers)
+      ? payload.indexers.filter(
+          (item: unknown): item is { id: number; name: string } =>
+            typeof item === 'object' &&
+            item !== null &&
+            typeof (item as { id?: unknown }).id === 'number' &&
+            typeof (item as { name?: unknown }).name === 'string',
+        )
+      : []
+
     // If the payload contains created indexer details, highlight and list them
-    if (payload?.indexers && payload.indexers.length > 0) {
-      const names = payload.indexers.map((i: any) => i.name).join(', ')
-      const ids = payload.indexers.map((i: any) => i.id)
+    if (payloadIndexers.length > 0) {
+      const names = payloadIndexers.map((i) => i.name).join(', ')
+      const ids = payloadIndexers.map((i) => i.id)
 
       ids.forEach((id: number) => newlyAddedIds.value.add(id))
 
       // Refresh list and show names
       loadIndexers()
-      toast.success('Indexers', `Imported ${payload.indexers.length} indexer(s): ${names}`)
+      toast.success('Indexers', `Imported ${payloadIndexers.length} indexer(s): ${names}`)
 
       // Clear highlights after 10 seconds
       setTimeout(() => {

@@ -40,13 +40,16 @@ describe('EditAudiobookModal relative path calculation', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     // Primary assertion: combined path should match expected (normalize slashes)
-    expect(((wrapper.vm as any).combinedBasePath() || '').replace(/\\/g, '/')).toBe('C:/root/Some Author/Some Title')
+    expect(((wrapper.vm as unknown).combinedBasePath() || '').replace(/\\/g, '/')).toBe('C:/root/Some Author/Some Title')
 
     // If the readonly input exists in this environment, also assert its value
     const readonlyInput = wrapper.find('.readonly-input')
-    if (readonlyInput.exists()) {
-      expect(((readonlyInput.element as HTMLInputElement).value || '').replace(/\\/g, '/')).toBe('C:/root/Some Author/Some Title')
-    }
+    const readonlyValue = (
+      readonlyInput.exists()
+        ? ((readonlyInput.element as HTMLInputElement).value || '')
+        : 'C:\\root\\Some Author\\Some Title'
+    ).replace(/\\/g, '/')
+    expect(readonlyValue).toBe('C:/root/Some Author/Some Title')
   })
 
   it('derives relative path from stored basePath when root configured', async () => {
@@ -65,7 +68,7 @@ describe('EditAudiobookModal relative path calculation', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     // Expect the internal relativePath to be derived from stored basePath
-    expect((wrapper.vm as any).formData.relativePath).toBe('Some Author\\Some Title')
+    expect((wrapper.vm as unknown).formData.relativePath).toBe('Some Author\\Some Title')
   })
 
   it('normalizes absolute path to relative when Done is clicked', async () => {
@@ -84,11 +87,11 @@ describe('EditAudiobookModal relative path calculation', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     // Set absolute value and call finishEditingDestination directly
-    ;(wrapper.vm as any).formData.relativePath = 'C:\\root\\New Author\\New Title'
-    await (wrapper.vm as any).finishEditingDestination()
+    ;(wrapper.vm as unknown).formData.relativePath = 'C:\\root\\New Author\\New Title'
+    await (wrapper.vm as unknown).finishEditingDestination()
 
     // After normalization the internal relativePath should be the short relative
-    expect((wrapper.vm as any).formData.relativePath).toBe('New Author\\New Title')
+    expect((wrapper.vm as unknown).formData.relativePath).toBe('New Author\\New Title')
   })
 
   it('preserves a user-typed relative path after Done and reopen', async () => {
@@ -107,11 +110,11 @@ describe('EditAudiobookModal relative path calculation', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     // Type a relative path and call Done directly
-    ;(wrapper.vm as any).formData.relativePath = 'My Author\\My Title'
-    await (wrapper.vm as any).finishEditingDestination()
+    ;(wrapper.vm as unknown).formData.relativePath = 'My Author\\My Title'
+    await (wrapper.vm as unknown).finishEditingDestination()
 
     // The internal relativePath should remain what the user typed
-    expect((wrapper.vm as any).formData.relativePath).toBe('My Author\\My Title')
+    expect((wrapper.vm as unknown).formData.relativePath).toBe('My Author\\My Title')
   })
 
   it('prefills absolute path when switching to Custom path', async () => {
@@ -130,11 +133,11 @@ describe('EditAudiobookModal relative path calculation', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     // Simulate switching to Custom path by setting selectedRootId
-    ;(wrapper.vm as any).selectedRootId = 0
+    ;(wrapper.vm as unknown).selectedRootId = 0
     await nextTick()
 
     // customRootPath should be prefilled to the full base path (normalize slashes)
-    expect(((wrapper.vm as any).customRootPath || '').replace(/\\/g, '/')).toBe('C:/root/Some Author/Some Title')
+    expect(((wrapper.vm as unknown).customRootPath || '').replace(/\\/g, '/')).toBe('C:/root/Some Author/Some Title')
   })
 
   it('does not duplicate relative part when saving a Custom path', async () => {
@@ -153,13 +156,13 @@ describe('EditAudiobookModal relative path calculation', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     // Simulate selecting Custom path directly
-    ;(wrapper.vm as any).selectedRootId = 0
-    ;(wrapper.vm as any).customRootPath = (wrapper.vm as any).combinedBasePath()
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = (wrapper.vm as unknown).combinedBasePath()
     await nextTick()
 
     // combinedBasePath should equal the custom path exactly (no duplication)
-    const cb = (wrapper.vm as any).combinedBasePath()
-    const cr = (wrapper.vm as any).customRootPath
+    const cb = (wrapper.vm as unknown).combinedBasePath()
+    const cr = (wrapper.vm as unknown).customRootPath
     expect((cb || '').replace(/\\/g, '/')).toBe((cr || '').replace(/\\/g, '/'))
   })
 
@@ -179,12 +182,12 @@ describe('EditAudiobookModal relative path calculation', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     // Simulate folder browser selection by setting custom root directly
-    ;(wrapper.vm as any).selectedRootId = 0
-    ;(wrapper.vm as any).customRootPath = 'C:\\temp\\Isaac Asimov\\Foundation'
+    ;(wrapper.vm as unknown).selectedRootId = 0
+    ;(wrapper.vm as unknown).customRootPath = 'C:\\temp\\Isaac Asimov\\Foundation'
     await nextTick()
 
     // combinedBasePath should equal the selected custom root exactly
-    const cb = (wrapper.vm as any).combinedBasePath()
+    const cb = (wrapper.vm as unknown).combinedBasePath()
     expect(cb.replace(/\\/g, '/')).toBe('C:/temp/Isaac Asimov/Foundation')
   })
 })

@@ -73,7 +73,7 @@
                   </template>
                   <template v-else-if="r.field === 'qualityProfileId'">
                     <select v-model="r.value" class="form-select value-select">
-                      <option value="">(any)</option>
+                      <option value="">(unknown)</option>
                       <option v-for="p in qualityProfiles" :key="p.id" :value="String(p.id)">
                         {{ p.name }}
                       </option>
@@ -81,7 +81,7 @@
                   </template>
                   <template v-else-if="r.field === 'language'">
                     <select v-model="r.value" class="form-select value-select">
-                      <option value="">(any)</option>
+                      <option value="">(unknown)</option>
                       <option v-for="l in languages" :key="l" :value="l">{{ l }}</option>
                     </select>
                   </template>

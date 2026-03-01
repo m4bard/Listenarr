@@ -103,14 +103,11 @@ import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import { Pill } from '@/components/base'
 import {
-  PhPlus,
   PhFolder,
   PhPencil,
   PhTrash,
   PhSpinner,
   PhFolderOpen,
-  PhWarningCircle,
-  PhX,
   PhStar,
 } from '@phosphor-icons/vue'
 import type { RootFolder } from '@/types'

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 // Test setup: Polyfill / mock environment pieces that tests expect
 // - Provide a Mock WebSocket implementation so SignalR code can run in jsdom
 
@@ -29,17 +29,18 @@ class MockWebSocket {
 
 // Centralized apiService and signalR mocks used by unit tests.
 import { vi } from 'vitest'
+import fs from 'fs'
 
 // Diagnostic: help locate failures during test setup in CI/local runs
 try {
-  // eslint-disable-next-line no-console
+   
   console.log('[test-setup] initializing test setup')
 } catch {}
 
 // Provide default component stubs for Modal teleporting components so unit tests
 // render modal content inline instead of using real teleport behavior.
 import { config as vtConfig } from '@vue/test-utils'
-const globalConfig = ((vtConfig.global ??= {} as any) as any)
+const globalConfig = ((vtConfig.global ??= {} as unknown) as unknown)
 globalConfig.components = {
   ...(globalConfig.components || {}),
   // Render modal content inline with accessible dialog attributes so tests
@@ -82,7 +83,7 @@ vi.mock('@/components/base/BrandLogo.vue', () => ({
 // inline stubs while preserving other named exports from the real module.
 vi.mock('@/components/feedback', async (importOriginal) => {
   const actual = (await importOriginal()) as Record<string, unknown>
-  const modalStub: any = {
+  const modalStub: unknown = {
     emits: ['close'],
     props: ['visible', 'title', 'showClose', 'size'],
     template:
@@ -129,7 +130,7 @@ vi.mock('@/services/api', () => {
         }
         if (svc.searchAudimetaByTitleAndAuthor) {
           const resp = (await svc.searchAudimetaByTitleAndAuthor(p.title, p.author)) as unknown
-          const r = resp as any
+          const r = resp as unknown
           return (r?.results) || r || []
         }
         return []
@@ -192,7 +193,7 @@ vi.mock('@/services/api', () => {
     // Expose checkVolume as a named export as well (delegates to the apiService
     // mock above) so tests that import the function directly behave the same.
     checkVolume: vi.fn(async (sourcePath: string, destPath: string) =>
-      (apiService as any).checkVolume(sourcePath, destPath),
+      (apiService as unknown).checkVolume(sourcePath, destPath),
     ),
   }
 })
@@ -352,8 +353,8 @@ try {
   // absolute pathname or return an empty string so tests don't crash during stacktrace
   // or source-map processing.
   try {
-    // eslint-disable-next-line @typescript-eslint/no-var-requires
-    const _fs = require('fs') as typeof import('fs')
+     
+    const _fs = fs
     const _origRead = _fs.readFile.bind(_fs)
     const _origReadSync = _fs.readFileSync.bind(_fs)
     const _origExistsSync = _fs.existsSync.bind(_fs)
@@ -378,7 +379,7 @@ try {
       return np === 'file:///logo.svg' || np.endsWith('/logo.svg')
     }
 
-    ;(_fs as any).readFile = function (p: any, ...args: any[]) {
+    ;(_fs as unknown).readFile = function (p: unknown, ...args: unknown[]) {
       const path = normalizePathArg(p)
       if (isProblematicLogoPath(p)) {
         const cb = args[args.length - 1]
@@ -388,46 +389,46 @@ try {
       return _origRead(path, ...args)
     }
 
-    ;(_fs as any).readFileSync = function (p: any, ...args: any[]) {
+    ;(_fs as unknown).readFileSync = function (p: unknown, ...args: unknown[]) {
       const path = normalizePathArg(p)
       if (isProblematicLogoPath(p)) return ''
       return _origReadSync(path, ...args)
     }
 
     if (_origPromisesRead) {
-      ;(_fs as any).promises.readFile = function (p: any, ...args: any[]) {
+      ;(_fs as unknown).promises.readFile = function (p: unknown, ...args: unknown[]) {
         const path = normalizePathArg(p)
         if (isProblematicLogoPath(p)) return Promise.resolve('')
         return _origPromisesRead(path, ...args)
       }
     }
 
-    ;(_fs as any).existsSync = function (p: any) {
+    ;(_fs as unknown).existsSync = function (p: unknown) {
       const path = normalizePathArg(p)
       if (isProblematicLogoPath(p)) return true
       return _origExistsSync(path)
     }
 
-    ;(_fs as any).statSync = function (p: any, ...args: any[]) {
+    ;(_fs as unknown).statSync = function (p: unknown, ...args: unknown[]) {
       const path = normalizePathArg(p)
-      if (isProblematicLogoPath(p)) return { isFile: () => true, isDirectory: () => false } as any
+      if (isProblematicLogoPath(p)) return { isFile: () => true, isDirectory: () => false } as unknown
       return _origStatSync(path, ...args)
     }
 
-    ;(_fs as any).realpathSync = function (p: any, ...args: any[]) {
+    ;(_fs as unknown).realpathSync = function (p: unknown, ...args: unknown[]) {
       const path = normalizePathArg(p)
       if (isProblematicLogoPath(p)) return path
       return _origRealpathSync(path, ...args)
     }
 
-    ;(_fs as any).createReadStream = function (p: any, ...args: any[]) {
+    ;(_fs as unknown).createReadStream = function (p: unknown, ...args: unknown[]) {
       const path = normalizePathArg(p)
       if (isProblematicLogoPath(p)) return _origCreateReadStream('/dev/null')
       return _origCreateReadStream(path, ...args)
     }
 
     if (_origOpenSync) {
-      ;(_fs as any).openSync = function (p: any, ...args: any[]) {
+      ;(_fs as unknown).openSync = function (p: unknown, ...args: unknown[]) {
         const path = normalizePathArg(p)
         if (isProblematicLogoPath(p)) return _origOpenSync(path)
         return _origOpenSync(path, ...args)

@@ -17,7 +17,7 @@ describe('IndexerFormModal', () => {
         implementation: 'Newznab',
         url: 'https://example.test',
         apiKey: 'secret',
-      } as any),
+      } as unknown),
     })
     await wrapper.vm.$nextTick()
 
