@@ -11,7 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Regression coverage for trust/proxy behavior:** Added API tests validating `*Arr standard` forwarded-header trust configuration and caller redaction behavior differences between public-network and private-network callers.
 
 ### Changed
-- **`*Arr standard` reverse-proxy trust model:** Updated forwarded-header handling to trust common private proxy networks (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `fe80::/10`) and process `X-Forwarded-Host` in addition to `X-Forwarded-For`/`X-Forwarded-Proto` for Docker/Synology/reverse-proxy deployments.
+- **`*arr standard` reverse-proxy trust model:** Updated forwarded-header handling to trust common private proxy networks (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `fe80::/10`) and process `X-Forwarded-Host` in addition to `X-Forwarded-For`/`X-Forwarded-Proto` for Docker/Synology/reverse-proxy deployments.
 - **Secret redaction trust policy:** Adjusted secret redaction decisions to match `*Arr standard` behavior by treating local/private-network callers as trusted perimeter callers, while still requiring admin/API-key authentication for public-network callers.
 - **Security/auth guidance text:** Updated API/Swagger guidance text to reflect trusted-network redaction behavior (`trusted-network/auth`) instead of localhost-only wording.
 
