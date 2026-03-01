@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
+ 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { Mock } from 'vitest'
 import { mount } from '@vue/test-utils' 
@@ -73,7 +73,7 @@ describe('AddNewView pagination', () => {
 
     expect(vm.allAudimetaResults.length).toBe(1)
     expect(vm.titleResults.length).toBe(1)
-    const tr = vm.titleResults[0] as any
+    const tr = vm.titleResults[0] as unknown
     expect(tr.searchResult.narrator).toBe('Scott Brick')
     expect(tr.searchResult.subtitle).toBe('A Heroic Saga')
     expect(tr.searchResult.series).toBe('Dune Series')
@@ -181,7 +181,7 @@ describe('AddNewView pagination', () => {
     expect(hint.text()).toContain('Searching by title')
 
     expect(vm.titleResults.length).toBe(1)
-    const tr = vm.titleResults[0] as any
+    const tr = vm.titleResults[0] as unknown
     expect(tr.title).toBe('Dune Simple')
   })
 
@@ -211,7 +211,7 @@ describe('AddNewView pagination', () => {
     await wrapper.vm.$nextTick()
 
     expect(vm.titleResults.length).toBe(1)
-    const tr = vm.titleResults[0] as any
+    const tr = vm.titleResults[0] as unknown
     expect(tr.title).toBe('Dune Simple')
   })
 
@@ -274,7 +274,7 @@ describe('AddNewView pagination', () => {
 
     await vm.performAdvancedSearch()
     expect(vm.titleResults.length).toBe(1)
-    const tr = vm.titleResults[0] as any
+    const tr = vm.titleResults[0] as unknown
     expect(tr.searchResult.runtime).toBe(10 * 60)
   })
 
@@ -309,7 +309,7 @@ describe('AddNewView pagination', () => {
 
     await vm.performAdvancedSearch()
     expect(vm.titleResults.length).toBe(1)
-    const tr = vm.titleResults[0] as any
+    const tr = vm.titleResults[0] as unknown
     expect(tr.searchResult.runtime).toBe(12 * 60)
   })
 
@@ -362,7 +362,7 @@ describe('AddNewView pagination', () => {
 
     // Simulate an ASIN-based audimeta result (single result view)
     vm.searchType = 'asin'
-    ;(vm as any).audibleResult = {
+    ;(vm as unknown).audibleResult = {
       asin: 'BAUD1',
       title: 'Title',
       authors: [{ name: 'Author Name' }],
@@ -396,7 +396,7 @@ describe('AddNewView pagination', () => {
     const vm = wrapper.vm as unknown as { searchType?: string; audibleResult?: Record<string, unknown> }
 
     vm.searchType = 'asin'
-    ;(vm as any).audibleResult = {
+    ;(vm as unknown).audibleResult = {
       asin: 'BAUDX',
       title: 'Title',
       source: 'External',
@@ -411,7 +411,7 @@ describe('AddNewView pagination', () => {
     }
 
     // Also ensure fake hostnames are not treated as Audible
-    (vm as any).audibleResult.sourceLink = 'https://fakeaudible.com/pd/123'
+    (vm as unknown).audibleResult.sourceLink = 'https://fakeaudible.com/pd/123'
     await wrapper.vm.$nextTick()
     sourceLink = wrapper.find('.result-meta .source-link')
     if (sourceLink.text().includes('Audible')) {
@@ -442,7 +442,7 @@ describe('AddNewView pagination', () => {
 
     // ASIN result case
     vm.searchType = 'asin'
-    ;(vm as any).audibleResult = { asin: 'BAUD2', title: 'B', series: 'X', seriesList: ['X', 'Y'] }
+    ;(vm as unknown).audibleResult = { asin: 'BAUD2', title: 'B', series: 'X', seriesList: ['X', 'Y'] }
     await wrapper.vm.$nextTick()
     const seriesBadgeAsin = wrapper.find('.search-results .title-result-card .series-badge[title]')
     expect(seriesBadgeAsin.exists()).toBe(true)

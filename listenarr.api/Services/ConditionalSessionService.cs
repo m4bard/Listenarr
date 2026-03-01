@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Microsoft.Extensions.Caching.Memory;
 using System.Security.Claims;
 
 namespace Listenarr.Api.Services
@@ -28,62 +27,68 @@ namespace Listenarr.Api.Services
     public class ConditionalSessionService : ISessionService
     {
         private readonly IStartupConfigService _startupConfigService;
-        private readonly IMemoryCache _cache;
-        private readonly ILogger<SessionService> _logger;
-        private SessionService? _actualService;
+        private readonly SessionService _sessionService;
 
-        public ConditionalSessionService(IStartupConfigService startupConfigService, IMemoryCache cache, ILogger<SessionService> logger)
+        public ConditionalSessionService(IStartupConfigService startupConfigService, SessionService sessionService)
         {
             _startupConfigService = startupConfigService;
-            _cache = cache;
-            _logger = logger;
+            _sessionService = sessionService;
         }
 
-        private SessionService? GetActualService()
+        private bool IsAuthenticationEnabled()
         {
-            if (_actualService != null) return _actualService;
-
             var config = _startupConfigService.GetConfig();
-            if (config?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1")
-            {
-                _actualService = new SessionService(_cache, _logger);
-            }
-
-            return _actualService;
+            return config?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1";
         }
 
         public Task<string> CreateSessionAsync(string username, bool isAdmin, bool rememberMe = false)
         {
-            var service = GetActualService();
-            if (service == null)
+            if (!IsAuthenticationEnabled())
             {
                 throw new InvalidOperationException("Authentication is not enabled. Set AuthenticationRequired to 'true' in configuration.");
             }
-            return service.CreateSessionAsync(username, isAdmin, rememberMe);
+
+            return _sessionService.CreateSessionAsync(username, isAdmin, rememberMe);
         }
 
         public Task<ClaimsPrincipal?> GetSessionUserAsync(string sessionToken)
         {
-            var service = GetActualService();
-            return service?.GetSessionUserAsync(sessionToken) ?? Task.FromResult<ClaimsPrincipal?>(null);
+            if (!IsAuthenticationEnabled())
+            {
+                return Task.FromResult<ClaimsPrincipal?>(null);
+            }
+
+            return _sessionService.GetSessionUserAsync(sessionToken);
         }
 
         public Task<bool> InvalidateSessionAsync(string sessionToken)
         {
-            var service = GetActualService();
-            return service?.InvalidateSessionAsync(sessionToken) ?? Task.FromResult(false);
+            if (!IsAuthenticationEnabled())
+            {
+                return Task.FromResult(false);
+            }
+
+            return _sessionService.InvalidateSessionAsync(sessionToken);
         }
 
         public Task InvalidateAllSessionsForUserAsync(string username)
         {
-            var service = GetActualService();
-            return service?.InvalidateAllSessionsForUserAsync(username) ?? Task.CompletedTask;
+            if (!IsAuthenticationEnabled())
+            {
+                return Task.CompletedTask;
+            }
+
+            return _sessionService.InvalidateAllSessionsForUserAsync(username);
         }
 
         public Task<int> GetActiveSessionCountAsync(string username)
         {
-            var service = GetActualService();
-            return service?.GetActiveSessionCountAsync(username) ?? Task.FromResult(0);
+            if (!IsAuthenticationEnabled())
+            {
+                return Task.FromResult(0);
+            }
+
+            return _sessionService.GetActiveSessionCountAsync(username);
         }
     }
 }

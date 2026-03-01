@@ -26,14 +26,14 @@
 
       <CheckboxCard
         :modelValue="settings.failedDownloadHandlingEnabled"
-        @update:modelValue="v => updateField('failedDownloadHandlingEnabled', v)"
+        @update:modelValue="updateFailedDownloadHandlingEnabled"
         title="Enable Failed Download Handling"
         description="When a download fails, mark it as failed, remove it from the client, and record history."
       />
 
       <CheckboxCard
         :modelValue="settings.failedDownloadAutoSearch"
-        @update:modelValue="v => updateField('failedDownloadAutoSearch', v)"
+        @update:modelValue="updateFailedDownloadAutoSearch"
         :disabled="!settings.failedDownloadHandlingEnabled"
         title="Auto-search on Failed Downloads"
         description="Automatically search for a replacement when a download fails (requires failed download handling)."
@@ -56,6 +56,14 @@ const emit = defineEmits<{
 function updateField(field: keyof ApplicationSettings, value: unknown) {
   const payload = { ...(props.settings || {}), [field]: value } as Partial<ApplicationSettings>
   emit('update:settings', payload)
+}
+
+function updateFailedDownloadHandlingEnabled(value: boolean) {
+  updateField('failedDownloadHandlingEnabled', value)
+}
+
+function updateFailedDownloadAutoSearch(value: boolean) {
+  updateField('failedDownloadAutoSearch', value)
 }
 </script>
 

@@ -231,7 +231,7 @@ internal class TestConfigurationService : Listenarr.Api.Services.IConfigurationS
 // Minimal payload builder used by NotificationService during tests. Returns an empty payload and no attachment.
 internal class TestNotificationPayloadBuilder : Listenarr.Api.Services.INotificationPayloadBuilder
 {
-    public JsonNode CreateDiscordPayload(string trigger, object data, string? startupBaseUrl)
+    public JsonNode CreateDiscordPayload(string trigger, object data, string? startupBaseUrl, string? apiVersion = null)
     {
         return new JsonObject();
     }
@@ -243,7 +243,8 @@ internal class TestNotificationPayloadBuilder : Listenarr.Api.Services.INotifica
         HttpClient httpClient,
         Microsoft.AspNetCore.Http.IHttpContextAccessor? httpContextAccessor = null,
         Action<string>? logInfo = null,
-        Action<Exception, string>? logDebug = null)
+        Action<Exception, string>? logDebug = null,
+        string? apiVersion = null)
     {
         var obj = new JsonObject();
         return Task.FromResult<(JsonObject, Listenarr.Api.Services.NotificationAttachmentInfo?)>((obj, null));

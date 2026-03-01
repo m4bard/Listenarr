@@ -91,7 +91,7 @@ namespace Listenarr.Api.Tests
 
             Assert.NotNull(returned);
             Assert.Single(returned!);
-            Assert.Equal($"/api/images/B00001", returned![0].ImageUrl);
+            Assert.Equal($"/api/v1/images/B00001", returned![0].ImageUrl);
         }
 
         [Fact]
@@ -132,7 +132,7 @@ namespace Listenarr.Api.Tests
 
             Assert.NotNull(returned);
             Assert.Single(returned!);
-            Assert.Equal($"/api/images/B00001", returned![0].ImageUrl);
+            Assert.Equal($"/api/v1/images/B00001", returned![0].ImageUrl);
             mockImageCache.Verify(m => m.DownloadAndCacheImageAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never());
         }
 
@@ -277,7 +277,7 @@ namespace Listenarr.Api.Tests
             {
                 Assert.NotEmpty(audimetaReturned!.Results!);
                 Assert.Equal("B123", audimetaReturned.Results![0].Asin);
-                Assert.Equal($"/api/images/B123", audimetaReturned.Results![0].ImageUrl);
+                Assert.Equal($"/api/v1/images/B123", audimetaReturned.Results![0].ImageUrl);
                 Assert.True(
                     audimetaReturned.Results![0].RuntimeLengthMin == 90
                     || audimetaReturned.Results![0].LengthMinutes == 90
@@ -334,7 +334,7 @@ namespace Listenarr.Api.Tests
                         {
                             foundAsin = true;
                             Assert.Equal("B123", a.GetString());
-                            Assert.Equal($"/api/images/B123", el.GetProperty("imageUrl").GetString());
+                            Assert.Equal($"/api/v1/images/B123", el.GetProperty("imageUrl").GetString());
                             break;
                         }
                     }
@@ -596,7 +596,7 @@ namespace Listenarr.Api.Tests
             Assert.Equal(System.Text.Json.JsonValueKind.Array, root.ValueKind);
             var first = root[0];
             Assert.Equal("B999", first.GetProperty("asin").GetString());
-            Assert.Equal("/api/images/B999", first.GetProperty("imageUrl").GetString());
+            Assert.Equal("/api/v1/images/B999", first.GetProperty("imageUrl").GetString());
         }
     }
 

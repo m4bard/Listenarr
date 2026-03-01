@@ -203,7 +203,8 @@ namespace Listenarr.Api.Services
                     var (payloadObj, attachment) = await _payloadBuilder.CreateDiscordPayloadWithAttachmentAsync(
                         trigger, data, baseUrl, _httpClient, _httpContextAccessor,
                         logInfo: msg => _logger.LogInformation(msg),
-                        logDebug: (ex, msg) => _logger.LogDebug(ex, msg)
+                        logDebug: (ex, msg) => _logger.LogDebug(ex, msg),
+                        apiVersion: ApiVersionPathBuilder.ResolveApiVersion(_httpContextAccessor?.HttpContext, startup?.ApiVersion)
                     );
 
                     Console.WriteLine($"DEBUG: NotificationService received attachment? {attachment != null}");
@@ -266,7 +267,7 @@ namespace Listenarr.Api.Services
                         if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
                     }
 
-                    var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                    var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl, ApiVersionPathBuilder.ResolveApiVersion(_httpContextAccessor?.HttpContext, startup?.ApiVersion));
                     var title = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
                     var message = title;
 
@@ -344,7 +345,7 @@ namespace Listenarr.Api.Services
                             if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
                         }
 
-                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl, ApiVersionPathBuilder.ResolveApiVersion(_httpContextAccessor?.HttpContext, startup?.ApiVersion));
                         var message = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
 
                         var values = new List<KeyValuePair<string, string>>
@@ -418,7 +419,7 @@ namespace Listenarr.Api.Services
                             if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
                         }
 
-                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl, ApiVersionPathBuilder.ResolveApiVersion(_httpContextAccessor?.HttpContext, startup?.ApiVersion));
                         var text = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
 
                         var telegramBody = new { chat_id = chatId, text = text ?? string.Empty, disable_notification = true, parse_mode = "Markdown" };
@@ -498,7 +499,7 @@ namespace Listenarr.Api.Services
                             if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
                         }
 
-                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                        var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl, ApiVersionPathBuilder.ResolveApiVersion(_httpContextAccessor?.HttpContext, startup?.ApiVersion));
                         var message = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
 
                         var pushObj = new JsonObject
@@ -569,7 +570,7 @@ namespace Listenarr.Api.Services
                         if (!string.IsNullOrWhiteSpace(derived)) baseUrl = derived;
                     }
 
-                    var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                    var discordPayload = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl, ApiVersionPathBuilder.ResolveApiVersion(_httpContextAccessor?.HttpContext, startup?.ApiVersion));
                     var message = discordPayload is JsonObject d && d.TryGetPropertyValue("content", out var c) ? (c?.ToString() ?? string.Empty) : string.Empty;
 
                     var slackObj = new JsonObject
@@ -627,7 +628,7 @@ namespace Listenarr.Api.Services
                 }
 
                 // Prefer rich payload created by the static helper (includes content, embeds, image links, etc.)
-                var payloadObj = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl);
+                var payloadObj = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, baseUrl, ApiVersionPathBuilder.ResolveApiVersion(_httpContextAccessor?.HttpContext, startup?.ApiVersion));
                 string defaultJson = payloadObj != null ? payloadObj.ToJsonString() : JsonSerializer.Serialize(new { @event = trigger, data = data, timestamp = DateTime.UtcNow }, new JsonSerializerOptions { DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull });
 
                 using var defaultContent = new StringContent(defaultJson, Encoding.UTF8, "application/json");
@@ -708,6 +709,7 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 
 
 

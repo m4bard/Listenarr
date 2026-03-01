@@ -9,9 +9,6 @@ describe('General Settings visual check', () => {
     // Ensure specific content has rendered: File Naming Pattern
     cy.contains('File Naming Pattern', { timeout: 15000 }).should('be.visible')
 
-    // Small delay to allow fonts/assets to stabilize briefly
-    cy.wait(400)
-
     // Take a full-page screenshot
     cy.screenshot('general-settings-fullpage', { capture: 'fullPage' })
 

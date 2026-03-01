@@ -90,7 +90,7 @@
           <PhWarningCircle />
           {{ error }}
         </div>
-      </div>
+      </ModalBody>
 
     </template>
 
@@ -113,7 +113,6 @@
 import { ref, computed } from 'vue'
 import {
   PhFunnelSimple,
-  PhX,
   PhMagnifyingGlass,
   PhSpinner,
   PhWarningCircle,

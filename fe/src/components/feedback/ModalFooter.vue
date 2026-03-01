@@ -42,7 +42,7 @@
 <script setup lang="ts">
 import { PhX, PhSpinner, PhGear, PhCheck } from '@phosphor-icons/vue'
 
-const props = defineProps({
+defineProps({
   showCancel: { type: Boolean, default: false },
   showTest: { type: Boolean, default: false },
   showSave: { type: Boolean, default: false },
@@ -55,7 +55,6 @@ const props = defineProps({
   saveLabelLoading: { type: String, default: 'Saving...' },
 })
 
-const emit = defineEmits(['cancel', 'test', 'save'])
 </script>
 
 <style scoped>

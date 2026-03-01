@@ -3,17 +3,122 @@ import { sessionTokenManager } from '@/utils/sessionToken'
 import { setConnected, setLastError, setReconnectAttempts } from './signalrEvents'
 import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { logger } from '@/utils/logger'
+import { API_BASE_URL } from '@/services/apiBase'
 
 // SignalR client for real-time download updates
 // Using native WebSocket with fallback to long polling
 
-// In DEV use localhost. In production prefer configured VITE_API_BASE_URL origin;
-// fall back to same-origin by using a relative '/api' which implies current host.
-const API_BASE_URL = import.meta.env.DEV
-  ? 'http://localhost:4545'
-  : import.meta.env.VITE_API_BASE_URL
-    ? import.meta.env.VITE_API_BASE_URL.replace(/\/api(?:\/v\d+(?:\.\d+)?)?$/, '')
-    : ''
+const API_SUFFIX_REGEX = /\/api(?:\/v\d+(?:\.\d+)?)?$/i
+const KNOWN_APP_ROUTE_PREFIXES = [
+  '/library-import',
+  '/audiobooks',
+  '/collection',
+  '/add-new',
+  '/activity',
+  '/wanted',
+  '/calendar',
+  '/downloads',
+  '/settings',
+  '/system',
+  '/logs',
+  '/login',
+]
+
+const stripApiSuffix = (value: string): string => value.replace(API_SUFFIX_REGEX, '')
+const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '')
+const ensureLeadingSlash = (value: string): string => (value.startsWith('/') ? value : `/${value}`)
+
+const normalizePathPrefix = (value: string): string => {
+  const trimmed = trimTrailingSlash((value || '').trim())
+  if (!trimmed || trimmed === '/') return ''
+  return ensureLeadingSlash(trimmed)
+}
+
+const toWebSocketOrigin = (httpOrigin: string): string => {
+  const trimmed = (httpOrigin || '').trim()
+  if (!trimmed) return ''
+  if (trimmed.startsWith('https://')) return `wss://${trimmed.slice('https://'.length)}`
+  if (trimmed.startsWith('http://')) return `ws://${trimmed.slice('http://'.length)}`
+  return trimmed
+}
+
+const detectPathPrefixFromLocation = (): string => {
+  if (typeof window === 'undefined') return ''
+  const pathname = window.location?.pathname || '/'
+  if (!pathname || pathname === '/') return ''
+
+  for (const routePrefix of KNOWN_APP_ROUTE_PREFIXES) {
+    const idx = pathname.indexOf(routePrefix)
+    if (idx > 0) {
+      return normalizePathPrefix(pathname.slice(0, idx))
+    }
+    if (idx === 0) {
+      return ''
+    }
+  }
+
+  // Fallback for subpath root requests (e.g., /listenarr before router navigation).
+  const segments = pathname.split('/').filter(Boolean)
+  if (segments.length === 1) {
+    return normalizePathPrefix(`/${segments[0]}`)
+  }
+
+  return ''
+}
+
+const resolveHubHttpBase = (): { origin: string; pathPrefix: string } => {
+  const browserOrigin =
+    typeof window !== 'undefined' && window.location?.origin
+      ? window.location.origin
+      : 'http://localhost'
+
+  const candidates = [
+    (import.meta.env.VITE_API_BASE_URL || '').toString().trim(),
+    (API_BASE_URL || '').toString().trim(),
+  ]
+
+  for (const candidate of candidates) {
+    if (!candidate) continue
+    try {
+      const url = new URL(candidate, browserOrigin)
+      const pathPrefix = normalizePathPrefix(stripApiSuffix(url.pathname || '/'))
+      return { origin: url.origin || browserOrigin, pathPrefix }
+    } catch {
+      // Continue to next candidate.
+    }
+  }
+
+  return { origin: browserOrigin, pathPrefix: detectPathPrefixFromLocation() }
+}
+
+const buildHubWebSocketUrl = (hubPath: '/hubs/downloads' | '/hubs/settings'): string => {
+  const resolved = resolveHubHttpBase()
+  const origin = toWebSocketOrigin(resolved.origin)
+  const prefix = normalizePathPrefix(resolved.pathPrefix)
+  return `${origin}${prefix}${hubPath}`
+}
+
+const SENSITIVE_QUERY_KEYS = new Set(['access_token', 'token', 'apikey', 'api_key', 'x-api-key'])
+
+const sanitizeWebSocketUrlForLog = (rawUrl: string): string => {
+  if (!rawUrl) return rawUrl
+  try {
+    const parsed = new URL(rawUrl)
+    let changed = false
+    for (const key of Array.from(parsed.searchParams.keys())) {
+      if (SENSITIVE_QUERY_KEYS.has(key.toLowerCase())) {
+        parsed.searchParams.set(key, 'redacted')
+        changed = true
+      }
+    }
+    return changed ? parsed.toString() : rawUrl
+  } catch {
+    return rawUrl.replace(
+      /([?&](?:access_token|token|apikey|api_key|x-api-key)=)[^&]*/gi,
+      '$1redacted',
+    )
+  }
+}
 
 type DownloadUpdateCallback = (downloads: Download[]) => void
 type DownloadListCallback = (downloads: Download[]) => void
@@ -56,8 +161,8 @@ class SignalRService {
   private settingsConnection: WebSocket | null = null
   private reconnectAttempts = 0
   private settingsReconnectAttempts = 0
-  private maxReconnectAttempts = 10
   private reconnectDelay = 2000
+  private maxReconnectDelay = 60000
   private isConnecting = false
   private isSettingsConnecting = false
   private messageId = 0
@@ -113,11 +218,9 @@ class SignalRService {
     }
 
     this.isConnecting = true
-    const wsUrl = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://')
-
     try {
       // Using SignalR protocol over WebSocket
-      let hubUrl = `${wsUrl}/hubs/downloads`
+      let hubUrl = buildHubWebSocketUrl('/hubs/downloads')
       try {
         // Prefer using the current session token (if present) for SignalR
         // WebSocket connections. Browsers can't send custom headers on the
@@ -156,7 +259,7 @@ class SignalRService {
       }
 
       if (import.meta.env.DEV) {
-        console.log('[SignalR] Connecting to:', hubUrl)
+        console.log('[SignalR] Connecting to:', sanitizeWebSocketUrlForLog(hubUrl))
       }
       this.connection = new WebSocket(hubUrl)
 
@@ -463,20 +566,17 @@ class SignalRService {
   }
 
   private attemptReconnect() {
-    if (this.reconnectAttempts >= this.maxReconnectAttempts) {
-      console.error('[SignalR] Max reconnect attempts reached')
-      return
-    }
     this.reconnectAttempts++
     try {
       setReconnectAttempts(this.reconnectAttempts)
     } catch {}
-    const delay = this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1)
+    const rawDelay = this.reconnectDelay * Math.pow(1.5, this.reconnectAttempts - 1)
+    const cappedDelay = Math.min(this.maxReconnectDelay, rawDelay)
+    const jitter = Math.round(cappedDelay * 0.2 * Math.random())
+    const delay = cappedDelay + jitter
 
     if (import.meta.env.DEV) {
-      console.log(
-        `[SignalR] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts}/${this.maxReconnectAttempts})`,
-      )
+      console.log(`[SignalR] Reconnecting in ${delay}ms (attempt ${this.reconnectAttempts})`)
     }
 
     setTimeout(() => {
@@ -514,8 +614,7 @@ class SignalRService {
 
     this.isSettingsConnecting = true
 
-    const wsUrl = API_BASE_URL.replace('http://', 'ws://').replace('https://', 'wss://')
-    let hubUrl = `${wsUrl}/hubs/settings`
+    let hubUrl = buildHubWebSocketUrl('/hubs/settings')
 
     try {
       const sess = sessionTokenManager.getToken()
@@ -537,7 +636,9 @@ class SignalRService {
     }
 
     try {
-      if (import.meta.env.DEV) console.log('[SignalR] Connecting to settings hub:', hubUrl)
+      if (import.meta.env.DEV) {
+        console.log('[SignalR] Connecting to settings hub:', sanitizeWebSocketUrlForLog(hubUrl))
+      }
       this.settingsConnection = new WebSocket(hubUrl)
 
       this.settingsConnection.onopen = () => {
@@ -559,7 +660,10 @@ class SignalRService {
         this.isSettingsConnecting = false
         // Try to reconnect with exponential backoff
         this.settingsReconnectAttempts++
-        const delay = this.reconnectDelay * Math.pow(1.5, this.settingsReconnectAttempts - 1)
+        const rawDelay = this.reconnectDelay * Math.pow(1.5, this.settingsReconnectAttempts - 1)
+        const cappedDelay = Math.min(this.maxReconnectDelay, rawDelay)
+        const jitter = Math.round(cappedDelay * 0.2 * Math.random())
+        const delay = cappedDelay + jitter
         setTimeout(() => this.connectSettings(), delay)
       }
 

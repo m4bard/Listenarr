@@ -562,7 +562,6 @@ const apiForm = reactive({
 const settings = ref<ApplicationSettings | null>(null)
 const startupConfig = ref<import('@/types').StartupConfig | null>(null)
 const authEnabled = ref(false)
-const testingNotification = ref(false)
 
 const adminUsers = ref<
   Array<{ id: number; username: string; email?: string; isAdmin: boolean; createdAt: string }>
@@ -631,20 +630,6 @@ const formatApiError = (error: unknown): string => {
   return errorMessage.charAt(0).toUpperCase() + errorMessage.slice(1)
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const editApiConfig = (api: ApiConfiguration) => {
-  editingApi.value = api
-  apiForm.id = api.id
-  apiForm.name = api.name
-  apiForm.baseUrl = api.baseUrl
-  apiForm.apiKey = api.apiKey || ''
-  apiForm.type = 'metadata' // Always metadata since this is the metadata sources modal
-  apiForm.isEnabled = api.isEnabled
-  apiForm.priority = api.priority
-  apiForm.rateLimitPerMinute = api.rateLimitPerMinute || ''
-  showApiForm.value = true
-}
-
 const closeApiForm = () => {
   showApiForm.value = false
   editingApi.value = null
@@ -660,11 +645,6 @@ const closeApiForm = () => {
 }
 
 const apiToDelete = ref<ApiConfiguration | null>(null)
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const confirmDeleteApi = (api: ApiConfiguration) => {
-  apiToDelete.value = api
-}
 
 const executeDeleteApi = async (id?: string) => {
   const apiId = id || apiToDelete.value?.id
@@ -686,54 +666,6 @@ const executeDeleteApi = async (id?: string) => {
     toast.error('API delete failed', errorMessage)
   } finally {
     apiToDelete.value = null
-  }
-}
-
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const toggleApiConfig = async (api: ApiConfiguration) => {
-  try {
-    // Toggle the enabled state
-    const updatedApi = { ...api, isEnabled: !api.isEnabled }
-    await configStore.saveApiConfiguration(updatedApi)
-    toast.success(
-      'Metadata source',
-      `${api.name} ${updatedApi.isEnabled ? 'enabled' : 'disabled'} successfully`,
-    )
-  } catch (error) {
-    errorTracking.captureException(error as Error, {
-      component: 'SettingsView',
-      operation: 'toggleApiConfig',
-    })
-    const errorMessage = formatApiError(error)
-    toast.error('Toggle failed', errorMessage)
-  }
-}
-
-// Test a download client configuration (include credentials in payload)
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const testNotification = async () => {
-  if (!settings.value?.webhookUrl || settings.value.webhookUrl.trim() === '') {
-    toast.error('Test failed', 'Please enter a webhook URL first')
-    return
-  }
-
-  testingNotification.value = true
-  try {
-    const response = await apiService.testNotification()
-    if (response.success) {
-      toast.success('Test notification', response.message || 'Test notification sent successfully')
-    } else {
-      toast.error('Test failed', response.message || 'Failed to send test notification')
-    }
-  } catch (error) {
-    errorTracking.captureException(error as Error, {
-      component: 'SettingsView',
-      operation: 'testNotification',
-    })
-    const errorMessage = formatApiError(error)
-    toast.error('Test failed', errorMessage)
-  } finally {
-    testingNotification.value = false
   }
 }
 
@@ -946,21 +878,6 @@ const loadAdminUsers = async () => {
     const errorMessage = formatApiError(error)
     toast.error('Load failed', errorMessage)
   }
-}
-
-// Helper functions for webhook UI
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const getWebhookIcon = (type: string) => {
-  const iconMap: Record<string, unknown> = {
-    Slack: PhBell,
-    Discord: PhBell,
-    Telegram: PhBell,
-    Pushover: PhBell,
-    Pushbullet: PhBell,
-    NTFY: PhBell,
-    Zapier: PhBell,
-  }
-  return iconMap[type] || PhBell
 }
 
 // Test Discord integration from the toolbar (validates token / installation)

@@ -227,7 +227,6 @@ import {
   PhPlay,
   PhStop,
 } from '@phosphor-icons/vue'
-import Checkbox from '@/components/form/Checkbox.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 

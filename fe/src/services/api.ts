@@ -45,6 +45,15 @@ import {
 
 const getApiImageOrigin = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
 const getApiImagesBaseUrl = (): string => `${getApiImageOrigin()}${API_BASE_PATH}/images`
+const ABSOLUTE_URL_REGEX = /^https?:\/\//i
+
+const buildApiRequestUrl = (endpoint: string): string => {
+  const raw = (endpoint || '').trim()
+  if (!raw) return API_BASE_URL
+  if (ABSOLUTE_URL_REGEX.test(raw)) return raw
+  const normalized = raw.startsWith('/') ? raw : `/${raw}`
+  return `${API_BASE_URL}${normalized}`
+}
 
 type ErrorWithStatus = Error & { status?: number; body?: string; retryAfter?: number }
 
@@ -52,6 +61,7 @@ class ApiService {
   private antiforgeryToken: string | null = null;
   private antiforgeryTokenSession: string | null = null;
   private tokenReadyPromise: Promise<void> | null = null;
+  private imageBlobFetchInFlight = new Map<string, Promise<Blob>>();
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
 
   private buildAuthHeaders(): Record<string, string> {
@@ -66,10 +76,13 @@ class ApiService {
             ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
             : false
 
-      if (authEnabled) {
-        const sessionToken = sessionTokenManager.getToken()
-        if (sessionToken) headers['Authorization'] = `Bearer ${sessionToken}`
-      } else {
+      // Always prefer the session token when present, even before startup
+      // config cache is populated. This prevents early authenticated requests
+      // (especially protected image fetches) from being sent without auth.
+      const sessionToken = sessionTokenManager.getToken()
+      if (sessionToken) {
+        headers['Authorization'] = `Bearer ${sessionToken}`
+      } else if (!authEnabled) {
         const apiKey = sc?.apiKey
         if (apiKey) headers['X-Api-Key'] = apiKey
       }
@@ -86,7 +99,7 @@ class ApiService {
       await this.tokenReadyPromise;
       this.tokenReadyPromise = null;
     }
-    const url = `${API_BASE_URL}${endpoint}`;
+    const url = buildApiRequestUrl(endpoint);
 
     // Build headers
     const headers: Record<string, string> = {
@@ -139,6 +152,81 @@ class ApiService {
       err.status = 429;
       err.retryAfter = retryAfter;
       throw err;
+    }
+
+    // If an unsafe request failed with a CSRF error, fetch a fresh antiforgery
+    // token and retry. We allow two refresh attempts to handle stale cached
+    // tokens that were issued for a prior auth principal.
+    if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && resp.status === 400) {
+      let text = await resp.text().catch(() => '')
+      const looksLikeCsrfFailure = /csrf|xsrf|antiforgery/i.test(text)
+      if (looksLikeCsrfFailure) {
+        const tokenHeaders: Record<string, string> = {}
+        if (headers['Authorization']) tokenHeaders['Authorization'] = headers['Authorization']
+        if (headers['X-Api-Key']) tokenHeaders['X-Api-Key'] = headers['X-Api-Key']
+        if (headers['x-api-key']) tokenHeaders['x-api-key'] = headers['x-api-key']
+
+        let retryAttempts = 0
+        while (retryAttempts < 2) {
+          retryAttempts += 1
+          const refreshedToken = await this.fetchAntiforgeryToken(tokenHeaders)
+          if (!refreshedToken) break
+
+          headers['X-XSRF-TOKEN'] = refreshedToken
+          const retryConfig: RequestInit = {
+            ...config,
+            headers,
+          }
+
+          try {
+            resp = await fetch(url, retryConfig)
+          } catch (err) {
+            logger.error('[ApiService] Network error during CSRF retry', err)
+            throw new Error('Network error')
+          }
+
+          if (resp.status === 401) {
+            sessionTokenManager.clearToken();
+            this.antiforgeryToken = null;
+            this.antiforgeryTokenSession = null;
+            throw Object.assign(new Error('Unauthorized'), { status: 401 });
+          }
+
+          if (resp.status === 429) {
+            const body = await resp.json().catch(() => ({}));
+            const retryAfter = body?.retryAfterSeconds ?? parseInt(resp.headers.get('Retry-After') || '0');
+            const err: ErrorWithStatus = new Error('Too many requests');
+            err.status = 429;
+            err.retryAfter = retryAfter;
+            throw err;
+          }
+
+          if (resp.ok) {
+            break
+          }
+
+          if (resp.status !== 400) {
+            break
+          }
+
+          text = await resp.text().catch(() => '')
+          if (!/csrf|xsrf|antiforgery/i.test(text)) {
+            break
+          }
+        }
+
+        if (!resp.ok) {
+          const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
+          err.status = resp.status;
+          err.body = text;
+          throw err;
+        }
+      } else {
+        const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
+        err.status = resp.status;
+        err.body = text;
+        throw err;
+      }
     }
 
     if (!resp.ok) {
@@ -810,6 +898,31 @@ class ApiService {
     return this.request<Audiobook[]>('/library')
   }
 
+  private normalizeMetadataForApi(
+    metadata: AudibleBookMetadata,
+  ): Omit<AudibleBookMetadata, 'isbn'> & { isbn?: string[] } {
+    const rawIsbn = (metadata as unknown as { isbn?: unknown }).isbn
+    const normalizedIsbn = Array.isArray(rawIsbn)
+      ? rawIsbn
+          .map((v) => (typeof v === 'string' ? v.trim() : String(v ?? '').trim()))
+          .filter((v) => v.length > 0)
+      : typeof rawIsbn === 'string' && rawIsbn.trim().length > 0
+        ? [rawIsbn.trim()]
+        : []
+
+    const normalized: Omit<AudibleBookMetadata, 'isbn'> & { isbn?: string[] } = {
+      ...(metadata as Omit<AudibleBookMetadata, 'isbn'>),
+    }
+
+    if (normalizedIsbn.length > 0) {
+      normalized.isbn = normalizedIsbn
+    } else {
+      delete (normalized as Record<string, unknown>).isbn
+    }
+
+    return normalized
+  }
+
   async addToLibrary(
     metadata: AudibleBookMetadata,
     options?: {
@@ -820,8 +933,9 @@ class ApiService {
       destinationPath?: string
     },
   ): Promise<{ message: string; audiobook: Audiobook }> {
+    const normalizedMetadata = this.normalizeMetadataForApi(metadata)
     const request = {
-      metadata,
+      metadata: normalizedMetadata,
       monitored: options?.monitored ?? true,
       qualityProfileId: options?.qualityProfileId,
       autoSearch: options?.autoSearch ?? false,
@@ -838,7 +952,8 @@ class ApiService {
     metadata: AudibleBookMetadata,
     destinationRoot?: string,
   ): Promise<{ fullPath: string; relativePath: string; root?: string }> {
-    const body = { metadata, destinationRoot }
+    const normalizedMetadata = this.normalizeMetadataForApi(metadata)
+    const body = { metadata: normalizedMetadata, destinationRoot }
     return this.request<{ fullPath: string; relativePath: string; root?: string }>(
       '/library/preview-path',
       {
@@ -1023,6 +1138,7 @@ class ApiService {
   // Helper to convert relative image URLs to absolute
   getImageUrl(imageUrl: string | undefined): string {
     if (!imageUrl) return ''
+
     // If already absolute URL, return as is
     if (imageUrl.startsWith('http://') || imageUrl.startsWith('https://')) {
       // Prefer serving images from the backend image cache when referencing
@@ -1169,21 +1285,38 @@ class ApiService {
       }
     }
 
-    const headers: Record<string, string> = {
-      ...this.buildAuthHeaders(),
+    let blobPromise = this.imageBlobFetchInFlight.get(resolved)
+    if (!blobPromise) {
+      const headers: Record<string, string> = {
+        ...this.buildAuthHeaders(),
+      }
+
+      blobPromise = (async () => {
+        const resp = await fetch(resolved, {
+          method: 'GET',
+          headers,
+          credentials: 'include',
+        })
+
+        if (!resp.ok) {
+          throw new Error(`Image request failed with status ${resp.status}`)
+        }
+
+        return await resp.blob()
+      })()
+
+      this.imageBlobFetchInFlight.set(resolved, blobPromise)
     }
 
-    const resp = await fetch(resolved, {
-      method: 'GET',
-      headers,
-      credentials: 'include',
-    })
-
-    if (!resp.ok) {
-      throw new Error(`Image request failed with status ${resp.status}`)
+    let blob: Blob
+    try {
+      blob = await blobPromise
+    } finally {
+      if (this.imageBlobFetchInFlight.get(resolved) === blobPromise) {
+        this.imageBlobFetchInFlight.delete(resolved)
+      }
     }
 
-    const blob = await resp.blob()
     return URL.createObjectURL(blob)
   }
 
@@ -1602,7 +1735,7 @@ class ApiService {
       // Clear antiforgery token cache BEFORE setting session token
       this.antiforgeryToken = null;
       this.antiforgeryTokenSession = null;
-      sessionTokenManager.setToken(responseData.sessionToken);
+      sessionTokenManager.setToken(responseData.sessionToken, { persistent: rememberMe });
       logger.debug('[ApiService] Session token received and stored');
       if (typeof window !== 'undefined') {
         try { window.localStorage.removeItem('listenarr_csrf_token'); } catch {}

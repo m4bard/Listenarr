@@ -9,16 +9,16 @@ describe('RootFoldersSettings', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
-    const store = useRootFoldersStore()
+    useRootFoldersStore()
 
     // Make the underlying API call pending so store.loading remains true while mounted
     const api = await import('@/services/api')
     let resolveFn: (value: unknown) => void = () => {}
     // spy on the apiService instance method (module-level named export is not present in TS types)
-    vi.spyOn((api as any).apiService, 'getRootFolders').mockImplementation(
+    vi.spyOn((api as unknown).apiService, 'getRootFolders').mockImplementation(
       () => new Promise((res) => {
         resolveFn = res
-      }) as any,
+      }) as unknown,
     )
 
     const wrapper = mount(RootFoldersSettings, { global: { plugins: [pinia] } })

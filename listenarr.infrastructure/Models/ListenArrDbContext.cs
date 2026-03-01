@@ -23,6 +23,7 @@ namespace Listenarr.Infrastructure.Models
         public DbSet<RemotePathMapping> RemotePathMappings { get; set; }
         public DbSet<ProcessExecutionLog> ProcessExecutionLogs { get; set; }
         public DbSet<RootFolder> RootFolders { get; set; }
+        public DbSet<UserSession> UserSessions { get; set; }
 
         public ListenArrDbContext(DbContextOptions<ListenArrDbContext> options)
             : base(options)
@@ -66,6 +67,20 @@ namespace Listenarr.Infrastructure.Models
             modelBuilder.Entity<History>().HasIndex(h => h.Timestamp);
 
             modelBuilder.Entity<MoveJob>().HasIndex(m => new { m.AudiobookId, m.Status });
+
+            modelBuilder.Entity<UserSession>(entity =>
+            {
+                entity.HasKey(s => s.Id);
+                entity.Property(s => s.Username).IsRequired().HasMaxLength(256);
+                entity.Property(s => s.TokenHash).IsRequired().HasMaxLength(128);
+                entity.Property(s => s.CreatedAt).IsRequired();
+                entity.Property(s => s.ExpiresAt).IsRequired();
+                entity.Property(s => s.LastAccessed).IsRequired();
+
+                entity.HasIndex(s => s.TokenHash).IsUnique();
+                entity.HasIndex(s => s.Username);
+                entity.HasIndex(s => s.ExpiresAt);
+            });
 
             // RootFolders table configuration
             modelBuilder.ApplyConfiguration(new Configurations.RootFolderConfiguration());

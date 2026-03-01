@@ -23,7 +23,16 @@ export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfi
     _inflight = apiService
       .getStartupConfig()
       .then((cfg) => {
-        logger.debug('[startupConfigCache] Raw config response:', cfg)
+        const cfgForLog =
+          cfg && typeof cfg === 'object'
+            ? (() => {
+                const cloned = { ...(cfg as Record<string, unknown>) }
+                if (typeof cloned.apiKey === 'string' && cloned.apiKey.length > 0) cloned.apiKey = 'redacted'
+                if (typeof cloned.ApiKey === 'string' && cloned.ApiKey.length > 0) cloned.ApiKey = 'redacted'
+                return cloned
+              })()
+            : cfg
+        logger.debug('[startupConfigCache] Raw config response:', cfgForLog)
         applyApiVersionFromStartupConfig(cfg)
         _cache = cfg
         _cacheTs = Date.now()

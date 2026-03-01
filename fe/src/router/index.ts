@@ -100,6 +100,14 @@ const router = createRouter({
   routes,
 })
 
+const redactStartupConfigForLog = (config: StartupConfig | null): StartupConfig | Record<string, unknown> | null => {
+  if (!config || typeof config !== 'object') return config
+  const cloned = { ...(config as Record<string, unknown>) }
+  if (typeof cloned.apiKey === 'string' && cloned.apiKey.length > 0) cloned.apiKey = 'redacted'
+  if (typeof cloned.ApiKey === 'string' && cloned.ApiKey.length > 0) cloned.ApiKey = 'redacted'
+  return cloned
+}
+
 // Preload helper: given a route name or path, trigger the route's lazy component import
 // without navigating. Returns the import promise or a resolved promise when not found.
 export function preloadRoute(nameOrPath: string) {
@@ -132,8 +140,8 @@ export function preloadRoute(nameOrPath: string) {
 
 
 
-router.beforeEach(async (to, from, next) => {
-  if (import.meta.env.CYPRESS) return next()
+router.beforeEach(async (to, from) => {
+  if (import.meta.env.CYPRESS) return true
   const auth = useAuthStore()
   const forceLogin =
     to.name === 'login' &&
@@ -158,7 +166,7 @@ router.beforeEach(async (to, from, next) => {
   const startupConfig = await getStartupConfigCached(0)
   const startupConfigMissing = !startupConfig
   logger.debug('[router] startupConfigMissing', startupConfigMissing)
-  logger.debug('[router] startupConfig', startupConfig)
+  logger.debug('[router] startupConfig', redactStartupConfigForLog(startupConfig))
   const authRequiredConfig = (() => {
     if (startupConfigMissing) {
         logger.debug('[router] startupConfig missing, defaulting authRequiredConfig to false')
@@ -201,7 +209,7 @@ router.beforeEach(async (to, from, next) => {
       // authentication as disabled.
       if (forceLogin && !auth.user.authenticated) {
         logger.debug('[router] force login requested; allowing login route despite auth config')
-        return next()
+        return true
       }
       // Check if there's a redirect parameter - if so, honor it instead of going to home
       // Also check auth.redirectTo store as fallback (set during initial navigation attempts)
@@ -218,7 +226,7 @@ router.beforeEach(async (to, from, next) => {
           }
           auth.redirectTo = null
           logger.debug('[router] auth disabled, but redirect found in store/query, going to:', dest)
-          return next(dest)
+          return dest
         } catch {
           // Fallback to string path
           auth.redirectTo = null
@@ -226,13 +234,13 @@ router.beforeEach(async (to, from, next) => {
             '[router] auth disabled, but redirect found in store/query (fallback), going to:',
             redirectPath,
           )
-          return next(redirectPath)
+          return redirectPath
         }
       }
 
       // No redirect - go to home
       logger.debug('[router] auth disabled, no redirect found, going to home')
-      return next({ name: 'home' })
+      return { name: 'home' }
     }
 
     // Auth disabled: allow all other routes through without checking authentication
@@ -251,7 +259,7 @@ router.beforeEach(async (to, from, next) => {
       logger.debug('[router] requiresAuth and not authenticated, redirecting to login', {
         redirect: to.fullPath,
       })
-      return next({ name: 'login', query: { redirect: to.fullPath } })
+      return { name: 'login', query: { redirect: to.fullPath } }
     }
   }
 
@@ -272,7 +280,7 @@ router.beforeEach(async (to, from, next) => {
         }
         auth.redirectTo = null
         logger.debug('[router] authenticated user on login page, redirecting to:', dest)
-        return next(dest)
+        return dest
       } catch {
         // Fallback: if URL parsing fails, use the path string directly
         // Vue Router should still handle it correctly
@@ -281,16 +289,16 @@ router.beforeEach(async (to, from, next) => {
           '[router] authenticated user on login page, redirecting to (fallback):',
           redirectPath,
         )
-        return next(redirectPath)
+        return redirectPath
       }
     }
 
     // No redirect path - go to home
     auth.redirectTo = null
-    return next({ name: 'home' })
+    return { name: 'home' }
   }
 
-  return next()
+  return true
 })
 
 export default router

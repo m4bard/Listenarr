@@ -12,24 +12,25 @@
   accurate tonal system that follows Material 3.
 */
 
-const fs = require('fs')
-const path = require('path')
-const { argbFromHex, hexFromArgb } = require('@material/material-color-utilities').argb
-const palettes = require('@material/material-color-utilities').palettes
-const argv = require('minimist')(process.argv.slice(2))
+import fs from 'node:fs'
+import path from 'node:path'
+import minimist from 'minimist'
+import { argbFromHex, hexFromArgb, TonalPalette } from '@material/material-color-utilities'
+
+const argv = minimist(process.argv.slice(2))
 
 const seed = (argv.seed || '#2196f3').trim()
 const out = argv.out || 'm3-generated.css'
 
 function tonalPalette(hex) {
   const argb = argbFromHex(hex)
-  const tonal = palettes.tonalPaletteFromArgb(argb)
+  const tonal = TonalPalette.fromInt(argb)
   // tonal.asList(): index 0-100 corresponds to tones (not direct indexes), but utilities provide mapping
   // We pull common tones: 40=primary, 100=primaryContainer, 100? adjust as needed
   const palette = {};
   const tones = [0,10,20,30,40,50,60,70,80,90,95,99];
   tones.forEach((t) => {
-    const c = palettes.tone(tonal, t)
+    const c = tonal.tone(t)
     palette[`t${t}`] = hexFromArgb(c).toUpperCase()
   })
   return palette

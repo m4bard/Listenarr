@@ -3,6 +3,34 @@ import type { SearchResult } from '@/types'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
 
+type AudibleMetadataRecord = Record<string, unknown> & {
+  guid?: string
+  id?: string
+  asin?: string
+  title?: string
+  productTitle?: string
+  size?: string | number
+  image?: string
+  imageUrl?: string
+  coverImage?: string
+  publisher?: string
+  publisherName?: string
+  releaseDate?: string
+  publishedDate?: string
+  runtimeMinutes?: number
+  runtimeLengthMin?: number
+  runtime?: number
+  narrators?: SearchResult['narrators']
+  Narrators?: SearchResult['narrators']
+  authors?: SearchResult['authors']
+  Authors?: SearchResult['authors']
+}
+
+type AudibleMetadataResponse = {
+  metadata?: AudibleMetadataRecord
+  source?: string
+} & AudibleMetadataRecord
+
 export function useSearch() {
   // Reactive state
   const searchQuery = ref('')
@@ -30,6 +58,13 @@ export function useSearch() {
 
   // Methods
   const lastResults = ref<SearchResult[] | null>(null)
+
+  const clearPendingSearchDebounce = () => {
+    if (searchDebounceTimer.value) {
+      clearTimeout(searchDebounceTimer.value)
+      searchDebounceTimer.value = null
+    }
+  }
 
   const detectSearchType = (query: string): 'asin' | 'title' | 'isbn' => {
     const trimmed = query.trim().toUpperCase()
@@ -68,10 +103,7 @@ export function useSearch() {
     const query = searchQuery.value.trim()
 
     // Clear existing timer
-    if (searchDebounceTimer.value) {
-      clearTimeout(searchDebounceTimer.value)
-      searchDebounceTimer.value = null
-    }
+    clearPendingSearchDebounce()
 
     // If a search is currently running, cancel it immediately so new input
     // will trigger a fresh search (prevents overlapping searches)
@@ -96,6 +128,15 @@ export function useSearch() {
   }
 
   const performSearch = async () => {
+    // Prevent a pending debounce timer from firing a duplicate search after
+    // the user triggers an explicit submit.
+    clearPendingSearchDebounce()
+
+    if (isSearching.value) {
+      logger.debug('performSearch ignored because a search is already running')
+      return null
+    }
+
     const query = searchQuery.value.trim()
     logger.debug('performSearch called with query:', query)
 
@@ -229,25 +270,68 @@ export function useSearch() {
 
       // Use metadata endpoint to fetch canonical metadata for the ASIN and
       // convert into a SearchResult-like envelope the UI expects.
-      const metaResp = await apiService.getAudibleMetadata<any>(cleanAsin /* region defaults to 'us' */)
+      const metaResp = await apiService.getAudibleMetadata<AudibleMetadataResponse>(
+        cleanAsin /* region defaults to 'us' */,
+      )
 
       logger.debug('ASIN audible metadata response:', metaResp)
 
-      const meta = (metaResp as any)?.metadata ?? (metaResp as any)
-      const mapped: any = {
+      const meta =
+        metaResp?.metadata && typeof metaResp.metadata === 'object'
+          ? metaResp.metadata
+          : (metaResp as AudibleMetadataRecord)
+      const mapped: SearchResult = {
+        id: String(meta.guid ?? meta.id ?? meta.asin ?? cleanAsin),
         asin: cleanAsin,
-        title: meta?.title || meta?.productTitle || '',
-        imageUrl: meta?.image || meta?.imageUrl || meta?.coverImage,
-        metadataSource: (metaResp as any)?.source || 'audimeta',
-        publisher: meta?.publisher || meta?.publisherName || undefined,
-        publishedDate: meta?.releaseDate || meta?.publishedDate || undefined,
-        runtimeLengthMin: meta?.runtimeMinutes ?? meta?.runtimeLengthMin ?? meta?.runtime ?? undefined,
-        narrators: meta?.narrators ?? meta?.Narrators ?? undefined,
-        authors: meta?.authors ?? meta?.Authors ?? undefined,
-        searchResult: meta,
+        title: String(meta.title ?? meta.productTitle ?? ''),
+        artist: '',
+        album: '',
+        category: '',
+        source: String(metaResp?.source ?? 'audimeta'),
+        sourceLink: '',
+        publishedDate: String(meta.releaseDate ?? meta.publishedDate ?? ''),
+        format: '',
+        size: Number(meta.size ?? 0),
+        magnetLink: '',
+        torrentUrl: '',
+        nzbUrl: '',
+        downloadType: '',
+        imageUrl:
+          typeof meta.image === 'string'
+            ? meta.image
+            : typeof meta.imageUrl === 'string'
+              ? meta.imageUrl
+              : typeof meta.coverImage === 'string'
+                ? meta.coverImage
+                : undefined,
+        metadataSource: String(metaResp?.source ?? 'audimeta'),
+        publisher:
+          typeof meta.publisher === 'string'
+            ? meta.publisher
+            : typeof meta.publisherName === 'string'
+              ? meta.publisherName
+              : undefined,
+        runtime:
+          typeof meta.runtimeMinutes === 'number'
+            ? meta.runtimeMinutes
+            : typeof meta.runtimeLengthMin === 'number'
+              ? meta.runtimeLengthMin
+              : typeof meta.runtime === 'number'
+                ? meta.runtime
+                : undefined,
+        narrators: Array.isArray(meta.narrators)
+          ? (meta.narrators as SearchResult['narrators'])
+          : Array.isArray(meta.Narrators)
+            ? (meta.Narrators as SearchResult['narrators'])
+            : undefined,
+        authors: Array.isArray(meta.authors)
+          ? (meta.authors as SearchResult['authors'])
+          : Array.isArray(meta.Authors)
+            ? (meta.Authors as SearchResult['authors'])
+            : undefined,
       }
 
-      return [mapped] as unknown as SearchResult[]
+      return [mapped]
     } catch (error) {
       logger.error('ASIN search failed:', error)
       searchError.value = error instanceof Error ? error.message : 'Failed to search for audiobook'

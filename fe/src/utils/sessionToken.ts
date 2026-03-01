@@ -4,7 +4,9 @@
 
 class SessionTokenManager {
   private static readonly STORAGE_KEY = 'listenarr_session_token'
+  private static readonly PERSISTENCE_MODE_KEY = 'listenarr_session_token_persistence'
   private token: string | null = null
+  private persistence: 'session' | 'local' = 'session'
   private subscribers: Set<(token: string | null) => void> = new Set()
 
   constructor() {
@@ -20,21 +22,28 @@ class SessionTokenManager {
       const sessionToken = sessionStorage.getItem(SessionTokenManager.STORAGE_KEY)
       if (sessionToken) {
         this.token = sessionToken
+        this.persistence = 'session'
+        try {
+          localStorage.setItem(SessionTokenManager.PERSISTENCE_MODE_KEY, 'session')
+        } catch {}
         return
       }
 
-      // One-time migration from older localStorage persistence.
-      const legacyToken = localStorage.getItem(SessionTokenManager.STORAGE_KEY)
-      if (legacyToken) {
-        this.token = legacyToken
-        sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, legacyToken)
-        localStorage.removeItem(SessionTokenManager.STORAGE_KEY)
+      const persistedToken = localStorage.getItem(SessionTokenManager.STORAGE_KEY)
+      if (persistedToken) {
+        this.token = persistedToken
+        this.persistence = 'local'
+        try {
+          localStorage.setItem(SessionTokenManager.PERSISTENCE_MODE_KEY, 'local')
+        } catch {}
         return
       }
 
       this.token = null
+      this.persistence = 'session'
     } catch {
       this.token = null
+      this.persistence = 'session'
     }
   }
 
@@ -42,15 +51,31 @@ class SessionTokenManager {
     return this.token
   }
 
-  setToken(token: string | null): void {
+  setToken(token: string | null, options?: { persistent?: boolean }): void {
     this.token = token
     try {
       if (token) {
-        sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, token)
-        localStorage.removeItem(SessionTokenManager.STORAGE_KEY)
+        const mode =
+          options?.persistent === true
+            ? 'local'
+            : options?.persistent === false
+              ? 'session'
+              : this.persistence
+
+        this.persistence = mode
+        if (mode === 'local') {
+          localStorage.setItem(SessionTokenManager.STORAGE_KEY, token)
+          sessionStorage.removeItem(SessionTokenManager.STORAGE_KEY)
+        } else {
+          sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, token)
+          localStorage.removeItem(SessionTokenManager.STORAGE_KEY)
+        }
+        localStorage.setItem(SessionTokenManager.PERSISTENCE_MODE_KEY, mode)
       } else {
+        this.persistence = 'session'
         sessionStorage.removeItem(SessionTokenManager.STORAGE_KEY)
         localStorage.removeItem(SessionTokenManager.STORAGE_KEY)
+        localStorage.removeItem(SessionTokenManager.PERSISTENCE_MODE_KEY)
       }
     } catch {
       // Storage might be unavailable
@@ -84,14 +109,25 @@ class SessionTokenManager {
   private handleStorageEvent = (ev: StorageEvent) => {
     try {
       if (!ev) return
-      if (ev.key !== SessionTokenManager.STORAGE_KEY) return
+      if (
+        ev.key !== SessionTokenManager.STORAGE_KEY &&
+        ev.key !== SessionTokenManager.PERSISTENCE_MODE_KEY
+      ) {
+        return
+      }
 
-      // If newValue is null, token was removed in another tab; update internal
-      // token value and notify subscribers.
       try {
-        this.token = ev.newValue
+        const localToken = localStorage.getItem(SessionTokenManager.STORAGE_KEY)
+        if (localToken) {
+          this.token = localToken
+          this.persistence = 'local'
+        } else {
+          this.token = sessionStorage.getItem(SessionTokenManager.STORAGE_KEY)
+          this.persistence = 'session'
+        }
       } catch {
         this.token = null
+        this.persistence = 'session'
       }
 
       for (const cb of Array.from(this.subscribers)) {

@@ -2,9 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import PasswordInput from '@/components/form/PasswordInput.vue'
 
-import { apiService } from '@/services/api'
-import * as useConfirmModule from '@/composables/useConfirm'
-
 describe('ApiKeyControl', () => {
   beforeEach(async () => {
     vi.restoreAllMocks()
@@ -14,8 +11,8 @@ describe('ApiKeyControl', () => {
 
   it('copies to clipboard when copy button clicked', async () => {
     const writeMock = vi.fn().mockResolvedValue(undefined)
-    // @ts-ignore - provide fake clipboard
-    global.navigator = { clipboard: { writeText: writeMock } } as any
+    // @ts-expect-error - provide fake clipboard
+    global.navigator = { clipboard: { writeText: writeMock } } as unknown
 
     const { default: ApiKeyControl } = await import('@/components/ui/ApiKeyControl.vue')
     const wrapper = mount(ApiKeyControl, {
@@ -32,11 +29,11 @@ describe('ApiKeyControl', () => {
 
   it('regenerates key and emits update when confirmed', async () => {
     const writeMock = vi.fn().mockResolvedValue(undefined)
-    // @ts-ignore
-    global.navigator = { clipboard: { writeText: writeMock } } as any
+    // @ts-expect-error - override navigator clipboard in jsdom test environment
+    global.navigator = { clipboard: { writeText: writeMock } } as unknown
 
     const confirmModule = await import('@/composables/useConfirm')
-    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as any)
+    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as unknown)
     // Mock the api module for this test to return a new key on regenerate
     vi.doMock('@/services/api', () => ({
       apiService: {
@@ -52,8 +49,8 @@ describe('ApiKeyControl', () => {
     })
 
     // Call the internal handler directly to avoid DOM-event quirks in VTU
-    const setupState = (wrapper.vm as any).$?.setupState || (wrapper.vm as any).$setup
-    await (setupState.onRegenerate as Function)()
+    const setupState = (wrapper.vm as unknown).$?.setupState || (wrapper.vm as unknown).$setup
+    await (setupState.onRegenerate as () => Promise<void>)()
     // wait for async handlers and promise resolution
     await new Promise((r) => setTimeout(r, 0))
 
@@ -63,8 +60,8 @@ describe('ApiKeyControl', () => {
 
 
 
-    expect((apiModule.apiService.regenerateApiKey as any).mock).toBeTruthy()
-    expect((apiModule.apiService.regenerateApiKey as any).mock.calls.length).toBeGreaterThan(0)
+    expect((apiModule.apiService.regenerateApiKey as unknown).mock).toBeTruthy()
+    expect((apiModule.apiService.regenerateApiKey as unknown).mock.calls.length).toBeGreaterThan(0)
 
     // Should emit update:apiKey with new key
     expect(wrapper.emitted()['update:apiKey']).toBeTruthy()
@@ -75,11 +72,11 @@ describe('ApiKeyControl', () => {
 
   it('generates initial key when none exists', async () => {
     const writeMock = vi.fn().mockResolvedValue(undefined)
-    // @ts-ignore
-    global.navigator = { clipboard: { writeText: writeMock } } as any
+    // @ts-expect-error - override navigator clipboard in jsdom test environment
+    global.navigator = { clipboard: { writeText: writeMock } } as unknown
 
     const confirmModule = await import('@/composables/useConfirm')
-    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as any)
+    vi.spyOn(confirmModule, 'showConfirm').mockResolvedValue(true as unknown)
     // Mock generateInitialApiKey to return a new key for initial generation
     vi.doMock('@/services/api', () => ({
       apiService: {
@@ -100,8 +97,8 @@ describe('ApiKeyControl', () => {
 
     // Ensure underlying API was called
     const apiModule = await import('@/services/api')
-    expect((apiModule.apiService.generateInitialApiKey as any).mock).toBeTruthy()
-    expect((apiModule.apiService.generateInitialApiKey as any).mock.calls.length).toBeGreaterThan(0)
+    expect((apiModule.apiService.generateInitialApiKey as unknown).mock).toBeTruthy()
+    expect((apiModule.apiService.generateInitialApiKey as unknown).mock.calls.length).toBeGreaterThan(0)
 
     expect(wrapper.emitted()['update:apiKey']).toBeTruthy()
     expect(wrapper.emitted()['update:apiKey']![0]).toEqual(['INITKEY'])

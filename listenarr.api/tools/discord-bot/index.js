@@ -1,6 +1,6 @@
 /*
   Simple Discord bot to integrate with Listenarr API.
-  - Reads Listenarr settings from GET /api/configuration/settings
+  - Reads Listenarr settings from GET /api/v{version}/configuration/settings
   - When enabled, logs in and registers a slash command in the application (or guild) like:
     /<group> <subcommand> title:<string>
   - Presents a select menu of search results, then an embed with a quality select and confirm button
@@ -153,6 +153,33 @@ async function resolveListenarrUrl() {
 // listenarrUrl will be resolved at startup (may prompt once and write tools/discord-bot/.env)
 let listenarrUrl = 'http://localhost:4545'
 resolveListenarrUrl().then(u => { listenarrUrl = (u || listenarrUrl).replace(/\/$/, '') }).catch(() => {})
+let listenarrApiVersion = normalizeApiVersion(process.env.LISTENARR_API_VERSION || '1')
+
+function normalizeApiVersion(value) {
+  const normalized = String(value || '').trim().replace(/^v/i, '')
+  if (!normalized) return '1'
+  if (/^\d+(?:\.0+)+$/.test(normalized)) return normalized.split('.')[0] || '1'
+  return normalized
+}
+
+function applyApiVersionFromPayload(payload) {
+  try {
+    if (!payload || typeof payload !== 'object') return
+    const next = normalizeApiVersion(payload.apiVersion || payload.ApiVersion || '')
+    if (!next || next === listenarrApiVersion) return
+    listenarrApiVersion = next
+    console.log(`Discord bot API version updated to v${listenarrApiVersion}`)
+  } catch {}
+}
+
+function buildApiUrl(endpoint) {
+  const raw = String(endpoint || '').trim()
+  if (!raw) return `${listenarrUrl.replace(/\/$/, '')}/api/v${listenarrApiVersion}`
+  if (/^https?:\/\//i.test(raw)) return raw
+  const withSlash = raw.startsWith('/') ? raw : `/${raw}`
+  const normalized = withSlash.replace(/^\/api(?:\/v\d+(?:\.\d+)?)?/i, '')
+  return `${listenarrUrl.replace(/\/$/, '')}/api/v${listenarrApiVersion}${normalized}`
+}
 
 let currentSettings = null
 let client = null
@@ -212,7 +239,7 @@ async function fetchAntiforgeryTokenForBot() {
   // Return cached token if still valid (5 minutes)
   if (cachedXsrfToken && Date.now() < cachedXsrfTokenExpires) return cachedXsrfToken
   try {
-    const resp = await fetch(`${listenarrUrl.replace(/\/$/, '')}/api/antiforgery/token`, { method: 'GET' })
+    const resp = await fetch(buildApiUrl('/antiforgery/token'), { method: 'GET' })
     if (!resp.ok) {
       console.warn('Failed to fetch antiforgery token for bot:', resp.status)
       return null
@@ -317,19 +344,20 @@ async function handleSetChannelCommand(interaction) {
   // Fetch current settings from Listenarr
   await interaction.deferReply({ flags: 64 })
   try {
-    const resp = await fetch(`${listenarrUrl}/api/configuration/settings`)
+    const resp = await fetch(buildApiUrl('/configuration/settings'))
     if (!resp.ok) {
       await interaction.editReply({ content: `Failed to fetch Listenarr settings: ${resp.status}` })
       return
     }
     const appSettings = await resp.json()
+    applyApiVersionFromPayload(appSettings)
 
     // Set guild and channel
     appSettings.discordGuildId = interaction.guildId
     appSettings.discordChannelId = channelId
 
     // POST back to save settings
-    const saveResp = await fetch(`${listenarrUrl}/api/configuration/settings`, {
+    const saveResp = await fetch(buildApiUrl('/configuration/settings'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(appSettings)
@@ -349,12 +377,14 @@ async function handleSetChannelCommand(interaction) {
 
 async function fetchSettings() {
   try {
-    const resp = await fetch(`${listenarrUrl}/api/configuration/settings`)
+    const resp = await fetch(buildApiUrl('/configuration/settings'))
     if (!resp.ok) {
       console.error('Failed to fetch settings:', resp.status, resp.statusText)
       return null
     }
-    return await resp.json()
+    const settings = await resp.json()
+    applyApiVersionFromPayload(settings)
+    return settings
   } catch (err) {
     console.error('Error fetching settings:', err)
     return null
@@ -674,7 +704,7 @@ async function handleSearchCommand(interaction, title, author) {
 
   // Call Listenarr search by title
   try {
-    const resp = await fetch(`${listenarrUrl}/api/search/title?query=${encodeURIComponent(query)}&limit=10`)
+    const resp = await fetch(buildApiUrl(`/search/title?query=${encodeURIComponent(query)}&limit=10`))
     if (!resp.ok) {
       await interaction.editReply({ content: `Search failed: ${resp.status}` })
       return
@@ -756,7 +786,7 @@ async function handleSearchCommand(interaction, title, author) {
       // Fetch quality profiles
       let profiles = []
       try {
-        const qp = await fetch(`${listenarrUrl}/api/qualityprofile`)
+        const qp = await fetch(buildApiUrl('/qualityprofile'))
         if (qp.ok) profiles = await qp.json()
       } catch (err) {
         console.warn('Failed to fetch quality profiles', err)
@@ -795,7 +825,7 @@ async function handleSearchCommand(interaction, title, author) {
       try {
         const asin = md.asin || md.Asin || md.ASIN
         if (asin) {
-          const lb = await fetch(`${listenarrUrl}/api/library/by-asin/${encodeURIComponent(asin)}`)
+          const lb = await fetch(buildApiUrl(`/library/by-asin/${encodeURIComponent(asin)}`))
           if (lb.ok) existingBook = await lb.json()
         }
       } catch (err) {
@@ -949,15 +979,15 @@ async function handleSelectMenuInteraction(interaction) {
     // fetch metadata endpoint
     try {
       const asin = selected
-      // Deprecated route replaced by /api/metadata/{asin}; keep compatibility header-wise
-      const resp = await fetch(`${listenarrUrl}/api/metadata/${encodeURIComponent(asin)}`)
+      // Deprecated route replaced by /api/v{version}/metadata/{asin}; keep compatibility header-wise
+      const resp = await fetch(buildApiUrl(`/metadata/${encodeURIComponent(asin)}`))
       if (resp.ok) {
         const data = await resp.json()
         metadata = data.metadata || data
       } else {
         // Fall back: try audimeta lookup
-        // Deprecated route replaced by /api/metadata/audimeta/{asin}; keep compatibility header-wise
-        const fallback = await fetch(`${listenarrUrl}/api/metadata/audimeta/${encodeURIComponent(asin)}`)
+        // Deprecated route replaced by /api/v{version}/metadata/audimeta/{asin}; keep compatibility header-wise
+        const fallback = await fetch(buildApiUrl(`/metadata/audimeta/${encodeURIComponent(asin)}`))
         if (fallback.ok) {
           metadata = await fallback.json()
         }
@@ -993,7 +1023,7 @@ async function handleSelectMenuInteraction(interaction) {
   // Fetch quality profiles
   let profiles = []
   try {
-    const qp = await fetch(`${listenarrUrl}/api/qualityprofile`)
+    const qp = await fetch(buildApiUrl('/qualityprofile'))
     if (qp.ok) profiles = await qp.json()
   } catch (err) {
     console.warn('Failed to fetch quality profiles', err)
@@ -1040,7 +1070,7 @@ async function handleSelectMenuInteraction(interaction) {
   try {
     const asin = metadata.asin || metadata.Asin || metadata.ASIN
     if (asin) {
-      const lb = await fetch(`${listenarrUrl}/api/library/by-asin/${encodeURIComponent(asin)}`)
+      const lb = await fetch(buildApiUrl(`/library/by-asin/${encodeURIComponent(asin)}`))
       if (lb.ok) existingBook = await lb.json()
     }
   } catch (err) {
@@ -1249,7 +1279,7 @@ async function handleButtonInteraction(interaction) {
     // Generate an idempotency key for this request so the server can deduplicate retries
     const idempotencyKey = crypto.randomBytes(12).toString('hex')
     console.log(`Making API call to add book: ${session.metadata.title}`)
-    const resp = await fetch(`${listenarrUrl}/api/library/add`, {
+    const resp = await fetch(buildApiUrl('/library/add'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key': idempotencyKey },
       body: JSON.stringify(body)
@@ -1261,7 +1291,7 @@ async function handleButtonInteraction(interaction) {
         console.log('Library add failed due to CSRF; attempting token fetch and retry')
         const xsrf = await fetchAntiforgeryTokenForBot()
         if (xsrf) {
-          const retryResp = await fetch(`${listenarrUrl}/api/library/add`, {
+          const retryResp = await fetch(buildApiUrl('/library/add'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-XSRF-TOKEN': xsrf, 'Idempotency-Key': idempotencyKey },
             body: JSON.stringify(body)

@@ -7,7 +7,7 @@ import { useConfigurationStore } from '@/stores/configuration'
 vi.mock('@/services/api', async (importOriginal) => {
   const actual = await importOriginal()
   return {
-    ...(actual as any),
+    ...(actual as unknown),
     testDownloadClient: vi.fn(async (config) => ({ success: true, message: 'ok', client: config })),
     getRemotePathMappings: vi.fn(async () => []),
   }
@@ -20,7 +20,7 @@ describe('DownloadClientsTab', () => {
     const store = useConfigurationStore()
 
     // seed store with a client
-    const client: any = {
+    const client: unknown = {
       id: 'db-1',
       name: 'qbt',
       type: 'qbittorrent',
@@ -45,7 +45,7 @@ describe('DownloadClientsTab', () => {
 
     const api = await import('@/services/api')
     expect(api.testDownloadClient).toHaveBeenCalled()
-    const calledWith = (api.testDownloadClient as any).mock.calls[0][0]
+    const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
     expect(calledWith.host).toBe('dbhost.local')
     expect(calledWith.port).toBe(8080)
   })
@@ -57,7 +57,7 @@ describe('DownloadClientsTab', () => {
 
     // simulate loading state on the store
     store.isLoading = true
-    store.downloadClientConfigurations = [] as any
+    store.downloadClientConfigurations = [] as unknown
 
     const wrapper = mount(DownloadClientsTab, { global: { plugins: [pinia] } })
 

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { Component } from 'vue'
+defineOptions({ name: 'BasePill' })
 
 /**
  * Pill Component

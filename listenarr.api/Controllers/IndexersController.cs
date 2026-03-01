@@ -1020,7 +1020,7 @@ namespace Listenarr.Api.Controllers
                 {
                     var scheme = Request.Scheme;
                     var hostVal = Request.Host.Value;
-                    var localSearchUrl = $"{scheme}://{hostVal}/api/search/{id}?query={Uri.EscapeDataString(query)}";
+                    var localSearchUrl = $"{scheme}://{hostVal}{ApiVersionPathBuilder.BuildApiPath($"/search/{id}", HttpContext)}?query={Uri.EscapeDataString(query)}";
                     var localResp = await _httpClient.GetAsync(localSearchUrl);
                     if (localResp.IsSuccessStatusCode)
                     {
@@ -1141,8 +1141,8 @@ namespace Listenarr.Api.Controllers
                 url = url.Replace("/api/api", "/api", StringComparison.OrdinalIgnoreCase);
             }
 
-            // Preserve /api for Prowlarr proxy URLs (/{id}/api or /api/v1/indexer/{id}/api)
-            var prowlarrProxyPattern = @"/((api/v1/indexer/\d+)|\d+)/api$";
+            // Preserve /api for Prowlarr proxy URLs (/{id}/api or /api/v{version}/indexer/{id}/api)
+            var prowlarrProxyPattern = @"/((api/v\d+(?:\.\d+)?/indexer/\d+)|\d+)/api$";
             if (url.EndsWith("/api", StringComparison.OrdinalIgnoreCase) &&
                 !Regex.IsMatch(url, prowlarrProxyPattern, RegexOptions.IgnoreCase))
             {
@@ -1184,6 +1184,8 @@ namespace Listenarr.Api.Controllers
         private async Task<(HttpResponseMessage Response, string Payload)> FetchProwlarrIndexersAsync(string baseUrl, string apiKey)
         {
             var encodedKey = System.Net.WebUtility.UrlEncode(apiKey);
+            // NOTE: This targets external Prowlarr instances, whose API path is /api/v1.
+            // It is intentionally independent from Listenarr's own API version segment.
             var endpoints = new List<string>
             {
                 $"{baseUrl}/api/v1/indexer",

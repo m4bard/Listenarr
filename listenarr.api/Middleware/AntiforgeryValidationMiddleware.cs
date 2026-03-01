@@ -1,12 +1,17 @@
 using Microsoft.AspNetCore.Antiforgery;
 using Microsoft.AspNetCore.Http;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 
 namespace Listenarr.Api.Middleware
 {
     public class AntiforgeryValidationMiddleware
     {
+        private static readonly Regex VersionedIndexerOrSystemPathRegex = new(
+            @"^/api/v\d+(?:\.\d+)?/(indexer|system)(?:/|$)",
+            RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
         private readonly RequestDelegate _next;
         private readonly IAntiforgery _antiforgery;
         private readonly Microsoft.Extensions.Logging.ILogger<AntiforgeryValidationMiddleware> _logger;
@@ -57,8 +62,7 @@ namespace Listenarr.Api.Middleware
                     || normalizedApiPath.StartsWith("/api/configuration/startupconfig", StringComparison.OrdinalIgnoreCase)
                     || path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase)
                     // Also allow Prowlarr-compatible indexer endpoints and system status
-                    || path.StartsWith("/api/v1/indexer", StringComparison.OrdinalIgnoreCase)
-                    || path.StartsWith("/api/v1/system", StringComparison.OrdinalIgnoreCase))
+                    || IsVersionedIndexerOrSystemPath(path))
                 {
                     _logger?.LogDebug("AntiforgeryMiddleware: path is whitelisted, skipping antiforgery validation");
                     await _next(context);
@@ -152,6 +156,9 @@ namespace Listenarr.Api.Middleware
 
             return "/api" + path[slashAfterVersion..];
         }
+
+        private static bool IsVersionedIndexerOrSystemPath(string path)
+            => !string.IsNullOrWhiteSpace(path) && VersionedIndexerOrSystemPathRegex.IsMatch(path);
     }
 }
 

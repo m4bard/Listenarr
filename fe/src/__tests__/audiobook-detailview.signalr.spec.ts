@@ -30,7 +30,7 @@ describe('AudiobookDetailView SignalR integration', () => {
     })
 
     // Ensure other signalR callbacks used by the component exist to avoid runtime errors
-    ;(signalRService as any).onScanJobUpdate = (cb?: (...args: unknown[]) => void) => {
+    ;(signalRService as unknown).onScanJobUpdate = (cb?: (...args: unknown[]) => void) => {
       void cb
       return () => {}
     }
@@ -78,7 +78,7 @@ describe('AudiobookDetailView SignalR integration', () => {
     expect(callbacks.length).toBeGreaterThan(0)
 
     // Ensure other signalR callbacks used by the component exist to avoid runtime errors
-    ;(signalRService as any).onScanJobUpdate = (cb?: (...args: unknown[]) => void) => {
+    ;(signalRService as unknown).onScanJobUpdate = (cb?: (...args: unknown[]) => void) => {
       void cb
       return () => {}
     }

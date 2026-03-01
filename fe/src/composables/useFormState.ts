@@ -16,8 +16,8 @@ export function useFormState<T>(initialData: T) {
     saveError.value = null
   }
 
-  const handleSaveError = (error: any) => {
-    const message = error?.message || 'Failed to save changes'
+  const handleSaveError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : 'Failed to save changes'
     saveError.value = message
     toast.error('Error', message)
   }

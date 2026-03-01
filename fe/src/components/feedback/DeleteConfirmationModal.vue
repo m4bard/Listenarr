@@ -21,13 +21,12 @@
 
 <script setup lang="ts">
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
-import { PhWarningCircle, PhTrash, PhX } from '@phosphor-icons/vue' 
-const props = defineProps({
+import { PhWarningCircle, PhTrash } from '@phosphor-icons/vue' 
+defineProps({
   visible: { type: Boolean, required: true },
   title: { type: String, default: 'Delete' },
   confirmText: { type: String, default: 'Delete' },
 })
-const emit = defineEmits(['close', 'confirm'])
 </script>
 
 <style scoped>

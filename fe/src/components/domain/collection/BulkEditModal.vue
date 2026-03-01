@@ -133,7 +133,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import Checkbox from '@/components/form/Checkbox.vue'
-import { Modal, ModalBody } from '@/components/feedback'
+import { Modal, ModalBody, ModalHeader } from '@/components/feedback'
 import MoveAudiobookModal from '@/components/feedback/MoveAudiobookModal.vue'
 import { apiService } from '@/services/api'
 import { buildApiPath } from '@/services/apiBase'

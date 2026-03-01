@@ -4,7 +4,7 @@
       <PhMagnifyingGlass /> Search Settings
     </h3>
     <div class="form-body">
-      <CheckboxCard :modelValue="settings.enableOpenLibrarySearch" @update:modelValue="v => updateField('enableOpenLibrarySearch', v)" title="Enable OpenLibrary Searching" description="Include OpenLibrary title augmentation and lookups when performing intelligent searches." />
+      <CheckboxCard :modelValue="settings.enableOpenLibrarySearch" @update:modelValue="updateEnableOpenLibrarySearch" title="Enable OpenLibrary Searching" description="Include OpenLibrary title augmentation and lookups when performing intelligent searches." />
 
     </div>
   </div>
@@ -24,6 +24,10 @@ const emit = defineEmits<{
 function updateField(field: keyof ApplicationSettings, value: unknown) {
   const payload = { ...(props.settings || {}), [field]: value } as Partial<ApplicationSettings>
   emit('update:settings', payload)
+}
+
+function updateEnableOpenLibrarySearch(value: boolean) {
+  updateField('enableOpenLibrarySearch', value)
 }
 </script>
 

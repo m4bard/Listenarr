@@ -108,6 +108,7 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<Listenarr.Api.Services.IHubBroadcaster>(sp =>
                 (Listenarr.Api.Services.IHubBroadcaster)sp.GetRequiredService<Listenarr.Application.Services.IHubBroadcaster>());
             // Always register session service, but it will check config internally
+            services.AddScoped<SessionService>();
             services.AddScoped<ISessionService, ConditionalSessionService>();
 
             // Scan queue & background workers registrations are left in Program.cs (hosted services)

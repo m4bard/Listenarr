@@ -716,19 +716,19 @@ builder.Services.AddSwaggerGen(options =>
     var swaggerDescription = string.Join(Environment.NewLine, new[]
     {
         "REST API for Listenarr audiobook management and automation.",
-        "Versioning: URL segment format `/api/v1/...` (current version: v1).",
+        "Versioning: URL segment format `/api/v{version}/...` (default version: v1).",
         "",
         "Authentication quick start:",
         "1. Click `Authorize` and enter one credential (you do not need all schemes).",
         "2. Session token flow:",
-        "   - Call `POST /api/v1/Account/login` with `{ \"username\": \"...\", \"password\": \"...\", \"rememberMe\": false }`.",
+        "   - Call `POST /api/v{version}/Account/login` with `{ \"username\": \"...\", \"password\": \"...\", \"rememberMe\": false }`.",
         "   - Copy `sessionToken` from the 200 response when `authType` is `session`.",
         "   - Use `SessionBearer` (`Bearer <sessionToken>`) or `SessionTokenHeader` (`<sessionToken>`).",
         "3. API key flow:",
         "   - Listenarr auto-generates an API key on first run.",
-        "   - Read the current key from `GET /api/v1/Configuration/startupconfig` (localhost/auth redaction rules apply).",
-        "   - Rotate the key with `POST /api/v1/Configuration/apikey/regenerate` (Administrator required).",
-        "   - `POST /api/v1/Configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
+        "   - Read the current key from `GET /api/v{version}/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+        "   - Rotate the key with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required).",
+        "   - `POST /api/v{version}/Configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
         "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
     });
 
@@ -747,7 +747,7 @@ builder.Services.AddSwaggerGen(options =>
         Description = string.Join(Environment.NewLine, new[]
         {
             "Use `Authorization: Bearer <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v1/Account/login` using username/password credentials."
+            "Get `sessionToken` from `POST /api/v{version}/Account/login` using username/password credentials."
         })
     });
 
@@ -759,7 +759,7 @@ builder.Services.AddSwaggerGen(options =>
         Description = string.Join(Environment.NewLine, new[]
         {
             "Use `X-Session-Token: <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v1/Account/login` using username/password credentials."
+            "Get `sessionToken` from `POST /api/v{version}/Account/login` using username/password credentials."
         })
     });
 
@@ -772,8 +772,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `X-Api-Key: <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v1/Configuration/startupconfig` (localhost/auth redaction rules apply).",
-            "Regenerate with `POST /api/v1/Configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+            "Regenerate with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required)."
         })
     });
 
@@ -786,8 +786,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `Authorization: ApiKey <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v1/Configuration/startupconfig` (localhost/auth redaction rules apply).",
-            "Regenerate with `POST /api/v1/Configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+            "Regenerate with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required)."
         })
     });
 

@@ -694,7 +694,7 @@ async function initializeForm() {
     await loadIdentifiers()
     return
   } catch (err) {
-    // Non-fatal: any error deriving relative path from stored basePath
+    // Non-fatal: unknown error deriving relative path from stored basePath
     logger.debug('Preview path unavailable:', err)
   }
   await loadIdentifiers()

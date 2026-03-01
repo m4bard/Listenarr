@@ -26,7 +26,7 @@
 <script setup lang="ts">
 import { stripHtmlAndNormalize } from '@/utils/textUtils'
 
-const props = defineProps({
+defineProps({
   visible: { type: Boolean, default: false },
   title: { type: String, default: '' },
   message: { type: String, default: '' },

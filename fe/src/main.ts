@@ -80,11 +80,11 @@ window.addEventListener('unhandledrejection', (event) => {
 })
 
 app.use(createPinia())
-app.use(router as any);
+app.use(router)
 
 // Prefetch lazy route chunks when a user hovers or presses a link.
 // This reduces perceived navigation latency by warming the dynamic import.
-(() => {
+;(() => {
   const seen = new Set<string>()
 
   function getAnchorFromEvent(e: Event) {

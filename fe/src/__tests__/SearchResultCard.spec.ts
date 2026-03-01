@@ -336,7 +336,7 @@ describe('SearchResultCard', () => {
             title: 'Test Book',
             author_name: ['Author'],
             key: 'OL123M',
-          } as any,
+          } as unknown,
         },
       })
 

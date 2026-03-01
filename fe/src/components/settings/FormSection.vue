@@ -13,7 +13,7 @@
 <script setup lang="ts">
 defineProps<{
   title: string
-  icon?: any // PhIcon component
+  icon?: unknown // PhIcon component
 }>()
 </script>
 
