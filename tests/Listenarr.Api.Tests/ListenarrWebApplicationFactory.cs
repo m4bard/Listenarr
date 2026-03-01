@@ -49,7 +49,6 @@ namespace Listenarr.Api.Tests
                 var overrides = new Dictionary<string, string?>
                 {
                     ["Listenarr:SqliteDbPath"] = _sqliteDbPath,
-                    ["Playwright:Enabled"] = "false",
                     ["Listenarr:DisableHostedServices"] = "true"
                 };
 

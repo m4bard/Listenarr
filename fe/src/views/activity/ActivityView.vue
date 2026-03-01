@@ -593,14 +593,6 @@ const confirmRemove = async () => {
   }
 }
 
-const getProgressClass = (status: string): string => {
-  if (status === 'completed') return 'completed'
-  if (status === 'failed') return 'failed'
-  if (status === 'downloading') return 'downloading'
-  if (status === 'paused') return 'paused'
-  return 'queued'
-}
-
 const formatStatus = (status: string): string => {
   return status.charAt(0).toUpperCase() + status.slice(1)
 }

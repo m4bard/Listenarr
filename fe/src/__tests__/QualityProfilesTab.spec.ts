@@ -13,7 +13,7 @@ describe('QualityProfilesTab', () => {
     vi.spyOn(api, 'getQualityProfiles').mockImplementation(
       () => new Promise((res) => {
         resolveFn = res
-      }) as any,
+      }) as unknown,
     )
 
     const QualityProfilesTab = (await import('@/views/settings/QualityProfilesTab.vue')).default

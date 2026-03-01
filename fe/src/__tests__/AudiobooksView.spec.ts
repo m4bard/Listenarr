@@ -195,8 +195,8 @@ describe('AudiobooksView Grouping', () => {
     })
 
     // Default sorting when grouped by authors should be author-last ascending
-    expect((vm as any).sortKey).toBe('author-last')
-    expect((vm as any).sortOrder).toBe('asc')
+    expect((vm as unknown).sortKey).toBe('author-last')
+    expect((vm as unknown).sortOrder).toBe('asc')
   })
 
   it('groups audiobooks by series when groupBy is series', async () => {
@@ -314,20 +314,20 @@ describe('AudiobooksView Grouping', () => {
     })
     await new Promise((r) => setTimeout(r, 0))
 
-    const vm = wrapper.vm as unknown as any
+    const vm = wrapper.vm as unknown as unknown
 
     // Switch to authors grouping and verify sortOptions exposed for collections
     await vm.setGroupBy('authors')
     await wrapper.vm.$nextTick()
 
-    const optValues = (vm.sortOptions || []).map((o: any) => o.value)
+    const optValues = (vm.sortOptions || []).map((o: unknown) => o.value)
     expect(optValues).toContain('author-last')
     expect(optValues).toContain('author-first')
     expect(optValues).toContain('count')
 
     // Default sorting when grouped by authors should be author-last ascending
-    expect((vm as any).sortKey).toBe('author-last')
-    expect((vm as any).sortOrder).toBe('asc')
+    expect((vm as unknown).sortKey).toBe('author-last')
+    expect((vm as unknown).sortOrder).toBe('asc')
 
     // CustomSelect should not be marked "active" for the default author sort
     const csStub = wrapper.find('custom-select-stub')
@@ -351,14 +351,14 @@ describe('AudiobooksView Grouping', () => {
     // Switch to series grouping and verify options
     await vm.setGroupBy('series')
     await wrapper.vm.$nextTick()
-    const seriesOpt = (vm.sortOptions || []).map((o: any) => o.value)
+    const seriesOpt = (vm.sortOptions || []).map((o: unknown) => o.value)
     expect(seriesOpt).toContain('title')
     expect(seriesOpt).toContain('count')
     expect(seriesOpt).not.toContain('author-last')
 
     // Series default should be `title` ascending and the control should NOT be active
-    expect((vm as any).sortKey).toBe('title')
-    expect((vm as any).sortOrder).toBe('asc')
+    expect((vm as unknown).sortKey).toBe('title')
+    expect((vm as unknown).sortOrder).toBe('asc')
     expect(wrapper.find('custom-select-stub').attributes('active')).toBe('false')
 
     // Sort series by count ascending (non-default)
@@ -458,7 +458,7 @@ describe('AudiobooksView Grouping', () => {
       },
     })
 
-    const vm = wrapper.vm as unknown as any
+    const vm = wrapper.vm as unknown as unknown
 
     // Apply a search that yields no results and a custom filter selection
     vm.searchQuery = 'no-match-query'

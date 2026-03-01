@@ -61,6 +61,11 @@ export default defineConfig(({ mode }) => ({
             })
           }
         }
+      },
+      '/hubs': {
+        target: 'http://localhost:4545',
+        changeOrigin: true,
+        ws: true,
       }
     }
   }

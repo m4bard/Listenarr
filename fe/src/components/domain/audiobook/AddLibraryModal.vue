@@ -393,6 +393,11 @@ interface Audimeta {
   isbn?: string
 }
 
+interface AudimetaMetadataResponse {
+  metadata?: Partial<Audimeta>
+  source?: string
+}
+
 // Helper to map audimeta response to AudibleBookMetadata
 const mapAudimetaToAudible = (
   audimeta: Partial<Audimeta> | undefined,
@@ -467,15 +472,26 @@ const seedPreview = async () => {
     if (props.book?.asin) {
       metadataLoading.value = true
       try {
-        const resp = await apiService.getAudibleMetadata<any>(props.book.asin)
-        if (resp && resp.metadata) {
-          const enrichedMeta = mapAudimetaToAudible(resp.metadata, resp.source)
+        const resp = await apiService.getAudibleMetadata<AudimetaMetadataResponse | Partial<Audimeta>>(
+          props.book.asin,
+        )
+        const payload = (resp && typeof resp === 'object' ? resp : {}) as
+          | AudimetaMetadataResponse
+          | Partial<Audimeta>
+        const source = 'source' in payload && typeof payload.source === 'string' ? payload.source : undefined
+        const metadata =
+          'metadata' in payload && payload.metadata && typeof payload.metadata === 'object'
+            ? payload.metadata
+            : (payload as Partial<Audimeta>)
+
+        if (metadata && typeof metadata === 'object') {
+          const enrichedMeta = mapAudimetaToAudible(metadata, source)
           // Sanitize seriesNumber to filter out the string "null"
           if (enrichedMeta.seriesNumber === 'null') {
             enrichedMeta.seriesNumber = undefined
           }
           enriched.value = enrichedMeta
-          metadataSource.value = resp.source || null
+          metadataSource.value = source || null
         }
       } catch (metaErr) {
         // ignore metadata fetch errors - we'll fall back to provided book
@@ -526,13 +542,6 @@ function onImageError() {
 function onImageLoad() {
   imageLoading.value = false
   imageError.value = false
-}
-
-function retryImage() {
-  imageError.value = false
-  imageRetryCount.value++
-  imageLoading.value = true
-  // The computed imageSrc will include a cache-buster when retryCount>0
 }
 
 // Helper to derive a relative path from server preview/paths

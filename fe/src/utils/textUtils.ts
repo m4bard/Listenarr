@@ -53,9 +53,25 @@ export function decodeHtmlEntities(text: string): string {
  * @param text - The text to render
  * @returns The decoded text
  */
-export function safeText(text: string | undefined | null): string {
-  if (!text) return ''
-  return decodeHtmlEntities(text)
+export function safeText(text: unknown): string {
+  if (text === null || text === undefined) return ''
+  if (typeof text === 'string') return decodeHtmlEntities(text)
+  if (typeof text === 'number' || typeof text === 'boolean' || typeof text === 'bigint') {
+    return String(text)
+  }
+  if (Array.isArray(text)) {
+    return text
+      .map((item) => safeText(item))
+      .filter((item) => item.length > 0)
+      .join(', ')
+  }
+  if (typeof text === 'object') {
+    const obj = text as Record<string, unknown>
+    const candidate = obj.name ?? obj.title ?? obj.value ?? obj.label
+    if (candidate !== undefined && candidate !== null) return safeText(candidate)
+    return ''
+  }
+  return ''
 }
 
 /**

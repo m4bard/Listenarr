@@ -22,7 +22,7 @@ using System.Runtime.InteropServices;
 namespace Listenarr.Api.Controllers;
 
 [ApiController]
-[Route("api/[controller]")]
+[Route("api/v{version:apiVersion}/[controller]")]
 public class FileSystemController : ControllerBase
 {
     private readonly ILogger<FileSystemController> _logger;

@@ -15,6 +15,19 @@ export const useDownloadsStore = defineStore('downloads', () => {
   let unsubscribeQueue: (() => void) | null = null
   let unsubscribeAudiobook: (() => void) | null = null
 
+  const normalizeDownloadStatus = (status: string | undefined): Download['status'] => {
+    const normalized = (status || '').trim().toLowerCase()
+    if (normalized === 'queued') return 'Queued'
+    if (normalized === 'downloading') return 'Downloading'
+    if (normalized === 'paused') return 'Paused'
+    if (normalized === 'completed') return 'Completed'
+    if (normalized === 'failed') return 'Failed'
+    if (normalized === 'processing') return 'Processing'
+    if (normalized === 'ready') return 'Ready'
+    if (normalized === 'moved') return 'Moved'
+    return 'Queued'
+  }
+
   // Subscribe to SignalR updates
   const initializeSignalR = () => {
     // Subscribe to individual download updates
@@ -85,7 +98,6 @@ export const useDownloadsStore = defineStore('downloads', () => {
       // QueueUpdate provides the current queue state
       // When a download is completed and removed, it won't be in this list
       // We need to update our downloads to match the queue
-      const currentDownloadIds = new Set(downloads.value.map(d => d.id))
       const queueIds = new Set(queueItems.map(q => q.id))
       
       // Remove downloads that are no longer in the queue
@@ -102,7 +114,7 @@ export const useDownloadsStore = defineStore('downloads', () => {
           artist: queueItem.author || '',
           album: queueItem.series || '',
           originalUrl: '',
-          status: queueItem.status as any,
+          status: normalizeDownloadStatus(queueItem.status),
           progress: queueItem.progress || 0,
           totalSize: queueItem.size || 0,
           downloadedSize: queueItem.downloaded || 0,

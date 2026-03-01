@@ -12,7 +12,7 @@ namespace Listenarr.Api.Services
     /// </summary>
     public interface INotificationPayloadBuilder
     {
-        JsonNode CreateDiscordPayload(string trigger, object data, string? startupBaseUrl);
+        JsonNode CreateDiscordPayload(string trigger, object data, string? startupBaseUrl, string? apiVersion = null);
 
         Task<(JsonObject payload, NotificationAttachmentInfo? attachment)> CreateDiscordPayloadWithAttachmentAsync(
             string trigger,
@@ -21,6 +21,7 @@ namespace Listenarr.Api.Services
             HttpClient httpClient,
             IHttpContextAccessor? httpContextAccessor = null,
             Action<string>? logInfo = null,
-            Action<Exception, string>? logDebug = null);
+            Action<Exception, string>? logDebug = null,
+            string? apiVersion = null);
     }
 }

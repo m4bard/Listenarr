@@ -133,9 +133,10 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import Checkbox from '@/components/form/Checkbox.vue'
-import { Modal, ModalBody } from '@/components/feedback'
+import { Modal, ModalBody, ModalHeader } from '@/components/feedback'
 import MoveAudiobookModal from '@/components/feedback/MoveAudiobookModal.vue'
 import { apiService } from '@/services/api'
+import { buildApiPath } from '@/services/apiBase'
 import { useToast } from '@/services/toastService'
 import type { QualityProfile } from '@/types'
 import { useRootFoldersStore } from '@/stores/rootFolders'
@@ -171,6 +172,7 @@ const saving = ref(false)
 const defaultOutputPath = ref<string | null>(null)
 const results = ref<Array<{ id: number; success: boolean; errors: string[] }>>([])
 const showResults = ref(false)
+const bulkUpdateEndpoint = buildApiPath('/library/bulk-update')
 
 // Move confirmation modal state
 const showMoveConfirm = ref(false)
@@ -364,7 +366,7 @@ async function handleSave() {
     // This will help diagnose NS_ERROR_CONNECTION_REFUSED in browser
     try {
       logger.debug('[BulkEditModal] Preparing bulk update', {
-        endpoint: '/api/library/bulk-update',
+        endpoint: bulkUpdateEndpoint,
         origin: window?.location?.origin,
         ids,
         updates,
@@ -466,7 +468,7 @@ async function handleSave() {
         name: err?.name,
         message: err?.message,
         stack: err?.stack,
-        url: err?.url || '/api/library/bulk-update',
+        url: err?.url || bulkUpdateEndpoint,
       })
     } catch {
       // fallback
@@ -1000,4 +1002,3 @@ function close() {
   }
 }
 </style>
-

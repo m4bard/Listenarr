@@ -18,6 +18,7 @@ namespace Listenarr.Domain.Models
         public string? InstanceName { get; set; }
         public int? SyslogPort { get; set; }
         public bool? AnalyticsEnabled { get; set; }
+        public string? ApiVersion { get; set; }
 
         // This is the new flag the user asked for. Accept both boolean or string-like values via JSON.
         [JsonPropertyName("AuthenticationRequired")]

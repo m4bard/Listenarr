@@ -213,7 +213,7 @@ import Checkbox from '@/components/form/Checkbox.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 import FormSection from '@/components/settings/FormSection.vue'
-import { PhX, PhGlobe, PhSpinner, PhGear, PhCheck, PhToggleRight, PhInfo } from '@phosphor-icons/vue' 
+import { PhGlobe, PhGear, PhToggleRight, PhInfo } from '@phosphor-icons/vue' 
 import type { Indexer } from '@/types' 
 import {
   createIndexer,

@@ -174,10 +174,9 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import type { AudibleBookMetadata, QualityProfile } from '@/types'
-import { getQualityProfiles, apiService } from '@/services/api'
+import { getQualityProfiles } from '@/services/api'
 import { handleImageError } from '@/utils/imageFallback'
-import { useLibraryStore } from '@/stores/library'
-import { PhX, PhImage, PhStar, PhCheck, PhPlus } from '@phosphor-icons/vue'
+import { PhX, PhImage, PhStar } from '@phosphor-icons/vue'
 import { stripHtmlAndNormalize } from '@/utils/textUtils'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { Modal, ModalBody, ModalHeader } from '@/components/feedback'
@@ -203,23 +202,6 @@ const { getProtectedImageSrc } = useProtectedImages()
 
 const qualityProfiles = ref<QualityProfile[]>([])
 const selectedQualityProfileId = ref<number | null>(null)
-const libraryStore = useLibraryStore()
-
-const isAdded = computed(() => {
-  try {
-    const asins = new Set(
-      libraryStore.audiobooks.map((b) => b.asin).filter((x): x is string => !!x),
-    )
-    const olids = new Set(
-      libraryStore.audiobooks.map((b) => b.openLibraryId).filter((x): x is string => !!x),
-    )
-    if (props.book?.asin && asins.has(props.book.asin)) return true
-    if (props.book?.openLibraryId && olids.has(props.book.openLibraryId)) return true
-    return false
-  } catch {
-    return false
-  }
-})
 
 const coverImageUrl = computed(() =>
   getProtectedImageSrc(
@@ -362,11 +344,6 @@ const hasFlags = computed(() => {
 
 const closeModal = () => {
   emit('close')
-}
-
-const addToLibrary = () => {
-  emit('add-to-library', props.book, selectedQualityProfileId.value || undefined)
-  closeModal()
 }
 
 const loadQualityProfiles = async () => {

@@ -15,7 +15,7 @@ namespace Listenarr.Infrastructure.Migrations
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
-            modelBuilder.HasAnnotation("ProductVersion", "9.0.0");
+            modelBuilder.HasAnnotation("ProductVersion", "9.0.13");
 
             modelBuilder.Entity("Listenarr.Domain.Models.ApiConfiguration", b =>
                 {
@@ -229,7 +229,7 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Property<string>("ImageUrl")
                         .HasColumnType("TEXT");
 
-                    b.PrimitiveCollection<string>("Isbn")
+                    b.Property<string>("Isbn")
                         .HasColumnType("TEXT");
 
                     b.Property<string>("Language")
@@ -1081,6 +1081,49 @@ namespace Listenarr.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.ToTable("Users");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Models.UserSession", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<DateTime>("ExpiresAt")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("IsAdmin")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<DateTime>("LastAccessed")
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("RememberMe")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("TokenHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Username")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ExpiresAt");
+
+                    b.HasIndex("TokenHash")
+                        .IsUnique();
+
+                    b.HasIndex("Username");
+
+                    b.ToTable("UserSessions");
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Models.Audiobook", b =>

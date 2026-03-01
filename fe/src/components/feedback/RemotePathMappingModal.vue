@@ -83,7 +83,7 @@
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import { PhX, PhCheck, PhLink, PhDesktop } from '@phosphor-icons/vue'
+import { PhX, PhCheck, PhLink } from '@phosphor-icons/vue'
 import { Modal, ModalHeader, ModalFooter, ModalForm, ModalBody } from '@/components/feedback'
 import { FormField } from '@/components/base'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'

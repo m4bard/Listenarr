@@ -7,7 +7,7 @@
 </template>
 
 <script setup lang="ts">
-const props = withDefaults(defineProps<{ score?: number }>(), { score: 0 })
+withDefaults(defineProps<{ score?: number }>(), { score: 0 })
 </script>
 
 <style scoped>

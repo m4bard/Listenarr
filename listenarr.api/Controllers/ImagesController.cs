@@ -24,7 +24,7 @@ using Microsoft.Extensions.DependencyInjection;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/images")]
+    [Route("api/v{version:apiVersion}/images")]
     public class ImagesController : ControllerBase
     {
         private readonly IImageCacheService _imageCacheService;

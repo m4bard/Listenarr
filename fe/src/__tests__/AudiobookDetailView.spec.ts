@@ -1,6 +1,10 @@
 import { mount } from '@vue/test-utils'
 import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, beforeEach, expect, vi } from 'vitest'
+import { API_BASE_PATH } from '@/services/apiBase'
+import { useLibraryStore } from '@/stores/library'
+import { ensureImageCached } from '@/services/api'
+import AudiobookDetailViewCmp from '@/views/library/AudiobookDetailView.vue'
 // Mock useRoute to provide params for the detail view
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { id: '5' } }),
@@ -31,9 +35,6 @@ vi.mock('@/services/signalr', () => ({
   },
 }))
 
-import AudiobookDetailView from '@/views/library/AudiobookDetailView.vue'
-import { useLibraryStore } from '@/stores/library'
-
 describe('AudiobookDetailView image recache behavior', () => {
   beforeEach(() => {
     const pinia = createPinia()
@@ -42,30 +43,21 @@ describe('AudiobookDetailView image recache behavior', () => {
   })
 
   it('calls ensureImageCached for the audiobook cover on load', async () => {
-    // Ensure a fresh module cache so mocks take effect for this test
-    vi.resetModules()
-
-    // Create a fresh Pinia instance and register it as active so both the test and component share it
     const pinia = createPinia()
     setActivePinia(pinia)
-
-    const { useLibraryStore } = await import('@/stores/library')
+    const imagePath = `${API_BASE_PATH}/images/ASIN000005`
     const store = useLibraryStore()
     store.audiobooks = [
-      { id: 5, title: 'Detail Book', imageUrl: '/api/images/ASIN000005', files: [] },
-    ] as unknown as any
+      { id: 5, title: 'Detail Book', imageUrl: imagePath, files: [] },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
 
-    // Prevent actual fetchLibrary from running
     store.fetchLibrary = vi.fn(async () => undefined)
 
-    // Re-import the component after resetting modules so it picks up the module mocks
-    const { default: AudiobookDetailViewCmp } = await import('@/views/library/AudiobookDetailView.vue')
-    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
-
+    mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
     await new Promise((r) => setTimeout(r, 10))
 
-    const { ensureImageCached } = await import('@/services/api')
     expect(ensureImageCached).toHaveBeenCalled()
-    expect((ensureImageCached as unknown as any).mock.calls[0][0]).toBe('/api/images/ASIN000005')
+    const ensureImageCachedMock = ensureImageCached as unknown as { mock: { calls: Array<[string]> } }
+    expect(ensureImageCachedMock.mock.calls[0]?.[0]).toBe(imagePath)
   })
 })

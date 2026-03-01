@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.54] - 2026-02-28
+
+### Added
+- **URL-segment API versioning (v1):** Added consistent URL-segment API versioning across controllers (`/api/v1/...`) with ApiExplorer/Swagger alignment and version substitution in generated docs.
+- **Runtime API version support in startup config:** Added `ApiVersion`/`apiVersion` to startup configuration models and responses so the frontend can dynamically resolve API version without requiring a frontend rebuild.
+- **Centralized frontend API base/version helper:** Added `fe/src/services/apiBase.ts` to unify API base URL/path construction, dynamic version application, and reusable helpers (`buildApiPath`, image URL detection).
+- **Swagger auth guidance improvements:** Added global OpenAPI operation filtering/documentation to show auth requirements and provide clearer instructions for obtaining/using available authorization methods in Swagger UI.
+- **Persistent server session storage:** Added database-backed `UserSessions` persistence (migration: `20260301033814_AddPersistentUserSessions`) so authenticated sessions can survive API process restarts.
+
+### Changed
+- **Endpoint namespace cleanup:** Moved ISBN-to-ASIN lookup from Amazon namespace to metadata namespace (`/api/v1/metadata/asin-from-isbn/{isbn}`) to reflect actual ownership/responsibility.
+- **Frontend endpoint usage normalization:** Replaced hardcoded `/api/v1/...` strings throughout the frontend with shared dynamic API path builders so endpoint versioning is controlled centrally.
+- **Startup config API version normalization:** Normalized equivalent version forms (e.g., `1.0`, `1.0.0`) to `1` to prevent unnecessary runtime URL churn.
+- **Middleware/route compatibility behavior:** Updated auth/antiforgery and routing-related checks to properly recognize versioned API paths while preserving expected enforcement behavior.
+- **SignalR hub URL resolution (frontend):** Reworked SignalR hub URL construction to derive from runtime/API configuration instead of relying on hardcoded dev host assumptions, improving compatibility with proxied/local environments.
+- **SignalR reconnect policy:** Updated reconnect behavior to use capped exponential backoff with jitter and continue retrying after disconnects instead of stopping after a fixed attempt cap.
+- **Remember-me client token persistence:** Updated frontend session token storage behavior so `Remember me` uses persistent storage, while non-remembered logins remain session-scoped.
+
+### Fixed
+- **Authenticated image loading regressions:** Fixed dev/proxied image-loading behavior so backend image URLs remain same-origin in development and avoid ORB/cross-origin request issues.
+- **Wanted view poster loading on initial render:** Fixed initial poster image rendering in Wanted view (images previously appearing only after scroll due to memoized row rendering + async protected image updates).
+- **Protected image auth-state race:** Fixed startup race where unknown auth state could briefly issue direct image requests and fall back to placeholders before protected image fetch logic engaged.
+- **Add New metadata ingestion stability:** Hardened metadata response handling for audiobook add flows so missing/invalid payloads no longer crash add actions.
+- **Add New duplicate search/image request loop:** Reduced repeated API calls from Add New result rendering by preventing submit+debounce overlap, guarding in-flight/attempted cover selection work, and avoiding repeated immediate retries after backend image failures.
+- **Concurrent protected image request duplication:** Added in-flight deduplication for authenticated image blob fetches so concurrent requests for the same image URL collapse to one network request.
+- **Dev websocket proxying for hubs:** Added Vite `/hubs` websocket proxy support so SignalR hub connections work consistently through the frontend dev server.
+- **`POST /api/v1/library/preview-path` ISBN contract mismatch:** Normalized frontend metadata payloads so `metadata.isbn` is sent as an array (or omitted), matching backend model binding expectations and preventing preview-path validation failures.
+- **Vue Router guard deprecation warning:** Migrated router guard from legacy `next(...)` callback usage to return-style navigation values to remove deprecation warnings.
+- **`BulkEditModal` component resolution warning:** Fixed unresolved `<ModalHeader>` warning by importing/registering `ModalHeader` in the bulk edit modal component.
+- **Remember-me durability:** Fixed remember-me behavior so long-lived sessions now survive both browser restarts and API restarts, instead of being dropped by session-only client storage and in-memory server cache.
+
+### Removed
+- **Obsolete Audible/Amazon controllers and endpoints:** Removed legacy Audible auth/library/controller surfaces that were no longer used in canary app flow.
+- **Legacy Amazon search/scrape services:** Removed obsolete Amazon-specific search/scrape plumbing (including unused service paths tied to deprecated search behavior).
+- **Legacy endpoint compatibility paths:** Removed unneeded legacy endpoint aliases now that frontend and backend are shipped together in canary and no third-party compatibility layer is required.
+- **Unused US-domain retry path:** Removed deprecated US-domain retry logic and associated test coverage no longer used by current metadata/search flow.
+
 ## [0.2.53] - 2026-02-27
 
 ### Fixed

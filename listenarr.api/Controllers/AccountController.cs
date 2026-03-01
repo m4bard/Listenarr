@@ -3,11 +3,12 @@ using Listenarr.Api.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.Security.Claims;
+using System.ComponentModel.DataAnnotations;
 
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     public class AccountController : ControllerBase
     {
         private readonly IStartupConfigService _startupConfigService;
@@ -166,10 +167,28 @@ namespace Listenarr.Api.Controllers
         }
     }
 
+    /// <summary>
+    /// Request payload used to authenticate a user.
+    /// </summary>
     public class LoginRequest
     {
+        /// <summary>
+        /// Account username.
+        /// </summary>
+        [Required]
+        [MinLength(1)]
         public string Username { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Account password.
+        /// </summary>
+        [Required]
+        [MinLength(1)]
         public string Password { get; set; } = string.Empty;
+
+        /// <summary>
+        /// Whether to issue a long-lived session token.
+        /// </summary>
         public bool RememberMe { get; set; }
     }
 

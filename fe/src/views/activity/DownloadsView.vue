@@ -111,7 +111,7 @@
 
                 <button
                   v-if="download.status === 'Failed'"
-                  @click="retryDownload(download)"
+                  @click="retryDownload()"
                   class="action-button retry btn"
                 >
                   Retry
@@ -271,8 +271,8 @@ const closeInspect = () => {
   inspectState.value.loading = false
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-const retryDownload = async (download: Download) => {
+ 
+const retryDownload = async () => {
   // For now, just show a message. In a real implementation,
   // you would restart the download
   // useToast expects (title, message)

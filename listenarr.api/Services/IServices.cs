@@ -519,12 +519,12 @@ namespace Listenarr.Api.Services
     }
 
     /// <summary>
-    /// Converts ISBNs to Amazon ASINs for metadata lookup
+    /// Resolves ASINs from ISBNs for metadata lookup
     /// </summary>
-    public interface IAmazonAsinService
+    public interface IAsinLookupService
     {
         /// <summary>
-        /// Gets the Amazon ASIN for a given ISBN
+        /// Gets an ASIN for a given ISBN
         /// </summary>
         /// <param name="isbn">The ISBN to convert</param>
         /// <param name="ct">Cancellation token</param>

@@ -253,12 +253,9 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import type { DownloadClientConfiguration, RemotePathMapping } from '@/types'
-import FolderBrowser from '@/components/ui/FolderBrowser.vue'
 import DownloadClientFormModal from '@/components/domain/download/DownloadClientFormModal.vue'
-import { Modal, ModalHeader, ModalFooter, ModalForm, ModalBody } from '@/components/feedback' 
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import RemotePathMappingModal from '@/components/feedback/RemotePathMappingModal.vue'
-import FormSection from '@/components/settings/FormSection.vue'
 import { Pill, LoadingState } from '@/components/base'
 import {
   PhDownloadSimple,
@@ -276,9 +273,6 @@ import {
   PhFolder,
   PhLinkSimple,
   PhBrowser,
-  PhWarningCircle,
-  PhX,
-  PhCheck,
 } from '@phosphor-icons/vue'
 import {
   getRemotePathMappings,
@@ -317,16 +311,6 @@ const formatApiError = (error: unknown): string => {
   }
   if (typeof e?.message === 'string') return e!.message as string
   return 'An unknown error occurred'
-}
-
-const getClientTypeClass = (type: string): string => {
-  const typeMap: Record<string, string> = {
-    qbittorrent: 'torrent',
-    transmission: 'torrent',
-    sabnzbd: 'usenet',
-    nzbget: 'usenet',
-  }
-  return typeMap[type.toLowerCase()] || 'torrent'
 }
 
 const getMappingsForClient = (client: DownloadClientConfiguration): RemotePathMapping[] => {

@@ -4,6 +4,7 @@ import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import type { Audiobook } from '@/types'
 import { errorTracking } from '@/services/errorTracking'
+import { buildApiPath } from '@/services/apiBase'
 
 export const useLibraryStore = defineStore('library', () => {
   const audiobooks = ref<Audiobook[]>([])
@@ -23,7 +24,7 @@ export const useLibraryStore = defineStore('library', () => {
     if ((isMissing || isPlaceholder) && book.asin) {
       return {
         ...book,
-        imageUrl: `/api/images/${encodeURIComponent(book.asin)}`,
+        imageUrl: buildApiPath(`/images/${encodeURIComponent(book.asin)}`),
       }
     }
 
@@ -77,7 +78,7 @@ export const useLibraryStore = defineStore('library', () => {
         try {
           await apiService.removeFromLibrary(id)
           deleted++
-        } catch (e) {
+        } catch {
           // Continue attempting remaining deletions even if one fails
         }
       }

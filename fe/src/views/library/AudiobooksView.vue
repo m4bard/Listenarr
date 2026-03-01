@@ -681,6 +681,7 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { useDownloadsStore } from '@/stores/downloads'
 import { apiService } from '@/services/api'
+import { buildApiPath } from '@/services/apiBase'
 import { logger } from '@/utils/logger'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
@@ -1069,7 +1070,7 @@ function getBookImageUrl(book: Pick<Audiobook, 'imageUrl' | 'asin'> | null | und
   const raw = (book.imageUrl || '').trim()
   if (raw && !isPlaceholderCoverUrl(raw)) return raw
   const asin = (book.asin || '').trim()
-  if (asin) return `/api/images/${encodeURIComponent(asin)}`
+  if (asin) return buildApiPath(`/images/${encodeURIComponent(asin)}`)
   return raw || undefined
 }
 
@@ -1118,7 +1119,7 @@ async function ensureAuthorCover(authorName: string) {
     if (info.cachedPath) {
       authorCoverOverrides[authorName] = info.cachedPath
     } else if (info.asin) {
-      authorCoverOverrides[authorName] = `/api/images/${encodeURIComponent(info.asin)}`
+      authorCoverOverrides[authorName] = buildApiPath(`/images/${encodeURIComponent(info.asin)}`)
     }
     try {
       await nextTick()
@@ -1159,7 +1160,7 @@ try {
   }
 } catch {}
 
-watch(groupBy, (v, oldV) => {
+watch(groupBy, (v) => {
   try {
     localStorage.setItem(GROUP_BY_KEY, v)
   } catch {}
@@ -1209,7 +1210,7 @@ const groupedCollections = computed(() => {
           if (!cover) {
             try {
               const asin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
-              if (asin) cover = `/api/images/${encodeURIComponent(asin)}`
+              if (asin) cover = buildApiPath(`/images/${encodeURIComponent(asin)}`)
             } catch {}
           }
 
@@ -1224,7 +1225,7 @@ const groupedCollections = computed(() => {
       if (groupBy.value === 'authors') {
         try {
           const authorAsin = (book as unknown as { authorAsins?: string[] })?.authorAsins?.[0]
-          if (authorAsin) group.coverUrl = `/api/images/${encodeURIComponent(authorAsin)}`
+          if (authorAsin) group.coverUrl = buildApiPath(`/images/${encodeURIComponent(authorAsin)}`)
         } catch {}
       }
       if (groupBy.value === 'series' && group.coverUrls && group.coverUrls.length < 8) {
@@ -1505,12 +1506,6 @@ const updateVisibleRange = () => {
 
   visibleRange.value = { start: startIndex, end: endIndex }
 }
-
-// Calculate total height for proper scrollbar
-const totalHeight = computed(() => {
-  const totalRows = Math.ceil(audiobooks.value.length / ITEMS_PER_ROW.value)
-  return totalRows * getRowHeight()
-})
 
 // Padding for offset positioning
 const topPadding = computed(() => {

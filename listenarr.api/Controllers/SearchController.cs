@@ -30,7 +30,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/[controller]")]
+    [Route("api/v{version:apiVersion}/[controller]")]
     public class SearchController : ControllerBase
     {
         private readonly ISearchService _searchService;
@@ -56,6 +56,9 @@ namespace Listenarr.Api.Controllers
             _metadataConverters = metadataConverters ?? new MetadataConverters(imageCacheService, Microsoft.Extensions.Logging.Abstractions.NullLogger<Listenarr.Api.Services.Search.MetadataConverters>.Instance);
         }
 
+        private string BuildApiImagePath(string identifier, string? sourceUrl = null)
+            => ApiVersionPathBuilder.BuildImagePath(identifier, HttpContext, sourceUrl: sourceUrl);
+
         private async Task NormalizeSearchResultImagesAsync(List<SearchResult> results)
         {
             if (_imageCacheService == null || results == null) return;
@@ -71,7 +74,7 @@ namespace Listenarr.Api.Controllers
                     var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
                     if (!string.IsNullOrWhiteSpace(cached))
                     {
-                        r.ImageUrl = $"/api/images/{r.Asin}";
+                        r.ImageUrl = BuildApiImagePath(r.Asin);
                         continue;
                     }
 
@@ -82,18 +85,18 @@ namespace Listenarr.Api.Controllers
                         var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
                         if (!string.IsNullOrWhiteSpace(downloaded))
                         {
-                            r.ImageUrl = $"/api/images/{r.Asin}";
+                            r.ImageUrl = BuildApiImagePath(r.Asin);
                         }
                         else
                         {
                             // Let the client trigger an on-demand download by including the original URL as a query param
-                            r.ImageUrl = $"/api/images/{r.Asin}?url={Uri.EscapeDataString(r.ImageUrl)}";
+                            r.ImageUrl = BuildApiImagePath(r.Asin, r.ImageUrl);
                         }
                     }
                     // If no external URL was present, map to API endpoint if ASIN present
                     else if (!string.IsNullOrWhiteSpace(r.Asin))
                     {
-                        r.ImageUrl = $"/api/images/{r.Asin}";
+                        r.ImageUrl = BuildApiImagePath(r.Asin);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -160,7 +163,7 @@ namespace Listenarr.Api.Controllers
                     var language = string.IsNullOrWhiteSpace(req.Language) ? null : req.Language;
                     var results = await _searchService.IntelligentSearchAsync(q, region: region, language: language, ct: HttpContext.RequestAborted) ?? new List<MetadataSearchResult>();
 
-                    // Normalize images for metadata results so the SPA receives local /api/images/{asin} when possible
+                    // Normalize images for metadata results so the SPA receives local /api/v{version}/images/{asin} when possible
                     if (_imageCacheService != null && results != null)
                     {
                         foreach (var r in results)
@@ -173,7 +176,7 @@ namespace Listenarr.Api.Controllers
                                 var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
                                 if (!string.IsNullOrWhiteSpace(cached))
                                 {
-                                    r.ImageUrl = $"/api/images/{r.Asin}";
+                                    r.ImageUrl = BuildApiImagePath(r.Asin);
                                     continue;
                                 }
 
@@ -182,16 +185,16 @@ namespace Listenarr.Api.Controllers
                                     var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
                                     if (!string.IsNullOrWhiteSpace(downloaded))
                                     {
-                                        r.ImageUrl = $"/api/images/{r.Asin}";
+                                        r.ImageUrl = BuildApiImagePath(r.Asin);
                                     }
                                     else
                                     {
-                                        r.ImageUrl = $"/api/images/{r.Asin}?url={Uri.EscapeDataString(r.ImageUrl)}";
+                                        r.ImageUrl = BuildApiImagePath(r.Asin, r.ImageUrl);
                                     }
                                 }
                                 else if (!string.IsNullOrWhiteSpace(r.Asin))
                                 {
-                                    r.ImageUrl = $"/api/images/{r.Asin}";
+                                    r.ImageUrl = BuildApiImagePath(r.Asin);
                                 }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -293,13 +296,14 @@ namespace Listenarr.Api.Controllers
                                         var cached = await _imageCacheService.GetCachedImagePathAsync(md.Asin);
                                         if (!string.IsNullOrWhiteSpace(cached))
                                         {
-                                            md.ImageUrl = $"/api/images/{md.Asin}";
+                                            md.ImageUrl = BuildApiImagePath(md.Asin);
                                         }
                                         else if (!string.IsNullOrWhiteSpace(md.ImageUrl) && (md.ImageUrl.StartsWith("http://") || md.ImageUrl.StartsWith("https://")))
                                         {
                                             var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(md.ImageUrl, md.Asin);
-                                            if (!string.IsNullOrWhiteSpace(downloaded)) md.ImageUrl = $"/api/images/{md.Asin}";
-                                            else md.ImageUrl = $"/api/images/{md.Asin}?url={Uri.EscapeDataString(md.ImageUrl)}";
+                                            md.ImageUrl = !string.IsNullOrWhiteSpace(downloaded)
+                                                ? BuildApiImagePath(md.Asin)
+                                                : BuildApiImagePath(md.Asin, md.ImageUrl);
                                         }
                                     }
                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -499,13 +503,13 @@ namespace Listenarr.Api.Controllers
                                                         var cached = await _imageCacheService.GetCachedImagePathAsync(md.Asin);
                                                         if (!string.IsNullOrWhiteSpace(cached))
                                                         {
-                                                            md.ImageUrl = $"/api/images/{md.Asin}";
+                                                            md.ImageUrl = BuildApiImagePath(md.Asin);
                                                             continue;
                                                         }
                                                         if (!string.IsNullOrWhiteSpace(md.ImageUrl) && (md.ImageUrl.StartsWith("http://") || md.ImageUrl.StartsWith("https://")))
                                                         {
                                                             var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(md.ImageUrl, md.Asin);
-                                                            if (!string.IsNullOrWhiteSpace(downloaded)) md.ImageUrl = $"/api/images/{md.Asin}";
+                                                            if (!string.IsNullOrWhiteSpace(downloaded)) md.ImageUrl = BuildApiImagePath(md.Asin);
                                                         }
                                                     }
                                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -552,7 +556,7 @@ namespace Listenarr.Api.Controllers
                     var results = await _searchService.IntelligentSearchAsync(query, candidateLimit, returnLimit, region: region, language: language, ct: HttpContext.RequestAborted);
 
                     // Ensure images for results are served via our API when possible.
-                    // For results that provide an ASIN, prefer the local /api/images/{asin}
+                    // For results that provide an ASIN, prefer the local /api/v{version}/images/{asin}
                     // endpoint by checking cached images or attempting to download and cache
                     // external image URLs. This prevents leaking external Amazon/Audible
                     // image URLs to the SPA and avoids mixed image sources.
@@ -568,7 +572,7 @@ namespace Listenarr.Api.Controllers
                                 var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
                                 if (!string.IsNullOrWhiteSpace(cached))
                                 {
-                                    r.ImageUrl = $"/api/images/{r.Asin}";
+                                    r.ImageUrl = BuildApiImagePath(r.Asin);
                                     continue;
                                 }
 
@@ -577,7 +581,7 @@ namespace Listenarr.Api.Controllers
                                     var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
                                     if (!string.IsNullOrWhiteSpace(downloaded))
                                     {
-                                        r.ImageUrl = $"/api/images/{r.Asin}";
+                                        r.ImageUrl = BuildApiImagePath(r.Asin);
                                     }
                                 }
                             }
@@ -653,7 +657,7 @@ namespace Listenarr.Api.Controllers
                 _logger.LogDebug(ex, "Failed to retrieve audimeta metadata for ASIN {Asin}", md?.Asin);
             }
 
-            // If audimeta provided a rich response, prefer it (but normalize image URLs to local /api/images/{asin} when possible)
+            // If audimeta provided a rich response, prefer it (but normalize image URLs to local /api/v{version}/images/{asin} when possible)
             if (aud != null)
             {
                 string? imageUrl = aud.ImageUrl;
@@ -664,17 +668,17 @@ namespace Listenarr.Api.Controllers
                         var cached = await _imageCacheService.GetCachedImagePathAsync(aud.Asin);
                         if (!string.IsNullOrWhiteSpace(cached))
                         {
-                            imageUrl = $"/api/images/{aud.Asin}";
+                            imageUrl = BuildApiImagePath(aud.Asin);
                         }
                         else if (!string.IsNullOrWhiteSpace(imageUrl) && (imageUrl.StartsWith("http://") || imageUrl.StartsWith("https://")))
                         {
                             var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(imageUrl, aud.Asin);
-                            if (!string.IsNullOrWhiteSpace(downloaded)) imageUrl = $"/api/images/{aud.Asin}";
+                            if (!string.IsNullOrWhiteSpace(downloaded)) imageUrl = BuildApiImagePath(aud.Asin);
                         }
                         else
                         {
                             // Map to API endpoint even if not cached to keep behaviour consistent
-                            imageUrl = $"/api/images/{aud.Asin}";
+                            imageUrl = BuildApiImagePath(aud.Asin);
                             _ = _imageCacheService.DownloadAndCacheImageAsync(aud.ImageUrl ?? imageUrl, aud.Asin);
                         }
                     }
@@ -832,7 +836,7 @@ namespace Listenarr.Api.Controllers
                     var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
                     if (!string.IsNullOrWhiteSpace(cached))
                     {
-                        r.ImageUrl = $"/api/images/{r.Asin}";
+                        r.ImageUrl = BuildApiImagePath(r.Asin);
                         continue;
                     }
 
@@ -841,7 +845,7 @@ namespace Listenarr.Api.Controllers
                         var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
                         if (!string.IsNullOrWhiteSpace(downloaded))
                         {
-                            r.ImageUrl = $"/api/images/{r.Asin}";
+                            r.ImageUrl = BuildApiImagePath(r.Asin);
                         }
                     }
                 }
@@ -901,7 +905,7 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // Normalize/canonicalize images for returned search results so the
-                // frontend receives local /api/images/{asin} URLs when possible.
+                // frontend receives local /api/v{version}/images/{asin} URLs when possible.
                 var mdResults = response.MetadataResults;
                 var cacheService = _imageCacheService;
 
@@ -923,7 +927,7 @@ namespace Listenarr.Api.Controllers
                             var cached = await svc.GetCachedImagePathAsync(asin);
                             if (!string.IsNullOrWhiteSpace(cached))
                             {
-                                r.ImageUrl = $"/api/images/{asin}";
+                                r.ImageUrl = BuildApiImagePath(asin);
                                 continue;
                             }
 
@@ -936,7 +940,7 @@ namespace Listenarr.Api.Controllers
                                     var downloaded = await svc.DownloadAndCacheImageAsync(url, asin);
                                     if (!string.IsNullOrWhiteSpace(downloaded))
                                     {
-                                        r.ImageUrl = $"/api/images/{asin}";
+                                        r.ImageUrl = BuildApiImagePath(asin);
                                     }
                                 }
                             }
@@ -995,7 +999,7 @@ namespace Listenarr.Api.Controllers
                 var region = Request.Query.ContainsKey("region") ? Request.Query["region"].ToString() ?? "us" : "us";
                 var language = Request.Query.ContainsKey("language") ? Request.Query["language"].ToString() : null;
                 var results = await _searchService.IntelligentSearchAsync(query, candidateLimit, returnLimit, containmentMode, requireAuthorAndPublisher, fuzzyThreshold, region, language, HttpContext.RequestAborted);
-                // Normalize images for metadata results so the SPA receives local /api/images/{asin} when possible
+                // Normalize images for metadata results so the SPA receives local /api/v{version}/images/{asin} when possible
                 if (_imageCacheService != null && results != null)
                 {
                     foreach (var r in results)
@@ -1008,14 +1012,14 @@ namespace Listenarr.Api.Controllers
                             var cached = await _imageCacheService.GetCachedImagePathAsync(r.Asin);
                             if (!string.IsNullOrWhiteSpace(cached))
                             {
-                                r.ImageUrl = $"/api/images/{r.Asin}";
+                                r.ImageUrl = BuildApiImagePath(r.Asin);
                                 continue;
                             }
 
                             if (!string.IsNullOrWhiteSpace(r.ImageUrl) && (r.ImageUrl.StartsWith("http://") || r.ImageUrl.StartsWith("https://")))
                             {
                                 var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
-                                if (!string.IsNullOrWhiteSpace(downloaded)) r.ImageUrl = $"/api/images/{r.Asin}";
+                                if (!string.IsNullOrWhiteSpace(downloaded)) r.ImageUrl = BuildApiImagePath(r.Asin);
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -1379,4 +1383,5 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
+
 

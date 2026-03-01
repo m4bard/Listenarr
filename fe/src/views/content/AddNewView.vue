@@ -33,7 +33,7 @@
               class="unified-search-form"
               role="search"
               aria-label="Search audiobooks"
-              @submit.prevent="performSearch"
+              @submit.prevent="onUnifiedSearchSubmit"
             >
               <input
                 ref="searchInput"
@@ -586,22 +586,12 @@
           <div v-for="book in displayedTitleResults" :key="book.key" class="title-result-card">
             <div class="result-poster">
               <img
-                v-if="getCoverUrl(book)"
-                :src="getCoverUrl(book) || getPlaceholderUrl()"
+                :src="getCoverUrl(book)"
                 :alt="book.title"
                 loading="lazy"
                 decoding="async"
                 @error="handleLazyImageError"
               />
-              <span v-else>
-                <img
-                  :src="getPlaceholderUrl()"
-                  alt="Cover unavailable"
-                  loading="lazy"
-                  class="placeholder-cover-image"
-                  decoding="async"
-                />
-              </span>
             </div>
             <div class="result-info">
               <h3>
@@ -912,10 +902,7 @@ import {
 import {
   extractAuthors,
   extractPublishedDate,
-  extractNarrators,
   normalizeSource,
-  isAudimetaSource,
-  extractSubtitle,
   getOptionalString,
   canAddOpenLibraryResult as canAddOpenLibraryResultHelper,
 } from '@/utils/searchResultHelpers'
@@ -956,6 +943,38 @@ type TitleSearchResult = Omit<OpenLibraryBook, 'isbn'> & {
 // Loose result type used for normalization of diverse backend shapes
 type LooseResult = Partial<SearchResult> & Record<string, unknown>
 
+interface AudimetaSeriesEntry {
+  name?: string
+  position?: string | number
+}
+
+interface AudimetaMetadataPayload {
+  asin?: string
+  title?: string
+  subtitle?: string
+  authors?: AudimetaAuthor[]
+  narrators?: AudimetaNarrator[]
+  publisher?: string
+  releaseDate?: string
+  publishDate?: string
+  publishedDate?: string
+  description?: string
+  imageUrl?: string
+  image?: string
+  runtime?: number
+  lengthMinutes?: number
+  language?: string
+  genres?: AudimetaGenre[]
+  series?: AudimetaSeriesEntry[]
+  bookFormat?: string
+  isbn?: string
+}
+
+interface AudimetaMetadataResponse {
+  metadata?: AudimetaMetadataPayload
+  source?: string
+}
+
 const route = useRoute()
 const router = useRouter()
 const configStore = useConfigurationStore()
@@ -975,6 +994,7 @@ const {
   searchPlaceholder,
   handleSearchInput,
   performSearch,
+  cancelSearch,
   lastResults,
 } = useSearch()
 
@@ -1141,6 +1161,8 @@ const convertedIsbn = computed(() => {
 
 // Cache for best cover selection per book key
 const coverSelection = ref<Record<string, string>>({})
+const coverSelectionInFlight = ref<Set<string>>(new Set())
+const coverSelectionAttempted = ref<Set<string>>(new Set())
 
 // General state
 const errorMessage = ref('')
@@ -1349,7 +1371,7 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
     }
 
     // 7. Normalize key
-    const key = String((result as any).asin || (result as any).id || (result as any).key || normalizedIsbn || '');
+    const key = String(rr['asin'] ?? rr['id'] ?? rr['key'] ?? normalizedIsbn ?? '');
 
     // 8. Normalize metadataSource
     let metadataSource: string | undefined = undefined;
@@ -1377,8 +1399,8 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
 
     const looksLikeAudimeta =
       (metadataSource && String(metadataSource).toLowerCase() === 'audimeta') ||
-      Boolean((result as any).isEnriched) ||
-      Boolean((result as any).asin)
+      Boolean(rr['isEnriched']) ||
+      Boolean(rr['asin'])
 
     if (looksLikeAudimeta) {
       // Keep a copy of the raw audimeta results for client-side paging and reference
@@ -1829,6 +1851,15 @@ const loadMoreTitleResults = async () => {
   logger.debug('Load more not needed - all Amazon/Audible results already loaded')
 }
 
+const onUnifiedSearchSubmit = async () => {
+  if (isSearching.value) {
+    cancelSearch()
+    return
+  }
+
+  await performSearch()
+}
+
 // const clearTitleError = () => {
 //   searchError.value = ''
 // }
@@ -1841,8 +1872,17 @@ const getCoverUrl = (book: TitleSearchResult): string => {
     return getProtectedImageSrc(coverSelection.value[key], `addnew-cover-${key}`, getPlaceholderUrl())
   }
 
-  // Start background evaluation of best cover (non-blocking)
-  pickBestCoverForBook(book).catch(() => logger.debug('pickBestCoverForBook error'))
+  // Start background evaluation once per key (non-blocking).
+  // We mark "attempted" up front so failed evaluations do not retry on every render.
+  if (!coverSelectionAttempted.value.has(key) && !coverSelectionInFlight.value.has(key)) {
+    coverSelectionAttempted.value.add(key)
+    coverSelectionInFlight.value.add(key)
+    pickBestCoverForBook(book)
+      .catch(() => logger.debug('pickBestCoverForBook error'))
+      .finally(() => {
+        coverSelectionInFlight.value.delete(key)
+      })
+  }
 
   // Immediate fallback: prefer explicit imageUrl, then searchResult image
   if (book.imageUrl) {
@@ -1896,11 +1936,26 @@ const pickBestCoverForBook = async (book: TitleSearchResult): Promise<void> => {
     // Normalize and dedupe
     const uniq = Array.from(new Set(candidates.filter((u) => !!u))) as string[]
     if (!uniq.length) return
+    if (uniq.length < 2) return
+
+    // If all candidates are backend-proxied image endpoints, keep the default
+    // selected image and skip additional measurement fetches to avoid duplicate
+    // API traffic for each rendered result.
+    const allBackendCandidates = uniq.every((url) => {
+      const resolved = apiService.getImageUrl(url)
+      return !!resolved && isLikelyBackendImageUrl(resolved)
+    })
+    if (allBackendCandidates) return
 
     // Load images and measure aspect ratios with timeout
     const results: Array<{ url: string; score: number }> = []
     for (const url of uniq) {
       try {
+        const resolved = apiService.getImageUrl(url)
+        if (resolved && isLikelyBackendImageUrl(resolved)) {
+          // Avoid extra authenticated fetches for backend image URLs here.
+          continue
+        }
         const { imageUrl, cleanup } = await resolveImageUrlForAspectRatio(url)
         if (!imageUrl) continue
         const ratio = await measureImageAspectRatio(imageUrl, 3000)
@@ -2244,15 +2299,72 @@ const selectTitleResult = async (book: TitleSearchResult) => {
     if (asin) {
       logger.debug('Fetching metadata for ASIN:', asin)
       toast.info('Fetching metadata', `Getting book details from configured sources...`)
-      const response = await apiService.getAudibleMetadata<any>(asin)
-      const audimetaData = response.metadata
-      logger.debug(`Metadata fetched from ${response.source}:`, audimetaData)
-      toast.success('Metadata retrieved', `Book details fetched from ${response.source}`)
+      const response = await apiService.getAudibleMetadata<AudimetaMetadataResponse | AudimetaMetadataPayload>(asin)
+      const responseObj = (response && typeof response === 'object')
+        ? (response as AudimetaMetadataResponse | AudimetaMetadataPayload)
+        : {}
+      const audimetaData = (
+        'metadata' in responseObj &&
+          responseObj.metadata &&
+          typeof responseObj.metadata === 'object'
+      )
+        ? responseObj.metadata
+        : (responseObj as AudimetaMetadataPayload)
+      const metadataSource = (
+        'source' in responseObj && typeof responseObj.source === 'string'
+          ? responseObj.source
+          : undefined
+      ) || book.metadataSource || 'configured metadata source'
+      logger.debug(`Metadata fetched from ${metadataSource}:`, audimetaData)
 
       // Store the metadata source in the book object so it shows in the UI
-      book.metadataSource = response.source
+      book.metadataSource = metadataSource
 
-      const publishedDate = audimetaData.publishDate || audimetaData.releaseDate
+      const hasUsableMetadata = !!(
+        audimetaData &&
+        (
+          (typeof audimetaData.title === 'string' && audimetaData.title.trim()) ||
+          (typeof audimetaData.asin === 'string' && audimetaData.asin.trim()) ||
+          (Array.isArray(audimetaData.authors) && audimetaData.authors.length > 0)
+        )
+      )
+
+      if (!hasUsableMetadata) {
+        logger.warn('Metadata payload missing/invalid; falling back to selected result data', {
+          asin,
+          responseType: typeof audimetaData,
+        })
+        const result = book.searchResult
+        const fallbackMetadata: AudibleBookMetadata = {
+          asin: asin || '',
+          title: result?.title || book.title || 'Unknown Title',
+          subtitle: result?.subtitle,
+          authors: result?.artist ? [result.artist] : (Array.isArray(book.author_name)
+            ? book.author_name.filter((a): a is string => typeof a === 'string')
+            : (typeof book.author_name === 'string' ? [book.author_name] : [])),
+          narrators: result?.narrator ? [result.narrator] : [],
+          publisher: result?.publisher,
+          publishedDate: result?.publishedDate || (book.first_publish_year ? String(book.first_publish_year) : undefined),
+          description: result?.description,
+          imageUrl: result?.imageUrl,
+          runtime: result?.runtime || result?.lengthMinutes || undefined,
+          language: result?.language,
+          genres: Array.isArray(result?.genres) ? result.genres : [],
+          series: result?.series,
+          seriesNumber: result?.seriesNumber,
+          abridged: false,
+          isbn: undefined,
+          source: metadataSource,
+          openLibraryId: result?.id || undefined,
+        }
+        toast.warning('Metadata unavailable', 'Using search result details to continue.')
+        await addToLibrary(fallbackMetadata)
+        return
+      }
+
+      toast.success('Metadata retrieved', `Book details fetched from ${metadataSource}`)
+
+      const publishedDate = audimetaData.releaseDate || audimetaData.publishDate || audimetaData.publishedDate
 
       const metadata: AudibleBookMetadata = {
         asin: audimetaData.asin || asin || '',
@@ -2278,13 +2390,19 @@ const selectTitleResult = async (book: TitleSearchResult) => {
             ?.map((g: AudimetaGenre) => g.name)
             .filter((n: string | undefined) => n) as string[]) || [],
         series: audimetaData.series?.length
-          ? audimetaData.series.map((s: any) => s.name).join(', ')
+          ? audimetaData.series.map((s) => s.name).filter((n): n is string => !!n).join(', ')
           : undefined,
-        seriesList: (audimetaData.series?.map((s: any) => s.name).filter((n: any): n is string => !!n) as string[]) || [],    
-        seriesNumber: audimetaData.series?.[0]?.position || undefined, // Extract position from primary series
-        abridged: audimetaData.bookFormat?.toLowerCase().includes('abridged') || false,
+        seriesList: (audimetaData.series?.map((s) => s.name).filter((n): n is string => !!n) as string[]) || [],
+        seriesNumber:
+          audimetaData.series?.[0]?.position !== undefined
+            ? String(audimetaData.series[0].position)
+            : undefined, // Extract position from primary series
+        abridged:
+          typeof audimetaData.bookFormat === 'string'
+            ? audimetaData.bookFormat.toLowerCase().includes('abridged')
+            : false,
         isbn: audimetaData.isbn,
-        source: response.source,
+        source: metadataSource,
         openLibraryId: book.searchResult?.id || undefined,
       }
 
@@ -2299,6 +2417,7 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       book.isbn && Array.isArray(book.isbn) && book.isbn.length > 0 && typeof book.isbn[0] === 'string' && book.isbn[0].trim()
     ) {
       const getFirstString = (val: unknown) => Array.isArray(val) ? (val[0] || '').toString() : (val || '').toString()
+      const bookRecord = book as unknown as Record<string, unknown>
       const metadata: AudibleBookMetadata = {
         asin: '',
         title: book.title,
@@ -2317,7 +2436,12 @@ const selectTitleResult = async (book: TitleSearchResult) => {
         seriesNumber: undefined,
         isbn: getFirstString(book.isbn),
         source: book.metadataSource || 'Unknown',
-        openLibraryId: (book as any).openLibraryId && typeof (book as any).openLibraryId === 'string' ? (book as any).openLibraryId : (book as any).key,
+        openLibraryId:
+          typeof bookRecord['openLibraryId'] === 'string'
+            ? bookRecord['openLibraryId']
+            : typeof bookRecord['key'] === 'string'
+              ? bookRecord['key']
+              : undefined,
         metadataSource: book.metadataSource || 'unknown',
       }
       await addToLibrary(metadata)

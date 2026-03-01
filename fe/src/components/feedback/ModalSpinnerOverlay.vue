@@ -9,7 +9,7 @@
 
 <script setup lang="ts">
 import { PhSpinner } from '@phosphor-icons/vue'
-const props = defineProps({ active: { type: Boolean, default: false }, message: { type: String, required: false } })
+defineProps({ active: { type: Boolean, default: false }, message: { type: String, required: false } })
 </script>
 
 <style scoped>

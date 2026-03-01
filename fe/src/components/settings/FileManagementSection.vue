@@ -160,7 +160,7 @@ function applyPattern(pattern: string, type: 'folder' | 'file' = 'folder', multi
     // Generate unique filenames by simulating different disk/chapter numbers
     let file1 = result
     let file2 = result
-    let file3 = result
+    const file3 = result
     
     // Replace DiskNumber variants
     if (hasDiskNumber) {

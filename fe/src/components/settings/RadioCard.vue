@@ -21,8 +21,8 @@
 import { computed } from 'vue'
 
 const props = defineProps<{
-  modelValue?: any
-  value: any
+  modelValue?: unknown
+  value: unknown
   title: string
   description?: string
   name?: string

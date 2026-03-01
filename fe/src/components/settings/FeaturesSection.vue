@@ -4,13 +4,13 @@
       <PhToggleLeft /> Features
     </h3>
     <div class="form-body">
-      <CheckboxCard :modelValue="settings.enableMetadataProcessing" @update:modelValue="v => updateField('enableMetadataProcessing', v)" title="Enable Metadata Processing" description="Automatically fetch and embed audiobook metadata" />
+      <CheckboxCard :modelValue="settings.enableMetadataProcessing" @update:modelValue="updateEnableMetadataProcessing" title="Enable Metadata Processing" description="Automatically fetch and embed audiobook metadata" />
 
-      <CheckboxCard :modelValue="settings.enableCoverArtDownload" @update:modelValue="v => updateField('enableCoverArtDownload', v)" title="Enable Cover Art Download" description="Download and embed cover art for audiobooks" />
+      <CheckboxCard :modelValue="settings.enableCoverArtDownload" @update:modelValue="updateEnableCoverArtDownload" title="Enable Cover Art Download" description="Download and embed cover art for audiobooks" />
 
-      <CheckboxCard :modelValue="settings.enableNotifications" @update:modelValue="v => updateField('enableNotifications', v)" title="Enable Notifications" description="Receive notifications for downloads and events" />
+      <CheckboxCard :modelValue="settings.enableNotifications" @update:modelValue="updateEnableNotifications" title="Enable Notifications" description="Receive notifications for downloads and events" />
 
-      <CheckboxCard :modelValue="settings.showCompletedExternalDownloads" @update:modelValue="v => updateField('showCompletedExternalDownloads', v)" title="Show completed external downloads in Activity" description="When enabled, completed torrents/NZBs from external clients will remain visible in the Activity view. When disabled, completed external items will be hidden to reduce clutter." />
+      <CheckboxCard :modelValue="settings.showCompletedExternalDownloads" @update:modelValue="updateShowCompletedExternalDownloads" title="Show completed external downloads in Activity" description="When enabled, completed torrents/NZBs from external clients will remain visible in the Activity view. When disabled, completed external items will be hidden to reduce clutter." />
     </div>
   </div>
 </template>
@@ -29,6 +29,22 @@ const emit = defineEmits<{
 function updateField(field: keyof ApplicationSettings, value: unknown) {
   const payload = { ...(props.settings || {}), [field]: value } as Partial<ApplicationSettings>
   emit('update:settings', payload)
+}
+
+function updateEnableMetadataProcessing(value: boolean) {
+  updateField('enableMetadataProcessing', value)
+}
+
+function updateEnableCoverArtDownload(value: boolean) {
+  updateField('enableCoverArtDownload', value)
+}
+
+function updateEnableNotifications(value: boolean) {
+  updateField('enableNotifications', value)
+}
+
+function updateShowCompletedExternalDownloads(value: boolean) {
+  updateField('showCompletedExternalDownloads', value)
 }
 </script>
 

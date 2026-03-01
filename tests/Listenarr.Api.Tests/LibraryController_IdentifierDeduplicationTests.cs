@@ -73,7 +73,7 @@ namespace Listenarr.Api.Tests
             }
 
             var client = _factory.CreateClient();
-            var response = await client.GetAsync($"/api/library/{audiobookId}/identifiers");
+            var response = await client.GetAsync($"/api/v1/library/{audiobookId}/identifiers");
             response.EnsureSuccessStatusCode();
 
             await using var stream = await response.Content.ReadAsStreamAsync();
@@ -141,7 +141,7 @@ namespace Listenarr.Api.Tests
                 }
                 """;
 
-            using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/library/{audiobookId}/identifiers")
+            using var request = new HttpRequestMessage(HttpMethod.Put, $"/api/v1/library/{audiobookId}/identifiers")
             {
                 Content = new StringContent(payload, Encoding.UTF8, "application/json")
             };
@@ -174,7 +174,7 @@ namespace Listenarr.Api.Tests
 
         private static async Task<string> GetAntiforgeryTokenAsync(HttpClient client)
         {
-            var tokenResponse = await client.GetAsync("/api/antiforgery/token");
+            var tokenResponse = await client.GetAsync("/api/v1/antiforgery/token");
             tokenResponse.EnsureSuccessStatusCode();
             using var json = JsonDocument.Parse(await tokenResponse.Content.ReadAsStringAsync());
             var token = json.RootElement.GetProperty("token").GetString();

@@ -210,7 +210,7 @@ docker-compose up --build
 - `GET /api/filesystem/drives` - Get available drives (Windows)
 
 ### Images
-- `GET /api/images/{filename}` - Get cached cover image
+- `GET /api/v1/images/{filename}` - Get cached cover image
 
 ## Current Status
 - **Development**: The project is actively developed and can be run locally. Many features are implemented and the dev environment supports rapid iteration.

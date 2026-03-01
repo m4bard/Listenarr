@@ -15,7 +15,7 @@ describe('IndexersTab', () => {
     vi.doMock('@/services/api', async (importOriginal) => {
       const actual = await importOriginal()
       return {
-        ...(actual as any),
+        ...(actual as unknown),
         getIndexers: vi.fn(() => new Promise((res) => (resolveFn = res))),
       }
     })
@@ -25,7 +25,7 @@ describe('IndexersTab', () => {
     const sr = await import('@/services/signalr')
     // provide a no-op subscription function
     if (!sr.signalRService || typeof sr.signalRService.onIndexersUpdated !== 'function') {
-      ;(sr as any).signalRService = { onIndexersUpdated: () => () => {} } as any
+      ;(sr as unknown).signalRService = { onIndexersUpdated: () => () => {} } as unknown
     }
 
     const IndexersTab = (await import('@/views/settings/IndexersTab.vue')).default

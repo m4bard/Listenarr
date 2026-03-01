@@ -190,6 +190,7 @@ import { PhSpinner, PhXCircle, PhStar, PhCheck, PhPlus, PhGlobe } from '@phospho
 import { useSearchStore } from '@/stores/search'
 import { useLibraryStore } from '@/stores/library'
 import { apiService } from '@/services/api'
+import { buildApiPath } from '@/services/apiBase'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
 import type { SearchResult, AudibleBookMetadata, QualityScore, QualityProfile } from '@/types'
@@ -254,7 +255,7 @@ const fetchRawDebugWindow = async (q: string) => {
     } catch {}
 
     const body = JSON.stringify({ mode: 'Simple', query: q })
-    const resp = await window.fetch('/api/search', {
+    const resp = await window.fetch(buildApiPath('/search'), {
       method: 'POST',
       credentials: 'include',
       headers: { 'Content-Type': 'application/json' },
