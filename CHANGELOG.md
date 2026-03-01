@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Indexer test + download client test in containerized LAN setups:** Removed over-restrictive private/loopback target blocking for these connectivity test flows, preventing false failures like successful test followed by save errors in common Synology Docker bridge-network deployments.
+- **Download client modal test credential fallback:** When testing an existing download client from the edit modal, the request now includes the client `id` so backend test logic can reuse saved credentials (for example password/API key) when the input field is left blank.
 
 ## [0.2.54] - 2026-02-28
 
