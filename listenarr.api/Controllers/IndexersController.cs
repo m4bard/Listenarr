@@ -50,9 +50,6 @@ namespace Listenarr.Api.Controllers
         private bool ShouldRedactIndexerSecretsForCaller()
             => SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext);
 
-        private bool AllowPrivateOutboundTargetsForCaller()
-            => SecurityRequestUtils.IsLoopbackRequest(HttpContext) || SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(HttpContext);
-
         private Indexer RedactIndexerForCaller(Indexer indexer)
             => ShouldRedactIndexerSecretsForCaller() ? ApiResponseRedactor.RedactIndexer(indexer) : indexer;
 
@@ -66,24 +63,16 @@ namespace Listenarr.Api.Controllers
                 ? ApiResponseRedactor.RedactedValue
                 : mamId;
 
-        private async Task<string?> ValidateOutboundUrlForCallerAsync(string url)
+        private Task<string?> ValidateOutboundUrlForCallerAsync(string url)
         {
-            var allowPrivateTargets = AllowPrivateOutboundTargetsForCaller();
-            if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(url, out var reason, allowPrivateTargets))
+            // *Arr standard behavior: allow private/loopback destinations for indexer connectivity
+            // tests/imports, but still enforce absolute HTTP(S) URLs and block embedded credentials.
+            if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(url, out var reason, allowPrivateTargets: true))
             {
-                return reason;
+                return Task.FromResult<string?>(reason);
             }
 
-            if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
-            {
-                var dnsOk = await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(uri, _logger, allowPrivateTargets);
-                if (!dnsOk)
-                {
-                    return "DNS resolved to private or loopback address";
-                }
-            }
-
-            return null;
+            return Task.FromResult<string?>(null);
         }
 
         private async Task<HttpResponseMessage> SendValidatedAsync(
@@ -98,7 +87,8 @@ namespace Listenarr.Api.Controllers
                 uri,
                 _httpClientNoRedirect,
                 _logger,
-                allowPrivateTargets: AllowPrivateOutboundTargetsForCaller(),
+                // *Arr standard behavior for indexers: allow private/loopback destinations.
+                allowPrivateTargets: true,
                 completionOption: completionOption,
                 cancellationToken: cancellationToken);
             return response;

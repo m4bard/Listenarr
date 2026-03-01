@@ -4,6 +4,8 @@ using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Domain.Models;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -106,6 +108,45 @@ namespace Listenarr.Api.Tests
             Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result);
             Assert.True(indexer.LastTestSuccessful);
             Assert.Null(indexer.LastTestError);
+        }
+
+        [Fact]
+        public async Task TestDraft_GenericIndexer_RemoteCaller_AllowsPrivateHost()
+        {
+            // Arrange - simulate a remote caller testing a private-network indexer URL.
+            var resp = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"ok\":true}")
+            };
+            var handler = new CaptureHandler(resp);
+            var controller = CreateController(handler);
+
+            var httpContext = new DefaultHttpContext();
+            httpContext.Connection.RemoteIpAddress = IPAddress.Parse("8.8.8.8");
+            controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+            var indexer = new Indexer
+            {
+                Name = "private-indexer",
+                Type = "Usenet",
+                Implementation = "Generic",
+                Url = "http://192.168.1.25"
+            };
+
+            // Act
+            var result = await controller.TestDraft(indexer);
+
+            // Assert - request should proceed instead of being blocked as private/loopback.
+            Assert.NotNull(handler.LastRequest);
+            Assert.Equal("192.168.1.25", handler.LastRequest!.RequestUri!.Host);
+
+            var ok = Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(ok.Value);
+            var payload = ok.Value!;
+            var successProp = payload.GetType().GetProperty("success");
+            Assert.NotNull(successProp);
+            Assert.True((bool)successProp!.GetValue(payload)!);
+            Assert.True(indexer.LastTestSuccessful);
         }
     }
 }

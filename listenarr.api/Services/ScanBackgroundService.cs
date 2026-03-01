@@ -528,6 +528,10 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogInformation("ScanBackgroundService cancellation requested");
                 }
+                catch (OperationCanceledException ex)
+                {
+                    _logger.LogWarning(ex, "ScanBackgroundService job stream canceled/timed out unexpectedly; continuing");
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Unhandled error in ScanBackgroundService loop");
                 }

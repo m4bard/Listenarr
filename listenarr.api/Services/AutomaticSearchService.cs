@@ -42,13 +42,29 @@ namespace Listenarr.Api.Services
             _logger.LogInformation("AutomaticSearchService started. Will search monitored audiobooks every {Hours} hours", _searchInterval.TotalHours);
 
             // Wait for application to be fully started before first search
-            await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromMinutes(5), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("AutomaticSearchService canceled before first search cycle");
+                return;
+            }
 
             while (!stoppingToken.IsCancellationRequested)
             {
                 try
                 {
                     await PerformAutomaticSearchesAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    _logger.LogWarning(ex, "Automatic search cycle canceled/timed out; continuing");
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error during automatic search cycle");
@@ -59,7 +75,7 @@ namespace Listenarr.Api.Services
                 {
                     await Task.Delay(_searchInterval, stoppingToken);
                 }
-                catch (TaskCanceledException)
+                catch (OperationCanceledException)
                 {
                     // Expected when stopping
                     break;
@@ -118,6 +134,14 @@ namespace Listenarr.Api.Services
 
                     _logger.LogInformation("Processed audiobook '{Title}' - queued {QueuedCount} downloads",
                         audiobook.Title, downloadsQueuedForBook);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    _logger.LogWarning(ex, "Automatic search processing canceled/timed out for audiobook '{Title}' (ID: {Id})", audiobook.Title, audiobook.Id);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error processing audiobook '{Title}' (ID: {Id})", audiobook.Title, audiobook.Id);

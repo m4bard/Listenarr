@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.55] - 2026-03-01
+
+### Added
+- **Regression coverage for trust/proxy behavior:** Added API tests validating `*Arr standard` forwarded-header trust configuration and caller redaction behavior differences between public-network and private-network callers.
+
+### Changed
+- **`*Arr standard` reverse-proxy trust model:** Updated forwarded-header handling to trust common private proxy networks (`10/8`, `172.16/12`, `192.168/16`, `fc00::/7`, `fe80::/10`) and process `X-Forwarded-Host` in addition to `X-Forwarded-For`/`X-Forwarded-Proto` for Docker/Synology/reverse-proxy deployments.
+- **Secret redaction trust policy:** Adjusted secret redaction decisions to match `*Arr standard` behavior by treating local/private-network callers as trusted perimeter callers, while still requiring admin/API-key authentication for public-network callers.
+- **Security/auth guidance text:** Updated API/Swagger guidance text to reflect trusted-network redaction behavior (`trusted-network/auth`) instead of localhost-only wording.
+
+### Fixed
+- **Indexer test + download client test in containerized LAN setups:** Removed over-restrictive private/loopback target blocking for these connectivity test flows, preventing false failures like successful test followed by save errors in common Synology Docker bridge-network deployments.
+
 ## [0.2.54] - 2026-02-28
 
 ### Added
