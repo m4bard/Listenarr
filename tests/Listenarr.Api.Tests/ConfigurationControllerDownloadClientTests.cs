@@ -5,7 +5,7 @@ using Listenarr.Api.Services;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
@@ -19,7 +19,7 @@ namespace Listenarr.Api.Tests
             // Arrange
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadService = new Mock<IDownloadService>(MockBehavior.Strict);
-            var logger = new LoggerFactory().CreateLogger<ConfigurationController>();
+            var logger = NullLogger<ConfigurationController>.Instance;
             var userService = Mock.Of<IUserService>();
             var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
 
@@ -107,7 +107,7 @@ namespace Listenarr.Api.Tests
             // Arrange
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadService = new Mock<IDownloadService>(MockBehavior.Strict);
-            var logger = new LoggerFactory().CreateLogger<ConfigurationController>();
+            var logger = NullLogger<ConfigurationController>.Instance;
             var userService = Mock.Of<IUserService>();
             var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
 

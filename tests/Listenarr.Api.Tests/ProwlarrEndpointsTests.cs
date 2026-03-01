@@ -183,9 +183,10 @@ namespace Listenarr.Api.Tests
                 categories = new[] { 3030 }
             });
 
+            using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
             var resp = await client.PostAsync(
                 "/api/v1/indexers",
-                new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+                content);
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
