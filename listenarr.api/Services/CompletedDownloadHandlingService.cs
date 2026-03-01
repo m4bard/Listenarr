@@ -71,6 +71,14 @@ namespace Listenarr.Api.Services
                     _pollingInterval = TimeSpan.FromSeconds(settings.PollingIntervalSeconds);
                 }
             }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("CompletedDownloadHandlingService startup canceled");
+            }
+            catch (OperationCanceledException ex)
+            {
+                _logger.LogWarning(ex, "CompletedDownloadHandlingService settings load canceled/timed out during startup; using default interval");
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to load polling interval from settings, using default");
             }
@@ -94,12 +102,27 @@ namespace Listenarr.Api.Services
                 {
                     await ProcessCompletedDownloadsAsync(stoppingToken);
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    _logger.LogWarning(ex, "CompletedDownloadHandlingService cycle canceled/timed out; continuing");
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error in CompletedDownloadHandlingService");
                 }
 
                 // Wait before next poll
-                await Task.Delay(_pollingInterval, stoppingToken);
+                try
+                {
+                    await Task.Delay(_pollingInterval, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
 
             _logger.LogInformation("CompletedDownloadHandlingService background task stopped");
@@ -220,6 +243,14 @@ namespace Listenarr.Api.Services
                         }
                     }
                 }
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (OperationCanceledException ex)
+            {
+                _logger.LogWarning(ex, "CompletedDownloadHandlingService processing canceled/timed out");
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error in CompletedDownloadHandlingService");

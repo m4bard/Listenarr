@@ -265,6 +265,23 @@ builder.Services
 // Required for [Authorize] / role policies used by controllers.
 builder.Services.AddAuthorization();
 
+// *Arr standard proxy trust model:
+// trust forwarded headers from RFC1918/RFC4193/link-local proxy networks that are
+// common in Docker/Synology/reverse-proxy deployments.
+builder.Services.Configure<ForwardedHeadersOptions>(options =>
+{
+    options.ForwardedHeaders =
+        ForwardedHeaders.XForwardedFor |
+        ForwardedHeaders.XForwardedProto |
+        ForwardedHeaders.XForwardedHost;
+
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("fc00::"), 7));
+    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("fe80::"), 10));
+});
+
 // Add SignalR for real-time updates
 builder.Services.AddSignalR()
     .AddJsonProtocol(options =>
@@ -723,7 +740,7 @@ builder.Services.AddSwaggerGen(options =>
         "   - Use `SessionBearer` (`Bearer <sessionToken>`) or `SessionTokenHeader` (`<sessionToken>`).",
         "3. API key flow:",
         "   - Listenarr auto-generates an API key on first run.",
-        "   - Read the current key from `GET /api/v{version}/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+        "   - Read the current key from `GET /api/v{version}/Configuration/startupconfig` (trusted-network/auth redaction rules apply).",
         "   - Rotate the key with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required).",
         "   - `POST /api/v{version}/Configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
         "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
@@ -769,7 +786,7 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `X-Api-Key: <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+            "Read the current key from `GET /api/v{version}/Configuration/startupconfig` (trusted-network/auth redaction rules apply).",
             "Regenerate with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required)."
         })
     });
@@ -783,7 +800,7 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `Authorization: ApiKey <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/Configuration/startupconfig` (localhost/auth redaction rules apply).",
+            "Read the current key from `GET /api/v{version}/Configuration/startupconfig` (trusted-network/auth redaction rules apply).",
             "Regenerate with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required)."
         })
     });
@@ -956,16 +973,9 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Use forwarded headers middleware (must be early in pipeline)
-// This processes X-Forwarded-For and X-Forwarded-Proto headers from the reverse proxy.
-// By default, ASP.NET Core will only trust forwarded headers from loopback addresses (127.0.0.1, ::1).
-// This is safe for most self-hosted and direct scenarios, and will work behind a reverse proxy if the proxy runs locally or you set ASPNETCORE_FORWARDEDHEADERS_ENABLED=true.
-// For advanced scenarios, set trusted proxies via KnownProxies/KnownNetworks if needed.
-app.UseForwardedHeaders(new ForwardedHeadersOptions
-{
-    ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto
-    // Do not set KnownProxies/KnownNetworks here for maximum compatibility
-});
+// Use forwarded headers middleware (must be early in pipeline).
+// Options are configured in DI to trust common private proxy networks.
+app.UseForwardedHeaders();
 
 // Note: HTTPS redirection is handled by the reverse proxy, not by this application
 
