@@ -24,14 +24,7 @@ namespace Listenarr.Api.Services
                 trimmed = trimmed[1..];
             }
 
-            // Normalize equivalent forms like 1.0 / 1.0.0 to just 1.
-            if (Regex.IsMatch(trimmed, @"^\d+(?:\.0+)+$"))
-            {
-                var major = trimmed.Split('.')[0];
-                return string.IsNullOrWhiteSpace(major) ? DefaultApiVersion : major;
-            }
-
-            return string.IsNullOrWhiteSpace(trimmed) ? DefaultApiVersion : trimmed;
+            return TryNormalizeNumericApiVersion(trimmed, out var normalized) ? normalized : DefaultApiVersion;
         }
 
         public static string ResolveApiVersion(HttpContext? context, string? fallbackVersion = null)
@@ -49,7 +42,10 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                System.Diagnostics.Debug.WriteLine($"ApiVersionPathBuilder.ResolveApiVersion route parse failed: {ex.Message}");
+            }
 
             try
             {
@@ -67,7 +63,10 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch { }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                System.Diagnostics.Debug.WriteLine($"ApiVersionPathBuilder.ResolveApiVersion path parse failed: {ex.Message}");
+            }
 
             return fallback;
         }
@@ -97,6 +96,58 @@ namespace Listenarr.Api.Services
             normalized = LeadingApiPrefixRegex.Replace(normalized, string.Empty);
             if (string.IsNullOrWhiteSpace(normalized)) return "/";
             return normalized.StartsWith('/') ? normalized : "/" + normalized;
+        }
+
+        private static bool TryNormalizeNumericApiVersion(string value, out string normalized)
+        {
+            normalized = string.Empty;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var segments = new System.Collections.Generic.List<string>();
+            var segmentStart = 0;
+
+            for (var i = 0; i <= value.Length; i++)
+            {
+                if (i < value.Length && value[i] != '.')
+                {
+                    continue;
+                }
+
+                var segmentLength = i - segmentStart;
+                if (segmentLength <= 0)
+                {
+                    return false;
+                }
+
+                var segment = value.Substring(segmentStart, segmentLength);
+                for (var j = 0; j < segment.Length; j++)
+                {
+                    if (!char.IsDigit(segment[j]))
+                    {
+                        return false;
+                    }
+                }
+
+                var nonZeroIndex = 0;
+                while (nonZeroIndex < segment.Length - 1 && segment[nonZeroIndex] == '0')
+                {
+                    nonZeroIndex++;
+                }
+
+                segments.Add(segment[nonZeroIndex..]);
+                segmentStart = i + 1;
+            }
+
+            while (segments.Count > 1 && segments[^1] == "0")
+            {
+                segments.RemoveAt(segments.Count - 1);
+            }
+
+            normalized = string.Join('.', segments);
+            return !string.IsNullOrWhiteSpace(normalized);
         }
     }
 }

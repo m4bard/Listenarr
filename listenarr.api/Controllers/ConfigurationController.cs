@@ -518,7 +518,10 @@ namespace Listenarr.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(value)) return value;
                 }
             }
-            catch { }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "Failed to read requested API version from route data.");
+            }
 
             return null;
         }
@@ -532,63 +535,59 @@ namespace Listenarr.Api.Controllers
                 trimmed = trimmed[1..];
             }
 
-            // Normalize equivalent forms like 1.0 / 1.0.0 to just 1.
-            if (TryNormalizeMajorWithZeroOnlyMinor(trimmed, out var major))
-            {
-                return major;
-            }
-
-            return trimmed;
+            return TryNormalizeNumericApiVersion(trimmed, out var normalized) ? normalized : null;
         }
 
-        private static bool TryNormalizeMajorWithZeroOnlyMinor(string value, out string major)
+        private static bool TryNormalizeNumericApiVersion(string value, out string normalized)
         {
-            major = string.Empty;
-
-            var dotIndex = value.IndexOf('.');
-            if (dotIndex <= 0 || dotIndex >= value.Length - 1)
+            normalized = string.Empty;
+            if (string.IsNullOrWhiteSpace(value))
             {
                 return false;
             }
 
-            for (var i = 0; i < dotIndex; i++)
-            {
-                if (!char.IsDigit(value[i]))
-                {
-                    return false;
-                }
-            }
+            var segments = new List<string>();
+            var segmentStart = 0;
 
-            var sawDigitInCurrentSegment = false;
-            for (var i = dotIndex + 1; i < value.Length; i++)
+            for (var i = 0; i <= value.Length; i++)
             {
-                var ch = value[i];
-                if (ch == '.')
+                if (i < value.Length && value[i] != '.')
                 {
-                    if (!sawDigitInCurrentSegment)
-                    {
-                        return false;
-                    }
-
-                    sawDigitInCurrentSegment = false;
                     continue;
                 }
 
-                if (ch != '0')
+                var segmentLength = i - segmentStart;
+                if (segmentLength <= 0)
                 {
                     return false;
                 }
 
-                sawDigitInCurrentSegment = true;
+                var segment = value.Substring(segmentStart, segmentLength);
+                for (var j = 0; j < segment.Length; j++)
+                {
+                    if (!char.IsDigit(segment[j]))
+                    {
+                        return false;
+                    }
+                }
+
+                var nonZeroIndex = 0;
+                while (nonZeroIndex < segment.Length - 1 && segment[nonZeroIndex] == '0')
+                {
+                    nonZeroIndex++;
+                }
+
+                segments.Add(segment[nonZeroIndex..]);
+                segmentStart = i + 1;
             }
 
-            if (!sawDigitInCurrentSegment)
+            while (segments.Count > 1 && segments[^1] == "0")
             {
-                return false;
+                segments.RemoveAt(segments.Count - 1);
             }
 
-            major = value[..dotIndex];
-            return major.Length > 0;
+            normalized = string.Join('.', segments);
+            return !string.IsNullOrWhiteSpace(normalized);
         }
 
         // Regenerate API key (requires authentication)

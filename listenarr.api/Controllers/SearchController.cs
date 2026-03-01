@@ -301,8 +301,9 @@ namespace Listenarr.Api.Controllers
                                         else if (!string.IsNullOrWhiteSpace(md.ImageUrl) && (md.ImageUrl.StartsWith("http://") || md.ImageUrl.StartsWith("https://")))
                                         {
                                             var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(md.ImageUrl, md.Asin);
-                                            if (!string.IsNullOrWhiteSpace(downloaded)) md.ImageUrl = BuildApiImagePath(md.Asin);
-                                            else md.ImageUrl = BuildApiImagePath(md.Asin, md.ImageUrl);
+                                            md.ImageUrl = !string.IsNullOrWhiteSpace(downloaded)
+                                                ? BuildApiImagePath(md.Asin)
+                                                : BuildApiImagePath(md.Asin, md.ImageUrl);
                                         }
                                     }
                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

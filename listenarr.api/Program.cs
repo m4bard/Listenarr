@@ -643,9 +643,6 @@ Log.Logger.Information("[Startup] Resolved SQLite DB path: {SqliteDbPath}", sqli
 // Register persistence (DbContextFactory + compatibility DbContext + repositories) via extension
 builder.Services.AddListenarrPersistence(builder.Configuration, sqliteDbPath);
 
-// Register consolidated HttpClient policies and common typed clients
-builder.Services.AddListenarrHttpClients(builder.Configuration);
-
 // Register adapters and related options/validators
 builder.Services.AddListenarrAdapters(builder.Configuration);
 
@@ -743,7 +740,7 @@ builder.Services.AddSwaggerGen(options =>
     {
         Type = SecuritySchemeType.Http,
         Scheme = "bearer",
-        BearerFormat = "JWT",
+        BearerFormat = "SessionToken",
         Description = string.Join(Environment.NewLine, new[]
         {
             "Use `Authorization: Bearer <sessionToken>`.",

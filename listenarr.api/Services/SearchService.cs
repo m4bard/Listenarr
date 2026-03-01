@@ -45,7 +45,7 @@ namespace Listenarr.Api.Services
         private readonly IImageCacheService _imageCacheService;
         private readonly ListenArrDbContext _dbContext;
         private readonly AudimetaService _audimetaService;
-        private readonly AudnexusService _audnexusService;
+        private readonly IAudnexusService _audnexusService;
         private readonly MetadataConverters _metadataConverters;
         private readonly MetadataMerger _metadataMerger;
         private readonly SearchProgressReporter _searchProgressReporter;
@@ -67,7 +67,7 @@ namespace Listenarr.Api.Services
             ListenArrDbContext dbContext,
             IHubContext<DownloadHub> hubContext,
             AudimetaService audimetaService,
-            AudnexusService audnexusService,
+            IAudnexusService audnexusService,
             MetadataConverters metadataConverters,
             MetadataMerger metadataMerger,
             SearchProgressReporter searchProgressReporter,

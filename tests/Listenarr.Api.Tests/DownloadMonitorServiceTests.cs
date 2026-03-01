@@ -60,9 +60,10 @@ namespace Listenarr.Api.Tests
 
             var loggerMock = new Mock<ILogger<DownloadMonitorService>>();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
+            using var httpClient = new HttpClient(new HttpClientHandler());
             httpFactoryMock
                 .Setup(f => f.CreateClient(It.IsAny<string>()))
-                .Returns(new HttpClient(new HttpClientHandler()));
+                .Returns(httpClient);
 
             var monitor = new DownloadMonitorService(
                 scopeFactory,

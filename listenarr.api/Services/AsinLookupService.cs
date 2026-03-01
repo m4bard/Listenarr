@@ -124,15 +124,7 @@ namespace Listenarr.Api.Services
                 return false;
             }
 
-            foreach (var ch in value)
-            {
-                if (!char.IsLetterOrDigit(ch))
-                {
-                    return false;
-                }
-            }
-
-            return true;
+            return value.All(char.IsLetterOrDigit);
         }
 
         private static string NormalizeAsin(string value) => value.Trim().ToUpperInvariant();

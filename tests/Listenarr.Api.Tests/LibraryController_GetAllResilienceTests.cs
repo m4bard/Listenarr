@@ -1,5 +1,6 @@
 using System.Net;
 using System.Threading.Tasks;
+using Asp.Versioning.ApiExplorer;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
@@ -20,6 +21,8 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetAll_DoesNotFail_WhenLegacyIsbnTextExists()
         {
+            var apiBasePath = ResolveApiBasePath(_factory.Services);
+
             int id;
             using (var scope = _factory.Services.CreateScope())
             {
@@ -40,9 +43,19 @@ namespace Listenarr.Api.Tests
             }
 
             var client = _factory.CreateClient();
-            var response = await client.GetAsync("/api/library");
+            var response = await client.GetAsync($"{apiBasePath}/library");
 
             Assert.Equal(HttpStatusCode.OK, response.StatusCode);
+        }
+
+        private static string ResolveApiBasePath(IServiceProvider services)
+        {
+            using var scope = services.CreateScope();
+            var provider = scope.ServiceProvider.GetService<IApiVersionDescriptionProvider>();
+            var groupName = provider?.ApiVersionDescriptions.FirstOrDefault(d => !d.IsDeprecated)?.GroupName
+                ?? provider?.ApiVersionDescriptions.FirstOrDefault()?.GroupName;
+
+            return string.IsNullOrWhiteSpace(groupName) ? "/api/v1" : $"/api/{groupName}";
         }
     }
 }
