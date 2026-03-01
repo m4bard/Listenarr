@@ -1771,10 +1771,10 @@ namespace Listenarr.Api.Services
                     var allDownloads = await dbContext.Downloads.ToListAsync();
                     downloadRecord = allDownloads.FirstOrDefault(d => 
                         d.Metadata != null &&
-                        ((d.Metadata.ContainsKey("ClientDownloadId") &&
+                        ((d.Metadata.TryGetValue("ClientDownloadId") &&
                           string.Equals(d.Metadata["ClientDownloadId"]?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase)) ||
-                         (d.Metadata.ContainsKey("TorrentHash") &&
-                          string.Equals(d.Metadata["TorrentHash"]?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase))));
+                         d.Metadata.TryGetValue("TorrentHash", out var hashObj) &&
+                          string.Equals(hashObj?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase))));
                 }
 
                 // If still not found, try enhanced title/name matching for legacy downloads
