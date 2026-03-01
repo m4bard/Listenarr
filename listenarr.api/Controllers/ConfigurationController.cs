@@ -533,13 +533,62 @@ namespace Listenarr.Api.Controllers
             }
 
             // Normalize equivalent forms like 1.0 / 1.0.0 to just 1.
-            if (System.Text.RegularExpressions.Regex.IsMatch(trimmed, @"^\d+(?:\.0+)+$"))
+            if (TryNormalizeMajorWithZeroOnlyMinor(trimmed, out var major))
             {
-                var major = trimmed.Split('.')[0];
-                return string.IsNullOrWhiteSpace(major) ? null : major;
+                return major;
             }
 
             return trimmed;
+        }
+
+        private static bool TryNormalizeMajorWithZeroOnlyMinor(string value, out string major)
+        {
+            major = string.Empty;
+
+            var dotIndex = value.IndexOf('.');
+            if (dotIndex <= 0 || dotIndex >= value.Length - 1)
+            {
+                return false;
+            }
+
+            for (var i = 0; i < dotIndex; i++)
+            {
+                if (!char.IsDigit(value[i]))
+                {
+                    return false;
+                }
+            }
+
+            var sawDigitInCurrentSegment = false;
+            for (var i = dotIndex + 1; i < value.Length; i++)
+            {
+                var ch = value[i];
+                if (ch == '.')
+                {
+                    if (!sawDigitInCurrentSegment)
+                    {
+                        return false;
+                    }
+
+                    sawDigitInCurrentSegment = false;
+                    continue;
+                }
+
+                if (ch != '0')
+                {
+                    return false;
+                }
+
+                sawDigitInCurrentSegment = true;
+            }
+
+            if (!sawDigitInCurrentSegment)
+            {
+                return false;
+            }
+
+            major = value[..dotIndex];
+            return major.Length > 0;
         }
 
         // Regenerate API key (requires authentication)
