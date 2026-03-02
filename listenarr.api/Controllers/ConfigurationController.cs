@@ -341,32 +341,6 @@ namespace Listenarr.Api.Controllers
                     }
                 }
 
-                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
-                {
-                    var scheme = config.UseSSL ? "https" : "http";
-                    var host = (config.Host ?? string.Empty).Trim();
-                    var baseUrl = string.IsNullOrWhiteSpace(host)
-                        ? string.Empty
-                        : $"{scheme}://{host}{(config.Port > 0 ? $":{config.Port}" : string.Empty)}/";
-
-                    if (!string.IsNullOrWhiteSpace(baseUrl))
-                    {
-                        if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(baseUrl, out var reason, allowPrivateTargets: false))
-                        {
-                            return BadRequest(new { success = false, message = $"Blocked download client test target: {reason}" });
-                        }
-
-                        if (Uri.TryCreate(baseUrl, UriKind.Absolute, out var targetUri))
-                        {
-                            var ok = await OutboundRequestSecurity.TryValidateResolvedExternalHttpUriAsync(targetUri, _logger, allowPrivateTargets: false);
-                            if (!ok)
-                            {
-                                return BadRequest(new { success = false, message = "Blocked download client test target: DNS resolved to private or loopback address" });
-                            }
-                        }
-                    }
-                }
-
                 // Delegate to download service to perform protocol-specific lightweight tests
                 var (Success, Message, Client) = await _downloadService.TestDownloadClientAsync(config);
                 var clientResponse = Client;
@@ -459,7 +433,8 @@ namespace Listenarr.Api.Controllers
                     _logger.LogWarning("[ConfigurationController] Authentication is enabled and user is not authenticated. Returning 401.");
                     return Unauthorized();
                 }
-                // Do not expose startup secrets to remote unauthenticated callers, even when auth is disabled.
+                // *Arr standard trust model: public remote unauthenticated callers get redacted
+                // values, while trusted local/private-network callers can read full config.
                 if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
                 {
                     config = ApiResponseRedactor.RedactStartupConfig(config);

@@ -478,12 +478,11 @@ const closeModal = () => {
 const testConnection = async () => {
   testing.value = true
   try {
-    // Build config for testing with proper settings structure
-    // Match the structure that handleSubmit uses to ensure settings are properly formatted
-    // Build a test-only config — do NOT include an `id` so that the server
-    // does not perform DB fallbacks when running a connection test. The
-    // full configuration (with id) is only sent on save.
+    // Build config for testing with proper settings structure.
+    // When editing an existing client, include id so the backend can reuse
+    // saved credentials (for example password/apiKey) if the form input is left blank.
     const configToTest: Partial<DownloadClientConfiguration> = {
+      ...(props.editingClient?.id ? { id: props.editingClient.id } : {}),
       name: formData.value.name,
       type: formData.value.type,
       host: formData.value.host,

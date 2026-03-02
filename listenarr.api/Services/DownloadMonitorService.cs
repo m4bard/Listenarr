@@ -436,7 +436,15 @@ namespace Listenarr.Api.Services
             _logger.LogInformation("Download Monitor Service starting");
 
             // Wait a bit before starting to ensure the app is fully initialized
-            await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(5), stoppingToken);
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("Download Monitor Service canceled before start");
+                return;
+            }
 
             // Attempt to read configured polling interval from ApplicationSettings (fallback to current default)
             try
@@ -459,6 +467,15 @@ namespace Listenarr.Api.Services
                 }
                 _logger.LogInformation("DownloadMonitorService polling interval set to {Interval}s", _pollingInterval.TotalSeconds);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("Download Monitor Service canceled while reading startup configuration");
+                return;
+            }
+            catch (OperationCanceledException ex)
+            {
+                _logger.LogWarning(ex, "Download monitor settings load canceled/timed out; using default polling interval");
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to read polling interval from settings, using default {Default}s", _pollingInterval.TotalSeconds);
             }
@@ -473,12 +490,27 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogWarning(ex, "Download monitor HTTP request timed out; continuing background polling loop");
                 }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    _logger.LogWarning(ex, "Download monitor operation canceled/timed out; continuing background polling loop");
+                }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error in Download Monitor Service");
                 }
 
                 // Wait before next poll
-                await Task.Delay(_pollingInterval, stoppingToken);
+                try
+                {
+                    await Task.Delay(_pollingInterval, stoppingToken);
+                }
+                catch (OperationCanceledException)
+                {
+                    break;
+                }
             }
 
             _logger.LogInformation("Download Monitor Service stopping");

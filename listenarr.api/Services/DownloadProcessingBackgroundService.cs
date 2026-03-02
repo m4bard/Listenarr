@@ -53,6 +53,14 @@ namespace Listenarr.Api.Services
             {
                 await ResetStuckJobsAsync(stoppingToken);
             }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("Download processing startup reset canceled during shutdown");
+            }
+            catch (OperationCanceledException ex)
+            {
+                _logger.LogWarning(ex, "Download processing startup reset canceled/timed out; continuing");
+            }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Failed to reset stuck jobs on startup");
             }
@@ -66,6 +74,14 @@ namespace Listenarr.Api.Services
 
                     await ProcessQueueAsync(stoppingToken);
                     await ProcessRetryJobsAsync(stoppingToken);
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (OperationCanceledException ex)
+                {
+                    _logger.LogWarning(ex, "Download processing cycle canceled/timed out; continuing");
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error processing download queue");
