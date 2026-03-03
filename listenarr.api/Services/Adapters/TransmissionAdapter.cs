@@ -197,6 +197,8 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<QueueItem>();
             if (client == null) return items;
 
+            var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
+
             // Use old format for compatibility with Transmission < 4.1.0
             var payload = new
             {
@@ -206,7 +208,7 @@ namespace Listenarr.Api.Services.Adapters
                     fields = new[]
                     {
                         "id", "hashString", "name", "percentDone", "status", "totalSize", "rateDownload", "rateUpload",
-                        "leftUntilDone", "eta", "downloadDir", "addedDate", "uploadedEver", "uploadRatio"
+                        "leftUntilDone", "eta", "downloadDir", "addedDate", "uploadedEver", "uploadRatio", "labels"
                     }
                 },
                 tag = 3
@@ -224,6 +226,12 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     try
                     {
+                        var labels = ExtractLabels(torrent);
+                        if (!DownloadClientCategoryFilter.MatchesAny(configuredCategory, labels))
+                        {
+                            continue;
+                        }
+
                         var queueItem = await MapTorrentAsync(client, torrent, ct);
                         items.Add(queueItem);
                     }
@@ -253,6 +261,8 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<DownloadClientItem>();
             if (client == null) return items;
 
+            var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
+
             var payload = new
             {
                 method = "torrent-get",
@@ -279,6 +289,12 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     try
                     {
+                        var labels = ExtractLabels(torrent);
+                        if (!DownloadClientCategoryFilter.MatchesAny(configuredCategory, labels))
+                        {
+                            continue;
+                        }
+
                         var downloadClientItem = await MapToDownloadClientItemAsync(client, torrent, ct);
                         items.Add(downloadClientItem);
                     }
@@ -535,12 +551,13 @@ namespace Listenarr.Api.Services.Adapters
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
                 : contentPath;
+            var primaryLabel = ExtractLabels(torrent).FirstOrDefault() ?? string.Empty;
 
             var queueItem = new QueueItem
             {
                 Id = id,
                 Title = name,
-                Quality = "Unknown",
+                Quality = string.IsNullOrWhiteSpace(primaryLabel) ? "Unknown" : primaryLabel,
                 Status = status,
                 Progress = percentDone,
                 Size = totalSize,
@@ -609,6 +626,7 @@ namespace Listenarr.Api.Services.Adapters
             var localContentPath = !string.IsNullOrEmpty(contentPath)
                 ? await _pathMappingService.TranslatePathAsync(client.Id, contentPath)
                 : contentPath;
+            var primaryLabel = ExtractLabels(torrent).FirstOrDefault() ?? string.Empty;
 
             TimeSpan? remainingTime = eta >= 0 ? TimeSpan.FromSeconds(eta) : null;
 
@@ -619,6 +637,7 @@ namespace Listenarr.Api.Services.Adapters
             {
                 DownloadId = downloadId,
                 Title = name,
+                Category = primaryLabel,
                 Status = status,
                 TotalSize = totalSize,
                 RemainingSize = leftUntilDone,
@@ -640,6 +659,31 @@ namespace Listenarr.Api.Services.Adapters
                     hasPostImportCategory: false // Transmission doesn't support post-import categories
                 )
             };
+        }
+
+        private static List<string> ExtractLabels(JsonElement torrent)
+        {
+            var labels = new List<string>();
+            if (!torrent.TryGetProperty("labels", out var labelsProp) || labelsProp.ValueKind != JsonValueKind.Array)
+            {
+                return labels;
+            }
+
+            foreach (var label in labelsProp.EnumerateArray())
+            {
+                if (label.ValueKind != JsonValueKind.String)
+                {
+                    continue;
+                }
+
+                var value = label.GetString();
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    labels.Add(value.Trim());
+                }
+            }
+
+            return labels;
         }
 
         private List<string> CollectLabels(DownloadClientConfiguration client)

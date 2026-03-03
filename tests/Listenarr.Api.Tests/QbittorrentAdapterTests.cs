@@ -1,6 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Listenarr.Api.Services.Adapters;
 using Listenarr.Domain.Models;
@@ -96,6 +98,51 @@ namespace Listenarr.Api.Tests
 
             Assert.False(success);
             Assert.Contains("Forbidden", message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        [Trait("Area", "QbittorrentImportPathResolution")]
+        [Trait("Scenario", "SingleFileResolvesContentFilePath")]
+        public async Task GetImportItemAsync_SingleFileTorrent_ResolvesSpecificFilePath()
+        {
+            var files = ParseFiles("[{\"name\":\"Book.m4b\"}]");
+            var resolvedPath = QbittorrentAdapter.ResolveTorrentContentPath("/downloads/audiobooks", files);
+            Assert.Equal("/downloads/audiobooks/Book.m4b", NormalizePath(resolvedPath));
+            await Task.CompletedTask;
+        }
+
+        [Fact]
+        [Trait("Area", "QbittorrentImportPathResolution")]
+        [Trait("Scenario", "MultiFileResolvesTopLevelDirectory")]
+        public async Task GetImportItemAsync_MultiFileTorrent_ResolvesTopLevelFolderPath()
+        {
+            var files = ParseFiles("[{\"name\":\"Series Book/file1.m4b\"},{\"name\":\"Series Book/file2.m4b\"}]");
+            var resolvedPath = QbittorrentAdapter.ResolveTorrentContentPath("/downloads/audiobooks", files);
+            Assert.Equal("/downloads/audiobooks/Series Book", NormalizePath(resolvedPath));
+            await Task.CompletedTask;
+        }
+
+        private static List<Dictionary<string, JsonElement>> ParseFiles(string json)
+        {
+            var root = JsonDocument.Parse(json).RootElement;
+            var files = new List<Dictionary<string, JsonElement>>();
+
+            foreach (var element in root.EnumerateArray())
+            {
+                var map = new Dictionary<string, JsonElement>(StringComparer.OrdinalIgnoreCase);
+                foreach (var property in element.EnumerateObject())
+                {
+                    map[property.Name] = property.Value;
+                }
+                files.Add(map);
+            }
+
+            return files;
+        }
+
+        private static string NormalizePath(string path)
+        {
+            return (path ?? string.Empty).Replace('\\', '/');
         }
     }
 }

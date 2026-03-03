@@ -70,5 +70,77 @@ namespace Listenarr.Api.Tests
             try { Directory.Delete(sourceDir, true); } catch { }
             try { Directory.Delete(outputRoot, true); } catch { }
         }
+
+        [Fact]
+        public async Task ImportSingleFile_WithAudiobookBasePath_DoesNotDuplicateFolderPatternSegments()
+        {
+            var outputRoot = Path.Combine(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var basePath = Path.Combine(outputRoot, "Frank Herbert", "Dune");
+            Directory.CreateDirectory(basePath);
+
+            var sourceDir = Path.Combine(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+            var sourceFile = Path.Combine(sourceDir, "dune-source.m4b");
+            await File.WriteAllTextAsync(sourceFile, "dummy");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Move",
+                EnableMetadataProcessing = false,
+                FileNamingPattern = "{Author}/{Title}/{Title} ({Year})"
+            };
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using (var seed = new ListenArrDbContext(options))
+            {
+                seed.Audiobooks.Add(new Audiobook
+                {
+                    Id = 123,
+                    Title = "Dune",
+                    Authors = new System.Collections.Generic.List<string> { "Frank Herbert" },
+                    PublishYear = "2021",
+                    BasePath = basePath
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock
+                .Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(() => new ListenArrDbContext(options));
+
+            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(dbFactoryMock.Object);
+                services.AddSingleton<IFileNamingService>(new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()));
+                services.AddSingleton<IMetadataService>(new Mock<IMetadataService>().Object);
+                services.AddSingleton<IImportService>(sp => new ImportService(
+                    dbFactoryMock.Object,
+                    sp.GetRequiredService<IServiceScopeFactory>(),
+                    sp.GetRequiredService<IFileNamingService>(),
+                    sp.GetService<IMetadataService>(),
+                    new NullLogger<ImportService>()));
+            });
+
+            var importService = provider.GetRequiredService<IImportService>();
+
+            var result = await importService.ImportSingleFileAsync("dl-1", 123, sourceFile, settings);
+
+            Assert.True(result.Success);
+            Assert.NotNull(result.FinalPath);
+            Assert.StartsWith(basePath.TrimEnd(Path.DirectorySeparatorChar), result.FinalPath!, StringComparison.OrdinalIgnoreCase);
+
+            var relative = Path.GetRelativePath(basePath, result.FinalPath!);
+            Assert.Equal(Path.GetFileName(relative), relative);
+            Assert.DoesNotContain($"Frank Herbert{Path.DirectorySeparatorChar}", relative, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain($"Dune{Path.DirectorySeparatorChar}", relative, StringComparison.OrdinalIgnoreCase);
+
+            try { Directory.Delete(sourceDir, true); } catch { }
+            try { Directory.Delete(outputRoot, true); } catch { }
+        }
     }
 }

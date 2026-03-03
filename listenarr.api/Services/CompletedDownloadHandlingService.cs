@@ -137,10 +137,42 @@ namespace Listenarr.Api.Services
 
             try
             {
-                // Find all downloads that are Completed but not yet imported (FinalPath still empty)
+                // Find all downloads that are Completed/ImportPending but not yet imported (FinalPath still empty)
                 var completedDownloads = await dbContext.Downloads
-                    .Where(d => d.Status == DownloadStatus.Completed && string.IsNullOrEmpty(d.FinalPath))
+                    .Where(d =>
+                        (d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) &&
+                        string.IsNullOrEmpty(d.FinalPath))
                     .ToListAsync(cancellationToken);
+
+                // Do not process completed downloads for disabled/missing external clients.
+                // Keep DDL entries because they are internal and not tied to external client configuration.
+                HashSet<string> enabledClientIds;
+                try
+                {
+                    var configuredClients = await configService.GetDownloadClientConfigurationsAsync();
+                    enabledClientIds = configuredClients
+                        .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
+                        .Select(c => c.Id)
+                        .ToHashSet(StringComparer.OrdinalIgnoreCase);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "CompletedDownloadHandlingService failed to load download client configurations; skipping external-client completed processing for this cycle");
+                    enabledClientIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+
+                var completedDownloadsAll = completedDownloads;
+                completedDownloads = completedDownloadsAll
+                    .Where(d =>
+                        string.Equals(d.DownloadClientId, "DDL", StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrWhiteSpace(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)))
+                    .ToList();
+
+                var skippedDisabledClientDownloads = completedDownloadsAll.Count - completedDownloads.Count;
+                if (skippedDisabledClientDownloads > 0)
+                {
+                    _logger.LogInformation("CompletedDownloadHandlingService skipping {Count} completed downloads from disabled or missing download clients", skippedDisabledClientDownloads);
+                }
 
                 if (completedDownloads.Count == 0)
                 {

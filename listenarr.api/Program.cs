@@ -668,16 +668,21 @@ builder.Services.AddListenarrInfrastructure();
 // Register application-level services (moved from Program.cs to keep startup focused)
 builder.Services.AddListenarrAppServices(builder.Configuration);
 // Register hosted/background services (moved from Program.cs). Allow tests to disable these.
-// In local development, disable hosted/background services to avoid activating
-// long-running background workers (and to avoid EF resolution at host start).
-    if (isDev)
-    {
-        builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
-        {
-            { "Listenarr:DisableHostedServices", "true" }
-        });
-    }
-var disableHostedServices = builder.Configuration.GetValue<bool>("Listenarr:DisableHostedServices");
+// Hosted services are ENABLED by default in local development because download monitoring
+// and import processing rely on these background workers.
+// Use explicit config/env override only when intentionally disabling them.
+var disableHostedServices =
+    builder.Configuration.GetValue<bool>("Listenarr:DisableHostedServices") ||
+    string.Equals(Environment.GetEnvironmentVariable("LISTENARR_DISABLE_HOSTED_SERVICES"), "true", StringComparison.OrdinalIgnoreCase);
+
+if (disableHostedServices)
+{
+    Log.Logger.Warning("[Startup] Hosted/background services are disabled by configuration override");
+}
+else
+{
+    Log.Logger.Information("[Startup] Hosted/background services are enabled");
+}
 if (!disableHostedServices)
 {
     builder.Services.AddListenarrHostedServices(builder.Configuration);

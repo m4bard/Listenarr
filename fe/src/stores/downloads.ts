@@ -25,6 +25,8 @@ export const useDownloadsStore = defineStore('downloads', () => {
     if (normalized === 'processing') return 'Processing'
     if (normalized === 'ready') return 'Ready'
     if (normalized === 'moved') return 'Moved'
+    if (normalized === 'importpending') return 'ImportPending'
+    if (normalized === 'importblocked') return 'ImportBlocked'
     return 'Queued'
   }
 
@@ -51,7 +53,7 @@ export const useDownloadsStore = defineStore('downloads', () => {
       for (const updated of updatedDownloads) {
         const status = (updated.status || '').toString().toLowerCase()
         if (
-          (status === 'completed' || status === 'ready') &&
+          (status === 'completed' || status === 'ready' || status === 'importpending') &&
           typeof updated.audiobookId === 'number'
         ) {
           const aid = updated.audiobookId as number
@@ -161,7 +163,7 @@ export const useDownloadsStore = defineStore('downloads', () => {
   const activeDownloads = computed(() => {
     const active = downloads.value.filter((d) => {
       const status = (d.status || '').toString().toLowerCase()
-      const isActive = ['queued', 'downloading', 'paused', 'processing'].includes(status)
+      const isActive = ['queued', 'downloading', 'paused', 'processing', 'importpending'].includes(status)
       return isActive
     })
     return active
@@ -175,7 +177,10 @@ export const useDownloadsStore = defineStore('downloads', () => {
   )
 
   const failedDownloads = computed(() =>
-    downloads.value.filter((d) => (d.status || '').toString().toLowerCase() === 'failed'),
+    downloads.value.filter((d) => {
+      const status = (d.status || '').toString().toLowerCase()
+      return status === 'failed' || status === 'importblocked'
+    }),
   )
 
   const loadDownloads = async () => {

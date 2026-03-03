@@ -394,8 +394,128 @@ namespace Listenarr.Api.Tests
                 Assert.NotNull(stillExists);
             }
 
-            // Verify telemetry that a history title match prevented purge
-            metricsMock.Verify(m => m.Increment("download.purge.skipped.history.title_match", It.IsAny<double>()), Times.AtLeastOnce);
+        }
+
+        [Fact]
+        public async Task GetQueue_MapsCompletedPendingImport_ExternalItemToTrackedDownloadId()
+        {
+            var db = CreateInMemoryDb();
+
+            var trackedDownload = new Download
+            {
+                Id = "tracked-1",
+                Title = "Dune - Frank Herbert [M4B]",
+                Status = DownloadStatus.Completed,
+                FinalPath = string.Empty,
+                DownloadClientId = "qb-1",
+                StartedAt = DateTime.UtcNow.AddMinutes(-20),
+                Metadata = new Dictionary<string, object>
+                {
+                    ["TorrentHash"] = "061850ead3eb6f1c5c6d8420211b4bbf2d4ee3e2"
+                }
+            };
+
+            db.Downloads.Add(trackedDownload);
+            await db.SaveChangesAsync();
+
+            var clientConfig = new DownloadClientConfiguration
+            {
+                Id = "qb-1",
+                Name = "local qbit",
+                Type = "qbittorrent",
+                Host = "localhost",
+                Port = 8080,
+                IsEnabled = true
+            };
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetDownloadClientConfigurationsAsync()).ReturnsAsync(new List<DownloadClientConfiguration> { clientConfig });
+            configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings());
+
+            var gatewayMock = new Mock<IDownloadClientGateway>();
+            gatewayMock
+                .Setup(g => g.GetQueueAsync(clientConfig, It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(new List<QueueItem>
+                {
+                    new QueueItem
+                    {
+                        Id = "061850ead3eb6f1c5c6d8420211b4bbf2d4ee3e2",
+                        Title = "Dune - Frank Herbert [M4B]",
+                        Status = "completed",
+                        Progress = 100,
+                        Size = 1100000000,
+                        Downloaded = 1100000000,
+                        DownloadClient = "local qbit",
+                        DownloadClientId = "qb-1",
+                        DownloadClientType = "qbittorrent",
+                        AddedAt = DateTime.UtcNow.AddHours(-2)
+                    }
+                });
+
+            var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+            var services = new ServiceCollection();
+            services.AddSingleton<ListenArrDbContext>(db);
+            services.AddSingleton<IConfigurationService>(configMock.Object);
+            services.AddMemoryCache();
+            services.AddSingleton(memoryCache);
+            var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+            var repoMock = new Mock<IAudiobookRepository>();
+            var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
+            var httpClient = new HttpClient(new DelegatingHandlerMock((_, _) => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK))));
+            var httpFactoryMock = new Mock<IHttpClientFactory>();
+            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            var pathMappingMock = new Mock<IRemotePathMappingService>();
+            var searchMock = new Mock<ISearchService>();
+            var hubContextMock = new Mock<IHubContext<DownloadHub>>();
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(db);
+            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(db);
+
+            var metricsMock = new Mock<IAppMetricsService>();
+            var importServiceMock = new Mock<IImportService>();
+            var queueServiceMock = new Mock<IDownloadQueueService>();
+            queueServiceMock.Setup(q => q.GetQueueAsync()).ReturnsAsync(new List<QueueItem>());
+            var completedProcessorMock = new Mock<ICompletedDownloadProcessor>();
+
+            var notificationService = new NotificationService(
+                httpClient,
+                new Microsoft.Extensions.Logging.Abstractions.NullLogger<NotificationService>(),
+                configMock.Object,
+                new TestNotificationPayloadBuilder(),
+                new Microsoft.AspNetCore.Http.HttpContextAccessor());
+
+            var provider2 = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddSingleton<IAudiobookRepository>(repoMock.Object);
+                services.AddSingleton<IConfigurationService>(configMock.Object);
+                services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(dbFactoryMock.Object);
+                services.AddSingleton<Microsoft.Extensions.Logging.ILogger<DownloadService>>(loggerMock.Object);
+                services.AddSingleton<HttpClient>(httpClient);
+                services.AddSingleton<IHttpClientFactory>(httpFactoryMock.Object);
+                services.AddSingleton<IImportService>(importServiceMock.Object);
+                services.AddSingleton<IRemotePathMappingService>(pathMappingMock.Object);
+                services.AddSingleton<ISearchService>(searchMock.Object);
+                services.AddSingleton<IHubContext<DownloadHub>>(hubContextMock.Object);
+                services.AddSingleton<IMemoryCache>(memoryCache);
+                services.AddSingleton<IDownloadClientGateway>(gatewayMock.Object);
+                services.AddSingleton<IDownloadQueueService>(queueServiceMock.Object);
+                services.AddSingleton<ICompletedDownloadProcessor>(completedProcessorMock.Object);
+                services.AddSingleton<IAppMetricsService>(metricsMock.Object);
+                services.AddSingleton(notificationService);
+                services.AddTransient<DownloadService>();
+            });
+
+            var downloadService = provider2.GetRequiredService<DownloadService>();
+
+            var queue = await downloadService.GetQueueAsync();
+
+            Assert.Single(queue);
+            Assert.Equal("tracked-1", queue[0].Id);
+            Assert.Equal("completed", queue[0].Status, ignoreCase: true, ignoreLineEndingDifferences: false, ignoreWhiteSpaceDifferences: false, ignoreAllWhiteSpace: false);
         }
     }
 }

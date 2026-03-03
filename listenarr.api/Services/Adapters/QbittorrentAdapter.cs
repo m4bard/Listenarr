@@ -625,6 +625,7 @@ namespace Listenarr.Api.Services.Adapters
             if (client == null) return items;
 
             var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "&");
 
             try
             {
@@ -662,7 +663,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 // Limit fields returned to reduce memory usage
                 var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path,category,content_path";
-                var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}", ct);
+                var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}{categoryFilter}", ct);
                 if (!torrentsResp.IsSuccessStatusCode) return items;
 
                 var json = await torrentsResp.Content.ReadAsStringAsync(ct);
@@ -852,27 +853,12 @@ namespace Listenarr.Api.Services.Adapters
                     return result;
                 }
 
-                // Get first file's path and extract subdirectory
-                var firstFile = files[0];
-                var fileName = firstFile.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty;
-                
-                if (string.IsNullOrEmpty(fileName))
+                var outputPath = ResolveTorrentContentPath(savePath, files);
+                if (string.IsNullOrEmpty(outputPath))
                 {
-                    _logger.LogWarning("No file name found in torrent {Hash}", hash);
+                    _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
                     return result;
                 }
-
-                // For multi-file torrents, files are inside a subfolder (e.g. "FolderName/file.mkv").
-                // For single-file torrents, the file has no directory component (e.g. "file.m4b").
-                // In both cases, construct the full content path so the import targets the
-                // correct file/folder rather than the entire save_path directory.
-                var pathParts = fileName.Split('/');
-                var subfolder = pathParts.Length > 1 ? pathParts[0] : string.Empty;
-
-                // Construct output path
-                var outputPath = !string.IsNullOrEmpty(subfolder) 
-                    ? CombineWithOptionalBase(savePath, subfolder)
-                    : savePath;
 
                 // Apply remote path mapping
                 result.OutputPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
@@ -979,27 +965,12 @@ namespace Listenarr.Api.Services.Adapters
                     return result;
                 }
 
-                // Get first file's path and extract subdirectory
-                var firstFile = files[0];
-                var fileName = firstFile.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty;
-                
-                if (string.IsNullOrEmpty(fileName))
+                var outputPath = ResolveTorrentContentPath(savePath, files);
+                if (string.IsNullOrEmpty(outputPath))
                 {
-                    _logger.LogWarning("No file name found in torrent {Hash}", hash);
+                    _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
                     return result;
                 }
-
-                // For multi-file torrents, files are inside a subfolder (e.g. "FolderName/file.mkv").
-                // For single-file torrents, the file has no directory component (e.g. "file.m4b").
-                // In both cases, construct the full content path so the import targets the
-                // correct file/folder rather than the entire save_path directory.
-                var pathParts = fileName.Split('/');
-                var subfolder = pathParts.Length > 1 ? pathParts[0] : string.Empty;
-
-                // Construct output path
-                var outputPath = !string.IsNullOrEmpty(subfolder) 
-                    ? CombineWithOptionalBase(savePath, subfolder)
-                    : savePath;
 
                 // ✅ Apply remote path mapping
                 result.ContentPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
@@ -1037,6 +1008,53 @@ namespace Listenarr.Api.Services.Adapters
             return string.IsNullOrEmpty(normalizedBasePath)
                 ? relativePath
                 : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
+
+        internal static string ResolveTorrentContentPath(
+            string savePath,
+            List<Dictionary<string, JsonElement>> files)
+        {
+            if (string.IsNullOrWhiteSpace(savePath) || files == null || files.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var fileNames = files
+                .Select(f => f.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .ToList();
+
+            if (fileNames.Count == 0)
+            {
+                return string.Empty;
+            }
+
+            var firstFile = fileNames[0];
+            var firstParts = firstFile.Split('/', StringSplitOptions.RemoveEmptyEntries);
+            var hasNestedPath = firstParts.Length > 1;
+
+            if (fileNames.Count == 1)
+            {
+                return hasNestedPath
+                    ? CombineWithOptionalBase(savePath, firstParts[0])
+                    : CombineWithOptionalBase(savePath, firstFile);
+            }
+
+            if (!hasNestedPath)
+            {
+                return savePath;
+            }
+
+            var topLevel = firstParts[0];
+            var allShareTopLevel = fileNames.All(name =>
+            {
+                var parts = name.Split('/', StringSplitOptions.RemoveEmptyEntries);
+                return parts.Length > 1 && string.Equals(parts[0], topLevel, StringComparison.Ordinal);
+            });
+
+            return allShareTopLevel
+                ? CombineWithOptionalBase(savePath, topLevel)
+                : savePath;
         }
     }
 }

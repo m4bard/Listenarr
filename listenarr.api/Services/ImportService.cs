@@ -198,6 +198,7 @@ namespace Listenarr.Api.Services
 
                 string basePathForFile = settings.OutputPath; // default
                 string filenamePattern = filePattern;
+                var usingAudiobookBasePath = false;
 
                 if (audiobookId != null && namingMetadata != null)
                 {
@@ -208,6 +209,7 @@ namespace Listenarr.Api.Services
                         if (ab != null && !string.IsNullOrWhiteSpace(ab.BasePath))
                         {
                             basePathForFile = ab.BasePath; // custom/base path
+                            usingAudiobookBasePath = true;
                             _logger.LogDebug("ImportSingleFile: using audiobook base path for download {DownloadId}: {BasePath}", downloadId, basePathForFile);
                             // For audiobook base path, default to filename-only unless the user explicitly configures a file pattern
                             filenamePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
@@ -251,8 +253,9 @@ namespace Listenarr.Api.Services
                     || filenamePattern.IndexOf('/') >= 0
                     || filenamePattern.IndexOf('\\') >= 0;
 
-                // When basepath was explicitly from audiobook and pattern is for audiobook we treat as filename only
-                var treatAsFilename = filenamePattern == "{Title}" ? true : !patternAllowsSubfolders;
+                // When importing into an explicit audiobook base path, always treat the naming output as filename-only.
+                // This prevents re-appending author/title folder segments when base path already contains them.
+                var treatAsFilename = usingAudiobookBasePath || filenamePattern == "{Title}" || !patternAllowsSubfolders;
 
                 var filename = _fileNamingService.ApplyNamingPattern(filenamePattern, variables, treatAsFilename);
                 var ext = Path.GetExtension(sourcePath);
@@ -716,7 +719,7 @@ namespace Listenarr.Api.Services
                 : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
 
-        // Local helpers - copy from DownloadService's helpers for parity
+        // Local helpers - aligned with DownloadService helper behavior
         private static string DetermineQualityFromMetadata(AudioMetadata? metadata, string path)
         {
             if (metadata != null)

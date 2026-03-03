@@ -70,9 +70,12 @@ namespace Listenarr.Api.Services
                 }
                 else
                 {
-                    download.Status = DownloadStatus.Completed;
+                    if (!TryTransitionStatus(download, DownloadStatus.ImportPending, "PreImport"))
+                    {
+                        return;
+                    }
                     await _downloadRepository.UpdateAsync(download);
-                    _logger.LogInformation("Marked download {DownloadId} as Completed (pre-import)", downloadId);
+                    _logger.LogInformation("Marked download {DownloadId} as ImportPending (pre-import)", downloadId);
 
                     // Broadcast queue update immediately after marking as Completed so UI updates
                     try
@@ -99,8 +102,8 @@ namespace Listenarr.Api.Services
                             var local = await scopedDb.Downloads.FindAsync(downloadId);
                             if (local != null)
                             {
-                                local.Status = DownloadStatus.Completed;
-                                _logger.LogDebug("Synchronized Completed status into scoped ListenArrDbContext for {DownloadId}", downloadId);
+                                local.Status = DownloadStatus.ImportPending;
+                                _logger.LogDebug("Synchronized ImportPending status into scoped ListenArrDbContext for {DownloadId}", downloadId);
                             }
                         }
                     }
@@ -503,6 +506,25 @@ namespace Listenarr.Api.Services
                     }
                 }
 
+                try
+                {
+                    var postImport = await _downloadRepository.FindAsync(downloadId);
+                    if (postImport != null &&
+                        postImport.Status == DownloadStatus.ImportPending &&
+                        string.IsNullOrWhiteSpace(postImport.FinalPath))
+                    {
+                        await MarkImportFailureAsync(
+                            downloadId,
+                            "NoImportableFiles",
+                            "No importable files were found after download completion. Manual interaction is required.",
+                            forceBlock: true);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(ex, "Failed to evaluate post-import state for download {DownloadId}", downloadId);
+                }
+
                 // Add history entry and send notifications after successful import
                 try
                 {
@@ -881,49 +903,180 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Unexpected error in ProcessCompletedDownloadAsync for {DownloadId}", downloadId);
-                
-                // Record import failure in history and check if we should block further attempts
-                try
+
+                await MarkImportFailureAsync(
+                    downloadId,
+                    "UnhandledImportError",
+                    ex.Message ?? "Unexpected import processing error",
+                    ex,
+                    forceBlock: false);
+            }
+        }
+
+        private async Task MarkImportFailureAsync(
+            string downloadId,
+            string reason,
+            string message,
+            Exception? exception = null,
+            bool forceBlock = false)
+        {
+            try
+            {
+                var download = await _downloadRepository.FindAsync(downloadId);
+                if (download == null)
                 {
-                    var download = await _downloadRepository.FindAsync(downloadId);
-                    if (download != null)
+                    return;
+                }
+
+                download.ImportAttempts = download.ImportAttempts + 1;
+                const int MaxImportAttempts = 3;
+
+                var shouldBlock = forceBlock || download.ImportAttempts >= MaxImportAttempts;
+                download.ErrorMessage = message;
+
+                var targetStatus = shouldBlock ? DownloadStatus.ImportBlocked : DownloadStatus.ImportPending;
+                if (!TryTransitionStatus(download, targetStatus, "MarkImportFailure"))
+                {
+                    return;
+                }
+
+                if (shouldBlock)
+                {
+                    download.ImportBlockReason = reason;
+                    download.ImportBlockMessages ??= new List<string>();
+                    if (!download.ImportBlockMessages.Contains(message))
                     {
-                        // Increment import attempts
-                        download.ImportAttempts = download.ImportAttempts + 1;
-                        const int MaxImportAttempts = 3;  // Block after 3 consecutive failures during testing
-                        
-                        if (download.ImportAttempts >= MaxImportAttempts)
-                        {
-                            // Block this download from further import attempts
-                            download.Status = DownloadStatus.ImportBlocked;
-                            download.ImportBlockReason = "MaxAttemptsExceeded";
-                            _logger.LogWarning("Download {DownloadId} blocked after {Attempts} failed import attempts", downloadId, download.ImportAttempts);
-                        }
-                        
-                        await _downloadRepository.UpdateAsync(download);
-                        
-                        // Record in history
-                        if (_downloadHistoryService != null && !string.IsNullOrEmpty(download.DownloadClientId))
-                        {
-                            var errorMessage = ex.Message ?? "Unknown error";
-                            var errorDetails = new List<string> { errorMessage };
-                            if (ex.InnerException != null)
-                            {
-                                errorDetails.Add($"Inner: {ex.InnerException.Message}");
-                            }
-                            
-                            await _downloadHistoryService.RecordImportFailedAsync(
-                                download.Id,
-                                download.DownloadClientId,
-                                string.Join(" | ", errorDetails));
-                            _logger.LogInformation("Recorded import failure in history for download {DownloadId}: {Error}", downloadId, errorMessage);
-                        }
+                        download.ImportBlockMessages.Add(message);
                     }
                 }
-                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
-                    _logger.LogWarning(histEx, "Failed to record import failure in history for download {DownloadId} (non-critical)", downloadId);
+
+                await _downloadRepository.UpdateAsync(download);
+
+                if (_downloadHistoryService != null && !string.IsNullOrEmpty(download.DownloadClientId))
+                {
+                    var detail = message;
+                    if (exception != null && exception.InnerException != null)
+                    {
+                        detail += $" | Inner: {exception.InnerException.Message}";
+                    }
+
+                    await _downloadHistoryService.RecordImportFailedAsync(
+                        download.Id,
+                        download.DownloadClientId,
+                        download.Title ?? "Unknown",
+                        detail);
+                }
+
+                if (shouldBlock)
+                {
+                    _logger.LogWarning(
+                        "Download {DownloadId} import blocked (Reason: {Reason}, Attempts: {Attempts})",
+                        downloadId,
+                        reason,
+                        download.ImportAttempts);
+
+                    var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
+                    using var scope = scopeFactoryToUse.CreateScope();
+
+                    var toastService = scope.ServiceProvider.GetService<IToastService>();
+                    if (toastService != null)
+                    {
+                        var title = string.IsNullOrWhiteSpace(download.Title) ? "Download" : download.Title;
+                        await toastService.PublishToastAsync(
+                            "warning",
+                            "Manual Interaction Required",
+                            $"{title} could not be imported automatically and has been blocked.",
+                            timeoutMs: 8000);
+                    }
+
+                    var historyRepo = scope.ServiceProvider.GetService<IHistoryRepository>();
+                    if (historyRepo != null)
+                    {
+                        await historyRepo.AddAsync(new Listenarr.Domain.Models.History
+                        {
+                            AudiobookId = download.AudiobookId,
+                            AudiobookTitle = download.Title,
+                            EventType = "ImportBlocked",
+                            Message = message,
+                            Source = "AutoImport",
+                            Timestamp = DateTime.UtcNow,
+                            NotificationSent = false,
+                            Data = JsonSerializer.Serialize(new
+                            {
+                                DownloadId = download.Id,
+                                Reason = reason,
+                                Attempts = download.ImportAttempts
+                            })
+                        });
+                    }
                 }
             }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to persist import failure details for download {DownloadId}", downloadId);
+            }
+        }
+
+        private bool TryTransitionStatus(Download download, DownloadStatus targetStatus, string transitionSource)
+        {
+            if (download == null)
+            {
+                return false;
+            }
+
+            var currentStatus = download.Status;
+            if (IsValidStatusTransition(currentStatus, targetStatus))
+            {
+                download.Status = targetStatus;
+                return true;
+            }
+
+            _logger.LogWarning(
+                "Rejected invalid download status transition for {DownloadId}: {FromStatus} -> {ToStatus} (Source: {Source})",
+                download.Id,
+                currentStatus,
+                targetStatus,
+                transitionSource);
+
+            try
+            {
+                _metrics.Increment("download.transition.rejected.invalid");
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to emit invalid transition metric for download {DownloadId}", download.Id);
+            }
+
+            return false;
+        }
+
+        private static bool IsValidStatusTransition(DownloadStatus fromStatus, DownloadStatus toStatus)
+        {
+            if (fromStatus == toStatus)
+            {
+                return true;
+            }
+
+            return toStatus switch
+            {
+                DownloadStatus.ImportPending => fromStatus is DownloadStatus.Queued
+                    or DownloadStatus.Downloading
+                    or DownloadStatus.Paused
+                    or DownloadStatus.Processing
+                    or DownloadStatus.Completed,
+
+                DownloadStatus.ImportBlocked => fromStatus is DownloadStatus.ImportPending
+                    or DownloadStatus.Processing
+                    or DownloadStatus.Completed
+                    or DownloadStatus.Downloading,
+
+                DownloadStatus.Moved => fromStatus is DownloadStatus.ImportPending
+                    or DownloadStatus.Completed
+                    or DownloadStatus.Processing
+                    or DownloadStatus.Downloading,
+
+                _ => true,
+            };
         }
     }
 }

@@ -401,6 +401,8 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<QueueItem>();
             if (client == null) return items;
 
+            var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
+
             try
             {
                 var listResult = await CallXmlRpcAsync(client, "listgroups");
@@ -418,6 +420,15 @@ namespace Listenarr.Api.Services.Adapters
                         var structElement = valueElement.Element("struct");
                         if (structElement != null)
                         {
+                            var groupCategory = structElement.Elements("member")
+                                .FirstOrDefault(m => string.Equals(m.Element("name")?.Value, "Category", StringComparison.Ordinal))?
+                                .Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty;
+
+                            if (!DownloadClientCategoryFilter.Matches(configuredCategory, groupCategory))
+                            {
+                                continue;
+                            }
+
                             var queueItem = MapGroup(client, structElement);
                             items.Add(queueItem);
                         }
@@ -488,6 +499,8 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<DownloadClientItem>();
             if (client == null) return items;
 
+            var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
+
             try
             {
                 var listResult = await CallXmlRpcAsync(client, "listgroups");
@@ -505,6 +518,15 @@ namespace Listenarr.Api.Services.Adapters
                         var structElement = valueElement.Element("struct");
                         if (structElement != null)
                         {
+                            var groupCategory = structElement.Elements("member")
+                                .FirstOrDefault(m => string.Equals(m.Element("name")?.Value, "Category", StringComparison.Ordinal))?
+                                .Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty;
+
+                            if (!DownloadClientCategoryFilter.Matches(configuredCategory, groupCategory))
+                            {
+                                continue;
+                            }
+
                             var downloadClientItem = await MapGroupToDownloadClientItemAsync(client, structElement);
                             items.Add(downloadClientItem);
                         }

@@ -550,17 +550,32 @@ namespace Listenarr.Api.Services
             // Include:
             // - Queued, Downloading, Paused, Processing (actively being monitored)
             // - Completed without FinalPath (completed in client but not yet imported)
+            // - ImportPending without FinalPath (import attempted but still unresolved)
             // Exclude:
             // - ImportBlocked (blocked due to repeated failures, no point in retrying)
             // - Moved, Failed, Cancelled (terminal states)
-            var activeDownloads = await dbContext.Downloads
+            var activeDownloadsAll = await dbContext.Downloads
                 .Where(d => (d.Status == DownloadStatus.Queued ||
                             d.Status == DownloadStatus.Downloading ||
                             d.Status == DownloadStatus.Paused ||
                             d.Status == DownloadStatus.Processing ||
-                            (d.Status == DownloadStatus.Completed && string.IsNullOrEmpty(d.FinalPath))) &&
+                            ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && string.IsNullOrEmpty(d.FinalPath))) &&
                            d.Status != DownloadStatus.ImportBlocked)
                 .ToListAsync(cancellationToken);
+
+            // Do not monitor downloads from disabled/missing external clients.
+            // Keep DDL entries because they are internal and not tied to external client configuration.
+            var activeDownloads = activeDownloadsAll
+                .Where(d =>
+                    string.Equals(d.DownloadClientId, "DDL", StringComparison.OrdinalIgnoreCase) ||
+                    (!string.IsNullOrWhiteSpace(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)))
+                .ToList();
+
+            var skippedDisabledClientDownloads = activeDownloadsAll.Count - activeDownloads.Count;
+            if (skippedDisabledClientDownloads > 0)
+            {
+                _logger.LogInformation("Skipping {Count} active downloads from disabled or missing download clients", skippedDisabledClientDownloads);
+            }
 
             _logger.LogInformation("DownloadMonitorService found {Count} active downloads", activeDownloads.Count);
             foreach (var dl in activeDownloads)
@@ -623,6 +638,12 @@ namespace Listenarr.Api.Services
                     .OrderByDescending(d => d.StartedAt)
                     .Take(100) // Limit to recent 100 downloads
                     .ToListAsync(cancellationToken);
+
+                allDownloads = allDownloads
+                    .Where(d =>
+                        string.Equals(d.DownloadClientId, "DDL", StringComparison.OrdinalIgnoreCase) ||
+                        (!string.IsNullOrWhiteSpace(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)))
+                    .ToList();
             }
 
             // Check for changes and broadcast updates (only if we have data)

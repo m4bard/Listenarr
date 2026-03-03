@@ -2073,12 +2073,15 @@ namespace Listenarr.Api.Services
                         d.Status != DownloadStatus.Moved));
                 }
 
-                // For external clients, we'll filter based on what's actually in their queues
-                // Exclude downloads that are already completed/moved to avoid duplicate queue entries
+                // For external clients, we'll filter based on what's actually in their queues.
+                // Keep completed-but-not-imported downloads (FinalPath is empty) so queue reconciliation
+                // can continue matching by DB ID/hash until import finishes. This avoids split identity
+                // where one item appears as completed (DB) and another appears as queued (client hash).
                 var externalDownloads = allDownloads
                     .Where(d => d.DownloadClientId != "DDL" &&
-                                d.Status != DownloadStatus.Completed &&
-                                d.Status != DownloadStatus.Moved)
+                                d.Status != DownloadStatus.Moved &&
+                                d.Status != DownloadStatus.Failed &&
+                                (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath)))
                     .ToList();
 
                 listenarrDownloads = ddlToShow.Concat(externalDownloads).ToList();
@@ -2305,8 +2308,10 @@ namespace Listenarr.Api.Services
                     _logger.LogDebug("Client {ClientName}: showing {TotalItems} queue items", 
                         client.Name, mappedFiltered.Count);
 
-                    // CONSERVATIVE CLEANUP: Only purge downloads that are clearly abandoned
-                    // Client is the source of truth for active downloads
+                    // Do not purge tracked downloads just because they are
+                    // temporarily missing from a client queue snapshot. Sonarr keeps tracked
+                    // downloads and transitions them through explicit completed/failed/import
+                    // workflows instead of deleting on queue-miss heuristics.
                     try
                     {
                         var clientDownloads = listenarrDownloads.Where(d => d.DownloadClientId == client.Id).ToList();
@@ -2336,11 +2341,9 @@ namespace Listenarr.Api.Services
                             allClientItemIds.Add(item.Id);
                         }
 
-                        // Only purge downloads that meet ALL these criteria:
-                        // 1. Not in client queue
-                        // 2. Not Completed status (needs processing first)
-                        // 3. Not very recent (allow 5 minutes for hash resolution)
-                        // 4. Not in Downloading/Processing state (might be actively monitored)
+                        // Determine records that are currently absent from queue snapshots.
+                        // These are kept (not purged) to avoid deleting tracked downloads on
+                        // transient client/API issues and to match Sonarr behavior.
                         var orphanedDownloads = clientDownloads.Where(d =>
                         {
                             // Check if in client queue by ID
@@ -2376,206 +2379,18 @@ namespace Listenarr.Api.Services
                                 return false;
                             }
 
-                            _logger.LogDebug("Download {DownloadId} '{Title}' is orphaned (not in client queue, age: {Age:F1} min, status: {Status})",
+                            _logger.LogDebug("Download {DownloadId} '{Title}' is missing from current queue snapshot (age: {Age:F1} min, status: {Status})",
                                 d.Id, d.Title, (DateTime.UtcNow - d.StartedAt).TotalMinutes, d.Status);
                             return true;
                         }).ToList();
 
                         if (orphanedDownloads.Any())
                         {
-                            _logger.LogInformation("Found {Count} potentially orphaned downloads for client {ClientName}, will purge after validation",
+                            _logger.LogInformation("Detected {Count} tracked downloads missing from current {ClientName} queue snapshot; keeping records for resilient monitoring/import handling",
                                 orphanedDownloads.Count, client.Name);
-                                
-                            var toPurge = orphanedDownloads;
-                            try
-                            {
-                                if (string.Equals(client.Type, "nzbget", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    // Check NZBGet history to avoid purging downloads that completed and moved to history
-                                    if (_clientGateway != null)
-                                    {
-                                        try
-                                        {
-                                            var historyItems = await _clientGateway.GetRecentHistoryAsync(client, 100);
-                                            
-                                            // Filter orphaned downloads: keep them if we find them in history
-                                            toPurge = orphanedDownloads.Where(d =>
-                                            {
-                                                try
-                                                {
-                                                    // If the DB record stores the NZBID as DownloadClientId, check history
-                                                    if (!string.IsNullOrEmpty(d.DownloadClientId) && 
-                                                        historyItems.Any(h => h.Id.Equals(d.DownloadClientId, StringComparison.OrdinalIgnoreCase)))
-                                                    {
-                                                        try { _metrics.Increment("download.purge.skipped.history.nzbid_match"); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
-                                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                                        }
-                                                        return false;
-                                                    }
-
-                                                    // Match by title similarity against history name entries
-                                                    if (!string.IsNullOrEmpty(d.Title) && 
-                                                        historyItems.Any(h => !string.IsNullOrEmpty(h.Name) && IsMatchingTitle(d.Title, h.Name)))
-                                                    {
-                                                        try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
-                                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                                        }
-                                                        return false;
-                                                    }
-
-                                                    // No match in history -> eligible to purge
-                                                    return true;
-                                                }
-                                                catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
-                                                    // If anything goes wrong, be conservative and avoid purging this download
-                                                    return false;
-                                                }
-                                            }).ToList();
-                                        }
-                                        catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
-                                            _logger.LogWarning(hx, "Error while fetching NZBGet history for client {ClientName}, skipping purge for safety", client.Name);
-                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
-                                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                            }
-                                            toPurge = new List<Download>();
-                                        }
-                                    }
-                                    else
-                                    {
-                                        _logger.LogWarning("DownloadClientGateway not available for client {ClientName}, skipping purge for safety", client.Name);
-                                        try { _metrics.Increment("download.purge.skipped.history.gateway_unavailable"); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { 
-                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                        }
-                                        toPurge = new List<Download>();
-                                    }
-                                }
-                                else if (string.Equals(client.Type, "sabnzbd", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    // Build history request
-                                    var apiKey = "";
-                                    if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
-                                        apiKey = apiKeyObj?.ToString() ?? "";
-
-                                    if (!string.IsNullOrEmpty(apiKey))
-                                    {
-                                        try
-                                        {
-                                            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
-                                            var historyUrl = $"{baseUrl}?mode=history&output=json&limit=100&apikey={Uri.EscapeDataString(apiKey)}";
-                                            var historyResp = await _httpClient.GetAsync(historyUrl);
-                                            if (historyResp.IsSuccessStatusCode)
-                                            {
-                                                var historyText = await historyResp.Content.ReadAsStringAsync();
-                                                if (!string.IsNullOrWhiteSpace(historyText))
-                                                {
-                                                    try
-                                                    {
-                                                        var doc = JsonDocument.Parse(historyText);
-                                                        var root = doc.RootElement;
-                                                        var historySlots = new List<(string nzo, string name)>();
-
-                                                        if (root.TryGetProperty("history", out var history) && history.TryGetProperty("slots", out var slots) && slots.ValueKind == JsonValueKind.Array)
-                                                        {
-                                                            foreach (var slot in slots.EnumerateArray())
-                                                            {
-                                                                var nzoId = slot.TryGetProperty("nzo_id", out var nzo) ? nzo.GetString() ?? string.Empty : string.Empty;
-                                                                var name = slot.TryGetProperty("name", out var nm) ? nm.GetString() ?? string.Empty : string.Empty;
-                                                                historySlots.Add((nzoId, name));
-                                                            }
-                                                        }
-
-                                                        // Filter orphaned downloads: keep them if we *don't* find them in history
-                                                        toPurge = orphanedDownloads.Where(d =>
-                                                        {
-                                                            try
-                                                            {
-                                                                // If the DB record stores the nzo id directly as the DownloadClientId, skip purging
-                                                                if (!string.IsNullOrEmpty(d.DownloadClientId) && historySlots.Any(h => h.nzo.Equals(d.DownloadClientId, StringComparison.OrdinalIgnoreCase)))
-                                                                {
-                                                                    try { _metrics.Increment("download.purge.skipped.history.nzo_match"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { 
-                                                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                                                    }
-                                                                    return false;
-                                                                }
-
-                                                                // Match by title similarity against history name entries -> skip purging
-                                                                if (!string.IsNullOrEmpty(d.Title) && historySlots.Any(h => !string.IsNullOrEmpty(h.name) && IsMatchingTitle(d.Title, h.name)))
-                                                                {
-                                                                    try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { 
-                                                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                                                    }
-                                                                    return false;
-                                                                }
-
-                                                                // No match in history -> eligible to purge
-                                                                return true;
-                                                            }
-                                                            catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) {
-                                                                // If anything goes wrong, be conservative and avoid purging this download
-                                                                return false;
-                                                            }
-                                                        }).ToList();
-                                                    }
-                                                    catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
-                                                        _logger.LogWarning(hx, "Failed to parse SABnzbd history for client {ClientName}, skipping purge for safety", client.Name);
-                                                        // Keep toPurge as orphanedDownloads but bail out of purging below
-                                                    }
-                                                }
-                                            }
-                                            else
-                                            {
-                                                _logger.LogWarning("Failed to fetch SABnzbd history for client {ClientName}: {StatusCode}", client.Name, historyResp.StatusCode);
-                                                try { _metrics.Increment("download.purge.skipped.history.fetch_failed"); } catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { 
-                                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                                }
-                                                // skip purging when we couldn't confirm history to avoid accidental deletions
-                                                toPurge = new List<Download>();
-                                            }
-                                        }
-                                        catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
-                                            _logger.LogWarning(hx, "Error while fetching SABnzbd history for client {ClientName}, skipping purge for safety", client.Name);
-                                            try { _metrics.Increment("download.purge.skipped.history.fetch_error"); } catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { 
-                                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                            }
-                                            toPurge = new List<Download>();
-                                        }
-                                    }
-                                    else
-                                    {
-                                        _logger.LogWarning("SABnzbd client {ClientName} missing apiKey in settings, skipping orphan purge for safety", client.Name);
-                                        try { _metrics.Increment("download.purge.skipped.history.missing_api_key"); } catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { 
-                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                        }
-                                        toPurge = new List<Download>();
-                                    }
-                                }
+                            try { _metrics.Increment("download.purge.skipped.tracked_orphan_retained", orphanedDownloads.Count); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
-                            catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException) {
-                                _logger.LogWarning(hx, "Unexpected error while checking history before purge for client {ClientName}, skipping purge for safety", client.Name);
-                                toPurge = new List<Download>();
-                            }
-                            // Use a factory-created DbContext for purge operations to avoid relying on scoped
-                            // registrations in the ambient IServiceScope. This is more robust for tests which
-                            // may only register an IDbContextFactory.
-                            var purgeScopedDbContext = await _dbContextFactory.CreateDbContextAsync();
-
-                            foreach (var orphanedDownload in toPurge)
-                            {
-                                var trackedDownload = await purgeScopedDbContext.Downloads.FindAsync(orphanedDownload.Id);
-                                if (trackedDownload != null)
-                                {
-                                    purgeScopedDbContext.Downloads.Remove(trackedDownload);
-                                    _logger.LogInformation("Purged orphaned download record: {DownloadId} '{Title}' (no longer exists in {ClientName} queue)",
-                                        orphanedDownload.Id, orphanedDownload.Title, client.Name);
-                                    try { _metrics.Increment("download.purged.count"); } catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { 
-                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                                    }
-                                }
-                            }
-
-                            await purgeScopedDbContext.SaveChangesAsync();
-                            _logger.LogInformation("Purged {Count} orphaned download records from {ClientName}",
-                                toPurge.Count, client.Name);
                         }
                     }
                     catch (Exception purgeEx) when (purgeEx is not OperationCanceledException && purgeEx is not OutOfMemoryException && purgeEx is not StackOverflowException) {

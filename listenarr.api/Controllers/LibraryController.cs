@@ -2764,7 +2764,9 @@ namespace Listenarr.Api.Controllers
             // Get existing downloads for this audiobook
             var existingDownloads = await dbContext.Downloads
                 .Where(d => d.AudiobookId == audiobook.Id &&
-                           (d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.Downloading))
+                           (d.Status == DownloadStatus.Completed ||
+                            d.Status == DownloadStatus.Downloading ||
+                            d.Status == DownloadStatus.ImportPending))
                 .ToListAsync();
 
             // Get existing files for this audiobook

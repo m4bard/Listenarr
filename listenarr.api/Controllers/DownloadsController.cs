@@ -68,6 +68,16 @@ public class DownloadsController : ControllerBase
         {
             IQueryable<Download> query = _dbContext.Downloads;
 
+            var downloadClients = await _configurationService.GetDownloadClientConfigurationsAsync();
+            var enabledClientIds = downloadClients
+                .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
+                .Select(c => c.Id)
+                .ToList();
+
+            query = query.Where(d =>
+                d.DownloadClientId == "DDL" ||
+                (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)));
+
             if (!string.IsNullOrEmpty(status))
             {
                 if (Enum.TryParse<DownloadStatus>(status, true, out var parsedStatus))
@@ -124,7 +134,10 @@ public class DownloadsController : ControllerBase
                 completedAt = download.CompletedAt,
                 errorMessage = download.ErrorMessage,
                 downloadClientId = download.DownloadClientId,
-                metadata = download.Metadata
+                metadata = download.Metadata,
+                importBlockReason = download.ImportBlockReason,
+                importBlockMessages = download.ImportBlockMessages,
+                importAttempts = download.ImportAttempts
             };
 
             return Ok(downloadObj);
@@ -136,6 +149,52 @@ public class DownloadsController : ControllerBase
       }
 
     /// <summary>
+    /// Retry a manually blocked import by returning it to ImportPending.
+    /// </summary>
+    [HttpPost("{id}/retry-import")]
+    public async Task<ActionResult> RetryBlockedImport(string id)
+    {
+        try
+        {
+            var download = await _dbContext.Downloads.FindAsync(id);
+            if (download == null)
+            {
+                return NotFound(new { error = "Download not found", id });
+            }
+
+            if (download.Status != DownloadStatus.ImportBlocked)
+            {
+                return BadRequest(new
+                {
+                    error = "Download is not import blocked",
+                    id,
+                    status = download.Status.ToString()
+                });
+            }
+
+            download.Status = DownloadStatus.ImportPending;
+            download.ImportBlockReason = null;
+            download.ImportBlockMessages = null;
+            download.ImportAttempts = 0;
+
+            await _dbContext.SaveChangesAsync();
+
+            _logger.LogInformation("Reset blocked import {DownloadId} back to ImportPending", id);
+            return Ok(new
+            {
+                message = "Import retry queued",
+                id,
+                status = download.Status.ToString()
+            });
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            _logger.LogError(ex, "Error retrying blocked import {DownloadId}", id);
+            return StatusCode(500, new { error = "Failed to retry blocked import", message = ex.Message });
+        }
+    }
+
+    /// <summary>
     /// Get active downloads (Queued or Downloading status)
     /// </summary>
     [HttpGet("active")]
@@ -143,10 +202,20 @@ public class DownloadsController : ControllerBase
     {
         try
         {
+            var downloadClients = await _configurationService.GetDownloadClientConfigurationsAsync();
+            var enabledClientIds = downloadClients
+                .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
+                .Select(c => c.Id)
+                .ToList();
+
             var activeDownloads = await _dbContext.Downloads
                 .Where(d => d.Status == DownloadStatus.Queued ||
                            d.Status == DownloadStatus.Downloading ||
-                           d.Status == DownloadStatus.Processing)
+                           d.Status == DownloadStatus.Processing ||
+                           d.Status == DownloadStatus.ImportPending)
+                .Where(d =>
+                    d.DownloadClientId == "DDL" ||
+                    (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)))
                 .OrderByDescending(d => d.StartedAt)
                 .ToListAsync();
 
@@ -221,7 +290,7 @@ public class DownloadsController : ControllerBase
         try
         {
             var failedDownloads = await _dbContext.Downloads
-                .Where(d => d.Status == DownloadStatus.Failed)
+                .Where(d => d.Status == DownloadStatus.Failed || d.Status == DownloadStatus.ImportBlocked)
                 .ToListAsync();
 
             _dbContext.Downloads.RemoveRange(failedDownloads);

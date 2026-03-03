@@ -9,10 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 - **Frontend regression coverage (Prowlarr import):** Added a unit test for the Settings → Indexers “Import from Prowlarr” modal validating that entering host in URL/IP and port in the dedicated Port field submits the expected API payload.
+- **Import lifecycle regression coverage:** Added focused `CompletedDownloadProcessor` unit tests covering:
+  - non-blocking retry behavior on first import failure (`ImportPending`, attempts incremented, no manual-interaction toast),
+  - threshold blocking behavior on third failure attempt (`ImportBlocked`, reason/messages persisted, manual-interaction toast + history event),
+  - blocked/manual-interaction flow for no-importable-files post-import guard.
+- **Reconciliation and adapter conformance coverage:** Added focused regression tests for queue rebind precedence, missing-queue retention, import-candidate eligibility, and adapter filtering behavior (Transmission, qBittorrent, SABnzbd, NZBGet).
+- **Import-path resolution coverage:** Added regression tests for single-file and multi-file import path resolution across Transmission, qBittorrent, SABnzbd, and NZBGet.
+- **Manual-interaction workflow coverage:** Added regression tests and API support for blocked-import signaling, block-reason visibility on single-download responses, and retry/unblock transition (`ImportBlocked -> ImportPending`) via `POST /api/v{version}/downloads/{id}/retry-import`.
+- **Recovery coverage:** Added regression tests for startup stuck-job reset behavior, duplicate requeue prevention during restart windows, and import-attempt counter persistence across processor restarts.
+- **API/UI status mapping coverage:** Added regression tests to lock status-surface consistency (`ImportPending` included in active/downloading mappings, `ImportBlocked` treated as failed/terminal) across backend downloads endpoints and frontend Activity/Wanted status buckets.
+
+### Changed
+- **Explicit import lifecycle state handling:** Strengthened Sonarr-parity lifecycle behavior around `Completed -> ImportPending -> Moved/ImportBlocked` by formalizing retry-vs-block transition semantics and ensuring failure metadata (`ImportAttempts`, block reason/messages) is consistently persisted.
+- **Active/in-progress parity semantics:** Treated `ImportPending` as an in-progress state across queue/monitoring and status-derived views while preserving `ImportBlocked` as terminal/manual-interaction-required.
+- **qBittorrent item-surface parity:** Applied configured qBittorrent category filtering parameter to `GetItemsAsync` so queue and item surfaces use the same category constraint.
 
 ### Fixed
 - **Prowlarr import modal port-field behavior:** Fixed port parsing in the Import from Prowlarr flow so the dedicated Port field is reliably accepted and sent when provided separately from the URL/IP field.
 - **Port input normalization and validation:** Hardened frontend handling for port input values by normalizing input types before parsing and enforcing valid integer TCP port range checks (1–65535).
+- **Manual interaction signaling reliability:** Ensured blocked-import paths consistently emit manual-interaction UX signals (warning toast + `ImportBlocked` history entry) and record import-failure history details for auditability.
 
 ## [0.2.55] - 2026-03-01
 

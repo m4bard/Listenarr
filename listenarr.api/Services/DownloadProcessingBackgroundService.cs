@@ -213,7 +213,7 @@ namespace Listenarr.Api.Services
 
                 // Find recent completed downloads that have not yet been processed into jobs
                 var candidates = await dbContext.Downloads
-                    .Where(d => d.Status == DownloadStatus.Completed)
+                    .Where(d => d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending)
                     .OrderByDescending(d => d.CompletedAt)
                     .Take(200)
                     .ToListAsync(cancellationToken);
