@@ -117,5 +117,10 @@ namespace Listenarr.Api.Tests
 
             return outList;
         }
+
+        public Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, string downloadId, CancellationToken ct = default)
+        {
+            return Task.FromResult(true);
+        }
     }
 }

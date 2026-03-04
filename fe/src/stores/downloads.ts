@@ -98,12 +98,9 @@ export const useDownloadsStore = defineStore('downloads', () => {
     // Subscribe to queue updates (replacement list from backend)
     unsubscribeQueue = signalRService.onQueueUpdate((queueItems) => {
       // QueueUpdate provides the current queue state
-      // When a download is completed and removed, it won't be in this list
-      // We need to update our downloads to match the queue
-      const queueIds = new Set(queueItems.map(q => q.id))
-      
-      // Remove downloads that are no longer in the queue
-      downloads.value = downloads.value.filter(d => queueIds.has(d.id))
+      // Do not remove existing tracked downloads solely because they are missing
+      // from a single queue snapshot. External clients can briefly report empty
+      // queues, and terminal/queue-less states are persisted in DB.
       
       // Update existing and add new items from queue
       queueItems.forEach((queueItem) => {

@@ -287,6 +287,106 @@ namespace Listenarr.Api.Services
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error in CompletedDownloadHandlingService");
             }
+
+            // Deferred removal: retry removal for imports that were completed but couldn't
+            // be removed from the download client (CanBeRemoved was false at import time).
+            // The DownloadMonitorService updates CanBeRemoved in metadata on each poll cycle,
+            // so eventually the torrent will reach its seed limit and become removable.
+            try
+            {
+                await ProcessDeferredRemovalsAsync(dbContext, scope, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Error processing deferred removals");
+            }
+        }
+
+        /// <summary>
+        /// Processes deferred removals for downloads that have been imported (Status == Moved)
+        /// but couldn't be removed from the client because the torrent hadn't reached its seed limit.
+        /// Checks metadata CanBeRemoved flag which is updated by DownloadMonitorService on each poll.
+        /// </summary>
+        private async Task ProcessDeferredRemovalsAsync(
+            ListenArrDbContext dbContext,
+            IServiceScope scope,
+            CancellationToken cancellationToken)
+        {
+            var movedDownloads = await dbContext.Downloads
+                .Where(d => d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId))
+                .ToListAsync(cancellationToken);
+
+            if (movedDownloads.Count == 0) return;
+
+            var configService = scope.ServiceProvider.GetService<IConfigurationService>();
+            var downloadClientGateway = scope.ServiceProvider.GetService<IDownloadClientGateway>();
+            if (configService == null || downloadClientGateway == null) return;
+
+            foreach (var download in movedDownloads)
+            {
+                try
+                {
+                    // Check if CanBeRemoved is now true (updated by DownloadMonitorService)
+                    bool canBeRemoved = false;
+                    if (download.Metadata != null && download.Metadata.TryGetValue("CanBeRemoved", out var canRemoveObj))
+                    {
+                        canBeRemoved = canRemoveObj is bool b ? b : (canRemoveObj is System.Text.Json.JsonElement je ? je.GetBoolean() : bool.TryParse(canRemoveObj?.ToString(), out var parsed) && parsed);
+                    }
+
+                    if (!canBeRemoved)
+                    {
+                        _logger.LogDebug("Deferred removal: Download {DownloadId} still not removable", download.Id);
+                        continue;
+                    }
+
+                    var clientConfig = await configService.GetDownloadClientConfigurationAsync(download.DownloadClientId);
+                    if (clientConfig != null && !clientConfig.IsEnabled)
+                    {
+                        _logger.LogDebug("Deferred removal: Skipping download {DownloadId} — client {ClientName} is disabled",
+                            download.Id, clientConfig.Name);
+                        continue;
+                    }
+                    if (clientConfig == null || string.IsNullOrEmpty(clientConfig.RemoveCompletedDownloads) ||
+                        clientConfig.RemoveCompletedDownloads == "none")
+                    {
+                        // Removal not configured, just delete the DB record
+                        dbContext.Downloads.Remove(download);
+                        await dbContext.SaveChangesAsync(cancellationToken);
+                        _logger.LogInformation("Deferred removal: Cleaned up DB record for {DownloadId} (removal not configured)", download.Id);
+                        continue;
+                    }
+
+                    bool deleteFiles = clientConfig.RemoveCompletedDownloads == "remove_and_delete";
+                    string clientId = download.Id;
+
+                    if (download.Metadata != null && download.Metadata.TryGetValue("TorrentHash", out var hashObj))
+                    {
+                        var hash = hashObj?.ToString();
+                        if (!string.IsNullOrEmpty(hash))
+                            clientId = hash;
+                    }
+
+                    var removed = await downloadClientGateway.RemoveAsync(clientConfig, clientId, deleteFiles);
+                    if (removed)
+                    {
+                        _logger.LogInformation("Deferred removal: Successfully removed {DownloadId} from {ClientName} (deleteFiles={DeleteFiles})",
+                            download.Id, clientConfig.Name, deleteFiles);
+
+                        dbContext.Downloads.Remove(download);
+                        await dbContext.SaveChangesAsync(cancellationToken);
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Deferred removal: Failed to remove {DownloadId} from {ClientName}, will retry next cycle",
+                            download.Id, clientConfig.Name);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "Error processing deferred removal for {DownloadId}", download.Id);
+                }
+            }
         }
     }
 }

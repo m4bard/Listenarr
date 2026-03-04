@@ -2526,7 +2526,11 @@ namespace Listenarr.Api.Services
                 {
                     // Check if the downloadClientId is a valid client configuration
                     var client = await _configurationService.GetDownloadClientConfigurationAsync(downloadClientId);
-                    if (client != null)
+                    if (client != null && !client.IsEnabled)
+                    {
+                        _logger.LogInformation("Skipping removal of {DownloadId} from disabled client {ClientName}", downloadId, client.Name);
+                    }
+                    else if (client != null)
                     {
                         removedFromClient = await RemoveFromClientAsync(client, downloadId);
                     }
@@ -2546,7 +2550,12 @@ namespace Listenarr.Api.Services
                             {
                                 // Try with the download record's client ID
                                 var recordClient = await _configurationService.GetDownloadClientConfigurationAsync(downloadRecord.DownloadClientId);
-                                if (recordClient != null)
+                                if (recordClient != null && !recordClient.IsEnabled)
+                                {
+                                    _logger.LogInformation("Skipping removal of {DownloadId} from disabled client {ClientName}", downloadId, recordClient.Name);
+                                    removedFromClient = true; // Treat as success so DB record is cleaned up
+                                }
+                                else if (recordClient != null)
                                 {
                                     removedFromClient = await RemoveFromClientAsync(recordClient, downloadId);
                                     downloadClientId = recordClient.Id;

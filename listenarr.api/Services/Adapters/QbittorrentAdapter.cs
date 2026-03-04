@@ -412,6 +412,62 @@ namespace Listenarr.Api.Services.Adapters
             }
         }
 
+        /// <summary>
+        /// Marks a torrent as imported by changing its category to the configured post-import category.
+        /// This allows users to differentiate imported vs active torrents in qBittorrent.
+        /// Mirrors Sonarr's MarkItemAsImported behavior.
+        /// </summary>
+        public async Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, string downloadId, CancellationToken ct = default)
+        {
+            if (client == null) return false;
+            if (string.IsNullOrEmpty(downloadId)) return false;
+
+            var postImportCategory = client.Settings?.GetValueOrDefault("postImportCategory")?.ToString();
+            if (string.IsNullOrEmpty(postImportCategory))
+            {
+                _logger.LogDebug("No postImportCategory configured for qBittorrent client {ClientId}, skipping MarkItemAsImported", client.Id);
+                return true; // No-op is success
+            }
+
+            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            try
+            {
+                var cookieJar = new CookieContainer();
+                var handler = new HttpClientHandler { CookieContainer = cookieJar, UseCookies = true, AutomaticDecompression = DecompressionMethods.All };
+                using var httpClient = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+
+                // Authenticate
+                using var loginData = new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("username", client.Username ?? string.Empty),
+                    new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
+                });
+                var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+
+                // Set category
+                using var setCategoryData = new FormUrlEncodedContent(new[]
+                {
+                    new KeyValuePair<string, string>("hashes", downloadId.ToLowerInvariant()),
+                    new KeyValuePair<string, string>("category", postImportCategory)
+                });
+
+                var resp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/setCategory", setCategoryData, ct);
+                if (resp.IsSuccessStatusCode)
+                {
+                    _logger.LogInformation("Marked torrent {Hash} as imported (category: {Category}) in qBittorrent", downloadId, postImportCategory);
+                    return true;
+                }
+
+                _logger.LogWarning("Failed to mark torrent {Hash} as imported in qBittorrent: {StatusCode}", downloadId, resp.StatusCode);
+                return false;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Error marking torrent {Hash} as imported in qBittorrent", downloadId);
+                return false;
+            }
+        }
+
         public async Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)
         {
             if (client == null) throw new ArgumentNullException(nameof(client));
@@ -661,8 +717,41 @@ namespace Listenarr.Api.Services.Adapters
                     return items;
                 }
 
+                // Fetch qBittorrent global preferences for seed limit evaluation (Sonarr parity)
+                bool globalMaxRatioEnabled = false;
+                float globalMaxRatio = -1f;
+                bool globalMaxSeedingTimeEnabled = false;
+                long globalMaxSeedingTime = -1;
+                try
+                {
+                    var prefsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/preferences", ct);
+                    if (prefsResp.IsSuccessStatusCode)
+                    {
+                        var prefsJson = await prefsResp.Content.ReadAsStringAsync(ct);
+                        if (!string.IsNullOrWhiteSpace(prefsJson))
+                        {
+                            var prefs = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(prefsJson);
+                            if (prefs != null)
+                            {
+                                globalMaxRatioEnabled = prefs.TryGetValue("max_ratio_enabled", out var mre) && mre.GetBoolean();
+                                globalMaxRatio = prefs.TryGetValue("max_ratio", out var mr) ? (float)mr.GetDouble() : -1f;
+                                globalMaxSeedingTimeEnabled = prefs.TryGetValue("max_seeding_time_enabled", out var mste) && mste.GetBoolean();
+                                globalMaxSeedingTime = prefs.TryGetValue("max_seeding_time", out var mst) ? mst.GetInt64() : -1;
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "Failed to fetch qBittorrent preferences for seed limit evaluation, will use conservative defaults");
+                }
+
+                // Resolve removeCompletedDownloads setting once for all torrents
+                var removeCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var removeValSetting) == true &&
+                    (removeValSetting is bool boolRemoveVal && boolRemoveVal);
+
                 // Limit fields returned to reduce memory usage
-                var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path,category,content_path";
+                var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path,category,content_path,ratio_limit,seeding_time_limit,seeding_time";
                 var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}{categoryFilter}", ct);
                 if (!torrentsResp.IsSuccessStatusCode) return items;
 
@@ -686,6 +775,10 @@ namespace Listenarr.Api.Services.Adapters
                     var numSeeds = torrent.TryGetValue("num_seeds", out var numSeedsEl) ? (int?)numSeedsEl.GetInt32() : null;
                     var numLeechs = torrent.TryGetValue("num_leechs", out var numLeechsEl) ? (int?)numLeechsEl.GetInt32() : null;
                     var ratio = torrent.TryGetValue("ratio", out var ratioEl) ? (double?)ratioEl.GetDouble() : null;
+                    // Per-torrent seed limit overrides (-1 = use global, -2 = use global, >=0 = per-torrent limit)
+                    var ratioLimit = torrent.TryGetValue("ratio_limit", out var ratioLimitEl) ? (float)ratioLimitEl.GetDouble() : -2f;
+                    var seedingTimeLimit = torrent.TryGetValue("seeding_time_limit", out var stlEl) ? stlEl.GetInt64() : -2L;
+                    var seedingTime = torrent.TryGetValue("seeding_time", out var seedTimeEl) ? (long?)seedTimeEl.GetInt64() : null;
                     var savePath = torrent.TryGetValue("save_path", out var savePathEl) ? savePathEl.GetString() ?? string.Empty : string.Empty;
                     var category = torrent.TryGetValue("category", out var categoryEl) ? categoryEl.GetString() ?? string.Empty : string.Empty;
                     var contentPath = torrent.TryGetValue("content_path", out var contentPathEl) ? contentPathEl.GetString() ?? string.Empty : string.Empty;
@@ -730,6 +823,17 @@ namespace Listenarr.Api.Services.Adapters
 
                     TimeSpan? remainingTime = eta.HasValue && eta.Value < 8640000 ? TimeSpan.FromSeconds(eta.Value) : null;
 
+                    // Sonarr parity: CanMoveFiles = CanBeRemoved =
+                    //   removeCompletedDownloads && torrent.State is "pausedUP"/"stoppedUP" && HasReachedSeedLimit
+                    // This prevents moving files from active seeders (which breaks the torrent)
+                    // and prevents removing torrents before seed goals are met.
+                    var isStopped = state is "pausedUP" or "stoppedUP";
+                    var seedLimitReached = HasReachedSeedLimit(
+                        ratio ?? 0, ratioLimit, seedingTime, seedingTimeLimit,
+                        globalMaxRatioEnabled, globalMaxRatio,
+                        globalMaxSeedingTimeEnabled, globalMaxSeedingTime);
+                    var canMoveAndRemove = removeCompletedDownloads && isStopped && seedLimitReached;
+
                     items.Add(new DownloadClientItem
                     {
                         DownloadId = hash.ToUpperInvariant(), // ✅ Uppercase SHA1 hash (standard format)
@@ -746,15 +850,14 @@ namespace Listenarr.Api.Services.Adapters
                         DownloadSpeed = dlspeed,
                         Seeders = numSeeds ?? 0,
                         Leechers = numLeechs ?? 0,
-                        CanBeRemoved = true,
-                        CanMoveFiles = status == DownloadItemStatus.Completed,
+                        CanBeRemoved = canMoveAndRemove,
+                        CanMoveFiles = canMoveAndRemove,
                         DownloadClientInfo = DownloadClientItemClientInfo.FromClient(
                             clientId: client.Id,
                             clientName: client.Name,
                             clientType: "qbittorrent",
                             protocol: DownloadProtocol.Torrent,
-                            removeCompletedDownloads: client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) == true && 
-                                                     (removeVal is bool boolVal && boolVal),
+                            removeCompletedDownloads: removeCompletedDownloads,
                             hasPostImportCategory: !string.IsNullOrEmpty(client.Settings?.GetValueOrDefault("postImportCategory")?.ToString())
                         )
                     });
@@ -765,6 +868,69 @@ namespace Listenarr.Api.Services.Adapters
             }
 
             return items;
+        }
+
+        /// <summary>
+        /// Determines whether a qBittorrent torrent has reached its seed limit (ratio or time).
+        /// Mirrors Sonarr's HasReachedSeedLimit logic for qBittorrent.
+        /// </summary>
+        /// <param name="ratio">Current torrent ratio</param>
+        /// <param name="ratioLimit">Per-torrent ratio limit (-2 = use global, -1 = no limit, >=0 = per-torrent)</param>
+        /// <param name="seedingTime">Torrent seeding time in seconds (null if unknown)</param>
+        /// <param name="seedingTimeLimit">Per-torrent seeding time limit in minutes (-2 = use global, -1 = no limit, >=0 = per-torrent)</param>
+        /// <param name="globalMaxRatioEnabled">Whether global max ratio is enabled in qBit preferences</param>
+        /// <param name="globalMaxRatio">Global max ratio from qBit preferences</param>
+        /// <param name="globalMaxSeedingTimeEnabled">Whether global max seeding time is enabled in qBit preferences</param>
+        /// <param name="globalMaxSeedingTime">Global max seeding time from qBit preferences (in minutes)</param>
+        private static bool HasReachedSeedLimit(
+            double ratio,
+            float ratioLimit,
+            long? seedingTime,
+            long seedingTimeLimit,
+            bool globalMaxRatioEnabled,
+            float globalMaxRatio,
+            bool globalMaxSeedingTimeEnabled,
+            long globalMaxSeedingTime)
+        {
+            // Check ratio limit (per-torrent override takes precedence)
+            if (ratioLimit >= 0)
+            {
+                // Per-torrent ratio limit set
+                if (ratioLimit - ratio <= 0.001)
+                {
+                    return true;
+                }
+            }
+            else if (ratioLimit <= -2 && globalMaxRatioEnabled)
+            {
+                // Use global ratio limit (-2 means inherit global)
+                if (globalMaxRatio - ratio <= 0.001)
+                {
+                    return true;
+                }
+            }
+
+            // Check seeding time limit (per-torrent override takes precedence)
+            if (seedingTimeLimit >= 0)
+            {
+                // Per-torrent seeding time limit set (in minutes, convert to seconds for comparison)
+                var limitSeconds = seedingTimeLimit * 60;
+                if (seedingTime.HasValue && seedingTime.Value >= limitSeconds)
+                {
+                    return true;
+                }
+            }
+            else if (seedingTimeLimit <= -2 && globalMaxSeedingTimeEnabled)
+            {
+                // Use global seeding time limit (in minutes, convert to seconds)
+                var limitSeconds = globalMaxSeedingTime * 60;
+                if (seedingTime.HasValue && seedingTime.Value >= limitSeconds)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         /// <summary>

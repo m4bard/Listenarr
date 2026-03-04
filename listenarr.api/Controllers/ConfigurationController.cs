@@ -26,7 +26,7 @@ using Microsoft.AspNetCore.SignalR;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/v{version:apiVersion}/[controller]")]
+    [Route("api/v{version:apiVersion}/configuration")]
     public class ConfigurationController : ControllerBase
     {
         private readonly IConfigurationService _configurationService;
@@ -50,6 +50,7 @@ namespace Listenarr.Api.Controllers
         /// <summary>
         /// Get all API configurations.
         /// </summary>
+        [Tags("API Sources")]
         [HttpGet("apis")]
         [ProducesResponseType(typeof(List<ApiConfiguration>), 200)]
         [ProducesResponseType(500)]
@@ -74,6 +75,7 @@ namespace Listenarr.Api.Controllers
         /// Get a specific API configuration by ID.
         /// </summary>
         /// <param name="id">API configuration ID</param>
+        [Tags("API Sources")]
         [HttpGet("apis/{id}")]
         [ProducesResponseType(typeof(ApiConfiguration), 200)]
         [ProducesResponseType(404)]
@@ -104,6 +106,7 @@ namespace Listenarr.Api.Controllers
         /// Save an API configuration.
         /// </summary>
         /// <param name="config">API configuration to save</param>
+        [Tags("API Sources")]
         [HttpPost("apis")]
         [ProducesResponseType(typeof(object), 200)]
         [ProducesResponseType(500)]
@@ -124,6 +127,7 @@ namespace Listenarr.Api.Controllers
         /// Delete an API configuration by ID.
         /// </summary>
         /// <param name="id">API configuration ID</param>
+        [Tags("API Sources")]
         [HttpDelete("apis/{id}")]
         [ProducesResponseType(typeof(bool), 200)]
         [ProducesResponseType(500)]
@@ -144,6 +148,7 @@ namespace Listenarr.Api.Controllers
         /// <summary>
         /// Get all download client configurations.
         /// </summary>
+        [Tags("Download Clients")]
         [HttpGet("download-clients")]
         [ProducesResponseType(typeof(List<DownloadClientConfiguration>), 200)]
         [ProducesResponseType(500)]
@@ -171,6 +176,7 @@ namespace Listenarr.Api.Controllers
         /// Get a specific download client configuration by ID.
         /// </summary>
         /// <param name="id">Download client configuration ID</param>
+        [Tags("Download Clients")]
         [HttpGet("download-clients/{id}")]
         [ProducesResponseType(typeof(DownloadClientConfiguration), 200)]
         [ProducesResponseType(404)]
@@ -199,6 +205,11 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Save or update a download client configuration. Preserves existing credentials when incoming values are blank.
+        /// </summary>
+        /// <param name="config">Download client configuration to save.</param>
+        [Tags("Download Clients")]
         [HttpPost("download-clients")]
         public async Task<ActionResult<object>> SaveDownloadClientConfiguration([FromBody] DownloadClientConfiguration config)
         {
@@ -279,6 +290,11 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Delete a download client configuration by ID.
+        /// </summary>
+        /// <param name="id">Download client configuration ID.</param>
+        [Tags("Download Clients")]
         [HttpDelete("download-clients/{id}")]
         public async Task<ActionResult<bool>> DeleteDownloadClientConfiguration(string id)
         {
@@ -293,7 +309,12 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        // Test a download client configuration (accepts full config payload so credentials can be included)
+        /// <summary>
+        /// Test connectivity to a download client. Send the full configuration so credentials can be included in the test.
+        /// </summary>
+        /// <param name="config">Download client configuration to test.</param>
+        /// <returns>Success flag, message, and the (optionally redacted) client configuration.</returns>
+        [Tags("Download Clients")]
         [HttpPost("download-clients/test")]
         public async Task<ActionResult<object>> TestDownloadClientConfiguration([FromBody] DownloadClientConfiguration config)
         {
@@ -356,7 +377,10 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        // Application Settings endpoints
+        /// <summary>
+        /// Get the current application settings (output paths, naming patterns, webhook URLs, etc.).
+        /// </summary>
+        [Tags("Settings")]
         [HttpGet("settings")]
         public async Task<ActionResult<ApplicationSettings>> GetApplicationSettings()
         {
@@ -376,6 +400,11 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Save application settings. Broadcasts the update to all connected clients via SignalR.
+        /// </summary>
+        /// <param name="settings">Updated application settings.</param>
+        [Tags("Settings")]
         [HttpPost("settings")]
         public async Task<ActionResult<ApplicationSettings>> SaveApplicationSettings([FromBody] ApplicationSettings settings)
         {
@@ -414,6 +443,7 @@ namespace Listenarr.Api.Controllers
         /// API key is redacted if authentication is enabled and user is not authenticated.
         /// </summary>
         /// <returns>StartupConfig object</returns>
+        [Tags("Settings")]
         [HttpGet("startupconfig")]
         [ProducesResponseType(typeof(StartupConfig), 200)]
         [ProducesResponseType(401)]
@@ -453,6 +483,7 @@ namespace Listenarr.Api.Controllers
         /// </summary>
         /// <param name="config">StartupConfig object to save</param>
         /// <returns>The saved StartupConfig</returns>
+        [Tags("Settings")]
         [HttpPost("startupconfig")]
         [ProducesResponseType(typeof(StartupConfig), 200)]
         [ProducesResponseType(500)]
@@ -565,7 +596,11 @@ namespace Listenarr.Api.Controllers
             return !string.IsNullOrWhiteSpace(normalized);
         }
 
-        // Regenerate API key (requires authentication)
+        /// <summary>
+        /// Regenerate the API key. Requires Administrator role.
+        /// </summary>
+        /// <returns>The newly generated API key.</returns>
+        [Tags("Security")]
         [HttpPost("apikey/regenerate")]
         [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
         public async Task<ActionResult<object>> RegenerateApiKey()
@@ -591,7 +626,14 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        // Generate API key for initial setup (when no API key exists and no users exist)
+        /// <summary>
+        /// Generate an API key during initial setup. Only available from localhost when no users or API key exist.
+        /// </summary>
+        /// <returns>The newly generated API key.</returns>
+        /// <response code="200">API key generated successfully.</response>
+        /// <response code="403">Request is not from localhost.</response>
+        /// <response code="409">Users or an API key already exist.</response>
+        [Tags("Security")]
         [HttpPost("apikey/generate-initial")]
         public async Task<ActionResult<object>> GenerateInitialApiKey()
         {
@@ -638,6 +680,7 @@ namespace Listenarr.Api.Controllers
         /// <summary>
         /// Send a test notification to the configured webhook URL.
         /// </summary>
+        [Tags("Notifications")]
         [HttpPost("notifications/test")]
         public async Task<ActionResult<object>> TestNotification()
         {

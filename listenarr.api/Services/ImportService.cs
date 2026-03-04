@@ -420,6 +420,18 @@ namespace Listenarr.Api.Services
                 foreach (var file in files)
                 {
                     var res = new ImportResult { SourcePath = file };
+
+                    // Skip non-audio files (cover images, NFOs, etc.) to prevent registering
+                    // them as AudiobookFile records that the scanner would later remove.
+                    if (!FileUtils.IsAudioFile(file))
+                    {
+                        res.Success = false;
+                        res.SkippedReason = "not an audio file";
+                        results.Add(res);
+                        _logger.LogDebug("ImportFilesFromDirectory: Skipping non-audio file {File}", file);
+                        continue;
+                    }
+
                     try
                     {
                         var candidateMetadata = (AudioMetadata?)null;

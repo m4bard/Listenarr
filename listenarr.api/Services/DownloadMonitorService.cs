@@ -812,9 +812,40 @@ namespace Listenarr.Api.Services
                     }
                     _logger.LogDebug("qBittorrent login successful for client {ClientName}", client.Name);
 
+                    // Fetch qBittorrent global preferences for seed limit evaluation (Sonarr parity)
+                    bool qbtGlobalMaxRatioEnabled = false;
+                    float qbtGlobalMaxRatio = -1f;
+                    bool qbtGlobalMaxSeedingTimeEnabled = false;
+                    long qbtGlobalMaxSeedingTime = -1;
+                    bool qbtRemoveCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var rcd) == true &&
+                        (rcd is bool rcdBool && rcdBool);
+                    try
+                    {
+                        var prefsResp = await http.GetAsync($"{baseUrl}/api/v2/app/preferences", cancellationToken);
+                        if (prefsResp.IsSuccessStatusCode)
+                        {
+                            var prefsJson = await prefsResp.Content.ReadAsStringAsync(cancellationToken);
+                            if (!string.IsNullOrWhiteSpace(prefsJson))
+                            {
+                                var prefs = System.Text.Json.JsonSerializer.Deserialize<Dictionary<string, System.Text.Json.JsonElement>>(prefsJson);
+                                if (prefs != null)
+                                {
+                                    qbtGlobalMaxRatioEnabled = prefs.TryGetValue("max_ratio_enabled", out var mre) && mre.GetBoolean();
+                                    qbtGlobalMaxRatio = prefs.TryGetValue("max_ratio", out var mr) ? (float)mr.GetDouble() : -1f;
+                                    qbtGlobalMaxSeedingTimeEnabled = prefs.TryGetValue("max_seeding_time_enabled", out var mste) && mste.GetBoolean();
+                                    qbtGlobalMaxSeedingTime = prefs.TryGetValue("max_seeding_time", out var mst) ? mst.GetInt64() : -1;
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        _logger.LogDebug(ex, "Failed to fetch qBittorrent preferences for seed limit evaluation");
+                    }
+
                     // Request all necessary fields from torrents/info to avoid additional API calls per torrent
                     // This single call replaces the need for individual /properties calls per download
-                    var fields = "hash,name,save_path,content_path,progress,amount_left,state,size,category,completion_on,seeding_time";
+                    var fields = "hash,name,save_path,content_path,progress,amount_left,state,size,category,completion_on,seeding_time,ratio,ratio_limit,seeding_time_limit";
 
                         // Prefer querying only the hashes we are tracking (if available) to avoid fetching all torrents
                     var trackedHashes = downloads
@@ -903,7 +934,7 @@ namespace Listenarr.Api.Services
                     }
 
                     // Build comprehensive lookup with all torrent info we need from single API call
-                    var torrentLookup = new List<(string Hash, string Name, string SavePath, string ContentPath, double Progress, long AmountLeft, string State, long Size, string Category, long? SeedingTime)>();
+                    var torrentLookup = new List<(string Hash, string Name, string SavePath, string ContentPath, double Progress, long AmountLeft, string State, long Size, string Category, long? SeedingTime, double Ratio, float RatioLimit, long SeedingTimeLimit, bool CanMoveFiles, bool CanBeRemoved)>();
                     foreach (var t in allTorrents)
                     {
                         var hash = t.ContainsKey("hash") ? t["hash"].GetString() ?? "" : "";
@@ -916,7 +947,19 @@ namespace Listenarr.Api.Services
                         var size = t.ContainsKey("size") ? t["size"].GetInt64() : 0L;
                         var category = t.ContainsKey("category") ? t["category"].GetString() ?? "" : "";
                         var seedingTime = t.ContainsKey("seeding_time") ? t["seeding_time"].GetInt64() : (long?)null;
-                        torrentLookup.Add((hash, name, savePath, contentPath, progress, amountLeft, state, size, category, seedingTime));
+                        var tRatio = t.ContainsKey("ratio") ? t["ratio"].GetDouble() : 0.0;
+                        var tRatioLimit = t.ContainsKey("ratio_limit") ? (float)t["ratio_limit"].GetDouble() : -2f;
+                        var tSeedingTimeLimit = t.ContainsKey("seeding_time_limit") ? t["seeding_time_limit"].GetInt64() : -2L;
+
+                        // Sonarr parity: compute CanMoveFiles/CanBeRemoved per-torrent
+                        var tIsStopped = state is "pausedUP" or "stoppedUP";
+                        var tSeedLimitReached = QBitHasReachedSeedLimit(
+                            tRatio, tRatioLimit, seedingTime, tSeedingTimeLimit,
+                            qbtGlobalMaxRatioEnabled, qbtGlobalMaxRatio,
+                            qbtGlobalMaxSeedingTimeEnabled, qbtGlobalMaxSeedingTime);
+                        var tCanMoveAndRemove = qbtRemoveCompletedDownloads && tIsStopped && tSeedLimitReached;
+
+                        torrentLookup.Add((hash, name, savePath, contentPath, progress, amountLeft, state, size, category, seedingTime, tRatio, tRatioLimit, tSeedingTimeLimit, tCanMoveAndRemove, tCanMoveAndRemove));
                     }
 
 
@@ -940,7 +983,7 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("Looking for qBittorrent match for download {DownloadId}: {Title}", dl.Id, dl.Title);
 
                             // Try hash-based matching first (most reliable for qBittorrent)
-                            var matched = (Hash: "", Name: "", SavePath: "", ContentPath: "", Progress: 0.0, AmountLeft: 0L, State: "", Size: 0L, Category: "", SeedingTime: (long?)null);
+                            var matched = (Hash: "", Name: "", SavePath: "", ContentPath: "", Progress: 0.0, AmountLeft: 0L, State: "", Size: 0L, Category: "", SeedingTime: (long?)null, Ratio: 0.0, RatioLimit: -2f, SeedingTimeLimit: -2L, CanMoveFiles: false, CanBeRemoved: false);
 
                             // Check if we have a stored torrent hash for this download
                             if (dl.Metadata != null && dl.Metadata.TryGetValue("TorrentHash", out var hashObj))
@@ -1028,6 +1071,12 @@ namespace Listenarr.Api.Services
                                         dbDownload.Metadata["SeedingTimeSeconds"] = matched.SeedingTime.Value;
                                         changed = true;
                                     }
+
+                                    // Persist CanMoveFiles/CanBeRemoved flags (Sonarr parity)
+                                    // These are evaluated downstream in import mode and cleanup decisions
+                                    dbDownload.Metadata["CanMoveFiles"] = matched.CanMoveFiles;
+                                    dbDownload.Metadata["CanBeRemoved"] = matched.CanBeRemoved;
+                                    changed = true;
 
                                     if (changed)
                                     {
@@ -1193,13 +1242,18 @@ namespace Listenarr.Api.Services
                     var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/transmission/rpc";
                     using var http = _httpClientFactory.CreateClient("DownloadClient");
 
-                    // Prepare RPC payload for torrent-get
+                    // Resolve removeCompletedDownloads for CanMoveFiles/CanBeRemoved evaluation
+                    bool txRemoveCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var txRcd) == true &&
+                        (txRcd is bool txRcdBool && txRcdBool);
+
+                    // Prepare RPC payload for torrent-get (includes seed limit fields for Sonarr parity)
                     var rpc = new
                     {
                         method = "torrent-get",
                         arguments = new
                         {
-                            fields = new[] { "id", "hashString", "name", "percentDone", "leftUntilDone", "isFinished", "status", "downloadDir" }
+                            fields = new[] { "id", "hashString", "name", "percentDone", "leftUntilDone", "isFinished", "status", "downloadDir",
+                                "uploadRatio", "seedRatioMode", "seedRatioLimit", "seedIdleMode", "seedIdleLimit", "secondsSeeding" }
                         },
                         tag = 4
                     };
@@ -1295,6 +1349,44 @@ namespace Listenarr.Api.Services
                         }
                         _logger.LogInformation("PollTransmission found {Count} torrents in response", torrents.GetArrayLength());
 
+                        // Fetch session config for seed limit evaluation (Sonarr parity)
+                        bool txSessionSeedRatioLimited = false;
+                        double txSessionSeedRatioLimit = 0;
+                        bool txSessionIdleSeedingLimitEnabled = false;
+                        int txSessionIdleSeedingLimit = 0;
+                        try
+                        {
+                            var sessionPayload = System.Text.Json.JsonSerializer.Serialize(new { method = "session-get", arguments = new { }, tag = 99 });
+                            using var sessionReq = new HttpRequestMessage(HttpMethod.Post, baseUrl)
+                            {
+                                Content = new StringContent(sessionPayload, System.Text.Encoding.UTF8, "application/json")
+                            };
+                            if (!string.IsNullOrEmpty(sessionId))
+                                sessionReq.Headers.Add("X-Transmission-Session-Id", sessionId);
+                            if (!string.IsNullOrWhiteSpace(client.Username))
+                            {
+                                var creds = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes($"{client.Username}:{client.Password}"));
+                                sessionReq.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", creds);
+                            }
+                            var sessionResp = await http.SendAsync(sessionReq, cancellationToken);
+                            if (sessionResp.IsSuccessStatusCode)
+                            {
+                                var sessionText = await sessionResp.Content.ReadAsStringAsync(cancellationToken);
+                                var sessionDoc = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement>(sessionText);
+                                if (sessionDoc.TryGetProperty("arguments", out var sessionArgs))
+                                {
+                                    txSessionSeedRatioLimited = (sessionArgs.TryGetProperty("seedRatioLimited", out var srl) || sessionArgs.TryGetProperty("seed_ratio_limited", out srl)) && srl.GetBoolean();
+                                    txSessionSeedRatioLimit = (sessionArgs.TryGetProperty("seedRatioLimit", out var srlv) || sessionArgs.TryGetProperty("seed_ratio_limit", out srlv)) ? srlv.GetDouble() : 0;
+                                    txSessionIdleSeedingLimitEnabled = (sessionArgs.TryGetProperty("idle-seeding-limit-enabled", out var isle) || sessionArgs.TryGetProperty("idle_seeding_limit_enabled", out isle)) && isle.GetBoolean();
+                                    txSessionIdleSeedingLimit = (sessionArgs.TryGetProperty("idle-seeding-limit", out var isl) || sessionArgs.TryGetProperty("idle_seeding_limit", out isl)) ? isl.GetInt32() : 0;
+                                }
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            _logger.LogDebug(ex, "Failed to fetch Transmission session config for seed limit evaluation");
+                        }
+
                         // Process torrents (continue with existing logic below)
                         foreach (var dl in downloads)
                         {
@@ -1350,6 +1442,42 @@ namespace Listenarr.Api.Services
 
                                 // Update database with real-time progress information
                                 await UpdateDownloadProgressAsync(dl.Id, percent * 100, left, status, dbContext, cancellationToken);
+
+                                // Compute and persist CanMoveFiles/CanBeRemoved (Sonarr parity)
+                                try
+                                {
+                                    var txUploadRatio = (matching.TryGetProperty("uploadRatio", out var txRatP) || matching.TryGetProperty("upload_ratio", out txRatP)) ? txRatP.GetDouble() : 0d;
+                                    var txSeedRatioMode = (matching.TryGetProperty("seedRatioMode", out var txSrmP) || matching.TryGetProperty("seed_ratio_mode", out txSrmP)) ? txSrmP.GetInt32() : 0;
+                                    var txSeedRatioLimit = (matching.TryGetProperty("seedRatioLimit", out var txSrlP) || matching.TryGetProperty("seed_ratio_limit", out txSrlP)) ? txSrlP.GetDouble() : 0d;
+                                    var txSeedIdleMode = (matching.TryGetProperty("seedIdleMode", out var txSimP) || matching.TryGetProperty("seed_idle_mode", out txSimP)) ? txSimP.GetInt32() : 0;
+                                    var txSeedIdleLimit = (matching.TryGetProperty("seedIdleLimit", out var txSilP) || matching.TryGetProperty("seed_idle_limit", out txSilP)) ? txSilP.GetInt32() : 0;
+                                    var txSecondsSeeding = (matching.TryGetProperty("secondsSeeding", out var txSsP) || matching.TryGetProperty("seconds_seeding", out txSsP)) ? txSsP.GetInt64() : 0L;
+
+                                    var txIsStopped = statusCode == 0;
+                                    var txIsSeeding = statusCode == 6;
+                                    var txSeedLimitReached = TransmissionHasReachedSeedLimit(
+                                        txIsStopped, txIsSeeding, txUploadRatio,
+                                        txSeedRatioMode, txSeedRatioLimit,
+                                        txSeedIdleMode, txSeedIdleLimit, txSecondsSeeding,
+                                        txSessionSeedRatioLimited, txSessionSeedRatioLimit,
+                                        txSessionIdleSeedingLimitEnabled, txSessionIdleSeedingLimit);
+                                    var txCanBeRemoved = txRemoveCompletedDownloads && txSeedLimitReached;
+                                    var txCanMoveFiles = txCanBeRemoved && txIsStopped;
+
+                                    var txDbDownload = await dbContext.Downloads.FindAsync(new object[] { dl.Id }, cancellationToken);
+                                    if (txDbDownload != null)
+                                    {
+                                        if (txDbDownload.Metadata == null) txDbDownload.Metadata = new Dictionary<string, object>();
+                                        txDbDownload.Metadata["CanMoveFiles"] = txCanMoveFiles;
+                                        txDbDownload.Metadata["CanBeRemoved"] = txCanBeRemoved;
+                                        dbContext.Downloads.Update(txDbDownload);
+                                        await dbContext.SaveChangesAsync(cancellationToken);
+                                    }
+                                }
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
+                                    _logger.LogDebug(ex, "Failed to persist CanMoveFiles/CanBeRemoved for Transmission download {DownloadId}", dl.Id);
+                                }
 
                                 if (status == "failed")
                                 {
@@ -1427,6 +1555,19 @@ namespace Listenarr.Api.Services
         {
             try
             {
+                // Re-check whether the client is still enabled (it may have been disabled
+                // since the polling loop started or since a retry was scheduled).
+                using var preScope = _serviceScopeFactory.CreateScope();
+                var preConfigService = preScope.ServiceProvider.GetRequiredService<IConfigurationService>();
+                var freshClient = await preConfigService.GetDownloadClientConfigurationAsync(client.Id);
+                if (freshClient != null && !freshClient.IsEnabled)
+                {
+                    _logger.LogInformation(
+                        "Skipping finalization for download {DownloadId} ({Title}): download client {ClientName} is disabled",
+                        download.Id, download.Title, client.Name);
+                    return;
+                }
+
                 _logger.LogInformation("Starting download finalization for {DownloadId}: {Title} from client {ClientName}",
                     download.Id, download.Title, client.Name);
                 _logger.LogDebug("Initial client path: {ClientPath}", clientPath);
@@ -2382,11 +2523,11 @@ namespace Listenarr.Api.Services
                             completedTime = DateTimeOffset.FromUnixTimeSeconds(timestamp).DateTime;
                         }
 
-                        // NZBGet status values for successful completion
+                        // NZBGet status values can include suffixed variants like
+                        // SUCCESS/HEALTH or FAILURE/HEALTH. Treat all SUCCESS* as
+                        // completed and FAILURE*/FAILED* as failed.
                         if (!string.IsNullOrEmpty(name) &&
-                            (status.Equals("SUCCESS", StringComparison.OrdinalIgnoreCase) ||
-                             status.Equals("SUCCESS/UNPACK", StringComparison.OrdinalIgnoreCase) ||
-                             status.Equals("SUCCESS/SCRIPT", StringComparison.OrdinalIgnoreCase)))
+                            status.StartsWith("SUCCESS", StringComparison.OrdinalIgnoreCase))
                         {
                             completedItems.Add((name, status, destDir, completedTime, itemId));
                         }
@@ -2898,6 +3039,95 @@ namespace Listenarr.Api.Services
             return string.IsNullOrEmpty(normalizedBasePath)
                 ? relativePath
                 : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
+
+        /// <summary>
+        /// Determines whether a qBittorrent torrent has reached its seed limit.
+        /// Used by the qBittorrent poller to compute CanMoveFiles/CanBeRemoved per-torrent.
+        /// Mirrors Sonarr's HasReachedSeedLimit logic.
+        /// </summary>
+        private static bool QBitHasReachedSeedLimit(
+            double ratio,
+            float ratioLimit,
+            long? seedingTime,
+            long seedingTimeLimit,
+            bool globalMaxRatioEnabled,
+            float globalMaxRatio,
+            bool globalMaxSeedingTimeEnabled,
+            long globalMaxSeedingTime)
+        {
+            // Check ratio limit (per-torrent override takes precedence)
+            if (ratioLimit >= 0)
+            {
+                if (ratioLimit - ratio <= 0.001)
+                    return true;
+            }
+            else if (ratioLimit <= -2 && globalMaxRatioEnabled)
+            {
+                if (globalMaxRatio - ratio <= 0.001)
+                    return true;
+            }
+
+            // Check seeding time limit (per-torrent override takes precedence)
+            if (seedingTimeLimit >= 0)
+            {
+                var limitSeconds = seedingTimeLimit * 60;
+                if (seedingTime.HasValue && seedingTime.Value >= limitSeconds)
+                    return true;
+            }
+            else if (seedingTimeLimit <= -2 && globalMaxSeedingTimeEnabled)
+            {
+                var limitSeconds = globalMaxSeedingTime * 60;
+                if (seedingTime.HasValue && seedingTime.Value >= limitSeconds)
+                    return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Determines whether a Transmission torrent has reached its seed limit.
+        /// Mirrors Sonarr's HasReachedSeedLimit logic for Transmission.
+        /// </summary>
+        private static bool TransmissionHasReachedSeedLimit(
+            bool isStopped,
+            bool isSeeding,
+            double ratio,
+            int seedRatioMode,
+            double seedRatioLimit,
+            int seedIdleMode,
+            int seedIdleLimit,
+            long secondsSeeding,
+            bool sessionSeedRatioLimited,
+            double sessionSeedRatioLimit,
+            bool sessionIdleSeedingLimitEnabled,
+            int sessionIdleSeedingLimit)
+        {
+            // seedRatioMode: 0 = global, 1 = per-torrent, 2 = unlimited
+            if (seedRatioMode == 1)
+            {
+                if (isStopped && ratio >= seedRatioLimit)
+                    return true;
+            }
+            else if (seedRatioMode == 0)
+            {
+                if (isStopped && sessionSeedRatioLimited && ratio >= sessionSeedRatioLimit)
+                    return true;
+            }
+
+            // seedIdleMode: 0 = global, 1 = per-torrent, 2 = unlimited
+            if (seedIdleMode == 1)
+            {
+                if ((isStopped || isSeeding) && secondsSeeding > seedIdleLimit * 60)
+                    return true;
+            }
+            else if (seedIdleMode == 0)
+            {
+                if (isStopped && sessionIdleSeedingLimitEnabled)
+                    return true;
+            }
+
+            return false;
         }
 
         private Download CloneDownload(Download download)

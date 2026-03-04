@@ -263,6 +263,30 @@ namespace Listenarr.Api.Services.Adapters
 
             var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
 
+            // Fetch session-level seed config for Sonarr-parity seed limit evaluation
+            bool sessionSeedRatioLimited = false;
+            double sessionSeedRatioLimit = 0;
+            bool sessionIdleSeedingLimitEnabled = false;
+            int sessionIdleSeedingLimit = 0;
+            try
+            {
+                var sessionPayload = new { method = "session-get", arguments = new { }, tag = 99 };
+                var sessionResp = await InvokeRpcAsync(client, sessionPayload, ct);
+                if (sessionResp.TryGetProperty("arguments", out var sessionArgs))
+                {
+                    sessionSeedRatioLimited = (sessionArgs.TryGetProperty("seedRatioLimited", out var srl) || sessionArgs.TryGetProperty("seed_ratio_limited", out srl)) && srl.GetBoolean();
+                    sessionSeedRatioLimit = (sessionArgs.TryGetProperty("seedRatioLimit", out var srlv) || sessionArgs.TryGetProperty("seed_ratio_limit", out srlv)) ? srlv.GetDouble() : 0;
+                    sessionIdleSeedingLimitEnabled = (sessionArgs.TryGetProperty("idle-seeding-limit-enabled", out var isle) || sessionArgs.TryGetProperty("idle_seeding_limit_enabled", out isle)) && isle.GetBoolean();
+                    sessionIdleSeedingLimit = (sessionArgs.TryGetProperty("idle-seeding-limit", out var isl) || sessionArgs.TryGetProperty("idle_seeding_limit", out isl)) ? isl.GetInt32() : 0;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to fetch Transmission session config for seed limit evaluation, will use conservative defaults");
+            }
+
+            var sessionConfig = (sessionSeedRatioLimited, sessionSeedRatioLimit, sessionIdleSeedingLimitEnabled, sessionIdleSeedingLimit);
+
             var payload = new
             {
                 method = "torrent-get",
@@ -271,7 +295,8 @@ namespace Listenarr.Api.Services.Adapters
                     fields = new[]
                     {
                         "id", "hashString", "name", "percentDone", "status", "totalSize", "rateDownload", "rateUpload",
-                        "leftUntilDone", "eta", "downloadDir", "addedDate", "uploadedEver", "uploadRatio", "labels"
+                        "leftUntilDone", "eta", "downloadDir", "addedDate", "uploadedEver", "uploadRatio", "labels",
+                        "seedRatioMode", "seedRatioLimit", "seedIdleMode", "seedIdleLimit", "secondsSeeding"
                     }
                 },
                 tag = 3
@@ -295,7 +320,7 @@ namespace Listenarr.Api.Services.Adapters
                             continue;
                         }
 
-                        var downloadClientItem = await MapToDownloadClientItemAsync(client, torrent, ct);
+                        var downloadClientItem = await MapToDownloadClientItemAsync(client, torrent, sessionConfig, ct);
                         items.Add(downloadClientItem);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -579,7 +604,11 @@ namespace Listenarr.Api.Services.Adapters
             return queueItem;
         }
 
-        private async Task<DownloadClientItem> MapToDownloadClientItemAsync(DownloadClientConfiguration client, JsonElement torrent, CancellationToken ct)
+        private async Task<DownloadClientItem> MapToDownloadClientItemAsync(
+            DownloadClientConfiguration client,
+            JsonElement torrent,
+            (bool SeedRatioLimited, double SeedRatioLimit, bool IdleSeedingLimitEnabled, int IdleSeedingLimit) sessionConfig,
+            CancellationToken ct)
         {
             // Try snake_case (JSON-RPC 2.0 / Transmission 4.1+) first, fall back to camelCase for backwards compatibility
             var hash = torrent.TryGetProperty("hash_string", out var hashProp) || torrent.TryGetProperty("hashString", out hashProp) 
@@ -600,6 +629,18 @@ namespace Listenarr.Api.Services.Adapters
             var statusCode = torrent.TryGetProperty("status", out var statusProp) ? statusProp.GetInt32() : 0;
             var uploadRatio = (torrent.TryGetProperty("upload_ratio", out var ratioProp) || torrent.TryGetProperty("uploadRatio", out ratioProp))
                 ? ratioProp.GetDouble() : 0d;
+
+            // Seed limit fields for Sonarr-parity seed limit evaluation
+            var seedRatioMode = (torrent.TryGetProperty("seed_ratio_mode", out var srmProp) || torrent.TryGetProperty("seedRatioMode", out srmProp))
+                ? srmProp.GetInt32() : 0;
+            var seedRatioLimit = (torrent.TryGetProperty("seed_ratio_limit", out var srlProp) || torrent.TryGetProperty("seedRatioLimit", out srlProp))
+                ? srlProp.GetDouble() : 0d;
+            var seedIdleMode = (torrent.TryGetProperty("seed_idle_mode", out var simProp) || torrent.TryGetProperty("seedIdleMode", out simProp))
+                ? simProp.GetInt32() : 0;
+            var seedIdleLimit = (torrent.TryGetProperty("seed_idle_limit", out var silProp) || torrent.TryGetProperty("seedIdleLimit", out silProp))
+                ? silProp.GetInt32() : 0;
+            var secondsSeeding = (torrent.TryGetProperty("seconds_seeding", out var ssProp) || torrent.TryGetProperty("secondsSeeding", out ssProp))
+                ? ssProp.GetInt64() : 0L;
 
             // Map Transmission status codes to DownloadItemStatus
             var status = statusCode switch
@@ -633,6 +674,22 @@ namespace Listenarr.Api.Services.Adapters
             // ✅ Use hash as DownloadId if available, otherwise fall back to numeric ID
             var downloadId = !string.IsNullOrEmpty(hash) ? hash.ToUpperInvariant() : numericId.ToString(CultureInfo.InvariantCulture);
 
+            // Sonarr parity: CanBeRemoved = removeCompletedDownloads && HasReachedSeedLimit
+            //                 CanMoveFiles = CanBeRemoved && status == Stopped (statusCode 0)
+            // This prevents removing torrents before seed goals are met and prevents
+            // moving files from active seeders (which breaks the torrent).
+            var removeCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) == true &&
+                (removeVal is bool boolVal && boolVal);
+            var isStopped = statusCode == 0; // TR_STATUS_STOPPED
+            var isSeeding = statusCode == 6; // TR_STATUS_SEED
+            var seedLimitReached = HasReachedSeedLimit(
+                isStopped, isSeeding, uploadRatio,
+                seedRatioMode, seedRatioLimit,
+                seedIdleMode, seedIdleLimit, secondsSeeding,
+                sessionConfig);
+            var canBeRemoved = removeCompletedDownloads && seedLimitReached;
+            var canMoveFiles = canBeRemoved && isStopped;
+
             return new DownloadClientItem
             {
                 DownloadId = downloadId,
@@ -647,18 +704,72 @@ namespace Listenarr.Api.Services.Adapters
                 Message = $"Status code: {statusCode}",
                 Progress = percentDone,
                 DownloadSpeed = rateDownload,
-                CanBeRemoved = true,
-                CanMoveFiles = status == DownloadItemStatus.Completed,
+                CanBeRemoved = canBeRemoved,
+                CanMoveFiles = canMoveFiles,
                 DownloadClientInfo = DownloadClientItemClientInfo.FromClient(
                     clientId: client.Id,
                     clientName: client.Name,
                     clientType: "transmission",
                     protocol: DownloadProtocol.Torrent,
-                    removeCompletedDownloads: client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) == true && 
-                                             (removeVal is bool boolVal && boolVal),
+                    removeCompletedDownloads: removeCompletedDownloads,
                     hasPostImportCategory: false // Transmission doesn't support post-import categories
                 )
             };
+        }
+
+        /// <summary>
+        /// Determines whether a Transmission torrent has reached its seed limit (ratio or idle time).
+        /// Mirrors Sonarr's HasReachedSeedLimit logic for Transmission.
+        /// </summary>
+        private static bool HasReachedSeedLimit(
+            bool isStopped,
+            bool isSeeding,
+            double ratio,
+            int seedRatioMode,
+            double seedRatioLimit,
+            int seedIdleMode,
+            int seedIdleLimit,
+            long secondsSeeding,
+            (bool SeedRatioLimited, double SeedRatioLimit, bool IdleSeedingLimitEnabled, int IdleSeedingLimit) sessionConfig)
+        {
+            // seedRatioMode: 0 = global, 1 = per-torrent, 2 = unlimited
+            if (seedRatioMode == 1)
+            {
+                // Per-torrent ratio limit
+                if (isStopped && ratio >= seedRatioLimit)
+                {
+                    return true;
+                }
+            }
+            else if (seedRatioMode == 0)
+            {
+                // Use global ratio limit
+                if (isStopped && sessionConfig.SeedRatioLimited && ratio >= sessionConfig.SeedRatioLimit)
+                {
+                    return true;
+                }
+            }
+
+            // seedIdleMode: 0 = global, 1 = per-torrent, 2 = unlimited
+            // Transmission uses idle limit as a seeding time limit when set per-torrent
+            if (seedIdleMode == 1)
+            {
+                // Per-torrent idle/seed time limit (in minutes)
+                if ((isStopped || isSeeding) && secondsSeeding > seedIdleLimit * 60)
+                {
+                    return true;
+                }
+            }
+            else if (seedIdleMode == 0)
+            {
+                // The global idle limit is a real idle limit, if configured then 'Stopped' is enough
+                if (isStopped && sessionConfig.IdleSeedingLimitEnabled)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private static List<string> ExtractLabels(JsonElement torrent)

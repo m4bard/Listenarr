@@ -740,14 +740,14 @@ builder.Services.AddSwaggerGen(options =>
         "Authentication quick start:",
         "1. Click `Authorize` and enter one credential (you do not need all schemes).",
         "2. Session token flow:",
-        "   - Call `POST /api/v{version}/Account/login` with `{ \"username\": \"...\", \"password\": \"...\", \"rememberMe\": false }`.",
+        "   - Call `POST /api/v{version}/account/login` with `{ \"username\": \"...\", \"password\": \"...\", \"rememberMe\": false }`.",
         "   - Copy `sessionToken` from the 200 response when `authType` is `session`.",
         "   - Use `SessionBearer` (`Bearer <sessionToken>`) or `SessionTokenHeader` (`<sessionToken>`).",
         "3. API key flow:",
         "   - Listenarr auto-generates an API key on first run.",
-        "   - Read the current key from `GET /api/v{version}/Configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-        "   - Rotate the key with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required).",
-        "   - `POST /api/v{version}/Configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
+        "   - Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
+        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required).",
+        "   - `POST /api/v{version}/configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
         "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
     });
 
@@ -766,7 +766,7 @@ builder.Services.AddSwaggerGen(options =>
         Description = string.Join(Environment.NewLine, new[]
         {
             "Use `Authorization: Bearer <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v{version}/Account/login` using username/password credentials."
+            "Get `sessionToken` from `POST /api/v{version}/account/login` using username/password credentials."
         })
     });
 
@@ -778,7 +778,7 @@ builder.Services.AddSwaggerGen(options =>
         Description = string.Join(Environment.NewLine, new[]
         {
             "Use `X-Session-Token: <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v{version}/Account/login` using username/password credentials."
+            "Get `sessionToken` from `POST /api/v{version}/account/login` using username/password credentials."
         })
     });
 
@@ -791,8 +791,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `X-Api-Key: <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/Configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-            "Regenerate with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required)."
         })
     });
 
@@ -805,8 +805,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `Authorization: ApiKey <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/Configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-            "Regenerate with `POST /api/v{version}/Configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required)."
         })
     });
 
@@ -834,6 +834,7 @@ builder.Services.AddSwaggerGen(options =>
     // the same simple type name (e.g. TranslatePathRequest).
     options.CustomSchemaIds(type => (type.FullName ?? type.Name).Replace('+', '.'));
     options.OperationFilter<GlobalApiDocumentationOperationFilter>();
+    options.DocumentFilter<SwaggerTagOrderDocumentFilter>();
 
     // Resolve conflicting actions (ambiguous HTTP method actions) by selecting the first
     // description. This prevents Swagger generation failures when multiple action descriptors

@@ -32,6 +32,7 @@ namespace Listenarr.Api.Controllers
 {
     [ApiController]
     [Route("api/v{version:apiVersion}/indexers")]
+    [Tags("Indexers")]
     public class IndexersController : ControllerBase
     {
         private readonly ListenArrDbContext _dbContext;
@@ -343,7 +344,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Get all indexers
+        /// Get all configured indexers.
         /// </summary>
         [HttpGet]
         public async Task<IActionResult> GetAll()
@@ -357,8 +358,9 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Get indexer by ID
+        /// Get an indexer by its database ID.
         /// </summary>
+        /// <param name="id">Indexer ID.</param>
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
@@ -372,8 +374,9 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Create a new indexer
+        /// Create a new indexer.
         /// </summary>
+        /// <param name="indexer">Indexer configuration to create.</param>
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] Indexer indexer)
         {
@@ -390,8 +393,9 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Import indexers from Prowlarr that include category 3000 or 3030
+        /// Import audiobook-related indexers (category 3000/3030) from a Prowlarr instance.
         /// </summary>
+        /// <param name="request">Prowlarr server URL and API key.</param>
         [HttpPost("prowlarr/import")]
         public async Task<IActionResult> ImportFromProwlarr([FromBody] ProwlarrImportRequest request)
         {
@@ -550,8 +554,10 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Update an existing indexer
+        /// Update an existing indexer.
         /// </summary>
+        /// <param name="id">Indexer ID.</param>
+        /// <param name="indexer">Updated indexer configuration.</param>
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] Indexer indexer)
         {
@@ -590,8 +596,9 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Delete an indexer
+        /// Delete an indexer.
         /// </summary>
+        /// <param name="id">Indexer ID.</param>
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
@@ -610,8 +617,9 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Test an indexer connection
+        /// Test an indexer's connection to verify it is reachable and properly configured.
         /// </summary>
+        /// <param name="id">Indexer ID.</param>
         [HttpPost("{id}/test")]
         public async Task<IActionResult> Test(int id)
         {
@@ -624,6 +632,10 @@ namespace Listenarr.Api.Controllers
             return await ExecuteIndexerTestAsync(indexer, persist: true);
         }
 
+        /// <summary>
+        /// Test an indexer configuration without saving it. Useful for validating settings before creating an indexer.
+        /// </summary>
+        /// <param name="indexer">Indexer configuration to test (not persisted).</param>
         [HttpPost("test")]
         public async Task<IActionResult> TestDraft([FromBody] Indexer indexer)
         {
@@ -1073,8 +1085,9 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Toggle indexer enabled state
+        /// Toggle an indexer's enabled/disabled state.
         /// </summary>
+        /// <param name="id">Indexer ID.</param>
         [HttpPut("{id}/toggle")]
         public async Task<IActionResult> Toggle(int id)
         {
@@ -1095,7 +1108,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Get enabled indexers only
+        /// Get only enabled indexers.
         /// </summary>
         [HttpGet("enabled")]
         public async Task<IActionResult> GetEnabled()

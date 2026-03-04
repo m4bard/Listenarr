@@ -9,7 +9,8 @@ using Microsoft.Extensions.Caching.Memory;
 namespace Listenarr.Api.Controllers;
 
 [ApiController]
-[Route("api/v{version:apiVersion}/[controller]")]
+[Route("api/v{version:apiVersion}/downloads")]
+[Tags("Downloads")]
 public class DownloadsController : ControllerBase
 {
     private readonly ListenArrDbContext _dbContext;
@@ -61,6 +62,10 @@ public class DownloadsController : ControllerBase
         return NotFound(new { error = "Cached announces not found", downloadId });
     }
 
+    /// <summary>
+    /// List all download records, optionally filtered by status.
+    /// </summary>
+    /// <param name="status">Optional status filter (e.g., Queued, Downloading, Completed, Failed).</param>
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Download>>> GetDownloads([FromQuery] string? status = null)
     {
@@ -102,8 +107,9 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Get a specific download by ID
+    /// Get a specific download record by ID.
     /// </summary>
+    /// <param name="id">Download record ID.</param>
     [HttpGet("{id}")]
     public async Task<ActionResult<Download>> GetDownload(string id)
     {
@@ -149,8 +155,9 @@ public class DownloadsController : ControllerBase
       }
 
     /// <summary>
-    /// Retry a manually blocked import by returning it to ImportPending.
+    /// Retry importing a download that was blocked due to import issues. Resets status to ImportPending.
     /// </summary>
+    /// <param name="id">Download record ID.</param>
     [HttpPost("{id}/retry-import")]
     public async Task<ActionResult> RetryBlockedImport(string id)
     {
@@ -195,7 +202,7 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Get active downloads (Queued or Downloading status)
+    /// Get all active downloads (Queued, Downloading, Processing, or ImportPending status).
     /// </summary>
     [HttpGet("active")]
     public async Task<ActionResult<IEnumerable<Download>>> GetActiveDownloads()
@@ -231,8 +238,10 @@ public class DownloadsController : ControllerBase
     }
 
 
-    /// <summary>    /// Delete a download record (does not cancel active download)
+    /// <summary>
+    /// Delete a download record from the database. This does not cancel an active download in the client.
     /// </summary>
+    /// <param name="id">Download record ID.</param>
     [HttpDelete("{id}")]
     public async Task<ActionResult> DeleteDownload(string id)
     {
@@ -258,7 +267,7 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Clear completed downloads
+    /// Delete all download records with Completed status.
     /// </summary>
     [HttpDelete("completed")]
     public async Task<ActionResult> ClearCompletedDownloads()
@@ -282,7 +291,7 @@ public class DownloadsController : ControllerBase
     }
 
     /// <summary>
-    /// Clear failed downloads
+    /// Delete all download records with Failed or ImportBlocked status.
     /// </summary>
     [HttpDelete("failed")]
     public async Task<ActionResult> ClearFailedDownloads()

@@ -651,8 +651,10 @@ namespace Listenarr.Api.Services.Adapters
                 remainingTime = TimeSpan.FromSeconds(etaSeconds);
             }
 
-            // Map NZBGet status to DownloadItemStatus
-            var status = (statusRaw ?? "QUEUED").ToUpperInvariant() switch
+            // Map NZBGet status to DownloadItemStatus.
+            // NZBGet can emit suffixed states (e.g. SUCCESS/HEALTH, FAILURE/HEALTH).
+            var normalizedStatus = (statusRaw ?? "QUEUED").ToUpperInvariant();
+            var status = normalizedStatus switch
             {
                 "QUEUED" => DownloadItemStatus.Queued,
                 "DOWNLOADING" => DownloadItemStatus.Downloading,
@@ -661,8 +663,8 @@ namespace Listenarr.Api.Services.Adapters
                 "SCANNING" => DownloadItemStatus.Downloading,
                 "PP_QUEUED" => DownloadItemStatus.Downloading,
                 "PP_PROCESSING" => DownloadItemStatus.Downloading,
-                "SUCCESS" => DownloadItemStatus.Completed,
-                "FAILURE" => DownloadItemStatus.Failed,
+                _ when normalizedStatus.StartsWith("SUCCESS", StringComparison.Ordinal) => DownloadItemStatus.Completed,
+                _ when normalizedStatus.StartsWith("FAILURE", StringComparison.Ordinal) || normalizedStatus.StartsWith("FAILED", StringComparison.Ordinal) => DownloadItemStatus.Failed,
                 _ => DownloadItemStatus.Queued
             };
 
@@ -733,7 +735,8 @@ namespace Listenarr.Api.Services.Adapters
                 etaSeconds = (int)Math.Max(0, remainingBytes / downloadRate);
             }
 
-            string status = (statusRaw ?? "QUEUED").ToUpperInvariant() switch
+            var normalizedStatus = (statusRaw ?? "QUEUED").ToUpperInvariant();
+            string status = normalizedStatus switch
             {
                 "QUEUED" => "queued",
                 "DOWNLOADING" => "downloading",
@@ -742,8 +745,8 @@ namespace Listenarr.Api.Services.Adapters
                 "SCANNING" => "downloading",
                 "PP_QUEUED" => "downloading",
                 "PP_PROCESSING" => "downloading",
-                "SUCCESS" => "completed",
-                "FAILURE" => "failed",
+                _ when normalizedStatus.StartsWith("SUCCESS", StringComparison.Ordinal) => "completed",
+                _ when normalizedStatus.StartsWith("FAILURE", StringComparison.Ordinal) || normalizedStatus.StartsWith("FAILED", StringComparison.Ordinal) => "failed",
                 _ => "queued"
             };
 

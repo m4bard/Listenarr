@@ -133,7 +133,9 @@ namespace Listenarr.Api.Services
                     {
                         try
                         {
-                            var files = System.IO.Directory.GetFiles(finalPath, "*", System.IO.SearchOption.AllDirectories);
+                            var files = System.IO.Directory.GetFiles(finalPath, "*", System.IO.SearchOption.AllDirectories)
+                                .Where(f => FileUtils.IsAudioFile(f))
+                                .ToArray();
                             if (files != null && files.Length > 0)
                             {
                                 var importResults = await _fileFinalizer.ImportFilesFromDirectoryAsync(downloadId, download?.AudiobookId, files, settings);
@@ -207,7 +209,9 @@ namespace Listenarr.Api.Services
                                         tempDirExtracted = await _archiveExtractor.ExtractArchiveToTempDirAsync(archivePath);
                                         if (!string.IsNullOrWhiteSpace(tempDirExtracted) && System.IO.Directory.Exists(tempDirExtracted))
                                         {
-                                            var extractedFiles = System.IO.Directory.GetFiles(tempDirExtracted, "*", System.IO.SearchOption.AllDirectories);
+                                            var extractedFiles = System.IO.Directory.GetFiles(tempDirExtracted, "*", System.IO.SearchOption.AllDirectories)
+                                                .Where(f => FileUtils.IsAudioFile(f))
+                                                .ToArray();
                                             if (extractedFiles != null && extractedFiles.Length > 0)
                                             {
                                                 var extractedResults = await _fileFinalizer.ImportFilesFromDirectoryAsync(downloadId, download?.AudiobookId, extractedFiles, settings);
@@ -301,7 +305,9 @@ namespace Listenarr.Api.Services
                                     tempExtractDir = await _archiveExtractor.ExtractArchiveToTempDirAsync(finalPath);
                                     if (!string.IsNullOrWhiteSpace(tempExtractDir) && System.IO.Directory.Exists(tempExtractDir))
                                     {
-                                        var extractedFiles = System.IO.Directory.GetFiles(tempExtractDir, "*", System.IO.SearchOption.AllDirectories);
+                                        var extractedFiles = System.IO.Directory.GetFiles(tempExtractDir, "*", System.IO.SearchOption.AllDirectories)
+                                            .Where(f => FileUtils.IsAudioFile(f))
+                                            .ToArray();
                                         if (extractedFiles != null && extractedFiles.Length > 0)
                                         {
                                             var extractedResults = await _fileFinalizer.ImportFilesFromDirectoryAsync(downloadId, download?.AudiobookId, extractedFiles, settings);
@@ -677,10 +683,51 @@ namespace Listenarr.Api.Services
                             _logger.LogInformation("Cleanup: clientConfig={IsNull}, RemoveCompletedDownloads={Setting}", 
                                 clientConfig == null ? "NULL" : "Found", 
                                 clientConfig?.RemoveCompletedDownloads ?? "NULL");
-                                
-                            if (clientConfig != null && !string.IsNullOrEmpty(clientConfig.RemoveCompletedDownloads) && 
+
+                            // Skip cleanup if the download client is disabled
+                            if (clientConfig != null && !clientConfig.IsEnabled)
+                            {
+                                _logger.LogDebug("Skipping post-import cleanup for download {DownloadId}: client {ClientName} is disabled",
+                                    downloadForCleanup.Id, clientConfig.Name);
+                            }
+                            else if (clientConfig != null && !string.IsNullOrEmpty(clientConfig.RemoveCompletedDownloads) && 
                                 clientConfig.RemoveCompletedDownloads != "none")
                             {
+                                // Sonarr parity: Mark item as imported (e.g., change torrent category) before removal.
+                                // This ensures the torrent is properly categorized even if removal is deferred.
+                                string clientIdForMark = downloadForCleanup.Id;
+                                if (downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("TorrentHash", out var markHashObj))
+                                {
+                                    var markHash = markHashObj?.ToString();
+                                    if (!string.IsNullOrEmpty(markHash))
+                                        clientIdForMark = markHash;
+                                }
+                                try
+                                {
+                                    await downloadClientGateway.MarkItemAsImportedAsync(clientConfig, clientIdForMark);
+                                }
+                                catch (Exception markEx) when (markEx is not OperationCanceledException && markEx is not OutOfMemoryException && markEx is not StackOverflowException)
+                                {
+                                    _logger.LogDebug(markEx, "Failed to mark download {DownloadId} as imported in client (non-fatal)", downloadForCleanup.Id);
+                                }
+
+                                // Sonarr parity: Check CanBeRemoved flag before attempting removal.
+                                // If the torrent hasn't reached its seed limit, defer removal to the next cycle.
+                                bool canBeRemoved = true; // Default true for usenet clients
+                                if (downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("CanBeRemoved", out var canRemoveObj))
+                                {
+                                    canBeRemoved = canRemoveObj is bool b ? b : (canRemoveObj is System.Text.Json.JsonElement je ? je.GetBoolean() : bool.TryParse(canRemoveObj?.ToString(), out var parsed) && parsed);
+                                }
+
+                                if (!canBeRemoved)
+                                {
+                                    _logger.LogInformation("Download {DownloadId} cannot be removed yet (CanBeRemoved=false, torrent still seeding). Deferring removal to next cycle.",
+                                        downloadForCleanup.Id);
+                                    // Don't remove - let the monitor service update CanBeRemoved on the next poll
+                                    // when the torrent eventually reaches its seed limit
+                                }
+                                else
+                                {
                                 bool deleteFiles = clientConfig.RemoveCompletedDownloads == "remove_and_delete";
                                 
                                 // Get the actual client-specific ID (torrent hash for qBittorrent/Transmission, droneId for NZBGet, etc.)
@@ -863,6 +910,7 @@ namespace Listenarr.Api.Services
                                     _logger.LogWarning("Failed to remove download {DownloadId} from client {ClientName}", 
                                         download!.Id, clientConfig.Name);
                                 }
+                                } // end else (canBeRemoved)
                             }
                         }
                     }

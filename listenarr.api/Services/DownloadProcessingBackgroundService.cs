@@ -211,12 +211,40 @@ namespace Listenarr.Api.Services
                 var pathMapping = scope.ServiceProvider.GetService<IRemotePathMappingService>();
                 var importItemResolution = scope.ServiceProvider.GetRequiredService<IImportItemResolutionService>();
 
+                // Build a set of enabled download client IDs so we skip downloads from disabled clients
+                var configService = scope.ServiceProvider.GetService<IConfigurationService>();
+                HashSet<string> enabledClientIds;
+                try
+                {
+                    var allClients = configService != null
+                        ? await configService.GetDownloadClientConfigurationsAsync()
+                        : new List<DownloadClientConfiguration>();
+                    enabledClientIds = new HashSet<string>(
+                        allClients.Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id)).Select(c => c.Id!),
+                        StringComparer.OrdinalIgnoreCase);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "Failed to load download client configurations for enabled-client filtering");
+                    enabledClientIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                }
+
                 // Find recent completed downloads that have not yet been processed into jobs
                 var candidates = await dbContext.Downloads
                     .Where(d => d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending)
                     .OrderByDescending(d => d.CompletedAt)
                     .Take(200)
                     .ToListAsync(cancellationToken);
+
+                // Filter out downloads from disabled or missing clients
+                var originalCount = candidates.Count;
+                candidates = candidates.Where(d =>
+                    string.IsNullOrWhiteSpace(d.DownloadClientId) || enabledClientIds.Contains(d.DownloadClientId)).ToList();
+                if (candidates.Count < originalCount)
+                {
+                    _logger.LogDebug("Skipping {Count} completed downloads from disabled/missing download clients",
+                        originalCount - candidates.Count);
+                }
 
                 // Batch load all processing jobs for these candidates to avoid N+1 queries
                 var candidateIds = candidates.Select(d => d.Id).ToList();
@@ -690,7 +718,23 @@ namespace Listenarr.Api.Services
                     }
                     if (!string.Equals(Path.GetFullPath(sourcePath), Path.GetFullPath(destinationPath), StringComparison.OrdinalIgnoreCase))
                     {
-                        var action = settings.CompletedFileAction ?? "Move";
+                        // Sonarr parity: ImportMode.Auto - if CanMoveFiles is true, Move; otherwise Copy.
+                        // This prevents moving files from active seeders (which breaks the torrent).
+                        // Falls back to configured CompletedFileAction if CanMoveFiles metadata is not present.
+                        var configuredAction = settings.CompletedFileAction ?? "Move";
+                        var action = configuredAction;
+
+                        if (download?.Metadata != null && download.Metadata.TryGetValue("CanMoveFiles", out var canMoveObj))
+                        {
+                            bool canMoveFiles = canMoveObj is bool b ? b : (canMoveObj is System.Text.Json.JsonElement je ? je.GetBoolean() : bool.TryParse(canMoveObj?.ToString(), out var parsed) && parsed);
+                            if (!canMoveFiles && string.Equals(configuredAction, "Move", StringComparison.OrdinalIgnoreCase))
+                            {
+                                action = "Copy";
+                                job.AddLogEntry("Torrent is still seeding (CanMoveFiles=false). Using Copy instead of Move to preserve seeder.");
+                                _logger.LogInformation("Download {DownloadId}: CanMoveFiles=false, downgrading Move to Copy to preserve active seeder", job.DownloadId);
+                            }
+                        }
+
                         job.AddLogEntry($"Performing {action} operation");
 
                         // Capture source size before operation for later verification (move will remove source)
