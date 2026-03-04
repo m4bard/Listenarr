@@ -5,42 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.56] - 2026-03-04
+## [0.2.56] - 2026-03-02
 
 ### Added
-- **Swagger endpoint documentation:** Added comprehensive XML doc comments (`<summary>`, `<param>`, `<remarks>`, `<response>`) to all ~133 API endpoints across 22 controllers for improved Swagger UI discoverability and developer experience.
-- **Swagger tag grouping and ordering:** Added `[Tags("...")]` attributes to all controllers with a custom `SwaggerTagOrderDocumentFilter` providing logical tag ordering and descriptions in the Swagger UI.
-- **Frontend regression coverage (Prowlarr import):** Added a unit test for the Settings → Indexers "Import from Prowlarr" modal validating that entering host in URL/IP and port in the dedicated Port field submits the expected API payload.
-- **Import lifecycle regression coverage:** Added focused `CompletedDownloadProcessor` unit tests covering:
-  - non-blocking retry behavior on first import failure (`ImportPending`, attempts incremented, no manual-interaction toast),
-  - threshold blocking behavior on third failure attempt (`ImportBlocked`, reason/messages persisted, manual-interaction toast + history event),
-  - blocked/manual-interaction flow for no-importable-files post-import guard.
-- **Reconciliation and adapter conformance coverage:** Added focused regression tests for queue rebind precedence, missing-queue retention, import-candidate eligibility, and adapter filtering behavior (Transmission, qBittorrent, SABnzbd, NZBGet).
-- **Import-path resolution coverage:** Added regression tests for single-file and multi-file import path resolution across Transmission, qBittorrent, SABnzbd, and NZBGet.
-- **Manual-interaction workflow coverage:** Added regression tests and API support for blocked-import signaling, block-reason visibility on single-download responses, and retry/unblock transition (`ImportBlocked -> ImportPending`) via `POST /api/v{version}/downloads/{id}/retry-import`.
-- **Recovery coverage:** Added regression tests for startup stuck-job reset behavior, duplicate requeue prevention during restart windows, and import-attempt counter persistence across processor restarts.
-- **API/UI status mapping coverage:** Added regression tests to lock status-surface consistency (`ImportPending` included in active/downloading mappings, `ImportBlocked` treated as failed/terminal) across backend downloads endpoints and frontend Activity/Wanted status buckets.
-
-### Changed
-- **API route casing normalization:** Replaced implicit `[controller]` route tokens with explicit lowercase route strings across all controllers for consistent URL casing.
-- **Prowlarr compatibility endpoints hidden from Swagger:** Added `[ApiExplorerSettings(IgnoreApi = true)]` to `ProwlarrCompatController` to hide internal compatibility endpoints from the public API documentation while keeping them functional.
-- **Explicit import lifecycle state handling:** Strengthened Sonarr-parity lifecycle behavior around `Completed -> ImportPending -> Moved/ImportBlocked` by formalizing retry-vs-block transition semantics and ensuring failure metadata (`ImportAttempts`, block reason/messages) is consistently persisted.
-- **Active/in-progress parity semantics:** Treated `ImportPending` as an in-progress state across queue/monitoring and status-derived views while preserving `ImportBlocked` as terminal/manual-interaction-required.
-- **qBittorrent item-surface parity:** Applied configured qBittorrent category filtering parameter to `GetItemsAsync` so queue and item surfaces use the same category constraint.
+- **Frontend regression coverage (Prowlarr import):** Added a unit test for the Settings → Indexers “Import from Prowlarr” modal validating that entering host in URL/IP and port in the dedicated Port field submits the expected API payload.
 
 ### Fixed
-- **Disabled download clients still contacted by background services:** Fixed multiple code paths where disabled download clients were still being contacted for import resolution, post-import cleanup, and deferred removals — causing persistent log spam and unnecessary network calls. Added `IsEnabled` guards in:
-  - `ImportItemResolutionService.ResolveImportItemAsync` — skips adapter calls for disabled clients
-  - `DownloadProcessingBackgroundService.EnqueueCompletedDownloadsAsync` — filters completed downloads by enabled client IDs before processing
-  - `DownloadMonitorService.FinalizeDownloadAsync` — re-checks client enabled status before finalization (handles mid-cycle disabling and scheduled retries)
-  - `CompletedDownloadProcessor.ProcessCompletedDownloadAsync` — skips `MarkItemAsImportedAsync` and `RemoveAsync` cleanup for disabled clients
-  - `CompletedDownloadHandlingService.ProcessDeferredRemovalsAsync` — skips deferred removal calls for disabled clients
-  - `DownloadService.RemoveFromQueueAsync` — skips client removal calls when target client is disabled (both explicit and record-fallback paths)
-  - `DownloadHashRetrievalService.TryRetrieveHashAsync` — defensive guard against future callers
-- **Prowlarr import URL/port handling:** Prowlarr import now reliably supports both input styles: `hostOrIp:port` directly in URL/IP field, or host/IP in URL/IP field with port in the dedicated Port field.
-- **Port input normalization and validation:** Hardened frontend/backend handling for port values by enforcing valid integer TCP port range checks (1–65535).
-- **Manual interaction signaling reliability:** Ensured blocked-import paths consistently emit manual-interaction UX signals (warning toast + `ImportBlocked` history entry) and record import-failure history details for auditability.
-
+- **Prowlarr import modal port-field behavior:** Fixed port parsing in the Import from Prowlarr flow so the dedicated Port field is reliably accepted and sent when provided separately from the URL/IP field.
+- **Port input normalization and validation:** Hardened frontend handling for port input values by normalizing input types before parsing and enforcing valid integer TCP port range checks (1–65535).
 
 ## [0.2.55] - 2026-03-01
 
