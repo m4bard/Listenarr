@@ -19,11 +19,6 @@ namespace Listenarr.Api.Extensions
             // Background worker to consume scan jobs and persist audiobook files
             services.AddHostedService<ScanBackgroundService>();
 
-            // Unmatched scan queue: enqueue root-folder scans to discover files not in the library
-            services.AddSingleton<IUnmatchedScanQueueService, UnmatchedScanQueueService>();
-            // Background worker to process unmatched scan jobs
-            services.AddHostedService<UnmatchedScanBackgroundService>();
-
             // Download processing channel (in-memory publish/subscribe to wake consumers)
             services.AddSingleton<DownloadProcessingChannel>();
             services.AddHostedService<DownloadProcessingChannelConsumer>();
@@ -60,6 +55,9 @@ namespace Listenarr.Api.Extensions
 
             // Register background service for download processing queue
             services.AddHostedService<DownloadProcessingBackgroundService>();
+
+            // Background worker that processes unmatched-file scan jobs
+            services.AddHostedService<UnmatchedScanBackgroundService>();
 
             return services;
         }
