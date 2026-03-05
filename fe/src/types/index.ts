@@ -253,6 +253,7 @@ export interface ApplicationSettings {
   enableCoverArtDownload: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
+  unmatchedScanConcurrency?: number
   pollingIntervalSeconds?: number
   // How many seconds a download must be observed as complete by the client before finalization begins
   downloadCompletionStabilitySeconds?: number

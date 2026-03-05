@@ -8,6 +8,10 @@
         <input :value="settings.maxConcurrentDownloads" @input="e => updateField('maxConcurrentDownloads', Number((e.target as HTMLInputElement).value || 1))" type="number" min="1" max="10" />
       </FormRow>
 
+      <FormRow label="Unmatched Scan Concurrency" help="Number of concurrent ffprobe processes during an unmatched scan (1-8). Lower values reduce NAS/disk pressure; higher values speed up large libraries.">
+        <input :value="settings.unmatchedScanConcurrency ?? 2" @input="e => updateField('unmatchedScanConcurrency', Number((e.target as HTMLInputElement).value || 2))" type="number" min="1" max="8" />
+      </FormRow>
+
       <FormRow label="Polling Interval (seconds)" help="How often to check download status (10-300 seconds)">
         <input :value="settings.pollingIntervalSeconds" @input="e => updateField('pollingIntervalSeconds', Number((e.target as HTMLInputElement).value || 10))" type="number" min="10" max="300" />
       </FormRow>
