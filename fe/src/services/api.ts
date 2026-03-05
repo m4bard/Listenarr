@@ -29,6 +29,7 @@ import type {
   AudiobookExternalIdentifier,
   AudiobookExternalIdentifierInput,
   UnmatchedFilesResponse,
+  SavedUnmatchedResponse,
 } from '@/types'
 import { getStartupConfigCached, getCachedStartupConfig, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -763,6 +764,10 @@ class ApiService {
 
   async getUnmatchedResults(jobId: string): Promise<UnmatchedFilesResponse> {
     return this.request<UnmatchedFilesResponse>(`/rootfolders/unmatched-results/${jobId}`)
+  }
+
+  async getSavedUnmatchedFiles(rootFolderId: number): Promise<SavedUnmatchedResponse> {
+    return this.request<SavedUnmatchedResponse>(`/rootfolders/${rootFolderId}/unmatched`)
   }
 
   // Discord integration helpers

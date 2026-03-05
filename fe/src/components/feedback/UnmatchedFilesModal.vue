@@ -1,28 +1,35 @@
 <template>
-  <Modal :visible="isOpen" size="xl" @close="close">
+  <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
       <ModalHeader
         title="Unmatched Files"
-        :icon="PhFolderSimpleMagnifyingGlass"
+        :icon="PhMagnifyingGlass"
         @close="close"
       />
     </template>
 
     <template #default>
       <ModalBody>
-        <!-- Phase 1: Scanning -->
+        <!-- Scanning in progress -->
         <div v-if="phase === 'scanning'" class="scan-status">
           <PhSpinner class="ph-spin scan-spinner" />
           <p>Scanning <strong>{{ rootFolderName }}</strong> for audio files not in your library…</p>
         </div>
 
-        <!-- Phase 1 error -->
+        <!-- Scan error -->
         <div v-else-if="phase === 'error'" class="scan-status error">
           <PhWarning class="error-icon" />
           <p>{{ errorMessage }}</p>
         </div>
 
-        <!-- Phase 2: Results -->
+        <!-- No scan yet -->
+        <div v-else-if="phase === 'empty'" class="empty-state">
+          <PhMagnifyingGlass class="empty-icon" />
+          <h4>No scan results yet</h4>
+          <p>Click <strong>Scan</strong> to search <strong>{{ rootFolderName }}</strong> for audio files not in your library.</p>
+        </div>
+
+        <!-- Results -->
         <div v-else-if="phase === 'results'">
           <div v-if="items.length === 0" class="empty-state">
             <PhCheckCircle class="empty-icon" />
@@ -33,6 +40,7 @@
           <div v-else>
             <p class="results-summary">
               Found <strong>{{ items.length }}</strong> folder{{ items.length !== 1 ? 's' : '' }} with audio files not in your library.
+              <span v-if="lastScannedAt" class="last-scanned">Last scanned {{ timeAgo(lastScannedAt) }}</span>
             </p>
 
             <div class="results-table-wrapper">
@@ -90,9 +98,41 @@
 
     <template #footer>
       <ModalFooter :showCancel="false">
-        <template #right>
-          <button class="btn" @click="close">Close</button>
+        <template #left>
+          <div v-if="phase === 'results' && rootFoldersStore.folders.length" class="destination-selector">
+            <span class="dest-label">{{ fileActionLabel }}:</span>
+            <select v-model="destinationFolderId" class="dest-select" :disabled="bulkAdding">
+              <option v-for="f in rootFoldersStore.folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+            </select>
+          </div>
+          <div v-if="phase === 'results' && asinCount > 0 && !bulkAdding" class="bulk-hint">
+            {{ asinCount }} item{{ asinCount !== 1 ? 's' : '' }} with ASIN
+          </div>
+          <div v-if="bulkAdding" class="bulk-progress">
+            <PhSpinner class="ph-spin" />
+            Adding {{ bulkDone }} / {{ bulkTotal }}…
+          </div>
         </template>
+        <button
+          v-if="phase === 'results' && asinCount > 0"
+          class="btn btn-primary"
+          :disabled="bulkAdding"
+          @click="addAllWithAsin"
+          title="Search Audimeta for every item with an ASIN and add matches automatically"
+        >
+          <PhRocketLaunch />
+          Add All (ASIN match)
+        </button>
+        <button
+          class="btn btn-secondary"
+          :disabled="phase === 'scanning' || bulkAdding"
+          @click="startScan"
+          title="Scan for unmatched files"
+        >
+          <PhArrowsClockwise />
+          Scan
+        </button>
+        <button class="btn" @click="close" :disabled="bulkAdding">Close</button>
       </ModalFooter>
     </template>
   </Modal>
@@ -115,15 +155,19 @@ import ModalBody from '@/components/feedback/ModalBody.vue'
 import ModalFooter from '@/components/feedback/ModalFooter.vue'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import {
-  PhFolderSimpleMagnifyingGlass,
+  PhMagnifyingGlass,
   PhSpinner,
   PhWarning,
   PhCheckCircle,
   PhX,
+  PhRocketLaunch,
+  PhArrowsClockwise,
 } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { useToast } from '@/services/toastService'
+import { useRootFoldersStore } from '@/stores/rootFolders'
+import { useConfigurationStore } from '@/stores/configuration'
 import type { UnmatchedFileItem, AudibleBookMetadata, Audiobook, RootFolder } from '@/types'
 
 interface Props {
@@ -140,58 +184,129 @@ const emit = defineEmits<Emits>()
 
 const toast = useToast()
 
-type Phase = 'scanning' | 'results' | 'error'
+type Phase = 'empty' | 'scanning' | 'results' | 'error'
 
-const phase = ref<Phase>('scanning')
+const phase = ref<Phase>('empty')
 const items = ref<UnmatchedFileItem[]>([])
 const errorMessage = ref('')
+const lastScannedAt = ref<string | null>(null)
 const addingItem = ref<UnmatchedFileItem | null>(null)
+const bulkAdding = ref(false)
+const bulkDone = ref(0)
+const bulkTotal = ref(0)
 
+const asinCount = computed(() => items.value.filter((i) => i.asin).length)
 const rootFolderName = computed(() => props.rootFolder?.name || props.rootFolder?.path || 'folder')
+
+const rootFoldersStore = useRootFoldersStore()
+const configStore = useConfigurationStore()
+
+const destinationFolderId = ref<number | null>(null)
+
+// Pre-select the default root folder once folders are available
+watch(
+  () => rootFoldersStore.folders,
+  (folders) => {
+    if (destinationFolderId.value === null && folders.length) {
+      const target = folders.find((f) => f.isDefault) ?? folders[0]
+      if (target) destinationFolderId.value = target.id
+    }
+  },
+  { immediate: true },
+)
+
+const destinationFolder = computed(
+  () => rootFoldersStore.folders.find((f) => f.id === destinationFolderId.value) ?? null,
+)
+
+const fileAction = computed(() => configStore.applicationSettings?.completedFileAction ?? 'Move')
+const fileActionLabel = computed(() => (fileAction.value === 'Hardlink/Copy' ? 'Copy to' : 'Move to'))
+const fileInputMode = computed<'move' | 'hardlink/copy'>(() =>
+  fileAction.value === 'Hardlink/Copy' ? 'hardlink/copy' : 'move',
+)
 
 let jobId = ''
 let offSignalR: (() => void) | null = null
 
+// On open: load cached results — no auto-scan
 watch(
   () => props.isOpen,
   async (open) => {
     if (!open) return
     if (!props.rootFolder?.id) return
 
-    phase.value = 'scanning'
-    items.value = []
-    errorMessage.value = ''
-    jobId = ''
-
-    // Subscribe to SignalR before triggering the scan
-    offSignalR = signalRService.onUnmatchedScanComplete(async (payload) => {
-      if (payload.jobId !== jobId) return
-      if (payload.error) {
-        phase.value = 'error'
-        errorMessage.value = payload.error
-        return
-      }
-      try {
-        const response = await apiService.getUnmatchedResults(payload.jobId)
-        items.value = response.items
-        phase.value = 'results'
-      } catch (e) {
-        phase.value = 'error'
-        errorMessage.value = (e as Error)?.message || 'Failed to fetch results'
-      }
-    })
+    // Ensure stores are populated (may not be loaded yet if opened from a cold page)
+    if (!configStore.applicationSettings) await configStore.loadApplicationSettings()
+    if (!rootFoldersStore.folders.length) await rootFoldersStore.load()
 
     try {
-      const result = await apiService.scanUnmatchedFiles(props.rootFolder.id)
-      jobId = result.jobId
-    } catch (e) {
-      phase.value = 'error'
-      errorMessage.value = (e as Error)?.message || 'Failed to start scan'
-      offSignalR?.()
-      offSignalR = null
+      const saved = await apiService.getSavedUnmatchedFiles(props.rootFolder.id)
+      if (saved.items.length > 0) {
+        items.value = saved.items
+        lastScannedAt.value = saved.lastScannedAt ?? null
+        phase.value = 'results'
+      } else {
+        items.value = []
+        lastScannedAt.value = null
+        phase.value = 'empty'
+      }
+    } catch {
+      items.value = []
+      phase.value = 'empty'
     }
   },
 )
+
+// Explicit scan button handler
+async function startScan() {
+  if (!props.rootFolder?.id) return
+
+  phase.value = 'scanning'
+  items.value = []
+  errorMessage.value = ''
+  jobId = ''
+
+  // Subscribe to SignalR before triggering the scan
+  offSignalR?.()
+  offSignalR = signalRService.onUnmatchedScanComplete(async (payload) => {
+    if (payload.jobId !== jobId) return
+    if (payload.error) {
+      phase.value = 'error'
+      errorMessage.value = payload.error
+      return
+    }
+    try {
+      const response = await apiService.getUnmatchedResults(payload.jobId)
+      items.value = response.items
+      lastScannedAt.value = new Date().toISOString()
+      phase.value = 'results'
+    } catch (e) {
+      phase.value = 'error'
+      errorMessage.value = (e as Error)?.message || 'Failed to fetch results'
+    }
+  })
+
+  try {
+    const result = await apiService.scanUnmatchedFiles(props.rootFolder.id)
+    jobId = result.jobId
+    // Poll once immediately — handles fast scans that complete before SignalR fires
+    const check = await apiService.getUnmatchedResults(jobId)
+    if (check.status === 'Completed') {
+      items.value = check.items
+      lastScannedAt.value = new Date().toISOString()
+      phase.value = 'results'
+    } else if (check.status === 'Failed') {
+      phase.value = 'error'
+      errorMessage.value = check.error || 'Scan failed'
+    }
+    // Otherwise SignalR will deliver the completion event
+  } catch (e) {
+    phase.value = 'error'
+    errorMessage.value = (e as Error)?.message || 'Failed to start scan'
+    offSignalR?.()
+    offSignalR = null
+  }
+}
 
 onUnmounted(() => {
   offSignalR?.()
@@ -201,6 +316,16 @@ function close() {
   offSignalR?.()
   offSignalR = null
   emit('close')
+}
+
+function timeAgo(isoString: string): string {
+  const diff = Date.now() - new Date(isoString).getTime()
+  const minutes = Math.floor(diff / 60000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes}m ago`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h ago`
+  return `${Math.floor(hours / 24)}d ago`
 }
 
 // Build a minimal AudibleBookMetadata from path-parsed data to pre-fill AddLibraryModal
@@ -233,7 +358,7 @@ async function onAdded(audiobook: Audiobook) {
     await apiService.startManualImport({
       path: item.bookFolder,
       mode: 'interactive',
-      inputMode: 'move',
+      inputMode: fileInputMode.value,
       items: [
         {
           fullPath: item.fullPath,
@@ -252,6 +377,107 @@ async function onAdded(audiobook: Audiobook) {
 
 function ignore(item: UnmatchedFileItem) {
   items.value = items.value.filter((i) => i.fullPath !== item.fullPath)
+}
+
+// Minimal Audimeta response shape — only what we need for adding
+interface AudimetaPayload {
+  asin?: string
+  title?: string
+  subtitle?: string
+  publishDate?: string
+  releaseDate?: string
+  authors?: { name?: string }[]
+  narrators?: { name?: string }[]
+  series?: { title?: string; part?: string }[]
+  description?: string
+  imageUrl?: string
+  lengthMinutes?: number
+  language?: string
+  genres?: { name?: string }[]
+}
+
+function mapToAudible(meta: AudimetaPayload, fallback: UnmatchedFileItem): AudibleBookMetadata {
+  const year = (meta.publishDate || meta.releaseDate || '').split(/[-/]/)[0] || fallback.year
+  const firstSeries = meta.series?.[0]
+  return {
+    asin: meta.asin || fallback.asin || '',
+    title: meta.title || fallback.title || '',
+    subtitle: meta.subtitle,
+    authors: (meta.authors || []).map((a) => a?.name).filter(Boolean) as string[],
+    narrators: (meta.narrators || []).map((n) => n?.name).filter(Boolean) as string[],
+    series: firstSeries?.title || fallback.series,
+    seriesNumber: firstSeries?.part || fallback.seriesNumber,
+    publishYear: year || undefined,
+    description: meta.description || fallback.description,
+    imageUrl: meta.imageUrl,
+    runtime: typeof meta.lengthMinutes === 'number' ? meta.lengthMinutes * 60 : undefined,
+    language: meta.language,
+    genres: (meta.genres || []).map((g) => g?.name).filter(Boolean) as string[],
+  }
+}
+
+async function addAllWithAsin() {
+  const candidates = items.value.filter((i) => i.asin)
+  if (!candidates.length) return
+
+  bulkAdding.value = true
+  bulkDone.value = 0
+  bulkTotal.value = candidates.length
+  let added = 0
+  let skipped = 0
+
+  for (const item of candidates) {
+    try {
+      // Fetch Audimeta metadata for this ASIN
+      const resp = await apiService.getAudibleMetadata<
+        { source?: string; metadata?: AudimetaPayload } | AudimetaPayload
+      >(item.asin!)
+
+      // Unwrap response — may be { source, metadata } or direct Audimeta payload
+      const raw =
+        resp && 'metadata' in resp && resp.metadata ? resp.metadata : (resp as AudimetaPayload)
+
+      if (!raw?.title) {
+        // No metamatch — skip, leave in table
+        skipped++
+        bulkDone.value++
+        continue
+      }
+
+      const metadata = mapToAudible(raw, item)
+      const { audiobook } = await apiService.addToLibrary(metadata, {
+        destinationPath: destinationFolder.value?.path,
+      })
+
+      try {
+        const importResult = await apiService.startManualImport({
+          path: item.bookFolder,
+          mode: 'interactive',
+          inputMode: fileInputMode.value,
+          items: [{ fullPath: item.fullPath, matchedAudiobookId: audiobook.id }],
+        })
+        if (importResult && importResult.importedCount === 0) {
+          toast.warning('File not linked', `${item.title || 'Book'} was added but the file could not be moved — check the library path`)
+        }
+      } catch {
+        toast.warning('File not linked', `${item.title || 'Book'} was added but the file could not be moved`)
+      }
+
+      items.value = items.value.filter((i) => i.fullPath !== item.fullPath)
+      added++
+    } catch {
+      skipped++
+    }
+    bulkDone.value++
+  }
+
+  bulkAdding.value = false
+
+  if (added > 0) {
+    toast.success('Bulk add complete', `Added ${added} book${added !== 1 ? 's' : ''}${skipped > 0 ? `, ${skipped} skipped (no match)` : ''}`)
+  } else {
+    toast.info('No matches found', 'No Audimeta records found for the ASINs in this scan')
+  }
 }
 </script>
 
@@ -306,6 +532,12 @@ function ignore(item: UnmatchedFileItem) {
   margin: 0 0 1rem;
   color: #adb5bd;
   font-size: 0.95rem;
+}
+
+.last-scanned {
+  margin-left: 0.5rem;
+  color: #868e96;
+  font-size: 0.85rem;
 }
 
 .results-table-wrapper {
@@ -376,5 +608,45 @@ function ignore(item: UnmatchedFileItem) {
 .btn-sm {
   padding: 0.25rem 0.6rem;
   font-size: 0.85rem;
+}
+
+.bulk-hint {
+  font-size: 0.85rem;
+  color: #868e96;
+}
+
+.bulk-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: #4dabf7;
+}
+
+.destination-selector {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.85rem;
+}
+
+.dest-label {
+  color: #adb5bd;
+  white-space: nowrap;
+}
+
+.dest-select {
+  background: #2a2a2a;
+  border: 1px solid #444;
+  border-radius: 4px;
+  color: #fff;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.5rem;
+  cursor: pointer;
+}
+
+.dest-select:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 </style>

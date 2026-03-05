@@ -27,6 +27,7 @@ namespace Listenarr.Api.Services
         public Guid Id { get; set; } = Guid.NewGuid();
         public string RootFolderPath { get; set; } = string.Empty;
         public DateTime EnqueuedAt { get; set; } = DateTime.UtcNow;
+        public DateTime? CompletedAt { get; set; }
         public string Status { get; set; } = "Queued";
         public string? Error { get; set; }
         public List<UnmatchedFileResult>? Results { get; set; }
@@ -37,12 +38,14 @@ namespace Listenarr.Api.Services
         Task<Guid> EnqueueAsync(string rootFolderPath);
         bool TryGetJob(Guid id, out UnmatchedScanJob? job);
         void UpdateJob(Guid id, string status, List<UnmatchedFileResult>? results = null, string? error = null);
+        bool TryGetLastJobForPath(string rootFolderPath, out UnmatchedScanJob? job);
         ChannelReader<UnmatchedScanJob> Reader { get; }
     }
 
     public class UnmatchedScanQueueService : IUnmatchedScanQueueService
     {
         private readonly ConcurrentDictionary<Guid, UnmatchedScanJob> _jobs = new();
+        private readonly ConcurrentDictionary<string, Guid> _lastJobByPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly Channel<UnmatchedScanJob> _channel = Channel.CreateUnbounded<UnmatchedScanJob>();
         private readonly ILogger<UnmatchedScanQueueService> _logger;
 
@@ -81,7 +84,19 @@ namespace Listenarr.Api.Services
             job.Status = status;
             job.Error = error;
             if (results != null) job.Results = results;
+            if (status == "Completed")
+            {
+                job.CompletedAt = DateTime.UtcNow;
+                _lastJobByPath[job.RootFolderPath] = id;
+            }
             _jobs[id] = job;
+        }
+
+        public bool TryGetLastJobForPath(string rootFolderPath, out UnmatchedScanJob? job)
+        {
+            job = null;
+            if (!_lastJobByPath.TryGetValue(rootFolderPath, out var jobId)) return false;
+            return _jobs.TryGetValue(jobId, out job);
         }
     }
 }

@@ -799,3 +799,8 @@ export interface UnmatchedFilesResponse {
   error?: string
   items: UnmatchedFileItem[]
 }
+
+export interface SavedUnmatchedResponse {
+  lastScannedAt?: string
+  items: UnmatchedFileItem[]
+}

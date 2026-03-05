@@ -19,6 +19,7 @@ namespace Listenarr.Api.Tests
             public Task<Guid> EnqueueAsync(string rootFolderPath) => Task.FromResult(Guid.NewGuid());
             public bool TryGetJob(Guid id, out UnmatchedScanJob? job) { job = null; return false; }
             public void UpdateJob(Guid id, string status, List<UnmatchedFileResult>? results = null, string? error = null) { }
+            public bool TryGetLastJobForPath(string rootFolderPath, out UnmatchedScanJob? job) { job = null; return false; }
         }
 
         private static readonly IUnmatchedScanQueueService _fakeQueue = new FakeUnmatchedQueue();

@@ -130,5 +130,27 @@ namespace Listenarr.Api.Controllers
                 items = job.Results ?? new List<UnmatchedFileResult>()
             });
         }
+
+        /// <summary>
+        /// Returns the cached results from the last completed unmatched scan for a root folder.
+        /// Returns an empty list if no scan has been run yet this session.
+        /// </summary>
+        [HttpGet("{id}/unmatched")]
+        public async Task<IActionResult> GetSavedUnmatched(int id)
+        {
+            var folder = await _service.GetByIdAsync(id);
+            if (folder == null) return NotFound(new { message = "Root folder not found" });
+
+            if (_unmatchedQueue.TryGetLastJobForPath(folder.Path, out var job) && job != null)
+            {
+                return Ok(new
+                {
+                    lastScannedAt = job.CompletedAt,
+                    items = job.Results ?? new List<UnmatchedFileResult>()
+                });
+            }
+
+            return Ok(new { lastScannedAt = (DateTime?)null, items = new List<UnmatchedFileResult>() });
+        }
     }
 }
