@@ -75,14 +75,21 @@ namespace Listenarr.Api.Services
             var appSettings = await configService.GetApplicationSettingsAsync();
             var concurrency = Math.Clamp(appSettings?.UnmatchedScanConcurrency ?? 2, 1, 8);
 
-            // Load all tracked file paths (normalized) from DB
-            var trackedPaths = await db.AudiobookFiles
+            // Load all tracked file paths (normalized) from DB.
+            // Check BOTH AudiobookFiles (multi-file imports) AND Audiobook.FilePath (single-file imports)
+            // so that files already in the library are not reported as unmatched.
+            var trackedFromFiles = await db.AudiobookFiles
                 .Where(f => f.Path != null)
                 .Select(f => f.Path!)
                 .ToListAsync(ct);
 
+            var trackedFromAudiobooks = await db.Audiobooks
+                .Where(a => a.FilePath != null)
+                .Select(a => a.FilePath!)
+                .ToListAsync(ct);
+
             var trackedNormalized = new HashSet<string>(
-                trackedPaths.Select(NormalizePath),
+                trackedFromFiles.Concat(trackedFromAudiobooks).Select(NormalizePath),
                 StringComparer.OrdinalIgnoreCase);
 
             // Walk the root folder tree
