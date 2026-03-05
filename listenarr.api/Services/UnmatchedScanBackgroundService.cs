@@ -15,17 +15,20 @@ namespace Listenarr.Api.Services
         private readonly IServiceScopeFactory _scopeFactory;
         private readonly ILogger<UnmatchedScanBackgroundService> _logger;
         private readonly IHubContext<SettingsHub> _hubContext;
+        private readonly IFfmpegService _ffmpegService;
 
         public UnmatchedScanBackgroundService(
             IUnmatchedScanQueueService queue,
             IServiceScopeFactory scopeFactory,
             ILogger<UnmatchedScanBackgroundService> logger,
-            IHubContext<SettingsHub> hubContext)
+            IHubContext<SettingsHub> hubContext,
+            IFfmpegService ffmpegService)
         {
             _queue = queue;
             _scopeFactory = scopeFactory;
             _logger = logger;
             _hubContext = hubContext;
+            _ffmpegService = ffmpegService;
         }
 
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -90,14 +93,39 @@ namespace Listenarr.Api.Services
             // Group by parent folder (each folder = one audiobook)
             var grouped = unmatched.GroupBy(f => Path.GetDirectoryName(f) ?? rootFolderPath);
 
-            var results = new List<UnmatchedFileResult>();
-            foreach (var group in grouped)
+            // Resolve ffprobe path once for the whole scan (null = not available)
+            var ffprobePath = await _ffmpegService.GetFfprobePathAsync();
+
+            var groupList = grouped.ToList();
+            var results = new List<UnmatchedFileResult>(groupList.Count);
+
+            // Run ffprobe in parallel (up to 4 concurrent) to read embedded tags
+            var semaphore = new SemaphoreSlim(4);
+            var tasks = groupList.Select(async group =>
             {
                 var files = group.ToList();
                 var representative = files.OrderBy(f => f).First();
                 var parsed = PathMetadataParser.Parse(representative, rootFolderPath);
 
-                // Relative path from root (use book folder)
+                if (!string.IsNullOrEmpty(ffprobePath))
+                {
+                    await semaphore.WaitAsync(ct);
+                    try
+                    {
+                        var tags = await PathMetadataParser.ReadEmbeddedTagsAsync(representative, ffprobePath, ct);
+                        // Prefer embedded tags over path-parsed values
+                        if (!string.IsNullOrEmpty(tags.Title))       parsed.Title = tags.Title;
+                        if (!string.IsNullOrEmpty(tags.Author))      parsed.Author = tags.Author;
+                        if (!string.IsNullOrEmpty(tags.Narrator))    parsed.Narrator = tags.Narrator;
+                        if (!string.IsNullOrEmpty(tags.Series))      parsed.Series = tags.Series;
+                        if (!string.IsNullOrEmpty(tags.SeriesNumber)) parsed.SeriesNumber = tags.SeriesNumber;
+                        if (!string.IsNullOrEmpty(tags.Year))        parsed.Year = tags.Year;
+                        if (!string.IsNullOrEmpty(tags.Description)) parsed.Description = tags.Description;
+                        if (!string.IsNullOrEmpty(tags.Asin))        parsed.Asin = tags.Asin;
+                    }
+                    finally { semaphore.Release(); }
+                }
+
                 var bookFolder = group.Key;
                 var relativeFolder = bookFolder.Length > rootFolderPath.Length
                     ? bookFolder[(rootFolderPath.Length)..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
@@ -108,7 +136,7 @@ namespace Listenarr.Api.Services
                     try { return new FileInfo(f).Length; } catch { return 0L; }
                 });
 
-                results.Add(new UnmatchedFileResult
+                return new UnmatchedFileResult
                 {
                     FullPath = representative,
                     RelativePath = relativeFolder,
@@ -123,9 +151,12 @@ namespace Listenarr.Api.Services
                     Narrator = parsed.Narrator,
                     Description = parsed.Description,
                     CoverPath = parsed.CoverPath,
+                    Asin = parsed.Asin,
                     Format = Path.GetExtension(representative).TrimStart('.').ToUpperInvariant()
-                });
-            }
+                };
+            });
+
+            results.AddRange(await Task.WhenAll(tasks));
 
             return results.OrderBy(r => r.Author).ThenBy(r => r.Series).ThenBy(r => r.Title).ToList();
         }

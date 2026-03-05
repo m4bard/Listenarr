@@ -18,6 +18,7 @@ namespace Listenarr.Api.Services
         public string? Narrator { get; set; }
         public string? Description { get; set; }
         public string? CoverPath { get; set; }
+        public string? Asin { get; set; }
         public string Format { get; set; } = string.Empty;
     }
 
