@@ -12,6 +12,17 @@ namespace Listenarr.Api.Tests
 {
     public class RootFoldersControllerTests
     {
+        private class FakeUnmatchedQueue : IUnmatchedScanQueueService
+        {
+            public System.Threading.Channels.ChannelReader<UnmatchedScanJob> Reader =>
+                System.Threading.Channels.Channel.CreateUnbounded<UnmatchedScanJob>().Reader;
+            public Task<Guid> EnqueueAsync(string rootFolderPath) => Task.FromResult(Guid.NewGuid());
+            public bool TryGetJob(Guid id, out UnmatchedScanJob? job) { job = null; return false; }
+            public void UpdateJob(Guid id, string status, List<UnmatchedFileResult>? results = null, string? error = null) { }
+        }
+
+        private static readonly IUnmatchedScanQueueService _fakeQueue = new FakeUnmatchedQueue();
+
         private class FakeService : IRootFolderService
         {
             public List<RootFolder> Store { get; } = new List<RootFolder>();
@@ -69,7 +80,7 @@ namespace Listenarr.Api.Tests
                 new RootFolder { Id = 2, Name = "Root2", Path = "D:/root2" }
             });
 
-            var controller = new RootFoldersController(svc);
+            var controller = new RootFoldersController(svc, _fakeQueue);
 
             var res = await controller.GetAll();
             var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(res);
@@ -81,7 +92,7 @@ namespace Listenarr.Api.Tests
         public async Task Get_NotFound_Returns404()
         {
             var svc = new FakeService();
-            var controller = new RootFoldersController(svc);
+            var controller = new RootFoldersController(svc, _fakeQueue);
 
             var res = await controller.Get(123);
             var notFound = Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(res);
@@ -93,7 +104,7 @@ namespace Listenarr.Api.Tests
         {
             var svc = new FakeService();
             svc.Store.Add(new RootFolder { Id = 1, Name = "R1", Path = "C:/dup" });
-            var controller = new RootFoldersController(svc);
+            var controller = new RootFoldersController(svc, _fakeQueue);
 
             var req = new RootFolder { Name = "New", Path = "C:/dup" };
             var res = await controller.Create(req);
@@ -106,7 +117,7 @@ namespace Listenarr.Api.Tests
         public async Task Update_IdMismatch_ReturnsBadRequest()
         {
             var svc = new FakeService();
-            var controller = new RootFoldersController(svc);
+            var controller = new RootFoldersController(svc, _fakeQueue);
 
             var req = new RootFolder { Id = 2, Name = "R", Path = "C:/p" };
             var res = await controller.Update(1, req);
@@ -119,7 +130,7 @@ namespace Listenarr.Api.Tests
         public async Task Update_NotFound_ReturnsNotFound()
         {
             var svc = new FakeService();
-            var controller = new RootFoldersController(svc);
+            var controller = new RootFoldersController(svc, _fakeQueue);
 
             var req = new RootFolder { Id = 99, Name = "R", Path = "C:/p" };
             var res = await controller.Update(99, req);
@@ -133,7 +144,7 @@ namespace Listenarr.Api.Tests
         {
             var svc = new FakeService();
             svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = "C:/inuse" });
-            var controller = new RootFoldersController(svc);
+            var controller = new RootFoldersController(svc, _fakeQueue);
 
             var res = await controller.Delete(1, null);
             var bad = Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(res);
@@ -146,7 +157,7 @@ namespace Listenarr.Api.Tests
             var svc = new FakeService();
             svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = "C:/inuse" });
             svc.Store.Add(new RootFolder { Id = 2, Name = "R2", Path = "D:/r" });
-            var controller = new RootFoldersController(svc);
+            var controller = new RootFoldersController(svc, _fakeQueue);
 
             var res = await controller.Delete(1, 2);
             var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(res);
