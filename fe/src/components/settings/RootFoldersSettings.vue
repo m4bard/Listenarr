@@ -40,6 +40,14 @@
               </div>
               <div class="folder-actions">
                 <button
+                  class="icon-button action-scan"
+                  @click="scanUnmatched(folder)"
+                  title="Scan for unmatched files"
+                  data-cy="scan-unmatched"
+                >
+                  <PhMagnifyingGlass />
+                </button>
+                <button
                   class="icon-button action-edit"
                   @click="edit(folder)"
                   title="Edit"
@@ -81,6 +89,12 @@
       @saved="onSaved"
     />
 
+    <UnmatchedFilesModal
+      :is-open="showUnmatchedModal"
+      :root-folder="scanningFolder"
+      @close="showUnmatchedModal = false"
+    />
+
     <!-- Delete Root Folder Confirmation (shared) -->
     <DeleteConfirmationModal :visible="!!folderToDelete" title="Delete Root Folder" @close="folderToDelete = null" @confirm="executeDeleteFolder">
       <template v-slot>
@@ -99,6 +113,7 @@ import { ref, onMounted } from 'vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import RootFolderFormModal from '@/components/settings/RootFolderFormModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
+import UnmatchedFilesModal from '@/components/feedback/UnmatchedFilesModal.vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import { Pill } from '@/components/base'
@@ -109,6 +124,7 @@ import {
   PhSpinner,
   PhFolderOpen,
   PhStar,
+  PhMagnifyingGlass,
 } from '@phosphor-icons/vue'
 import type { RootFolder } from '@/types'
 
@@ -123,6 +139,8 @@ const props = withDefaults(defineProps<Props>(), {
 const store = useRootFoldersStore()
 const showForm = ref(false)
 const editing = ref<{ id?: number; name: string; path: string } | null>(null)
+const showUnmatchedModal = ref(false)
+const scanningFolder = ref<RootFolder | null>(null)
 import { computed } from 'vue'
 const editingRoot = computed(() => editing.value as RootFolder | undefined)
 const toast = useToast()
@@ -134,6 +152,11 @@ onMounted(async () => {
 function openAdd() {
   editing.value = null
   showForm.value = true
+}
+
+function scanUnmatched(folder: RootFolder) {
+  scanningFolder.value = folder
+  showUnmatchedModal.value = true
 }
 
 function edit(r: { id?: number; name: string; path: string }) {
@@ -377,10 +400,11 @@ defineExpose({
   margin-left: 1rem;
 }
 
-/* Override global action ordering for folder cards so Edit sits next to Delete */
-.folder-actions .action-secondary { order: 1 }
-.folder-actions .action-edit { order: 2 }
-.folder-actions .action-delete { order: 3 }
+/* Override global action ordering for folder cards */
+.folder-actions .action-scan { order: 1 }
+.folder-actions .action-secondary { order: 2 }
+.folder-actions .action-edit { order: 3 }
+.folder-actions .action-delete { order: 4 }
 
 /* Use shared .icon-button in src/assets/buttons.css to avoid duplication */
 

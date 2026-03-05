@@ -770,3 +770,31 @@ export interface SearchResponse {
   metadataResults: MetadataSearchResult[]
   totalCount: number
 }
+
+// Unmatched file scan types
+
+export interface UnmatchedFileItem {
+  fullPath: string
+  relativePath: string
+  bookFolder: string
+  size: number
+  fileCount: number
+  title?: string
+  author?: string
+  series?: string
+  seriesNumber?: string
+  year?: string
+  narrator?: string
+  description?: string
+  coverPath?: string
+  asin?: string
+  format: string
+  duration?: string
+}
+
+export interface UnmatchedFilesResponse {
+  jobId: string
+  status: 'Queued' | 'Processing' | 'Completed' | 'Failed'
+  error?: string
+  items: UnmatchedFileItem[]
+}

@@ -206,6 +206,9 @@ class SignalRService {
     }) => void
   > = new Set()
   private indexersUpdatedCallbacks: Set<(payload?: { created?: number; skipped?: number }) => void> = new Set()
+  private unmatchedScanCompleteCallbacks: Set<
+    (payload: { jobId: string; count: number; error?: string }) => void
+  > = new Set()
   private pingInterval: number | null = null
   private visibilityListener: (() => void) | null = null
   // Connection state listeners (for UI to subscribe to connect/disconnect events)
@@ -508,6 +511,13 @@ class SignalRService {
         } else {
           if (import.meta.env.DEV) console.info('[SignalR] IndexersUpdated (no payload)')
           this.indexersUpdatedCallbacks.forEach((cb) => cb())
+        }
+        break
+
+      case 'UnmatchedScanComplete':
+        if (args && args[0]) {
+          const payload = args[0] as { jobId: string; count: number; error?: string }
+          this.unmatchedScanCompleteCallbacks.forEach((cb) => cb(payload))
         }
         break
     }
@@ -819,6 +829,16 @@ class SignalRService {
     this.indexersUpdatedCallbacks.add(callback)
     return () => {
       this.indexersUpdatedCallbacks.delete(callback)
+    }
+  }
+
+  // Subscribe to unmatched scan completion notifications
+  onUnmatchedScanComplete(
+    callback: (payload: { jobId: string; count: number; error?: string }) => void,
+  ): () => void {
+    this.unmatchedScanCompleteCallbacks.add(callback)
+    return () => {
+      this.unmatchedScanCompleteCallbacks.delete(callback)
     }
   }
 

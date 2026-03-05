@@ -28,6 +28,7 @@ import type {
   QualityScore,
   AudiobookExternalIdentifier,
   AudiobookExternalIdentifierInput,
+  UnmatchedFilesResponse,
 } from '@/types'
 import { getStartupConfigCached, getCachedStartupConfig, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -752,6 +753,16 @@ class ApiService {
   async deleteRootFolder(id: number, reassignTo?: number): Promise<{ message?: string }> {
     const qs = reassignTo ? `?reassignTo=${reassignTo}` : ''
     return this.request<{ message?: string }>(`/rootfolders/${id}${qs}`, { method: 'DELETE' })
+  }
+
+  async scanUnmatchedFiles(rootFolderId: number): Promise<{ jobId: string }> {
+    return this.request<{ jobId: string }>(`/rootfolders/${rootFolderId}/scan-unmatched`, {
+      method: 'POST',
+    })
+  }
+
+  async getUnmatchedResults(jobId: string): Promise<UnmatchedFilesResponse> {
+    return this.request<UnmatchedFilesResponse>(`/rootfolders/unmatched-results/${jobId}`)
   }
 
   // Discord integration helpers

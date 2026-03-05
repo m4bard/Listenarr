@@ -12,10 +12,12 @@ namespace Listenarr.Api.Controllers
     public class RootFoldersController : ControllerBase
     {
         private readonly IRootFolderService _service;
+        private readonly IUnmatchedScanQueueService _unmatchedQueue;
 
-        public RootFoldersController(IRootFolderService service)
+        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue)
         {
             _service = service;
+            _unmatchedQueue = unmatchedQueue;
         }
 
         [HttpGet]
@@ -95,6 +97,38 @@ namespace Listenarr.Api.Controllers
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 return StatusCode(500, new { message = "Failed to delete root folder", error = ex.Message });
             }
+        }
+
+        /// <summary>
+        /// Enqueues a background scan of a root folder to find audio files not in the library.
+        /// Returns a jobId; subscribe to SignalR "UnmatchedScanComplete" for completion notification.
+        /// </summary>
+        [HttpPost("{id}/scan-unmatched")]
+        public async Task<IActionResult> ScanUnmatched(int id)
+        {
+            var folder = await _service.GetByIdAsync(id);
+            if (folder == null) return NotFound(new { message = "Root folder not found" });
+
+            var jobId = await _unmatchedQueue.EnqueueAsync(folder.Path);
+            return Ok(new { jobId = jobId.ToString() });
+        }
+
+        /// <summary>
+        /// Returns the status and results of a previously enqueued unmatched scan job.
+        /// </summary>
+        [HttpGet("unmatched-results/{jobId}")]
+        public IActionResult GetUnmatchedResults(Guid jobId)
+        {
+            if (!_unmatchedQueue.TryGetJob(jobId, out var job) || job == null)
+                return NotFound(new { message = "Scan job not found" });
+
+            return Ok(new
+            {
+                jobId = job.Id.ToString(),
+                status = job.Status,
+                error = job.Error,
+                items = job.Results ?? new List<UnmatchedFileResult>()
+            });
         }
     }
 }
