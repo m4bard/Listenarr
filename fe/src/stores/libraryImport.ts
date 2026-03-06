@@ -330,6 +330,34 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
   // ─── Import ───────────────────────────────────────────────────────────────
 
+  // Enrich metadata with full Audimeta data before adding to library.
+  // Search results often have authors: [{ asin, name: undefined }] — the full
+  // metadata fetch is the only way to get real author/narrator names.
+  async function _enrichMetadata(match: SearchResult): Promise<AudibleBookMetadata> {
+    const base = matchToMetadata(match)
+    if (!match.asin) return base
+    try {
+      type AudimetaPayload = {
+        authors?: { name?: string }[]
+        narrators?: { name?: string }[]
+      }
+      const resp = await apiService.getAudibleMetadata<
+        { source?: string; metadata?: AudimetaPayload } | AudimetaPayload
+      >(match.asin)
+      const raw: AudimetaPayload =
+        resp && 'metadata' in resp && resp.metadata ? resp.metadata : (resp as AudimetaPayload)
+      const enrichedAuthors = (raw.authors ?? []).map((a) => a?.name ?? '').filter(Boolean)
+      const enrichedNarrators = (raw.narrators ?? []).map((n) => n?.name ?? '').filter(Boolean)
+      return {
+        ...base,
+        ...(enrichedAuthors.length > 0 ? { authors: enrichedAuthors } : {}),
+        ...(enrichedNarrators.length > 0 ? { narrators: enrichedNarrators } : {}),
+      }
+    } catch {
+      return base
+    }
+  }
+
   async function importSelected(rootFolderPath: string): Promise<{ imported: number; errors: string[] }> {
     const toImport = itemList.value.filter((i) => i.selected && i.selectedMatch)
     importErrors.value = []
@@ -340,7 +368,8 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       try {
         let audiobookId: number
         try {
-          const { audiobook } = await apiService.addToLibrary(matchToMetadata(match), {
+          const metadata = await _enrichMetadata(match)
+          const { audiobook } = await apiService.addToLibrary(metadata, {
             destinationPath: rootFolderPath,
             searchResult: match,
           })

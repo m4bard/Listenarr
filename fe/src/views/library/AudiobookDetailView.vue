@@ -168,11 +168,11 @@
         <div class="details-grid">
           <div class="detail-card">
             <h3>Author Information</h3>
-            <div class="detail-row" v-if="audiobook.authors">
+            <div class="detail-row" v-if="audiobook.authors?.length">
               <span class="label">Author(s):</span>
               <span class="value">{{ audiobook.authors.map(safeText).join(', ') }}</span>
             </div>
-            <div class="detail-row" v-if="audiobook.narrators">
+            <div class="detail-row" v-if="audiobook.narrators?.length">
               <span class="label">Narrator(s):</span>
               <span class="value">{{ audiobook.narrators.map(safeText).join(', ') }}</span>
             </div>
