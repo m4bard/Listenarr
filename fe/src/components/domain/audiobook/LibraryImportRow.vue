@@ -39,7 +39,12 @@
           <span class="match-title" :title="`ASIN: ${item.selectedMatch.asin}`">
             {{ item.selectedMatch.title }}
           </span>
-          <span class="match-author" v-if="item.selectedMatch.authors?.length">
+          <span
+            v-if="item.selectedMatch.authors?.length"
+            class="match-author"
+            :class="{ 'author-mismatch': isAuthorMismatch(item) }"
+            :title="isAuthorMismatch(item) ? `Detected: ${item.detectedAuthor}` : undefined"
+          >
             {{ item.selectedMatch.authors[0]?.name }}
           </span>
           <button class="btn-clear-match" title="Clear match" @click="store.clearMatch(item.id)">×</button>
@@ -125,6 +130,13 @@ const searchResults = ref<SearchResult[]>([])
 const isLocalSearching = ref(false)
 const hasSearched = ref(false)
 const searchInputEl = ref<HTMLInputElement | null>(null)
+
+function isAuthorMismatch(item: LibraryImportItem): boolean {
+  if (!item.detectedAuthor || !item.selectedMatch?.authors?.length) return false
+  const detected = item.detectedAuthor.toLowerCase()
+  const matched = (item.selectedMatch.authors[0]?.name ?? '').toLowerCase()
+  return !!matched && !matched.includes(detected) && !detected.includes(matched)
+}
 
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -287,6 +299,10 @@ function applyMatch(result: SearchResult) {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 100px;
+}
+
+.match-author.author-mismatch {
+  color: #f59e0b;
 }
 
 .match-status.no-match {

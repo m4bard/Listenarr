@@ -46,6 +46,20 @@ function buildSearchTitle(item: LibraryImportItem): string {
   return item.detectedTitle ?? item.folderName
 }
 
+// From a list of search results, prefer the one whose author best matches detectedAuthor.
+// Falls back to results[0] when no author info is available on either side.
+function pickBestMatch(results: SearchResult[], detectedAuthor?: string): SearchResult | null {
+  if (!results.length) return null
+  if (!detectedAuthor) return results[0]
+  const needle = detectedAuthor.toLowerCase()
+  const scored = results.map((r) => {
+    const resultAuthor = (r.authors?.[0]?.name ?? '').toLowerCase()
+    const match = resultAuthor && (resultAuthor.includes(needle) || needle.includes(resultAuthor))
+    return { r, match }
+  })
+  return scored.find((s) => s.match)?.r ?? results[0]
+}
+
 function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
   return {
     id: item.fullPath,
@@ -248,7 +262,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         : { title: buildSearchTitle(item), cap: 5 }
       const results = await apiService.advancedSearch(searchParams)
       metadataFetchCount.value++
-      const first = results[0] ?? null
+      const first = pickBestMatch(results, item.detectedAuthor)
       const current = items.value[id]!
       items.value = {
         ...items.value,
