@@ -32,6 +32,20 @@ function extractFolderName(relativePath: string): string {
   return parts[parts.length - 1] ?? relativePath
 }
 
+// Build a search query title, using a numeric suffix from the filename when available.
+// e.g. file "The Land (3).m4b" in folder "The Land" → "The Land 3"
+function buildSearchTitle(item: LibraryImportItem): string {
+  const filenameStem = item.fullPath.replace(/\\/g, '/').split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+  const numericMatch = /\((\d+)\)\s*$/.exec(filenameStem)
+  const base = item.detectedTitle && item.detectedTitle !== item.folderName
+    ? item.detectedTitle
+    : item.folderName
+  if (numericMatch) {
+    return `${base.replace(/\s*\(\d+\)\s*$/, '').trim()} ${numericMatch[1]}`
+  }
+  return item.detectedTitle ?? item.folderName
+}
+
 function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
   return {
     id: item.fullPath,
@@ -231,7 +245,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     try {
       const searchParams = item.detectedAsin
         ? { asin: item.detectedAsin, cap: 5 }
-        : { title: item.detectedTitle ?? item.folderName, cap: 5 }
+        : { title: buildSearchTitle(item), cap: 5 }
       const results = await apiService.advancedSearch(searchParams)
       metadataFetchCount.value++
       const first = results[0] ?? null
@@ -310,15 +324,31 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     for (const item of toImport) {
       const match = item.selectedMatch!
       try {
-        const { audiobook } = await apiService.addToLibrary(matchToMetadata(match), {
-          destinationPath: rootFolderPath,
-          searchResult: match,
-        })
+        let audiobookId: number
+        try {
+          const { audiobook } = await apiService.addToLibrary(matchToMetadata(match), {
+            destinationPath: rootFolderPath,
+            searchResult: match,
+          })
+          audiobookId = audiobook.id
+        } catch (e: any) {
+          // 409 = book already in library — extract existing audiobook from response body
+          if (e?.status === 409 && e?.body) {
+            const body = typeof e.body === 'string' ? JSON.parse(e.body) : e.body
+            if (body?.audiobook?.id) {
+              audiobookId = body.audiobook.id
+            } else {
+              throw e
+            }
+          } else {
+            throw e
+          }
+        }
         await apiService.startManualImport({
           path: item.folderPath,
           mode: 'interactive',
           inputMode: inputMode.value,
-          items: [{ fullPath: item.fullPath, matchedAudiobookId: audiobook.id }],
+          items: [{ fullPath: item.fullPath, matchedAudiobookId: audiobookId }],
         })
         // Remove imported item from store
         const updated = { ...items.value }
