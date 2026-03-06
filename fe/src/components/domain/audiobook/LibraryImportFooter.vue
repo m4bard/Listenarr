@@ -3,11 +3,11 @@
     <!-- Left: input mode + rate limit warning -->
     <div class="footer-left">
       <label class="footer-label">
-        <span>{{ store.inputMode === 'move' ? 'Move to:' : 'Copy to:' }}</span>
         <select v-model="store.inputMode" class="mode-select">
           <option value="move">Move</option>
           <option value="hardlink/copy">Hardlink / Copy</option>
         </select>
+        <span>to: <span class="footer-path" :title="rootFolderPath">{{ rootFolderPath }}</span></span>
       </label>
 
       <div v-if="store.metadataFetchCount > 100" class="rate-limit-warning">
@@ -108,6 +108,18 @@ async function handleImport() {
   font-size: 0.82rem;
   color: #aaa;
   white-space: nowrap;
+}
+
+.footer-path {
+  font-family: monospace;
+  font-size: 0.78rem;
+  color: #ccc;
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: inline-block;
+  vertical-align: middle;
 }
 
 .mode-select {
