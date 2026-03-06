@@ -291,10 +291,17 @@
               <PhCalendar />
               <span>Calendar</span>
             </RouterLink>
-            <!-- <RouterLink to="/library-import" class="nav-item">
+            <RouterLink
+              to="/library-import"
+              class="nav-item"
+              @mouseenter="preload('library-import')"
+              @focus="preload('library-import')"
+              @touchstart.passive="preload('library-import')"
+              @click="closeMobileMenu"
+            >
               <PhFolderOpen />
               <span>Library Import</span>
-            </RouterLink> -->
+            </RouterLink>
           </div>
 
           <div class="nav-section">
@@ -485,6 +492,7 @@ import {
   PhDownload,
   PhCheckCircle,
   PhList,
+  PhFolderOpen,
 } from '@phosphor-icons/vue'
 import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useEventListener } from '@vueuse/core'
