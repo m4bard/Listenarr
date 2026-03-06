@@ -337,6 +337,15 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             const body = typeof e.body === 'string' ? JSON.parse(e.body) : e.body
             if (body?.audiobook?.id) {
               audiobookId = body.audiobook.id
+              // Update BasePath to the selected destination so the file moves to the right place.
+              // Existing audiobooks may have BasePath = null or pointing to the wrong location.
+              if (rootFolderPath) {
+                try {
+                  await apiService.updateAudiobook(audiobookId, { basePath: rootFolderPath })
+                } catch {
+                  // Non-critical — import continues, file may go to OutputPath fallback
+                }
+              }
             } else {
               throw e
             }
