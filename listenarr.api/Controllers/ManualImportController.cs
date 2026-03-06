@@ -376,8 +376,15 @@ public class ManualImportController : ControllerBase
         if (!string.IsNullOrWhiteSpace(author))
             variables["Author"] = author;
         
-        if (!string.IsNullOrWhiteSpace(audiobook.Title))
-            variables["Title"] = audiobook.Title;
+        // Combine title + subtitle so series books get unique paths
+        // (e.g. "The Land" + "Founding" → "The Land: Founding")
+        var titleFull = !string.IsNullOrWhiteSpace(audiobook.Subtitle)
+            && !string.IsNullOrWhiteSpace(audiobook.Title)
+            && !audiobook.Title.Contains(audiobook.Subtitle, StringComparison.OrdinalIgnoreCase)
+            ? $"{audiobook.Title}: {audiobook.Subtitle}"
+            : audiobook.Title;
+        if (!string.IsNullOrWhiteSpace(titleFull))
+            variables["Title"] = titleFull;
         else
             variables["Title"] = "Unknown Title"; // Title is required as fallback
         
