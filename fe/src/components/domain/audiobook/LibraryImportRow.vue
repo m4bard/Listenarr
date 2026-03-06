@@ -93,7 +93,7 @@
               <span class="result-title">{{ result.title }}</span>
               <span class="result-meta">
                 {{ result.authors?.[0]?.name }}
-                <span v-if="result.series"> · {{ result.series }}</span>
+                <span v-if="result.series"> · {{ Array.isArray(result.series) ? (result.series as any)[0]?.name : result.series }}</span>
                 <span v-if="result.asin" class="result-asin"> · {{ result.asin }}</span>
               </span>
             </div>

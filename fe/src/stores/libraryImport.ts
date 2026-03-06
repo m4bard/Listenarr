@@ -58,14 +58,23 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
       ? result.authors.map((a) => a.name ?? '').filter(Boolean)
       : []
 
+  // series may come back as AudimetaSeries[] from the search endpoint
+  const seriesRaw = result.series as unknown
+  const seriesItem = Array.isArray(seriesRaw)
+    ? (seriesRaw as Array<{ name?: string; asin?: string; position?: string }>)[0]
+    : null
+  const series = seriesItem?.name ?? (typeof seriesRaw === 'string' ? seriesRaw : undefined)
+  const seriesNumber = seriesItem?.position ?? result.seriesNumber
+  const seriesAsin = seriesItem?.asin ?? result.seriesAsin
+
   return {
     title: result.title ?? '',
     asin: result.asin ?? '',
     authors,
     subtitle: result.subtitle,
-    series: result.series,
-    seriesNumber: result.seriesNumber,
-    seriesAsin: result.seriesAsin,
+    series,
+    seriesNumber,
+    seriesAsin,
     description: result.description,
     publisher: result.publisher,
     language: result.language,
@@ -248,7 +257,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
     items.value[id] = { ...item, isSearching: true }
     try {
-      const results = await apiService.advancedSearch({ title: query, cap: 5 })
+      const isAsin = /^[A-Z0-9]{10}$/i.test(query.trim())
+      const results = await apiService.advancedSearch(
+        isAsin ? { asin: query.trim(), cap: 5 } : { title: query, cap: 5 },
+      )
       items.value[id] = { ...items.value[id], isSearching: false, hasSearched: true }
       return results
     } catch {
