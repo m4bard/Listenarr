@@ -17,6 +17,7 @@ public class ManualImportController : ControllerBase
     private readonly IFileNamingService _fileNamingService;
     private readonly IConfigurationService _configService;
     private readonly IScanQueueService _scanQueueService;
+    private readonly IRootFolderService _rootFolderService;
 
     public ManualImportController(
         ILogger<ManualImportController> logger,
@@ -24,7 +25,8 @@ public class ManualImportController : ControllerBase
         IMetadataService metadataService,
         IFileNamingService fileNamingService,
         IConfigurationService configService,
-        IScanQueueService scanQueueService)
+        IScanQueueService scanQueueService,
+        IRootFolderService rootFolderService)
     {
         _logger = logger;
         _audiobookRepository = audiobookRepository;
@@ -32,6 +34,7 @@ public class ManualImportController : ControllerBase
         _fileNamingService = fileNamingService;
         _configService = configService;
         _scanQueueService = scanQueueService;
+        _rootFolderService = rootFolderService;
     }
 
     [HttpGet("preview")]
@@ -324,7 +327,10 @@ public class ManualImportController : ControllerBase
         var folderPattern = settings.FolderNamingPattern;
         var filePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
 
-        // If a custom BasePath is set (different from configured OutputPath), store directly under that path
+        // If a custom BasePath is set (different from configured OutputPath AND not a known
+        // root folder), store directly under that path using file-only naming.
+        // If BasePath IS a configured root folder, treat it as a library destination and
+        // apply the full folder+file naming pattern so files are properly organised.
         var basePath = audiobook.BasePath ?? string.Empty;
         var configuredOutput = settings.OutputPath ?? string.Empty;
         var isCustomBasePath = false;
@@ -335,6 +341,19 @@ public class ManualImportController : ControllerBase
                 var baseFull = Path.GetFullPath(basePath);
                 var configuredFull = string.IsNullOrWhiteSpace(configuredOutput) ? string.Empty : Path.GetFullPath(configuredOutput);
                 isCustomBasePath = !string.Equals(baseFull, configuredFull, StringComparison.OrdinalIgnoreCase);
+
+                // Even if it differs from OutputPath, don't treat it as custom when it
+                // matches a configured root folder — those are all valid library destinations.
+                if (isCustomBasePath)
+                {
+                    var rootFolders = await _rootFolderService.GetAllAsync();
+                    var isRootFolder = rootFolders.Any(r =>
+                    {
+                        try { return string.Equals(Path.GetFullPath(r.Path), baseFull, StringComparison.OrdinalIgnoreCase); }
+                        catch { return false; }
+                    });
+                    if (isRootFolder) isCustomBasePath = false;
+                }
             }
         }
         catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
