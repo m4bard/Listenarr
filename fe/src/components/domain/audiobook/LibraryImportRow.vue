@@ -39,8 +39,8 @@
           <span class="match-title" :title="`ASIN: ${item.selectedMatch.asin}`">
             {{ item.selectedMatch.title }}
           </span>
-          <span class="match-author" v-if="item.selectedMatch.author || (item.selectedMatch.authors?.length)">
-            {{ item.selectedMatch.authors?.[0]?.name ?? item.selectedMatch.author }}
+          <span class="match-author" v-if="item.selectedMatch.authors?.length">
+            {{ item.selectedMatch.authors[0]?.name }}
           </span>
           <button class="btn-clear-match" title="Clear match" @click="store.clearMatch(item.id)">×</button>
         </div>
@@ -92,7 +92,7 @@
             <div class="result-info">
               <span class="result-title">{{ result.title }}</span>
               <span class="result-meta">
-                {{ result.authors?.[0]?.name ?? result.author }}
+                {{ result.authors?.[0]?.name }}
                 <span v-if="result.series"> · {{ result.series }}</span>
                 <span v-if="result.asin" class="result-asin"> · {{ result.asin }}</span>
               </span>

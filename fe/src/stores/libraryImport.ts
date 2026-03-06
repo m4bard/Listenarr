@@ -56,9 +56,7 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
   const authors: string[] =
     result.authors && result.authors.length > 0
       ? result.authors.map((a) => a.name ?? '').filter(Boolean)
-      : result.author
-        ? [result.author]
-        : []
+      : []
 
   return {
     title: result.title ?? '',
@@ -197,8 +195,9 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     isProcessing.value = false
     // Clear any in-flight isSearching flags
     for (const id of Object.keys(items.value)) {
-      if (items.value[id].isSearching) {
-        items.value[id] = { ...items.value[id], isSearching: false }
+      const entry = items.value[id]
+      if (entry?.isSearching) {
+        items.value = { ...items.value, [id]: { ...entry, isSearching: false } }
       }
     }
   }
@@ -209,7 +208,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       return
     }
 
-    const id = lookupQueue.value[0]
+    const id: string = lookupQueue.value[0]!
     const item = items.value[id]
 
     if (!item) {
@@ -218,21 +217,20 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       return
     }
 
-    items.value[id] = { ...item, isSearching: true }
+    items.value = { ...items.value, [id]: { ...item, isSearching: true } }
 
     try {
       const results = await apiService.advancedSearch({ title: item.folderName, cap: 5 })
       metadataFetchCount.value++
       const first = results[0] ?? null
-      items.value[id] = {
-        ...items.value[id],
-        isSearching: false,
-        hasSearched: true,
-        selectedMatch: first,
-        selected: first !== null,
+      const current = items.value[id]!
+      items.value = {
+        ...items.value,
+        [id]: { ...current, isSearching: false, hasSearched: true, selectedMatch: first, selected: first !== null },
       }
     } catch {
-      items.value[id] = { ...items.value[id], isSearching: false, hasSearched: true }
+      const current = items.value[id]
+      if (current) items.value = { ...items.value, [id]: { ...current, isSearching: false, hasSearched: true } }
     }
 
     lookupQueue.value = lookupQueue.value.slice(1)
