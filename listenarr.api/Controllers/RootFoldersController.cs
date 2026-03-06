@@ -4,6 +4,9 @@ using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using System.Collections.Generic;
 using System;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Controllers
 {
@@ -13,11 +16,13 @@ namespace Listenarr.Api.Controllers
     {
         private readonly IRootFolderService _service;
         private readonly IUnmatchedScanQueueService _unmatchedQueue;
+        private readonly ListenArrDbContext _db;
 
-        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue)
+        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue, ListenArrDbContext db)
         {
             _service = service;
             _unmatchedQueue = unmatchedQueue;
+            _db = db;
         }
 
         [HttpGet]
@@ -143,10 +148,27 @@ namespace Listenarr.Api.Controllers
 
             if (_unmatchedQueue.TryGetLastJobForPath(folder.Path, out var job) && job != null)
             {
+                // Filter out items already added to the library since the scan ran
+                var trackedFromFiles = await _db.AudiobookFiles
+                    .Where(f => f.Path != null)
+                    .Select(f => f.Path!)
+                    .ToListAsync();
+                var trackedFromAudiobooks = await _db.Audiobooks
+                    .Where(a => a.FilePath != null)
+                    .Select(a => a.FilePath!)
+                    .ToListAsync();
+                var tracked = new HashSet<string>(
+                    trackedFromFiles.Concat(trackedFromAudiobooks),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var filtered = (job.Results ?? new List<UnmatchedFileResult>())
+                    .Where(r => !tracked.Contains(r.FullPath))
+                    .ToList();
+
                 return Ok(new
                 {
                     lastScannedAt = job.CompletedAt,
-                    items = job.Results ?? new List<UnmatchedFileResult>()
+                    items = filtered
                 });
             }
 
