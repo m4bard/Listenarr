@@ -257,6 +257,10 @@ public class ManualImportController : ControllerBase
                 _logger.LogWarning(ex, "Destination file already exists despite unique name generation: {Destination}", destinationPath);
                 throw;
             }
+            // Write ASIN to embedded file tags (non-critical — failure is logged, not thrown)
+            if (!string.IsNullOrWhiteSpace(audiobook.Asin))
+                await _metadataService.WriteAsinTagAsync(destinationPath, audiobook.Asin);
+
             // Record the destination to avoid collisions with subsequent items in this batch
             try
             {

@@ -354,6 +354,11 @@ namespace Listenarr.Api.Services
         Task ApplyMetadataAsync(string filePath, AudioMetadata metadata);
 
         /// <summary>
+        /// Writes the ASIN to the audio file's embedded tags. No-op if filePath or asin is null/empty.
+        /// </summary>
+        Task WriteAsinTagAsync(string filePath, string asin);
+
+        /// <summary>
         /// Downloads cover art image from URL
         /// </summary>
         /// <param name="coverArtUrl">URL of the cover art image</param>
