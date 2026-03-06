@@ -47,13 +47,17 @@ namespace Listenarr.Api.Tests
             var scanMock = new Mock<IScanQueueService>();
             scanMock.Setup(s => s.EnqueueScanAsync(It.IsAny<int>(), It.IsAny<string>())).ReturnsAsync(Guid.NewGuid());
 
+            var rootFolderMock = new Mock<IRootFolderService>();
+            rootFolderMock.Setup(r => r.GetAllAsync()).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.RootFolder>());
+
             var controller = new ManualImportController(
                 Mock.Of<Microsoft.Extensions.Logging.ILogger<ManualImportController>>(),
                 repoMock.Object,
                 metadataMock.Object,
                 fileNamingMock.Object,
                 configMock.Object,
-                scanMock.Object
+                scanMock.Object,
+                rootFolderMock.Object
             );
 
             var request = new ManualImportRequest

@@ -207,13 +207,15 @@ namespace Listenarr.Api.Tests
             // Ensure the author flow (intelligent search) was used
             mockSearch.Verify(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()), Times.Once);
 
-            // Validate returned results were filtered by series (response is Audimeta-shaped objects)
+            // Validate returned results were filtered by series (response is { results: [...], totalResults: N })
             var ok = Assert.IsType<OkObjectResult>(res.Result);
             var serialized = System.Text.Json.JsonSerializer.Serialize(ok.Value);
-            var parsed = System.Text.Json.JsonSerializer.Deserialize<System.Text.Json.JsonElement[]>(serialized);
-            Assert.NotNull(parsed);
-            Assert.Single(parsed);
-            var first = parsed![0];
+            using var doc = System.Text.Json.JsonDocument.Parse(serialized);
+            var root = doc.RootElement;
+            var resultsEl = root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("results", out var rr) ? rr : root;
+            Assert.Equal(System.Text.Json.JsonValueKind.Array, resultsEl.ValueKind);
+            Assert.Equal(1, resultsEl.GetArrayLength());
+            var first = resultsEl[0];
             Assert.True(first.TryGetProperty("asin", out var asinProp));
             Assert.Equal("B1", asinProp.GetString());
         }
