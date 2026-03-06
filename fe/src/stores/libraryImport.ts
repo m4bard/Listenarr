@@ -50,14 +50,14 @@ function buildSearchTitle(item: LibraryImportItem): string {
 // Falls back to results[0] when no author info is available on either side.
 function pickBestMatch(results: SearchResult[], detectedAuthor?: string): SearchResult | null {
   if (!results.length) return null
-  if (!detectedAuthor) return results[0]
+  if (!detectedAuthor) return results[0] ?? null
   const needle = detectedAuthor.toLowerCase()
   const scored = results.map((r) => {
     const resultAuthor = (r.authors?.[0]?.name ?? '').toLowerCase()
     const match = resultAuthor && (resultAuthor.includes(needle) || needle.includes(resultAuthor))
     return { r, match }
   })
-  return scored.find((s) => s.match)?.r ?? results[0]
+  return scored.find((s) => s.match)?.r ?? results[0] ?? null
 }
 
 function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
