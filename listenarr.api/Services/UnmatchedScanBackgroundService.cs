@@ -243,10 +243,14 @@ namespace Listenarr.Api.Services
 
             // Strip leading track/disc number prefix: "01 - ", "Track 01 - ", "1. "
             name = Regex.Replace(name, @"^(track\s*)?\d+[\s\-_\.]+", "", RegexOptions.IgnoreCase);
-            // Strip trailing Part/CD/Disc/Chapter number: "- Part 1", "CD2", "Disc 2"
-            name = Regex.Replace(name, @"[\s\-_]*(part|cd|disc|chapter)\s*\d+$", "", RegexOptions.IgnoreCase);
-            // Strip year and series/info in brackets: (2020), [Series 3], {tag}
-            name = Regex.Replace(name, @"\s*[\[\(].*?[\]\)]", "");
+            // Strip trailing Part/CD/Disc/Chapter number: "- Part 1", "CD2", "Disc 2", "pt00"
+            name = Regex.Replace(name, @"[\s\-_]*(part|cd|disc|chapter|pt)\s*\d+$", "", RegexOptions.IgnoreCase);
+            // Strip 4-digit years in parens: (2020), (2021)
+            name = Regex.Replace(name, @"\s*\(\d{4}\)", "");
+            // Strip square bracket content: [Series 3], [Chaos Seeds 1]
+            name = Regex.Replace(name, @"\s*\[.*?\]", "");
+            // NOTE: plain numeric parens like (1), (2) are intentionally kept —
+            // they distinguish separate books in a series (e.g. "The Land (1)" vs "The Land (2)")
             // Normalize whitespace
             name = Regex.Replace(name, @"\s+", " ").Trim().ToLowerInvariant();
 
