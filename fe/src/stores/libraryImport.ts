@@ -220,7 +220,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     items.value = { ...items.value, [id]: { ...item, isSearching: true } }
 
     try {
-      const results = await apiService.advancedSearch({ title: item.folderName, cap: 5 })
+      const results = await apiService.advancedSearch({ title: item.detectedTitle ?? item.folderName, cap: 5 })
       metadataFetchCount.value++
       const first = results[0] ?? null
       const current = items.value[id]!

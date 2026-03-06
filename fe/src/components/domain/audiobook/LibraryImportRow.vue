@@ -120,7 +120,7 @@ const props = defineProps<{ item: LibraryImportItem }>()
 const store = useLibraryImportStore()
 
 const showSearch = ref(false)
-const searchQuery = ref(props.item.folderName)
+const searchQuery = ref(props.item.detectedTitle ?? props.item.folderName)
 const searchResults = ref<SearchResult[]>([])
 const isLocalSearching = ref(false)
 const hasSearched = ref(false)
