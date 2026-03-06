@@ -14,7 +14,8 @@ namespace Listenarr.Api.Services
         /// </summary>
         public static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
         {
-            ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav"
+            ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav",
+            ".wv", ".wma", ".ape", ".alac", ".aif", ".aiff"
         };
 
         /// <summary>

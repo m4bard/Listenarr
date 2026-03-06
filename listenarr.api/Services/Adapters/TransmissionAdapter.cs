@@ -23,12 +23,14 @@ namespace Listenarr.Api.Services.Adapters
 
         private readonly IHttpClientFactory _httpClientFactory;
         private readonly IRemotePathMappingService _pathMappingService;
+        private readonly ITorrentFileDownloader _torrentFileDownloader;
         private readonly ILogger<TransmissionAdapter> _logger;
 
-        public TransmissionAdapter(IHttpClientFactory httpClientFactory, IRemotePathMappingService pathMappingService, ILogger<TransmissionAdapter> logger)
+        public TransmissionAdapter(IHttpClientFactory httpClientFactory, IRemotePathMappingService pathMappingService, ITorrentFileDownloader torrentFileDownloader, ILogger<TransmissionAdapter> logger)
         {
             _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             _pathMappingService = pathMappingService ?? throw new ArgumentNullException(nameof(pathMappingService));
+            _torrentFileDownloader = torrentFileDownloader ?? throw new ArgumentNullException(nameof(torrentFileDownloader));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -43,7 +45,18 @@ namespace Listenarr.Api.Services.Adapters
                     arguments = new { },
                     tag = 1
                 };
-                await InvokeRpcAsync(client, payload, ct);
+                var response = await InvokeRpcAsync(client, payload, ct);
+
+                // Validate that the RPC endpoint actually responded with a successful session-get.
+                // Without this check, a non-Transmission service on the same port (or Transmission's
+                // web UI returning HTML) would falsely pass the test.
+                if (!response.TryGetProperty("result", out var resultProp) ||
+                    !string.Equals(resultProp.GetString(), "success", StringComparison.OrdinalIgnoreCase))
+                {
+                    var hint = resultProp.ValueKind == JsonValueKind.String ? resultProp.GetString() : "unexpected response";
+                    return (false, $"Transmission: RPC endpoint did not return a valid session response ({hint})");
+                }
+
                 return (true, "Transmission: connected");
             }
             catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
@@ -75,16 +88,69 @@ namespace Listenarr.Api.Services.Adapters
             var arguments = new Dictionary<string, object>();
 
             // Prefer cached torrent file data over URL (required for private trackers with authentication)
-            if (result.TorrentFileContent != null && result.TorrentFileContent.Length > 0)
+            byte[]? torrentFileData = result.TorrentFileContent;
+            var torrentUrl = !string.IsNullOrEmpty(result.MagnetLink) ? result.MagnetLink : result.TorrentUrl;
+
+            _logger.LogDebug("AddAsync entry for '{Title}': TorrentFileContent={HasContent}, MagnetLink={HasMagnet}, TorrentUrl={Url}",
+                LogRedaction.SanitizeText(result.Title),
+                result.TorrentFileContent != null && result.TorrentFileContent.Length > 0 ? $"{result.TorrentFileContent.Length} bytes" : "null",
+                !string.IsNullOrEmpty(result.MagnetLink) ? "yes" : "no",
+                LogRedaction.SanitizeUrl(torrentUrl ?? "(null)"));
+
+            // Pre-download torrent file if not cached and URL is HTTP(S) (not magnet).
+            // Transmission's built-in HTTP client cannot always follow redirects from indexers
+            // (e.g. Prowlarr returning 301), so we fetch the .torrent file ourselves and send
+            // the raw bytes via the metainfo field instead.
+            if ((torrentFileData == null || torrentFileData.Length == 0) &&
+                !string.IsNullOrEmpty(torrentUrl) &&
+                !torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
+                Uri.TryCreate(torrentUrl, UriKind.Absolute, out var torrentUri) &&
+                (torrentUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
+                 torrentUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogDebug("Attempting pre-download of torrent file from {Url}", LogRedaction.SanitizeUrl(torrentUrl));
+                try
+                {
+                    var downloadResult = await _torrentFileDownloader.DownloadAsync(torrentUrl, ct);
+                    if (downloadResult.HasBytes)
+                    {
+                        torrentFileData = downloadResult.TorrentBytes;
+                        _logger.LogInformation("Pre-downloaded torrent file ({Bytes} bytes) for '{Title}'",
+                            torrentFileData!.Length, LogRedaction.SanitizeText(result.Title));
+                    }
+                    else if (downloadResult.HasMagnet)
+                    {
+                        // Indexer redirected to a magnet link — use it directly
+                        torrentUrl = downloadResult.MagnetUri!;
+                        _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Pre-download returned no data for '{Title}', falling back to URL", LogRedaction.SanitizeText(result.Title));
+                    }
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(ex, "Failed to pre-download torrent file for '{Title}', falling back to URL", LogRedaction.SanitizeText(result.Title));
+                }
+            }
+            else
+            {
+                _logger.LogDebug("Skipping pre-download: torrentFileData={HasData}, torrentUrl={Url}, isMagnet={IsMagnet}",
+                    torrentFileData != null && torrentFileData.Length > 0 ? "has data" : "null/empty",
+                    string.IsNullOrEmpty(torrentUrl) ? "(empty)" : LogRedaction.SanitizeUrl(torrentUrl),
+                    torrentUrl?.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) == true ? "yes" : "no");
+            }
+
+            if (torrentFileData != null && torrentFileData.Length > 0)
             {
                 // Use metainfo field for torrent file data (base64 encoded)
-                arguments["metainfo"] = Convert.ToBase64String(result.TorrentFileContent);
-                _logger.LogDebug("Using cached torrent file data ({Bytes} bytes) for '{Title}'", result.TorrentFileContent.Length, LogRedaction.SanitizeText(result.Title));
+                arguments["metainfo"] = Convert.ToBase64String(torrentFileData);
+                _logger.LogDebug("Using cached torrent file data ({Bytes} bytes) for '{Title}'", torrentFileData.Length, LogRedaction.SanitizeText(result.Title));
             }
             else
             {
                 // Fall back to filename field for URLs/magnet links
-                var torrentUrl = !string.IsNullOrEmpty(result.MagnetLink) ? result.MagnetLink : result.TorrentUrl;
                 if (string.IsNullOrEmpty(torrentUrl))
                 {
                     throw new ArgumentException("No magnet link, torrent URL, or cached torrent file provided", nameof(result));
@@ -878,7 +944,7 @@ namespace Listenarr.Api.Services.Adapters
                     var sensitiveValues = LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty });
                     var redacted = LogRedaction.RedactText(body, sensitiveValues);
                     _logger.LogWarning("Transmission returned {StatusCode}: {Body}", response.StatusCode, redacted);
-                    throw new HttpRequestException($"Transmission returned {response.StatusCode}: {redacted}");
+                    throw new HttpRequestException($"Transmission returned {response.StatusCode}: {redacted}", null, response.StatusCode);
                 }
 
                 _logger.LogDebug("Transmission RPC response ({StatusCode}): {Body}", response.StatusCode, body);
@@ -888,6 +954,17 @@ namespace Listenarr.Api.Services.Adapters
                     _logger.LogWarning("Transmission returned empty response body");
                     using var emptyDoc = JsonDocument.Parse("{}");
                     return emptyDoc.RootElement.Clone();
+                }
+
+                // Validate the response is actually JSON before parsing. A non-Transmission service
+                // (or the web UI on the wrong port) may return HTML which would fail JSON parsing
+                // with an unhelpful error message.
+                var trimmedBody = body.TrimStart();
+                if (trimmedBody.Length > 0 && trimmedBody[0] != '{' && trimmedBody[0] != '[')
+                {
+                    var preview = trimmedBody.Length > 100 ? trimmedBody[..100] + "..." : trimmedBody;
+                    _logger.LogWarning("Transmission RPC returned non-JSON response: {Preview}", LogRedaction.SanitizeText(preview));
+                    throw new HttpRequestException("Transmission RPC endpoint returned a non-JSON response. Verify the host and port point to the Transmission RPC endpoint (default port 9091).");
                 }
 
                 using var doc = JsonDocument.Parse(body);
@@ -938,6 +1015,68 @@ namespace Listenarr.Api.Services.Adapters
 
             var credentials = Convert.ToBase64String(Encoding.UTF8.GetBytes($"{client.Username}:{client.Password}"));
             return new AuthenticationHeaderValue("Basic", credentials);
+        }
+
+        private async Task<byte[]?> PreDownloadTorrentFileAsync(string torrentUrl, CancellationToken ct)
+        {
+            using var downloadCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            downloadCts.CancelAfter(TimeSpan.FromSeconds(60));
+
+            // Use a dedicated handler with redirects disabled so we can follow them manually
+            using var handler = new HttpClientHandler
+            {
+                AutomaticDecompression = DecompressionMethods.All,
+                AllowAutoRedirect = false
+            };
+            using var httpClient = new HttpClient(handler)
+            {
+                Timeout = TimeSpan.FromSeconds(60)
+            };
+
+            var currentUrl = torrentUrl;
+            for (var hop = 0; hop < 10; hop++)
+            {
+                using var request = new HttpRequestMessage(HttpMethod.Get, currentUrl);
+                request.Headers.Accept.ParseAdd("application/x-bittorrent, application/octet-stream, */*");
+                request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
+
+                var response = await httpClient.SendAsync(request, downloadCts.Token);
+
+                if (response.StatusCode is HttpStatusCode.MovedPermanently or HttpStatusCode.Found
+                    or HttpStatusCode.TemporaryRedirect or HttpStatusCode.PermanentRedirect
+                    or HttpStatusCode.SeeOther)
+                {
+                    var location = response.Headers.Location;
+                    if (location == null)
+                    {
+                        _logger.LogWarning("Pre-download got {StatusCode} with no Location header from {Url}",
+                            response.StatusCode, LogRedaction.SanitizeUrl(currentUrl));
+                        return null;
+                    }
+
+                    // Resolve relative redirects
+                    var nextUri = location.IsAbsoluteUri ? location : new Uri(new Uri(currentUrl), location);
+                    _logger.LogDebug("Pre-download following {StatusCode} redirect: {From} → {To}",
+                        response.StatusCode, LogRedaction.SanitizeUrl(currentUrl), LogRedaction.SanitizeUrl(nextUri.ToString()));
+                    currentUrl = nextUri.ToString();
+                    continue;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Pre-download failed ({StatusCode}) from {Url}",
+                        response.StatusCode, LogRedaction.SanitizeUrl(currentUrl));
+                    return null;
+                }
+
+                var bytes = await response.Content.ReadAsByteArrayAsync(downloadCts.Token);
+                _logger.LogDebug("Pre-download fetched {Bytes} bytes from {Url} (hops: {Hops})",
+                    bytes.Length, LogRedaction.SanitizeUrl(currentUrl), hop);
+                return bytes;
+            }
+
+            _logger.LogWarning("Pre-download exceeded maximum redirects (10) starting from {Url}", LogRedaction.SanitizeUrl(torrentUrl));
+            return null;
         }
 
         private static string? ExtractTorrentIdentifier(JsonElement element)

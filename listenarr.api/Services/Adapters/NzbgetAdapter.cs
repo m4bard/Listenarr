@@ -72,11 +72,6 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogDebug(httpEx, "NZBGet authentication failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, "NZBGet: Authentication failed (check username/password)");
             }
-            catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
-            {
-                _logger.LogDebug(httpEx, "NZBGet authentication failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
-                return (false, "NZBGet: Authentication failed (check username/password)");
-            }
             catch (HttpRequestException httpEx)
             {
                 _logger.LogDebug(httpEx, "NZBGet network error for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
@@ -437,6 +432,10 @@ namespace Listenarr.Api.Services.Adapters
                         _logger.LogDebug(ex, "Failed to map NZBGet queue item (non-fatal)");
                     }
                 }
+            }
+            catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _logger.LogWarning("NZBGet authentication failed for client {ClientName} — check username/password", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to retrieve NZBGet queue for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
@@ -893,7 +892,7 @@ namespace Listenarr.Api.Services.Adapters
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new HttpRequestException($"NZBGet XML-RPC error: {response.StatusCode} - {responseBody}");
+                throw new HttpRequestException($"NZBGet XML-RPC error: {response.StatusCode} - {responseBody}", null, response.StatusCode);
             }
 
             var doc = XDocument.Parse(responseBody);

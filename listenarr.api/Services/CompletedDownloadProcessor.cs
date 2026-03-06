@@ -197,6 +197,65 @@ namespace Listenarr.Api.Services
                                 _logger.LogDebug(ex, "Failed to update FinalPath from directory import results (non-fatal)");
                             }
 
+                            // Update audiobook BasePath so future scans target the correct library
+                            // directory instead of falling back to the global OutputPath.
+                            try
+                            {
+                                if (download?.AudiobookId != null && importResults != null)
+                                {
+                                    var successPaths = importResults
+                                        .Where(r => r != null && r.Success && !string.IsNullOrWhiteSpace(r.FinalPath))
+                                        .Select(r => r.FinalPath!)
+                                        .ToList();
+
+                                    if (successPaths.Count > 0)
+                                    {
+                                        var dirs = successPaths
+                                            .Select(p => System.IO.Path.GetDirectoryName(p) ?? p)
+                                            .Distinct(StringComparer.OrdinalIgnoreCase)
+                                            .ToList();
+
+                                        string? commonDir;
+                                        if (dirs.Count == 1)
+                                        {
+                                            commonDir = dirs[0];
+                                        }
+                                        else
+                                        {
+                                            // Find common ancestor directory of all imported files
+                                            var first = dirs[0];
+                                            var minLen = dirs.Min(d => d.Length);
+                                            int ci = 0;
+                                            while (ci < minLen && dirs.All(d => char.ToUpperInvariant(d[ci]) == char.ToUpperInvariant(first[ci])))
+                                                ci++;
+                                            var prefix = first.Substring(0, ci);
+                                            var lastSep = prefix.LastIndexOfAny(new[] { System.IO.Path.DirectorySeparatorChar, System.IO.Path.AltDirectorySeparatorChar });
+                                            commonDir = lastSep >= 0 ? prefix.Substring(0, lastSep) : prefix;
+                                        }
+
+                                        if (!string.IsNullOrWhiteSpace(commonDir))
+                                        {
+                                            var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
+                                            using var bpScope = scopeFactoryToUse.CreateScope();
+                                            var bpDb = bpScope.ServiceProvider.GetService<ListenArrDbContext>();
+                                            if (bpDb != null)
+                                            {
+                                                var audiobook = await bpDb.Audiobooks.FindAsync(download.AudiobookId.Value);
+                                                if (audiobook != null && !commonDir.Equals(audiobook.BasePath, StringComparison.OrdinalIgnoreCase))
+                                                {
+                                                    audiobook.BasePath = commonDir;
+                                                    await bpDb.SaveChangesAsync();
+                                                    _logger.LogInformation("Updated audiobook {AudiobookId} BasePath after directory import: {BasePath}", download.AudiobookId, commonDir);
+                                                }
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            catch (Exception bpEx) when (bpEx is not OperationCanceledException && bpEx is not OutOfMemoryException && bpEx is not StackOverflowException) {
+                                _logger.LogDebug(bpEx, "Failed to update audiobook BasePath after directory import (non-fatal)");
+                            }
+
                             // Process archives inside the directory (extract and import)
                             if (settings.ExtractArchives)
                             {

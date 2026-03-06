@@ -604,8 +604,9 @@ namespace Listenarr.Api.Services
                     // Persist client-specific ID for all clients (NZBGet/SABnzbd/etc.)
                     downloadToUpdate.Metadata["ClientDownloadId"] = clientSpecificId;
 
-                    // Maintain TorrentHash for qBittorrent compatibility
-                    if (downloadClient.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase))
+                    // Store TorrentHash for all torrent clients (qBittorrent, Transmission)
+                    if (downloadClient.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase) ||
+                        downloadClient.Type.Equals("transmission", StringComparison.OrdinalIgnoreCase))
                     {
                         downloadToUpdate.Metadata["TorrentHash"] = clientSpecificId;
                     }
@@ -2163,13 +2164,26 @@ namespace Listenarr.Api.Services
                                 if (download.Id == queueItem.Id)
                                     return true;
 
-                                // For qBittorrent, check torrent hash
-                                if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase))
+                                // Match by ClientDownloadId metadata (torrent hash / NZB id) — works for all clients
+                                if (download.Metadata != null)
                                 {
-                                    if (download.Metadata != null && download.Metadata.TryGetValue("TorrentHash", out var hashObj))
+                                    if (download.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
+                                    {
+                                        var storedId = clientIdObj?.ToString();
+                                        if (!string.IsNullOrEmpty(storedId) &&
+                                            storedId.Equals(queueItem.Id, StringComparison.OrdinalIgnoreCase))
+                                        {
+                                            _logger.LogDebug("Matched download {DownloadId} to queue item {QueueId} via ClientDownloadId (hash)",
+                                                download.Id, queueItem.Id);
+                                            return true;
+                                        }
+                                    }
+
+                                    // Legacy fallback: TorrentHash metadata (older qBittorrent records)
+                                    if (download.Metadata.TryGetValue("TorrentHash", out var hashObj))
                                     {
                                         var storedHash = hashObj?.ToString();
-                                        if (!string.IsNullOrEmpty(storedHash) && 
+                                        if (!string.IsNullOrEmpty(storedHash) &&
                                             storedHash.Equals(queueItem.Id, StringComparison.OrdinalIgnoreCase))
                                             return true;
                                     }
@@ -2195,7 +2209,8 @@ namespace Listenarr.Api.Services
                                 var originalClientId = queueItem.Id;
                                 bool hashUpdated = false;
                                 
-                                if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase))
+                                if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase) ||
+                                    string.Equals(client.Type, "transmission", StringComparison.OrdinalIgnoreCase))
                                 {
                                     if (matchedDownload.Metadata == null)
                                         matchedDownload.Metadata = new Dictionary<string, object>();
@@ -2475,8 +2490,10 @@ namespace Listenarr.Api.Services
                     var allDownloads = await dbContext.Downloads.ToListAsync();
                     downloadRecord = allDownloads.FirstOrDefault(d => 
                         d.Metadata != null &&
-                        d.Metadata.ContainsKey("TorrentHash") &&
-                        d.Metadata["TorrentHash"]?.ToString() == downloadId);
+                        ((d.Metadata.ContainsKey("ClientDownloadId") &&
+                          string.Equals(d.Metadata["ClientDownloadId"]?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase)) ||
+                         (d.Metadata.ContainsKey("TorrentHash") &&
+                          string.Equals(d.Metadata["TorrentHash"]?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase))));
                 }
 
                 // If still not found, try enhanced title/name matching for legacy downloads

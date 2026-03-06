@@ -61,6 +61,7 @@
                 max="65535"
                 :placeholder="getPortPlaceholder()"
               />
+              <small>{{ getPortHelpText() }}</small>
             </div>
 
             <div class="form-group">
@@ -402,6 +403,16 @@ const getPortPlaceholder = () => {
     nzbget: 6789,
   }
   return ports[formData.value.type]?.toString() || '8080'
+}
+
+const getPortHelpText = () => {
+  const hints: Record<string, string> = {
+    transmission: 'RPC port (default: 9091). This is not the web UI port if you changed it separately.',
+    qbittorrent: 'Web UI port (default: 8080). Found in qBittorrent → Options → Web UI.',
+    sabnzbd: 'Web interface port (default: 8080). Found in SABnzbd → Config → General.',
+    nzbget: 'Web interface port (default: 6789). Found in NZBGet → Settings → Connection.',
+  }
+  return hints[formData.value.type] || 'Port the download client is listening on.'
 }
 
 const getCategoryHelp = () => {

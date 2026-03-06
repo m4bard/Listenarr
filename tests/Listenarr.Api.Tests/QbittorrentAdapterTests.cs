@@ -50,7 +50,7 @@ namespace Listenarr.Api.Tests
             var http = new HttpClient(handler);
             var factory = new TestHttpClientFactory(http);
             var pathMapMock = new Mock<Listenarr.Api.Services.IRemotePathMappingService>();
-            var adapter = new QbittorrentAdapter(factory, pathMapMock.Object, NullLogger<QbittorrentAdapter>.Instance);
+            var adapter = new QbittorrentAdapter(factory, pathMapMock.Object, Mock.Of<ITorrentFileDownloader>(), NullLogger<QbittorrentAdapter>.Instance);
 
             var cfg = new DownloadClientConfiguration
             {
@@ -83,7 +83,7 @@ namespace Listenarr.Api.Tests
             var http = new HttpClient(handler);
             var factory = new TestHttpClientFactory(http);
             var pathMapMock = new Mock<Listenarr.Api.Services.IRemotePathMappingService>();
-            var adapter = new QbittorrentAdapter(factory, pathMapMock.Object, NullLogger<QbittorrentAdapter>.Instance);
+            var adapter = new QbittorrentAdapter(factory, pathMapMock.Object, Mock.Of<ITorrentFileDownloader>(), NullLogger<QbittorrentAdapter>.Instance);
 
             var cfg = new DownloadClientConfiguration
             {

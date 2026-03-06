@@ -339,15 +339,28 @@ namespace Listenarr.Api.Services
 
             try
             {
-                if (download.Metadata != null &&
-                    download.Metadata.TryGetValue("TorrentHash", out var hashObj))
+                if (download.Metadata != null && !string.IsNullOrWhiteSpace(queueItem.Id))
                 {
-                    var storedHash = hashObj?.ToString();
-                    if (!string.IsNullOrWhiteSpace(storedHash) &&
-                        !string.IsNullOrWhiteSpace(queueItem.Id) &&
-                        string.Equals(storedHash, queueItem.Id, StringComparison.OrdinalIgnoreCase))
+                    // Check ClientDownloadId (stored for all client types on add)
+                    if (download.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
                     {
-                        return 2;
+                        var storedId = clientIdObj?.ToString();
+                        if (!string.IsNullOrWhiteSpace(storedId) &&
+                            string.Equals(storedId, queueItem.Id, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return 2;
+                        }
+                    }
+
+                    // Legacy fallback: TorrentHash (older qBittorrent records)
+                    if (download.Metadata.TryGetValue("TorrentHash", out var hashObj))
+                    {
+                        var storedHash = hashObj?.ToString();
+                        if (!string.IsNullOrWhiteSpace(storedHash) &&
+                            string.Equals(storedHash, queueItem.Id, StringComparison.OrdinalIgnoreCase))
+                        {
+                            return 2;
+                        }
                     }
                 }
             }

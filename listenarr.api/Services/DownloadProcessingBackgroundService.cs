@@ -1034,10 +1034,14 @@ namespace Listenarr.Api.Services
                     {
                         try
                         {
-                            // Enqueue a scan for the audiobook using the destination path so the scanner
-                            // can focus on the moved/copied file location if appropriate.
-                            var jobId = await scanQueue.EnqueueScanAsync(dl.AudiobookId.Value, job.DestinationPath);
-                            job.AddLogEntry($"Enqueued scan job {jobId} for audiobook {dl.AudiobookId} path={job.DestinationPath}");
+                            // Enqueue a scan using the audiobook's configured library path (null)
+                            // rather than the download/destination path. The import process already
+                            // hardlinks/copies files into the library folder, so the scanner should
+                            // verify the library location — not the download directory, which would
+                            // trigger spurious "Refusing to associate file outside audiobook folder"
+                            // warnings from AudioFileService.
+                            var jobId = await scanQueue.EnqueueScanAsync(dl.AudiobookId.Value, null);
+                            job.AddLogEntry($"Enqueued scan job {jobId} for audiobook {dl.AudiobookId}");
                             _logger.LogInformation("Enqueued scan job {JobId} for audiobook {AudiobookId} after processing download {DownloadId}", jobId, dl.AudiobookId, job.DownloadId);
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

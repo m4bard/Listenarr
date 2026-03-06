@@ -118,7 +118,7 @@ namespace Listenarr.Api.Tests
                 .Setup(p => p.TranslatePathAsync(It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync((string _, string path) => path);
 
-            var adapter = new TransmissionAdapter(httpFactory.Object, pathMapping.Object, NullLogger<TransmissionAdapter>.Instance);
+            var adapter = new TransmissionAdapter(httpFactory.Object, pathMapping.Object, Mock.Of<ITorrentFileDownloader>(), NullLogger<TransmissionAdapter>.Instance);
             var client = new DownloadClientConfiguration
             {
                 Id = "tr-1",
@@ -200,7 +200,7 @@ namespace Listenarr.Api.Tests
                 .Setup(p => p.TranslatePathAsync(It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync((string _, string path) => path);
 
-            var adapter = new TransmissionAdapter(httpFactory.Object, pathMapping.Object, NullLogger<TransmissionAdapter>.Instance);
+            var adapter = new TransmissionAdapter(httpFactory.Object, pathMapping.Object, Mock.Of<ITorrentFileDownloader>(), NullLogger<TransmissionAdapter>.Instance);
             var client = new DownloadClientConfiguration
             {
                 Id = "tr-1",

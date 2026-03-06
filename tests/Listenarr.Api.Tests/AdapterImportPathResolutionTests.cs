@@ -50,6 +50,7 @@ namespace Listenarr.Api.Tests
             var adapter = new TransmissionAdapter(
                 new TestHttpClientFactory(new HttpClient(handler)),
                 pathMapMock.Object,
+                Mock.Of<ITorrentFileDownloader>(),
                 NullLogger<TransmissionAdapter>.Instance);
 
             var client = new DownloadClientConfiguration
@@ -85,6 +86,7 @@ namespace Listenarr.Api.Tests
             var adapter = new TransmissionAdapter(
                 new TestHttpClientFactory(new HttpClient(handler)),
                 pathMapMock.Object,
+                Mock.Of<ITorrentFileDownloader>(),
                 NullLogger<TransmissionAdapter>.Instance);
 
             var client = new DownloadClientConfiguration

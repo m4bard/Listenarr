@@ -25,11 +25,13 @@ namespace Listenarr.Api.Services.Adapters
         private readonly IHttpClientFactory _httpFactory;
         private readonly ILogger<QbittorrentAdapter> _logger;
         private readonly IRemotePathMappingService _pathMappingService;
+        private readonly ITorrentFileDownloader _torrentFileDownloader;
 
-        public QbittorrentAdapter(IHttpClientFactory httpFactory, IRemotePathMappingService pathMappingService, ILogger<QbittorrentAdapter> logger)
+        public QbittorrentAdapter(IHttpClientFactory httpFactory, IRemotePathMappingService pathMappingService, ITorrentFileDownloader torrentFileDownloader, ILogger<QbittorrentAdapter> logger)
         {
             _httpFactory = httpFactory ?? throw new ArgumentNullException(nameof(httpFactory));
             _pathMappingService = pathMappingService ?? throw new ArgumentNullException(nameof(pathMappingService));
+            _torrentFileDownloader = torrentFileDownloader ?? throw new ArgumentNullException(nameof(torrentFileDownloader));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -319,7 +321,39 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 HttpResponseMessage addResponse;
-                if (result.TorrentFileContent != null && result.TorrentFileContent.Length > 0)
+                // Pre-download torrent file if not cached and URL is HTTP(S) (not magnet).
+                // This avoids the download client needing to fetch from the source URL,
+                // which can fail if the source requires authentication the client lacks.
+                byte[]? torrentFileData = result.TorrentFileContent;
+                if ((torrentFileData == null || torrentFileData.Length == 0) &&
+                    !torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
+                    Uri.TryCreate(torrentUrl, UriKind.Absolute, out var torrentUri) &&
+                    (torrentUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
+                     torrentUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+                {
+                    try
+                    {
+                        var downloadResult = await _torrentFileDownloader.DownloadAsync(torrentUrl, ct);
+                        if (downloadResult.HasBytes)
+                        {
+                            torrentFileData = downloadResult.TorrentBytes;
+                            _logger.LogInformation("Pre-downloaded torrent file ({Bytes} bytes) for '{Title}'",
+                                torrentFileData!.Length, LogRedaction.SanitizeText(result.Title));
+                        }
+                        else if (downloadResult.HasMagnet)
+                        {
+                            // Indexer redirected to a magnet link — use it as the torrent URL instead
+                            torrentUrl = downloadResult.MagnetUri!;
+                            _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        _logger.LogWarning(ex, "Failed to pre-download torrent file for '{Title}', falling back to URL", LogRedaction.SanitizeText(result.Title));
+                    }
+                }
+
+                if (torrentFileData != null && torrentFileData.Length > 0)
                 {
                     using var multipart = new MultipartFormDataContent();
                     multipart.Add(new StringContent(savePath), "savepath");
@@ -329,7 +363,7 @@ namespace Listenarr.Api.Services.Adapters
                         multipart.Add(new StringContent(tags), "tags");
 
                     var torrentFileName = string.IsNullOrEmpty(result.TorrentFileName) ? "download.torrent" : result.TorrentFileName;
-                    var torrentContent = new ByteArrayContent(result.TorrentFileContent!);
+                    var torrentContent = new ByteArrayContent(torrentFileData);
                     torrentContent.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/x-bittorrent");
                     multipart.Add(torrentContent, "torrents", torrentFileName);
 
@@ -1222,6 +1256,7 @@ namespace Listenarr.Api.Services.Adapters
                 ? CombineWithOptionalBase(savePath, topLevel)
                 : savePath;
         }
+
     }
 }
 

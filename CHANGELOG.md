@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.56] - 2026-03-04
+## [0.2.56] - 2026-03-05
 
 ### Added
 - **Swagger endpoint documentation:** Added comprehensive XML doc comments (`<summary>`, `<param>`, `<remarks>`, `<response>`) to all ~133 API endpoints across 22 controllers for improved Swagger UI discoverability and developer experience.
@@ -20,6 +20,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Manual-interaction workflow coverage:** Added regression tests and API support for blocked-import signaling, block-reason visibility on single-download responses, and retry/unblock transition (`ImportBlocked -> ImportPending`) via `POST /api/v{version}/downloads/{id}/retry-import`.
 - **Recovery coverage:** Added regression tests for startup stuck-job reset behavior, duplicate requeue prevention during restart windows, and import-attempt counter persistence across processor restarts.
 - **API/UI status mapping coverage:** Added regression tests to lock status-surface consistency (`ImportPending` included in active/downloading mappings, `ImportBlocked` treated as failed/terminal) across backend downloads endpoints and frontend Activity/Wanted status buckets.
+- **Shared `TorrentFileDownloader` service:** Extracted reusable service for pre-downloading torrent files and resolving magnet URI redirects, used by Transmission and qBittorrent adapters.
+- **Windows path length enforcement:** Added backend `EnsurePathWithinLimits()` method in `FileNamingService` and frontend `usePathLengthCheck` composable providing real-time path length warnings in FileManagementSection, AddLibraryModal, EditAudiobookModal, and MoveAudiobookModal.
 
 ### Changed
 - **API route casing normalization:** Replaced implicit `[controller]` route tokens with explicit lowercase route strings across all controllers for consistent URL casing.
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Explicit import lifecycle state handling:** Strengthened Sonarr-parity lifecycle behavior around `Completed -> ImportPending -> Moved/ImportBlocked` by formalizing retry-vs-block transition semantics and ensuring failure metadata (`ImportAttempts`, block reason/messages) is consistently persisted.
 - **Active/in-progress parity semantics:** Treated `ImportPending` as an in-progress state across queue/monitoring and status-derived views while preserving `ImportBlocked` as terminal/manual-interaction-required.
 - **qBittorrent item-surface parity:** Applied configured qBittorrent category filtering parameter to `GetItemsAsync` so queue and item surfaces use the same category constraint.
+- **Expanded audio file format support:** Added `.wv` (WavPack), `.wma`, `.ape` (Monkey's Audio), `.alac`, `.aif`, and `.aiff` to the recognized audio extensions in `FileUtils.AudioExtensions`, enabling import of audiobooks in lossless/less-common formats.
 
 ### Fixed
 - **Disabled download clients still contacted by background services:** Fixed multiple code paths where disabled download clients were still being contacted for import resolution, post-import cleanup, and deferred removals — causing persistent log spam and unnecessary network calls. Added `IsEnabled` guards in:
@@ -40,6 +43,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Prowlarr import URL/port handling:** Prowlarr import now reliably supports both input styles: `hostOrIp:port` directly in URL/IP field, or host/IP in URL/IP field with port in the dedicated Port field.
 - **Port input normalization and validation:** Hardened frontend/backend handling for port values by enforcing valid integer TCP port range checks (1–65535).
 - **Manual interaction signaling reliability:** Ensured blocked-import paths consistently emit manual-interaction UX signals (warning toast + `ImportBlocked` history entry) and record import-failure history details for auditability.
+- **Transmission 301 redirect handling:** Pre-download torrent files before sending to Transmission to handle 301 redirects and magnet URI resolution that Transmission cannot follow natively.
+- **Duplicate Activity entries:** Fixed matching logic in `DownloadService` and `DownloadQueueService` to check `ClientDownloadId` metadata first, preventing duplicate download records when queue items were re-matched by title alone.
+- **FileMover hardlink cross-drive warning:** Improved logging when hardlink creation fails due to cross-drive source/destination, clearly indicating the fallback to copy.
+- **Runtime display showing incorrect hours:** Fixed `formatRuntime` displaying values like "2175h" instead of correct hours/minutes. Root cause was a `* 60` conversion in AddLibraryModal sending seconds to backend expecting minutes; added `>= 20000` legacy seconds guard across shared formatting utilities.
+- **NZBGet test connection and queue auth errors:** Fixed `CallXmlRpcAsync` not passing HTTP status code to `HttpRequestException`, removed duplicate catch block in `TestConnectionAsync`, and improved auth-specific error logging in `GetQueueAsync`.
+- **NZBGet downloads falsely reported as failed:** Downloads containing unrecognized audio formats (e.g., `.wv` WavPack files) were marked as `ImportFailed` because `FileUtils.IsAudioFile()` did not recognize the extension, causing the completed download processor to find zero importable files.
+- **Post-import scan scanning download directory instead of library:** After importing files, the scan job was enqueued with the download/destination path, causing `ScanBackgroundService` to scan the download directory and trigger spurious "Refusing to associate file outside audiobook folder" warnings. Fixed by passing `null` to the scan enqueue so the scanner uses the audiobook's `BasePath` or global `OutputPath`. Also added `BasePath` population in `CompletedDownloadProcessor` after directory imports so the audiobook's library path is always known.
 
 
 ## [0.2.55] - 2026-03-01
