@@ -86,10 +86,10 @@
       </table>
     </div>
 
-    <!-- Footer (always visible when items exist) -->
+    <!-- Footer (always visible when folders exist) -->
     <LibraryImportFooter
-      v-if="selectedFolder"
-      :root-folder-path="selectedFolder.path"
+      v-if="rootFoldersStore.folders.length > 0"
+      :folders="rootFoldersStore.folders"
     />
   </div>
 </template>

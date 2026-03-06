@@ -7,7 +7,12 @@
           <option value="move">Move</option>
           <option value="hardlink/copy">Hardlink / Copy</option>
         </select>
-        <span>to: <span class="footer-path" :title="rootFolderPath">{{ rootFolderPath }}</span></span>
+        <span class="footer-to">to:</span>
+        <select v-model="destinationFolderId" class="mode-select destination-select">
+          <option v-for="f in props.folders" :key="f.id" :value="f.id">
+            {{ f.path }}
+          </option>
+        </select>
       </label>
 
       <div v-if="store.metadataFetchCount > 100" class="rate-limit-warning">
@@ -57,17 +62,24 @@
 </template>
 
 <script setup lang="ts">
+import { ref, computed } from 'vue'
 import { PhWarning, PhPlay, PhStop, PhSpinner, PhDownload } from '@phosphor-icons/vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
 import { useToast } from '@/services/toastService'
+import type { RootFolder } from '@/types'
 
-const props = defineProps<{ rootFolderPath: string }>()
+const props = defineProps<{ folders: RootFolder[] }>()
 
 const store = useLibraryImportStore()
 const toast = useToast()
 
+const destinationFolderId = ref<number | null>(props.folders[0]?.id ?? null)
+const destinationPath = computed(
+  () => props.folders.find((f) => f.id === destinationFolderId.value)?.path ?? '',
+)
+
 async function handleImport() {
-  const { imported, errors } = await store.importSelected(props.rootFolderPath)
+  const { imported, errors } = await store.importSelected(destinationPath.value)
 
   if (imported > 0) {
     let msg = `${imported} book${imported !== 1 ? 's' : ''} imported`
@@ -110,16 +122,14 @@ async function handleImport() {
   white-space: nowrap;
 }
 
-.footer-path {
+.footer-to {
+  color: #888;
+}
+
+.destination-select {
   font-family: monospace;
   font-size: 0.78rem;
-  color: #ccc;
-  max-width: 260px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: inline-block;
-  vertical-align: middle;
+  max-width: 280px;
 }
 
 .mode-select {
