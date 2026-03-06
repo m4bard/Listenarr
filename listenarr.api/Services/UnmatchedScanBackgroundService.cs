@@ -100,8 +100,18 @@ namespace Listenarr.Api.Services
                 .Where(f => !trackedNormalized.Contains(NormalizePath(f)))
                 .ToList();
 
-            // Group by parent folder (each folder = one audiobook)
-            var grouped = unmatched.GroupBy(f => Path.GetDirectoryName(f) ?? rootFolderPath);
+            // Group by parent folder (each subfolder = one audiobook).
+            // Exception: files sitting directly in the root are each treated as their own
+            // audiobook (flat layout) — use the file path as the group key so every file
+            // produces its own result entry instead of all being collapsed into one.
+            var normalizedRoot = Path.GetFullPath(rootFolderPath);
+            var grouped = unmatched.GroupBy(f =>
+            {
+                var parent = Path.GetFullPath(Path.GetDirectoryName(f) ?? rootFolderPath);
+                return string.Equals(parent, normalizedRoot, StringComparison.OrdinalIgnoreCase)
+                    ? f        // flat root file → each file is its own group
+                    : parent;  // subfolder file → whole folder = one book
+            });
 
             // Resolve ffprobe path once for the whole scan (null = not available)
             var ffprobePath = await _ffmpegService.GetFfprobePathAsync();
@@ -131,7 +141,10 @@ namespace Listenarr.Api.Services
                         if (!string.IsNullOrEmpty(tags.Asin))         parsed.Asin = tags.Asin;
                     }
 
-                    var bookFolder = group.Key;
+                    // For flat root files the group key is the file path, not a directory.
+                    var bookFolder = Directory.Exists(group.Key)
+                        ? group.Key
+                        : (Path.GetDirectoryName(representative) ?? rootFolderPath);
                     var relativeFolder = bookFolder.Length > rootFolderPath.Length
                         ? bookFolder[(rootFolderPath.Length)..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                         : bookFolder;
