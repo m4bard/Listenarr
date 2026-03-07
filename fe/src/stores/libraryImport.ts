@@ -394,9 +394,15 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         let audiobookId: number
         try {
           const metadata = await _enrichMetadata(match)
+          const sanitizedMatch = {
+            ...match,
+            genres: Array.isArray(match.genres)
+              ? (match.genres as any[]).map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean)
+              : match.genres,
+          }
           const { audiobook } = await apiService.addToLibrary(metadata, {
             destinationPath: rootFolderPath,
-            searchResult: match,
+            searchResult: sanitizedMatch,
           })
           audiobookId = audiobook.id
         } catch (e: any) {
