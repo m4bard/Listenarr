@@ -139,7 +139,7 @@ namespace Listenarr.Api.Tests
             Assert.Single(files);
 
             // Cleanup
-            try { File.Delete(tmpMp3); } catch { }
+            try { File.Delete(tmpMp3); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{tmpMp3}': {ex.Message}"); }
         }
 
         [Fact]
@@ -151,7 +151,7 @@ namespace Listenarr.Api.Tests
 
             await using var db = new ListenArrDbContext(options);
 
-            var book = new Audiobook { Title = "Multi Book", BasePath = Path.Combine(Path.GetTempPath(), "listenarr-multi", Guid.NewGuid().ToString()) };
+            var book = new Audiobook { Title = "Multi Book", BasePath = Path.Join(Path.GetTempPath(), "listenarr-multi", Guid.NewGuid().ToString()) };
             db.Audiobooks.Add(book);
             await db.SaveChangesAsync();
 
@@ -159,14 +159,14 @@ namespace Listenarr.Api.Tests
             Directory.CreateDirectory(book.BasePath);
 
             // Create an existing file in destination with name collision
-            var existing = Path.Combine(book.BasePath, "chapter1.mp3");
+            var existing = Path.Join(book.BasePath, "chapter1.mp3");
             await File.WriteAllTextAsync(existing, "existing");
 
             // Create source directory with two files: one collides, one new
-            var srcDir = Path.Combine(Path.GetTempPath(), "listenarr-src", Guid.NewGuid().ToString());
+            var srcDir = Path.Join(Path.GetTempPath(), "listenarr-src", Guid.NewGuid().ToString());
             Directory.CreateDirectory(srcDir);
-            var file1 = Path.Combine(srcDir, "chapter1.mp3");
-            var file2 = Path.Combine(srcDir, "chapter2.mp3");
+            var file1 = Path.Join(srcDir, "chapter1.mp3");
+            var file2 = Path.Join(srcDir, "chapter2.mp3");
             await File.WriteAllTextAsync(file1, "file1");
             await File.WriteAllTextAsync(file2, "file2");
 
@@ -271,8 +271,8 @@ namespace Listenarr.Api.Tests
             }
 
             // Cleanup
-            try { Directory.Delete(book.BasePath, true); } catch { }
-            try { Directory.Delete(srcDir, true); } catch { }
+            try { Directory.Delete(book.BasePath, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{book.BasePath}': {ex.Message}"); }
+            try { Directory.Delete(srcDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{srcDir}': {ex.Message}"); }
         }
 
         [Fact]

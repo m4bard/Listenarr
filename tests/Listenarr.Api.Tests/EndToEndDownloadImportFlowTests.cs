@@ -43,10 +43,10 @@ namespace Listenarr.Api.Tests
                 .UseInMemoryDatabase(dbName)
                 .Options;
 
-            var outputRoot = Path.Combine(Path.GetTempPath(), "listenarr-e2e-out", Guid.NewGuid().ToString("N"));
+            var outputRoot = Path.Join(Path.GetTempPath(), "listenarr-e2e-out", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(outputRoot);
 
-            var sourceRoot = Path.Combine(Path.GetTempPath(), "listenarr-e2e-src", Guid.NewGuid().ToString("N"));
+            var sourceRoot = Path.Join(Path.GetTempPath(), "listenarr-e2e-src", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(sourceRoot);
 
             var sourcePath = isMultiFile
@@ -59,7 +59,7 @@ namespace Listenarr.Api.Tests
                 {
                     Title = $"E2E {downloadType} {(isMultiFile ? "Multi" : "Single")}",
                     Authors = new List<string> { "Test Author" },
-                    BasePath = Path.Combine(outputRoot, "library", Guid.NewGuid().ToString("N"))
+                    BasePath = Path.Join(outputRoot, "library", Guid.NewGuid().ToString("N"))
                 };
                 seed.Audiobooks.Add(audiobook);
                 await seed.SaveChangesAsync();
@@ -276,17 +276,17 @@ namespace Listenarr.Api.Tests
 
         private static async Task<string> CreateSingleFileSourceAsync(string sourceRoot)
         {
-            var file = Path.Combine(sourceRoot, "single-book.m4b");
+            var file = Path.Join(sourceRoot, "single-book.m4b");
             await File.WriteAllTextAsync(file, "single-file-content");
             return file;
         }
 
         private static async Task<string> CreateMultiFileSourceAsync(string sourceRoot)
         {
-            var dir = Path.Combine(sourceRoot, "multi-book");
+            var dir = Path.Join(sourceRoot, "multi-book");
             Directory.CreateDirectory(dir);
-            await File.WriteAllTextAsync(Path.Combine(dir, "part1.mp3"), "part-1");
-            await File.WriteAllTextAsync(Path.Combine(dir, "part2.mp3"), "part-2");
+            await File.WriteAllTextAsync(Path.Join(dir, "part1.mp3"), "part-1");
+            await File.WriteAllTextAsync(Path.Join(dir, "part2.mp3"), "part-2");
             return dir;
         }
     }

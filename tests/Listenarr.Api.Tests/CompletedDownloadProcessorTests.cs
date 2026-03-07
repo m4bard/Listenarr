@@ -505,9 +505,9 @@ namespace Listenarr.Api.Tests
         {
             // Arrange
             var downloadId = Guid.NewGuid().ToString();
-            var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            var tempDir = System.IO.Path.Join(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
             System.IO.Directory.CreateDirectory(tempDir);
-            var filePath = System.IO.Path.Combine(tempDir, "file1.mp3");
+            var filePath = System.IO.Path.Join(tempDir, "file1.mp3");
             System.IO.File.WriteAllText(filePath, "dummy");
 
             var repo = new TestDownloadRepository();
@@ -543,8 +543,8 @@ namespace Listenarr.Api.Tests
             Assert.True(tracked!.Status == DownloadStatus.Completed || tracked.Status == DownloadStatus.Moved, $"Expected Completed or Moved, got {tracked.Status}");
 
             // cleanup
-            try { System.IO.File.Delete(filePath); } catch { }
-            try { System.IO.Directory.Delete(tempDir); } catch { }
+            try { System.IO.File.Delete(filePath); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{filePath}': {ex.Message}"); }
+            try { System.IO.Directory.Delete(tempDir); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{tempDir}': {ex.Message}"); }
         }
 
         [Fact]
@@ -552,10 +552,10 @@ namespace Listenarr.Api.Tests
         public async Task ProcessCompletedDownloadAsync_RecursiveDirectory_ImportsNestedFile()
         {
             var downloadId = Guid.NewGuid().ToString();
-            var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
-            var nested = System.IO.Path.Combine(tempDir, "nested");
+            var tempDir = System.IO.Path.Join(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            var nested = System.IO.Path.Join(tempDir, "nested");
             System.IO.Directory.CreateDirectory(nested);
-            var filePath = System.IO.Path.Combine(nested, "file2.mp3");
+            var filePath = System.IO.Path.Join(nested, "file2.mp3");
             System.IO.File.WriteAllText(filePath, "dummy");
 
             var repo = new TestDownloadRepository();
@@ -590,8 +590,8 @@ namespace Listenarr.Api.Tests
             Assert.Equal(filePath, tracked.FinalPath);
 
             // cleanup
-            try { System.IO.File.Delete(filePath); } catch { }
-            try { System.IO.Directory.Delete(tempDir, true); } catch { }
+            try { System.IO.File.Delete(filePath); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{filePath}': {ex.Message}"); }
+            try { System.IO.Directory.Delete(tempDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{tempDir}': {ex.Message}"); }
         }
 
         [Fact]
@@ -599,13 +599,13 @@ namespace Listenarr.Api.Tests
         public async Task ProcessCompletedDownloadAsync_ArchiveExtraction_ImportsContainedFile()
         {
             var downloadId = Guid.NewGuid().ToString();
-            var tempDir = System.IO.Path.Combine(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
-            var inner = System.IO.Path.Combine(tempDir, "inner");
+            var tempDir = System.IO.Path.Join(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            var inner = System.IO.Path.Join(tempDir, "inner");
             System.IO.Directory.CreateDirectory(inner);
-            var audioPath = System.IO.Path.Combine(inner, "audio.mp3");
+            var audioPath = System.IO.Path.Join(inner, "audio.mp3");
             System.IO.File.WriteAllText(audioPath, "dummy");
 
-            var zipPath = System.IO.Path.Combine(tempDir, "release.zip");
+            var zipPath = System.IO.Path.Join(tempDir, "release.zip");
             ZipFile.CreateFromDirectory(inner, zipPath);
 
             var repo = new TestDownloadRepository();
@@ -641,8 +641,8 @@ namespace Listenarr.Api.Tests
             Assert.Contains("audio.mp3", tracked.FinalPath ?? string.Empty);
 
             // cleanup
-            try { System.IO.File.Delete(zipPath); } catch { }
-            try { System.IO.Directory.Delete(tempDir, true); } catch { }
+            try { System.IO.File.Delete(zipPath); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{zipPath}': {ex.Message}"); }
+            try { System.IO.Directory.Delete(tempDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{tempDir}': {ex.Message}"); }
         }
 
         [Fact]

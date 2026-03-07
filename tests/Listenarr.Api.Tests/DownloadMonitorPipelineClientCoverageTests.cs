@@ -45,12 +45,12 @@ namespace Listenarr.Api.Tests
             db.Downloads.Add(download);
             await db.SaveChangesAsync();
 
-            var sourceDir = Path.Combine(Path.GetTempPath(), "listenarr-pipeline", Guid.NewGuid().ToString("N"));
+            var sourceDir = Path.Join(Path.GetTempPath(), "listenarr-pipeline", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(sourceDir);
-            var sourceFile = Path.Combine(sourceDir, "Pipeline Coverage.m4b");
+            var sourceFile = Path.Join(sourceDir, "Pipeline Coverage.m4b");
             await File.WriteAllTextAsync(sourceFile, "dummy");
 
-            var outputDir = Path.Combine(Path.GetTempPath(), "listenarr-pipeline-out", Guid.NewGuid().ToString("N"));
+            var outputDir = Path.Join(Path.GetTempPath(), "listenarr-pipeline-out", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(outputDir);
 
             var settings = new ApplicationSettings

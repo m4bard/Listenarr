@@ -383,8 +383,13 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
+                _logger.LogDebug(
+                    ex,
+                    "Failed to inspect download metadata while scoring queue match for download {DownloadId} and queue item {QueueItemId}",
+                    LogRedaction.SanitizeText(download.Id),
+                    LogRedaction.SanitizeText(queueItem.Id));
             }
 
             if (!string.IsNullOrWhiteSpace(download.Title) &&

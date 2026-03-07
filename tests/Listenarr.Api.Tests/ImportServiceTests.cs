@@ -18,20 +18,20 @@ namespace Listenarr.Api.Tests
         public async Task ImportFilesFromDirectory_CreatesDestinationDirectory_WhenMissing()
         {
             // Arrange
-            var outputRoot = Path.Combine(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
             if (Directory.Exists(outputRoot)) Directory.Delete(outputRoot, true);
 
-            var sourceDir = Path.Combine(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
             Directory.CreateDirectory(sourceDir);
-            var file1 = Path.Combine(sourceDir, "track1.m4b");
-            var file2 = Path.Combine(sourceDir, "track2.m4b");
+            var file1 = Path.Join(sourceDir, "track1.m4b");
+            var file2 = Path.Join(sourceDir, "track2.m4b");
             await File.WriteAllTextAsync(file1, "dummy");
             await File.WriteAllTextAsync(file2, "dummy");
 
             var settings = new ApplicationSettings { OutputPath = outputRoot, CompletedFileAction = "Move", EnableMetadataProcessing = false };
 
             // Build provider and register ImportService with an in-memory DB factory
-            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            using var provider = TestServiceFactory.BuildServiceProvider(services =>
             {
                 var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                     .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -67,20 +67,20 @@ namespace Listenarr.Api.Tests
             }
 
             // Cleanup
-            try { Directory.Delete(sourceDir, true); } catch { }
-            try { Directory.Delete(outputRoot, true); } catch { }
+            try { Directory.Delete(sourceDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{sourceDir}': {ex.Message}"); }
+            try { Directory.Delete(outputRoot, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{outputRoot}': {ex.Message}"); }
         }
 
         [Fact]
         public async Task ImportSingleFile_WithAudiobookBasePath_DoesNotDuplicateFolderPatternSegments()
         {
-            var outputRoot = Path.Combine(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
-            var basePath = Path.Combine(outputRoot, "Frank Herbert", "Dune");
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var basePath = Path.Join(outputRoot, "Frank Herbert", "Dune");
             Directory.CreateDirectory(basePath);
 
-            var sourceDir = Path.Combine(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
             Directory.CreateDirectory(sourceDir);
-            var sourceFile = Path.Combine(sourceDir, "dune-source.m4b");
+            var sourceFile = Path.Join(sourceDir, "dune-source.m4b");
             await File.WriteAllTextAsync(sourceFile, "dummy");
 
             var settings = new ApplicationSettings
@@ -113,7 +113,7 @@ namespace Listenarr.Api.Tests
                 .Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>()))
                 .ReturnsAsync(() => new ListenArrDbContext(options));
 
-            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            using var provider = TestServiceFactory.BuildServiceProvider(services =>
             {
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(dbFactoryMock.Object);
                 services.AddSingleton<IFileNamingService>(new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()));
@@ -139,8 +139,8 @@ namespace Listenarr.Api.Tests
             Assert.DoesNotContain($"Frank Herbert{Path.DirectorySeparatorChar}", relative, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain($"Dune{Path.DirectorySeparatorChar}", relative, StringComparison.OrdinalIgnoreCase);
 
-            try { Directory.Delete(sourceDir, true); } catch { }
-            try { Directory.Delete(outputRoot, true); } catch { }
+            try { Directory.Delete(sourceDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{sourceDir}': {ex.Message}"); }
+            try { Directory.Delete(outputRoot, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{outputRoot}': {ex.Message}"); }
         }
     }
 }
