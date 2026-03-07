@@ -453,13 +453,6 @@ namespace Listenarr.Api.Tests
                 });
 
             var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
-            var services = new ServiceCollection();
-            services.AddSingleton<ListenArrDbContext>(db);
-            services.AddSingleton<IConfigurationService>(configMock.Object);
-            services.AddMemoryCache();
-            services.AddSingleton(memoryCache);
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();

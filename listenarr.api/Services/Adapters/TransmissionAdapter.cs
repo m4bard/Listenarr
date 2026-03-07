@@ -194,22 +194,18 @@ namespace Listenarr.Api.Services.Adapters
                     throw new ArgumentException("No magnet link, torrent URL, or cached torrent file provided", nameof(result));
                 }
 
-                // Transmission's magnet link parser does NOT URL-decode percent-encoded
-                // tracker parameters (e.g. tr=http%3a%2f%2ftracker... stays encoded).
-                // This causes tracker resolution to fail silently — Transmission tries to
-                // contact "http%3a%2f%2f..." as a literal URL which is invalid, so the
-                // torrent stalls at "Downloading metadata" (status 4, totalSize 0) forever.
-                // Normalize by decoding the magnet URI so tracker URLs are raw:
-                //   Before: tr=http%3a%2f%2ftracker.example.com%3a1337%2fannounce
-                //   After:  tr=http://tracker.example.com:1337/announce
+                // Transmission does not reliably decode percent-encoded magnet parameter
+                // values, so decode safe values ahead of time. Leave values encoded when
+                // decoding would introduce top-level separators like '&' or '#' and corrupt
+                // the magnet payload.
                 if (torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
                 {
-                    var decoded = Uri.UnescapeDataString(torrentUrl);
-                    if (!string.Equals(decoded, torrentUrl, StringComparison.Ordinal))
+                    var normalizedMagnetUrl = NormalizeMagnetUriForTransmission(torrentUrl);
+                    if (!string.Equals(normalizedMagnetUrl, torrentUrl, StringComparison.Ordinal))
                     {
                         _logger.LogDebug("Normalized percent-encoded magnet link for Transmission compatibility");
                     }
-                    torrentUrl = decoded;
+                    torrentUrl = normalizedMagnetUrl;
                 }
 
                 arguments["filename"] = torrentUrl;
@@ -1074,6 +1070,58 @@ namespace Listenarr.Api.Services.Adapters
                 }
             }
             return $"{scheme}://{client.Host}:{client.Port}{rpcPath}";
+        }
+
+        private static string NormalizeMagnetUriForTransmission(string magnetUri)
+        {
+            var queryStart = magnetUri.IndexOf('?');
+            if (queryStart < 0 || queryStart >= magnetUri.Length - 1)
+            {
+                return magnetUri;
+            }
+
+            var segments = magnetUri[(queryStart + 1)..].Split('&');
+            var changed = false;
+
+            for (var i = 0; i < segments.Length; i++)
+            {
+                var segment = segments[i];
+                if (string.IsNullOrEmpty(segment))
+                {
+                    continue;
+                }
+
+                var equalsIndex = segment.IndexOf('=');
+                if (equalsIndex <= 0 || equalsIndex >= segment.Length - 1)
+                {
+                    continue;
+                }
+
+                var value = segment[(equalsIndex + 1)..];
+                if (!value.Contains('%'))
+                {
+                    continue;
+                }
+
+                var decodedValue = Uri.UnescapeDataString(value);
+                if (decodedValue.Contains('&') || decodedValue.Contains('#'))
+                {
+                    continue;
+                }
+
+                if (!string.Equals(decodedValue, value, StringComparison.Ordinal))
+                {
+                    segments[i] = $"{segment[..(equalsIndex + 1)]}{decodedValue}";
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+            {
+                return magnetUri;
+            }
+
+            return $"{magnetUri[..(queryStart + 1)]}{string.Join("&", segments)}";
         }
 
         private static string CombineWithOptionalBase(string? basePath, string candidatePath)

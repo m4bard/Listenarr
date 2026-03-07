@@ -239,7 +239,9 @@ namespace Listenarr.Api.Services
                 // Filter out downloads from disabled or missing clients
                 var originalCount = candidates.Count;
                 candidates = candidates.Where(d =>
-                    string.IsNullOrWhiteSpace(d.DownloadClientId) || enabledClientIds.Contains(d.DownloadClientId)).ToList();
+                    string.IsNullOrWhiteSpace(d.DownloadClientId) ||
+                    string.Equals(d.DownloadClientId, "DDL", StringComparison.OrdinalIgnoreCase) ||
+                    enabledClientIds.Contains(d.DownloadClientId)).ToList();
                 if (candidates.Count < originalCount)
                 {
                     _logger.LogDebug("Skipping {Count} completed downloads from disabled/missing download clients",

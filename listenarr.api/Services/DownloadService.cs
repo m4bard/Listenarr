@@ -535,13 +535,13 @@ namespace Listenarr.Api.Services
             // If another download for this audiobook is already active (Queued/Downloading/
             // Completed/ImportPending), skip creating a new record to prevent duplicate
             // entries in the activity view.
-            if (audiobookId.HasValue && audiobookId.Value > 0)
+            if (audiobookId is int audiobookIdValue && audiobookIdValue > 0)
             {
                 try
                 {
                     var checkContext = await _dbContextFactory.CreateDbContextAsync();
                     var existingActive = await checkContext.Downloads
-                        .Where(d => d.AudiobookId == audiobookId.Value &&
+                        .Where(d => d.AudiobookId == audiobookIdValue &&
                                     (d.Status == DownloadStatus.Queued ||
                                      d.Status == DownloadStatus.Downloading ||
                                      d.Status == DownloadStatus.Completed ||
@@ -552,13 +552,13 @@ namespace Listenarr.Api.Services
                     {
                         _logger.LogInformation(
                             "Skipping duplicate download for audiobook {AudiobookId} — an active download already exists. Title: '{Title}'",
-                            audiobookId.Value, searchResult.Title);
+                            audiobookIdValue, searchResult.Title);
                         return string.Empty;
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
-                    _logger.LogDebug(ex, "Failed to check for duplicate downloads for audiobook {AudiobookId} (non-blocking)", audiobookId.Value);
+                    _logger.LogDebug(ex, "Failed to check for duplicate downloads for audiobook {AudiobookId} (non-blocking)", audiobookIdValue);
                 }
             }
 
@@ -2498,4 +2498,3 @@ namespace Listenarr.Api.Services
         }
     }
 }
-

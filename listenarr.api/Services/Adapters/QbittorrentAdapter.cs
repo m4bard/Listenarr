@@ -254,13 +254,13 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                 });
 
-                var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
-                if (!loginResp.IsSuccessStatusCode)
+                using var loginResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+                if (!loginResponse.IsSuccessStatusCode)
                 {
-                    var body = await loginResp.Content.ReadAsStringAsync(ct);
+                    var body = await loginResponse.Content.ReadAsStringAsync(ct);
                     var redacted = LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
 
-                    if (loginResp.StatusCode == HttpStatusCode.Forbidden)
+                    if (loginResponse.StatusCode == HttpStatusCode.Forbidden)
                     {
                         var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                         if (!testResp.IsSuccessStatusCode)
@@ -275,7 +275,7 @@ namespace Listenarr.Api.Services.Adapters
                     }
                     else
                     {
-                        _logger.LogWarning("qBittorrent login failed: {Status} - {Body}", loginResp.StatusCode, redacted);
+                        _logger.LogWarning("qBittorrent login failed: {Status} - {Body}", loginResponse.StatusCode, redacted);
                     }
                 }
                 else
@@ -485,7 +485,7 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("category", postImportCategory)
                 });
 
-                var resp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/setCategory", setCategoryData, ct);
+                using var resp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/setCategory", setCategoryData, ct);
                 if (resp.IsSuccessStatusCode)
                 {
                     _logger.LogInformation("Marked torrent {Hash} as imported (category: {Category}) in qBittorrent", downloadId, postImportCategory);

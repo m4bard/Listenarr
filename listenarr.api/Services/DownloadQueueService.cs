@@ -114,10 +114,13 @@ namespace Listenarr.Api.Services
                 {
                     if (dl.Metadata != null)
                     {
-                        if (dl.Metadata.TryGetValue("ClientDownloadId", out var cdId) && cdId is string cdStr && !string.IsNullOrWhiteSpace(cdStr))
-                            allKnownClientItemIds.Add(cdStr);
-                        if (dl.Metadata.TryGetValue("TorrentHash", out var thVal) && thVal is string thStr && !string.IsNullOrWhiteSpace(thStr))
-                            allKnownClientItemIds.Add(thStr);
+                        var clientDownloadId = GetMetadataString(dl.Metadata, "ClientDownloadId");
+                        if (!string.IsNullOrWhiteSpace(clientDownloadId))
+                            allKnownClientItemIds.Add(clientDownloadId);
+
+                        var torrentHash = GetMetadataString(dl.Metadata, "TorrentHash");
+                        if (!string.IsNullOrWhiteSpace(torrentHash))
+                            allKnownClientItemIds.Add(torrentHash);
                     }
                 }
             }
@@ -364,25 +367,19 @@ namespace Listenarr.Api.Services
                 if (download.Metadata != null && !string.IsNullOrWhiteSpace(queueItem.Id))
                 {
                     // Check ClientDownloadId (stored for all client types on add)
-                    if (download.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
+                    var storedId = GetMetadataString(download.Metadata, "ClientDownloadId");
+                    if (!string.IsNullOrWhiteSpace(storedId) &&
+                        string.Equals(storedId, queueItem.Id, StringComparison.OrdinalIgnoreCase))
                     {
-                        var storedId = clientIdObj?.ToString();
-                        if (!string.IsNullOrWhiteSpace(storedId) &&
-                            string.Equals(storedId, queueItem.Id, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return 2;
-                        }
+                        return 2;
                     }
 
                     // Legacy fallback: TorrentHash (older qBittorrent records)
-                    if (download.Metadata.TryGetValue("TorrentHash", out var hashObj))
+                    var storedHash = GetMetadataString(download.Metadata, "TorrentHash");
+                    if (!string.IsNullOrWhiteSpace(storedHash) &&
+                        string.Equals(storedHash, queueItem.Id, StringComparison.OrdinalIgnoreCase))
                     {
-                        var storedHash = hashObj?.ToString();
-                        if (!string.IsNullOrWhiteSpace(storedHash) &&
-                            string.Equals(storedHash, queueItem.Id, StringComparison.OrdinalIgnoreCase))
-                        {
-                            return 2;
-                        }
+                        return 2;
                     }
                 }
             }
@@ -398,6 +395,26 @@ namespace Listenarr.Api.Services
             }
 
             return 0;
+        }
+
+        private static string? GetMetadataString(Dictionary<string, object>? metadata, string key)
+        {
+            if (metadata == null || !metadata.TryGetValue(key, out var value) || value == null)
+            {
+                return null;
+            }
+
+            if (value is JsonElement element)
+            {
+                return element.ValueKind switch
+                {
+                    JsonValueKind.Null => null,
+                    JsonValueKind.Undefined => null,
+                    _ => element.ToString()
+                };
+            }
+
+            return value.ToString();
         }
     }
 }

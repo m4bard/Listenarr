@@ -2884,9 +2884,10 @@ namespace Listenarr.Api.Controllers
                     }
                 }
                 // For active downloads, assume they will meet quality requirements
-                else if (download.Status == DownloadStatus.Downloading)
+                else if (download.Status == DownloadStatus.Downloading ||
+                         download.Status == DownloadStatus.ImportPending)
                 {
-                    _logger.LogDebug("Quality cutoff assumed met for audiobook '{Title}' due to active download", audiobook.Title);
+                    _logger.LogDebug("Quality cutoff assumed met for audiobook '{Title}' due to active download/import", audiobook.Title);
                     return true;
                 }
             }

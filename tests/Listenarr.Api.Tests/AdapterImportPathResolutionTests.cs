@@ -34,10 +34,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Transmission_GetImportItemAsync_SingleFile_ResolvesFilePath()
         {
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"arguments\":{\"torrents\":[{\"id\":1,\"name\":\"Book.m4b\",\"downloadDir\":\"/downloads\"}]}}")
+            };
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
-                var body = "{\"arguments\":{\"torrents\":[{\"id\":1,\"name\":\"Book.m4b\",\"downloadDir\":\"/downloads\"}]}}";
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) });
+                return Task.FromResult(response);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -47,8 +50,9 @@ namespace Listenarr.Api.Tests
                     It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book.m4b", StringComparison.Ordinal))))
                 .ReturnsAsync("D:/import/Book.m4b");
 
+            using var httpClient = new HttpClient(handler);
             var adapter = new TransmissionAdapter(
-                new TestHttpClientFactory(new HttpClient(handler)),
+                new TestHttpClientFactory(httpClient),
                 pathMapMock.Object,
                 Mock.Of<ITorrentFileDownloader>(),
                 NullLogger<TransmissionAdapter>.Instance);
@@ -70,10 +74,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Transmission_GetImportItemAsync_MultiFile_ResolvesDirectoryPath()
         {
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"arguments\":{\"torrents\":[{\"id\":2,\"name\":\"Book Folder\",\"downloadDir\":\"/downloads\"}]}}")
+            };
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
-                var body = "{\"arguments\":{\"torrents\":[{\"id\":2,\"name\":\"Book Folder\",\"downloadDir\":\"/downloads\"}]}}";
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) });
+                return Task.FromResult(response);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -83,8 +90,9 @@ namespace Listenarr.Api.Tests
                     It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book Folder", StringComparison.Ordinal))))
                 .ReturnsAsync("D:/import/Book Folder");
 
+            using var httpClient = new HttpClient(handler);
             var adapter = new TransmissionAdapter(
-                new TestHttpClientFactory(new HttpClient(handler)),
+                new TestHttpClientFactory(httpClient),
                 pathMapMock.Object,
                 Mock.Of<ITorrentFileDownloader>(),
                 NullLogger<TransmissionAdapter>.Instance);
@@ -106,10 +114,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Sabnzbd_GetImportItemAsync_SingleFile_ResolvesFilePath()
         {
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_1\",\"storage\":\"/completed/Book.m4b\"}]}}")
+            };
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
-                var body = "{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_1\",\"storage\":\"/completed/Book.m4b\"}]}}";
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) });
+                return Task.FromResult(response);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -117,8 +128,9 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync("sab-client", "/completed/Book.m4b"))
                 .ReturnsAsync("E:/imports/Book.m4b");
 
+            using var httpClient = new HttpClient(handler);
             var adapter = new SabnzbdAdapter(
-                new TestHttpClientFactory(new HttpClient(handler)),
+                new TestHttpClientFactory(httpClient),
                 pathMapMock.Object,
                 Mock.Of<INzbUrlResolver>(),
                 NullLogger<SabnzbdAdapter>.Instance);
@@ -141,10 +153,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Sabnzbd_GetImportItemAsync_MultiFile_ResolvesDirectoryPath()
         {
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_2\",\"storage\":\"/completed/Book Folder\"}]}}")
+            };
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
-                var body = "{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_2\",\"storage\":\"/completed/Book Folder\"}]}}";
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(body) });
+                return Task.FromResult(response);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -152,8 +167,9 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync("sab-client", "/completed/Book Folder"))
                 .ReturnsAsync("E:/imports/Book Folder");
 
+            using var httpClient = new HttpClient(handler);
             var adapter = new SabnzbdAdapter(
-                new TestHttpClientFactory(new HttpClient(handler)),
+                new TestHttpClientFactory(httpClient),
                 pathMapMock.Object,
                 Mock.Of<INzbUrlResolver>(),
                 NullLogger<SabnzbdAdapter>.Instance);
@@ -176,13 +192,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Nzbget_GetImportItemAsync_SingleFile_ResolvesFilePath()
         {
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(BuildNzbGetHistoryResponse("101", "/nzbget/completed/Book.m4b"), Encoding.UTF8, "text/xml")
+            };
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
-                var xml = BuildNzbGetHistoryResponse("101", "/nzbget/completed/Book.m4b");
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(xml, Encoding.UTF8, "text/xml")
-                });
+                return Task.FromResult(response);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -190,8 +206,9 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync("nzb-client", "/nzbget/completed/Book.m4b"))
                 .ReturnsAsync("F:/imports/Book.m4b");
 
+            using var httpClient = new HttpClient(handler);
             var adapter = new NzbgetAdapter(
-                new TestHttpClientFactory(new HttpClient(handler)),
+                new TestHttpClientFactory(httpClient),
                 Mock.Of<INzbUrlResolver>(),
                 pathMapMock.Object,
                 NullLogger<NzbgetAdapter>.Instance);
@@ -213,13 +230,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Nzbget_GetImportItemAsync_MultiFile_ResolvesDirectoryPath()
         {
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(BuildNzbGetHistoryResponse("202", "/nzbget/completed/Book Folder"), Encoding.UTF8, "text/xml")
+            };
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
-                var xml = BuildNzbGetHistoryResponse("202", "/nzbget/completed/Book Folder");
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(xml, Encoding.UTF8, "text/xml")
-                });
+                return Task.FromResult(response);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -227,8 +244,9 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync("nzb-client", "/nzbget/completed/Book Folder"))
                 .ReturnsAsync("F:/imports/Book Folder");
 
+            using var httpClient = new HttpClient(handler);
             var adapter = new NzbgetAdapter(
-                new TestHttpClientFactory(new HttpClient(handler)),
+                new TestHttpClientFactory(httpClient),
                 Mock.Of<INzbUrlResolver>(),
                 pathMapMock.Object,
                 NullLogger<NzbgetAdapter>.Instance);

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Api.Repositories;
@@ -219,6 +220,71 @@ namespace Listenarr.Api.Tests
 
             gatewayMock.Verify(g => g.GetQueueAsync(enabledClient, It.IsAny<CancellationToken>()), Times.Once);
             gatewayMock.Verify(g => g.GetQueueAsync(disabledClient, It.IsAny<CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        [Trait("Scenario", "JsonElementMetadataSuppressesTrackedCompletedExternalItem")]
+        public async Task GetQueueAsync_KnownClientIdStoredAsJsonElement_DoesNotSurfaceUnmatchedCompletedItem()
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = "tr-1",
+                Name = "Transmission",
+                Type = "transmission",
+                IsEnabled = true
+            };
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetDownloadClientConfigurationsAsync())
+                .ReturnsAsync(new List<DownloadClientConfiguration> { client });
+            configMock.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { ShowCompletedExternalDownloads = true });
+
+            using var clientIdDoc = JsonDocument.Parse("\"HASH1\"");
+            var trackedDownload = new Download
+            {
+                Id = "tracked-1",
+                DownloadClientId = "old-client",
+                Title = "Tracked elsewhere",
+                Status = DownloadStatus.Failed,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["ClientDownloadId"] = clientIdDoc.RootElement.Clone()
+                }
+            };
+
+            var downloadRepoMock = new Mock<IDownloadRepository>();
+            downloadRepoMock.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<Download> { trackedDownload });
+
+            var processingJobRepoMock = new Mock<IDownloadProcessingJobRepository>();
+            processingJobRepoMock.Setup(r => r.GetPendingDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
+            processingJobRepoMock.Setup(r => r.GetAllJobDownloadIdsAsync(It.IsAny<IEnumerable<string>>())).ReturnsAsync(new List<string>());
+
+            var gatewayMock = new Mock<IDownloadClientGateway>();
+            gatewayMock.Setup(g => g.GetQueueAsync(client, It.IsAny<CancellationToken>()))
+                .ReturnsAsync(new List<QueueItem>
+                {
+                    new QueueItem
+                    {
+                        Id = "HASH1",
+                        Title = "Tracked elsewhere",
+                        Status = "completed",
+                        AddedAt = DateTime.UtcNow
+                    }
+                });
+
+            var metricsMock = new Mock<IAppMetricsService>();
+
+            var service = CreateService(
+                configMock.Object,
+                downloadRepoMock.Object,
+                processingJobRepoMock.Object,
+                gatewayMock.Object,
+                metricsMock.Object);
+
+            var result = await service.GetQueueAsync();
+
+            Assert.Empty(result);
         }
     }
 }

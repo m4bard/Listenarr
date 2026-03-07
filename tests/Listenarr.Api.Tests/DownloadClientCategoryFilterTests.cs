@@ -109,7 +109,7 @@ namespace Listenarr.Api.Tests
                 });
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactory = new Mock<IHttpClientFactory>();
             httpFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
@@ -191,7 +191,7 @@ namespace Listenarr.Api.Tests
                 });
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactory = new Mock<IHttpClientFactory>();
             httpFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
