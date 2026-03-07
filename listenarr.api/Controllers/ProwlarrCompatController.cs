@@ -13,7 +13,8 @@ namespace Listenarr.Api.Controllers
 {
     [ApiController]
     [Route("api/v1")]
-
+    [Tags("Prowlarr Compatibility")]
+    [ApiExplorerSettings(IgnoreApi = true)]
     public class ProwlarrCompatController : ControllerBase
     {
         private StartupConfig GetStartupConfig()

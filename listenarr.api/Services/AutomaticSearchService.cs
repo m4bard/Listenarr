@@ -173,7 +173,8 @@ namespace Listenarr.Api.Services
                             d.Status == DownloadStatus.Downloading ||
                             d.Status == DownloadStatus.Paused ||
                             d.Status == DownloadStatus.Processing ||
-                            d.Status == DownloadStatus.Ready))
+                            d.Status == DownloadStatus.Ready ||
+                            d.Status == DownloadStatus.ImportPending))
                 .FirstOrDefaultAsync(stoppingToken);
 
             if (activeDownload != null)
@@ -349,7 +350,9 @@ namespace Listenarr.Api.Services
             // Get existing downloads for this audiobook
             var existingDownloads = await dbContext.Downloads
                 .Where(d => d.AudiobookId == audiobook.Id &&
-                           (d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.Downloading))
+                           (d.Status == DownloadStatus.Completed ||
+                            d.Status == DownloadStatus.Downloading ||
+                            d.Status == DownloadStatus.ImportPending))
                 .ToListAsync();
 
             // Get existing files for this audiobook
@@ -385,7 +388,7 @@ namespace Listenarr.Api.Services
                     }
                 }
                 // For active downloads, assume they will meet quality requirements
-                else if (download.Status == DownloadStatus.Downloading)
+                else if (download.Status == DownloadStatus.Downloading || download.Status == DownloadStatus.ImportPending)
                 {
                     _logger.LogDebug("Quality cutoff assumed met for audiobook '{Title}' due to active download", audiobook.Title);
                     return true;
