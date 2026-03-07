@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - **Swagger endpoint documentation:** Added comprehensive XML doc comments (`<summary>`, `<param>`, `<remarks>`, `<response>`) to all ~133 API endpoints across 22 controllers for improved Swagger UI discoverability and developer experience.
 - **Swagger tag grouping and ordering:** Added `[Tags("...")]` attributes to all controllers with a custom `SwaggerTagOrderDocumentFilter` providing logical tag ordering and descriptions in the Swagger UI.
+- **Custom Transmission RPC path support:** Added frontend and backend support for configuring a non-default Transmission RPC endpoint path (`urlBase`), allowing connections to installations that use custom paths instead of `/transmission/rpc`.
 - **Frontend regression coverage (Prowlarr import):** Added a unit test for the Settings → Indexers "Import from Prowlarr" modal validating that entering host in URL/IP and port in the dedicated Port field submits the expected API payload.
 - **Import lifecycle regression coverage:** Added focused `CompletedDownloadProcessor` unit tests covering:
   - non-blocking retry behavior on first import failure (`ImportPending`, attempts incremented, no manual-interaction toast),
