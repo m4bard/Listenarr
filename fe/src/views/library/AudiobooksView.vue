@@ -194,7 +194,6 @@
                   :class="{ loaded: authorImageLoaded[collection.name] }"
                 ></div>
                 <img
-                  v-if="getAuthorImageUrl(collection)"
                   class="audiobook-poster author-cover lazy-img"
                   :class="{ loaded: authorImageLoaded[collection.name] }"
                   :src="
