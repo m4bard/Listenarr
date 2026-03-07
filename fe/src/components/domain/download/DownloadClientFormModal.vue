@@ -84,6 +84,20 @@
                 <small>{{ `Use secure connection when connecting to ${formData.type}` }}</small>
               </Checkbox>
             </div>
+
+            <div class="form-group" v-if="formData.type === 'transmission'">
+              <label for="urlBase">URL Base</label>
+              <input
+                id="urlBase"
+                v-model="formData.urlBase"
+                type="text"
+                placeholder="/transmission/rpc"
+              />
+              <small
+                >RPC path for the Transmission endpoint. Default is <code>/transmission/rpc</code>.
+                Some seedbox providers use a custom path (e.g. <code>/rpc</code>).</small
+              >
+            </div>
           </FormSection>
 
           <!-- Authentication -->
@@ -356,6 +370,7 @@ const defaultFormData = {
   sequentialOrder: false,
   firstAndLastFirst: false,
   contentLayout: 'default',
+  urlBase: '',
   settings: {},
   remotePathMappingIds: [] as number[],
 }
@@ -463,11 +478,15 @@ watch(
         olderPriority: (settings?.olderPriority as string) || 'default',
         removeCompleted: (settings?.removeCompleted as boolean) || false,
         removeFailed: (settings?.removeFailed as boolean) || false,
-        removeCompletedDownloads: (settings?.removeCompletedDownloads as string) || 'none',
+        removeCompletedDownloads:
+          newClient.removeCompletedDownloads ||
+          (settings?.removeCompletedDownloads as string) ||
+          'none',
         initialState: (settings?.initialState as string) || 'default',
         sequentialOrder: (settings?.sequentialOrder as boolean) || false,
         firstAndLastFirst: (settings?.firstAndLastFirst as boolean) || false,
         contentLayout: (settings?.contentLayout as string) || 'default',
+        urlBase: (settings?.urlBase as string) || '',
         settings: newClient.settings || {},
         remotePathMappingIds:
           settings && settings.remotePathMappingIds ? settings.remotePathMappingIds : [],
@@ -507,6 +526,9 @@ const testConnection = async () => {
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
           ? { apiKey: formData.value.apiKey }
+          : {}),
+        ...(formData.value.type === 'transmission' && formData.value.urlBase
+          ? { urlBase: formData.value.urlBase }
           : {}),
         ...(formData.value.category && { category: formData.value.category }),
         ...(formData.value.tags && { tags: formData.value.tags }),
@@ -564,6 +586,9 @@ const handleSubmit = async () => {
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
           ? { apiKey: formData.value.apiKey }
+          : {}),
+        ...(formData.value.type === 'transmission' && formData.value.urlBase
+          ? { urlBase: formData.value.urlBase }
           : {}),
         ...(formData.value.category && { category: formData.value.category }),
         ...(formData.value.tags && { tags: formData.value.tags }),

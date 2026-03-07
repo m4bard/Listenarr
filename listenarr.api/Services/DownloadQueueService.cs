@@ -65,6 +65,10 @@ namespace Listenarr.Api.Services
 
             // Build listenarrDownloads list using repository
             List<Download> listenarrDownloads;
+            // Track all known client-specific IDs (TorrentHash, ClientDownloadId) across ALL downloads
+            // (including Moved/Failed) so that "unmatched completed" external items can be correctly
+            // identified as tracked — even when the DB record points to a different client.
+            var allKnownClientItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             {
                 var allDownloads = await _downloadRepository.GetAllAsync();
                 _logger.LogInformation("Found {TotalDownloads} downloads (including failed)", allDownloads.Count);
@@ -103,6 +107,19 @@ namespace Listenarr.Api.Services
                 listenarrDownloads = ddlToShow.Concat(externalDownloads).ToList();
                 _logger.LogDebug("Final filtering result: {FinalCount} downloads to include in queue filtering ({DdlCount} DDL, {ExternalCount} external)",
                     listenarrDownloads.Count, ddlToShow.Count, externalDownloads.Count);
+
+                // Collect all known client item IDs from ALL downloads (including Moved/Failed)
+                // so we can suppress "unmatched external" items that are actually tracked.
+                foreach (var dl in allDownloads)
+                {
+                    if (dl.Metadata != null)
+                    {
+                        if (dl.Metadata.TryGetValue("ClientDownloadId", out var cdId) && cdId is string cdStr && !string.IsNullOrWhiteSpace(cdStr))
+                            allKnownClientItemIds.Add(cdStr);
+                        if (dl.Metadata.TryGetValue("TorrentHash", out var thVal) && thVal is string thStr && !string.IsNullOrWhiteSpace(thStr))
+                            allKnownClientItemIds.Add(thStr);
+                    }
+                }
             }
 
             // Application settings cache
@@ -164,6 +181,11 @@ namespace Listenarr.Api.Services
                         var unmatchedCompleted = clientQueue
                             .Where(q => (q.Status ?? string.Empty).Equals("completed", StringComparison.OrdinalIgnoreCase))
                             .Where(q => !existingIds.Contains(q.Id))
+                            // Skip items whose client ID (hash) is already tracked by ANY download
+                            // record, even one tied to a different client or in a terminal state.
+                            // This prevents showing torrents as "unmatched" when they were grabbed
+                            // by Listenarr but recorded under a different download client.
+                            .Where(q => string.IsNullOrEmpty(q.Id) || !allKnownClientItemIds.Contains(q.Id))
                             .ToList();
 
                         foreach (var uc in unmatchedCompleted)

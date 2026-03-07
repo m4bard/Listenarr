@@ -208,6 +208,7 @@ export interface DownloadClientConfiguration {
 
 export interface DownloadClientSettings {
   apiKey?: string
+  urlBase?: string
   category?: string
   tags?: string
   recentPriority?: string

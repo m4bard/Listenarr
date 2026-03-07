@@ -6,6 +6,7 @@ using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text;
+using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -97,6 +98,43 @@ namespace Listenarr.Api.Services.Adapters
                 !string.IsNullOrEmpty(result.MagnetLink) ? "yes" : "no",
                 LogRedaction.SanitizeUrl(torrentUrl ?? "(null)"));
 
+            // Transmission's magnet link handling is less reliable than qBittorrent's — it
+            // often stalls at "Downloading metadata..." because its DHT/tracker resolution is
+            // weaker. When a separate TorrentUrl (HTTP) is available alongside a magnet link,
+            // prefer fetching the .torrent file from TorrentUrl. The .torrent file contains
+            // full tracker lists and piece hashes, giving Transmission everything it needs to
+            // start immediately without metadata resolution.
+            if ((torrentFileData == null || torrentFileData.Length == 0) &&
+                !string.IsNullOrEmpty(torrentUrl) &&
+                torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrEmpty(result.TorrentUrl) &&
+                !result.TorrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
+                Uri.TryCreate(result.TorrentUrl, UriKind.Absolute, out var altUri) &&
+                (altUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
+                 altUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+            {
+                _logger.LogDebug("Magnet link available but TorrentUrl also present — attempting .torrent pre-download from {Url} for better Transmission compatibility",
+                    LogRedaction.SanitizeUrl(result.TorrentUrl));
+                try
+                {
+                    var altResult = await _torrentFileDownloader.DownloadAsync(result.TorrentUrl, ct);
+                    if (altResult.HasBytes)
+                    {
+                        torrentFileData = altResult.TorrentBytes;
+                        _logger.LogInformation("Pre-downloaded .torrent file ({Bytes} bytes) from TorrentUrl for '{Title}' — using instead of magnet link",
+                            torrentFileData!.Length, LogRedaction.SanitizeText(result.Title));
+                    }
+                    else
+                    {
+                        _logger.LogDebug("TorrentUrl pre-download did not return file data for '{Title}', will use magnet link", LogRedaction.SanitizeText(result.Title));
+                    }
+                }
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "TorrentUrl pre-download failed for '{Title}', will use magnet link", LogRedaction.SanitizeText(result.Title));
+                }
+            }
+
             // Pre-download torrent file if not cached and URL is HTTP(S) (not magnet).
             // Transmission's built-in HTTP client cannot always follow redirects from indexers
             // (e.g. Prowlarr returning 301), so we fetch the .torrent file ourselves and send
@@ -134,7 +172,7 @@ namespace Listenarr.Api.Services.Adapters
                     _logger.LogWarning(ex, "Failed to pre-download torrent file for '{Title}', falling back to URL", LogRedaction.SanitizeText(result.Title));
                 }
             }
-            else
+            else if (torrentFileData == null || torrentFileData.Length == 0)
             {
                 _logger.LogDebug("Skipping pre-download: torrentFileData={HasData}, torrentUrl={Url}, isMagnet={IsMagnet}",
                     torrentFileData != null && torrentFileData.Length > 0 ? "has data" : "null/empty",
@@ -155,6 +193,25 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     throw new ArgumentException("No magnet link, torrent URL, or cached torrent file provided", nameof(result));
                 }
+
+                // Transmission's magnet link parser does NOT URL-decode percent-encoded
+                // tracker parameters (e.g. tr=http%3a%2f%2ftracker... stays encoded).
+                // This causes tracker resolution to fail silently — Transmission tries to
+                // contact "http%3a%2f%2f..." as a literal URL which is invalid, so the
+                // torrent stalls at "Downloading metadata" (status 4, totalSize 0) forever.
+                // Normalize by decoding the magnet URI so tracker URLs are raw:
+                //   Before: tr=http%3a%2f%2ftracker.example.com%3a1337%2fannounce
+                //   After:  tr=http://tracker.example.com:1337/announce
+                if (torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+                {
+                    var decoded = Uri.UnescapeDataString(torrentUrl);
+                    if (!string.Equals(decoded, torrentUrl, StringComparison.Ordinal))
+                    {
+                        _logger.LogDebug("Normalized percent-encoded magnet link for Transmission compatibility");
+                    }
+                    torrentUrl = decoded;
+                }
+
                 arguments["filename"] = torrentUrl;
                 _logger.LogDebug("Using torrent URL for '{Title}': {Url}", LogRedaction.SanitizeText(result.Title), LogRedaction.SanitizeUrl(torrentUrl));
             }
@@ -164,6 +221,11 @@ namespace Listenarr.Api.Services.Adapters
             {
                 arguments["download-dir"] = client.DownloadPath;
             }
+
+            // Explicitly request that the torrent starts immediately. Without this,
+            // Transmission uses its session setting `start-added-torrents` which
+            // defaults to true but may be set to false by the user.
+            arguments["paused"] = false;
 
             var labels = CollectLabels(client);
             if (labels.Count > 0)
@@ -798,6 +860,20 @@ namespace Listenarr.Api.Services.Adapters
             long secondsSeeding,
             (bool SeedRatioLimited, double SeedRatioLimit, bool IdleSeedingLimitEnabled, int IdleSeedingLimit) sessionConfig)
         {
+            var hasEffectiveRatioLimit =
+                (seedRatioMode == 1 && seedRatioLimit > 0) ||
+                (seedRatioMode == 0 && sessionConfig.SeedRatioLimited && sessionConfig.SeedRatioLimit > 0);
+            var hasEffectiveIdleLimit =
+                (seedIdleMode == 1 && seedIdleLimit > 0) ||
+                (seedIdleMode == 0 && sessionConfig.IdleSeedingLimitEnabled && sessionConfig.IdleSeedingLimit > 0);
+
+            // With no effective seed constraints configured, honor the cleanup policy
+            // immediately instead of reporting the torrent as non-removable forever.
+            if (!hasEffectiveRatioLimit && !hasEffectiveIdleLimit)
+            {
+                return true;
+            }
+
             // seedRatioMode: 0 = global, 1 = per-torrent, 2 = unlimited
             if (seedRatioMode == 1)
             {
@@ -901,11 +977,22 @@ namespace Listenarr.Api.Services.Adapters
             return new object[] { id };
         }
 
+        /// <summary>
+        /// JsonSerializerOptions that use UnsafeRelaxedJsonEscaping so that characters like
+        /// &amp;, +, and = inside magnet-link query strings are NOT escaped to \u00XX sequences.
+        /// Transmission's built-in JSON parser does not always decode unicode escape sequences
+        /// correctly, which causes tracker URLs in magnet links (&amp;tr=...) to be silently lost.
+        /// </summary>
+        private static readonly JsonSerializerOptions s_rpcJsonOptions = new()
+        {
+            Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+        };
+
         private async Task<JsonElement> InvokeRpcAsync(DownloadClientConfiguration client, object payload, CancellationToken ct)
         {
             var httpClient = _httpClientFactory.CreateClient("transmission");
             var baseUrl = BuildBaseUrl(client);
-            var serializedPayload = JsonSerializer.Serialize(payload);
+            var serializedPayload = JsonSerializer.Serialize(payload, s_rpcJsonOptions);
             string? sessionId = null;
             
             _logger.LogDebug("Transmission RPC request to {Url}: {Payload}", LogRedaction.SanitizeUrl(baseUrl), LogRedaction.SanitizeText(serializedPayload, 500));
@@ -977,7 +1064,16 @@ namespace Listenarr.Api.Services.Adapters
         private static string BuildBaseUrl(DownloadClientConfiguration client)
         {
             var scheme = client.UseSSL ? "https" : "http";
-            return $"{scheme}://{client.Host}:{client.Port}/transmission/rpc";
+            var rpcPath = "/transmission/rpc";
+            if (client.Settings?.TryGetValue("urlBase", out var urlBaseObj) == true)
+            {
+                var custom = urlBaseObj?.ToString()?.Trim();
+                if (!string.IsNullOrEmpty(custom))
+                {
+                    rpcPath = custom.StartsWith('/') ? custom : "/" + custom;
+                }
+            }
+            return $"{scheme}://{client.Host}:{client.Port}{rpcPath}";
         }
 
         private static string CombineWithOptionalBase(string? basePath, string candidatePath)

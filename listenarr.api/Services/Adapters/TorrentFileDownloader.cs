@@ -118,6 +118,26 @@ namespace Listenarr.Api.Services.Adapters
                 var bytes = await response.Content.ReadAsByteArrayAsync(downloadCts.Token);
                 _logger.LogDebug("Pre-download fetched {Bytes} bytes from {Url} (hops: {Hops})",
                     bytes.Length, LogRedaction.SanitizeUrl(currentUrl), hop);
+
+                // Validate that the response is actually a .torrent file (bencoded dictionary
+                // starts with 'd') rather than HTML, error pages, or other non-torrent content.
+                if (bytes.Length < 2 || bytes[0] != (byte)'d')
+                {
+                    // Check if the response looks like HTML
+                    var prefix = System.Text.Encoding.ASCII.GetString(bytes, 0, Math.Min(bytes.Length, 50)).TrimStart();
+                    if (prefix.StartsWith("<", StringComparison.Ordinal) ||
+                        prefix.StartsWith("{", StringComparison.Ordinal) ||
+                        prefix.StartsWith("error", StringComparison.OrdinalIgnoreCase))
+                    {
+                        _logger.LogWarning("Pre-download returned non-torrent content ({Bytes} bytes, prefix='{Prefix}') from {Url}",
+                            bytes.Length, prefix.Substring(0, Math.Min(prefix.Length, 30)), LogRedaction.SanitizeUrl(currentUrl));
+                        return TorrentDownloadResult.Empty;
+                    }
+
+                    _logger.LogDebug("Pre-download response doesn't look like a .torrent file (first byte=0x{FirstByte:X2}), returning anyway",
+                        bytes.Length > 0 ? bytes[0] : 0);
+                }
+
                 return TorrentDownloadResult.FromBytes(bytes);
             }
 

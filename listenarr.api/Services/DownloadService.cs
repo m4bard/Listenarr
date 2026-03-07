@@ -531,6 +531,37 @@ namespace Listenarr.Api.Services
             // Ensure downloadClientId is non-null before assignment into model
             var downloadClientIdForModel = downloadClientId ?? string.Empty;
 
+            // Guard against duplicate downloads for the same audiobook.
+            // If another download for this audiobook is already active (Queued/Downloading/
+            // Completed/ImportPending), skip creating a new record to prevent duplicate
+            // entries in the activity view.
+            if (audiobookId.HasValue && audiobookId.Value > 0)
+            {
+                try
+                {
+                    var checkContext = await _dbContextFactory.CreateDbContextAsync();
+                    var existingActive = await checkContext.Downloads
+                        .Where(d => d.AudiobookId == audiobookId.Value &&
+                                    (d.Status == DownloadStatus.Queued ||
+                                     d.Status == DownloadStatus.Downloading ||
+                                     d.Status == DownloadStatus.Completed ||
+                                     d.Status == DownloadStatus.ImportPending))
+                        .AnyAsync();
+
+                    if (existingActive)
+                    {
+                        _logger.LogInformation(
+                            "Skipping duplicate download for audiobook {AudiobookId} — an active download already exists. Title: '{Title}'",
+                            audiobookId.Value, searchResult.Title);
+                        return string.Empty;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "Failed to check for duplicate downloads for audiobook {AudiobookId} (non-blocking)", audiobookId.Value);
+                }
+            }
+
             // Create Download record in database before sending to client
             var download = new Download
             {
@@ -1251,757 +1282,6 @@ namespace Listenarr.Api.Services
             }
         }
 
-        private async Task<string?> SendToQBittorrent(DownloadClientConfiguration client, SearchResult result)
-        {
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
-
-            // Try to extract hash from magnet link before we even contact qBittorrent
-            string? extractedHash = null;
-            if (!string.IsNullOrEmpty(result.MagnetLink) && result.MagnetLink.Contains("xt=urn:btih:"))
-            {
-                var hashStart = result.MagnetLink.IndexOf("xt=urn:btih:") + "xt=urn:btih:".Length;
-                var hashEnd = result.MagnetLink.IndexOf("&", hashStart);
-                if (hashEnd == -1) hashEnd = result.MagnetLink.Length;
-                extractedHash = result.MagnetLink.Substring(hashStart, hashEnd - hashStart).ToLowerInvariant();
-                _logger.LogInformation("Extracted hash from magnet link: {Hash}", extractedHash);
-            }
-
-            // Create a local HttpClient with a CookieContainer so qBittorrent session cookie (SID) is preserved
-            // Note: For qBittorrent we need cookies, so we create a custom handler
-            // This is acceptable as it's not high-frequency and cookies are required for auth
-            var cookieJar = new CookieContainer();
-            var handler = new HttpClientHandler
-            {
-                CookieContainer = cookieJar,
-                UseCookies = true,
-                AutomaticDecompression = DecompressionMethods.All
-            };
-
-            // Create HttpClient in a scoped block so it gets disposed before the fallback hash check
-            {
-                using var httpClient = new HttpClient(handler);
-
-                // Check if authentication is required by attempting login
-                using var loginData = new FormUrlEncodedContent(new[]
-                {
-                new KeyValuePair<string, string>("username", client.Username ?? string.Empty),
-                new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
-            });
-
-                var loginResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData);
-
-                if (!loginResponse.IsSuccessStatusCode)
-                {
-                    // Read response body to provide more context
-                    var loginResponseContent = await loginResponse.Content.ReadAsStringAsync();
-
-                    // Redact any potentially sensitive values from the response when logging
-                    var redactedLoginResponse = LogRedaction.RedactText(loginResponseContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
-
-                    // Check if this is a 403 Forbidden (authentication disabled) vs other errors
-                    if (loginResponse.StatusCode == System.Net.HttpStatusCode.Forbidden)
-                    {
-                        // Try a simple API call without authentication
-                        var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version");
-                        if (testResp.IsSuccessStatusCode)
-                        {
-                            // API works without auth, so authentication is disabled
-                            _logger.LogInformation("qBittorrent authentication disabled, proceeding without credentials");
-                        }
-                        else
-                        {
-                            // API fails without auth, so authentication is enabled but credentials are wrong
-                            throw new Exception("qBittorrent authentication enabled but credentials are incorrect");
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogError("Failed to login to qBittorrent. Status: {Status}, Response: {Response}",
-                            loginResponse.StatusCode, redactedLoginResponse);
-                        throw new Exception($"Failed to login to qBittorrent: {loginResponse.StatusCode} - {redactedLoginResponse}");
-                    }
-                }
-                else
-                {
-                    _logger.LogInformation("Successfully authenticated with qBittorrent");
-                }
-
-                // Get torrent URL - prefer magnet link, fall back to torrent file URL
-                var torrentUrl = !string.IsNullOrEmpty(result.MagnetLink)
-                    ? result.MagnetLink
-                    : result.TorrentUrl;
-
-                if (string.IsNullOrEmpty(torrentUrl))
-                {
-                    throw new Exception("No magnet link or torrent URL found in search result");
-                }
-
-                _logger.LogInformation("Adding torrent to qBittorrent: {Title}", result.Title);
-                _logger.LogDebug("Torrent URL: {Url}", torrentUrl);
-
-                // Get existing torrents list before adding (only request hashes to minimize payload)
-                var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "?");
-                var torrentsBeforeResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash{categoryFilter}");
-                var existingHashes = new HashSet<string>();
-                if (torrentsBeforeResp.IsSuccessStatusCode)
-                {
-                    var beforeJson = await torrentsBeforeResp.Content.ReadAsStringAsync();
-                    if (!string.IsNullOrWhiteSpace(beforeJson))
-                    {
-                        var beforeTorrents = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, System.Text.Json.JsonElement>>>(beforeJson);
-                        if (beforeTorrents != null)
-                        {
-                            foreach (var t in beforeTorrents)
-                            {
-                                if (t.TryGetValue("hash", out var hashEl))
-                                {
-                                    var hash = hashEl.GetString();
-                                    if (!string.IsNullOrEmpty(hash))
-                                        existingHashes.Add(hash);
-                                }
-                            }
-                        }
-                    }
-                }
-
-                var savePath = string.IsNullOrEmpty(client.DownloadPath) ? string.Empty : client.DownloadPath;
-                string? category = null;
-                string? tags = null;
-
-                if (client.Settings != null)
-                {
-                    if (client.Settings.TryGetValue("category", out var categoryObj))
-                        category = categoryObj?.ToString();
-                    if (client.Settings.TryGetValue("tags", out var tagsObj))
-                        tags = tagsObj?.ToString();
-                }
-
-                if (!string.IsNullOrEmpty(category))
-                    _logger.LogInformation("Adding torrent to qBittorrent with category: {Category}", category);
-                if (!string.IsNullOrEmpty(tags))
-                    _logger.LogInformation("Adding torrent to qBittorrent with tags: {Tags}", tags);
-
-                var hasCachedTorrent = result.TorrentFileContent != null && result.TorrentFileContent.Length > 0;
-                HttpResponseMessage addResponse;
-
-                if (hasCachedTorrent)
-                {
-                    using var multipart = new MultipartFormDataContent();
-                    multipart.Add(new StringContent(savePath), "savepath");
-                    if (!string.IsNullOrEmpty(category))
-                        multipart.Add(new StringContent(category), "category");
-                    if (!string.IsNullOrEmpty(tags))
-                        multipart.Add(new StringContent(tags), "tags");
-
-                    var torrentFileName = string.IsNullOrEmpty(result.TorrentFileName) ? "myanonamouse.torrent" : result.TorrentFileName;
-                    var torrentContent = new ByteArrayContent(result.TorrentFileContent!);
-                    torrentContent.Headers.ContentType = new MediaTypeHeaderValue("application/x-bittorrent");
-                    multipart.Add(torrentContent, "torrents", torrentFileName);
-
-                    // Extract announce/tracker URLs from the bencoded torrent (http/https/udp and announce-list/url-list)
-                    try
-                    {
-                        var announces = MyAnonamouseHelper.ExtractAnnounceUrls(result.TorrentFileContent!);
-                        var count = announces?.Count ?? 0;
-                        var unique = count > 0 ? string.Join(", ", announces?.Take(10) ?? Enumerable.Empty<string>()) : "(none)";
-                        _logger.LogInformation("Torrent announce/URLs for '{Title}' - count={Count}: {Announces}", result.Title, count, LogRedaction.RedactText(unique, LogRedaction.GetSensitiveValuesFromEnvironment()));
-                        if (count == 0)
-                        {
-                            _logger.LogDebug("No announce/URL entries detected in cached torrent for '{Title}'", result.Title);
-                        }
-                    }
-                    catch (Exception exAnn) when (exAnn is not OperationCanceledException && exAnn is not OutOfMemoryException && exAnn is not StackOverflowException) {
-                        _logger.LogDebug(exAnn, "Failed to extract announce URLs from torrent for diagnostics (non-fatal)");
-                    }
-
-                    _logger.LogInformation("Uploading cached MyAnonamouse torrent to qBittorrent for '{Title}'", result.Title);
-                    addResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/add", multipart);
-                }
-                else
-                {
-                    var formData = new List<KeyValuePair<string, string>>
-                    {
-                        new KeyValuePair<string, string>("urls", torrentUrl),
-                        new KeyValuePair<string, string>("savepath", savePath)
-                    };
-
-                    if (!string.IsNullOrEmpty(category))
-                        formData.Add(new KeyValuePair<string, string>("category", category));
-                    if (!string.IsNullOrEmpty(tags))
-                        formData.Add(new KeyValuePair<string, string>("tags", tags));
-
-                    using var addData = new FormUrlEncodedContent(formData);
-                    addResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/add", addData);
-                }
-                if (!addResponse.IsSuccessStatusCode)
-                {
-                    var responseContent = await addResponse.Content.ReadAsStringAsync();
-                    var redacted = LogRedaction.RedactText(responseContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
-                    _logger.LogError("Failed to add torrent to qBittorrent. Status: {Status}, Response: {Response}",
-                        addResponse.StatusCode, redacted);
-                    throw new Exception($"Failed to add torrent to qBittorrent: {addResponse.StatusCode} - {redacted}");
-                }
-
-                _logger.LogInformation("Successfully sent torrent to qBittorrent");
-
-                // Wait a moment for qBittorrent to process the torrent
-                await Task.Delay(1000);
-
-                // Get updated torrents list to find the newly added torrent hash (request minimal fields)
-                var categoryFilter2 = QBittorrentHelpers.BuildCategoryParameter(client?.Settings ?? new Dictionary<string, object>(), "&");
-                var torrentsAfterResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash,name{categoryFilter2}");
-                if (torrentsAfterResp.IsSuccessStatusCode)
-                {
-                    var afterJson = await torrentsAfterResp.Content.ReadAsStringAsync();
-                    if (!string.IsNullOrWhiteSpace(afterJson))
-                    {
-                        var afterTorrents = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, System.Text.Json.JsonElement>>>(afterJson);
-                        if (afterTorrents != null)
-                        {
-                            // Find the new torrent by comparing with existing hashes
-                            foreach (var t in afterTorrents)
-                            {
-                                if (t.TryGetValue("hash", out var hashEl))
-                                {
-                                    var hash = hashEl.GetString();
-                                    if (!string.IsNullOrEmpty(hash) && !existingHashes.Contains(hash))
-                                    {
-                                        var name = t.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
-                                        _logger.LogInformation("Found newly added qBittorrent torrent: {Name} with hash {Hash}", name, hash);
-                                        return hash;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            } // End using httpClient scope
-
-            // If we couldn't find it by comparing lists but we extracted the hash from magnet link, use that
-            if (!string.IsNullOrEmpty(extractedHash))
-            {
-                _logger.LogInformation("Using extracted hash from magnet link: {Hash}", extractedHash);
-                return extractedHash;
-            }
-
-            _logger.LogWarning("Could not retrieve torrent hash from qBittorrent after adding torrent: {Title}", result.Title);
-            return null;
-        }
-
-        private async Task SendToTransmission(DownloadClientConfiguration client, SearchResult result)
-        {
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/transmission/rpc";
-
-            try
-            {
-                // Get torrent URL - prefer magnet link, fall back to torrent file URL
-                var torrentUrl = !string.IsNullOrEmpty(result.MagnetLink)
-                    ? result.MagnetLink
-                    : result.TorrentUrl;
-
-                if (string.IsNullOrEmpty(torrentUrl))
-                {
-                    throw new Exception("No magnet link or torrent URL found in search result");
-                }
-
-                _logger.LogInformation("Adding torrent to Transmission: {Title}", result.Title);
-                _logger.LogDebug("Torrent URL: {Url}", torrentUrl);
-
-                // First, get session ID (required for authentication)
-                string sessionId = await GetTransmissionSessionId(baseUrl, client.Username, client.Password);
-
-                // Prepare torrent-add arguments
-                var arguments = new Dictionary<string, object>
-                {
-                    { "filename", torrentUrl },
-                    { "download-dir", client.DownloadPath }
-                };
-
-                // Add labels (Transmission's equivalent to categories/tags)
-                var labels = new List<string>();
-
-                // Add category as a label if configured
-                if (client.Settings != null && client.Settings.TryGetValue("category", out var categoryObj))
-                {
-                    var category = categoryObj?.ToString();
-                    if (!string.IsNullOrEmpty(category))
-                    {
-                        labels.Add(category);
-                        _logger.LogInformation("Adding torrent to Transmission with category: {Category}", category);
-                    }
-                }
-
-                // Add tags as labels if configured
-                if (client.Settings != null && client.Settings.TryGetValue("tags", out var tagsObj))
-                {
-                    var tags = tagsObj?.ToString();
-                    if (!string.IsNullOrEmpty(tags))
-                    {
-                        // Split tags by comma and add each as a label
-                        var tagList = tags.Split(',', StringSplitOptions.RemoveEmptyEntries)
-                                         .Select(t => t.Trim())
-                                         .Where(t => !string.IsNullOrEmpty(t));
-                        labels.AddRange(tagList);
-                        _logger.LogInformation("Adding torrent to Transmission with tags: {Tags}", tags);
-                    }
-                }
-
-                // Add labels to arguments if we have any
-                if (labels.Any())
-                {
-                    arguments["labels"] = labels;
-                }
-
-                // Create RPC request
-                var rpcRequest = new
-                {
-                    method = "torrent-add",
-                    arguments = arguments,
-                    tag = 1
-                };
-
-                var jsonContent = JsonSerializer.Serialize(rpcRequest);
-                var httpContent = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-                // Set required headers
-                httpContent.Headers.Add("X-Transmission-Session-Id", sessionId);
-
-                // Use per-request authorization header (thread-safe)
-                using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl);
-                request.Content = httpContent;
-
-                if (!string.IsNullOrEmpty(client.Username))
-                {
-                    var authBytes = Encoding.UTF8.GetBytes($"{client.Username}:{client.Password}");
-                    var authHeader = Convert.ToBase64String(authBytes);
-                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authHeader);
-                }
-
-                var response = await _httpClient.SendAsync(request);
-                var responseContent = await response.Content.ReadAsStringAsync();
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var redacted = LogRedaction.RedactText(responseContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
-                    _logger.LogError("Failed to add torrent to Transmission. Status: {Status}, Response: {Response}",
-                        response.StatusCode, redacted);
-                    throw new Exception($"Transmission RPC error: {response.StatusCode}");
-                }
-
-                // Defensive: ensure response body is valid JSON
-                if (string.IsNullOrWhiteSpace(responseContent))
-                {
-                    _logger.LogWarning("Transmission returned empty response body for torrent-add request: {Url}", baseUrl);
-                    return;
-                }
-
-                // Parse response to get torrent ID
-                var rpcResponse = JsonSerializer.Deserialize<JsonElement>(responseContent);
-
-                if (rpcResponse.TryGetProperty("result", out var result_prop) && result_prop.GetString() == "success")
-                {
-                    string torrentId = Guid.NewGuid().ToString(); // Default fallback
-
-                    // Try to get the actual torrent ID from response
-                    if (rpcResponse.TryGetProperty("arguments", out var args) &&
-                        args.TryGetProperty("torrent-added", out var torrentAdded) &&
-                        torrentAdded.TryGetProperty("id", out var id))
-                    {
-                        torrentId = id.GetInt32().ToString();
-                    }
-                    else if (args.TryGetProperty("torrent-duplicate", out var torrentDuplicate) &&
-                             torrentDuplicate.TryGetProperty("id", out var dupId))
-                    {
-                        torrentId = dupId.GetInt32().ToString();
-                        _logger.LogInformation("Torrent already exists in Transmission with ID: {TorrentId}", torrentId);
-                    }
-
-                    _logger.LogInformation("Successfully added torrent to Transmission with ID: {TorrentId}", torrentId);
-                }
-                else
-                {
-                    var errorMsg = "Unknown error";
-                    if (rpcResponse.TryGetProperty("result", out var resultMsg))
-                    {
-                        errorMsg = resultMsg.GetString() ?? "Unknown error";
-                    }
-                    throw new Exception($"Transmission RPC error: {errorMsg}");
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Failed to send torrent to Transmission");
-                throw;
-            }
-        }
-
-        private async Task<string> GetTransmissionSessionId(string baseUrl, string username, string password)
-        {
-            try
-            {
-                // Make a dummy request to get the session ID from the 409 response
-                var dummyRequest = new { method = "session-get", tag = 0 };
-                var jsonContent = JsonSerializer.Serialize(dummyRequest);
-                var httpContent = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-                // Use per-request authorization header (thread-safe)
-                using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl);
-                request.Content = httpContent;
-
-                if (!string.IsNullOrEmpty(username))
-                {
-                    var authBytes = Encoding.UTF8.GetBytes($"{username}:{password}");
-                    var authHeader = Convert.ToBase64String(authBytes);
-                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authHeader);
-                }
-
-                var response = await _httpClient.SendAsync(request);
-
-                // Transmission returns 409 with X-Transmission-Session-Id header on first request
-                if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
-                {
-                    if (response.Headers.TryGetValues("X-Transmission-Session-Id", out var sessionIds))
-                    {
-                        var sessionId = sessionIds.First();
-                        _logger.LogDebug("Got Transmission session ID: {SessionId}", sessionId);
-                        return sessionId;
-                    }
-                }
-                else if (response.IsSuccessStatusCode)
-                {
-                    // If we get a success response, we might not need a session ID (older versions)
-                    return string.Empty;
-                }
-
-                throw new Exception($"Failed to get Transmission session ID: {response.StatusCode}");
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Failed to get Transmission session ID");
-                throw;
-            }
-        }
-
-        private async Task SendToSABnzbd(DownloadClientConfiguration client, SearchResult result)
-        {
-            try
-            {
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
-
-                // Get API key from settings
-                var apiKey = "";
-                if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
-                {
-                    apiKey = apiKeyObj?.ToString() ?? "";
-                }
-
-                if (string.IsNullOrEmpty(apiKey))
-                {
-                    _logger.LogError("SABnzbd API key not configured");
-                    return;
-                }
-
-                // Get NZB URL (append indexer API key when required)
-                var (nzbUrl, indexerApiKey) = await EnsureIndexerApiKeyOnNzbUrlAsync(result);
-                if (string.IsNullOrEmpty(nzbUrl))
-                {
-                    _logger.LogError("No NZB URL found in search result");
-                    return;
-                }
-
-                _logger.LogInformation("Sending NZB to SABnzbd: {Title} from {Source}", result.Title, result.Source);
-                var sabSensitiveValues = LogRedaction.GetSensitiveValuesFromEnvironment().ToList();
-                sabSensitiveValues.Add(apiKey);
-                if (!string.IsNullOrEmpty(client.Password)) sabSensitiveValues.Add(client.Password);
-                if (!string.IsNullOrEmpty(indexerApiKey)) sabSensitiveValues.Add(indexerApiKey);
-                _logger.LogDebug("NZB URL: {Url}", LogRedaction.RedactText(nzbUrl, sabSensitiveValues));
-
-                // Build SABnzbd addurl API request
-                var queryParams = new Dictionary<string, string>
-                {
-                    { "mode", "addurl" },
-                    { "name", nzbUrl },
-                    { "apikey", apiKey },
-                    { "output", "json" },
-                    { "nzbname", result.Title }
-                };
-
-                // Add priority if configured
-                if (client.Settings != null && client.Settings.TryGetValue("recentPriority", out var priorityObj))
-                {
-                    var priority = priorityObj?.ToString();
-                    if (!string.IsNullOrEmpty(priority) && priority != "default")
-                    {
-                        queryParams["priority"] = priority switch
-                        {
-                            "force" => "2",
-                            "high" => "1",
-                            "normal" => "0",
-                            "low" => "-1",
-                            _ => "0"
-                        };
-                    }
-                }
-
-                // Add category if configured
-                var category = "audiobooks"; // default fallback
-                if (client.Settings != null && client.Settings.TryGetValue("category", out var categoryObj))
-                {
-                    var configuredCategory = categoryObj?.ToString();
-                    if (!string.IsNullOrEmpty(configuredCategory))
-                    {
-                        category = configuredCategory;
-                    }
-                }
-                queryParams["cat"] = category;
-                _logger.LogInformation("Adding NZB to SABnzbd with category: {Category}", category);
-
-                var queryString = string.Join("&", queryParams.Select(kvp => $"{kvp.Key}={Uri.EscapeDataString(kvp.Value)}"));
-                var requestUrl = $"{baseUrl}?{queryString}";
-
-                _logger.LogDebug("SABnzbd request URL: {Url}", LogRedaction.RedactText(requestUrl, sabSensitiveValues));
-
-                var response = await _httpClient.GetAsync(requestUrl);
-                var responseContent = await response.Content.ReadAsStringAsync();
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var redacted = LogRedaction.RedactText(responseContent, sabSensitiveValues);
-                    _logger.LogError("SABnzbd returned error status {Status}: {Content}", response.StatusCode, redacted);
-                    throw new Exception($"SABnzbd returned status {response.StatusCode}: {redacted}");
-                }
-
-                // Defensive: ensure response body is valid JSON
-                if (string.IsNullOrWhiteSpace(responseContent))
-                {
-                    _logger.LogWarning("SABnzbd returned empty response body when adding NZB: {Url}", LogRedaction.RedactText(requestUrl, sabSensitiveValues));
-                    return; // Treat as no-op (we still created a DB record earlier)
-                }
-
-                // Parse JSON response
-                var jsonDoc = JsonDocument.Parse(responseContent);
-                var root = jsonDoc.RootElement;
-
-                // Check for errors
-                if (root.TryGetProperty("error", out var errorElement))
-                {
-                    var errorMsg = errorElement.GetString();
-                    if (!string.IsNullOrEmpty(errorMsg))
-                    {
-                        throw new Exception($"SABnzbd error: {errorMsg}");
-                    }
-                }
-
-                // Get NZO ID (download ID)
-                string downloadId = "";
-                if (root.TryGetProperty("nzo_ids", out var nzoIds) && nzoIds.ValueKind == JsonValueKind.Array)
-                {
-                    var firstId = nzoIds.EnumerateArray().FirstOrDefault();
-                    downloadId = firstId.GetString() ?? Guid.NewGuid().ToString();
-                }
-                else
-                {
-                    downloadId = Guid.NewGuid().ToString();
-                }
-
-                _logger.LogInformation("Successfully added NZB to SABnzbd with ID: {DownloadId}", downloadId);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Failed to send NZB to SABnzbd");
-                throw;
-            }
-        }
-
-        private async Task SendToNZBGet(DownloadClientConfiguration client, SearchResult result)
-        {
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/jsonrpc";
-
-            try
-            {
-                // Get NZB URL (append indexer API key when required)
-                var (nzbUrl, indexerApiKey) = await EnsureIndexerApiKeyOnNzbUrlAsync(result);
-                if (string.IsNullOrEmpty(nzbUrl))
-                {
-                    _logger.LogError("No NZB URL found in search result");
-                    return;
-                }
-
-                _logger.LogInformation("Sending NZB to NZBGet: {Title} from {Source}", result.Title, result.Source);
-                var nzbGetSensitiveValues = LogRedaction.GetSensitiveValuesFromEnvironment().ToList();
-                if (!string.IsNullOrEmpty(client.Password)) nzbGetSensitiveValues.Add(client.Password);
-                if (!string.IsNullOrEmpty(indexerApiKey)) nzbGetSensitiveValues.Add(indexerApiKey);
-                _logger.LogDebug("NZB URL: {Url}", LogRedaction.RedactText(nzbUrl, nzbGetSensitiveValues));
-
-                // Get category if configured
-                var category = "audiobooks"; // default fallback
-                if (client.Settings != null && client.Settings.TryGetValue("category", out var categoryObj))
-                {
-                    var configuredCategory = categoryObj?.ToString();
-                    if (!string.IsNullOrEmpty(configuredCategory))
-                    {
-                        category = configuredCategory;
-                    }
-                }
-                _logger.LogInformation("Adding NZB to NZBGet with category: {Category}", category);
-
-                // Get priority if configured  
-                int priority = 0; // normal priority
-                if (client.Settings != null && client.Settings.TryGetValue("recentPriority", out var priorityObj))
-                {
-                    var priorityStr = priorityObj?.ToString();
-                    if (!string.IsNullOrEmpty(priorityStr) && priorityStr != "default")
-                    {
-                        priority = priorityStr switch
-                        {
-                            "force" => 100,
-                            "high" => 50,
-                            "normal" => 0,
-                            "low" => -50,
-                            _ => 0
-                        };
-                    }
-                }
-
-                // Create JSON-RPC request for appendurl method (NZBGet fetches the URL directly)
-                var rpcRequest = new
-                {
-                    method = "appendurl",
-                    @params = new object[]
-                    {
-                        result.Title,        // NZBFilename
-                        nzbUrl,             // NZB URL to fetch
-                        category,           // Category
-                        priority,           // Priority
-                        false,              // AddToTop
-                        false,              // AddPaused
-                        "",                 // DupeKey (empty)
-                        0,                  // DupeScore
-                        "SCORE",            // DupeMode
-                        new object[0]       // PPParameters (empty array)
-                    },
-                    id = 1
-                };
-
-                var jsonContent = JsonSerializer.Serialize(rpcRequest);
-                var httpContent = new StringContent(jsonContent, Encoding.UTF8, "application/json");
-
-                // Use per-request authorization header (thread-safe)
-                using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl);
-                request.Content = httpContent;
-
-                if (!string.IsNullOrEmpty(client.Username))
-                {
-                    var authBytes = Encoding.UTF8.GetBytes($"{client.Username}:{client.Password}");
-                    var authHeader = Convert.ToBase64String(authBytes);
-                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Basic", authHeader);
-                }
-
-                var response = await _httpClient.SendAsync(request);
-                var responseContent = await response.Content.ReadAsStringAsync();
-
-                if (!response.IsSuccessStatusCode)
-                {
-                    var redacted = LogRedaction.RedactText(responseContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
-                    _logger.LogError("Failed to add NZB to NZBGet. Status: {Status}, Response: {Response}",
-                        response.StatusCode, redacted);
-                    throw new Exception($"Failed to add NZB to NZBGet: {response.StatusCode}");
-                }
-
-                // Defensive: ensure response body is valid JSON
-                if (string.IsNullOrWhiteSpace(responseContent))
-                {
-                    _logger.LogWarning("NZBGet returned empty response body for append request: {Url}", baseUrl);
-                    return;
-                }
-
-                // Parse JSON-RPC response
-                var rpcResponse = JsonSerializer.Deserialize<JsonElement>(responseContent);
-
-                if (rpcResponse.TryGetProperty("error", out var error) && error.ValueKind != JsonValueKind.Null)
-                {
-                    var errorMsg = "Unknown error";
-                    if (error.TryGetProperty("message", out var errorMessage))
-                    {
-                        errorMsg = errorMessage.GetString() ?? "Unknown error";
-                    }
-                    throw new Exception($"NZBGet RPC error: {errorMsg}");
-                }
-
-                // Get the NZB ID from the result
-                string nzbId = Guid.NewGuid().ToString(); // Default fallback
-                if (rpcResponse.TryGetProperty("result", out var resultProp))
-                {
-                    if (resultProp.ValueKind == JsonValueKind.Number)
-                    {
-                        nzbId = resultProp.GetInt32().ToString();
-                    }
-                    else if (resultProp.ValueKind == JsonValueKind.True || resultProp.ValueKind == JsonValueKind.False)
-                    {
-                        var success = resultProp.GetBoolean();
-                        nzbId = success ? result.Title : Guid.NewGuid().ToString();
-                    }
-                }
-
-                _logger.LogInformation("Successfully added NZB to NZBGet with ID: {NzbId}", nzbId);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Failed to send NZB to NZBGet");
-                throw;
-            }
-        }
-
-        private async Task<(string Url, string? IndexerApiKey)> EnsureIndexerApiKeyOnNzbUrlAsync(SearchResult result)
-        {
-            var nzbUrl = result.NzbUrl ?? string.Empty;
-            if (string.IsNullOrWhiteSpace(nzbUrl))
-            {
-                return (nzbUrl, null);
-            }
-
-            try
-            {
-                var hasApiKey = false;
-                if (Uri.TryCreate(nzbUrl, UriKind.Absolute, out var parsed))
-                {
-                    var query = QueryHelpers.ParseQuery(parsed.Query);
-                    hasApiKey = query.Keys.Any(k => string.Equals(k, "apikey", StringComparison.OrdinalIgnoreCase));
-                }
-                else if (nzbUrl.Contains("apikey=", StringComparison.OrdinalIgnoreCase))
-                {
-                    hasApiKey = true;
-                }
-
-                if (hasApiKey)
-                {
-                    return (nzbUrl, null);
-                }
-
-                Indexer? indexer = null;
-                await using var dbContext = await _dbContextFactory.CreateDbContextAsync();
-                if (result.IndexerId.HasValue)
-                {
-                    indexer = await dbContext.Indexers
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(i => i.Id == result.IndexerId.Value);
-                }
-                else if (!string.IsNullOrWhiteSpace(result.Source))
-                {
-                    indexer = await dbContext.Indexers
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(i => i.Name == result.Source);
-                }
-
-                if (indexer != null && !string.IsNullOrWhiteSpace(indexer.ApiKey))
-                {
-                    var updatedUrl = QueryHelpers.AddQueryString(nzbUrl, "apikey", indexer.ApiKey);
-                    return (updatedUrl, indexer.ApiKey);
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogDebug(ex, "Failed to append indexer API key to NZB URL for {Title}", result.Title);
-            }
-
-            return (nzbUrl, null);
-        }
-
         public async Task<List<QueueItem>> GetQueueAsync()
         {
             var queueItems = new List<QueueItem>();
@@ -2531,7 +1811,7 @@ namespace Listenarr.Api.Services
 
                     foreach (var client in enabledClients)
                     {
-                        removedFromClient = await RemoveFromClientAsync(client, downloadId);
+                        removedFromClient = await RemoveFromClientAsync(client, downloadId, downloadRecord);
                         if (removedFromClient)
                         {
                             downloadClientId = client.Id; // Track which client it was removed from
@@ -2549,7 +1829,7 @@ namespace Listenarr.Api.Services
                     }
                     else if (client != null)
                     {
-                        removedFromClient = await RemoveFromClientAsync(client, downloadId);
+                        removedFromClient = await RemoveFromClientAsync(client, downloadId, downloadRecord);
                     }
                     else
                     {
@@ -2574,7 +1854,7 @@ namespace Listenarr.Api.Services
                                 }
                                 else if (recordClient != null)
                                 {
-                                    removedFromClient = await RemoveFromClientAsync(recordClient, downloadId);
+                                    removedFromClient = await RemoveFromClientAsync(recordClient, downloadId, downloadRecord);
                                     downloadClientId = recordClient.Id;
                                 }
                                 else
@@ -2599,7 +1879,7 @@ namespace Listenarr.Api.Services
 
                             foreach (var tryClient in enabledClients)
                             {
-                                removedFromClient = await RemoveFromClientAsync(tryClient, downloadId);
+                                removedFromClient = await RemoveFromClientAsync(tryClient, downloadId, downloadRecord);
                                 if (removedFromClient)
                                 {
                                     downloadClientId = tryClient.Id;
@@ -3037,17 +2317,47 @@ namespace Listenarr.Api.Services
             return d[n, m];
         }
 
-        private async Task<bool> RemoveFromClientAsync(DownloadClientConfiguration client, string downloadId)
+        private async Task<bool> RemoveFromClientAsync(DownloadClientConfiguration client, string downloadId, Download? downloadRecord = null)
         {
             try
             {
                 if (client == null) return false;
 
+                // Resolve the client-specific ID (torrent hash, NZB ID, etc.) from the download record.
+                // The download record's Metadata dictionary stores the mapping set during AddAsync.
+                // Without this, Transmission/qBittorrent receive the Listenarr UUID which they don't recognise.
+                var clientItemId = downloadId;
+                if (downloadRecord?.Metadata != null)
+                {
+                    if ((string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(client.Type, "transmission", StringComparison.OrdinalIgnoreCase)) &&
+                        downloadRecord.Metadata.TryGetValue("TorrentHash", out var hashObj))
+                    {
+                        var hash = hashObj?.ToString();
+                        if (!string.IsNullOrEmpty(hash))
+                        {
+                            clientItemId = hash;
+                            _logger.LogDebug("RemoveFromClientAsync: Using torrent hash {Hash} instead of download ID for {ClientType} removal",
+                                hash, client.Type);
+                        }
+                    }
+                    else if (downloadRecord.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
+                    {
+                        var resolvedId = clientIdObj?.ToString();
+                        if (!string.IsNullOrEmpty(resolvedId))
+                        {
+                            clientItemId = resolvedId;
+                            _logger.LogDebug("RemoveFromClientAsync: Using client-specific ID {ClientId} for {ClientType} removal",
+                                resolvedId, client.Type);
+                        }
+                    }
+                }
+
                 if (_clientGateway != null)
                 {
                     try
                     {
-                        var removed = await _clientGateway.RemoveAsync(client, downloadId, false);
+                        var removed = await _clientGateway.RemoveAsync(client, clientItemId, false);
                         if (removed)
                         {
                             _logger.LogInformation("Successfully removed {DownloadId} from client {ClientName}", downloadId, client.Name ?? client.Id);

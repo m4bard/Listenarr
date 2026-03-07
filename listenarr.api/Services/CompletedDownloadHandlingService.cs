@@ -144,8 +144,9 @@ namespace Listenarr.Api.Services
                         string.IsNullOrEmpty(d.FinalPath))
                     .ToListAsync(cancellationToken);
 
-                // Do not process completed downloads for disabled/missing external clients.
-                // Keep DDL entries because they are internal and not tied to external client configuration.
+                // Skip completed downloads for disabled/missing external clients.
+                // They stay alive so they resume automatically when the client is re-enabled.
+                // DDL entries are internal and not tied to external client configuration.
                 HashSet<string> enabledClientIds;
                 try
                 {
@@ -171,15 +172,16 @@ namespace Listenarr.Api.Services
                 var skippedDisabledClientDownloads = completedDownloadsAll.Count - completedDownloads.Count;
                 if (skippedDisabledClientDownloads > 0)
                 {
-                    _logger.LogInformation("CompletedDownloadHandlingService skipping {Count} completed downloads from disabled or missing download clients", skippedDisabledClientDownloads);
+                    _logger.LogDebug("CompletedDownloadHandlingService skipping {Count} completed downloads from disabled or missing download clients", skippedDisabledClientDownloads);
                 }
 
                 if (completedDownloads.Count == 0)
                 {
-                    // No completed downloads to process
-                    return;
+                    // No completed downloads to process — skip import loop but still run deferred removals below
                 }
 
+                if (completedDownloads.Count > 0)
+                {
                 _logger.LogInformation("CompletedDownloadHandlingService found {Count} completed downloads to process", completedDownloads.Count);
 
                 // Load configuration for stability window
@@ -276,6 +278,7 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
+            } // end if (completedDownloads.Count > 0)
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
                 throw;
@@ -307,6 +310,11 @@ namespace Listenarr.Api.Services
         /// Processes deferred removals for downloads that have been imported (Status == Moved)
         /// but couldn't be removed from the client because the torrent hadn't reached its seed limit.
         /// Checks metadata CanBeRemoved flag which is updated by DownloadMonitorService on each poll.
+        /// 
+        /// Handles edge cases:
+        /// - CanBeRemoved never set (download assigned to wrong client type, e.g. NZBGet for a torrent)
+        /// - Primary client removal fails (cross-client fallback using TorrentHash)
+        /// - All removal attempts fail (stale DB record cleanup after grace period)
         /// </summary>
         private async Task ProcessDeferredRemovalsAsync(
             ListenArrDbContext dbContext,
@@ -323,6 +331,19 @@ namespace Listenarr.Api.Services
             var downloadClientGateway = scope.ServiceProvider.GetService<IDownloadClientGateway>();
             if (configService == null || downloadClientGateway == null) return;
 
+            // Pre-load all enabled client configurations for cross-client removal fallback
+            List<DownloadClientConfiguration> allEnabledClients;
+            try
+            {
+                var allClients = await configService.GetDownloadClientConfigurationsAsync();
+                allEnabledClients = allClients.Where(c => c.IsEnabled).ToList();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to load client configurations for deferred removal");
+                return;
+            }
+
             foreach (var download in movedDownloads)
             {
                 try
@@ -332,6 +353,22 @@ namespace Listenarr.Api.Services
                     if (download.Metadata != null && download.Metadata.TryGetValue("CanBeRemoved", out var canRemoveObj))
                     {
                         canBeRemoved = canRemoveObj is bool b ? b : (canRemoveObj is System.Text.Json.JsonElement je ? je.GetBoolean() : bool.TryParse(canRemoveObj?.ToString(), out var parsed) && parsed);
+                    }
+
+                    // Fallback: if CanBeRemoved was never set (e.g. download assigned to wrong
+                    // client type — NZBGet record for a Transmission torrent — so the correct
+                    // poller never updates it), treat as removable after a grace period.
+                    // The import is already done (status == Moved), so cleaning up is safe.
+                    var timeSinceCompleted = download.CompletedAt.HasValue
+                        ? DateTime.UtcNow - download.CompletedAt.Value
+                        : (TimeSpan?)null;
+
+                    if (!canBeRemoved && timeSinceCompleted.HasValue && timeSinceCompleted.Value > TimeSpan.FromHours(2))
+                    {
+                        _logger.LogInformation(
+                            "Deferred removal: Download {DownloadId} CanBeRemoved not set after {Hours:F1}h — " +
+                            "treating as removable (possible client ID mismatch)", download.Id, timeSinceCompleted.Value.TotalHours);
+                        canBeRemoved = true;
                     }
 
                     if (!canBeRemoved)
@@ -347,39 +384,108 @@ namespace Listenarr.Api.Services
                             download.Id, clientConfig.Name);
                         continue;
                     }
-                    if (clientConfig == null || string.IsNullOrEmpty(clientConfig.RemoveCompletedDownloads) ||
-                        clientConfig.RemoveCompletedDownloads == "none")
+
+                    // Determine removal policy from any configured client (prefer primary)
+                    var removalPolicy = clientConfig?.RemoveCompletedDownloads;
+                    if (string.IsNullOrEmpty(removalPolicy) || removalPolicy == "none")
                     {
-                        // Removal not configured, just delete the DB record
-                        dbContext.Downloads.Remove(download);
-                        await dbContext.SaveChangesAsync(cancellationToken);
-                        _logger.LogInformation("Deferred removal: Cleaned up DB record for {DownloadId} (removal not configured)", download.Id);
-                        continue;
+                        // Check if ANY enabled client has removal configured (for cross-client scenarios)
+                        var anyRemovalClient = allEnabledClients
+                            .FirstOrDefault(c => !string.IsNullOrEmpty(c.RemoveCompletedDownloads) && c.RemoveCompletedDownloads != "none");
+                        if (anyRemovalClient == null)
+                        {
+                            // Removal not configured on any client, just delete the DB record
+                            dbContext.Downloads.Remove(download);
+                            await dbContext.SaveChangesAsync(cancellationToken);
+                            _logger.LogInformation("Deferred removal: Cleaned up DB record for {DownloadId} (removal not configured)", download.Id);
+                            continue;
+                        }
+                        removalPolicy = anyRemovalClient.RemoveCompletedDownloads;
                     }
 
-                    bool deleteFiles = clientConfig.RemoveCompletedDownloads == "remove_and_delete";
-                    string clientId = download.Id;
+                    bool deleteFiles = removalPolicy == "remove_and_delete";
 
+                    // Resolve the client-side ID (prefer TorrentHash for torrents)
+                    string? torrentHash = null;
                     if (download.Metadata != null && download.Metadata.TryGetValue("TorrentHash", out var hashObj))
                     {
-                        var hash = hashObj?.ToString();
-                        if (!string.IsNullOrEmpty(hash))
-                            clientId = hash;
+                        torrentHash = hashObj?.ToString();
+                    }
+                    string clientId = !string.IsNullOrEmpty(torrentHash) ? torrentHash : download.Id;
+
+                    // Attempt 1: Try primary client
+                    bool removed = false;
+                    if (clientConfig != null)
+                    {
+                        try
+                        {
+                            removed = await downloadClientGateway.RemoveAsync(clientConfig, clientId, deleteFiles);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            _logger.LogDebug(ex, "Deferred removal: Primary client {ClientName} removal failed for {DownloadId}",
+                                clientConfig.Name, download.Id);
+                        }
                     }
 
-                    var removed = await downloadClientGateway.RemoveAsync(clientConfig, clientId, deleteFiles);
+                    // Attempt 2: Cross-client fallback — if primary failed and we have a torrent
+                    // hash, try all other enabled torrent clients. This handles cases where the
+                    // download was recorded under the wrong DownloadClientId.
+                    if (!removed && !string.IsNullOrEmpty(torrentHash))
+                    {
+                        var torrentClientTypes = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                            { "qbittorrent", "transmission" };
+                        var otherTorrentClients = allEnabledClients
+                            .Where(c => torrentClientTypes.Contains(c.Type ?? "") &&
+                                        c.Id != download.DownloadClientId)
+                            .ToList();
+
+                        foreach (var altClient in otherTorrentClients)
+                        {
+                            try
+                            {
+                                var altDeleteFiles = altClient.RemoveCompletedDownloads == "remove_and_delete";
+                                removed = await downloadClientGateway.RemoveAsync(altClient, torrentHash, altDeleteFiles);
+                                if (removed)
+                                {
+                                    _logger.LogInformation(
+                                        "Deferred removal: Cross-client removal succeeded — removed {DownloadId} from {ClientName} " +
+                                        "(was assigned to {OriginalClientId})",
+                                        download.Id, altClient.Name, download.DownloadClientId);
+                                    break;
+                                }
+                            }
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                            {
+                                _logger.LogDebug(ex, "Deferred removal: Cross-client removal from {ClientName} failed for {DownloadId}",
+                                    altClient.Name, download.Id);
+                            }
+                        }
+                    }
+
                     if (removed)
                     {
-                        _logger.LogInformation("Deferred removal: Successfully removed {DownloadId} from {ClientName} (deleteFiles={DeleteFiles})",
-                            download.Id, clientConfig.Name, deleteFiles);
-
+                        _logger.LogInformation("Deferred removal: Successfully removed {DownloadId} (deleteFiles={DeleteFiles})",
+                            download.Id, deleteFiles);
+                        dbContext.Downloads.Remove(download);
+                        await dbContext.SaveChangesAsync(cancellationToken);
+                    }
+                    else if (timeSinceCompleted.HasValue && timeSinceCompleted.Value > TimeSpan.FromHours(24))
+                    {
+                        // All removal attempts failed and the download has been Moved for > 24h.
+                        // The item was likely already removed from the client manually, or the
+                        // DownloadClientId is wrong and the torrent is unrecoverable.
+                        // Clean up the DB record to stop the endless polling loop.
+                        _logger.LogWarning(
+                            "Deferred removal: All removal attempts failed for {DownloadId} after {Hours:F1}h — " +
+                            "cleaning up stale DB record (import already completed)",
+                            download.Id, timeSinceCompleted.Value.TotalHours);
                         dbContext.Downloads.Remove(download);
                         await dbContext.SaveChangesAsync(cancellationToken);
                     }
                     else
                     {
-                        _logger.LogWarning("Deferred removal: Failed to remove {DownloadId} from {ClientName}, will retry next cycle",
-                            download.Id, clientConfig.Name);
+                        _logger.LogDebug("Deferred removal: Failed to remove {DownloadId}, will retry next cycle", download.Id);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

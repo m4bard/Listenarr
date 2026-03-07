@@ -25,6 +25,7 @@ using System.Runtime.InteropServices;
 using Listenarr.Api.Hubs;
 using Listenarr.Domain.Models;
 using System.Text.Json;
+using System.Text.Encodings.Web;
 using Microsoft.Extensions.Caching.Memory;
 using Listenarr.Application.Services;
 
@@ -551,20 +552,24 @@ namespace Listenarr.Api.Services
             // - Queued, Downloading, Paused, Processing (actively being monitored)
             // - Completed without FinalPath (completed in client but not yet imported)
             // - ImportPending without FinalPath (import attempted but still unresolved)
+            // - Moved with DownloadClientId (imported but deferred client removal pending;
+            //   we keep polling so CanBeRemoved metadata stays fresh for ProcessDeferredRemovalsAsync)
             // Exclude:
             // - ImportBlocked (blocked due to repeated failures, no point in retrying)
-            // - Moved, Failed, Cancelled (terminal states)
+            // - Failed, Cancelled (terminal states)
             var activeDownloadsAll = await dbContext.Downloads
                 .Where(d => (d.Status == DownloadStatus.Queued ||
                             d.Status == DownloadStatus.Downloading ||
                             d.Status == DownloadStatus.Paused ||
                             d.Status == DownloadStatus.Processing ||
-                            ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && string.IsNullOrEmpty(d.FinalPath))) &&
+                            ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && string.IsNullOrEmpty(d.FinalPath)) ||
+                            (d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId))) &&
                            d.Status != DownloadStatus.ImportBlocked)
                 .ToListAsync(cancellationToken);
 
-            // Do not monitor downloads from disabled/missing external clients.
-            // Keep DDL entries because they are internal and not tied to external client configuration.
+            // Skip downloads from disabled/missing external clients.
+            // They stay alive so they resume automatically when the client is re-enabled.
+            // DDL entries are internal and not tied to external client configuration.
             var activeDownloads = activeDownloadsAll
                 .Where(d =>
                     string.Equals(d.DownloadClientId, "DDL", StringComparison.OrdinalIgnoreCase) ||
@@ -574,7 +579,7 @@ namespace Listenarr.Api.Services
             var skippedDisabledClientDownloads = activeDownloadsAll.Count - activeDownloads.Count;
             if (skippedDisabledClientDownloads > 0)
             {
-                _logger.LogInformation("Skipping {Count} active downloads from disabled or missing download clients", skippedDisabledClientDownloads);
+                _logger.LogDebug("Skipping {Count} active downloads from disabled or missing download clients", skippedDisabledClientDownloads);
             }
 
             _logger.LogInformation("DownloadMonitorService found {Count} active downloads", activeDownloads.Count);
@@ -817,8 +822,8 @@ namespace Listenarr.Api.Services
                     float qbtGlobalMaxRatio = -1f;
                     bool qbtGlobalMaxSeedingTimeEnabled = false;
                     long qbtGlobalMaxSeedingTime = -1;
-                    bool qbtRemoveCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var rcd) == true &&
-                        (rcd is bool rcdBool && rcdBool);
+                    bool qbtRemoveCompletedDownloads = !string.IsNullOrEmpty(client.RemoveCompletedDownloads) &&
+                        client.RemoveCompletedDownloads != "none";
                     try
                     {
                         var prefsResp = await http.GetAsync($"{baseUrl}/api/v2/app/preferences", cancellationToken);
@@ -894,43 +899,47 @@ namespace Listenarr.Api.Services
                             await Task.Delay(150, cancellationToken);
                         }
                     }
-                    else if (client.Settings != null && client.Settings.TryGetValue("category", out var catObj) && !string.IsNullOrEmpty(catObj?.ToString()))
-                    {
-                        var cat = Uri.EscapeDataString(catObj!.ToString()!);
-                        var query = $"?category={cat}&fields={Uri.EscapeDataString(fields)}";
-                        _logger.LogDebug("Querying qBittorrent by category: {Category}", cat);
-
-                        var torrentsResp = await http.GetAsync($"{baseUrl}/api/v2/torrents/info{query}", cancellationToken);
-                        if (!torrentsResp.IsSuccessStatusCode)
-                        {
-                            _logger.LogWarning("Failed to fetch torrents from qBittorrent for {ClientName}", client.Name);
-                            ScheduleNextClientPollOnFailure(client.Id);
-                            return;
-                        }
-
-                        var json = await torrentsResp.Content.ReadAsStringAsync(cancellationToken);
-                        var torrents = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, System.Text.Json.JsonElement>>>(json);
-                        if (torrents == null) return;
-
-                        allTorrents.AddRange(torrents);
-                    }
                     else
                     {
-                        // Default: fetch a limited set of recent torrents
-                        var query = $"?fields={Uri.EscapeDataString(fields)}";
-                        var torrentsResp = await http.GetAsync($"{baseUrl}/api/v2/torrents/info{query}", cancellationToken);
-                        if (!torrentsResp.IsSuccessStatusCode)
+                        var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
+                        if (!string.IsNullOrWhiteSpace(configuredCategory))
                         {
-                            _logger.LogWarning("Failed to fetch torrents from qBittorrent for {ClientName}", client.Name);
-                            ScheduleNextClientPollOnFailure(client.Id);
-                            return;
+                            var cat = Uri.EscapeDataString(configuredCategory);
+                            var query = $"?category={cat}&fields={Uri.EscapeDataString(fields)}";
+                            _logger.LogDebug("Querying qBittorrent by category: {Category}", configuredCategory);
+
+                            var torrentsResp = await http.GetAsync($"{baseUrl}/api/v2/torrents/info{query}", cancellationToken);
+                            if (!torrentsResp.IsSuccessStatusCode)
+                            {
+                                _logger.LogWarning("Failed to fetch torrents from qBittorrent for {ClientName}", client.Name);
+                                ScheduleNextClientPollOnFailure(client.Id);
+                                return;
+                            }
+
+                            var json = await torrentsResp.Content.ReadAsStringAsync(cancellationToken);
+                            var torrents = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, System.Text.Json.JsonElement>>>(json);
+                            if (torrents == null) return;
+
+                            allTorrents.AddRange(torrents);
                         }
+                        else
+                        {
+                            // Default: fetch a limited set of recent torrents
+                            var query = $"?fields={Uri.EscapeDataString(fields)}";
+                            var torrentsResp = await http.GetAsync($"{baseUrl}/api/v2/torrents/info{query}", cancellationToken);
+                            if (!torrentsResp.IsSuccessStatusCode)
+                            {
+                                _logger.LogWarning("Failed to fetch torrents from qBittorrent for {ClientName}", client.Name);
+                                ScheduleNextClientPollOnFailure(client.Id);
+                                return;
+                            }
 
-                        var json = await torrentsResp.Content.ReadAsStringAsync(cancellationToken);
-                        var torrents = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, System.Text.Json.JsonElement>>>(json);
-                        if (torrents == null) return;
+                            var json = await torrentsResp.Content.ReadAsStringAsync(cancellationToken);
+                            var torrents = System.Text.Json.JsonSerializer.Deserialize<List<Dictionary<string, System.Text.Json.JsonElement>>>(json);
+                            if (torrents == null) return;
 
-                        allTorrents.AddRange(torrents);
+                            allTorrents.AddRange(torrents);
+                        }
                     }
 
                     // Build comprehensive lookup with all torrent info we need from single API call
@@ -957,9 +966,10 @@ namespace Listenarr.Api.Services
                             tRatio, tRatioLimit, seedingTime, tSeedingTimeLimit,
                             qbtGlobalMaxRatioEnabled, qbtGlobalMaxRatio,
                             qbtGlobalMaxSeedingTimeEnabled, qbtGlobalMaxSeedingTime);
-                        var tCanMoveAndRemove = qbtRemoveCompletedDownloads && tIsStopped && tSeedLimitReached;
+                        var tCanBeRemoved = qbtRemoveCompletedDownloads && tSeedLimitReached;
+                        var tCanMoveFiles = tCanBeRemoved && tIsStopped;
 
-                        torrentLookup.Add((hash, name, savePath, contentPath, progress, amountLeft, state, size, category, seedingTime, tRatio, tRatioLimit, tSeedingTimeLimit, tCanMoveAndRemove, tCanMoveAndRemove));
+                        torrentLookup.Add((hash, name, savePath, contentPath, progress, amountLeft, state, size, category, seedingTime, tRatio, tRatioLimit, tSeedingTimeLimit, tCanMoveFiles, tCanBeRemoved));
                     }
 
 
@@ -1093,6 +1103,14 @@ namespace Listenarr.Api.Services
 
                             // Update database with real-time progress information
                             await UpdateDownloadProgressAsync(dl.Id, matched.Progress * 100, matched.AmountLeft, matched.State, dbContext, cancellationToken);
+
+                            // Skip finalization/progress logic for already-imported (Moved) downloads.
+                            // We only polled them to update CanBeRemoved metadata above.
+                            if (dl.Status == DownloadStatus.Moved)
+                            {
+                                _logger.LogDebug("Skipping finalization for Moved download {DownloadId} — only updating CanBeRemoved metadata", dl.Id);
+                                continue;
+                            }
 
                             var normalizedState = (matched.State ?? string.Empty).ToLowerInvariant();
                             if (normalizedState == "error" || normalizedState == "missingfiles")
@@ -1239,12 +1257,21 @@ namespace Listenarr.Api.Services
                         return;
                     }
 
-                    var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/transmission/rpc";
+                    var rpcPath = "/transmission/rpc";
+                    if (client.Settings?.TryGetValue("urlBase", out var urlBaseObj) == true)
+                    {
+                        var custom = urlBaseObj?.ToString()?.Trim();
+                        if (!string.IsNullOrEmpty(custom))
+                        {
+                            rpcPath = custom.StartsWith('/') ? custom : "/" + custom;
+                        }
+                    }
+                    var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}{rpcPath}";
                     using var http = _httpClientFactory.CreateClient("DownloadClient");
 
                     // Resolve removeCompletedDownloads for CanMoveFiles/CanBeRemoved evaluation
-                    bool txRemoveCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var txRcd) == true &&
-                        (txRcd is bool txRcdBool && txRcdBool);
+                    bool txRemoveCompletedDownloads = !string.IsNullOrEmpty(client.RemoveCompletedDownloads) &&
+                        client.RemoveCompletedDownloads != "none";
 
                     // Prepare RPC payload for torrent-get (includes seed limit fields for Sonarr parity)
                     var rpc = new
@@ -1258,7 +1285,7 @@ namespace Listenarr.Api.Services
                         tag = 4
                     };
 
-                    var serializedPayload = System.Text.Json.JsonSerializer.Serialize(rpc);
+                    var serializedPayload = System.Text.Json.JsonSerializer.Serialize(rpc, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
                     string? sessionId = null;
 
                     _logger.LogDebug("PollTransmission RPC request to {BaseUrl}", baseUrl);
@@ -1356,7 +1383,7 @@ namespace Listenarr.Api.Services
                         int txSessionIdleSeedingLimit = 0;
                         try
                         {
-                            var sessionPayload = System.Text.Json.JsonSerializer.Serialize(new { method = "session-get", arguments = new { }, tag = 99 });
+                            var sessionPayload = System.Text.Json.JsonSerializer.Serialize(new { method = "session-get", arguments = new { }, tag = 99 }, new JsonSerializerOptions { Encoder = JavaScriptEncoder.UnsafeRelaxedJsonEscaping });
                             using var sessionReq = new HttpRequestMessage(HttpMethod.Post, baseUrl)
                             {
                                 Content = new StringContent(sessionPayload, System.Text.Encoding.UTF8, "application/json")
@@ -1479,6 +1506,14 @@ namespace Listenarr.Api.Services
                                     _logger.LogDebug(ex, "Failed to persist CanMoveFiles/CanBeRemoved for Transmission download {DownloadId}", dl.Id);
                                 }
 
+                                // Skip finalization/progress logic for already-imported (Moved) downloads.
+                                // We only polled them to update CanBeRemoved metadata above.
+                                if (dl.Status == DownloadStatus.Moved)
+                                {
+                                    _logger.LogDebug("Skipping finalization for Moved download {DownloadId} — only updating CanBeRemoved metadata", dl.Id);
+                                    continue;
+                                }
+
                                 if (status == "failed")
                                 {
                                     await HandleFailedDownloadAsync(
@@ -1508,10 +1543,16 @@ namespace Listenarr.Api.Services
                                     var firstSeen = _completionCandidates[dl.Id];
                                     if (DateTime.UtcNow - firstSeen >= _completionStableWindow)
                                     {
-                                        // Determine downloadDir
+                                        // Build the full content path: downloadDir/name
+                                        // Using just downloadDir would scan the entire download folder
+                                        // and pick up unrelated files (.wv, etc.) from other downloads.
                                         var downloadDir = matching.TryGetProperty("downloadDir", out var dprop) ? dprop.GetString() ?? string.Empty : string.Empty;
-                                        _logger.LogInformation("Download {DownloadId} confirmed complete after stability window (Transmission). Finalizing.", dl.Id);
-                                        await FinalizeDownloadAsync(dl, downloadDir, client, cancellationToken);
+                                        var torrentName = matching.TryGetProperty("name", out var nprop) ? nprop.GetString() ?? string.Empty : string.Empty;
+                                        var contentPath = !string.IsNullOrEmpty(torrentName)
+                                            ? CombineWithOptionalBase(downloadDir, torrentName)
+                                            : downloadDir;
+                                        _logger.LogInformation("Download {DownloadId} confirmed complete after stability window (Transmission). Finalizing from path: {ContentPath}", dl.Id, contentPath);
+                                        await FinalizeDownloadAsync(dl, contentPath, client, cancellationToken);
                                         _completionCandidates.Remove(dl.Id);
                                     }
                                 }
@@ -2190,6 +2231,12 @@ namespace Listenarr.Api.Services
                     {
                         try
                         {
+                            // Skip Moved downloads — they're only included for CanBeRemoved
+                            // polling. SABnzbd history items don't need removal tracking, so
+                            // just skip them entirely to avoid overwriting Moved → Completed.
+                            if (dl.Status == DownloadStatus.Moved)
+                                continue;
+
                             var failedMatch = failedItems.FirstOrDefault(item =>
                                 (!string.IsNullOrEmpty(item.NzoId) && !string.IsNullOrEmpty(GetClientItemId(dl)) &&
                                     string.Equals(item.NzoId, GetClientItemId(dl), StringComparison.OrdinalIgnoreCase)) ||
@@ -2553,6 +2600,12 @@ namespace Listenarr.Api.Services
                     {
                         try
                         {
+                            // Skip Moved downloads — they're only included for CanBeRemoved
+                            // polling. NZBGet history items don't need removal tracking, so
+                            // just skip them entirely to avoid overwriting Moved → Completed.
+                            if (dl.Status == DownloadStatus.Moved)
+                                continue;
+
                             var failedMatch = failedItems.FirstOrDefault(item =>
                                 (!string.IsNullOrEmpty(item.Id) && !string.IsNullOrEmpty(GetClientItemId(dl)) &&
                                     string.Equals(item.Id, GetClientItemId(dl), StringComparison.OrdinalIgnoreCase)) ||
@@ -2734,14 +2787,16 @@ namespace Listenarr.Api.Services
                         download.Status = mappedStatus;
                     }
                 }
-                else if (download.Status != DownloadStatus.Completed)
+                else if (download.Status != DownloadStatus.Completed && download.Status != DownloadStatus.Moved)
                 {
-                    // Don't overwrite Completed status - it's managed by the completion detection logic
+                    // Don't overwrite Completed/Moved status - Completed is managed by the completion
+                    // detection logic, and Moved means the file is already imported (we only keep
+                    // polling Moved downloads to update CanBeRemoved for deferred client removal).
                     download.Status = mappedStatus;
                 }
                 else
                 {
-                    _logger.LogDebug("Preserving Completed status for {DownloadId} - not overwriting with client state {ClientState}", downloadId, clientState);
+                    _logger.LogDebug("Preserving {Status} status for {DownloadId} - not overwriting with client state {ClientState}", download.Status, downloadId, clientState);
                 }
 
                 // Add metadata for real-time updates
@@ -3056,6 +3111,16 @@ namespace Listenarr.Api.Services
             bool globalMaxSeedingTimeEnabled,
             long globalMaxSeedingTime)
         {
+            var hasEffectiveRatioLimit =
+                ratioLimit >= 0 ||
+                (ratioLimit <= -2 && globalMaxRatioEnabled && globalMaxRatio > 0);
+            var hasEffectiveSeedingTimeLimit =
+                seedingTimeLimit >= 0 ||
+                (seedingTimeLimit <= -2 && globalMaxSeedingTimeEnabled && globalMaxSeedingTime > 0);
+
+            if (!hasEffectiveRatioLimit && !hasEffectiveSeedingTimeLimit)
+                return true;
+
             // Check ratio limit (per-torrent override takes precedence)
             if (ratioLimit >= 0)
             {
@@ -3103,6 +3168,20 @@ namespace Listenarr.Api.Services
             bool sessionIdleSeedingLimitEnabled,
             int sessionIdleSeedingLimit)
         {
+            var hasEffectiveRatioLimit =
+                (seedRatioMode == 1 && seedRatioLimit > 0) ||
+                (seedRatioMode == 0 && sessionSeedRatioLimited && sessionSeedRatioLimit > 0);
+            var hasEffectiveIdleLimit =
+                (seedIdleMode == 1 && seedIdleLimit > 0) ||
+                (seedIdleMode == 0 && sessionIdleSeedingLimitEnabled && sessionIdleSeedingLimit > 0);
+
+            // If Transmission has no seed ratio or idle seeding limits configured,
+            // the user's remove policy should not defer forever. Treat the item as removable.
+            if (!hasEffectiveRatioLimit && !hasEffectiveIdleLimit)
+            {
+                return true;
+            }
+
             // seedRatioMode: 0 = global, 1 = per-torrent, 2 = unlimited
             if (seedRatioMode == 1)
             {

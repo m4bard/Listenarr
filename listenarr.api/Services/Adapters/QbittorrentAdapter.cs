@@ -781,8 +781,8 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Resolve removeCompletedDownloads setting once for all torrents
-                var removeCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var removeValSetting) == true &&
-                    (removeValSetting is bool boolRemoveVal && boolRemoveVal);
+                var removeCompletedDownloads = !string.IsNullOrEmpty(client.RemoveCompletedDownloads) &&
+                    client.RemoveCompletedDownloads != "none";
 
                 // Limit fields returned to reduce memory usage
                 var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path,category,content_path,ratio_limit,seeding_time_limit,seeding_time";
@@ -857,16 +857,15 @@ namespace Listenarr.Api.Services.Adapters
 
                     TimeSpan? remainingTime = eta.HasValue && eta.Value < 8640000 ? TimeSpan.FromSeconds(eta.Value) : null;
 
-                    // Sonarr parity: CanMoveFiles = CanBeRemoved =
-                    //   removeCompletedDownloads && torrent.State is "pausedUP"/"stoppedUP" && HasReachedSeedLimit
-                    // This prevents moving files from active seeders (which breaks the torrent)
-                    // and prevents removing torrents before seed goals are met.
+                    // qBittorrent can remove completed torrents while still seeding; file moves
+                    // still require the torrent to be stopped so we don't break the payload.
                     var isStopped = state is "pausedUP" or "stoppedUP";
                     var seedLimitReached = HasReachedSeedLimit(
                         ratio ?? 0, ratioLimit, seedingTime, seedingTimeLimit,
                         globalMaxRatioEnabled, globalMaxRatio,
                         globalMaxSeedingTimeEnabled, globalMaxSeedingTime);
-                    var canMoveAndRemove = removeCompletedDownloads && isStopped && seedLimitReached;
+                    var canBeRemoved = removeCompletedDownloads && seedLimitReached;
+                    var canMoveFiles = canBeRemoved && isStopped;
 
                     items.Add(new DownloadClientItem
                     {
@@ -884,8 +883,8 @@ namespace Listenarr.Api.Services.Adapters
                         DownloadSpeed = dlspeed,
                         Seeders = numSeeds ?? 0,
                         Leechers = numLeechs ?? 0,
-                        CanBeRemoved = canMoveAndRemove,
-                        CanMoveFiles = canMoveAndRemove,
+                        CanBeRemoved = canBeRemoved,
+                        CanMoveFiles = canMoveFiles,
                         DownloadClientInfo = DownloadClientItemClientInfo.FromClient(
                             clientId: client.Id,
                             clientName: client.Name,
@@ -926,6 +925,18 @@ namespace Listenarr.Api.Services.Adapters
             bool globalMaxSeedingTimeEnabled,
             long globalMaxSeedingTime)
         {
+            var hasEffectiveRatioLimit =
+                ratioLimit >= 0 ||
+                (ratioLimit <= -2 && globalMaxRatioEnabled && globalMaxRatio > 0);
+            var hasEffectiveSeedingTimeLimit =
+                seedingTimeLimit >= 0 ||
+                (seedingTimeLimit <= -2 && globalMaxSeedingTimeEnabled && globalMaxSeedingTime > 0);
+
+            if (!hasEffectiveRatioLimit && !hasEffectiveSeedingTimeLimit)
+            {
+                return true;
+            }
+
             // Check ratio limit (per-torrent override takes precedence)
             if (ratioLimit >= 0)
             {

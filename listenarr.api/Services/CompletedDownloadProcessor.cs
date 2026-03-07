@@ -575,13 +575,21 @@ namespace Listenarr.Api.Services
                 {
                     var postImport = await _downloadRepository.FindAsync(downloadId);
                     if (postImport != null &&
-                        postImport.Status == DownloadStatus.ImportPending &&
-                        string.IsNullOrWhiteSpace(postImport.FinalPath))
+                        postImport.Status == DownloadStatus.ImportPending)
                     {
+                        // Download is still ImportPending after all import attempts.
+                        // This can happen when:
+                        //  - No importable files were found at all (FinalPath empty)
+                        //  - Import was rejected by quality check (FinalPath may be pre-set from prior import)
+                        // Mark as ImportBlocked to prevent infinite re-enqueue loops.
+                        var reason = string.IsNullOrWhiteSpace(postImport.FinalPath)
+                            ? "No importable files were found after download completion. Manual interaction is required."
+                            : "Import was not successful (possible quality rejection or duplicate). Manual interaction is required.";
+
                         await MarkImportFailureAsync(
                             downloadId,
                             "NoImportableFiles",
-                            "No importable files were found after download completion. Manual interaction is required.",
+                            reason,
                             forceBlock: true);
                     }
                 }

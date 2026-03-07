@@ -4,6 +4,7 @@
   <PropertyGroup>
     <Version>0.2.55</Version>
     <AssemblyVersion>0.2.55</AssemblyVersion>
+    <DefaultItemExcludes>$(DefaultItemExcludes);bin\**;bin/**;artifacts\**;artifacts/**</DefaultItemExcludes>
     <GenerateAssemblyInfo>true</GenerateAssemblyInfo>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>  
