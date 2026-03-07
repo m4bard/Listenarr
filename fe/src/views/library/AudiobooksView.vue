@@ -1124,6 +1124,8 @@ async function ensureAuthorCover(authorName: string) {
       authorCoverOverrides[authorName] = info.cachedPath
     } else if (info.asin) {
       authorCoverOverrides[authorName] = buildApiPath(`/images/${encodeURIComponent(info.asin)}`)
+    } else if (info.image) {
+      authorCoverOverrides[authorName] = info.image
     } else {
       authorCoverNotFound.add(authorName)
     }
