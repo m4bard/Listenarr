@@ -165,18 +165,21 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     items.value = {}
 
     let jobId = ''
+    let settled = false
     let offSignalR: (() => void) | null = null
+    let pollInterval: ReturnType<typeof setInterval> | null = null
 
-    offSignalR = signalRService.onUnmatchedScanComplete(async (payload) => {
-      if (payload.jobId !== jobId) return
+    function cleanUp() {
       offSignalR?.()
-      if (payload.error) {
-        scanStatus.value = 'error'
-        scanError.value = payload.error
-        return
-      }
+      if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
+    }
+
+    async function onComplete(completedJobId: string) {
+      if (settled) return
+      settled = true
+      cleanUp()
       try {
-        const response = await apiService.getUnmatchedResults(payload.jobId)
+        const response = await apiService.getUnmatchedResults(completedJobId)
         _populateFromItems(response.items)
         lastScannedAt.value = new Date().toISOString()
         scanStatus.value = 'done'
@@ -184,27 +187,47 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         scanStatus.value = 'error'
         scanError.value = (e as Error)?.message ?? 'Failed to fetch results'
       }
+    }
+
+    function onFailed(error?: string) {
+      if (settled) return
+      settled = true
+      cleanUp()
+      scanStatus.value = 'error'
+      scanError.value = error ?? 'Scan failed'
+    }
+
+    // Register before POST — if scan is fast, SignalR may fire before scanUnmatchedFiles() returns.
+    // Allow the event if jobId is not yet assigned (jobId === '') — it must be ours.
+    offSignalR = signalRService.onUnmatchedScanComplete(async (payload) => {
+      if (jobId && payload.jobId !== jobId) return
+      if (payload.error) { onFailed(payload.error); return }
+      await onComplete(payload.jobId)
     })
 
     try {
       const result = await apiService.scanUnmatchedFiles(id)
       jobId = result.jobId
-      // Poll once immediately — handles fast scans before SignalR fires
+      if (settled) return  // SignalR already handled it before this line
+      // Poll once immediately — handles fast scans
       const check = await apiService.getUnmatchedResults(jobId)
       if (check.status === 'Completed') {
-        offSignalR?.()
-        _populateFromItems(check.items)
-        lastScannedAt.value = new Date().toISOString()
-        scanStatus.value = 'done'
+        await onComplete(jobId)
       } else if (check.status === 'Failed') {
-        offSignalR?.()
-        scanStatus.value = 'error'
-        scanError.value = check.error ?? 'Scan failed'
+        onFailed(check.error)
+      } else {
+        // Polling fallback — keeps checking every 2.5s if SignalR is unavailable or slow
+        pollInterval = setInterval(async () => {
+          if (settled || !jobId) return
+          try {
+            const poll = await apiService.getUnmatchedResults(jobId)
+            if (poll.status === 'Completed') await onComplete(jobId)
+            else if (poll.status === 'Failed') onFailed(poll.error)
+          } catch { /* ignore transient errors, keep polling */ }
+        }, 2500)
       }
     } catch (e) {
-      offSignalR?.()
-      scanStatus.value = 'error'
-      scanError.value = (e as Error)?.message ?? 'Failed to start scan'
+      onFailed((e as Error)?.message ?? 'Failed to start scan')
     }
   }
 
@@ -257,12 +280,14 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     items.value = { ...items.value, [id]: { ...item, isSearching: true } }
 
     try {
-      const searchParams = item.detectedAsin
+      const byAsin = !!item.detectedAsin
+      const searchParams = byAsin
         ? { asin: item.detectedAsin, cap: 5 }
         : { title: buildSearchTitle(item), cap: 5 }
       const results = await apiService.advancedSearch(searchParams)
       metadataFetchCount.value++
-      const first = pickBestMatch(results, item.detectedAuthor)
+      // ASIN results are authoritative — take the first result directly without author comparison
+      const first = byAsin ? (results[0] ?? null) : pickBestMatch(results, item.detectedAuthor)
       const current = items.value[id]!
       items.value = {
         ...items.value,
