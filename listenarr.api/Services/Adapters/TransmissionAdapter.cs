@@ -802,7 +802,7 @@ namespace Listenarr.Api.Services.Adapters
             //                 CanMoveFiles = CanBeRemoved && status == Stopped (statusCode 0)
             // This prevents removing torrents before seed goals are met and prevents
             // moving files from active seeders (which breaks the torrent).
-            var removeCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) == true &&
+            var removeCompletedDownloads = client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) is true &&
                 (removeVal is bool boolVal && boolVal);
             var isStopped = statusCode == 0; // TR_STATUS_STOPPED
             var isSeeding = statusCode == 6; // TR_STATUS_SEED
@@ -871,40 +871,30 @@ namespace Listenarr.Api.Services.Adapters
             }
 
             // seedRatioMode: 0 = global, 1 = per-torrent, 2 = unlimited
-            if (seedRatioMode == 1)
+            if (seedRatioMode == 1 && isStopped && ratio >= seedRatioLimit)
             {
                 // Per-torrent ratio limit
-                if (isStopped && ratio >= seedRatioLimit)
-                {
-                    return true;
-                }
+                return true;
             }
-            else if (seedRatioMode == 0)
+
+            if (seedRatioMode == 0 && isStopped && sessionConfig.SeedRatioLimited && ratio >= sessionConfig.SeedRatioLimit)
             {
                 // Use global ratio limit
-                if (isStopped && sessionConfig.SeedRatioLimited && ratio >= sessionConfig.SeedRatioLimit)
-                {
-                    return true;
-                }
+                return true;
             }
 
             // seedIdleMode: 0 = global, 1 = per-torrent, 2 = unlimited
             // Transmission uses idle limit as a seeding time limit when set per-torrent
-            if (seedIdleMode == 1)
+            if (seedIdleMode == 1 && (isStopped || isSeeding) && secondsSeeding > seedIdleLimit * 60)
             {
                 // Per-torrent idle/seed time limit (in minutes)
-                if ((isStopped || isSeeding) && secondsSeeding > seedIdleLimit * 60)
-                {
-                    return true;
-                }
+                return true;
             }
-            else if (seedIdleMode == 0)
+
+            if (seedIdleMode == 0 && isStopped && sessionConfig.IdleSeedingLimitEnabled)
             {
                 // The global idle limit is a real idle limit, if configured then 'Stopped' is enough
-                if (isStopped && sessionConfig.IdleSeedingLimitEnabled)
-                {
-                    return true;
-                }
+                return true;
             }
 
             return false;
@@ -1061,7 +1051,7 @@ namespace Listenarr.Api.Services.Adapters
         {
             var scheme = client.UseSSL ? "https" : "http";
             var rpcPath = "/transmission/rpc";
-            if (client.Settings?.TryGetValue("urlBase", out var urlBaseObj) == true)
+            if (client.Settings?.TryGetValue("urlBase", out var urlBaseObj) is true)
             {
                 var custom = urlBaseObj?.ToString()?.Trim();
                 if (!string.IsNullOrEmpty(custom))

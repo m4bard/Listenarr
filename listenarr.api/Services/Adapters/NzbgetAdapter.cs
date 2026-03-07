@@ -697,7 +697,7 @@ namespace Listenarr.Api.Services.Adapters
                     clientName: client.Name,
                     clientType: "nzbget",
                     protocol: DownloadProtocol.Usenet,
-                    removeCompletedDownloads: client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) == true && 
+                    removeCompletedDownloads: client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) is true &&
                                              (removeVal is bool boolVal && boolVal),
                     hasPostImportCategory: !string.IsNullOrEmpty(client.Settings?.GetValueOrDefault("postImportCategory")?.ToString())
                 )

@@ -62,7 +62,7 @@ namespace Listenarr.Api.Tests
                 {
                     var http = GetHttpClient();
                     var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
-                    var url = $"{baseUrl}?mode=queue&output=json&apikey={Uri.EscapeDataString(client.Settings?.TryGetValue("apiKey", out var v) == true ? v?.ToString() ?? string.Empty : string.Empty)}";
+                    var url = $"{baseUrl}?mode=queue&output=json&apikey={Uri.EscapeDataString(client.Settings?.TryGetValue("apiKey", out var v) is true ? v?.ToString() ?? string.Empty : string.Empty)}";
                     var resp = await http.GetAsync(url, ct);
                     if (!resp.IsSuccessStatusCode) return new List<QueueItem>();
                     var txt = await resp.Content.ReadAsStringAsync(ct);
@@ -98,7 +98,7 @@ namespace Listenarr.Api.Tests
                 {
                     var http = GetHttpClient();
                     var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
-                    var apiKey = client.Settings?.TryGetValue("apiKey", out var v) == true ? v?.ToString() ?? string.Empty : string.Empty;
+                    var apiKey = client.Settings?.TryGetValue("apiKey", out var v) is true ? v?.ToString() ?? string.Empty : string.Empty;
                     var url = $"{baseUrl}?mode=history&output=json&limit={limit}&apikey={Uri.EscapeDataString(apiKey)}";
                     var resp = await http.GetAsync(url, ct);
                     if (!resp.IsSuccessStatusCode) return outList;

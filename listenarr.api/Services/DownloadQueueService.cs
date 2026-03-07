@@ -110,16 +110,9 @@ namespace Listenarr.Api.Services
 
                 // Collect all known client item IDs from ALL downloads (including Moved/Failed)
                 // so we can suppress "unmatched external" items that are actually tracked.
-                foreach (var dl in allDownloads.Where(d => d.Metadata != null))
+                foreach (var clientItemId in allDownloads.SelectMany(dl => GetKnownClientItemIds(dl.Metadata)))
                 {
-                    var metadata = dl.Metadata!;
-                    var clientDownloadId = GetMetadataString(metadata, "ClientDownloadId");
-                    if (!string.IsNullOrWhiteSpace(clientDownloadId))
-                        allKnownClientItemIds.Add(clientDownloadId);
-
-                    var torrentHash = GetMetadataString(metadata, "TorrentHash");
-                    if (!string.IsNullOrWhiteSpace(torrentHash))
-                        allKnownClientItemIds.Add(torrentHash);
+                    allKnownClientItemIds.Add(clientItemId);
                 }
             }
 
@@ -398,6 +391,21 @@ namespace Listenarr.Api.Services
             }
 
             return 0;
+        }
+
+        private static IEnumerable<string> GetKnownClientItemIds(Dictionary<string, object>? metadata)
+        {
+            var clientDownloadId = GetMetadataString(metadata, "ClientDownloadId");
+            if (!string.IsNullOrWhiteSpace(clientDownloadId))
+            {
+                yield return clientDownloadId;
+            }
+
+            var torrentHash = GetMetadataString(metadata, "TorrentHash");
+            if (!string.IsNullOrWhiteSpace(torrentHash))
+            {
+                yield return torrentHash;
+            }
         }
 
         private static string? GetMetadataString(Dictionary<string, object>? metadata, string key)

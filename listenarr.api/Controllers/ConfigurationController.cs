@@ -518,7 +518,7 @@ namespace Listenarr.Api.Controllers
         {
             try
             {
-                if (RouteData?.Values?.TryGetValue("version", out var versionObj) == true)
+                if (RouteData?.Values?.TryGetValue("version", out var versionObj) is true)
                 {
                     var value = versionObj?.ToString();
                     if (!string.IsNullOrWhiteSpace(value)) return value;

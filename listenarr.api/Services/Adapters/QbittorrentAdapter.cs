@@ -607,7 +607,7 @@ namespace Listenarr.Api.Services.Adapters
                 var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "&");
                 
                 // Extract category for logging
-                var category = client.Settings?.TryGetValue("category", out var categoryObj) == true 
+                var category = client.Settings?.TryGetValue("category", out var categoryObj) is true
                     ? categoryObj?.ToString() 
                     : null;
                 QBittorrentHelpers.LogCategoryFiltering(_logger, category);
@@ -938,41 +938,34 @@ namespace Listenarr.Api.Services.Adapters
             }
 
             // Check ratio limit (per-torrent override takes precedence)
-            if (ratioLimit >= 0)
+            if (ratioLimit >= 0 && ratioLimit - ratio <= 0.001)
             {
                 // Per-torrent ratio limit set
-                if (ratioLimit - ratio <= 0.001)
-                {
-                    return true;
-                }
+                return true;
             }
-            else if (ratioLimit <= -2 && globalMaxRatioEnabled)
+
+            if (ratioLimit <= -2 && globalMaxRatioEnabled && globalMaxRatio - ratio <= 0.001)
             {
                 // Use global ratio limit (-2 means inherit global)
-                if (globalMaxRatio - ratio <= 0.001)
-                {
-                    return true;
-                }
+                return true;
             }
 
             // Check seeding time limit (per-torrent override takes precedence)
-            if (seedingTimeLimit >= 0)
+            if (seedingTimeLimit >= 0 &&
+                seedingTime is long currentSeedingTime &&
+                currentSeedingTime >= seedingTimeLimit * 60)
             {
                 // Per-torrent seeding time limit set (in minutes, convert to seconds for comparison)
-                var limitSeconds = seedingTimeLimit * 60;
-                if (seedingTime.HasValue && seedingTime.Value >= limitSeconds)
-                {
-                    return true;
-                }
+                return true;
             }
-            else if (seedingTimeLimit <= -2 && globalMaxSeedingTimeEnabled)
+
+            if (seedingTimeLimit <= -2 &&
+                globalMaxSeedingTimeEnabled &&
+                seedingTime is long inheritedSeedingTime &&
+                inheritedSeedingTime >= globalMaxSeedingTime * 60)
             {
                 // Use global seeding time limit (in minutes, convert to seconds)
-                var limitSeconds = globalMaxSeedingTime * 60;
-                if (seedingTime.HasValue && seedingTime.Value >= limitSeconds)
-                {
-                    return true;
-                }
+                return true;
             }
 
             return false;
@@ -1054,7 +1047,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 var propsJson = await propsResp.Content.ReadAsStringAsync(ct);
                 var props = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(propsJson);
-                var savePath = props?.TryGetValue("save_path", out var savePathEl) == true 
+                var savePath = props?.TryGetValue("save_path", out var savePathEl) is true
                     ? savePathEl.GetString() ?? string.Empty 
                     : string.Empty;
 
@@ -1166,7 +1159,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 var propsJson = await propsResp.Content.ReadAsStringAsync(ct);
                 var props = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(propsJson);
-                var savePath = props?.TryGetValue("save_path", out var savePathEl) == true 
+                var savePath = props?.TryGetValue("save_path", out var savePathEl) is true
                     ? savePathEl.GetString() ?? string.Empty 
                     : string.Empty;
 

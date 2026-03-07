@@ -1258,7 +1258,7 @@ namespace Listenarr.Api.Services
                     }
 
                     var rpcPath = "/transmission/rpc";
-                    if (client.Settings?.TryGetValue("urlBase", out var urlBaseObj) == true)
+                    if (client.Settings?.TryGetValue("urlBase", out var urlBaseObj) is true)
                     {
                         var custom = urlBaseObj?.ToString()?.Trim();
                         if (!string.IsNullOrEmpty(custom))
@@ -3122,30 +3122,23 @@ namespace Listenarr.Api.Services
                 return true;
 
             // Check ratio limit (per-torrent override takes precedence)
-            if (ratioLimit >= 0)
-            {
-                if (ratioLimit - ratio <= 0.001)
-                    return true;
-            }
-            else if (ratioLimit <= -2 && globalMaxRatioEnabled)
-            {
-                if (globalMaxRatio - ratio <= 0.001)
-                    return true;
-            }
+            if (ratioLimit >= 0 && ratioLimit - ratio <= 0.001)
+                return true;
+
+            if (ratioLimit <= -2 && globalMaxRatioEnabled && globalMaxRatio - ratio <= 0.001)
+                return true;
 
             // Check seeding time limit (per-torrent override takes precedence)
-            if (seedingTimeLimit >= 0)
-            {
-                var limitSeconds = seedingTimeLimit * 60;
-                if (seedingTime.HasValue && seedingTime.Value >= limitSeconds)
-                    return true;
-            }
-            else if (seedingTimeLimit <= -2 && globalMaxSeedingTimeEnabled)
-            {
-                var limitSeconds = globalMaxSeedingTime * 60;
-                if (seedingTime.HasValue && seedingTime.Value >= limitSeconds)
-                    return true;
-            }
+            if (seedingTimeLimit >= 0 &&
+                seedingTime is long currentSeedingTime &&
+                currentSeedingTime >= seedingTimeLimit * 60)
+                return true;
+
+            if (seedingTimeLimit <= -2 &&
+                globalMaxSeedingTimeEnabled &&
+                seedingTime is long inheritedSeedingTime &&
+                inheritedSeedingTime >= globalMaxSeedingTime * 60)
+                return true;
 
             return false;
         }
@@ -3183,28 +3176,18 @@ namespace Listenarr.Api.Services
             }
 
             // seedRatioMode: 0 = global, 1 = per-torrent, 2 = unlimited
-            if (seedRatioMode == 1)
-            {
-                if (isStopped && ratio >= seedRatioLimit)
-                    return true;
-            }
-            else if (seedRatioMode == 0)
-            {
-                if (isStopped && sessionSeedRatioLimited && ratio >= sessionSeedRatioLimit)
-                    return true;
-            }
+            if (seedRatioMode == 1 && isStopped && ratio >= seedRatioLimit)
+                return true;
+
+            if (seedRatioMode == 0 && isStopped && sessionSeedRatioLimited && ratio >= sessionSeedRatioLimit)
+                return true;
 
             // seedIdleMode: 0 = global, 1 = per-torrent, 2 = unlimited
-            if (seedIdleMode == 1)
-            {
-                if ((isStopped || isSeeding) && secondsSeeding > seedIdleLimit * 60)
-                    return true;
-            }
-            else if (seedIdleMode == 0)
-            {
-                if (isStopped && sessionIdleSeedingLimitEnabled)
-                    return true;
-            }
+            if (seedIdleMode == 1 && (isStopped || isSeeding) && secondsSeeding > seedIdleLimit * 60)
+                return true;
+
+            if (seedIdleMode == 0 && isStopped && sessionIdleSeedingLimitEnabled)
+                return true;
 
             return false;
         }

@@ -484,15 +484,10 @@ namespace Listenarr.Api.Services
                 if (parts[i].Length <= MaxComponentLength)
                     continue;
 
-                if (i == parts.Count - 1 && !string.IsNullOrEmpty(extension))
-                {
-                    // Last component (filename): keep extension
-                    parts[i] = parts[i].Substring(0, MaxComponentLength - extension.Length) + extension;
-                }
-                else
-                {
-                    parts[i] = parts[i].Substring(0, MaxComponentLength);
-                }
+                // Last component (filename): keep extension
+                parts[i] = i == parts.Count - 1 && !string.IsNullOrEmpty(extension)
+                    ? parts[i].Substring(0, MaxComponentLength - extension.Length) + extension
+                    : parts[i].Substring(0, MaxComponentLength);
             }
 
             // --- Step 2: Enforce total path length ---

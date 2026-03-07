@@ -279,7 +279,7 @@ namespace Listenarr.Api.Services
                         // file/folder) over DownloadPath (save_path, i.e. the download directory).
                         // Using save_path for single-file torrents would resolve to the entire
                         // downloads directory and import every file in it.
-                        var clientContentPath = dl.Metadata?.TryGetValue("ClientContentPath", out var ccp) == true
+                        var clientContentPath = dl.Metadata?.TryGetValue("ClientContentPath", out var ccp) is true
                             ? ccp?.ToString()
                             : null;
                         var preliminaryItem = new QueueItem
