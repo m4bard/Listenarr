@@ -61,50 +61,51 @@ namespace Listenarr.Api.Tests
         [Trait("Scenario", "TransmissionQueueCategoryFilter")]
         public async Task Transmission_GetQueue_FiltersByConfiguredCategory()
         {
+            const string body = """
+            {
+              "result":"success",
+              "arguments":{
+                "torrents":[
+                  {
+                    "id":1,
+                    "hashString":"HASH1",
+                    "name":"Book One",
+                    "percentDone":0.5,
+                    "status":4,
+                    "totalSize":1000,
+                    "leftUntilDone":500,
+                    "rateDownload":25,
+                    "eta":60,
+                    "downloadDir":"/downloads",
+                    "addedDate":1700000000,
+                    "uploadRatio":0.1,
+                    "labels":["audiobooks"]
+                  },
+                  {
+                    "id":2,
+                    "hashString":"HASH2",
+                    "name":"Movie One",
+                    "percentDone":0.6,
+                    "status":4,
+                    "totalSize":1000,
+                    "leftUntilDone":400,
+                    "rateDownload":20,
+                    "eta":50,
+                    "downloadDir":"/downloads",
+                    "addedDate":1700000000,
+                    "uploadRatio":0.1,
+                    "labels":["movies"]
+                  }
+                ]
+              }
+            }
+            """;
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
             var handler = new DelegatingHandlerMock((_, _) =>
             {
-                const string body = """
-                {
-                  "result":"success",
-                  "arguments":{
-                    "torrents":[
-                      {
-                        "id":1,
-                        "hashString":"HASH1",
-                        "name":"Book One",
-                        "percentDone":0.5,
-                        "status":4,
-                        "totalSize":1000,
-                        "leftUntilDone":500,
-                        "rateDownload":25,
-                        "eta":60,
-                        "downloadDir":"/downloads",
-                        "addedDate":1700000000,
-                        "uploadRatio":0.1,
-                        "labels":["audiobooks"]
-                      },
-                      {
-                        "id":2,
-                        "hashString":"HASH2",
-                        "name":"Movie One",
-                        "percentDone":0.6,
-                        "status":4,
-                        "totalSize":1000,
-                        "leftUntilDone":400,
-                        "rateDownload":20,
-                        "eta":50,
-                        "downloadDir":"/downloads",
-                        "addedDate":1700000000,
-                        "uploadRatio":0.1,
-                        "labels":["movies"]
-                      }
-                    ]
-                  }
-                }
-                """;
-
-                var response = new HttpResponseMessage(HttpStatusCode.OK);
-                response.Content = new StringContent(body, Encoding.UTF8, "application/json");
                 return Task.FromResult(response);
             });
 
@@ -142,50 +143,51 @@ namespace Listenarr.Api.Tests
         [Trait("Scenario", "TransmissionItemCategoryFilter")]
         public async Task Transmission_GetItems_FiltersByConfiguredCategory()
         {
+            const string body = """
+            {
+              "result":"success",
+              "arguments":{
+                "torrents":[
+                  {
+                    "id":1,
+                    "hashString":"HASH1",
+                    "name":"Book One",
+                    "percentDone":0.5,
+                    "status":4,
+                    "totalSize":1000,
+                    "leftUntilDone":500,
+                    "rateDownload":25,
+                    "eta":60,
+                    "downloadDir":"/downloads",
+                    "addedDate":1700000000,
+                    "uploadRatio":0.1,
+                    "labels":["audiobooks"]
+                  },
+                  {
+                    "id":2,
+                    "hashString":"HASH2",
+                    "name":"Movie One",
+                    "percentDone":0.6,
+                    "status":4,
+                    "totalSize":1000,
+                    "leftUntilDone":400,
+                    "rateDownload":20,
+                    "eta":50,
+                    "downloadDir":"/downloads",
+                    "addedDate":1700000000,
+                    "uploadRatio":0.1,
+                    "labels":["movies"]
+                  }
+                ]
+              }
+            }
+            """;
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(body, Encoding.UTF8, "application/json")
+            };
             var handler = new DelegatingHandlerMock((_, _) =>
             {
-                const string body = """
-                {
-                  "result":"success",
-                  "arguments":{
-                    "torrents":[
-                      {
-                        "id":1,
-                        "hashString":"HASH1",
-                        "name":"Book One",
-                        "percentDone":0.5,
-                        "status":4,
-                        "totalSize":1000,
-                        "leftUntilDone":500,
-                        "rateDownload":25,
-                        "eta":60,
-                        "downloadDir":"/downloads",
-                        "addedDate":1700000000,
-                        "uploadRatio":0.1,
-                        "labels":["audiobooks"]
-                      },
-                      {
-                        "id":2,
-                        "hashString":"HASH2",
-                        "name":"Movie One",
-                        "percentDone":0.6,
-                        "status":4,
-                        "totalSize":1000,
-                        "leftUntilDone":400,
-                        "rateDownload":20,
-                        "eta":50,
-                        "downloadDir":"/downloads",
-                        "addedDate":1700000000,
-                        "uploadRatio":0.1,
-                        "labels":["movies"]
-                      }
-                    ]
-                  }
-                }
-                """;
-
-                var response = new HttpResponseMessage(HttpStatusCode.OK);
-                response.Content = new StringContent(body, Encoding.UTF8, "application/json");
                 return Task.FromResult(response);
             });
 

@@ -36,67 +36,69 @@ namespace Listenarr.Api.Tests
         [Trait("Scenario", "SabnzbdQueueAndItemsRespectConfiguredCategory")]
         public async Task Sabnzbd_GetQueueAndItems_FilterByConfiguredCategory()
         {
+            const string queueBody = """
+            {
+              "queue": {
+                "speed": "5 M",
+                "slots": [
+                  {
+                    "nzo_id": "SABnzbd_nzo_1",
+                    "filename": "Book One",
+                    "status": "Downloading",
+                    "mb": "100",
+                    "mbleft": "50",
+                    "percentage": "50",
+                    "timeleft": "0:30:00",
+                    "cat": "audiobooks"
+                  },
+                  {
+                    "nzo_id": "SABnzbd_nzo_2",
+                    "filename": "Movie One",
+                    "status": "Downloading",
+                    "mb": "100",
+                    "mbleft": "70",
+                    "percentage": "30",
+                    "timeleft": "0:45:00",
+                    "cat": "movies"
+                  }
+                ]
+              }
+            }
+            """;
+            const string historyBody = """
+            {
+              "history": {
+                "slots": [
+                  { "nzo_id": "SABnzbd_nzo_1", "name": "Book One" },
+                  { "nzo_id": "SABnzbd_nzo_2", "name": "Movie One" }
+                ]
+              }
+            }
+            """;
+            using var queueResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(queueBody, Encoding.UTF8, "application/json")
+            };
+            using var historyResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(historyBody, Encoding.UTF8, "application/json")
+            };
+            using var notFoundResponse = new HttpResponseMessage(HttpStatusCode.NotFound);
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
                 var query = req.RequestUri?.Query ?? string.Empty;
 
                 if (query.Contains("mode=queue", StringComparison.OrdinalIgnoreCase))
                 {
-                    const string queueBody = """
-                    {
-                      "queue": {
-                        "speed": "5 M",
-                        "slots": [
-                          {
-                            "nzo_id": "SABnzbd_nzo_1",
-                            "filename": "Book One",
-                            "status": "Downloading",
-                            "mb": "100",
-                            "mbleft": "50",
-                            "percentage": "50",
-                            "timeleft": "0:30:00",
-                            "cat": "audiobooks"
-                          },
-                          {
-                            "nzo_id": "SABnzbd_nzo_2",
-                            "filename": "Movie One",
-                            "status": "Downloading",
-                            "mb": "100",
-                            "mbleft": "70",
-                            "percentage": "30",
-                            "timeleft": "0:45:00",
-                            "cat": "movies"
-                          }
-                        ]
-                      }
-                    }
-                    """;
-
-                    var response = new HttpResponseMessage(HttpStatusCode.OK);
-                    response.Content = new StringContent(queueBody, Encoding.UTF8, "application/json");
-                    return Task.FromResult(response);
+                    return Task.FromResult(queueResponse);
                 }
 
                 if (query.Contains("mode=history", StringComparison.OrdinalIgnoreCase))
                 {
-                    const string historyBody = """
-                    {
-                      "history": {
-                        "slots": [
-                          { "nzo_id": "SABnzbd_nzo_1", "name": "Book One" },
-                          { "nzo_id": "SABnzbd_nzo_2", "name": "Movie One" }
-                        ]
-                      }
-                    }
-                    """;
-
-                    var response = new HttpResponseMessage(HttpStatusCode.OK);
-                    response.Content = new StringContent(historyBody, Encoding.UTF8, "application/json");
-                    return Task.FromResult(response);
+                    return Task.FromResult(historyResponse);
                 }
 
-                var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
-                return Task.FromResult(notFound);
+                return Task.FromResult(notFoundResponse);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -138,15 +140,22 @@ namespace Listenarr.Api.Tests
         [Trait("Scenario", "NzbgetQueueAndItemsRespectConfiguredCategory")]
         public async Task Nzbget_GetQueueAndItems_FilterByConfiguredCategory()
         {
+            var xml = BuildNzbGetListGroupsResponse(
+                ("101", "Book One", "audiobooks", "DOWNLOADING"),
+                ("202", "Movie One", "movies", "DOWNLOADING"));
+            using var queueResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(xml, Encoding.UTF8, "text/xml")
+            };
+            using var itemsResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(xml, Encoding.UTF8, "text/xml")
+            };
+            using var notFoundResponse = new HttpResponseMessage(HttpStatusCode.NotFound);
+            var responses = new Queue<HttpResponseMessage>(new[] { queueResponse, itemsResponse });
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
-                var xml = BuildNzbGetListGroupsResponse(
-                    ("101", "Book One", "audiobooks", "DOWNLOADING"),
-                    ("202", "Movie One", "movies", "DOWNLOADING"));
-
-                var response = new HttpResponseMessage(HttpStatusCode.OK);
-                response.Content = new StringContent(xml, Encoding.UTF8, "text/xml");
-                return Task.FromResult(response);
+                return Task.FromResult(responses.Count > 0 ? responses.Dequeue() : notFoundResponse);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();

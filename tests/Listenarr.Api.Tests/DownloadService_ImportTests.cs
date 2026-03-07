@@ -314,6 +314,17 @@ namespace Listenarr.Api.Tests
 
             // Setup MemoryCache so the GetQueueAsync can use the cache path
             using var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+            const string queueJson = "{\"queue\":{\"slots\":[]}}";
+            const string historyJson = "{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_x123\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"/downloads/complete/listenarr/William Faulkner - The Sound and the Fury\",\"completed\":1600000000}]}}";
+            using var queueResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(queueJson)
+            };
+            using var historyResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+            {
+                Content = new StringContent(historyJson)
+            };
+            using var notFoundResponse = new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
 
             // Setup HTTP handler that returns empty queue but history contains the completed entry
             var handler = new DelegatingHandlerMock((req, ct) =>
@@ -321,22 +332,15 @@ namespace Listenarr.Api.Tests
                 var q = req.RequestUri?.Query ?? string.Empty;
                 if (q.Contains("mode=queue"))
                 {
-                    var queueJson = "{\"queue\":{\"slots\":[]}}";
-                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
-                    response.Content = new StringContent(queueJson);
-                    return Task.FromResult(response);
+                    return Task.FromResult(queueResponse);
                 }
 
                 if (q.Contains("mode=history"))
                 {
-                    var historyJson = "{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_x123\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"/downloads/complete/listenarr/William Faulkner - The Sound and the Fury\",\"completed\":1600000000}]}}";
-                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
-                    response.Content = new StringContent(historyJson);
-                    return Task.FromResult(response);
+                    return Task.FromResult(historyResponse);
                 }
 
-                var notFound = new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
-                return Task.FromResult(notFound);
+                return Task.FromResult(notFoundResponse);
             });
 
             using var httpClient = new HttpClient(handler);
@@ -461,10 +465,10 @@ namespace Listenarr.Api.Tests
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
+            using var okResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
             var handler = new DelegatingHandlerMock((_, _) =>
             {
-                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
-                return Task.FromResult(response);
+                return Task.FromResult(okResponse);
             });
             using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();

@@ -16,14 +16,27 @@ namespace Listenarr.Api.Tests
     {
         private sealed class CaptureHandler : HttpMessageHandler
         {
+            private readonly HttpResponseMessage _response = new(HttpStatusCode.OK)
+            {
+                Content = new StringContent("[]", Encoding.UTF8, "application/json")
+            };
+
             public HttpRequestMessage? LastRequest { get; private set; }
 
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 LastRequest = request;
-                var response = new HttpResponseMessage(HttpStatusCode.OK);
-                response.Content = new StringContent("[]", Encoding.UTF8, "application/json");
-                return Task.FromResult(response);
+                return Task.FromResult(_response);
+            }
+
+            protected override void Dispose(bool disposing)
+            {
+                if (disposing)
+                {
+                    _response.Dispose();
+                }
+
+                base.Dispose(disposing);
             }
         }
 

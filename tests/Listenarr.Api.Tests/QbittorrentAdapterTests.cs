@@ -25,26 +25,35 @@ namespace Listenarr.Api.Tests
         public async Task TestConnection_When_VersionForbidden_Then_LoginSucceeds_ReturnsSuccess()
         {
             var loggedIn = false;
+            using var forbiddenVersionResponse = new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent("Forbidden")
+            };
+            using var successVersionResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("v5.0.2")
+            };
+            using var loginResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("Ok")
+            };
+            loginResponse.Headers.Add("Set-Cookie", "SID=1; HttpOnly; Path=/");
+            using var notFoundResponse = new HttpResponseMessage(HttpStatusCode.NotFound);
 
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
                 if (req.Method == HttpMethod.Get && req.RequestUri.PathAndQuery.StartsWith("/api/v2/app/version", StringComparison.OrdinalIgnoreCase))
                 {
-                    var response = new HttpResponseMessage(!loggedIn ? HttpStatusCode.Forbidden : HttpStatusCode.OK);
-                    response.Content = new StringContent(!loggedIn ? "Forbidden" : "v5.0.2");
-                    return Task.FromResult(response);
+                    return Task.FromResult(loggedIn ? successVersionResponse : forbiddenVersionResponse);
                 }
 
                 if (req.Method == HttpMethod.Post && req.RequestUri.PathAndQuery.StartsWith("/api/v2/auth/login", StringComparison.OrdinalIgnoreCase))
                 {
                     loggedIn = true;
-                    var resp = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("Ok") };
-                    resp.Headers.Add("Set-Cookie", "SID=1; HttpOnly; Path=/");
-                    return Task.FromResult(resp);
+                    return Task.FromResult(loginResponse);
                 }
 
-                var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
-                return Task.FromResult(notFound);
+                return Task.FromResult(notFoundResponse);
             });
 
             using var http = new HttpClient(handler);
@@ -70,17 +79,19 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task TestConnection_When_VersionForbidden_And_NoCredentials_ReturnsForbidden()
         {
+            using var forbiddenVersionResponse = new HttpResponseMessage(HttpStatusCode.Forbidden)
+            {
+                Content = new StringContent("Forbidden")
+            };
+            using var notFoundResponse = new HttpResponseMessage(HttpStatusCode.NotFound);
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
                 if (req.Method == HttpMethod.Get && req.RequestUri.PathAndQuery.StartsWith("/api/v2/app/version", StringComparison.OrdinalIgnoreCase))
                 {
-                    var response = new HttpResponseMessage(HttpStatusCode.Forbidden);
-                    response.Content = new StringContent("Forbidden");
-                    return Task.FromResult(response);
+                    return Task.FromResult(forbiddenVersionResponse);
                 }
 
-                var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
-                return Task.FromResult(notFound);
+                return Task.FromResult(notFoundResponse);
             });
 
             using var http = new HttpClient(handler);
