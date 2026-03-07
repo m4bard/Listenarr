@@ -162,7 +162,7 @@ namespace Listenarr.Api.Controllers
                     StringComparer.OrdinalIgnoreCase);
 
                 var filtered = (job.Results ?? new List<UnmatchedFileResult>())
-                    .Where(r => !tracked.Contains(r.FullPath))
+                    .Where(r => !tracked.Contains(r.FullPath) && System.IO.File.Exists(r.FullPath))
                     .ToList();
 
                 return Ok(new

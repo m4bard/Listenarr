@@ -39,6 +39,16 @@ namespace Listenarr.Api.Services
                     return false;
                 }
 
+                // Skip if already registered to a different audiobook — prevents flat series folders
+                // (e.g. Author/Series/*.m4b) from having sibling files attributed to the wrong audiobook
+                // when multiple focused scans run concurrently after a batch import.
+                var registeredElsewhere = await db.AudiobookFiles.AnyAsync(x => x.AudiobookId != audiobookId && x.Path == filePath);
+                if (registeredElsewhere)
+                {
+                    _logger.LogInformation("Skipping file {Path} for audiobook {AudiobookId} — already registered to another audiobook", filePath, audiobookId);
+                    return false;
+                }
+
                 // Conservative safety: if the audiobook already has a stored FilePath (legacy
                 // single-file representation) prefer to only associate files that live in the
                 // same containing directory. This prevents accidental associations when a
