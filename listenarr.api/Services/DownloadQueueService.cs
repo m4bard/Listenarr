@@ -110,18 +110,16 @@ namespace Listenarr.Api.Services
 
                 // Collect all known client item IDs from ALL downloads (including Moved/Failed)
                 // so we can suppress "unmatched external" items that are actually tracked.
-                foreach (var dl in allDownloads)
+                foreach (var dl in allDownloads.Where(d => d.Metadata != null))
                 {
-                    if (dl.Metadata != null)
-                    {
-                        var clientDownloadId = GetMetadataString(dl.Metadata, "ClientDownloadId");
-                        if (!string.IsNullOrWhiteSpace(clientDownloadId))
-                            allKnownClientItemIds.Add(clientDownloadId);
+                    var metadata = dl.Metadata!;
+                    var clientDownloadId = GetMetadataString(metadata, "ClientDownloadId");
+                    if (!string.IsNullOrWhiteSpace(clientDownloadId))
+                        allKnownClientItemIds.Add(clientDownloadId);
 
-                        var torrentHash = GetMetadataString(dl.Metadata, "TorrentHash");
-                        if (!string.IsNullOrWhiteSpace(torrentHash))
-                            allKnownClientItemIds.Add(torrentHash);
-                    }
+                    var torrentHash = GetMetadataString(metadata, "TorrentHash");
+                    if (!string.IsNullOrWhiteSpace(torrentHash))
+                        allKnownClientItemIds.Add(torrentHash);
                 }
             }
 

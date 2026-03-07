@@ -543,8 +543,8 @@ namespace Listenarr.Api.Tests
             Assert.True(tracked!.Status == DownloadStatus.Completed || tracked.Status == DownloadStatus.Moved, $"Expected Completed or Moved, got {tracked.Status}");
 
             // cleanup
-            try { System.IO.File.Delete(filePath); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{filePath}': {ex.Message}"); }
-            try { System.IO.Directory.Delete(tempDir); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{tempDir}': {ex.Message}"); }
+            TryDeleteFile(filePath);
+            TryDeleteDirectory(tempDir);
         }
 
         [Fact]
@@ -590,8 +590,8 @@ namespace Listenarr.Api.Tests
             Assert.Equal(filePath, tracked.FinalPath);
 
             // cleanup
-            try { System.IO.File.Delete(filePath); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{filePath}': {ex.Message}"); }
-            try { System.IO.Directory.Delete(tempDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{tempDir}': {ex.Message}"); }
+            TryDeleteFile(filePath);
+            TryDeleteDirectory(tempDir, recursive: true);
         }
 
         [Fact]
@@ -641,8 +641,8 @@ namespace Listenarr.Api.Tests
             Assert.Contains("audio.mp3", tracked.FinalPath ?? string.Empty);
 
             // cleanup
-            try { System.IO.File.Delete(zipPath); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{zipPath}': {ex.Message}"); }
-            try { System.IO.Directory.Delete(tempDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{tempDir}': {ex.Message}"); }
+            TryDeleteFile(zipPath);
+            TryDeleteDirectory(tempDir, recursive: true);
         }
 
         [Fact]
@@ -698,6 +698,38 @@ namespace Listenarr.Api.Tests
             Assert.Equal(DownloadStatus.Moved, tracked!.Status);
 
             queueMock.Verify(q => q.GetQueueAsync(), Times.Never);
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            try
+            {
+                System.IO.File.Delete(path);
+            }
+            catch (System.IO.IOException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
+        }
+
+        private static void TryDeleteDirectory(string path, bool recursive = false)
+        {
+            try
+            {
+                System.IO.Directory.Delete(path, recursive);
+            }
+            catch (System.IO.IOException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
         }
     }
 }

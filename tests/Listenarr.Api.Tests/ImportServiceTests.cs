@@ -67,8 +67,8 @@ namespace Listenarr.Api.Tests
             }
 
             // Cleanup
-            try { Directory.Delete(sourceDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{sourceDir}': {ex.Message}"); }
-            try { Directory.Delete(outputRoot, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{outputRoot}': {ex.Message}"); }
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
         }
 
         [Fact]
@@ -139,8 +139,24 @@ namespace Listenarr.Api.Tests
             Assert.DoesNotContain($"Frank Herbert{Path.DirectorySeparatorChar}", relative, StringComparison.OrdinalIgnoreCase);
             Assert.DoesNotContain($"Dune{Path.DirectorySeparatorChar}", relative, StringComparison.OrdinalIgnoreCase);
 
-            try { Directory.Delete(sourceDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{sourceDir}': {ex.Message}"); }
-            try { Directory.Delete(outputRoot, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{outputRoot}': {ex.Message}"); }
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        private static void TryDeleteDirectory(string path, bool recursive = false)
+        {
+            try
+            {
+                Directory.Delete(path, recursive);
+            }
+            catch (IOException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
         }
     }
 }

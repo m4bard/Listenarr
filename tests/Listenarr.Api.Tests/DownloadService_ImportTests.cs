@@ -139,7 +139,7 @@ namespace Listenarr.Api.Tests
             Assert.Single(files);
 
             // Cleanup
-            try { File.Delete(tmpMp3); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{tmpMp3}': {ex.Message}"); }
+            TryDeleteFile(tmpMp3);
         }
 
         [Fact]
@@ -271,8 +271,8 @@ namespace Listenarr.Api.Tests
             }
 
             // Cleanup
-            try { Directory.Delete(book.BasePath, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{book.BasePath}': {ex.Message}"); }
-            try { Directory.Delete(srcDir, true); } catch (Exception ex) { Console.Error.WriteLine($"Ignoring cleanup failure for '{srcDir}': {ex.Message}"); }
+            TryDeleteDirectory(book.BasePath, recursive: true);
+            TryDeleteDirectory(srcDir, recursive: true);
         }
 
         [Fact]
@@ -523,6 +523,38 @@ namespace Listenarr.Api.Tests
             Assert.Single(queue);
             Assert.Equal("tracked-1", queue[0].Id);
             Assert.Equal("completed", queue[0].Status, ignoreCase: true, ignoreLineEndingDifferences: false, ignoreWhiteSpaceDifferences: false, ignoreAllWhiteSpace: false);
+        }
+
+        private static void TryDeleteFile(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
+        }
+
+        private static void TryDeleteDirectory(string path, bool recursive = false)
+        {
+            try
+            {
+                Directory.Delete(path, recursive);
+            }
+            catch (IOException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
+            }
         }
     }
 }

@@ -946,19 +946,19 @@ namespace Listenarr.Api.Services
                     var torrentLookup = new List<(string Hash, string Name, string SavePath, string ContentPath, double Progress, long AmountLeft, string State, long Size, string Category, long? SeedingTime, double Ratio, float RatioLimit, long SeedingTimeLimit, bool CanMoveFiles, bool CanBeRemoved)>();
                     foreach (var t in allTorrents)
                     {
-                        var hash = t.ContainsKey("hash") ? t["hash"].GetString() ?? "" : "";
-                        var name = t.ContainsKey("name") ? t["name"].GetString() ?? "" : "";
-                        var savePath = t.ContainsKey("save_path") ? t["save_path"].GetString() ?? "" : "";
-                        var contentPath = t.ContainsKey("content_path") ? t["content_path"].GetString() ?? "" : "";
-                        var progress = t.ContainsKey("progress") ? t["progress"].GetDouble() : 0.0;
-                        var amountLeft = t.ContainsKey("amount_left") ? t["amount_left"].GetInt64() : 0L;
-                        var state = t.ContainsKey("state") ? t["state"].GetString() ?? "" : "";
-                        var size = t.ContainsKey("size") ? t["size"].GetInt64() : 0L;
-                        var category = t.ContainsKey("category") ? t["category"].GetString() ?? "" : "";
-                        var seedingTime = t.ContainsKey("seeding_time") ? t["seeding_time"].GetInt64() : (long?)null;
-                        var tRatio = t.ContainsKey("ratio") ? t["ratio"].GetDouble() : 0.0;
-                        var tRatioLimit = t.ContainsKey("ratio_limit") ? (float)t["ratio_limit"].GetDouble() : -2f;
-                        var tSeedingTimeLimit = t.ContainsKey("seeding_time_limit") ? t["seeding_time_limit"].GetInt64() : -2L;
+                        var hash = t.TryGetValue("hash", out var hashElement) ? hashElement.GetString() ?? "" : "";
+                        var name = t.TryGetValue("name", out var nameElement) ? nameElement.GetString() ?? "" : "";
+                        var savePath = t.TryGetValue("save_path", out var savePathElement) ? savePathElement.GetString() ?? "" : "";
+                        var contentPath = t.TryGetValue("content_path", out var contentPathElement) ? contentPathElement.GetString() ?? "" : "";
+                        var progress = t.TryGetValue("progress", out var progressElement) ? progressElement.GetDouble() : 0.0;
+                        var amountLeft = t.TryGetValue("amount_left", out var amountLeftElement) ? amountLeftElement.GetInt64() : 0L;
+                        var state = t.TryGetValue("state", out var stateElement) ? stateElement.GetString() ?? "" : "";
+                        var size = t.TryGetValue("size", out var sizeElement) ? sizeElement.GetInt64() : 0L;
+                        var category = t.TryGetValue("category", out var categoryElement) ? categoryElement.GetString() ?? "" : "";
+                        var seedingTime = t.TryGetValue("seeding_time", out var seedingTimeElement) ? seedingTimeElement.GetInt64() : (long?)null;
+                        var tRatio = t.TryGetValue("ratio", out var ratioElement) ? ratioElement.GetDouble() : 0.0;
+                        var tRatioLimit = t.TryGetValue("ratio_limit", out var ratioLimitElement) ? (float)ratioLimitElement.GetDouble() : -2f;
+                        var tSeedingTimeLimit = t.TryGetValue("seeding_time_limit", out var seedingTimeLimitElement) ? seedingTimeLimitElement.GetInt64() : -2L;
 
                         // Sonarr parity: compute CanMoveFiles/CanBeRemoved per-torrent
                         var tIsStopped = state is "pausedUP" or "stoppedUP";
