@@ -18,20 +18,24 @@ using Xunit;
 namespace Listenarr.Api.Tests
 {
     [Trait("Area", "QueueReconciliation")]
-    public class DownloadQueueServiceReconciliationTests
+    public class DownloadQueueServiceReconciliationTests : IDisposable
     {
-        private static DownloadQueueService CreateService(
+        private readonly List<IDisposable> _disposables = new();
+
+        private DownloadQueueService CreateService(
             IConfigurationService configurationService,
             IDownloadRepository downloadRepository,
             IDownloadProcessingJobRepository processingJobRepository,
             IDownloadClientGateway clientGateway,
             IAppMetricsService metrics)
         {
-            var memoryCache = new MemoryCache(new MemoryCacheOptions());
+            var memoryCache = Track(new MemoryCache(new MemoryCacheOptions()));
             var pathMapping = new Mock<IRemotePathMappingService>();
             var httpFactory = new Mock<IHttpClientFactory>();
-            httpFactory.Setup(h => h.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
-            var scopeFactory = new ServiceCollection().BuildServiceProvider().GetRequiredService<IServiceScopeFactory>();
+            var httpClient = Track(new HttpClient());
+            httpFactory.Setup(h => h.CreateClient(It.IsAny<string>())).Returns(httpClient);
+            var scopeProvider = Track(new ServiceCollection().BuildServiceProvider());
+            var scopeFactory = scopeProvider.GetRequiredService<IServiceScopeFactory>();
 
             return new DownloadQueueService(
                 memoryCache,
@@ -44,6 +48,20 @@ namespace Listenarr.Api.Tests
                 scopeFactory,
                 metrics,
                 NullLogger<DownloadQueueService>.Instance);
+        }
+
+        private T Track<T>(T disposable) where T : IDisposable
+        {
+            _disposables.Add(disposable);
+            return disposable;
+        }
+
+        public void Dispose()
+        {
+            for (var i = _disposables.Count - 1; i >= 0; i--)
+            {
+                _disposables[i].Dispose();
+            }
         }
 
         [Fact]

@@ -72,10 +72,9 @@ namespace Listenarr.Api.Tests
                     }
                     """;
 
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                    {
-                        Content = new StringContent(queueBody, Encoding.UTF8, "application/json")
-                    });
+                    var response = new HttpResponseMessage(HttpStatusCode.OK);
+                    response.Content = new StringContent(queueBody, Encoding.UTF8, "application/json");
+                    return Task.FromResult(response);
                 }
 
                 if (query.Contains("mode=history", StringComparison.OrdinalIgnoreCase))
@@ -91,13 +90,13 @@ namespace Listenarr.Api.Tests
                     }
                     """;
 
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                    {
-                        Content = new StringContent(historyBody, Encoding.UTF8, "application/json")
-                    });
+                    var response = new HttpResponseMessage(HttpStatusCode.OK);
+                    response.Content = new StringContent(historyBody, Encoding.UTF8, "application/json");
+                    return Task.FromResult(response);
                 }
 
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
+                return Task.FromResult(notFound);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -105,8 +104,9 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync(It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync((string _, string path) => path);
 
+            using var httpClient = new HttpClient(handler);
             var adapter = new SabnzbdAdapter(
-                new TestHttpClientFactory(new HttpClient(handler)),
+                new TestHttpClientFactory(httpClient),
                 pathMapMock.Object,
                 Mock.Of<INzbUrlResolver>(),
                 NullLogger<SabnzbdAdapter>.Instance);
@@ -144,10 +144,9 @@ namespace Listenarr.Api.Tests
                     ("101", "Book One", "audiobooks", "DOWNLOADING"),
                     ("202", "Movie One", "movies", "DOWNLOADING"));
 
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(xml, Encoding.UTF8, "text/xml")
-                });
+                var response = new HttpResponseMessage(HttpStatusCode.OK);
+                response.Content = new StringContent(xml, Encoding.UTF8, "text/xml");
+                return Task.FromResult(response);
             });
 
             var pathMapMock = new Mock<IRemotePathMappingService>();
@@ -155,8 +154,9 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync(It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync((string _, string path) => path);
 
+            using var httpClient = new HttpClient(handler);
             var adapter = new NzbgetAdapter(
-                new TestHttpClientFactory(new HttpClient(handler)),
+                new TestHttpClientFactory(httpClient),
                 Mock.Of<INzbUrlResolver>(),
                 pathMapMock.Object,
                 NullLogger<NzbgetAdapter>.Instance);

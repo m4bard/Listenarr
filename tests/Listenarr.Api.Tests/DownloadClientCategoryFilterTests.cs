@@ -103,10 +103,9 @@ namespace Listenarr.Api.Tests
                 }
                 """;
 
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(body, Encoding.UTF8, "application/json")
-                });
+                var response = new HttpResponseMessage(HttpStatusCode.OK);
+                response.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                return Task.FromResult(response);
             });
 
             using var httpClient = new HttpClient(handler);
@@ -185,10 +184,9 @@ namespace Listenarr.Api.Tests
                 }
                 """;
 
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(body, Encoding.UTF8, "application/json")
-                });
+                var response = new HttpResponseMessage(HttpStatusCode.OK);
+                response.Content = new StringContent(body, Encoding.UTF8, "application/json");
+                return Task.FromResult(response);
             });
 
             using var httpClient = new HttpClient(handler);

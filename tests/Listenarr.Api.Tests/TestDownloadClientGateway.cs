@@ -15,10 +15,11 @@ namespace Listenarr.Api.Tests
     /// queue/history requests so tests that register a DelegatingHandlerMock will work.
     /// For other operations it returns conservative defaults.
     /// </summary>
-    public class TestDownloadClientGateway : Listenarr.Api.Services.IDownloadClientGateway
+    public class TestDownloadClientGateway : Listenarr.Api.Services.IDownloadClientGateway, IDisposable
     {
         private readonly IHttpClientFactory? _httpFactory;
         private readonly HttpClient? _httpClient;
+        private HttpClient? _ownedHttpClient;
 
         public TestDownloadClientGateway(IHttpClientFactory? httpFactory = null, HttpClient? httpClient = null)
         {
@@ -30,7 +31,12 @@ namespace Listenarr.Api.Tests
         {
             if (_httpClient != null) return _httpClient;
             if (_httpFactory != null) return _httpFactory.CreateClient();
-            return new HttpClient();
+            return _ownedHttpClient ??= new HttpClient();
+        }
+
+        public void Dispose()
+        {
+            _ownedHttpClient?.Dispose();
         }
 
         public Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)

@@ -30,10 +30,9 @@ namespace Listenarr.Api.Tests
             {
                 if (req.Method == HttpMethod.Get && req.RequestUri.PathAndQuery.StartsWith("/api/v2/app/version", StringComparison.OrdinalIgnoreCase))
                 {
-                    return Task.FromResult(new HttpResponseMessage(!loggedIn ? HttpStatusCode.Forbidden : HttpStatusCode.OK)
-                    {
-                        Content = new StringContent(!loggedIn ? "Forbidden" : "v5.0.2")
-                    });
+                    var response = new HttpResponseMessage(!loggedIn ? HttpStatusCode.Forbidden : HttpStatusCode.OK);
+                    response.Content = new StringContent(!loggedIn ? "Forbidden" : "v5.0.2");
+                    return Task.FromResult(response);
                 }
 
                 if (req.Method == HttpMethod.Post && req.RequestUri.PathAndQuery.StartsWith("/api/v2/auth/login", StringComparison.OrdinalIgnoreCase))
@@ -44,10 +43,11 @@ namespace Listenarr.Api.Tests
                     return Task.FromResult(resp);
                 }
 
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
+                return Task.FromResult(notFound);
             });
 
-            var http = new HttpClient(handler);
+            using var http = new HttpClient(handler);
             var factory = new TestHttpClientFactory(http);
             var pathMapMock = new Mock<Listenarr.Api.Services.IRemotePathMappingService>();
             var adapter = new QbittorrentAdapter(factory, pathMapMock.Object, Mock.Of<ITorrentFileDownloader>(), NullLogger<QbittorrentAdapter>.Instance);
@@ -74,13 +74,16 @@ namespace Listenarr.Api.Tests
             {
                 if (req.Method == HttpMethod.Get && req.RequestUri.PathAndQuery.StartsWith("/api/v2/app/version", StringComparison.OrdinalIgnoreCase))
                 {
-                    return Task.FromResult(new HttpResponseMessage(HttpStatusCode.Forbidden) { Content = new StringContent("Forbidden") });
+                    var response = new HttpResponseMessage(HttpStatusCode.Forbidden);
+                    response.Content = new StringContent("Forbidden");
+                    return Task.FromResult(response);
                 }
 
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound));
+                var notFound = new HttpResponseMessage(HttpStatusCode.NotFound);
+                return Task.FromResult(notFound);
             });
 
-            var http = new HttpClient(handler);
+            using var http = new HttpClient(handler);
             var factory = new TestHttpClientFactory(http);
             var pathMapMock = new Mock<Listenarr.Api.Services.IRemotePathMappingService>();
             var adapter = new QbittorrentAdapter(factory, pathMapMock.Object, Mock.Of<ITorrentFileDownloader>(), NullLogger<QbittorrentAdapter>.Instance);

@@ -34,7 +34,7 @@ namespace Listenarr.Api.Tests
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
 
-            var db = new ListenArrDbContext(options);
+            await using var db = new ListenArrDbContext(options);
 
             // Create audiobook and an existing high-quality file
             var book = new Audiobook { Title = "The High Quality Book" };
@@ -95,12 +95,12 @@ namespace Listenarr.Api.Tests
             services.AddMemoryCache();
             services.AddSingleton<MetadataExtractionLimiter>();
             services.AddSingleton(hubContextMock.Object);
-            var provider = services.BuildServiceProvider();
+            using var provider = services.BuildServiceProvider();
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            var httpClient = new System.Net.Http.HttpClient();
+            using var httpClient = new System.Net.Http.HttpClient();
             var httpClientFactoryMock = new Mock<IHttpClientFactory>();
             httpClientFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
             var cacheMock = new Mock<IMemoryCache>();
@@ -113,7 +113,7 @@ namespace Listenarr.Api.Tests
             var importService = new ImportService(dbFactoryMock.Object, scopeFactory, new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()), metadataMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<ImportService>());
 
             // one importService instance for this test
-            var provider2 = TestServiceFactory.BuildServiceProvider(services =>
+            using var provider2 = TestServiceFactory.BuildServiceProvider(services =>
             {
                 services.AddSingleton<IAudiobookRepository>(repoMock.Object);
                 services.AddSingleton<IConfigurationService>(configMock.Object);
@@ -149,7 +149,7 @@ namespace Listenarr.Api.Tests
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
 
-            var db = new ListenArrDbContext(options);
+            await using var db = new ListenArrDbContext(options);
 
             var book = new Audiobook { Title = "Multi Book", BasePath = Path.Combine(Path.GetTempPath(), "listenarr-multi", Guid.NewGuid().ToString()) };
             db.Audiobooks.Add(book);
@@ -206,12 +206,12 @@ namespace Listenarr.Api.Tests
             services.AddMemoryCache();
             services.AddSingleton<MetadataExtractionLimiter>();
             services.AddSingleton(hubContextMock.Object);
-            var provider = services.BuildServiceProvider();
+            using var provider = services.BuildServiceProvider();
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            var httpClient = new System.Net.Http.HttpClient();
+            using var httpClient = new System.Net.Http.HttpClient();
             var httpClientFactoryMock = new Mock<IHttpClientFactory>();
             httpClientFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
             var cacheMock = new Mock<IMemoryCache>();
@@ -223,7 +223,7 @@ namespace Listenarr.Api.Tests
 
             var importService = new ImportService(dbFactoryMock.Object, scopeFactory, new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()), metadataMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<ImportService>());
 
-            var provider2 = TestServiceFactory.BuildServiceProvider(services =>
+            using var provider2 = TestServiceFactory.BuildServiceProvider(services =>
             {
                 services.AddSingleton<IAudiobookRepository>(repoMock.Object);
                 services.AddSingleton<IConfigurationService>(configMock.Object);
@@ -278,7 +278,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetQueue_DoesNotPurge_WhenSabnzbdHistoryContainsMatch()
         {
-            var db = CreateInMemoryDb();
+            await using var db = CreateInMemoryDb();
 
             // Seed download that would be considered orphaned: 
             // - Status is Queued (not Downloading/Processing, not terminal states)
@@ -313,7 +313,7 @@ namespace Listenarr.Api.Tests
             configMock.Setup(c => c.GetDownloadClientConfigurationsAsync()).ReturnsAsync(new List<DownloadClientConfiguration> { clientConfig });
 
             // Setup MemoryCache so the GetQueueAsync can use the cache path
-            var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+            using var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
 
             // Setup HTTP handler that returns empty queue but history contains the completed entry
             var handler = new DelegatingHandlerMock((req, ct) =>
@@ -322,19 +322,24 @@ namespace Listenarr.Api.Tests
                 if (q.Contains("mode=queue"))
                 {
                     var queueJson = "{\"queue\":{\"slots\":[]}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(queueJson) });
+                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+                    response.Content = new StringContent(queueJson);
+                    return Task.FromResult(response);
                 }
 
                 if (q.Contains("mode=history"))
                 {
                     var historyJson = "{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_x123\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"/downloads/complete/listenarr/William Faulkner - The Sound and the Fury\",\"completed\":1600000000}]}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(historyJson) });
+                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+                    response.Content = new StringContent(historyJson);
+                    return Task.FromResult(response);
                 }
 
-                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                var notFound = new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+                return Task.FromResult(notFound);
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
 
             // Build service provider scope factory (for db contexts)
             var services = new ServiceCollection();
@@ -342,7 +347,7 @@ namespace Listenarr.Api.Tests
             services.AddSingleton<IConfigurationService>(configMock.Object);
             services.AddMemoryCache();
             services.AddSingleton(memoryCache);
-            var provider = services.BuildServiceProvider();
+            using var provider = services.BuildServiceProvider();
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             // Mocks for other constructor dependencies
@@ -364,7 +369,7 @@ namespace Listenarr.Api.Tests
             // Construct the service under test (use our HttpClient and factory)
             var importService4 = new Mock<IImportService>();
 
-            var provider2 = TestServiceFactory.BuildServiceProvider(services =>
+            using var provider2 = TestServiceFactory.BuildServiceProvider(services =>
             {
                 services.AddSingleton<IAudiobookRepository>(repoMock.Object);
                 services.AddSingleton<IConfigurationService>(configMock.Object);
@@ -399,7 +404,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetQueue_MapsCompletedPendingImport_ExternalItemToTrackedDownloadId()
         {
-            var db = CreateInMemoryDb();
+            await using var db = CreateInMemoryDb();
 
             var trackedDownload = new Download
             {
@@ -452,11 +457,16 @@ namespace Listenarr.Api.Tests
                     }
                 });
 
-            var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+            using var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            var httpClient = new HttpClient(new DelegatingHandlerMock((_, _) => Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK))));
+            var handler = new DelegatingHandlerMock((_, _) =>
+            {
+                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+                return Task.FromResult(response);
+            });
+            using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
             httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
@@ -481,7 +491,7 @@ namespace Listenarr.Api.Tests
                 new TestNotificationPayloadBuilder(),
                 new Microsoft.AspNetCore.Http.HttpContextAccessor());
 
-            var provider2 = TestServiceFactory.BuildServiceProvider(services =>
+            using var provider2 = TestServiceFactory.BuildServiceProvider(services =>
             {
                 services.AddSingleton<IAudiobookRepository>(repoMock.Object);
                 services.AddSingleton<IConfigurationService>(configMock.Object);

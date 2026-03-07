@@ -33,7 +33,7 @@ namespace Listenarr.Api.Tests
         [InlineData("nzbget")]
         public async Task FinalizeDownload_QueuesImport_ForAllSupportedClientTypes(string clientType)
         {
-            var db = CreateInMemoryDb();
+            await using var db = CreateInMemoryDb();
             var download = new Download
             {
                 Id = $"dl-{clientType}",
@@ -92,14 +92,15 @@ namespace Listenarr.Api.Tests
             services.AddSingleton(new Mock<IFileNamingService>().Object);
             services.AddSingleton(new Mock<IMetadataService>().Object);
 
-            var provider = services.BuildServiceProvider();
+            using var provider = services.BuildServiceProvider();
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
             hubContextMock.SetupGet(h => h.Clients).Returns(new Mock<IHubClients>().Object);
 
             var httpFactoryMock = new Mock<IHttpClientFactory>();
-            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new System.Net.Http.HttpClient());
+            using var httpClient = new System.Net.Http.HttpClient();
+            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
             var monitor = new DownloadMonitorService(
                 scopeFactory,

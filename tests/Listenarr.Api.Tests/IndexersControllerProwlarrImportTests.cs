@@ -21,49 +21,68 @@ namespace Listenarr.Api.Tests
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 LastRequest = request;
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent("[]", Encoding.UTF8, "application/json")
-                });
+                var response = new HttpResponseMessage(HttpStatusCode.OK);
+                response.Content = new StringContent("[]", Encoding.UTF8, "application/json");
+                return Task.FromResult(response);
             }
         }
 
-        private static Listenarr.Api.Controllers.IndexersController CreateController(CaptureHandler handler)
+        private sealed class ControllerHarness : IDisposable
         {
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase($"prowlarr-import-{Guid.NewGuid()}")
-                .Options;
+            private readonly LoggerFactory _loggerFactory;
+            private readonly ListenArrDbContext _db;
+            private readonly HttpClient _client;
 
-            var db = new ListenArrDbContext(options);
-            var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
-            var client = new HttpClient(handler);
-            return new Listenarr.Api.Controllers.IndexersController(db, logger, client);
+            public ControllerHarness(CaptureHandler handler)
+            {
+                Handler = handler;
+                var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                    .UseInMemoryDatabase($"prowlarr-import-{Guid.NewGuid()}")
+                    .Options;
+
+                _db = new ListenArrDbContext(options);
+                _loggerFactory = new LoggerFactory();
+                _client = new HttpClient(handler);
+                Controller = new Listenarr.Api.Controllers.IndexersController(
+                    _db,
+                    _loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>(),
+                    _client);
+            }
+
+            public CaptureHandler Handler { get; }
+            public Listenarr.Api.Controllers.IndexersController Controller { get; }
+
+            public void Dispose()
+            {
+                _client.Dispose();
+                Handler.Dispose();
+                _db.Dispose();
+                _loggerFactory.Dispose();
+            }
         }
 
         [Fact]
         public async Task ImportFromProwlarr_AcceptsEmbeddedPortInHostField_WhenSchemeOmitted()
         {
-            var handler = new CaptureHandler();
-            var controller = CreateController(handler);
+            using var harness = new ControllerHarness(new CaptureHandler());
 
-            var result = await controller.ImportFromProwlarr(new ProwlarrImportRequest
+            var result = await harness.Controller.ImportFromProwlarr(new ProwlarrImportRequest
             {
                 Url = "192.168.1.10:4545",
                 ApiKey = "test-key"
             });
 
             Assert.IsType<OkObjectResult>(result);
-            Assert.NotNull(handler.LastRequest);
-            Assert.Equal("http://192.168.1.10:4545/api/v1/indexer", handler.LastRequest!.RequestUri!.ToString());
+            Assert.NotNull(harness.Handler.LastRequest);
+            Assert.Equal("http://192.168.1.10:4545/api/v1/indexer", harness.Handler.LastRequest!.RequestUri!.ToString());
         }
 
         [Fact]
         public async Task ImportFromProwlarr_BuildsFromHostAndSeparatePortField()
         {
-            var handler = new CaptureHandler();
-            var controller = CreateController(handler);
+            using var harness = new ControllerHarness(new CaptureHandler());
 
-            var result = await controller.ImportFromProwlarr(new ProwlarrImportRequest
+            var result = await harness.Controller.ImportFromProwlarr(new ProwlarrImportRequest
             {
                 Url = "192.168.1.10",
                 Port = 4545,
@@ -71,17 +90,16 @@ namespace Listenarr.Api.Tests
             });
 
             Assert.IsType<OkObjectResult>(result);
-            Assert.NotNull(handler.LastRequest);
-            Assert.Equal("http://192.168.1.10:4545/api/v1/indexer", handler.LastRequest!.RequestUri!.ToString());
+            Assert.NotNull(harness.Handler.LastRequest);
+            Assert.Equal("http://192.168.1.10:4545/api/v1/indexer", harness.Handler.LastRequest!.RequestUri!.ToString());
         }
 
         [Fact]
         public async Task ImportFromProwlarr_HonorsExplicitHttpsScheme_WhenProvided()
         {
-            var handler = new CaptureHandler();
-            var controller = CreateController(handler);
+            using var harness = new ControllerHarness(new CaptureHandler());
 
-            var result = await controller.ImportFromProwlarr(new ProwlarrImportRequest
+            var result = await harness.Controller.ImportFromProwlarr(new ProwlarrImportRequest
             {
                 Url = "https://192.168.1.10",
                 Port = 4545,
@@ -89,8 +107,8 @@ namespace Listenarr.Api.Tests
             });
 
             Assert.IsType<OkObjectResult>(result);
-            Assert.NotNull(handler.LastRequest);
-            Assert.Equal("https://192.168.1.10:4545/api/v1/indexer", handler.LastRequest!.RequestUri!.ToString());
+            Assert.NotNull(harness.Handler.LastRequest);
+            Assert.Equal("https://192.168.1.10:4545/api/v1/indexer", harness.Handler.LastRequest!.RequestUri!.ToString());
         }
     }
 }

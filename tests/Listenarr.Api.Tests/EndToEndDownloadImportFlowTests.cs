@@ -133,7 +133,7 @@ namespace Listenarr.Api.Tests
             serviceCollection.AddScoped(_ => new ListenArrDbContext(options));
             serviceCollection.AddSingleton<IConfigurationService>(configMock.Object);
             serviceCollection.AddSingleton<IMetadataService>(metadataMock.Object);
-            var provider = serviceCollection.BuildServiceProvider();
+            using var provider = serviceCollection.BuildServiceProvider();
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             var fileNamingService = new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance);
@@ -158,21 +158,24 @@ namespace Listenarr.Api.Tests
                 NullLogger<CompletedDownloadProcessor>.Instance);
 
             var httpFactoryMock = new Mock<IHttpClientFactory>();
-            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(new HttpClient());
+            using var factoryHttpClient = new HttpClient();
+            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(factoryHttpClient);
+            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(factoryHttpClient);
 
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             pathMappingMock
                 .Setup(p => p.TranslatePathAsync(It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync((string _, string path) => path);
 
+            using var notificationHttpClient = new HttpClient();
             var notificationService = new NotificationService(
-                new HttpClient(),
+                notificationHttpClient,
                 NullLogger<NotificationService>.Instance,
                 configMock.Object,
                 new TestNotificationPayloadBuilder(),
                 new HttpContextAccessor());
 
+            using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var downloadService = new DownloadService(
                 hubContextMock.Object,
                 Mock.Of<IAudiobookRepository>(),
@@ -185,7 +188,7 @@ namespace Listenarr.Api.Tests
                 importService,
                 Mock.Of<ISearchService>(),
                 gatewayMock.Object,
-                new MemoryCache(new MemoryCacheOptions()),
+                memoryCache,
                 queueServiceMock.Object,
                 completedProcessor,
                 new NoopAppMetricsService(),
