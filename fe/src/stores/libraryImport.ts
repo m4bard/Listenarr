@@ -186,6 +186,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       try {
         const response = await apiService.getUnmatchedResults(completedJobId)
         _populateFromItems(response.items)
+        _persistMatches()
         lastScannedAt.value = new Date().toISOString()
         scanStatus.value = 'done'
       } catch (e) {
