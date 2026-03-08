@@ -36,7 +36,7 @@ export const useLibraryStore = defineStore('library', () => {
     error.value = null
     try {
       const serverList = await apiService.getLibrary()
-      // Always trust server data - it includes accurate wanted flags based on File.Exists() checks
+      // Always trust server data for wanted status so the store stays aligned with API semantics.
       audiobooks.value = serverList.map(normalizeLibraryImageUrl)
     } catch (err) {
       error.value = err instanceof Error ? err.message : 'Failed to fetch library'

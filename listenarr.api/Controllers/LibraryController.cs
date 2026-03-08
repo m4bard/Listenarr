@@ -99,46 +99,17 @@ namespace Listenarr.Api.Controllers
             _rootFolderService = rootFolderService;
         }
 
-        private bool ComputeWantedFlag(Audiobook audiobook)
+        private static bool ComputeWantedFlag(Audiobook audiobook)
         {
             if (!audiobook.Monitored)
             {
                 return false;
             }
 
+            // The library list endpoint should not hit the filesystem for every book.
+            // Treat existing DB file records as the source of truth for wanted status.
             var files = audiobook.Files;
-            if (files == null || files.Count == 0)
-            {
-                return true;
-            }
-
-            foreach (var file in files)
-            {
-                if (string.IsNullOrWhiteSpace(file.Path))
-                {
-                    continue;
-                }
-
-                try
-                {
-                    var fullPath = ResolvePathWithOptionalBase(audiobook.BasePath, file.Path);
-
-                    if (System.IO.File.Exists(fullPath))
-                    {
-                        return false;
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                {
-                    _logger.LogWarning(
-                        ex,
-                        "Failed to evaluate file path while computing wanted flag for audiobook {AudiobookId}, file {FileId}. Treating file as missing.",
-                        audiobook.Id,
-                        file.Id);
-                }
-            }
-
-            return true;
+            return files == null || files.Count == 0;
         }
 
         private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
@@ -608,25 +579,11 @@ namespace Listenarr.Api.Controllers
         public async Task<IActionResult> GetAll()
         {
             // Return audiobooks including files and an explicit 'wanted' flag
-            List<Audiobook> audiobooks;
-            try
-            {
-                audiobooks = await _dbContext.Audiobooks
-                    .Include(a => a.QualityProfile)
-                    .Include(a => a.Files)
-                    .ToListAsync();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                // Defensive fallback: if any JSON-backed column or related navigation
-                // causes materialization errors (EF's JSON reader or coercion), log and
-                // retry without the QualityProfile include so the library view can still
-                // render basic audiobook and file information.
-                _logger.LogWarning(ex, "Error retrieving audiobooks with QualityProfile; retrying without QualityProfile include to avoid malformed JSON or mapping issues in DB columns.");
-
-                audiobooks = await _dbContext.Audiobooks
-                    .Include(a => a.Files)
-                    .ToListAsync();
-            }
+            var audiobooks = await _dbContext.Audiobooks
+                .AsNoTracking()
+                .Include(a => a.Files)
+                .OrderBy(a => a.Title)
+                .ToListAsync();
 
             var dto = audiobooks.Select(a => new
             {
