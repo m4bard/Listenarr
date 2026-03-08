@@ -138,7 +138,11 @@ export const useLibraryStore = defineStore('library', () => {
     })
 
     // Clone the audiobook object and update files safely so reactivity notices the change
-    const updated: Audiobook = { ...book, files: newFiles }
+    const updated: Audiobook = {
+      ...book,
+      files: newFiles,
+      wanted: Boolean(book.monitored) && newFiles.length === 0,
+    }
 
     // If the current primary filePath was one of the removed paths, clear it (safe behavior)
     if (book.filePath) {
@@ -147,6 +151,10 @@ export const useLibraryStore = defineStore('library', () => {
         updated.filePath = undefined
         updated.fileSize = undefined
       }
+    }
+
+    if (updated.wanted) {
+      updated.status = 'no-file'
     }
 
     // Replace the item in the array immutably to ensure watchers pick up the change

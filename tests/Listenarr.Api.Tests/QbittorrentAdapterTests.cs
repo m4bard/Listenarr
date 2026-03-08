@@ -115,6 +115,42 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task TestConnection_NormalizesHostWithSchemeAndPath()
+        {
+            Uri? capturedUri = null;
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
+                capturedUri = req.RequestUri;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("v5.0.2")
+                });
+            });
+
+            using var http = new HttpClient(handler);
+            var factory = new TestHttpClientFactory(http);
+            var pathMapMock = new Mock<Listenarr.Api.Services.IRemotePathMappingService>();
+            var adapter = new QbittorrentAdapter(factory, pathMapMock.Object, Mock.Of<ITorrentFileDownloader>(), NullLogger<QbittorrentAdapter>.Instance);
+
+            var cfg = new DownloadClientConfiguration
+            {
+                Host = "http://192.168.50.111/qbt",
+                Port = 8080,
+                UseSSL = false
+            };
+
+            var (success, message) = await adapter.TestConnectionAsync(cfg);
+
+            Assert.True(success);
+            Assert.Contains("connected", message, StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(capturedUri);
+            Assert.Equal("http", capturedUri!.Scheme);
+            Assert.Equal("192.168.50.111", capturedUri.Host);
+            Assert.Equal(8080, capturedUri.Port);
+            Assert.Equal("/api/v2/app/version", capturedUri.AbsolutePath);
+        }
+
+        [Fact]
         [Trait("Area", "QbittorrentImportPathResolution")]
         [Trait("Scenario", "SingleFileResolvesContentFilePath")]
         public async Task GetImportItemAsync_SingleFileTorrent_ResolvesSpecificFilePath()

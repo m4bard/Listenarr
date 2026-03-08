@@ -388,6 +388,17 @@ const loadRemotePathMappings = async () => {
   }
 }
 
+const normalizeHost = (value: string): string => {
+  const trimmed = (value || '').trim()
+  if (!trimmed) return ''
+
+  const withoutScheme = trimmed.replace(/^[a-z]+:\/\//i, '')
+  const withoutTrailingSlashes = withoutScheme.replace(/\/+$/, '')
+  const firstSlash = withoutTrailingSlashes.indexOf('/')
+
+  return firstSlash >= 0 ? withoutTrailingSlashes.slice(0, firstSlash) : withoutTrailingSlashes
+}
+
 const isUsenet = computed(() => {
   return formData.value.type === 'sabnzbd' || formData.value.type === 'nzbget'
 })
@@ -464,7 +475,7 @@ watch(
       formData.value = {
         name: newClient.name,
         type: newClient.type,
-        host: newClient.host,
+        host: normalizeHost(newClient.host),
         port: newClient.port,
         username: newClient.username || '',
         password: newClient.password || '',
@@ -515,7 +526,7 @@ const testConnection = async () => {
       ...(props.editingClient?.id ? { id: props.editingClient.id } : {}),
       name: formData.value.name,
       type: formData.value.type,
-      host: formData.value.host,
+      host: normalizeHost(formData.value.host),
       port: formData.value.port,
       username: formData.value.username || '',
       password: formData.value.password || '',
@@ -575,7 +586,7 @@ const handleSubmit = async () => {
       id: props.editingClient?.id || generateId(),
       name: formData.value.name,
       type: formData.value.type,
-      host: formData.value.host,
+      host: normalizeHost(formData.value.host),
       port: formData.value.port,
       username: formData.value.username || '',
       password: formData.value.password || '',

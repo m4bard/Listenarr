@@ -133,8 +133,7 @@ namespace Listenarr.Api.Services.Adapters
             var nzbBytes = await DownloadNzbAsync(nzbUrl, indexerApiKey, ct);
             var nzbFileName = BuildNzbFileName(result);
 
-            var scheme = client.UseSSL ? "https" : "http";
-            var uploadUrl = $"{scheme}://{client.Host}:{client.Port}/api/v2/nzb";
+            var uploadUrl = DownloadClientUriBuilder.BuildUri(client, "/api/v2/nzb");
             
             using var httpClient = _httpClientFactory.CreateClient();
             using var content = new MultipartFormDataContent();
@@ -168,7 +167,7 @@ namespace Listenarr.Api.Services.Adapters
                 request.Headers.Authorization = authHeader;
             }
             
-            _logger.LogDebug("NZBGet REST API POST to {Url} with file {FileName}", LogRedaction.SanitizeUrl(uploadUrl), LogRedaction.SanitizeText(nzbFileName));
+            _logger.LogDebug("NZBGet REST API POST to {Url} with file {FileName}", LogRedaction.SanitizeUrl(uploadUrl.ToString()), LogRedaction.SanitizeText(nzbFileName));
             
             var response = await httpClient.SendAsync(request, ct);
             var responseBody = await response.Content.ReadAsStringAsync(ct);
@@ -941,17 +940,12 @@ namespace Listenarr.Api.Services.Adapters
 
         private static string BuildBaseUrl(DownloadClientConfiguration client)
         {
-            var scheme = client.UseSSL ? "https" : "http";
-            
-            // NZBGet XML-RPC requires authentication in URL: http://username:password@host:port/xmlrpc
-            if (!string.IsNullOrWhiteSpace(client.Username) && !string.IsNullOrWhiteSpace(client.Password))
-            {
-                var encodedUsername = Uri.EscapeDataString(client.Username);
-                var encodedPassword = Uri.EscapeDataString(client.Password);
-                return $"{scheme}://{encodedUsername}:{encodedPassword}@{client.Host}:{client.Port}/xmlrpc";
-            }
-            
-            return $"{scheme}://{client.Host}:{client.Port}/xmlrpc";
+            return DownloadClientUriBuilder
+                .BuildUri(
+                    client,
+                    "/xmlrpc",
+                    includeCredentials: !string.IsNullOrWhiteSpace(client.Username) && !string.IsNullOrWhiteSpace(client.Password))
+                .ToString();
         }
 
         private async Task<byte[]> DownloadNzbAsync(string nzbUrl, string? indexerApiKey, CancellationToken ct)

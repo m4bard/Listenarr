@@ -1049,7 +1049,6 @@ namespace Listenarr.Api.Services.Adapters
 
         private static string BuildBaseUrl(DownloadClientConfiguration client)
         {
-            var scheme = client.UseSSL ? "https" : "http";
             var rpcPath = "/transmission/rpc";
             if (client.Settings?.TryGetValue("urlBase", out var urlBaseObj) is true)
             {
@@ -1059,7 +1058,7 @@ namespace Listenarr.Api.Services.Adapters
                     rpcPath = custom.StartsWith('/') ? custom : "/" + custom;
                 }
             }
-            return $"{scheme}://{client.Host}:{client.Port}{rpcPath}";
+            return DownloadClientUriBuilder.BuildUri(client, rpcPath).ToString();
         }
 
         private static string NormalizeMagnetUriForTransmission(string magnetUri)

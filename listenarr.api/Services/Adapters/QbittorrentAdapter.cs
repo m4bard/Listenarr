@@ -39,7 +39,7 @@ namespace Listenarr.Api.Services.Adapters
         {
             try
             {
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+                var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
                     // Prefer the IHttpClientFactory-created client so unit tests can inject
                     // a DelegatingHandler mock. Fall back to a local cookie-enabled client
@@ -225,7 +225,7 @@ namespace Listenarr.Api.Services.Adapters
             if (string.IsNullOrEmpty(torrentUrl))
                 throw new ArgumentException("No magnet link or torrent URL provided", nameof(result));
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             string? extractedHash = null;
             if (!string.IsNullOrEmpty(result.MagnetLink) && result.MagnetLink.Contains("xt=urn:btih:", StringComparison.OrdinalIgnoreCase))
@@ -463,7 +463,7 @@ namespace Listenarr.Api.Services.Adapters
                 return true; // No-op is success
             }
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
             try
             {
                 var cookieJar = new CookieContainer();
@@ -507,7 +507,7 @@ namespace Listenarr.Api.Services.Adapters
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (string.IsNullOrEmpty(id)) throw new ArgumentNullException(nameof(id));
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {
@@ -564,7 +564,7 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<QueueItem>();
             if (client == null) return items;
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {
@@ -714,7 +714,7 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<DownloadClientItem>();
             if (client == null) return items;
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
             var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "&");
 
             try
@@ -992,7 +992,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // Otherwise, resolve path from qBittorrent API
             var hash = result.DownloadId.ToLowerInvariant();
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {
@@ -1104,7 +1104,7 @@ namespace Listenarr.Api.Services.Adapters
                 return result;
             }
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {

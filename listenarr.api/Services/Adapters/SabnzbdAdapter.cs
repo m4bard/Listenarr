@@ -41,7 +41,7 @@ namespace Listenarr.Api.Services.Adapters
             {
                 if (client == null) throw new ArgumentNullException(nameof(client));
 
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
                 var apiKey = "";
                 if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
                     apiKey = apiKeyObj?.ToString() ?? "";
@@ -94,7 +94,7 @@ namespace Listenarr.Api.Services.Adapters
 
             try
             {
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
 
                 // Get API key
                 var apiKey = "";
@@ -208,7 +208,7 @@ namespace Listenarr.Api.Services.Adapters
 
             try
             {
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
 
                 var apiKey = "";
                 if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
@@ -298,7 +298,7 @@ namespace Listenarr.Api.Services.Adapters
 
             try
             {
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
                 var apiKey = "";
                 if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
                 {
@@ -453,7 +453,7 @@ namespace Listenarr.Api.Services.Adapters
 
             try
             {
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
                 var apiKey = "";
                 if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
                 {
@@ -499,7 +499,7 @@ namespace Listenarr.Api.Services.Adapters
 
             try
             {
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
                 var apiKey = "";
                 if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
                 {
@@ -671,7 +671,7 @@ namespace Listenarr.Api.Services.Adapters
             try
             {
                 // Query SABnzbd history for the download
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
                 var apiKey = "";
                 if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
                 {
@@ -834,7 +834,7 @@ namespace Listenarr.Api.Services.Adapters
             try
             {
                 // Query SABnzbd history for the download
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
                 var apiKey = "";
                 if (client.Settings != null && client.Settings.TryGetValue("apiKey", out var apiKeyObj))
                 {

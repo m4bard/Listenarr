@@ -25,10 +25,10 @@ vi.mock('@/stores/auth', () => ({
 vi.mock('@/services/signalr', () => ({
   signalRService: {
     connect: vi.fn(async () => undefined),
+    onConnected: vi.fn(() => () => undefined),
     onQueueUpdate: vi.fn(() => () => undefined),
     onFilesRemoved: vi.fn(() => () => undefined),
     onToast: vi.fn(() => () => undefined),
-    onAudiobookUpdate: vi.fn(() => () => undefined),
     onDownloadUpdate: vi.fn(() => () => undefined),
     onDownloadsList: vi.fn(() => () => undefined),
     onNotification: vi.fn(() => () => undefined),
@@ -192,6 +192,7 @@ describe('App.vue activity badge', () => {
     vi.doMock('@/services/signalr', () => ({
       signalRService: {
         connect: vi.fn(async () => undefined),
+        onConnected: vi.fn(() => () => undefined),
         onQueueUpdate: (cb: (items: unknown[]) => void) => {
           cb([
             { id: 'q1', status: 'queued' },
@@ -201,7 +202,6 @@ describe('App.vue activity badge', () => {
         },
         onFilesRemoved: vi.fn(() => () => undefined),
         onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
         onDownloadUpdate: vi.fn(() => () => undefined),
         onDownloadsList: vi.fn(() => () => undefined),
         onNotification: vi.fn(() => () => undefined),
@@ -235,4 +235,41 @@ describe('App.vue activity badge', () => {
     // With zero active downloads and two queue items, activityCount should reflect the queue
     expect(vm.activityCount).toBe(2)
   }, 20000)
+
+  it('derives wantedCount from the hydrated library store without polling timers', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => [],
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: false }),
+        getLibrary: async () => [
+          { id: 1, title: 'Wanted Book', wanted: true },
+          { id: 2, title: 'Present Book', wanted: false },
+        ],
+      },
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'home', component: { template: '<div />' } }],
+    })
+    await router.push('/')
+    await router.isReady().catch(() => {})
+
+    const wrapper = mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+
+    await new Promise((r) => setTimeout(r, 20))
+
+    const vm = wrapper.vm as unknown as { wantedCount: number }
+    expect(vm.wantedCount).toBe(1)
+    expect(setIntervalSpy).not.toHaveBeenCalled()
+
+    setIntervalSpy.mockRestore()
+  })
 })

@@ -699,7 +699,12 @@ const closeMobileMenu = () => {
 // Reactive state for badges and counters
 const notificationCount = computed(() => recentNotifications.filter((n) => !n.dismissed).length)
 const queueItems = ref<QueueItem[]>([])
-const wantedCount = ref(0)
+const wantedCount = computed(() =>
+  libraryStore.audiobooks.filter((book) => {
+    const serverWanted = (book as unknown as Record<string, unknown>)['wanted']
+    return serverWanted === true
+  }).length,
+)
 const systemIssues = ref(0)
 
 // Activity count: Optimized with memoized intermediate computations
@@ -830,57 +835,15 @@ function notificationIconComponent(icon?: string) {
   }
 }
 
-let wantedBadgeRefreshInterval: number | undefined
 let unsubscribeQueue: (() => void) | null = null
 let unsubscribeFilesRemoved: (() => void) | null = null
-let wantedBadgeVisibilityHandler: (() => void) | null = null
+let unsubscribeSignalRConnected: (() => void) | null = null
 
-function startWantedBadgePolling() {
-  if (wantedBadgeRefreshInterval) return
-  // Refresh immediately then start interval (only when page is visible)
-  if (!document.hidden) {
-    refreshWantedBadge()
-    wantedBadgeRefreshInterval = window.setInterval(refreshWantedBadge, 60000)
-  }
-
-  if (!wantedBadgeVisibilityHandler) {
-    wantedBadgeVisibilityHandler = () => {
-      if (document.hidden) {
-        if (wantedBadgeRefreshInterval) {
-          clearInterval(wantedBadgeRefreshInterval)
-          wantedBadgeRefreshInterval = undefined
-        }
-      } else {
-        if (!wantedBadgeRefreshInterval) {
-          refreshWantedBadge()
-          wantedBadgeRefreshInterval = window.setInterval(refreshWantedBadge, 60000)
-        }
-      }
-    }
-    // Use VueUse for automatic cleanup
-    useEventListener(document, 'visibilitychange', wantedBadgeVisibilityHandler)
-  }
-}
-
-function stopWantedBadgePolling() {
-  if (wantedBadgeRefreshInterval) {
-    clearInterval(wantedBadgeRefreshInterval)
-    wantedBadgeRefreshInterval = undefined
-  }
-  // Event listener is automatically cleaned up by VueUse
-  wantedBadgeVisibilityHandler = null
-}
-
-// Fetch wanted badge count (library changes less frequently - minimal polling)
-const refreshWantedBadge = async () => {
+const syncLibrarySnapshot = async () => {
   try {
     await libraryStore.fetchLibrary()
-    wantedCount.value = libraryStore.audiobooks.filter((book) => {
-      const serverWanted = (book as unknown as Record<string, unknown>)['wanted']
-      return serverWanted === true
-    }).length
   } catch (err) {
-    logger.error('Failed to refresh wanted badge:', err)
+    logger.error('Failed to sync library snapshot:', err)
   }
 }
 
@@ -1101,8 +1064,14 @@ onMounted(async () => {
 
   // If authenticated, load protected resources and enable real-time updates
   if (auth.user.authenticated) {
-    // Load initial downloads
-    await downloadsStore.loadDownloads()
+    // Hydrate the app once, then keep it current from SignalR updates.
+    await Promise.all([downloadsStore.loadDownloads(), syncLibrarySnapshot()])
+
+    unsubscribeSignalRConnected = signalRService.onConnected(() => {
+      if (auth.user.authenticated && libraryStore.audiobooks.length > 0) {
+        void syncLibrarySnapshot()
+      }
+    })
 
     // Subscribe to queue updates via SignalR (real-time, no polling!)
     unsubscribeQueue = signalRService.onQueueUpdate((queue) => {
@@ -1120,8 +1089,6 @@ onMounted(async () => {
         const display =
           removed.length > 0 ? removed.join(', ') : 'Files were removed from a library item.'
         toast.info('Files removed', display, 6000)
-        // Refresh wanted badge in case monitored items lost files
-        refreshWantedBadge()
         // Push into recent notifications
         pushNotification({
           id: `files-removed-${Date.now()}`,
@@ -1157,25 +1124,6 @@ onMounted(async () => {
         pushNotification(notification)
       } catch (e) {
         logger.error('Notification dispatch error', e)
-      }
-    })
-
-    // Subscribe to audiobook updates (for wanted badge refresh only, no notifications)
-    signalRService.onAudiobookUpdate((ab) => {
-      try {
-        if (!ab) return
-
-        // If server provided a wanted flag, refresh the wanted badge using the authoritative value
-        try {
-          const serverWanted = (ab as unknown as Record<string, unknown>)['wanted']
-          if (typeof serverWanted === 'boolean') {
-            // Recompute wantedCount by fetching library DTOs and trusting server 'wanted'
-            // This is a targeted refresh to avoid stale counts; call refreshWantedBadge()
-            refreshWantedBadge()
-          }
-        } catch {}
-      } catch (err) {
-        logger.error('AudiobookUpdate error', err)
       }
     })
 
@@ -1216,9 +1164,6 @@ onMounted(async () => {
                 recentDownloadTitles.value.delete(title)
               }, 30000)
             }
-          } else if (status === 'moved') {
-            // Download was successfully imported - refresh wanted badge to reflect the change
-            refreshWantedBadge()
           } else {
             // Ignore progress/other transient updates
           }
@@ -1251,9 +1196,6 @@ onMounted(async () => {
   } catch (err) {
     logger.debug('Fallback queue fetch failed (non-fatal)', err)
   }
-
-  // Only poll "Wanted" badge (library changes infrequently)
-  startWantedBadgePolling()
 
   logger.info('✅ Real-time updates enabled - Activity badge updates automatically via SignalR!')
   await refreshAuthPresentationFromStartupConfig(true)
@@ -1299,7 +1241,9 @@ onUnmounted(() => {
   if (unsubscribeFilesRemoved) {
     unsubscribeFilesRemoved()
   }
-  stopWantedBadgePolling()
+  if (unsubscribeSignalRConnected) {
+    unsubscribeSignalRConnected()
+  }
   // Event listeners are automatically cleaned up by VueUse
 })
 

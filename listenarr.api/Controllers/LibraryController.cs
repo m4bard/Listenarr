@@ -24,6 +24,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Caching.Memory;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Api.Models;
 using Listenarr.Api.Services;
 using Microsoft.EntityFrameworkCore;
 using System.Collections.Generic;
@@ -573,65 +574,135 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Get all audiobooks in the library, including file info and wanted status.
+        /// Get all audiobooks in the library using a slim list payload.
         /// </summary>
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            // Return audiobooks including files and an explicit 'wanted' flag
             var audiobooks = await _dbContext.Audiobooks
                 .AsNoTracking()
-                .Include(a => a.Files)
                 .OrderBy(a => a.Title)
+                .Select(a => new
+                {
+                    a.Id,
+                    a.Title,
+                    a.Authors,
+                    a.Narrators,
+                    a.PublishYear,
+                    a.PublishedDate,
+                    a.Series,
+                    a.SeriesNumber,
+                    a.Asin,
+                    a.OpenLibraryId,
+                    a.Publisher,
+                    a.Language,
+                    a.Runtime,
+                    a.ImageUrl,
+                    a.Monitored,
+                    a.Quality,
+                    a.QualityProfileId,
+                    a.AuthorAsins
+                })
                 .ToListAsync();
 
-            var dto = audiobooks.Select(a => new
+            if (audiobooks.Count == 0)
             {
-                id = a.Id,
-                title = a.Title,
-                subtitle = a.Subtitle,
-                authors = a.Authors,
-                publishYear = a.PublishYear,
-                publishedDate = a.PublishedDate,
-                series = a.Series,
-                seriesNumber = a.SeriesNumber,
-                description = a.Description,
-                genres = a.Genres,
-                tags = a.Tags,
-                narrators = a.Narrators,
-                isbn = a.Isbn,
-                asin = a.Asin,
-                openLibraryId = a.OpenLibraryId,
-                publisher = a.Publisher,
-                language = a.Language,
-                runtime = a.Runtime,
-                version = a.Version,
-                @explicit = a.Explicit,
-                abridged = a.Abridged,
-                imageUrl = a.ImageUrl,
-                filePath = a.FilePath,
-                fileSize = a.FileSize,
-                basePath = a.BasePath,
-                monitored = a.Monitored,
-                quality = a.Quality,
-                qualityProfileId = a.QualityProfileId,
-                files = a.Files?.Select(f => new
+                return Ok(Array.Empty<LibraryAudiobookListItemDto>());
+            }
+
+            var audiobookIds = audiobooks.Select(a => a.Id).ToArray();
+            var fileSummaries = await _dbContext.AudiobookFiles
+                .AsNoTracking()
+                .Where(f => audiobookIds.Contains(f.AudiobookId))
+                .Select(f => new AudiobookFileStatusInfo
                 {
-                    id = f.Id,
-                    path = f.Path,
-                    size = f.Size,
-                    durationSeconds = f.DurationSeconds,
-                    format = f.Format,
-                    container = f.Container,
-                    codec = f.Codec,
-                    bitrate = f.Bitrate,
-                    sampleRate = f.SampleRate,
-                    channels = f.Channels,
-                    source = f.Source,
-                    createdAt = f.CreatedAt
-                }).ToList(),
-                wanted = ComputeWantedFlag(a)
-            });
+                    AudiobookId = f.AudiobookId,
+                    Path = f.Path,
+                    Format = f.Format,
+                    Container = f.Container,
+                    Codec = f.Codec,
+                    Bitrate = f.Bitrate
+                })
+                .ToListAsync();
+
+            var filesByAudiobookId = fileSummaries
+                .GroupBy(f => f.AudiobookId)
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<AudiobookFileStatusInfo>)g.ToList());
+
+            var qualityProfileIds = audiobooks
+                .Where(a => a.QualityProfileId.HasValue)
+                .Select(a => a.QualityProfileId!.Value)
+                .Distinct()
+                .ToArray();
+
+            var qualityProfiles = qualityProfileIds.Length == 0
+                ? new List<QualityProfile>()
+                : await _dbContext.QualityProfiles
+                    .AsNoTracking()
+                    .Where(q => qualityProfileIds.Contains(q.Id))
+                    .ToListAsync();
+
+            var qualityProfilesById = qualityProfiles.ToDictionary(q => q.Id);
+
+            var activeDownloadStatuses = new[]
+            {
+                DownloadStatus.Queued,
+                DownloadStatus.Downloading,
+                DownloadStatus.Paused,
+                DownloadStatus.Processing,
+                DownloadStatus.ImportPending
+            };
+
+            var activeDownloadAudiobookIds = await _dbContext.Downloads
+                .AsNoTracking()
+                .Where(d => d.AudiobookId.HasValue && activeDownloadStatuses.Contains(d.Status))
+                .Select(d => d.AudiobookId!.Value)
+                .Distinct()
+                .ToListAsync();
+
+            var activeDownloadAudiobookIdSet = activeDownloadAudiobookIds.ToHashSet();
+
+            var dto = audiobooks.Select(a =>
+            {
+                filesByAudiobookId.TryGetValue(a.Id, out var files);
+                var hasFiles = files != null && files.Count > 0;
+                var wanted = a.Monitored && !hasFiles;
+                QualityProfile? qualityProfile = null;
+                if (a.QualityProfileId.HasValue)
+                {
+                    qualityProfilesById.TryGetValue(a.QualityProfileId.Value, out qualityProfile);
+                }
+
+                return new LibraryAudiobookListItemDto
+                {
+                    Id = a.Id,
+                    Title = a.Title,
+                    Authors = a.Authors?.ToArray(),
+                    Narrators = a.Narrators?.ToArray(),
+                    PublishYear = a.PublishYear,
+                    PublishedDate = a.PublishedDate,
+                    Series = a.Series,
+                    SeriesNumber = a.SeriesNumber,
+                    Asin = a.Asin,
+                    OpenLibraryId = a.OpenLibraryId,
+                    Publisher = a.Publisher,
+                    Language = a.Language,
+                    Runtime = a.Runtime,
+                    ImageUrl = a.ImageUrl,
+                    Monitored = a.Monitored,
+                    Quality = a.Quality,
+                    QualityProfileId = a.QualityProfileId,
+                    AuthorAsins = a.AuthorAsins?.ToArray(),
+                    Wanted = wanted,
+                    Status = AudiobookStatusEvaluator.ComputeStatus(
+                        activeDownloadAudiobookIdSet.Contains(a.Id),
+                        wanted,
+                        hasFiles,
+                        a.Quality,
+                        qualityProfile,
+                        files)
+                };
+            }).ToList();
 
             return Ok(dto);
         }
@@ -667,14 +738,8 @@ namespace Listenarr.Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<Audiobook>> GetAudiobook(int id)
         {
-            var audiobook = await _repo.GetByIdAsync(id);
-            if (audiobook == null)
-            {
-                return NotFound(new { message = "Audiobook not found" });
-            }
-            // Include QualityProfile and Files in the query
             var updated = await _dbContext.Audiobooks
-                .Include(a => a.QualityProfile)
+                .AsNoTracking()
                 .Include(a => a.Files)
                 .Include(a => a.ExternalIdentifiers)
                 .FirstOrDefaultAsync(a => a.Id == id);

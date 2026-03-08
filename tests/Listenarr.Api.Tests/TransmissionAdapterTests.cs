@@ -77,5 +77,50 @@ namespace Listenarr.Api.Tests
                 "magnet:?xt=urn:btih:ABCDEF1234567890&tr=http%3A%2F%2Ftracker.example.com%2Fannounce%3Ffoo%3D1%26bar%3D2&dn=Book Title",
                 postedFilename);
         }
+
+        [Fact]
+        public async Task TestConnectionAsync_NormalizesHostAndRespectsConfiguredRpcPath()
+        {
+            Uri? capturedUri = null;
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
+                capturedUri = req.RequestUri;
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("""{"result":"success","arguments":{}}""")
+                });
+            });
+
+            using var httpClient = new HttpClient(handler);
+            var adapter = new TransmissionAdapter(
+                new TestHttpClientFactory(httpClient),
+                Mock.Of<IRemotePathMappingService>(),
+                Mock.Of<ITorrentFileDownloader>(),
+                NullLogger<TransmissionAdapter>.Instance);
+
+            var client = new DownloadClientConfiguration
+            {
+                Id = "tr-1",
+                Name = "Transmission",
+                Type = "transmission",
+                Host = "http://192.168.50.111:9999/legacy",
+                Port = 9091,
+                UseSSL = true,
+                Settings = new System.Collections.Generic.Dictionary<string, object>
+                {
+                    ["urlBase"] = "/rpc"
+                }
+            };
+
+            var (success, message) = await adapter.TestConnectionAsync(client);
+
+            Assert.True(success);
+            Assert.Contains("connected", message, StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(capturedUri);
+            Assert.Equal("https", capturedUri!.Scheme);
+            Assert.Equal("192.168.50.111", capturedUri.Host);
+            Assert.Equal(9091, capturedUri.Port);
+            Assert.Equal("/rpc", capturedUri.AbsolutePath);
+        }
     }
 }

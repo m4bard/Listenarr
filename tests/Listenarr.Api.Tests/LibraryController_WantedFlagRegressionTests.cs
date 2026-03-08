@@ -54,7 +54,8 @@ namespace Listenarr.Api.Tests
             var actionResult = await controller.GetAll();
             var ok = Assert.IsType<OkObjectResult>(actionResult);
 
-            using var doc = JsonDocument.Parse(JsonSerializer.Serialize(ok.Value));
+            var json = JsonSerializer.Serialize(ok.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            using var doc = JsonDocument.Parse(json);
             var wanted = doc.RootElement
                 .EnumerateArray()
                 .Single(item => item.GetProperty("id").GetInt32() == book.Id)
