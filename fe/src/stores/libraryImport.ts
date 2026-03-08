@@ -162,7 +162,6 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     rootFolderId.value = id
     scanStatus.value = 'scanning'
     scanError.value = null
-    items.value = {}
 
     let jobId = ''
     let settled = false
@@ -234,7 +233,11 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   function _populateFromItems(scanItems: UnmatchedFileItem[]) {
     const newItems: Record<string, LibraryImportItem> = {}
     for (const item of scanItems) {
-      newItems[item.fullPath] = unmatchedToImportItem(item)
+      const existing = items.value[item.fullPath]
+      const fresh = unmatchedToImportItem(item)
+      newItems[item.fullPath] = existing
+        ? { ...fresh, selectedMatch: existing.selectedMatch, hasSearched: existing.hasSearched, selected: existing.selected }
+        : fresh
     }
     items.value = newItems
   }

@@ -56,6 +56,7 @@ export interface MetadataSearchResult extends BaseSearchResult {
   isbn?: string
   series?: string
   seriesNumber?: string
+  seriesAsin?: string
   seriesList?: string[]
   genres?: string[] // Genres from metadata sources (e.g., Audimeta)
   productUrl?: string // Direct link to Amazon/Audible product page
@@ -100,6 +101,7 @@ export interface SearchResult extends BaseSearchResult {
   isbn?: string
   series?: string
   seriesNumber?: string
+  seriesAsin?: string
   seriesList?: string[]
   genres?: string[] // Genres from metadata sources (e.g., Audimeta)
   productUrl?: string // Direct link to Amazon/Audible product page
@@ -338,6 +340,7 @@ export interface AudibleBookMetadata {
   publishYear?: string
   series?: string
   seriesNumber?: string
+  seriesAsin?: string
   seriesList?: string[]
   description?: string
   genres?: string[]
