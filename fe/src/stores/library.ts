@@ -11,6 +11,7 @@ export const useLibraryStore = defineStore('library', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const selectedIds = ref<Set<number>>(new Set())
+  let inFlightFetch: Promise<void> | null = null
 
   function normalizeLibraryImageUrl(book: Audiobook): Audiobook {
     const current = (book.imageUrl || '').trim()
@@ -32,21 +33,30 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   async function fetchLibrary() {
+    if (inFlightFetch) {
+      return inFlightFetch
+    }
+
     loading.value = true
     error.value = null
-    try {
-      const serverList = await apiService.getLibrary()
-      // Always trust server data for wanted status so the store stays aligned with API semantics.
-      audiobooks.value = serverList.map(normalizeLibraryImageUrl)
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to fetch library'
-      errorTracking.captureException(err as Error, {
-        component: 'LibraryStore',
-        operation: 'fetchLibrary',
-      })
-    } finally {
-      loading.value = false
-    }
+    inFlightFetch = (async () => {
+      try {
+        const serverList = await apiService.getLibrary()
+        // Always trust server data for wanted status so the store stays aligned with API semantics.
+        audiobooks.value = serverList.map(normalizeLibraryImageUrl)
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Failed to fetch library'
+        errorTracking.captureException(err as Error, {
+          component: 'LibraryStore',
+          operation: 'fetchLibrary',
+        })
+      } finally {
+        loading.value = false
+        inFlightFetch = null
+      }
+    })()
+
+    return inFlightFetch
   }
 
   async function removeFromLibrary(id: number) {

@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 // Mock the downloads store so App.vue picks up the activeDownloads correctly
 vi.mock('@/stores/downloads', () => ({
@@ -50,6 +51,7 @@ describe('App.vue activity badge', () => {
   beforeEach(() => {
     // reset mocks between tests
     vi.resetModules()
+    setActivePinia(createPinia())
   })
 
   // Ensure localStorage APIs exist in the test environment for App.vue session debug helpers
@@ -111,7 +113,7 @@ describe('App.vue activity badge', () => {
     await router.isReady().catch(() => {})
 
     const wrapper = mount(AppComponent, {
-      global: { stubs: ['RouterLink', 'RouterView'], plugins: [router] },
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
     })
 
     // Wait a tick for computed properties in mounted hook
@@ -160,7 +162,7 @@ describe('App.vue activity badge', () => {
     await router.isReady().catch(() => {})
 
     const wrapper = mount(AppComponent, {
-      global: { stubs: ['RouterLink', 'RouterView'], plugins: [router] },
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
     })
 
     // Allow async onMounted tasks to settle
@@ -223,7 +225,7 @@ describe('App.vue activity badge', () => {
     await router.isReady().catch(() => {})
 
     const wrapper = mount(AppComponent, {
-      global: { stubs: ['RouterLink', 'RouterView'], plugins: [router] },
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
     })
 
     // Allow async onMounted tasks (SignalR/connect, api fetches) to settle

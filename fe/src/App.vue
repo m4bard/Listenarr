@@ -496,6 +496,7 @@ import ConfirmDialog from '@/components/feedback/ConfirmDialog.vue'
 import { useConfirmService } from '@/composables/confirmService'
 import { useNotification } from '@/composables/useNotification'
 import { useDownloadsStore } from '@/stores/downloads'
+import { useLibraryStore } from '@/stores/library'
 import { useAuthStore } from '@/stores/auth'
 import { apiService } from '@/services/api'
 import { getStartupConfigCached } from '@/services/startupConfigCache'
@@ -522,6 +523,7 @@ const STARTUP_CONFIG_UPDATED_EVENT = 'listenarr-startup-config-updated'
 const { notification, close: closeNotification } = useNotification()
 const { getProtectedImageSrc } = useProtectedImages()
 const downloadsStore = useDownloadsStore()
+const libraryStore = useLibraryStore()
 const auth = useAuthStore()
 const authEnabled = ref(false)
 const startupConfigLoaded = ref(false)
@@ -872,10 +874,8 @@ function stopWantedBadgePolling() {
 // Fetch wanted badge count (library changes less frequently - minimal polling)
 const refreshWantedBadge = async () => {
   try {
-    // Wanted badge: rely exclusively on the server-provided `wanted` flag.
-    // Treat only audiobooks where server returns wanted === true as wanted.
-    const library = await apiService.getLibrary()
-    wantedCount.value = library.filter((book) => {
+    await libraryStore.fetchLibrary()
+    wantedCount.value = libraryStore.audiobooks.filter((book) => {
       const serverWanted = (book as unknown as Record<string, unknown>)['wanted']
       return serverWanted === true
     }).length
@@ -936,8 +936,10 @@ const onSearchInput = async () => {
   searchDebounceTimer = window.setTimeout(async () => {
     searching.value = true
     try {
-      // First try to match local library entries
-      const lib = await apiService.getLibrary()
+      if (libraryStore.audiobooks.length === 0) {
+        await libraryStore.fetchLibrary()
+      }
+      const lib = libraryStore.audiobooks
       const lower = q.toLowerCase()
       const localMatches = lib.filter(
         (b) =>
