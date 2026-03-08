@@ -105,5 +105,47 @@ namespace Listenarr.Api.Tests
             Assert.Equal(6789, capturedUri.Port);
             Assert.Equal("/xmlrpc", capturedUri.AbsolutePath);
         }
+
+        [Fact]
+        public async Task GetQueueAsync_NormalizesHostWithSchemeAndPath()
+        {
+            Uri? capturedUri = null;
+            var handler = new DelegatingHandlerMock((req, _) =>
+            {
+                capturedUri = req.RequestUri;
+
+                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(
+                        "<?xml version=\"1.0\"?><methodResponse><params><param><value><array><data></data></array></value></param></params></methodResponse>")
+                });
+            });
+
+            using var http = new HttpClient(handler);
+            var adapter = new NzbgetAdapter(
+                new TestHttpClientFactory(http),
+                Mock.Of<INzbUrlResolver>(),
+                Mock.Of<IRemotePathMappingService>(),
+                NullLogger<NzbgetAdapter>.Instance);
+
+            var client = new DownloadClientConfiguration
+            {
+                Host = "http://192.168.50.111/nzbget",
+                Port = 6789,
+                UseSSL = false,
+                Username = "Talis",
+                Password = "secret"
+            };
+
+            var queue = await adapter.GetQueueAsync(client);
+
+            Assert.NotNull(queue);
+            Assert.Empty(queue);
+            Assert.NotNull(capturedUri);
+            Assert.Equal("http", capturedUri!.Scheme);
+            Assert.Equal("192.168.50.111", capturedUri.Host);
+            Assert.Equal(6789, capturedUri.Port);
+            Assert.Equal("/xmlrpc", capturedUri.AbsolutePath);
+        }
     }
 }
