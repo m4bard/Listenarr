@@ -85,7 +85,7 @@ describe('WantedView image recache behavior', () => {
         startedAt: new Date().toISOString(),
         metadata: {},
       },
-    ] as any
+    ] as ReturnType<typeof useDownloadsStore>['downloads']
 
     const wrapper = mount(WantedView, { global: { plugins: [pinia] } })
     await new Promise((r) => setTimeout(r, 10))
