@@ -950,12 +950,19 @@ class ApiService {
     },
   ): Promise<{ message: string; audiobook: Audiobook }> {
     const normalizedMetadata = this.normalizeMetadataForApi(metadata)
+    const sr = options?.searchResult
+    const normalizedSearchResult = sr
+      ? {
+          ...sr,
+          isbn: Array.isArray(sr.isbn) ? sr.isbn : sr.isbn ? [sr.isbn] : [],
+        }
+      : undefined
     const request = {
       metadata: normalizedMetadata,
       monitored: options?.monitored ?? true,
       qualityProfileId: options?.qualityProfileId,
       autoSearch: options?.autoSearch ?? false,
-      searchResult: options?.searchResult,
+      searchResult: normalizedSearchResult,
       destinationPath: options?.destinationPath,
     }
     return this.request<{ message: string; audiobook: Audiobook }>('/library/add', {
