@@ -340,7 +340,7 @@
       :class="['audiobooks-scroll-container', { 'has-selection': selectedCount > 0 }]"
       @scroll="updateVisibleRange"
     >
-      <div class="audiobooks-scroll-spacer">
+      <div class="audiobooks-scroll-spacer" :style="{ height: totalHeight + 'px' }">
         <div
           v-if="viewMode === 'grid'"
           class="audiobooks-grid"
@@ -1523,6 +1523,14 @@ const updateVisibleRange = () => {
 const topPadding = computed(() => {
   const firstVisibleRow = Math.floor(visibleRange.value.start / ITEMS_PER_ROW.value)
   return firstVisibleRow * getRowHeight()
+})
+
+// Total scroll height so the container scrollbar reflects the full list
+const totalHeight = computed(() => {
+  const totalRows = Math.ceil(audiobooks.value.length / ITEMS_PER_ROW.value)
+  return totalRows * (viewMode.value === 'grid'
+    ? GRID_ROW_HEIGHT + (showItemDetails.value ? GRID_DETAILS_EXTRA_HEIGHT : 0)
+    : LIST_ROW_HEIGHT)
 })
 
 // deletion dialog handled via global showConfirm()
