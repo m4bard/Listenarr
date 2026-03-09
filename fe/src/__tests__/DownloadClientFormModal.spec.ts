@@ -88,7 +88,7 @@ describe('DownloadClientFormModal', () => {
 
     // change host input to a new value before testing
     const hostInput = wrapper.find('input[id="host"]')
-    await hostInput.setValue('edited.local')
+    await hostInput.setValue('http://edited.local/nzbget')
 
     // click the Test button (use class selector to reliably find the correct button)
     const testButton = wrapper.find('button.btn-info')

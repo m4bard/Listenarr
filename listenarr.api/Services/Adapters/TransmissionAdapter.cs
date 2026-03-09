@@ -90,13 +90,16 @@ namespace Listenarr.Api.Services.Adapters
 
             // Prefer cached torrent file data over URL (required for private trackers with authentication)
             byte[]? torrentFileData = result.TorrentFileContent;
-            var torrentUrl = !string.IsNullOrEmpty(result.MagnetLink) ? result.MagnetLink : result.TorrentUrl;
+            var magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(result.MagnetLink);
+            var httpTorrentUrl = NormalizeTorrentUrl(result.TorrentUrl);
+            var torrentUrl = magnetLink.Length > 0 ? magnetLink : httpTorrentUrl ?? string.Empty;
+            var isMagnetTarget = magnetLink.Length > 0;
 
             _logger.LogDebug("AddAsync entry for '{Title}': TorrentFileContent={HasContent}, MagnetLink={HasMagnet}, TorrentUrl={Url}",
                 LogRedaction.SanitizeText(result.Title),
                 result.TorrentFileContent != null && result.TorrentFileContent.Length > 0 ? $"{result.TorrentFileContent.Length} bytes" : "null",
-                !string.IsNullOrEmpty(result.MagnetLink) ? "yes" : "no",
-                LogRedaction.SanitizeUrl(torrentUrl ?? "(null)"));
+                isMagnetTarget ? "yes" : "no",
+                LogRedaction.SanitizeUrl(torrentUrl));
 
             // Transmission's magnet link handling is less reliable than qBittorrent's — it
             // often stalls at "Downloading metadata..." because its DHT/tracker resolution is
@@ -105,19 +108,14 @@ namespace Listenarr.Api.Services.Adapters
             // full tracker lists and piece hashes, giving Transmission everything it needs to
             // start immediately without metadata resolution.
             if ((torrentFileData == null || torrentFileData.Length == 0) &&
-                !string.IsNullOrEmpty(torrentUrl) &&
-                torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
-                !string.IsNullOrEmpty(result.TorrentUrl) &&
-                !result.TorrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
-                Uri.TryCreate(result.TorrentUrl, UriKind.Absolute, out var altUri) &&
-                (altUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
-                 altUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+                isMagnetTarget &&
+                !string.IsNullOrEmpty(httpTorrentUrl))
             {
                 _logger.LogDebug("Magnet link available but TorrentUrl also present — attempting .torrent pre-download from {Url} for better Transmission compatibility",
-                    LogRedaction.SanitizeUrl(result.TorrentUrl));
+                    LogRedaction.SanitizeUrl(httpTorrentUrl));
                 try
                 {
-                    var altResult = await _torrentFileDownloader.DownloadAsync(result.TorrentUrl, ct);
+                    var altResult = await _torrentFileDownloader.DownloadAsync(httpTorrentUrl, ct);
                     if (altResult.HasBytes)
                     {
                         torrentFileData = altResult.TorrentBytes;
@@ -140,16 +138,13 @@ namespace Listenarr.Api.Services.Adapters
             // (e.g. Prowlarr returning 301), so we fetch the .torrent file ourselves and send
             // the raw bytes via the metainfo field instead.
             if ((torrentFileData == null || torrentFileData.Length == 0) &&
-                !string.IsNullOrEmpty(torrentUrl) &&
-                !torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
-                Uri.TryCreate(torrentUrl, UriKind.Absolute, out var torrentUri) &&
-                (torrentUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
-                 torrentUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+                !isMagnetTarget &&
+                !string.IsNullOrEmpty(httpTorrentUrl))
             {
-                _logger.LogDebug("Attempting pre-download of torrent file from {Url}", LogRedaction.SanitizeUrl(torrentUrl));
+                _logger.LogDebug("Attempting pre-download of torrent file from {Url}", LogRedaction.SanitizeUrl(httpTorrentUrl));
                 try
                 {
-                    var downloadResult = await _torrentFileDownloader.DownloadAsync(torrentUrl, ct);
+                    var downloadResult = await _torrentFileDownloader.DownloadAsync(httpTorrentUrl, ct);
                     if (downloadResult.HasBytes)
                     {
                         torrentFileData = downloadResult.TorrentBytes;
@@ -159,7 +154,7 @@ namespace Listenarr.Api.Services.Adapters
                     else if (downloadResult.HasMagnet)
                     {
                         // Indexer redirected to a magnet link — use it directly
-                        torrentUrl = downloadResult.MagnetUri!;
+                        torrentUrl = DownloadClientUriBuilder.NormalizeMagnetLink(downloadResult.MagnetUri);
                         _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
                     }
                     else
@@ -1049,7 +1044,6 @@ namespace Listenarr.Api.Services.Adapters
 
         private static string BuildBaseUrl(DownloadClientConfiguration client)
         {
-            var scheme = client.UseSSL ? "https" : "http";
             var rpcPath = "/transmission/rpc";
             if (client.Settings?.TryGetValue("urlBase", out var urlBaseObj) is true)
             {
@@ -1059,7 +1053,23 @@ namespace Listenarr.Api.Services.Adapters
                     rpcPath = custom.StartsWith('/') ? custom : "/" + custom;
                 }
             }
-            return $"{scheme}://{client.Host}:{client.Port}{rpcPath}";
+            return DownloadClientUriBuilder.BuildUri(client, rpcPath).ToString();
+        }
+
+        private static string? NormalizeTorrentUrl(string? torrentUrl)
+        {
+            var trimmed = (torrentUrl ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+            {
+                return null;
+            }
+
+            if (!DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(trimmed, out var torrentUri))
+            {
+                throw new ArgumentException("Torrent URL must be an absolute HTTP or HTTPS URL.", nameof(torrentUrl));
+            }
+
+            return torrentUri!.ToString();
         }
 
         private static string NormalizeMagnetUriForTransmission(string magnetUri)

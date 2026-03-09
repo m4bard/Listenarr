@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { mount } from '@vue/test-utils'
 import { computed, ref } from 'vue'
+import { createPinia, setActivePinia } from 'pinia'
 
 // Mock the downloads store so App.vue picks up the activeDownloads correctly
 vi.mock('@/stores/downloads', () => ({
@@ -24,10 +25,10 @@ vi.mock('@/stores/auth', () => ({
 vi.mock('@/services/signalr', () => ({
   signalRService: {
     connect: vi.fn(async () => undefined),
+    onConnected: vi.fn(() => () => undefined),
     onQueueUpdate: vi.fn(() => () => undefined),
     onFilesRemoved: vi.fn(() => () => undefined),
     onToast: vi.fn(() => () => undefined),
-    onAudiobookUpdate: vi.fn(() => () => undefined),
     onDownloadUpdate: vi.fn(() => () => undefined),
     onDownloadsList: vi.fn(() => () => undefined),
     onNotification: vi.fn(() => () => undefined),
@@ -50,6 +51,7 @@ describe('App.vue activity badge', () => {
   beforeEach(() => {
     // reset mocks between tests
     vi.resetModules()
+    setActivePinia(createPinia())
   })
 
   // Ensure localStorage APIs exist in the test environment for App.vue session debug helpers
@@ -111,7 +113,7 @@ describe('App.vue activity badge', () => {
     await router.isReady().catch(() => {})
 
     const wrapper = mount(AppComponent, {
-      global: { stubs: ['RouterLink', 'RouterView'], plugins: [router] },
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
     })
 
     // Wait a tick for computed properties in mounted hook
@@ -160,7 +162,7 @@ describe('App.vue activity badge', () => {
     await router.isReady().catch(() => {})
 
     const wrapper = mount(AppComponent, {
-      global: { stubs: ['RouterLink', 'RouterView'], plugins: [router] },
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
     })
 
     // Allow async onMounted tasks to settle
@@ -190,6 +192,7 @@ describe('App.vue activity badge', () => {
     vi.doMock('@/services/signalr', () => ({
       signalRService: {
         connect: vi.fn(async () => undefined),
+        onConnected: vi.fn(() => () => undefined),
         onQueueUpdate: (cb: (items: unknown[]) => void) => {
           cb([
             { id: 'q1', status: 'queued' },
@@ -199,7 +202,6 @@ describe('App.vue activity badge', () => {
         },
         onFilesRemoved: vi.fn(() => () => undefined),
         onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
         onDownloadUpdate: vi.fn(() => () => undefined),
         onDownloadsList: vi.fn(() => () => undefined),
         onNotification: vi.fn(() => () => undefined),
@@ -223,7 +225,7 @@ describe('App.vue activity badge', () => {
     await router.isReady().catch(() => {})
 
     const wrapper = mount(AppComponent, {
-      global: { stubs: ['RouterLink', 'RouterView'], plugins: [router] },
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
     })
 
     // Allow async onMounted tasks (SignalR/connect, api fetches) to settle
@@ -233,4 +235,99 @@ describe('App.vue activity badge', () => {
     // With zero active downloads and two queue items, activityCount should reflect the queue
     expect(vm.activityCount).toBe(2)
   }, 20000)
+
+  it('derives wantedCount from the hydrated library store without polling timers', async () => {
+    const setIntervalSpy = vi.spyOn(window, 'setInterval')
+
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => [],
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: false }),
+        getLibrary: async () => [
+          { id: 1, title: 'Wanted Book', wanted: true },
+          { id: 2, title: 'Present Book', wanted: false },
+        ],
+      },
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'home', component: { template: '<div />' } }],
+    })
+    await router.push('/')
+    await router.isReady().catch(() => {})
+
+    const wrapper = mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+
+    await new Promise((r) => setTimeout(r, 20))
+
+    const vm = wrapper.vm as unknown as { wantedCount: number }
+    expect(vm.wantedCount).toBe(1)
+    expect(setIntervalSpy).not.toHaveBeenCalled()
+
+    setIntervalSpy.mockRestore()
+  })
+
+  it('retries library sync on SignalR reconnect even when the initial hydrate fails', async () => {
+    const getLibrary = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('initial load failed'))
+      .mockResolvedValueOnce([{ id: 1, title: 'Recovered Book', wanted: true }])
+    const connectedCallbacks: Array<() => void> = []
+
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => [],
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: false }),
+        getLibrary,
+      },
+    }))
+
+    vi.doMock('@/services/signalr', () => ({
+      signalRService: {
+        connect: vi.fn(async () => undefined),
+        onConnected: vi.fn((cb: () => void) => {
+          connectedCallbacks.push(cb)
+          return () => undefined
+        }),
+        onQueueUpdate: vi.fn(() => () => undefined),
+        onFilesRemoved: vi.fn(() => () => undefined),
+        onToast: vi.fn(() => () => undefined),
+        onDownloadUpdate: vi.fn(() => () => undefined),
+        onDownloadsList: vi.fn(() => () => undefined),
+        onNotification: vi.fn(() => () => undefined),
+      },
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'home', component: { template: '<div />' } }],
+    })
+    await router.push('/')
+    await router.isReady().catch(() => {})
+
+    const wrapper = mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(getLibrary).toHaveBeenCalledTimes(1)
+    expect(connectedCallbacks).toHaveLength(1)
+
+    connectedCallbacks[0]!()
+    await new Promise((r) => setTimeout(r, 20))
+
+    const vm = wrapper.vm as unknown as { wantedCount: number }
+    expect(getLibrary).toHaveBeenCalledTimes(2)
+    expect(vm.wantedCount).toBe(1)
+  })
 })

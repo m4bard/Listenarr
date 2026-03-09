@@ -39,7 +39,7 @@ namespace Listenarr.Api.Services.Adapters
         {
             try
             {
-                var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+                var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
                     // Prefer the IHttpClientFactory-created client so unit tests can inject
                     // a DelegatingHandler mock. Fall back to a local cookie-enabled client
@@ -221,20 +221,10 @@ namespace Listenarr.Api.Services.Adapters
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (result == null) throw new ArgumentNullException(nameof(result));
 
-            var torrentUrl = !string.IsNullOrEmpty(result.MagnetLink) ? result.MagnetLink : result.TorrentUrl;
-            if (string.IsNullOrEmpty(torrentUrl))
-                throw new ArgumentException("No magnet link or torrent URL provided", nameof(result));
+            var magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(result.MagnetLink);
+            var httpTorrentUrl = NormalizeTorrentUrl(result.TorrentUrl);
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
-
-            string? extractedHash = null;
-            if (!string.IsNullOrEmpty(result.MagnetLink) && result.MagnetLink.Contains("xt=urn:btih:", StringComparison.OrdinalIgnoreCase))
-            {
-                var start = result.MagnetLink.IndexOf("xt=urn:btih:", StringComparison.OrdinalIgnoreCase) + "xt=urn:btih:".Length;
-                var end = result.MagnetLink.IndexOf('&', start);
-                if (end == -1) end = result.MagnetLink.Length;
-                extractedHash = result.MagnetLink[start..end].ToLowerInvariant();
-            }
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {
@@ -321,37 +311,34 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 HttpResponseMessage addResponse;
-                // Pre-download torrent file if not cached and URL is HTTP(S) (not magnet).
-                // This avoids the download client needing to fetch from the source URL,
-                // which can fail if the source requires authentication the client lacks.
+                // Prefer a validated HTTP(S) torrent URL when one exists so we can add
+                // authenticated/private-tracker content via bytes and only fall back to
+                // a magnet when no file data can be obtained.
                 byte[]? torrentFileData = result.TorrentFileContent;
-                if ((torrentFileData == null || torrentFileData.Length == 0) &&
-                    !torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
-                    Uri.TryCreate(torrentUrl, UriKind.Absolute, out var torrentUri) &&
-                    (torrentUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
-                     torrentUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+                if (torrentFileData == null || torrentFileData.Length == 0)
                 {
-                    try
+                    var downloadResult = await TryPredownloadTorrentFileAsync(httpTorrentUrl, result.Title, ct);
+                    if (downloadResult.HasBytes)
                     {
-                        var downloadResult = await _torrentFileDownloader.DownloadAsync(torrentUrl, ct);
-                        if (downloadResult.HasBytes)
-                        {
-                            torrentFileData = downloadResult.TorrentBytes;
-                            _logger.LogInformation("Pre-downloaded torrent file ({Bytes} bytes) for '{Title}'",
-                                torrentFileData!.Length, LogRedaction.SanitizeText(result.Title));
-                        }
-                        else if (downloadResult.HasMagnet)
-                        {
-                            // Indexer redirected to a magnet link — use it as the torrent URL instead
-                            torrentUrl = downloadResult.MagnetUri!;
-                            _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
-                        }
+                        torrentFileData = downloadResult.TorrentBytes;
+                        _logger.LogInformation("Pre-downloaded torrent file ({Bytes} bytes) for '{Title}'",
+                            torrentFileData!.Length, LogRedaction.SanitizeText(result.Title));
                     }
-                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    else if (downloadResult.HasMagnet)
                     {
-                        _logger.LogWarning(ex, "Failed to pre-download torrent file for '{Title}', falling back to URL", LogRedaction.SanitizeText(result.Title));
+                        // Indexer redirected to a magnet link — use it as the torrent URL instead
+                        magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(downloadResult.MagnetUri);
+                        _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
                     }
                 }
+
+                var torrentUrl = new[] { magnetLink, httpTorrentUrl }
+                    .FirstOrDefault(static url => !string.IsNullOrEmpty(url)) ?? string.Empty;
+
+                if ((torrentFileData == null || torrentFileData.Length == 0) && string.IsNullOrEmpty(torrentUrl))
+                    throw new ArgumentException("No magnet link or torrent URL provided", nameof(result));
+
+                var extractedHash = TryExtractMagnetHash(torrentUrl);
 
                 if (torrentFileData != null && torrentFileData.Length > 0)
                 {
@@ -446,6 +433,54 @@ namespace Listenarr.Api.Services.Adapters
             }
         }
 
+        private static string? TryExtractMagnetHash(string? torrentUrl)
+        {
+            if (string.IsNullOrEmpty(torrentUrl) ||
+                !torrentUrl.Contains("xt=urn:btih:", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var start = torrentUrl.IndexOf("xt=urn:btih:", StringComparison.OrdinalIgnoreCase) + "xt=urn:btih:".Length;
+            var end = torrentUrl.IndexOf('&', start);
+            if (end == -1) end = torrentUrl.Length;
+            return torrentUrl[start..end].ToLowerInvariant();
+        }
+
+        private static string? NormalizeTorrentUrl(string? torrentUrl)
+        {
+            var trimmed = (torrentUrl ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+            {
+                return null;
+            }
+
+            if (!DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(trimmed, out var torrentUri))
+            {
+                throw new ArgumentException("Torrent URL must be an absolute HTTP or HTTPS URL.", nameof(torrentUrl));
+            }
+
+            return torrentUri!.ToString();
+        }
+
+        private async Task<TorrentDownloadResult> TryPredownloadTorrentFileAsync(string? torrentUrl, string? title, CancellationToken ct)
+        {
+            if (string.IsNullOrEmpty(torrentUrl))
+            {
+                return TorrentDownloadResult.Empty;
+            }
+
+            try
+            {
+                return await _torrentFileDownloader.DownloadAsync(torrentUrl, ct);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to pre-download torrent file for '{Title}', falling back to URL", LogRedaction.SanitizeText(title));
+                return TorrentDownloadResult.Empty;
+            }
+        }
+
         /// <summary>
         /// Marks a torrent as imported by changing its category to the configured post-import category.
         /// This allows users to differentiate imported vs active torrents in qBittorrent.
@@ -463,7 +498,7 @@ namespace Listenarr.Api.Services.Adapters
                 return true; // No-op is success
             }
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
             try
             {
                 var cookieJar = new CookieContainer();
@@ -507,7 +542,7 @@ namespace Listenarr.Api.Services.Adapters
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (string.IsNullOrEmpty(id)) throw new ArgumentNullException(nameof(id));
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {
@@ -564,7 +599,7 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<QueueItem>();
             if (client == null) return items;
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {
@@ -714,7 +749,7 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<DownloadClientItem>();
             if (client == null) return items;
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
             var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "&");
 
             try
@@ -992,7 +1027,7 @@ namespace Listenarr.Api.Services.Adapters
 
             // Otherwise, resolve path from qBittorrent API
             var hash = result.DownloadId.ToLowerInvariant();
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {
@@ -1104,7 +1139,7 @@ namespace Listenarr.Api.Services.Adapters
                 return result;
             }
 
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             try
             {

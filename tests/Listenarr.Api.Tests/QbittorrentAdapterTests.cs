@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
+using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
+using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Api.Services.Adapters;
 using Listenarr.Domain.Models;
@@ -115,6 +118,156 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task TestConnection_NormalizesHostWithSchemeAndPath()
+        {
+            Uri? capturedUri = null;
+            using var okResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("v5.0.2")
+            };
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
+                capturedUri = req.RequestUri;
+                return Task.FromResult(okResponse);
+            });
+
+            using var http = new HttpClient(handler);
+            var factory = new TestHttpClientFactory(http);
+            var pathMapMock = new Mock<Listenarr.Api.Services.IRemotePathMappingService>();
+            var adapter = new QbittorrentAdapter(factory, pathMapMock.Object, Mock.Of<ITorrentFileDownloader>(), NullLogger<QbittorrentAdapter>.Instance);
+
+            var cfg = new DownloadClientConfiguration
+            {
+                Host = "http://192.168.50.111/qbt",
+                Port = 8080,
+                UseSSL = false
+            };
+
+            var (success, message) = await adapter.TestConnectionAsync(cfg);
+
+            Assert.True(success);
+            Assert.Contains("connected", message, StringComparison.OrdinalIgnoreCase);
+            Assert.NotNull(capturedUri);
+            Assert.Equal("http", capturedUri!.Scheme);
+            Assert.Equal("192.168.50.111", capturedUri.Host);
+            Assert.Equal(8080, capturedUri.Port);
+            Assert.Equal("/api/v2/app/version", capturedUri.AbsolutePath);
+        }
+
+        [Fact]
+        public async Task AddAsync_WhenMagnetAndTorrentUrlAreProvided_PredownloadsTorrentUrlFirst()
+        {
+            string? requestedTorrentUrl = null;
+            var port = GetAvailablePort();
+            using var listener = new HttpListener();
+            listener.Prefixes.Add($"http://127.0.0.1:{port}/");
+            listener.Start();
+
+            var serverTask = Task.Run(async () =>
+            {
+                for (var requestIndex = 0; requestIndex < 4; requestIndex++)
+                {
+                    var context = await listener.GetContextAsync();
+                    var pathAndQuery = context.Request.Url!.PathAndQuery;
+
+                    if (context.Request.HttpMethod == HttpMethod.Post.Method &&
+                        pathAndQuery.StartsWith("/api/v2/auth/login", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await WriteResponseAsync(context.Response, HttpStatusCode.OK, "Ok", "text/plain");
+                        continue;
+                    }
+
+                    if (context.Request.HttpMethod == HttpMethod.Get.Method &&
+                        pathAndQuery.StartsWith("/api/v2/torrents/info?fields=hash,name", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await WriteResponseAsync(context.Response, HttpStatusCode.OK, """[{"hash":"NEWHASH","name":"Book"}]""");
+                        continue;
+                    }
+
+                    if (context.Request.HttpMethod == HttpMethod.Get.Method &&
+                        pathAndQuery.StartsWith("/api/v2/torrents/info?fields=hash", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await WriteResponseAsync(context.Response, HttpStatusCode.OK, "[]");
+                        continue;
+                    }
+
+                    if (context.Request.HttpMethod == HttpMethod.Post.Method &&
+                        pathAndQuery.StartsWith("/api/v2/torrents/add", StringComparison.OrdinalIgnoreCase))
+                    {
+                        await WriteResponseAsync(context.Response, HttpStatusCode.OK, "Ok.", "text/plain");
+                        continue;
+                    }
+
+                    throw new InvalidOperationException($"Unexpected qBittorrent request: {context.Request.HttpMethod} {context.Request.Url}");
+                }
+            });
+
+            using var http = new HttpClient();
+            var downloader = new Mock<ITorrentFileDownloader>(MockBehavior.Strict);
+            downloader
+                .Setup(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<CancellationToken>()))
+                .Callback<string, CancellationToken>((url, _) => requestedTorrentUrl = url)
+                .ReturnsAsync(TorrentDownloadResult.Empty);
+
+            var adapter = new QbittorrentAdapter(
+                new TestHttpClientFactory(http),
+                Mock.Of<Listenarr.Api.Services.IRemotePathMappingService>(),
+                downloader.Object,
+                NullLogger<QbittorrentAdapter>.Instance);
+
+            var client = new DownloadClientConfiguration
+            {
+                Host = "127.0.0.1",
+                Port = port,
+                Username = "admin",
+                Password = "admin"
+            };
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890",
+                TorrentUrl = "https://indexer.example.com/book.torrent"
+            };
+
+            var addedId = await adapter.AddAsync(client, searchResult);
+            await serverTask;
+
+            Assert.Equal("NEWHASH", addedId);
+            Assert.Equal("https://indexer.example.com/book.torrent", requestedTorrentUrl);
+            downloader.Verify(x => x.DownloadAsync("https://indexer.example.com/book.torrent", It.IsAny<CancellationToken>()), Times.Once);
+        }
+
+        [Fact]
+        public async Task AddAsync_WhenTorrentUrlUsesInvalidScheme_ThrowsArgumentException()
+        {
+            using var http = new HttpClient(new DelegatingHandlerMock((_, _) =>
+                throw new InvalidOperationException("Network should not be hit for invalid torrent URLs.")));
+
+            var adapter = new QbittorrentAdapter(
+                new TestHttpClientFactory(http),
+                Mock.Of<Listenarr.Api.Services.IRemotePathMappingService>(),
+                Mock.Of<ITorrentFileDownloader>(),
+                NullLogger<QbittorrentAdapter>.Instance);
+
+            var client = new DownloadClientConfiguration
+            {
+                Host = "localhost",
+                Port = 8080
+            };
+
+            var searchResult = new SearchResult
+            {
+                Title = "Book",
+                TorrentUrl = "ftp://indexer.example.com/book.torrent"
+            };
+
+            var ex = await Assert.ThrowsAsync<ArgumentException>(() => adapter.AddAsync(client, searchResult));
+
+            Assert.Contains("HTTP or HTTPS", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
         [Trait("Area", "QbittorrentImportPathResolution")]
         [Trait("Scenario", "SingleFileResolvesContentFilePath")]
         public async Task GetImportItemAsync_SingleFileTorrent_ResolvesSpecificFilePath()
@@ -157,6 +310,23 @@ namespace Listenarr.Api.Tests
         private static string NormalizePath(string path)
         {
             return (path ?? string.Empty).Replace('\\', '/');
+        }
+
+        private static int GetAvailablePort()
+        {
+            using var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            return ((IPEndPoint)listener.LocalEndpoint).Port;
+        }
+
+        private static async Task WriteResponseAsync(HttpListenerResponse response, HttpStatusCode statusCode, string body, string contentType = "application/json")
+        {
+            var payload = Encoding.UTF8.GetBytes(body);
+            response.StatusCode = (int)statusCode;
+            response.ContentType = contentType;
+            response.ContentLength64 = payload.Length;
+            await response.OutputStream.WriteAsync(payload, 0, payload.Length);
+            response.Close();
         }
     }
 }

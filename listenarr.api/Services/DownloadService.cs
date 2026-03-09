@@ -31,6 +31,7 @@ using System.Text.RegularExpressions;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
+using Listenarr.Api.Services.Adapters;
 
 namespace Listenarr.Api.Services
 {
@@ -1931,7 +1932,7 @@ namespace Listenarr.Api.Services
 
         private async Task<List<QueueItem>> GetQBittorrentQueueAsync(DownloadClientConfiguration client)
         {
-            var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+            var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
             var items = new List<QueueItem>();
 
             try

@@ -28,6 +28,7 @@ using System.Text.Json;
 using System.Text.Encodings.Web;
 using Microsoft.Extensions.Caching.Memory;
 using Listenarr.Application.Services;
+using Listenarr.Api.Services.Adapters;
 
 namespace Listenarr.Api.Services
 {
@@ -784,7 +785,7 @@ namespace Listenarr.Api.Services
                         return;
                     }
 
-                    var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}";
+                    var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
                     _logger.LogInformation("Polling qBittorrent client {ClientName} at {BaseUrl}", client.Name, baseUrl);
 
                     // Create an HttpClient with its own CookieContainer so the qBittorrent
@@ -1266,7 +1267,7 @@ namespace Listenarr.Api.Services
                             rpcPath = custom.StartsWith('/') ? custom : "/" + custom;
                         }
                     }
-                    var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}{rpcPath}";
+                    var baseUrl = DownloadClientUriBuilder.BuildUri(client, rpcPath).ToString();
                     using var http = _httpClientFactory.CreateClient("DownloadClient");
 
                     // Resolve removeCompletedDownloads for CanMoveFiles/CanBeRemoved evaluation
@@ -2049,7 +2050,7 @@ namespace Listenarr.Api.Services
                         return;
                     }
 
-                    var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/api";
+                    var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/api").ToString();
 
                     using var http = _httpClientFactory.CreateClient("DownloadClient");
 
@@ -2396,7 +2397,7 @@ namespace Listenarr.Api.Services
                         return;
                     }
 
-                    var baseUrl = $"{(client.UseSSL ? "https" : "http")}://{client.Host}:{client.Port}/jsonrpc";
+                    var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/jsonrpc");
 
                     using var http = _httpClientFactory.CreateClient("nzbget");
 

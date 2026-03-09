@@ -5,6 +5,25 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.57] - 2026-03-08
+
+### Added
+- **Library payload and status regression coverage:** Added focused backend and frontend regression tests covering slim `/library` payload behavior, wanted-flag correctness, shared audiobook status calculation, and download-client host normalization across NZBGet, qBittorrent, SABnzbd, and Transmission.
+
+### Changed
+- **Slimmed `/library` list contract:** Converted `GET /library` from a hybrid list/detail response into a lighter list payload, while keeping `GET /library/{id}` as the rich single-audiobook detail endpoint.
+- **Server-side library status evaluation:** Moved list status calculation into shared backend/frontend helpers so library and collection views no longer depend on full file metadata from the list response to derive status.
+- **Event-driven library badge updates:** Removed periodic full-library polling for the Wanted badge in favor of store-driven updates backed by existing SignalR events, keeping a reconnect refresh path instead of a timer.
+- **Deduplicated library fetches and client-side lookups:** Updated the frontend library store and app shell to collapse concurrent `/library` requests into a single in-flight fetch and reuse cached library state for header search and related UI lookups.
+- **Download client URI handling normalization:** Standardized host/scheme/port/path handling across all download clients through a shared URI builder so adapters and monitor paths all interpret download-client connection settings consistently.
+
+### Fixed
+- **Slow `/library` responses on large or remote libraries:** Removed per-audiobook filesystem existence checks from the library list path and replaced them with DB-backed wanted-state evaluation, eliminating expensive synchronous disk/network probes during list loads.
+- **Duplicate `/library` requests during app startup:** Fixed overlapping library fetches from the app shell and library views so initial navigation no longer issues redundant full-library requests.
+- **Library polling churn:** Stopped the app from re-fetching the full library every 60 seconds just to refresh the Wanted badge.
+- **NZBGet host parsing failures (`http:80` / name resolution errors):** Fixed malformed URL construction when users paste a scheme or path into download-client host fields, and applied the same normalization to qBittorrent, SABnzbd, and Transmission to prevent the same bug class across clients.
+- **Extra database work in audiobook detail loading:** Collapsed the audiobook detail route from a two-query existence-check/fetch pattern into a single no-tracking detail query.
+
 ## [0.2.56] - 2026-03-05
 
 ### Added
