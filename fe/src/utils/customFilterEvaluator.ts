@@ -13,6 +13,18 @@ function normalizeString(s: unknown) {
   return (s ?? '').toString().toLowerCase()
 }
 
+function resolveFileCount(a: Audiobook): number {
+  if (Array.isArray(a.files)) {
+    return a.files.length
+  }
+
+  if (typeof a.fileCount === 'number' && Number.isFinite(a.fileCount)) {
+    return a.fileCount
+  }
+
+  return 0
+}
+
 function evalSingle(a: Audiobook, r: RuleLike): boolean {
   const field = r.field
   const op = r.operator
@@ -54,7 +66,7 @@ function evalSingle(a: Audiobook, r: RuleLike): boolean {
       )
       break
     case 'files':
-      left = String(a.files && a.files.length ? a.files.length : 0)
+      left = String(resolveFileCount(a))
       break
     case 'filesize':
       left = String((a as unknown as Record<string, unknown>)['fileSize'] ?? '')

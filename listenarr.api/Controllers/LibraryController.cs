@@ -599,6 +599,8 @@ namespace Listenarr.Api.Controllers
                     a.Runtime,
                     a.ImageUrl,
                     a.Monitored,
+                    a.FilePath,
+                    a.FileSize,
                     a.Quality,
                     a.QualityProfileId,
                     a.AuthorAsins
@@ -690,6 +692,9 @@ namespace Listenarr.Api.Controllers
                     Runtime = a.Runtime,
                     ImageUrl = a.ImageUrl,
                     Monitored = a.Monitored,
+                    FilePath = a.FilePath,
+                    FileSize = a.FileSize,
+                    FileCount = files?.Count ?? 0,
                     Quality = a.Quality,
                     QualityProfileId = a.QualityProfileId,
                     AuthorAsins = a.AuthorAsins?.ToArray(),
@@ -732,7 +737,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Get a single audiobook by its database ID, including files, quality profile, external identifiers, and wanted status.
+        /// Get a single audiobook by its database ID, including files, external identifiers, and wanted status.
         /// </summary>
         /// <param name="id">Audiobook ID.</param>
         [HttpGet("{id}")]

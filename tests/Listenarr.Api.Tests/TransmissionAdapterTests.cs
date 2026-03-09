@@ -82,13 +82,14 @@ namespace Listenarr.Api.Tests
         public async Task TestConnectionAsync_NormalizesHostAndRespectsConfiguredRpcPath()
         {
             Uri? capturedUri = null;
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"result":"success","arguments":{}}""")
+            };
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
                 capturedUri = req.RequestUri;
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent("""{"result":"success","arguments":{}}""")
-                });
+                return Task.FromResult(response);
             });
 
             using var httpClient = new HttpClient(handler);

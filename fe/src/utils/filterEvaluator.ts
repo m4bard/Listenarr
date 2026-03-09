@@ -15,6 +15,20 @@ function toLower(s: unknown) {
 
 const numericFields = new Set(['publishYear', 'publishedYear', 'files', 'filesize'])
 
+function resolveFileCount(b: Record<string, unknown>): number {
+  const files = b['files']
+  if (Array.isArray(files)) {
+    return files.length
+  }
+
+  const fileCount = b['fileCount']
+  if (typeof fileCount === 'number' && Number.isFinite(fileCount)) {
+    return fileCount
+  }
+
+  return 0
+}
+
 function evalSingleRule(rule: Rule, b: Record<string, unknown>): boolean {
   const field = rule.field || ''
   const op = rule.operator || 'contains'
@@ -59,8 +73,7 @@ function evalSingleRule(rule: Rule, b: Record<string, unknown>): boolean {
       )
       break
     case 'files': {
-      const files = ((b as Record<string, unknown>)['files'] as unknown[]) || []
-      left = String(files.length)
+      left = String(resolveFileCount(b))
       break
     }
     case 'filesize':

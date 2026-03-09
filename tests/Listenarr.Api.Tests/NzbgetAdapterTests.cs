@@ -29,15 +29,15 @@ namespace Listenarr.Api.Tests
         public async Task TestConnectionAsync_NormalizesHostWithSchemeAndPath()
         {
             Uri? capturedUri = null;
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "<?xml version=\"1.0\"?><methodResponse><params><param><value><string>25.4</string></value></param></params></methodResponse>")
+            };
             var handler = new DelegatingHandlerMock((req, _) =>
             {
                 capturedUri = req.RequestUri;
-
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\"?><methodResponse><params><param><value><string>25.4</string></value></param></params></methodResponse>")
-                });
+                return Task.FromResult(response);
             });
 
             using var http = new HttpClient(handler);
@@ -71,15 +71,15 @@ namespace Listenarr.Api.Tests
         public async Task TestConnectionAsync_PrefersExplicitPortAndSslOverEmbeddedHostUri()
         {
             Uri? capturedUri = null;
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "<?xml version=\"1.0\"?><methodResponse><params><param><value><string>25.4</string></value></param></params></methodResponse>")
+            };
             var handler = new DelegatingHandlerMock((req, _) =>
             {
                 capturedUri = req.RequestUri;
-
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\"?><methodResponse><params><param><value><string>25.4</string></value></param></params></methodResponse>")
-                });
+                return Task.FromResult(response);
             });
 
             using var http = new HttpClient(handler);
@@ -110,15 +110,15 @@ namespace Listenarr.Api.Tests
         public async Task GetQueueAsync_NormalizesHostWithSchemeAndPath()
         {
             Uri? capturedUri = null;
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(
+                    "<?xml version=\"1.0\"?><methodResponse><params><param><value><array><data></data></array></value></param></params></methodResponse>")
+            };
             var handler = new DelegatingHandlerMock((req, _) =>
             {
                 capturedUri = req.RequestUri;
-
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent(
-                        "<?xml version=\"1.0\"?><methodResponse><params><param><value><array><data></data></array></value></param></params></methodResponse>")
-                });
+                return Task.FromResult(response);
             });
 
             using var http = new HttpClient(handler);

@@ -3,11 +3,80 @@ using Listenarr.Domain.Models;
 
 namespace Listenarr.Api.Services.Adapters
 {
+    internal readonly record struct TorrentAddTarget(string Value, bool IsMagnet);
+
     internal static class DownloadClientUriBuilder
     {
         public static string BuildAuthority(DownloadClientConfiguration client)
         {
             return BuildUri(client, "/").GetLeftPart(UriPartial.Authority);
+        }
+
+        public static TorrentAddTarget ResolveTorrentAddTarget(SearchResult result)
+        {
+            if (result == null)
+            {
+                throw new ArgumentNullException(nameof(result));
+            }
+
+            var magnetLink = NormalizeMagnetLink(result.MagnetLink);
+            if (!string.IsNullOrEmpty(magnetLink))
+            {
+                return new TorrentAddTarget(magnetLink, true);
+            }
+
+            var torrentUrl = (result.TorrentUrl ?? string.Empty).Trim();
+            if (string.IsNullOrEmpty(torrentUrl))
+            {
+                throw new ArgumentException("No magnet link or torrent URL provided", nameof(result));
+            }
+
+            if (!TryParseHttpOrHttpsAbsoluteUri(torrentUrl, out var torrentUri))
+            {
+                throw new ArgumentException("Torrent URL must be an absolute HTTP or HTTPS URL.", nameof(result));
+            }
+
+            return new TorrentAddTarget(torrentUri!.ToString(), false);
+        }
+
+        public static string NormalizeMagnetLink(string? magnetLink)
+        {
+            var trimmed = (magnetLink ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+            {
+                return string.Empty;
+            }
+
+            if (!trimmed.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase))
+            {
+                throw new ArgumentException("Magnet link must use the magnet scheme.", nameof(magnetLink));
+            }
+
+            return trimmed;
+        }
+
+        public static bool TryParseHttpOrHttpsAbsoluteUri(string? value, out Uri? uri)
+        {
+            uri = null;
+            var trimmed = (value ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+            {
+                return false;
+            }
+
+            if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var parsed))
+            {
+                return false;
+            }
+
+            if (!parsed.Scheme.Equals(Uri.UriSchemeHttp, StringComparison.OrdinalIgnoreCase) &&
+                !parsed.Scheme.Equals(Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            uri = parsed;
+            return true;
         }
 
         public static Uri BuildUri(

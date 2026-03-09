@@ -137,11 +137,22 @@ export const useLibraryStore = defineStore('library', () => {
       return true
     })
 
+    const currentFileCount =
+      typeof book.fileCount === 'number'
+        ? book.fileCount
+        : Array.isArray(book.files)
+          ? book.files.length
+          : 0
+    const nextFileCount = Array.isArray(book.files)
+      ? newFiles.length
+      : Math.max(0, currentFileCount - removed.length)
+
     // Clone the audiobook object and update files safely so reactivity notices the change
     const updated: Audiobook = {
       ...book,
-      files: newFiles,
-      wanted: Boolean(book.monitored) && newFiles.length === 0,
+      files: Array.isArray(book.files) ? newFiles : undefined,
+      fileCount: nextFileCount,
+      wanted: Boolean(book.monitored) && nextFileCount === 0,
     }
 
     // If the current primary filePath was one of the removed paths, clear it (safe behavior)
@@ -153,7 +164,7 @@ export const useLibraryStore = defineStore('library', () => {
       }
     }
 
-    if (updated.wanted) {
+    if (nextFileCount === 0) {
       updated.status = 'no-file'
     }
 

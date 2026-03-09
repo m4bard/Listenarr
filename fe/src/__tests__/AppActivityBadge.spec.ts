@@ -272,4 +272,62 @@ describe('App.vue activity badge', () => {
 
     setIntervalSpy.mockRestore()
   })
+
+  it('retries library sync on SignalR reconnect even when the initial hydrate fails', async () => {
+    const getLibrary = vi
+      .fn()
+      .mockRejectedValueOnce(new Error('initial load failed'))
+      .mockResolvedValueOnce([{ id: 1, title: 'Recovered Book', wanted: true }])
+    const connectedCallbacks: Array<() => void> = []
+
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => [],
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: false }),
+        getLibrary,
+      },
+    }))
+
+    vi.doMock('@/services/signalr', () => ({
+      signalRService: {
+        connect: vi.fn(async () => undefined),
+        onConnected: vi.fn((cb: () => void) => {
+          connectedCallbacks.push(cb)
+          return () => undefined
+        }),
+        onQueueUpdate: vi.fn(() => () => undefined),
+        onFilesRemoved: vi.fn(() => () => undefined),
+        onToast: vi.fn(() => () => undefined),
+        onDownloadUpdate: vi.fn(() => () => undefined),
+        onDownloadsList: vi.fn(() => () => undefined),
+        onNotification: vi.fn(() => () => undefined),
+      },
+    }))
+
+    const { default: AppComponent } = await import('@/App.vue')
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', name: 'home', component: { template: '<div />' } }],
+    })
+    await router.push('/')
+    await router.isReady().catch(() => {})
+
+    const wrapper = mount(AppComponent, {
+      global: { stubs: ['RouterLink', 'RouterView'], plugins: [createPinia(), router] },
+    })
+
+    await new Promise((r) => setTimeout(r, 20))
+
+    expect(getLibrary).toHaveBeenCalledTimes(1)
+    expect(connectedCallbacks).toHaveLength(1)
+
+    connectedCallbacks[0]!()
+    await new Promise((r) => setTimeout(r, 20))
+
+    const vm = wrapper.vm as unknown as { wantedCount: number }
+    expect(getLibrary).toHaveBeenCalledTimes(2)
+    expect(vm.wantedCount).toBe(1)
+  })
 })

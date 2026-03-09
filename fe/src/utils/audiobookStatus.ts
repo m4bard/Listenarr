@@ -97,10 +97,6 @@ export function computeAudiobookStatus(
     return audiobook.status
   }
 
-  if (audiobook.wanted === true) {
-    return 'no-file'
-  }
-
   return 'no-file'
 }
 

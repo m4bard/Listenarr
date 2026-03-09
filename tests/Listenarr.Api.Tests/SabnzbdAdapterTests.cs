@@ -30,13 +30,14 @@ namespace Listenarr.Api.Tests
         public async Task TestConnectionAsync_NormalizesHostWithSchemeAndPath()
         {
             Uri? capturedUri = null;
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("""{"version":"4.4.1"}""")
+            };
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
                 capturedUri = req.RequestUri;
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new StringContent("""{"version":"4.4.1"}""")
-                });
+                return Task.FromResult(response);
             });
 
             using var http = new HttpClient(handler);

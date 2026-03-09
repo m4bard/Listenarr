@@ -52,4 +52,22 @@ describe('customFilterEvaluator - grouping and precedence', () => {
     const b4 = { ...base, title: 'Gamma', authors: ['No One'] }
     expect(evaluateRules(b4 as Audiobook, rules)).toBe(false)
   })
+
+  it('uses slim list file summary fields for path, filesize, and file count filters', () => {
+    const slimBook = {
+      ...base,
+      files: undefined,
+      fileCount: 2,
+      filePath: '/library/Alpha Tales/book.m4b',
+      fileSize: 5242880,
+    } as Audiobook
+
+    expect(
+      evaluateRules(slimBook, [
+        { field: 'path', operator: 'contains', value: '/library/alpha tales' },
+        { field: 'files', operator: 'eq', value: '2', conjunction: 'and' },
+        { field: 'filesize', operator: 'gt', value: '1048576', conjunction: 'and' },
+      ]),
+    ).toBe(true)
+  })
 })

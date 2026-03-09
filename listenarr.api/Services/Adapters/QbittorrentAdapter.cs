@@ -221,19 +221,19 @@ namespace Listenarr.Api.Services.Adapters
             if (client == null) throw new ArgumentNullException(nameof(client));
             if (result == null) throw new ArgumentNullException(nameof(result));
 
-            var torrentUrl = !string.IsNullOrEmpty(result.MagnetLink) ? result.MagnetLink : result.TorrentUrl;
-            if (string.IsNullOrEmpty(torrentUrl))
-                throw new ArgumentException("No magnet link or torrent URL provided", nameof(result));
+            var torrentTarget = DownloadClientUriBuilder.ResolveTorrentAddTarget(result);
+            string torrentUrl = torrentTarget.Value;
+            var isMagnetTarget = torrentTarget.IsMagnet;
 
             var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
             string? extractedHash = null;
-            if (!string.IsNullOrEmpty(result.MagnetLink) && result.MagnetLink.Contains("xt=urn:btih:", StringComparison.OrdinalIgnoreCase))
+            if (isMagnetTarget && torrentUrl.Contains("xt=urn:btih:", StringComparison.OrdinalIgnoreCase))
             {
-                var start = result.MagnetLink.IndexOf("xt=urn:btih:", StringComparison.OrdinalIgnoreCase) + "xt=urn:btih:".Length;
-                var end = result.MagnetLink.IndexOf('&', start);
-                if (end == -1) end = result.MagnetLink.Length;
-                extractedHash = result.MagnetLink[start..end].ToLowerInvariant();
+                var start = torrentUrl.IndexOf("xt=urn:btih:", StringComparison.OrdinalIgnoreCase) + "xt=urn:btih:".Length;
+                var end = torrentUrl.IndexOf('&', start);
+                if (end == -1) end = torrentUrl.Length;
+                extractedHash = torrentUrl[start..end].ToLowerInvariant();
             }
 
             try
@@ -326,10 +326,8 @@ namespace Listenarr.Api.Services.Adapters
                 // which can fail if the source requires authentication the client lacks.
                 byte[]? torrentFileData = result.TorrentFileContent;
                 if ((torrentFileData == null || torrentFileData.Length == 0) &&
-                    !torrentUrl.StartsWith("magnet:", StringComparison.OrdinalIgnoreCase) &&
-                    Uri.TryCreate(torrentUrl, UriKind.Absolute, out var torrentUri) &&
-                    (torrentUri.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase) ||
-                     torrentUri.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)))
+                    !isMagnetTarget &&
+                    DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(torrentUrl, out _))
                 {
                     try
                     {
@@ -343,7 +341,8 @@ namespace Listenarr.Api.Services.Adapters
                         else if (downloadResult.HasMagnet)
                         {
                             // Indexer redirected to a magnet link — use it as the torrent URL instead
-                            torrentUrl = downloadResult.MagnetUri!;
+                            torrentUrl = DownloadClientUriBuilder.NormalizeMagnetLink(downloadResult.MagnetUri);
+                            isMagnetTarget = true;
                             _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
                         }
                     }

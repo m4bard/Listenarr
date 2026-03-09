@@ -19,6 +19,9 @@ namespace Listenarr.Api.Models
         public int? Runtime { get; set; }
         public string? ImageUrl { get; set; }
         public bool Monitored { get; set; }
+        public string? FilePath { get; set; }
+        public long? FileSize { get; set; }
+        public int FileCount { get; set; }
         public string? Quality { get; set; }
         public int? QualityProfileId { get; set; }
         public string[]? AuthorAsins { get; set; }

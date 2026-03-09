@@ -699,12 +699,7 @@ const closeMobileMenu = () => {
 // Reactive state for badges and counters
 const notificationCount = computed(() => recentNotifications.filter((n) => !n.dismissed).length)
 const queueItems = ref<QueueItem[]>([])
-const wantedCount = computed(() =>
-  libraryStore.audiobooks.filter((book) => {
-    const serverWanted = (book as unknown as Record<string, unknown>)['wanted']
-    return serverWanted === true
-  }).length,
-)
+const wantedCount = computed(() => libraryStore.audiobooks.filter((book) => book.wanted === true).length)
 const systemIssues = ref(0)
 
 // Activity count: Optimized with memoized intermediate computations
@@ -1068,7 +1063,7 @@ onMounted(async () => {
     await Promise.all([downloadsStore.loadDownloads(), syncLibrarySnapshot()])
 
     unsubscribeSignalRConnected = signalRService.onConnected(() => {
-      if (auth.user.authenticated && libraryStore.audiobooks.length > 0) {
+      if (auth.user.authenticated) {
         void syncLibrarySnapshot()
       }
     })

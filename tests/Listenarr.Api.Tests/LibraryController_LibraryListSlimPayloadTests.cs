@@ -87,11 +87,13 @@ namespace Listenarr.Api.Tests
             Assert.False(item.GetProperty("wanted").GetBoolean());
             Assert.True(item.TryGetProperty("openLibraryId", out var openLibraryId));
             Assert.Equal("OL123", openLibraryId.GetString());
+            Assert.Equal(book.FilePath, item.GetProperty("filePath").GetString());
+            Assert.Equal(book.FileSize, item.GetProperty("fileSize").GetInt64());
+            Assert.Equal(1, item.GetProperty("fileCount").GetInt32());
 
             Assert.False(item.TryGetProperty("files", out _));
             Assert.False(item.TryGetProperty("description", out _));
             Assert.False(item.TryGetProperty("subtitle", out _));
-            Assert.False(item.TryGetProperty("filePath", out _));
             Assert.False(item.TryGetProperty("basePath", out _));
         }
     }
