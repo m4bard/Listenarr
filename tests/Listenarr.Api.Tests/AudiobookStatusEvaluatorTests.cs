@@ -8,7 +8,7 @@ namespace Listenarr.Api.Tests
     public class AudiobookStatusEvaluatorTests
     {
         [Fact]
-        public void ComputeStatus_ReturnsNoFile_WhenWanted()
+        public void ComputeStatus_ReturnsNoFile_WhenHasNoFiles()
         {
             var status = AudiobookStatusEvaluator.ComputeStatus(
                 isDownloading: false,

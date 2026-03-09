@@ -628,12 +628,10 @@ namespace Listenarr.Api.Controllers
                 return Ok(Array.Empty<LibraryAudiobookListItemDto>());
             }
 
-            // Keep this as a handful of set-based queries instead of a wide join so the
-            // list endpoint stays lean and avoids cartesian duplication across files and downloads.
-            var audiobookIds = audiobooks.Select(a => a.Id).ToArray();
+            // Because this endpoint already loads the entire audiobook table, fetch file
+            // summaries directly instead of expanding a large in-memory ID list into SQL.
             var fileSummaries = await _dbContext.AudiobookFiles
                 .AsNoTracking()
-                .Where(f => audiobookIds.Contains(f.AudiobookId))
                 .Select(f => new AudiobookFileStatusInfo
                 {
                     AudiobookId = f.AudiobookId,
