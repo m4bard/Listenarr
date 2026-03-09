@@ -122,7 +122,17 @@ export interface Download {
   artist: string
   album: string
   originalUrl: string
-  status: 'Queued' | 'Downloading' | 'Paused' | 'Completed' | 'Failed' | 'Processing' | 'Ready' | 'Moved'
+  status:
+    | 'Queued'
+    | 'Downloading'
+    | 'Paused'
+    | 'Completed'
+    | 'Failed'
+    | 'Processing'
+    | 'Ready'
+    | 'Moved'
+    | 'ImportPending'
+    | 'ImportBlocked'
   progress: number
   totalSize: number
   downloadedSize: number
@@ -200,6 +210,7 @@ export interface DownloadClientConfiguration {
 
 export interface DownloadClientSettings {
   apiKey?: string
+  urlBase?: string
   category?: string
   tags?: string
   recentPriority?: string
@@ -387,6 +398,8 @@ export interface AudiobookExternalIdentifierInput {
   source?: AudiobookExternalIdentifierSource
 }
 
+export type AudiobookStatus = 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match'
+
 export interface Audiobook {
   id: number
   title: string
@@ -413,6 +426,7 @@ export interface Audiobook {
   monitored?: boolean
   filePath?: string
   fileSize?: number
+  fileCount?: number
   basePath?: string
   files?: {
     id: number
@@ -435,6 +449,8 @@ export interface Audiobook {
   identifiers?: AudiobookExternalIdentifier[]
   // Server-computed flag indicating if this audiobook is wanted (monitored and missing files)
   wanted?: boolean
+  // Server-computed list status used by slim /library responses.
+  status?: AudiobookStatus
 }
 
 export interface History {

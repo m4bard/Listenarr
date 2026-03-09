@@ -11,6 +11,7 @@ export const useLibraryStore = defineStore('library', () => {
   const loading = ref(false)
   const error = ref<string | null>(null)
   const selectedIds = ref<Set<number>>(new Set())
+  let inFlightFetch: Promise<void> | null = null
 
   function normalizeLibraryImageUrl(book: Audiobook): Audiobook {
     const current = (book.imageUrl || '').trim()
@@ -32,21 +33,30 @@ export const useLibraryStore = defineStore('library', () => {
   }
 
   async function fetchLibrary() {
+    if (inFlightFetch) {
+      return inFlightFetch
+    }
+
     loading.value = true
     error.value = null
-    try {
-      const serverList = await apiService.getLibrary()
-      // Always trust server data - it includes accurate wanted flags based on File.Exists() checks
-      audiobooks.value = serverList.map(normalizeLibraryImageUrl)
-    } catch (err) {
-      error.value = err instanceof Error ? err.message : 'Failed to fetch library'
-      errorTracking.captureException(err as Error, {
-        component: 'LibraryStore',
-        operation: 'fetchLibrary',
-      })
-    } finally {
-      loading.value = false
-    }
+    inFlightFetch = (async () => {
+      try {
+        const serverList = await apiService.getLibrary()
+        // Always trust server data for wanted status so the store stays aligned with API semantics.
+        audiobooks.value = serverList.map(normalizeLibraryImageUrl)
+      } catch (err) {
+        error.value = err instanceof Error ? err.message : 'Failed to fetch library'
+        errorTracking.captureException(err as Error, {
+          component: 'LibraryStore',
+          operation: 'fetchLibrary',
+        })
+      } finally {
+        loading.value = false
+        inFlightFetch = null
+      }
+    })()
+
+    return inFlightFetch
   }
 
   async function removeFromLibrary(id: number) {
@@ -127,8 +137,23 @@ export const useLibraryStore = defineStore('library', () => {
       return true
     })
 
+    const currentFileCount =
+      typeof book.fileCount === 'number'
+        ? book.fileCount
+        : Array.isArray(book.files)
+          ? book.files.length
+          : 0
+    const nextFileCount = Array.isArray(book.files)
+      ? newFiles.length
+      : Math.max(0, currentFileCount - removed.length)
+
     // Clone the audiobook object and update files safely so reactivity notices the change
-    const updated: Audiobook = { ...book, files: newFiles }
+    const updated: Audiobook = {
+      ...book,
+      files: Array.isArray(book.files) ? newFiles : undefined,
+      fileCount: nextFileCount,
+      wanted: Boolean(book.monitored) && nextFileCount === 0,
+    }
 
     // If the current primary filePath was one of the removed paths, clear it (safe behavior)
     if (book.filePath) {
@@ -137,6 +162,10 @@ export const useLibraryStore = defineStore('library', () => {
         updated.filePath = undefined
         updated.fileSize = undefined
       }
+    }
+
+    if (nextFileCount === 0) {
+      updated.status = 'no-file'
     }
 
     // Replace the item in the array immutably to ensure watchers pick up the change

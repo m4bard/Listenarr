@@ -61,6 +61,7 @@
                 max="65535"
                 :placeholder="getPortPlaceholder()"
               />
+              <small>{{ getPortHelpText() }}</small>
             </div>
 
             <div class="form-group">
@@ -82,6 +83,20 @@
                 <strong>Use SSL</strong>
                 <small>{{ `Use secure connection when connecting to ${formData.type}` }}</small>
               </Checkbox>
+            </div>
+
+            <div class="form-group" v-if="formData.type === 'transmission'">
+              <label for="urlBase">URL Base</label>
+              <input
+                id="urlBase"
+                v-model="formData.urlBase"
+                type="text"
+                placeholder="/transmission/rpc"
+              />
+              <small
+                >RPC path for the Transmission endpoint. Default is <code>/transmission/rpc</code>.
+                Some seedbox providers use a custom path (e.g. <code>/rpc</code>).</small
+              >
             </div>
           </FormSection>
 
@@ -355,6 +370,7 @@ const defaultFormData = {
   sequentialOrder: false,
   firstAndLastFirst: false,
   contentLayout: 'default',
+  urlBase: '',
   settings: {},
   remotePathMappingIds: [] as number[],
 }
@@ -370,6 +386,17 @@ const loadRemotePathMappings = async () => {
     logger.debug('Failed to load remote path mappings', e)
     remotePathMappings.value = []
   }
+}
+
+const normalizeHost = (value: string): string => {
+  const trimmed = (value || '').trim()
+  if (!trimmed) return ''
+
+  const withoutScheme = trimmed.replace(/^[a-z]+:\/\//i, '')
+  const withoutTrailingSlashes = withoutScheme.replace(/\/+$/, '')
+  const firstSlash = withoutTrailingSlashes.indexOf('/')
+
+  return firstSlash >= 0 ? withoutTrailingSlashes.slice(0, firstSlash) : withoutTrailingSlashes
 }
 
 const isUsenet = computed(() => {
@@ -402,6 +429,16 @@ const getPortPlaceholder = () => {
     nzbget: 6789,
   }
   return ports[formData.value.type]?.toString() || '8080'
+}
+
+const getPortHelpText = () => {
+  const hints: Record<string, string> = {
+    transmission: 'RPC port (default: 9091). This is not the web UI port if you changed it separately.',
+    qbittorrent: 'Web UI port (default: 8080). Found in qBittorrent → Options → Web UI.',
+    sabnzbd: 'Web interface port (default: 8080). Found in SABnzbd → Config → General.',
+    nzbget: 'Web interface port (default: 6789). Found in NZBGet → Settings → Connection.',
+  }
+  return hints[formData.value.type] || 'Port the download client is listening on.'
 }
 
 const getCategoryHelp = () => {
@@ -438,7 +475,7 @@ watch(
       formData.value = {
         name: newClient.name,
         type: newClient.type,
-        host: newClient.host,
+        host: normalizeHost(newClient.host),
         port: newClient.port,
         username: newClient.username || '',
         password: newClient.password || '',
@@ -452,11 +489,15 @@ watch(
         olderPriority: (settings?.olderPriority as string) || 'default',
         removeCompleted: (settings?.removeCompleted as boolean) || false,
         removeFailed: (settings?.removeFailed as boolean) || false,
-        removeCompletedDownloads: (settings?.removeCompletedDownloads as string) || 'none',
+        removeCompletedDownloads:
+          newClient.removeCompletedDownloads ||
+          (settings?.removeCompletedDownloads as string) ||
+          'none',
         initialState: (settings?.initialState as string) || 'default',
         sequentialOrder: (settings?.sequentialOrder as boolean) || false,
         firstAndLastFirst: (settings?.firstAndLastFirst as boolean) || false,
         contentLayout: (settings?.contentLayout as string) || 'default',
+        urlBase: (settings?.urlBase as string) || '',
         settings: newClient.settings || {},
         remotePathMappingIds:
           settings && settings.remotePathMappingIds ? settings.remotePathMappingIds : [],
@@ -485,7 +526,7 @@ const testConnection = async () => {
       ...(props.editingClient?.id ? { id: props.editingClient.id } : {}),
       name: formData.value.name,
       type: formData.value.type,
-      host: formData.value.host,
+      host: normalizeHost(formData.value.host),
       port: formData.value.port,
       username: formData.value.username || '',
       password: formData.value.password || '',
@@ -496,6 +537,9 @@ const testConnection = async () => {
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
           ? { apiKey: formData.value.apiKey }
+          : {}),
+        ...(formData.value.type === 'transmission' && formData.value.urlBase
+          ? { urlBase: formData.value.urlBase }
           : {}),
         ...(formData.value.category && { category: formData.value.category }),
         ...(formData.value.tags && { tags: formData.value.tags }),
@@ -542,7 +586,7 @@ const handleSubmit = async () => {
       id: props.editingClient?.id || generateId(),
       name: formData.value.name,
       type: formData.value.type,
-      host: formData.value.host,
+      host: normalizeHost(formData.value.host),
       port: formData.value.port,
       username: formData.value.username || '',
       password: formData.value.password || '',
@@ -553,6 +597,9 @@ const handleSubmit = async () => {
       settings: {
         ...(formData.value.type === 'sabnzbd' && formData.value.apiKey
           ? { apiKey: formData.value.apiKey }
+          : {}),
+        ...(formData.value.type === 'transmission' && formData.value.urlBase
+          ? { urlBase: formData.value.urlBase }
           : {}),
         ...(formData.value.category && { category: formData.value.category }),
         ...(formData.value.tags && { tags: formData.value.tags }),

@@ -7,11 +7,13 @@ namespace Listenarr.Api.Controllers
 {
     [ApiController]
     [Route("api/v{version:apiVersion}/metadata")]
+    [Tags("Metadata")]
     public class MetadataController : ControllerBase
     {
         private readonly IAudiobookMetadataService _metadataService;
         private readonly ILogger<MetadataController> _logger;
         private readonly AudimetaService _audimetaService;
+        private readonly IAudnexusService _audnexusService;
         private readonly IImageCacheService _imageCacheService;
         private readonly IMemoryCache _cache;
         private readonly IAudiobookRepository _audiobookRepository;
@@ -20,6 +22,7 @@ namespace Listenarr.Api.Controllers
         public MetadataController(
             IAudiobookMetadataService metadataService,
             AudimetaService audimetaService,
+            IAudnexusService audnexusService,
             IImageCacheService imageCacheService,
             IMemoryCache cache,
             IAudiobookRepository audiobookRepository,
@@ -28,6 +31,7 @@ namespace Listenarr.Api.Controllers
         {
             _metadataService = metadataService;
             _audimetaService = audimetaService;
+            _audnexusService = audnexusService;
             _imageCacheService = imageCacheService;
             _cache = cache;
             _audiobookRepository = audiobookRepository;

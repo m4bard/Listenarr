@@ -689,9 +689,10 @@ import FiltersDropdown from '@/components/ui/FiltersDropdown.vue'
 import CustomFilterModal from '@/components/domain/collection/CustomFilterModal.vue'
 import { EmptyState } from '@/components/base'
 import { showConfirm } from '@/composables/useConfirm'
-import type { Audiobook, QualityProfile } from '@/types'
+import type { Audiobook, AudiobookStatus, QualityProfile } from '@/types'
 import { evaluateRules } from '@/utils/customFilterEvaluator'
 import type { RuleLike } from '@/utils/customFilterEvaluator'
+import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
 import { safeText } from '@/utils/textUtils'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { observeLazyImages } from '@/utils/lazyLoad'
@@ -1541,132 +1542,18 @@ const showEditModal = ref(false)
 const editAudiobook = ref<Audiobook | null>(null)
 const lastClickedIndex = ref<number | null>(null)
 
-type AudiobookStatus = 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match'
+const activeDownloadAudiobookIds = computed(() => {
+  const ids = new Set<number>()
+  for (const download of downloadsStore.activeDownloads || []) {
+    if (typeof download?.audiobookId === 'number') {
+      ids.add(download.audiobookId)
+    }
+  }
+  return ids
+})
 
-// Get the download status for an audiobook
-// Returns:
-// - 'downloading': Currently being downloaded (blue border)
-// - 'no-file': No file downloaded yet (red border)
-// - 'quality-mismatch': Has file but doesn't meet quality cutoff (blue border)
-// - 'quality-match': Has file and meets quality cutoff (green border)
 function computeAudiobookStatusRaw(audiobook: Audiobook): AudiobookStatus {
-  // Check if this audiobook is currently being downloaded
-  const isDownloading = downloadsStore.activeDownloads.some((d) => d.audiobookId === audiobook.id)
-  if (isDownloading) {
-    return 'downloading'
-  }
-
-  // Use server's wanted flag if available (it checks File.Exists() on backend)
-  // wanted === true means files are missing or invalid
-  // wanted === false means files exist and are valid
-  if (audiobook.wanted === true) {
-    return 'no-file'
-  }
-
-  // If there are no files at all, treat as no-file
-  if (!audiobook.files || !Array.isArray(audiobook.files) || audiobook.files.length === 0) {
-    return 'no-file'
-  }
-
-  const profile = qualityProfiles.value.find((p) => p.id === audiobook.qualityProfileId)
-
-  // If no profile or no preferredFormats defined, fall back to the simple existing behavior
-  if (!profile) {
-    const hasFile = audiobook.filePath && audiobook.fileSize && audiobook.fileSize > 0
-    return hasFile ? 'quality-match' : 'no-file'
-  }
-
-  // Helper: normalize strings
-  const normalize = (s?: string) => (s || '').toString().toLowerCase()
-
-  // Find any file that matches one of the profile's preferred formats
-  const preferredFormats = (profile.preferredFormats || []).map((f) => normalize(f))
-
-  // If no preferred formats configured, treat any file as a candidate
-  const candidateFiles = audiobook.files.filter((f) => {
-    if (!f) return false
-    const fileFormat = normalize(f.format) || normalize(f.container) || ''
-    if (preferredFormats.length === 0) return true
-    return (
-      preferredFormats.includes(fileFormat) ||
-      preferredFormats.some((pf) => fileFormat.includes(pf))
-    )
-  })
-
-  if (candidateFiles.length === 0) {
-    // Files exist but none match preferred formats; treat as mismatch instead of missing.
-    return 'quality-mismatch'
-  }
-
-  // If no cutoff defined, assume match
-  if (!profile.cutoffQuality || !profile.qualities || profile.qualities.length === 0) {
-    return 'quality-match'
-  }
-
-  // Build a map of quality -> priority for quick lookup
-  const qualityPriority = new Map<string, number>()
-  for (const q of profile.qualities) {
-    if (!q || !q.quality) continue
-    qualityPriority.set(normalize(q.quality), q.priority)
-  }
-
-  const cutoff = normalize(profile.cutoffQuality)
-  const cutoffPriority = qualityPriority.has(cutoff)
-    ? qualityPriority.get(cutoff)!
-    : Number.POSITIVE_INFINITY
-
-  // Helper to derive a quality string for a given file/audiobook
-  type FileInfo = {
-    bitrate?: number | string
-    container?: string
-    codec?: string
-    format?: string
-  }
-
-  function deriveQualityLabel(file: FileInfo | undefined): string {
-    // Prefer the denormalized audiobook.quality if present
-    if (audiobook.quality) return normalize(audiobook.quality)
-
-    if (file && file.bitrate) {
-      const br = Number(file.bitrate)
-      if (!isNaN(br)) {
-        if (br >= 320) return '320kbps'
-        if (br >= 256) return '256kbps'
-        if (br >= 192) return '192kbps'
-        return `${Math.round(br)}kbps`
-      }
-    }
-
-    // If container or codec suggests lossless
-    const container = normalize(file?.container)
-    const codec = normalize(file?.codec)
-    if (
-      container.includes('flac') ||
-      codec.includes('flac') ||
-      codec.includes('alac') ||
-      codec.includes('wav')
-    ) {
-      return 'lossless'
-    }
-
-    // Fallback: use format string
-    if (file && file.format) return normalize(file.format)
-
-    return ''
-  }
-
-  // If any candidate file meets or exceeds the cutoff (lower priority number == better), return match
-  for (const f of candidateFiles) {
-    const label = deriveQualityLabel(f)
-    if (!label) continue
-    const p = qualityPriority.has(label) ? qualityPriority.get(label)! : Number.POSITIVE_INFINITY
-    if (p <= cutoffPriority) {
-      return 'quality-match'
-    }
-  }
-
-  // Otherwise at least one preferred-format file exists but doesn't meet cutoff
-  return 'quality-mismatch'
+  return computeAudiobookStatus(audiobook, activeDownloadAudiobookIds.value, qualityProfiles.value)
 }
 
 const audiobookStatusById = computed(() => {
@@ -1843,20 +1730,9 @@ function getQualityProfileName(profileId?: number): string | null {
 }
 
 function statusText(
-  status: 'downloading' | 'no-file' | 'quality-mismatch' | 'quality-match',
+  status: AudiobookStatus,
 ): string {
-  switch (status) {
-    case 'downloading':
-      return 'Downloading'
-    case 'no-file':
-      return 'Missing'
-    case 'quality-mismatch':
-      return 'Below Cutoff'
-    case 'quality-match':
-      return 'Downloaded'
-    default:
-      return ''
-  }
+  return formatAudiobookStatus(status)
 }
 
 function openStatusDetails(audiobook: Audiobook) {

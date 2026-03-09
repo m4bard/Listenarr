@@ -72,11 +72,6 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogDebug(httpEx, "NZBGet authentication failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, "NZBGet: Authentication failed (check username/password)");
             }
-            catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
-            {
-                _logger.LogDebug(httpEx, "NZBGet authentication failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
-                return (false, "NZBGet: Authentication failed (check username/password)");
-            }
             catch (HttpRequestException httpEx)
             {
                 _logger.LogDebug(httpEx, "NZBGet network error for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
@@ -138,8 +133,7 @@ namespace Listenarr.Api.Services.Adapters
             var nzbBytes = await DownloadNzbAsync(nzbUrl, indexerApiKey, ct);
             var nzbFileName = BuildNzbFileName(result);
 
-            var scheme = client.UseSSL ? "https" : "http";
-            var uploadUrl = $"{scheme}://{client.Host}:{client.Port}/api/v2/nzb";
+            var uploadUrl = DownloadClientUriBuilder.BuildUri(client, "/api/v2/nzb");
             
             using var httpClient = _httpClientFactory.CreateClient();
             using var content = new MultipartFormDataContent();
@@ -173,7 +167,7 @@ namespace Listenarr.Api.Services.Adapters
                 request.Headers.Authorization = authHeader;
             }
             
-            _logger.LogDebug("NZBGet REST API POST to {Url} with file {FileName}", LogRedaction.SanitizeUrl(uploadUrl), LogRedaction.SanitizeText(nzbFileName));
+            _logger.LogDebug("NZBGet REST API POST to {Url} with file {FileName}", LogRedaction.SanitizeUrl(uploadUrl.ToString()), LogRedaction.SanitizeText(nzbFileName));
             
             var response = await httpClient.SendAsync(request, ct);
             var responseBody = await response.Content.ReadAsStringAsync(ct);
@@ -401,6 +395,8 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<QueueItem>();
             if (client == null) return items;
 
+            var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
+
             try
             {
                 var listResult = await CallXmlRpcAsync(client, "listgroups");
@@ -418,6 +414,15 @@ namespace Listenarr.Api.Services.Adapters
                         var structElement = valueElement.Element("struct");
                         if (structElement != null)
                         {
+                            var groupCategory = structElement.Elements("member")
+                                .FirstOrDefault(m => string.Equals(m.Element("name")?.Value, "Category", StringComparison.Ordinal))?
+                                .Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty;
+
+                            if (!DownloadClientCategoryFilter.Matches(configuredCategory, groupCategory))
+                            {
+                                continue;
+                            }
+
                             var queueItem = MapGroup(client, structElement);
                             items.Add(queueItem);
                         }
@@ -426,6 +431,10 @@ namespace Listenarr.Api.Services.Adapters
                         _logger.LogDebug(ex, "Failed to map NZBGet queue item (non-fatal)");
                     }
                 }
+            }
+            catch (HttpRequestException httpEx) when (httpEx.StatusCode == HttpStatusCode.Unauthorized || httpEx.StatusCode == HttpStatusCode.Forbidden)
+            {
+                _logger.LogWarning("NZBGet authentication failed for client {ClientName} — check username/password", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to retrieve NZBGet queue for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
@@ -488,6 +497,8 @@ namespace Listenarr.Api.Services.Adapters
             var items = new List<DownloadClientItem>();
             if (client == null) return items;
 
+            var configuredCategory = DownloadClientCategoryFilter.GetConfiguredCategory(client);
+
             try
             {
                 var listResult = await CallXmlRpcAsync(client, "listgroups");
@@ -505,6 +516,15 @@ namespace Listenarr.Api.Services.Adapters
                         var structElement = valueElement.Element("struct");
                         if (structElement != null)
                         {
+                            var groupCategory = structElement.Elements("member")
+                                .FirstOrDefault(m => string.Equals(m.Element("name")?.Value, "Category", StringComparison.Ordinal))?
+                                .Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty;
+
+                            if (!DownloadClientCategoryFilter.Matches(configuredCategory, groupCategory))
+                            {
+                                continue;
+                            }
+
                             var downloadClientItem = await MapGroupToDownloadClientItemAsync(client, structElement);
                             items.Add(downloadClientItem);
                         }
@@ -629,8 +649,10 @@ namespace Listenarr.Api.Services.Adapters
                 remainingTime = TimeSpan.FromSeconds(etaSeconds);
             }
 
-            // Map NZBGet status to DownloadItemStatus
-            var status = (statusRaw ?? "QUEUED").ToUpperInvariant() switch
+            // Map NZBGet status to DownloadItemStatus.
+            // NZBGet can emit suffixed states (e.g. SUCCESS/HEALTH, FAILURE/HEALTH).
+            var normalizedStatus = (statusRaw ?? "QUEUED").ToUpperInvariant();
+            var status = normalizedStatus switch
             {
                 "QUEUED" => DownloadItemStatus.Queued,
                 "DOWNLOADING" => DownloadItemStatus.Downloading,
@@ -639,8 +661,8 @@ namespace Listenarr.Api.Services.Adapters
                 "SCANNING" => DownloadItemStatus.Downloading,
                 "PP_QUEUED" => DownloadItemStatus.Downloading,
                 "PP_PROCESSING" => DownloadItemStatus.Downloading,
-                "SUCCESS" => DownloadItemStatus.Completed,
-                "FAILURE" => DownloadItemStatus.Failed,
+                _ when normalizedStatus.StartsWith("SUCCESS", StringComparison.Ordinal) => DownloadItemStatus.Completed,
+                _ when normalizedStatus.StartsWith("FAILURE", StringComparison.Ordinal) || normalizedStatus.StartsWith("FAILED", StringComparison.Ordinal) => DownloadItemStatus.Failed,
                 _ => DownloadItemStatus.Queued
             };
 
@@ -674,7 +696,7 @@ namespace Listenarr.Api.Services.Adapters
                     clientName: client.Name,
                     clientType: "nzbget",
                     protocol: DownloadProtocol.Usenet,
-                    removeCompletedDownloads: client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) == true && 
+                    removeCompletedDownloads: client.Settings?.TryGetValue("removeCompletedDownloads", out var removeVal) is true &&
                                              (removeVal is bool boolVal && boolVal),
                     hasPostImportCategory: !string.IsNullOrEmpty(client.Settings?.GetValueOrDefault("postImportCategory")?.ToString())
                 )
@@ -711,7 +733,8 @@ namespace Listenarr.Api.Services.Adapters
                 etaSeconds = (int)Math.Max(0, remainingBytes / downloadRate);
             }
 
-            string status = (statusRaw ?? "QUEUED").ToUpperInvariant() switch
+            var normalizedStatus = (statusRaw ?? "QUEUED").ToUpperInvariant();
+            string status = normalizedStatus switch
             {
                 "QUEUED" => "queued",
                 "DOWNLOADING" => "downloading",
@@ -720,8 +743,8 @@ namespace Listenarr.Api.Services.Adapters
                 "SCANNING" => "downloading",
                 "PP_QUEUED" => "downloading",
                 "PP_PROCESSING" => "downloading",
-                "SUCCESS" => "completed",
-                "FAILURE" => "failed",
+                _ when normalizedStatus.StartsWith("SUCCESS", StringComparison.Ordinal) => "completed",
+                _ when normalizedStatus.StartsWith("FAILURE", StringComparison.Ordinal) || normalizedStatus.StartsWith("FAILED", StringComparison.Ordinal) => "failed",
                 _ => "queued"
             };
 
@@ -868,7 +891,7 @@ namespace Listenarr.Api.Services.Adapters
 
             if (!response.IsSuccessStatusCode)
             {
-                throw new HttpRequestException($"NZBGet XML-RPC error: {response.StatusCode} - {responseBody}");
+                throw new HttpRequestException($"NZBGet XML-RPC error: {response.StatusCode} - {responseBody}", null, response.StatusCode);
             }
 
             var doc = XDocument.Parse(responseBody);
@@ -917,17 +940,12 @@ namespace Listenarr.Api.Services.Adapters
 
         private static string BuildBaseUrl(DownloadClientConfiguration client)
         {
-            var scheme = client.UseSSL ? "https" : "http";
-            
-            // NZBGet XML-RPC requires authentication in URL: http://username:password@host:port/xmlrpc
-            if (!string.IsNullOrWhiteSpace(client.Username) && !string.IsNullOrWhiteSpace(client.Password))
-            {
-                var encodedUsername = Uri.EscapeDataString(client.Username);
-                var encodedPassword = Uri.EscapeDataString(client.Password);
-                return $"{scheme}://{encodedUsername}:{encodedPassword}@{client.Host}:{client.Port}/xmlrpc";
-            }
-            
-            return $"{scheme}://{client.Host}:{client.Port}/xmlrpc";
+            return DownloadClientUriBuilder
+                .BuildUri(
+                    client,
+                    "/xmlrpc",
+                    includeCredentials: !string.IsNullOrWhiteSpace(client.Username) && !string.IsNullOrWhiteSpace(client.Password))
+                .ToString();
         }
 
         private async Task<byte[]> DownloadNzbAsync(string nzbUrl, string? indexerApiKey, CancellationToken ct)

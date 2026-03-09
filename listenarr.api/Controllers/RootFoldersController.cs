@@ -12,6 +12,7 @@ namespace Listenarr.Api.Controllers
 {
     [ApiController]
     [Route("api/v{version:apiVersion}/rootfolders")]
+    [Tags("Root Folders")]
     public class RootFoldersController : ControllerBase
     {
         private readonly IRootFolderService _service;
@@ -25,6 +26,9 @@ namespace Listenarr.Api.Controllers
             _db = db;
         }
 
+        /// <summary>
+        /// List all configured root folders.
+        /// </summary>
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
@@ -32,6 +36,10 @@ namespace Listenarr.Api.Controllers
             return Ok(all);
         }
 
+        /// <summary>
+        /// Get a single root folder by ID.
+        /// </summary>
+        /// <param name="id">Root folder ID.</param>
         [HttpGet("{id}")]
         public async Task<IActionResult> Get(int id)
         {
@@ -40,6 +48,11 @@ namespace Listenarr.Api.Controllers
             return Ok(r);
         }
 
+        /// <summary>
+        /// Create a new root folder.
+        /// </summary>
+        /// <param name="request">The root folder to create.</param>
+        /// <returns>The newly created root folder.</returns>
         [HttpPost]
         public async Task<IActionResult> Create([FromBody] RootFolder request)
         {
@@ -61,6 +74,13 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Update an existing root folder.
+        /// </summary>
+        /// <param name="id">Root folder ID.</param>
+        /// <param name="request">Updated root folder data.</param>
+        /// <param name="moveFiles">When true, physically move existing audiobook files to the new path.</param>
+        /// <param name="deleteEmptySource">When true, delete the old root directory if it is empty after moving files.</param>
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] RootFolder request, [FromQuery] bool moveFiles = false, [FromQuery] bool deleteEmptySource = true)
         {
@@ -83,6 +103,11 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Delete a root folder.
+        /// </summary>
+        /// <param name="id">Root folder ID to delete.</param>
+        /// <param name="reassignTo">Optional ID of another root folder to reassign audiobooks to before deleting.</param>
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id, [FromQuery] int? reassignTo = null)
         {
