@@ -49,6 +49,14 @@ namespace Listenarr.Api.Controllers
         private const int MetadataRescanMaxRequestsPerWindow = 5;
         private const int MetadataRescanMaxAsinLookupAttempts = 8;
         private const int MetadataRescanMaxIsbnConversionAttempts = 5;
+        private static readonly DownloadStatus[] ActiveLibraryDownloadStatuses =
+        {
+            DownloadStatus.Queued,
+            DownloadStatus.Downloading,
+            DownloadStatus.Paused,
+            DownloadStatus.Processing,
+            DownloadStatus.ImportPending
+        };
 
         private static string? ToStringOrFirst(object? value)
         {
@@ -102,15 +110,23 @@ namespace Listenarr.Api.Controllers
 
         private static bool ComputeWantedFlag(Audiobook audiobook)
         {
-            if (!audiobook.Monitored)
+            var files = audiobook.Files;
+            var hasTrackedFiles = files != null && files.Count > 0;
+            return ComputeWantedFlag(audiobook.Monitored, hasTrackedFiles, audiobook.FilePath);
+        }
+
+        private static bool ComputeWantedFlag(bool monitored, bool hasTrackedFiles, string? legacyFilePath)
+        {
+            if (!monitored)
             {
                 return false;
             }
 
             // The library list endpoint should not hit the filesystem for every book.
-            // Treat existing DB file records as the source of truth for wanted status.
-            var files = audiobook.Files;
-            return files == null || files.Count == 0;
+            // Use AudiobookFiles as the primary source of truth, but honor the legacy
+            // primary FilePath during the upgrade window so existing installs do not
+            // suddenly flip back to Wanted before file rows are backfilled.
+            return !hasTrackedFiles && string.IsNullOrWhiteSpace(legacyFilePath);
         }
 
         private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
@@ -612,6 +628,8 @@ namespace Listenarr.Api.Controllers
                 return Ok(Array.Empty<LibraryAudiobookListItemDto>());
             }
 
+            // Keep this as a handful of set-based queries instead of a wide join so the
+            // list endpoint stays lean and avoids cartesian duplication across files and downloads.
             var audiobookIds = audiobooks.Select(a => a.Id).ToArray();
             var fileSummaries = await _dbContext.AudiobookFiles
                 .AsNoTracking()
@@ -646,18 +664,9 @@ namespace Listenarr.Api.Controllers
 
             var qualityProfilesById = qualityProfiles.ToDictionary(q => q.Id);
 
-            var activeDownloadStatuses = new[]
-            {
-                DownloadStatus.Queued,
-                DownloadStatus.Downloading,
-                DownloadStatus.Paused,
-                DownloadStatus.Processing,
-                DownloadStatus.ImportPending
-            };
-
             var activeDownloadAudiobookIds = await _dbContext.Downloads
                 .AsNoTracking()
-                .Where(d => d.AudiobookId.HasValue && activeDownloadStatuses.Contains(d.Status))
+                .Where(d => d.AudiobookId.HasValue && ActiveLibraryDownloadStatuses.Contains(d.Status))
                 .Select(d => d.AudiobookId!.Value)
                 .Distinct()
                 .ToListAsync();
@@ -667,8 +676,10 @@ namespace Listenarr.Api.Controllers
             var dto = audiobooks.Select(a =>
             {
                 filesByAudiobookId.TryGetValue(a.Id, out var files);
-                var hasFiles = files != null && files.Count > 0;
-                var wanted = a.Monitored && !hasFiles;
+                var hasTrackedFiles = files != null && files.Count > 0;
+                var hasLegacyFileSummary = !string.IsNullOrWhiteSpace(a.FilePath);
+                var hasAnyFile = hasTrackedFiles || hasLegacyFileSummary;
+                var wanted = ComputeWantedFlag(a.Monitored, hasTrackedFiles, a.FilePath);
                 QualityProfile? qualityProfile = null;
                 if (a.QualityProfileId.HasValue)
                 {
@@ -696,17 +707,16 @@ namespace Listenarr.Api.Controllers
                     FileSize = a.FileSize,
                     FileCount = files?.Count ?? 0,
                     Quality = a.Quality,
-                    QualityProfileId = a.QualityProfileId,
-                    AuthorAsins = a.AuthorAsins?.ToArray(),
-                    Wanted = wanted,
-                    Status = AudiobookStatusEvaluator.ComputeStatus(
-                        activeDownloadAudiobookIdSet.Contains(a.Id),
-                        wanted,
-                        hasFiles,
-                        a.Quality,
-                        qualityProfile,
-                        files)
-                };
+                     QualityProfileId = a.QualityProfileId,
+                     AuthorAsins = a.AuthorAsins?.ToArray(),
+                     Wanted = wanted,
+                     Status = AudiobookStatusEvaluator.ComputeStatus(
+                         activeDownloadAudiobookIdSet.Contains(a.Id),
+                         hasAnyFile,
+                         a.Quality,
+                         qualityProfile,
+                         files)
+                 };
             }).ToList();
 
             return Ok(dto);

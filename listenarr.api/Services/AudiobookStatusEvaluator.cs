@@ -24,7 +24,6 @@ namespace Listenarr.Api.Services
 
         public static string ComputeStatus(
             bool isDownloading,
-            bool wanted,
             bool hasAnyFile,
             string? audiobookQuality,
             QualityProfile? qualityProfile,
@@ -33,11 +32,6 @@ namespace Listenarr.Api.Services
             if (isDownloading)
             {
                 return Downloading;
-            }
-
-            if (wanted)
-            {
-                return NoFile;
             }
 
             if (!hasAnyFile)
@@ -76,6 +70,11 @@ namespace Listenarr.Api.Services
 
             if (candidateFiles.Count == 0)
             {
+                if (files == null || files.Count == 0)
+                {
+                    return QualityMatch;
+                }
+
                 return QualityMismatch;
             }
 
@@ -157,7 +156,17 @@ namespace Listenarr.Api.Services
             var codec = Normalize(file?.Codec);
             if (container.Contains("flac", StringComparison.Ordinal)
                 || codec.Contains("flac", StringComparison.Ordinal)
+                || container.Contains("alac", StringComparison.Ordinal)
                 || codec.Contains("alac", StringComparison.Ordinal)
+                || container.Contains("aiff", StringComparison.Ordinal)
+                || codec.Contains("aiff", StringComparison.Ordinal)
+                || container.Contains("ape", StringComparison.Ordinal)
+                || codec.Contains("ape", StringComparison.Ordinal)
+                || container.Contains("dsd", StringComparison.Ordinal)
+                || codec.Contains("dsd", StringComparison.Ordinal)
+                || container.Contains("wv", StringComparison.Ordinal)
+                || codec.Contains("wv", StringComparison.Ordinal)
+                || container.Contains("wav", StringComparison.Ordinal)
                 || codec.Contains("wav", StringComparison.Ordinal))
             {
                 return "lossless";
