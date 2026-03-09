@@ -64,5 +64,46 @@ namespace Listenarr.Api.Tests
 
             Assert.False(wanted);
         }
+
+        [Fact]
+        public async Task GetAll_TreatsLegacyFilePathAsNotWanted_WhenNoFileRowsExist()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            using var db = new ListenArrDbContext(options);
+
+            var book = new Audiobook
+            {
+                Title = "Legacy FilePath Book",
+                Monitored = true,
+                FilePath = @"C:\legacy\book.m4b",
+                FileSize = 2048
+            };
+            db.Audiobooks.Add(book);
+            await db.SaveChangesAsync();
+
+            using var provider = new ServiceCollection().BuildServiceProvider();
+            var controller = new LibraryController(
+                Mock.Of<IAudiobookRepository>(),
+                Mock.Of<IImageCacheService>(),
+                NullLogger<LibraryController>.Instance,
+                db,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                Mock.Of<IFileNamingService>());
+
+            var actionResult = await controller.GetAll();
+            var ok = Assert.IsType<OkObjectResult>(actionResult);
+
+            var json = JsonSerializer.Serialize(ok.Value, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+            using var doc = JsonDocument.Parse(json);
+            var item = doc.RootElement
+                .EnumerateArray()
+                .Single(element => element.GetProperty("id").GetInt32() == book.Id);
+
+            Assert.False(item.GetProperty("wanted").GetBoolean());
+            Assert.Equal("quality-match", item.GetProperty("status").GetString());
+        }
     }
 }

@@ -66,4 +66,25 @@ describe('computeAudiobookStatus', () => {
 
     expect(computeAudiobookStatus(audiobook, new Set(), profiles)).toBe('quality-match')
   })
+
+  it('treats WavPack files as lossless', () => {
+    const audiobook = {
+      id: 5,
+      title: 'Lossless Book',
+      qualityProfileId: 10,
+      files: [{ id: 102, format: 'wv', container: 'wv' }],
+    } as Audiobook
+
+    const profiles: QualityProfile[] = [
+      {
+        id: 10,
+        name: 'Lossless',
+        cutoffQuality: 'lossless',
+        preferredFormats: ['wv'],
+        qualities: [{ quality: 'lossless', allowed: true, priority: 0 }],
+      },
+    ]
+
+    expect(computeAudiobookStatus(audiobook, new Set(), profiles)).toBe('quality-match')
+  })
 })

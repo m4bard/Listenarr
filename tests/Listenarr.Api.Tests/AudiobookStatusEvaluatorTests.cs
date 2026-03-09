@@ -8,11 +8,10 @@ namespace Listenarr.Api.Tests
     public class AudiobookStatusEvaluatorTests
     {
         [Fact]
-        public void ComputeStatus_ReturnsNoFile_WhenWanted()
+        public void ComputeStatus_ReturnsNoFile_WhenHasNoFiles()
         {
             var status = AudiobookStatusEvaluator.ComputeStatus(
                 isDownloading: false,
-                wanted: true,
                 hasAnyFile: false,
                 audiobookQuality: null,
                 qualityProfile: null,
@@ -30,7 +29,7 @@ namespace Listenarr.Api.Tests
                 new() { Format = "mp3", Bitrate = 320000 }
             };
 
-            var status = AudiobookStatusEvaluator.ComputeStatus(false, false, true, null, profile, files);
+            var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files);
 
             Assert.Equal(AudiobookStatusEvaluator.QualityMismatch, status);
         }
@@ -44,7 +43,7 @@ namespace Listenarr.Api.Tests
                 new() { Format = "m4b", Bitrate = 256000 }
             };
 
-            var status = AudiobookStatusEvaluator.ComputeStatus(false, false, true, null, profile, files);
+            var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files);
 
             Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
         }
@@ -58,9 +57,42 @@ namespace Listenarr.Api.Tests
                 new() { Format = "m4b", Bitrate = 192000 }
             };
 
-            var status = AudiobookStatusEvaluator.ComputeStatus(false, false, true, null, profile, files);
+            var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files);
 
             Assert.Equal(AudiobookStatusEvaluator.QualityMismatch, status);
+        }
+
+        [Fact]
+        public void ComputeStatus_ReturnsQualityMatch_WhenOnlyLegacyFileSummaryExists()
+        {
+            var profile = CreateProfile(cutoffQuality: "256kbps", preferredFormats: new List<string> { "m4b" });
+
+            var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files: null);
+
+            Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
+        }
+
+        [Fact]
+        public void ComputeStatus_TreatsWavPackAsLossless()
+        {
+            var profile = new QualityProfile
+            {
+                Name = "Lossless Profile",
+                CutoffQuality = "lossless",
+                PreferredFormats = new List<string> { "wv" },
+                Qualities = new List<QualityDefinition>
+                {
+                    new() { Quality = "lossless", Priority = 0 }
+                }
+            };
+            var files = new List<AudiobookFileStatusInfo>
+            {
+                new() { Format = "wv", Container = "wv" }
+            };
+
+            var status = AudiobookStatusEvaluator.ComputeStatus(false, true, null, profile, files);
+
+            Assert.Equal(AudiobookStatusEvaluator.QualityMatch, status);
         }
 
         private static QualityProfile CreateProfile(string cutoffQuality, List<string> preferredFormats)

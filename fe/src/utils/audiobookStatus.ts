@@ -129,7 +129,17 @@ function deriveQualityLabel(
   if (
     container.includes('flac') ||
     codec.includes('flac') ||
+    container.includes('alac') ||
     codec.includes('alac') ||
+    container.includes('aiff') ||
+    codec.includes('aiff') ||
+    container.includes('ape') ||
+    codec.includes('ape') ||
+    container.includes('dsd') ||
+    codec.includes('dsd') ||
+    container.includes('wv') ||
+    codec.includes('wv') ||
+    container.includes('wav') ||
     codec.includes('wav')
   ) {
     return 'lossless'
