@@ -342,7 +342,6 @@ namespace Listenarr.Api.Services.Adapters
                         {
                             // Indexer redirected to a magnet link — use it as the torrent URL instead
                             torrentUrl = DownloadClientUriBuilder.NormalizeMagnetLink(downloadResult.MagnetUri);
-                            isMagnetTarget = true;
                             _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
                         }
                     }
