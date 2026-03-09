@@ -90,9 +90,10 @@ namespace Listenarr.Api.Services.Adapters
 
             // Prefer cached torrent file data over URL (required for private trackers with authentication)
             byte[]? torrentFileData = result.TorrentFileContent;
-            var torrentTarget = DownloadClientUriBuilder.ResolveTorrentAddTarget(result);
-            string torrentUrl = torrentTarget.Value;
-            var isMagnetTarget = torrentTarget.IsMagnet;
+            var magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(result.MagnetLink);
+            var httpTorrentUrl = NormalizeTorrentUrl(result.TorrentUrl);
+            var torrentUrl = magnetLink.Length > 0 ? magnetLink : httpTorrentUrl ?? string.Empty;
+            var isMagnetTarget = magnetLink.Length > 0;
 
             _logger.LogDebug("AddAsync entry for '{Title}': TorrentFileContent={HasContent}, MagnetLink={HasMagnet}, TorrentUrl={Url}",
                 LogRedaction.SanitizeText(result.Title),
@@ -108,14 +109,13 @@ namespace Listenarr.Api.Services.Adapters
             // start immediately without metadata resolution.
             if ((torrentFileData == null || torrentFileData.Length == 0) &&
                 isMagnetTarget &&
-                DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(result.TorrentUrl, out _))
+                !string.IsNullOrEmpty(httpTorrentUrl))
             {
-                var alternateTorrentUrl = result.TorrentUrl!.Trim();
                 _logger.LogDebug("Magnet link available but TorrentUrl also present — attempting .torrent pre-download from {Url} for better Transmission compatibility",
-                    LogRedaction.SanitizeUrl(alternateTorrentUrl));
+                    LogRedaction.SanitizeUrl(httpTorrentUrl));
                 try
                 {
-                    var altResult = await _torrentFileDownloader.DownloadAsync(alternateTorrentUrl, ct);
+                    var altResult = await _torrentFileDownloader.DownloadAsync(httpTorrentUrl, ct);
                     if (altResult.HasBytes)
                     {
                         torrentFileData = altResult.TorrentBytes;
@@ -139,12 +139,12 @@ namespace Listenarr.Api.Services.Adapters
             // the raw bytes via the metainfo field instead.
             if ((torrentFileData == null || torrentFileData.Length == 0) &&
                 !isMagnetTarget &&
-                DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(torrentUrl, out _))
+                !string.IsNullOrEmpty(httpTorrentUrl))
             {
-                _logger.LogDebug("Attempting pre-download of torrent file from {Url}", LogRedaction.SanitizeUrl(torrentUrl));
+                _logger.LogDebug("Attempting pre-download of torrent file from {Url}", LogRedaction.SanitizeUrl(httpTorrentUrl));
                 try
                 {
-                    var downloadResult = await _torrentFileDownloader.DownloadAsync(torrentUrl, ct);
+                    var downloadResult = await _torrentFileDownloader.DownloadAsync(httpTorrentUrl, ct);
                     if (downloadResult.HasBytes)
                     {
                         torrentFileData = downloadResult.TorrentBytes;
@@ -1054,6 +1054,22 @@ namespace Listenarr.Api.Services.Adapters
                 }
             }
             return DownloadClientUriBuilder.BuildUri(client, rpcPath).ToString();
+        }
+
+        private static string? NormalizeTorrentUrl(string? torrentUrl)
+        {
+            var trimmed = (torrentUrl ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+            {
+                return null;
+            }
+
+            if (!DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(trimmed, out var torrentUri))
+            {
+                throw new ArgumentException("Torrent URL must be an absolute HTTP or HTTPS URL.", nameof(torrentUrl));
+            }
+
+            return torrentUri!.ToString();
         }
 
         private static string NormalizeMagnetUriForTransmission(string magnetUri)

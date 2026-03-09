@@ -222,9 +222,7 @@ namespace Listenarr.Api.Services.Adapters
             if (result == null) throw new ArgumentNullException(nameof(result));
 
             var magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(result.MagnetLink);
-            var hasHttpTorrentUrl = DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(result.TorrentUrl, out var torrentUri);
-            string? httpTorrentUrl = torrentUri?.ToString();
-            string torrentUrl = magnetLink.Length > 0 ? magnetLink : httpTorrentUrl ?? string.Empty;
+            var httpTorrentUrl = NormalizeTorrentUrl(result.TorrentUrl);
 
             var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
@@ -317,40 +315,25 @@ namespace Listenarr.Api.Services.Adapters
                 // authenticated/private-tracker content via bytes and only fall back to
                 // a magnet when no file data can be obtained.
                 byte[]? torrentFileData = result.TorrentFileContent;
-                if ((torrentFileData == null || torrentFileData.Length == 0) &&
-                    hasHttpTorrentUrl &&
-                    !string.IsNullOrEmpty(httpTorrentUrl))
+                if (torrentFileData == null || torrentFileData.Length == 0)
                 {
-                    try
+                    var downloadResult = await TryPredownloadTorrentFileAsync(httpTorrentUrl, result.Title, ct);
+                    if (downloadResult.HasBytes)
                     {
-                        var downloadResult = await _torrentFileDownloader.DownloadAsync(httpTorrentUrl, ct);
-                        if (downloadResult.HasBytes)
-                        {
-                            torrentFileData = downloadResult.TorrentBytes;
-                            _logger.LogInformation("Pre-downloaded torrent file ({Bytes} bytes) for '{Title}'",
-                                torrentFileData!.Length, LogRedaction.SanitizeText(result.Title));
-                        }
-                        else if (downloadResult.HasMagnet)
-                        {
-                            // Indexer redirected to a magnet link — use it as the torrent URL instead
-                            magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(downloadResult.MagnetUri);
-                            _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
-                        }
+                        torrentFileData = downloadResult.TorrentBytes;
+                        _logger.LogInformation("Pre-downloaded torrent file ({Bytes} bytes) for '{Title}'",
+                            torrentFileData!.Length, LogRedaction.SanitizeText(result.Title));
                     }
-                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    else if (downloadResult.HasMagnet)
                     {
-                        _logger.LogWarning(ex, "Failed to pre-download torrent file for '{Title}', falling back to URL", LogRedaction.SanitizeText(result.Title));
+                        // Indexer redirected to a magnet link — use it as the torrent URL instead
+                        magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(downloadResult.MagnetUri);
+                        _logger.LogInformation("Indexer redirected to magnet link for '{Title}'", LogRedaction.SanitizeText(result.Title));
                     }
                 }
 
-                if (magnetLink.Length > 0)
-                {
-                    torrentUrl = magnetLink;
-                }
-                else if (!string.IsNullOrEmpty(httpTorrentUrl))
-                {
-                    torrentUrl = httpTorrentUrl;
-                }
+                var torrentUrl = new[] { magnetLink, httpTorrentUrl }
+                    .FirstOrDefault(static url => !string.IsNullOrEmpty(url)) ?? string.Empty;
 
                 if ((torrentFileData == null || torrentFileData.Length == 0) && string.IsNullOrEmpty(torrentUrl))
                     throw new ArgumentException("No magnet link or torrent URL provided", nameof(result));
@@ -462,6 +445,40 @@ namespace Listenarr.Api.Services.Adapters
             var end = torrentUrl.IndexOf('&', start);
             if (end == -1) end = torrentUrl.Length;
             return torrentUrl[start..end].ToLowerInvariant();
+        }
+
+        private static string? NormalizeTorrentUrl(string? torrentUrl)
+        {
+            var trimmed = (torrentUrl ?? string.Empty).Trim();
+            if (trimmed.Length == 0)
+            {
+                return null;
+            }
+
+            if (!DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(trimmed, out var torrentUri))
+            {
+                throw new ArgumentException("Torrent URL must be an absolute HTTP or HTTPS URL.", nameof(torrentUrl));
+            }
+
+            return torrentUri!.ToString();
+        }
+
+        private async Task<TorrentDownloadResult> TryPredownloadTorrentFileAsync(string? torrentUrl, string? title, CancellationToken ct)
+        {
+            if (string.IsNullOrEmpty(torrentUrl))
+            {
+                return TorrentDownloadResult.Empty;
+            }
+
+            try
+            {
+                return await _torrentFileDownloader.DownloadAsync(torrentUrl, ct);
+            }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to pre-download torrent file for '{Title}', falling back to URL", LogRedaction.SanitizeText(title));
+                return TorrentDownloadResult.Empty;
+            }
         }
 
         /// <summary>
