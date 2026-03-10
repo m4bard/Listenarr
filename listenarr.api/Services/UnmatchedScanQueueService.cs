@@ -44,6 +44,8 @@ namespace Listenarr.Api.Services
 
     public class UnmatchedScanQueueService : IUnmatchedScanQueueService
     {
+        private static readonly TimeSpan JobTtl = TimeSpan.FromHours(1);
+
         private readonly ConcurrentDictionary<Guid, UnmatchedScanJob> _jobs = new();
         private readonly ConcurrentDictionary<string, Guid> _lastJobByPath = new(StringComparer.OrdinalIgnoreCase);
         private readonly Channel<UnmatchedScanJob> _channel = Channel.CreateUnbounded<UnmatchedScanJob>();
@@ -56,8 +58,24 @@ namespace Listenarr.Api.Services
 
         public ChannelReader<UnmatchedScanJob> Reader => _channel.Reader;
 
+        private void PurgeExpired()
+        {
+            var cutoff = DateTime.UtcNow - JobTtl;
+            foreach (var (id, job) in _jobs)
+            {
+                if (job.Status is not ("Completed" or "Failed")) continue;
+                var timestamp = job.CompletedAt ?? job.EnqueuedAt;
+                if (timestamp >= cutoff) continue;
+
+                _jobs.TryRemove(id, out _);
+                if (_lastJobByPath.TryGetValue(job.RootFolderPath, out var lastId) && lastId == id)
+                    _lastJobByPath.TryRemove(job.RootFolderPath, out _);
+            }
+        }
+
         public async Task<Guid> EnqueueAsync(string rootFolderPath)
         {
+            PurgeExpired();
             // Dedupe: if a queued/processing job exists for the same path, return it
             var existing = _jobs.Values.FirstOrDefault(j =>
                 string.Equals(j.RootFolderPath, rootFolderPath, StringComparison.OrdinalIgnoreCase) &&
