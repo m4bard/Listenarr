@@ -33,17 +33,27 @@ function extractFolderName(relativePath: string): string {
 }
 
 // Build a search query title, using a numeric suffix from the filename when available.
+// Priority: filename stem (when it differs from folder) > folderName
+// detectedTitle comes from the audio file's "album" tag which is often the series name,
+// not the individual book title — so it is intentionally excluded from the search query.
 // e.g. file "The Land (3).m4b" in folder "The Land" → "The Land 3"
+// e.g. file "The Hobbit.m4b" in folder "Lord of the Rings" → "The Hobbit"
+// e.g. file "The Name of the Wind.m4b" in flat author folder → "The Name of the Wind"
 function buildSearchTitle(item: LibraryImportItem): string {
   const filenameStem = item.fullPath.replace(/\\/g, '/').split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
   const numericMatch = /\((\d+)\)\s*$/.exec(filenameStem)
-  const base = item.detectedTitle && item.detectedTitle !== item.folderName
-    ? item.detectedTitle
+  // Strip numeric suffix for comparison only — keep it in base for the numeric-append path
+  const stemBase = filenameStem.replace(/\s*\(\d+\)\s*$/, '').trim()
+  // Use filename stem when it's more specific than the folder name; otherwise use folder name.
+  // This handles: author folder ("Patrick Rothfuss") containing "The Name of the Wind.m4b",
+  // and series folder ("Lord of the Rings") containing "The Hobbit.m4b".
+  const base = stemBase && stemBase.toLowerCase() !== item.folderName.toLowerCase()
+    ? filenameStem
     : item.folderName
   if (numericMatch) {
     return `${base.replace(/\s*\(\d+\)\s*$/, '').trim()} ${numericMatch[1]}`
   }
-  return item.detectedTitle ?? item.folderName
+  return base
 }
 
 // From a list of search results, prefer the one whose author best matches detectedAuthor.

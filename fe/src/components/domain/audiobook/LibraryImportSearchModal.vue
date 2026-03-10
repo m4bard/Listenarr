@@ -64,7 +64,16 @@ const emit = defineEmits<{
 }>()
 
 const inputEl = ref<HTMLInputElement | null>(null)
-const searchQuery = ref(props.item.detectedAsin ?? props.item.detectedTitle ?? props.item.folderName)
+// Build the initial query: ASIN → filename stem (when more specific than folder) → folderName
+// detectedTitle comes from the audio file's "album" tag which is often the series name — skip it
+function initialQuery(): string {
+  if (props.item.detectedAsin) return props.item.detectedAsin
+  const filenameStem = props.item.fullPath.replace(/\\/g, '/').split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+  const stemBase = filenameStem.replace(/\s*\(\d+\)\s*$/, '').trim()
+  if (stemBase && stemBase.toLowerCase() !== props.item.folderName.toLowerCase()) return filenameStem
+  return props.item.folderName
+}
+const searchQuery = ref(initialQuery())
 const searchResults = ref<SearchResult[]>([])
 const isSearching = ref(false)
 const hasSearched = ref(false)
