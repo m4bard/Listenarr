@@ -60,6 +60,11 @@ function pickBestMatch(results: SearchResult[], detectedAuthor?: string): Search
   return scored.find((s) => s.match)?.r ?? results[0] ?? null
 }
 
+function normalizeGenres(genres: unknown): string[] | undefined {
+  if (!Array.isArray(genres)) return genres as string[] | undefined
+  return genres.map((g) => (typeof g === 'string' ? g : (g as any)?.name ?? '')).filter(Boolean)
+}
+
 function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
   return {
     id: item.fullPath,
@@ -108,7 +113,9 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
     language: result.language,
     runtime: result.runtime ?? (result.lengthMinutes ? result.lengthMinutes * 60 : undefined),
     imageUrl: result.imageUrl,
-    genres: result.genres,
+    // SearchResult.genres comes as objects {asin, name, type} from Audimeta;
+    // AudibleBookMetadata.genres expects string[] (genre names only)
+    genres: normalizeGenres(result.genres),
     narrators: result.narrators?.map((n) => n.name ?? '').filter(Boolean),
     publishYear: result.releaseDate?.substring(0, 4) ?? result.publishDate?.substring(0, 4),
     metadataSource: result.metadataSource,
@@ -440,9 +447,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
           const metadata = await _enrichMetadata(match)
           const sanitizedMatch = {
             ...match,
-            genres: Array.isArray(match.genres)
-              ? (match.genres as any[]).map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean)
-              : match.genres,
+            genres: normalizeGenres(match.genres),
+            series: Array.isArray(match.series)
+              ? ((match.series as any[])[0]?.name ?? undefined)
+              : match.series,
           }
           const { audiobook } = await apiService.addToLibrary(metadata, {
             destinationPath: rootFolderPath,
