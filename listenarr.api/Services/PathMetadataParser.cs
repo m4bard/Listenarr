@@ -44,8 +44,9 @@ namespace Listenarr.Api.Services
             var normalizedFile = Path.GetFullPath(filePath);
             var normalizedRoot = Path.GetFullPath(rootFolderPath)
                 .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var normalizedRootWithSep = normalizedRoot + Path.DirectorySeparatorChar;
 
-            if (!normalizedFile.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+            if (!normalizedFile.StartsWith(normalizedRootWithSep, StringComparison.OrdinalIgnoreCase))
                 return result;
 
             var relative = normalizedFile[(normalizedRoot.Length)..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);

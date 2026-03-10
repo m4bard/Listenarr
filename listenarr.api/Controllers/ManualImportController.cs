@@ -118,19 +118,21 @@ public class ManualImportController : ControllerBase
                 var results = new List<ManualImportResult>();
                 // Track destination paths used within this batch so we avoid collisions between items
                 var usedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                
+                // Fetch root folders once for the whole batch (used for path containment validation)
+                var batchRootFolders = await _rootFolderService.GetAllAsync();
+
                 // Count files per audiobook to determine if multi-file import
                 var filesPerAudiobook = request.Items
                     .GroupBy(i => i.MatchedAudiobookId)
                     .ToDictionary(g => g.Key, g => g.Count());
-                
+
                 _logger.LogDebug("Manual import batch: {ItemCount} items, filesPerAudiobook: {AudiobookFileCount}", request.Items.Count, string.Join(";", filesPerAudiobook.Select(x => $"{x.Key}:{x.Value}")));
-                
+
                 foreach (var item in request.Items)
                 {
                     var isMultiFile = filesPerAudiobook.TryGetValue(item.MatchedAudiobookId, out var count) && count > 1;
                     _logger.LogDebug("Importing item {Index}: {Path} for audiobook {AudiobookId}, isMultiFile: {IsMultiFile}", request.Items.IndexOf(item), item.FullPath, item.MatchedAudiobookId, isMultiFile);
-                    var result = await ImportFileAsync(item, request.InputMode ?? "copy", usedDestinations, isMultiFile);
+                    var result = await ImportFileAsync(item, request.InputMode ?? "copy", usedDestinations, isMultiFile, batchRootFolders);
                     _logger.LogDebug("Import result {Index}: Success={Success}, Destination={Destination}, Error={Error}", request.Items.IndexOf(item), result.Success, result.DestinationPath, result.Error);
                     results.Add(result);
                 }
@@ -153,7 +155,7 @@ public class ManualImportController : ControllerBase
         }
     }
 
-    private async Task<ManualImportResult> ImportFileAsync(ManualImportItem item, string inputMode, HashSet<string>? usedDestinations = null, bool isMultiFile = false)
+    private async Task<ManualImportResult> ImportFileAsync(ManualImportItem item, string inputMode, HashSet<string>? usedDestinations = null, bool isMultiFile = false, IEnumerable<Listenarr.Domain.Models.RootFolder>? rootFolders = null)
     {
         try
         {
@@ -193,7 +195,7 @@ public class ManualImportController : ControllerBase
 
             // Validate source is within a configured root folder (prevents path traversal)
             var normalizedSource = Path.GetFullPath(item.FullPath);
-            var allRootFolders = await _rootFolderService.GetAllAsync();
+            var allRootFolders = rootFolders ?? await _rootFolderService.GetAllAsync();
             var isUnderRoot = allRootFolders.Any(r =>
             {
                 try
