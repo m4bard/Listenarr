@@ -5,17 +5,29 @@
     </template>
     <ModalBody>
       <div class="search-wrap">
-        <div class="search-input-row">
-          <input
-            ref="inputEl"
-            v-model="searchQuery"
-            class="form-input search-input"
-            placeholder="Search by title or enter ASIN…"
-            @input="onInput"
-            @keydown.escape="emit('close')"
-            @keydown.enter="runSearch"
-          />
-          <PhSpinner v-if="isSearching" class="ph-spin search-spinner" :size="16" />
+        <div class="search-fields">
+          <div class="search-input-row">
+            <input
+              ref="inputEl"
+              v-model="searchQuery"
+              class="form-input search-input"
+              placeholder="Title or ASIN…"
+              @input="onInput"
+              @keydown.escape="emit('close')"
+              @keydown.enter="runSearch"
+            />
+          </div>
+          <div class="search-input-row">
+            <input
+              v-model="authorQuery"
+              class="form-input search-input"
+              placeholder="Author (optional)…"
+              @input="onInput"
+              @keydown.escape="emit('close')"
+              @keydown.enter="runSearch"
+            />
+            <PhSpinner v-if="isSearching" class="ph-spin search-spinner" :size="16" />
+          </div>
         </div>
 
         <div v-if="searchResults.length > 0" class="results-list">
@@ -38,7 +50,7 @@
         </div>
 
         <div v-else-if="hasSearched && !isSearching" class="no-results">
-          No results for "{{ searchQuery }}"
+          No results for "{{ searchQuery }}"{{ authorQuery ? ` by "${authorQuery}"` : '' }}
         </div>
 
         <div v-else-if="!hasSearched && !isSearching" class="hint-text">
@@ -74,6 +86,7 @@ function initialQuery(): string {
   return props.item.folderName
 }
 const searchQuery = ref(initialQuery())
+const authorQuery = ref(props.item.detectedAuthor ?? '')
 const searchResults = ref<SearchResult[]>([])
 const isSearching = ref(false)
 const hasSearched = ref(false)
@@ -99,7 +112,9 @@ async function runSearch() {
   hasSearched.value = false
   try {
     const isAsin = /^[A-Z0-9]{10}$/i.test(q)
-    const params = isAsin ? { asin: q, cap: 5 } : { title: q, cap: 5 }
+    const params = isAsin
+      ? { asin: q, cap: 5 }
+      : { title: q, author: authorQuery.value.trim() || undefined, cap: 5 }
     searchResults.value = await apiService.advancedSearch(params)
     hasSearched.value = true
   } finally {
@@ -118,6 +133,12 @@ function select(result: SearchResult) {
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
+}
+
+.search-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
 }
 
 .search-input-row {
