@@ -315,5 +315,23 @@ function timeAgo(isoString: string): string {
   .col-format {
     display: none;
   }
+
+  .scan-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .folder-select-wrap {
+    width: 100%;
+  }
+
+  .folder-select {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .scan-controls .btn {
+    width: fit-content;
+  }
 }
 </style>
