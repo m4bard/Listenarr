@@ -15,13 +15,5 @@ services:
       - listenarr_data:/app/config
     restart: unless-stopped
 
-  db-reset:
-    image: ghcr.io/listenarrs/listenarr:canary
-    profiles: ["tools"]
-    volumes:
-      - listenarr_data:/app/config
-    entrypoint: sh
-    command: -c "rm -f /app/config/listenarr.db && echo 'Database deleted.'"
-
 volumes:
   listenarr_data:

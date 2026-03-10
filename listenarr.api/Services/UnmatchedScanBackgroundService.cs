@@ -195,8 +195,9 @@ namespace Listenarr.Api.Services
         private List<string> CollectAudioFiles(string rootFolderPath)
         {
             var candidates = new List<string>();
+            var normalizedRoot = Path.GetFullPath(rootFolderPath);
             var dirs = new Stack<string>();
-            dirs.Push(rootFolderPath);
+            dirs.Push(normalizedRoot);
 
             while (dirs.Count > 0)
             {
@@ -217,7 +218,21 @@ namespace Listenarr.Api.Services
                         }
                     }
                     foreach (var sub in Directory.EnumerateDirectories(normalizedDir))
-                        dirs.Push(sub);
+                    {
+                        // Skip reparse points (symlinks, junctions) — they can point outside the root
+                        if (new DirectoryInfo(sub).Attributes.HasFlag(FileAttributes.ReparsePoint))
+                        {
+                            _logger.LogDebug("Skipping reparse point {Dir}", sub);
+                            continue;
+                        }
+                        var resolvedSub = Path.GetFullPath(sub);
+                        if (!resolvedSub.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                        {
+                            _logger.LogWarning("Skipping {Dir}: resolves outside configured root {Root}", sub, normalizedRoot);
+                            continue;
+                        }
+                        dirs.Push(resolvedSub);
+                    }
                 }
                 catch (IOException ioEx) { _logger.LogWarning(ioEx, "IO error scanning {Dir}", dir); }
                 catch (UnauthorizedAccessException uaEx) { _logger.LogWarning(uaEx, "Access denied scanning {Dir}", dir); }
