@@ -309,44 +309,36 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   }
 
   async function processNext() {
-    if (!isProcessing.value || lookupQueue.value.length === 0) {
-      isProcessing.value = false
-      return
-    }
-
-    const id: string = lookupQueue.value[0]!
-    const item = items.value[id]
-
-    if (!item) {
+    while (isProcessing.value && lookupQueue.value.length > 0) {
+      const id: string = lookupQueue.value[0]!
       lookupQueue.value = lookupQueue.value.slice(1)
-      await processNext()
-      return
-    }
 
-    items.value = { ...items.value, [id]: { ...item, isSearching: true } }
+      const item = items.value[id]
+      if (!item) continue
 
-    try {
-      const byAsin = !!item.detectedAsin
-      const searchParams = byAsin
-        ? { asin: item.detectedAsin, cap: 5 }
-        : { title: buildSearchTitle(item), cap: 5 }
-      const results = await apiService.advancedSearch(searchParams)
-      metadataFetchCount.value++
-      // ASIN results are authoritative — take the first result directly without author comparison
-      const first = byAsin ? (results[0] ?? null) : pickBestMatch(results, item.detectedAuthor)
-      const current = items.value[id]!
-      items.value = {
-        ...items.value,
-        [id]: { ...current, isSearching: false, hasSearched: true, selectedMatch: first, selected: first !== null },
+      items.value = { ...items.value, [id]: { ...item, isSearching: true } }
+
+      try {
+        const byAsin = !!item.detectedAsin
+        const searchParams = byAsin
+          ? { asin: item.detectedAsin, cap: 5 }
+          : { title: buildSearchTitle(item), cap: 5 }
+        const results = await apiService.advancedSearch(searchParams)
+        metadataFetchCount.value++
+        // ASIN results are authoritative — take the first result directly without author comparison
+        const first = byAsin ? (results[0] ?? null) : pickBestMatch(results, item.detectedAuthor)
+        const current = items.value[id]!
+        items.value = {
+          ...items.value,
+          [id]: { ...current, isSearching: false, hasSearched: true, selectedMatch: first, selected: first !== null },
+        }
+        _persistMatches()
+      } catch {
+        const current = items.value[id]
+        if (current) items.value = { ...items.value, [id]: { ...current, isSearching: false, hasSearched: true } }
       }
-      _persistMatches()
-    } catch {
-      const current = items.value[id]
-      if (current) items.value = { ...items.value, [id]: { ...current, isSearching: false, hasSearched: true } }
     }
-
-    lookupQueue.value = lookupQueue.value.slice(1)
-    await processNext()
+    isProcessing.value = false
   }
 
   // ─── Per-row manual search ────────────────────────────────────────────────

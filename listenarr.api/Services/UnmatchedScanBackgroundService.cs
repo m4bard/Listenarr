@@ -226,7 +226,8 @@ namespace Listenarr.Api.Services
                             continue;
                         }
                         var resolvedSub = Path.GetFullPath(sub);
-                        if (!resolvedSub.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase))
+                        var rootWithSep = normalizedRoot.TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                        if (!resolvedSub.StartsWith(rootWithSep, StringComparison.OrdinalIgnoreCase))
                         {
                             _logger.LogWarning("Skipping {Dir}: resolves outside configured root {Root}", sub, normalizedRoot);
                             continue;

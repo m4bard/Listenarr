@@ -191,6 +191,29 @@ public class ManualImportController : ControllerBase
                 };
             }
 
+            // Validate source is within a configured root folder (prevents path traversal)
+            var normalizedSource = Path.GetFullPath(item.FullPath);
+            var allRootFolders = await _rootFolderService.GetAllAsync();
+            var isUnderRoot = allRootFolders.Any(r =>
+            {
+                try
+                {
+                    var root = Path.GetFullPath(r.Path).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
+                    return normalizedSource.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+                }
+                catch { return false; }
+            });
+            if (!isUnderRoot)
+            {
+                _logger.LogWarning("Rejected manual import: {Path} is not within a configured root folder", item.FullPath);
+                return new ManualImportResult
+                {
+                    Success = false,
+                    Error = "Source file is not within a configured root folder",
+                    FilePath = item.FullPath
+                };
+            }
+
             // Check if audiobook has a base path
             if (string.IsNullOrWhiteSpace(audiobook.BasePath))
             {
