@@ -25,7 +25,7 @@
     <div class="footer-center">
       <button
         v-if="store.hasUnprocessedItems && !store.isProcessing"
-        class="btn btn-success"
+        class="btn btn-primary btn-sm"
         @click="store.startProcessing()"
       >
         <PhPlay :size="14" />
@@ -37,7 +37,7 @@
         <span class="processing-label">
           Processing {{ store.processedCount }} / {{ store.itemList.length }}…
         </span>
-        <button class="btn btn-warning btn-sm" @click="store.stopProcessing()">
+        <button class="btn btn-secondary btn-sm" @click="store.stopProcessing()">
           <PhStop :size="14" />
           Cancel
         </button>
@@ -111,6 +111,7 @@ async function handleImport() {
   align-items: center;
   gap: 1rem;
   flex: 1;
+  flex-wrap: wrap;
 }
 
 .footer-label {
@@ -126,20 +127,22 @@ async function handleImport() {
   color: #888;
 }
 
-.destination-select {
-  font-family: monospace;
-  font-size: 0.78rem;
-  max-width: 280px;
-}
-
 .mode-select {
   background: #2a2a2a;
   border: 1px solid #444;
   border-radius: 4px;
   color: #e0e0e0;
   font-size: 0.82rem;
-  padding: 0.25rem 0.5rem;
+  padding: 0.4rem 0.6rem;
+  height: var(--control-height, 40px);
+  box-sizing: border-box;
   cursor: pointer;
+}
+
+.destination-select {
+  font-family: monospace;
+  font-size: 0.78rem;
+  max-width: 280px;
 }
 
 .rate-limit-warning {
@@ -179,54 +182,24 @@ async function handleImport() {
   white-space: nowrap;
 }
 
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.4rem 0.85rem;
-  transition: background 0.15s, opacity 0.15s;
-}
+@media (max-width: 640px) {
+  .import-footer {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+  }
 
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
+  .footer-left,
+  .footer-center,
+  .footer-right {
+    width: 100%;
+    justify-content: flex-start;
+  }
 
-.btn-primary {
-  background: var(--brand-500, #6366f1);
-  color: #fff;
-}
-
-.btn-primary:hover:not(:disabled) {
-  background: var(--brand-600, #4f52c9);
-}
-
-.btn-success {
-  background: #166534;
-  color: #d1fae5;
-  border: 1px solid #14532d;
-}
-
-.btn-success:hover {
-  background: #15803d;
-}
-
-.btn-warning {
-  background: #78350f;
-  color: #fef3c7;
-  border: 1px solid #92400e;
-}
-
-.btn-warning:hover {
-  background: #92400e;
-}
-
-.btn-sm {
-  padding: 0.25rem 0.6rem;
-  font-size: 0.78rem;
+  .destination-select {
+    max-width: 100%;
+    flex: 1;
+  }
 }
 </style>

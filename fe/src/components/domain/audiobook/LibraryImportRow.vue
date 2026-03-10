@@ -61,75 +61,39 @@
           <span>—</span>
         </div>
 
-        <!-- Search toggle button -->
+        <!-- Search modal trigger -->
         <button
           class="btn-search-toggle"
-          :class="{ active: showSearch }"
           title="Search for a match"
-          @click="toggleSearch"
+          @click="showSearchModal = true"
         >
           <PhMagnifyingGlass :size="14" />
         </button>
       </div>
-
-      <!-- Inline search panel -->
-      <div v-if="showSearch" class="search-panel">
-        <div class="search-input-wrap">
-          <input
-            ref="searchInputEl"
-            v-model="searchQuery"
-            class="search-input"
-            placeholder="Search by title or enter ASIN…"
-            @input="onSearchInput"
-            @keydown.escape="showSearch = false"
-          />
-          <PhSpinner v-if="isLocalSearching" class="ph-spin search-spinner" :size="14" />
-        </div>
-
-        <div v-if="searchResults.length > 0" class="search-results">
-          <div
-            v-for="result in searchResults"
-            :key="result.asin ?? result.title"
-            class="search-result-item"
-            @click="applyMatch(result)"
-          >
-            <img v-if="result.imageUrl" :src="result.imageUrl" class="result-thumb" alt="" />
-            <div class="result-info">
-              <span class="result-title">{{ result.title }}</span>
-              <span class="result-meta">
-                {{ result.authors?.[0]?.name }}
-                <span v-if="result.series"> · {{ Array.isArray(result.series) ? (result.series as any)[0]?.name : result.series }}</span>
-                <span v-if="result.asin" class="result-asin"> · {{ result.asin }}</span>
-              </span>
-            </div>
-          </div>
-        </div>
-
-        <div v-else-if="hasSearched && searchResults.length === 0" class="search-no-results">
-          No results for "{{ searchQuery }}"
-        </div>
-      </div>
     </td>
   </tr>
+
+  <!-- Search modal (teleported to body by Modal component) -->
+  <LibraryImportSearchModal
+    v-if="showSearchModal"
+    :item="item"
+    @close="showSearchModal = false"
+    @select="applyMatch"
+  />
 </template>
 
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { ref } from 'vue'
 import { PhSpinner, PhCheckCircle, PhWarningCircle, PhMagnifyingGlass } from '@phosphor-icons/vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
 import type { LibraryImportItem } from '@/stores/libraryImport'
 import type { SearchResult } from '@/types'
+import LibraryImportSearchModal from './LibraryImportSearchModal.vue'
 
 const props = defineProps<{ item: LibraryImportItem }>()
 
 const store = useLibraryImportStore()
-
-const showSearch = ref(false)
-const searchQuery = ref(props.item.detectedAsin ?? props.item.detectedTitle ?? props.item.folderName)
-const searchResults = ref<SearchResult[]>([])
-const isLocalSearching = ref(false)
-const hasSearched = ref(false)
-const searchInputEl = ref<HTMLInputElement | null>(null)
+const showSearchModal = ref(false)
 
 function isAuthorMismatch(item: LibraryImportItem): boolean {
   if (!item.detectedAuthor || !item.selectedMatch?.authors?.length) return false
@@ -138,40 +102,8 @@ function isAuthorMismatch(item: LibraryImportItem): boolean {
   return !!matched && !matched.includes(detected) && !detected.includes(matched)
 }
 
-let debounceTimer: ReturnType<typeof setTimeout> | null = null
-
-async function toggleSearch() {
-  showSearch.value = !showSearch.value
-  if (showSearch.value) {
-    await nextTick()
-    searchInputEl.value?.focus()
-    searchInputEl.value?.select()
-  }
-}
-
-function onSearchInput() {
-  if (debounceTimer) clearTimeout(debounceTimer)
-  debounceTimer = setTimeout(() => runSearch(), 400)
-}
-
-async function runSearch() {
-  const q = searchQuery.value.trim()
-  if (!q) return
-  isLocalSearching.value = true
-  hasSearched.value = false
-  try {
-    const results = await store.searchItem(props.item.id, q)
-    searchResults.value = results ?? []
-    hasSearched.value = true
-  } finally {
-    isLocalSearching.value = false
-  }
-}
-
 function applyMatch(result: SearchResult) {
   store.selectMatch(props.item.id, result)
-  showSearch.value = false
-  searchResults.value = []
 }
 </script>
 
@@ -345,100 +277,15 @@ function applyMatch(result: SearchResult) {
   align-items: center;
 }
 
-.btn-search-toggle:hover,
-.btn-search-toggle.active {
+.btn-search-toggle:hover {
   border-color: var(--brand-500, #6366f1);
   color: var(--brand-500, #6366f1);
 }
 
-/* Inline search panel */
-.search-panel {
-  margin-top: 0.4rem;
-  background: #1e1e1e;
-  border: 1px solid #333;
-  border-radius: 6px;
-  overflow: hidden;
-}
-
-.search-input-wrap {
-  display: flex;
-  align-items: center;
-  padding: 0.3rem 0.5rem;
-  gap: 0.4rem;
-  border-bottom: 1px solid #2a2a2a;
-}
-
-.search-input {
-  flex: 1;
-  background: transparent;
-  border: none;
-  outline: none;
-  color: #e0e0e0;
-  font-size: 0.82rem;
-}
-
-.search-spinner {
-  color: #888;
-  flex-shrink: 0;
-}
-
-.search-results {
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.search-result-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.4rem 0.6rem;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.search-result-item:hover {
-  background: #2a2a2a;
-}
-
-.result-thumb {
-  width: 32px;
-  height: 32px;
-  object-fit: cover;
-  border-radius: 3px;
-  flex-shrink: 0;
-}
-
-.result-info {
-  min-width: 0;
-  flex: 1;
-}
-
-.result-title {
-  display: block;
-  font-size: 0.82rem;
-  color: #e0e0e0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.result-meta {
-  display: block;
-  font-size: 0.72rem;
-  color: #888;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.result-asin {
-  font-family: monospace;
-  font-size: 0.7rem;
-}
-
-.search-no-results {
-  padding: 0.5rem 0.75rem;
-  font-size: 0.8rem;
-  color: #666;
+/* Mobile: hide format column */
+@media (max-width: 640px) {
+  .cell-format {
+    display: none;
+  }
 }
 </style>

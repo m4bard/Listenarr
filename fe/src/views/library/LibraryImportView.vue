@@ -20,7 +20,7 @@
       </div>
 
       <button
-        class="btn btn-outline"
+        class="btn btn-primary btn-sm"
         :disabled="!selectedFolderId || store.scanStatus === 'scanning'"
         @click="startScan"
       >
@@ -210,7 +210,9 @@ function timeAgo(isoString: string): string {
   border-radius: 4px;
   color: #e0e0e0;
   font-size: 0.85rem;
-  padding: 0.3rem 0.6rem;
+  padding: 0.4rem 0.6rem;
+  height: var(--control-height, 40px);
+  box-sizing: border-box;
   cursor: pointer;
   min-width: 180px;
 }
@@ -226,34 +228,6 @@ function timeAgo(isoString: string): string {
   gap: 0.3rem;
   font-size: 0.8rem;
   color: #ef4444;
-}
-
-/* Buttons */
-.btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.85rem;
-  padding: 0.35rem 0.75rem;
-  transition: background 0.15s, opacity 0.15s;
-}
-
-.btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.btn-outline {
-  background: transparent;
-  border: 1px solid #444;
-  color: #ccc;
-}
-
-.btn-outline:hover:not(:disabled) {
-  border-color: var(--brand-500, #6366f1);
-  color: var(--brand-500, #6366f1);
 }
 
 /* State panels */
@@ -335,5 +309,11 @@ function timeAgo(isoString: string): string {
   width: 1rem;
   height: 1rem;
   cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .col-format {
+    display: none;
+  }
 }
 </style>
