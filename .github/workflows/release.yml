@@ -396,4 +396,14 @@ jobs:
             text: A new stable build has been released for docker.
             webhookUrl: ${{ secrets.DISCORD_DOCKER_UPDATE_URL }}
 
+      - name: Trigger docs rebuild
+        if: ${{ github.repository_owner == 'listenarrs' }}
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GH_PAT }}
+          repository: Listenarrs/listenarrs.github.io
+          event-type: listenarr_release
+          client-payload: >-
+            {"ref":"${{ github.ref_name }}","version":"${{ steps.resolve-version.outputs.VERSION }}"}
+
       # Skipped: separate Web image. The API image contains the frontend in wwwroot.
