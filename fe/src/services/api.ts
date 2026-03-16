@@ -418,8 +418,11 @@ class ApiService {
     cap?: number
   }): Promise<SearchResult[]> {
     const body: Record<string, unknown> = { mode: 'Advanced' }
+    const hasAsin = !!params.asin
     if (params.title) (body as Record<string, unknown>).title = params.title
-    if (params.author) (body as Record<string, unknown>).author = params.author
+    // ASIN searches are exact identifier lookups; omit author to avoid
+    // accidentally narrowing or perturbing identifier-based requests.
+    if (params.author && !hasAsin) (body as Record<string, unknown>).author = params.author
     if (params.isbn) (body as Record<string, unknown>).isbn = params.isbn
     if (params.series) (body as Record<string, unknown>).series = params.series
     if (params.asin) (body as Record<string, unknown>).asin = params.asin

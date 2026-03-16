@@ -86,7 +86,7 @@ function initialQuery(): string {
   return props.item.folderName
 }
 const searchQuery = ref(initialQuery())
-const authorQuery = ref(props.item.detectedAuthor ?? '')
+const authorQuery = ref(props.item.detectedAsin ? '' : (props.item.detectedAuthor ?? ''))
 const searchResults = ref<SearchResult[]>([])
 const isSearching = ref(false)
 const hasSearched = ref(false)

@@ -143,22 +143,31 @@ namespace Listenarr.Api.Services
                 if (string.IsNullOrWhiteSpace(stdout)) return result;
 
                 var doc = JsonSerializer.Deserialize<JsonElement>(stdout);
-                if (!doc.TryGetProperty("format", out var fmt)) return result;
-                if (!fmt.TryGetProperty("tags", out var tags)) return result;
-
-                result.Title      = GetTag(tags, "album");
-                result.Author     = GetTag(tags, "album_artist", "ALBUM_ARTIST");
-                result.Narrator   = GetTag(tags, "composer", "COMPOSER");
-                result.Series     = GetTag(tags, "SERIES", "series");
-                result.SeriesNumber = GetTag(tags, "PART", "part", "SERIES-PART", "series-part");
-                result.Year       = GetTag(tags, "date", "year", "DATE", "YEAR")?.Split('-')[0].Trim();
-                result.Description = GetTag(tags, "DESCRIPTION", "description", "comment", "COMMENT");
-                result.Asin       = GetTag(tags, "ASIN", "asin");
-
-                if (result.Description?.Length > 2000)
-                    result.Description = result.Description[..2000];
+                result = ParseEmbeddedTagsFromFfprobeJson(doc);
             }
             catch { /* silently skip — ffprobe unavailable or file unreadable */ }
+            return result;
+        }
+
+        internal static PathParsedMetadata ParseEmbeddedTagsFromFfprobeJson(JsonElement doc)
+        {
+            var result = new PathParsedMetadata();
+
+            if (!doc.TryGetProperty("format", out var fmt)) return result;
+            if (!fmt.TryGetProperty("tags", out var tags) || tags.ValueKind != JsonValueKind.Object) return result;
+
+            result.Title = GetTag(tags, "album");
+            result.Author = GetTag(tags, "album_artist", "ALBUM_ARTIST");
+            result.Narrator = GetTag(tags, "composer", "COMPOSER");
+            result.Series = GetTag(tags, "SERIES", "series");
+            result.SeriesNumber = GetTag(tags, "PART", "part", "SERIES-PART", "series-part");
+            result.Year = GetTag(tags, "date", "year", "DATE", "YEAR")?.Split('-')[0].Trim();
+            result.Description = GetTag(tags, "DESCRIPTION", "description", "comment", "COMMENT");
+            result.Asin = ExtractAsin(tags);
+
+            if (result.Description?.Length > 2000)
+                result.Description = result.Description[..2000];
+
             return result;
         }
 
@@ -173,6 +182,68 @@ namespace Listenarr.Api.Services
                 }
             }
             return null;
+        }
+
+        private static string? ExtractAsin(JsonElement tags)
+        {
+            var direct = GetTag(
+                tags,
+                "ASIN",
+                "ASIN:",
+                "asin",
+                "asin:",
+                "TXXX:ASIN",
+                "TXXX:ASIN:",
+                "TXXX/ASIN",
+                "----:com.apple.iTunes:ASIN",
+                "----:com.apple.iTunes:ASIN:",
+                "com.apple.iTunes:ASIN",
+                "com.apple.iTunes:ASIN:",
+                "CDEK",
+                "CDEK:",
+                "cdek",
+                "cdek:",
+                "TXXX:CDEK",
+                "TXXX:CDEK:",
+                "TXXX/cdek",
+                "----:com.apple.iTunes:CDEK",
+                "----:com.apple.iTunes:CDEK:",
+                "com.apple.iTunes:CDEK",
+                "com.apple.iTunes:CDEK:",
+                "AUDIBLE_ASIN",
+                "audible_asin",
+                "AUDIBLE-ASIN",
+                "audible-asin");
+
+            var normalized = NormalizeAsinValue(direct);
+            if (!string.IsNullOrWhiteSpace(normalized)) return normalized;
+
+            foreach (var property in tags.EnumerateObject())
+            {
+                if (!property.Name.Contains("asin", StringComparison.OrdinalIgnoreCase)
+                    && !property.Name.Contains("cdek", StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (property.Value.ValueKind != JsonValueKind.String)
+                    continue;
+
+                normalized = NormalizeAsinValue(property.Value.GetString());
+                if (!string.IsNullOrWhiteSpace(normalized))
+                    return normalized;
+            }
+
+            return null;
+        }
+
+        private static string? NormalizeAsinValue(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+
+            var match = Regex.Match(
+                value,
+                @"\b(?:B0[A-Z0-9]{8}|[0-9][A-Z0-9]{9})\b",
+                RegexOptions.IgnoreCase);
+
+            return match.Success ? match.Value.ToUpperInvariant() : null;
         }
 
         private static void TryReadSidecar(string folder, string filename, Action<string> assign)

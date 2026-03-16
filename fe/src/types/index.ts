@@ -275,8 +275,8 @@ export interface ApplicationSettings {
   missingSourceMaxRetries?: number
   enableNotifications: boolean
   allowedFileExtensions: string[]
-  // Action to perform for completed downloads: 'Move' or 'Copy'
-  completedFileAction?: 'Move' | 'Copy'
+  // Action to perform for completed downloads.
+  completedFileAction?: 'Move' | 'Copy' | 'Hardlink/Copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
   // Failed download handling

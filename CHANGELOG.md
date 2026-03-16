@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.58] - 2026-03-16
+
+### Added
+- **Library Import page and workflow:** Added a Sonarr-style Library Import page for scanning unmatched audio under root folders, reviewing grouped files, auto/manual matching them to audiobooks, choosing a destination root, and importing matched results.
+- **Unmatched root-folder scan infrastructure:** Added background unmatched-file scanning for root folders with cached scan results, an explicit `Scan` action, configurable scan concurrency, and the backend queue/service plumbing needed to support the workflow.
+- **Library Import matching enhancements:** Added destination-folder selection and destination-path display in the footer, author-aware manual search with pre-filled author input, persisted match state across rescans/page reloads, ASIN tag embedding on import, and focused regression coverage for author fallback, embedded ASIN parsing, ASIN-first search shaping, and library import sorting helpers.
+
+### Changed
+- **Library Import table UX:** Reworked the Library Import results surface with sortable columns, persisted desktop column resizing, a richer sort summary toolbar, improved dark-theme control styling, and denser mobile card layouts for narrow viewports.
+- **Library Import matching flow:** Updated auto-search to prefer embedded ASINs, detected titles, and filename stems over noisier folder metadata, prefer author-matched candidates, highlight author mismatches, and rename the bulk action from `Start Processing` to `Start Matching`.
+- **Unmatched file metadata extraction:** Expanded unmatched-file parsing to read embedded ffprobe metadata from MP4/M4B files and recognize ASINs from common standard and non-standard audiobook tags, including MP3 `TXXX:*`, iTunes freeform tags, and `CDEK` aliases.
+
+### Fixed
+- **Author metadata/catalog fallbacks:** Added fallback from successful Audimeta author lookup to Audible author-page scraping when `/author/books/{asin}` fails, and fallback to Audnexus when Audimeta author lookup itself returns `404`.
+- **Library Import scan correctness:** Fixed unmatched scanning to exclude files already tracked in the library, handle flat/author/series folder layouts more accurately, preserve numeric parenthetical title splits, avoid sibling-file mis-attribution, skip reparse points, clear stale cached entries, and clean up completed scan jobs with TTL expiry.
+- **Library Import import correctness:** Fixed manual/batch import to pass destination paths correctly, apply full folder+file naming when importing into configured root folders, combine title+subtitle when needed for unique series paths, update `BasePath` on existing audiobooks before import, and handle `409` existing-book collisions more gracefully.
+- **Library Import match persistence and request shaping:** Fixed rescans/page reloads dropping saved matches, normalized ISBN/series data before library add requests, ensured ASIN-first advanced searches do not include `author`, and avoided empty ASIN auto-match results.
+- **Path parsing and performance regressions:** Fixed separator-boundary bugs in `PathMetadataParser`, root-path containment validation, recursive `processNext` stack depth issues, and N+1 root-folder queries during batch import.
+- **Library/library-view noise regressions:** Fixed repeated author-image lookup `404` floods and corrected a virtual-scroller spacer height issue that could truncate the audiobook grid.
+
 ## [0.2.57] - 2026-03-08
 
 ### Added

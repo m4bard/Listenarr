@@ -25,11 +25,11 @@
     <div class="footer-center">
       <button
         v-if="store.hasUnprocessedItems && !store.isProcessing"
-        class="btn btn-primary btn-sm"
+        class="btn btn-secondary btn-sm"
         @click="store.startProcessing()"
       >
         <PhPlay :size="14" />
-        Start Processing
+        Start Matching
       </button>
 
       <template v-if="store.isProcessing">
