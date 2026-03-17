@@ -131,6 +131,62 @@ namespace Listenarr.Api.Tests
             Assert.Contains("Refused to associate file", history.Message);
         }
 
+        [Fact]
+        public async Task EnsureAudiobookFileAsync_AllowsFileWithinBasePath_WhenBasePathHasTrailingSeparator()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var db = new ListenArrDbContext(options);
+
+            var oldDir = Path.Combine(Path.GetTempPath(), "listenarr-audiofile-old", Guid.NewGuid().ToString(), "Old Folder");
+            Directory.CreateDirectory(oldDir);
+            var oldFile = Path.Combine(oldDir, "track1.m4b");
+            await File.WriteAllTextAsync(oldFile, "old");
+
+            var importDir = Path.Combine(Path.GetTempPath(), "listenarr-audiofile-new", Guid.NewGuid().ToString(), "Jack of Shadows");
+            Directory.CreateDirectory(importDir);
+            var candidateFile = Path.Combine(importDir, "Jack of Shadows_ Rediscovered Classics, Book 23-14.mp3");
+            await File.WriteAllTextAsync(candidateFile, "new");
+
+            var book = new Audiobook
+            {
+                Title = "Jack of Shadows",
+                FilePath = oldFile,
+                BasePath = importDir + Path.DirectorySeparatorChar
+            };
+            db.Audiobooks.Add(book);
+            await db.SaveChangesAsync();
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.IsAny<string>()))
+                .ReturnsAsync(new AudioMetadata { Format = "mp3", Bitrate = 128000 });
+
+            var services = new ServiceCollection();
+            services.AddSingleton<IMetadataService>(metadataMock.Object);
+            services.AddSingleton(db);
+            services.AddSingleton<MetadataExtractionLimiter>();
+            services.AddMemoryCache();
+
+            var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+            var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<AudioFileService>>();
+            var svc = new AudioFileService(
+                scopeFactory,
+                loggerMock.Object,
+                provider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+                provider.GetRequiredService<MetadataExtractionLimiter>());
+
+            var created = await svc.EnsureAudiobookFileAsync(book.Id, candidateFile, "test-scan");
+            Assert.True(created);
+
+            var file = await db.AudiobookFiles.FirstOrDefaultAsync(f => f.AudiobookId == book.Id && f.Path == candidateFile);
+            Assert.NotNull(file);
+            Assert.DoesNotContain(db.History, h => h.AudiobookId == book.Id && h.EventType == "File Association Refused");
+        }
+
         // Test helper DbContext that throws on SaveChangesAsync
         private class ThrowingSaveChangesDbContext : ListenArrDbContext
         {

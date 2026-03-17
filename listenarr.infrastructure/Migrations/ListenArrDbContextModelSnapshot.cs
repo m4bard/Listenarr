@@ -78,6 +78,10 @@ namespace Listenarr.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ImportBlacklistExtensions")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("AudnexusApiUrl")
                         .IsRequired()
                         .HasColumnType("TEXT");

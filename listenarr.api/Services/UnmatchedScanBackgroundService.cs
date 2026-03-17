@@ -11,6 +11,7 @@ namespace Listenarr.Api.Services
     public class UnmatchedScanBackgroundService : BackgroundService
     {
         private static readonly string[] AudioExtensions = { ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav" };
+        private sealed record StemGroup(string Stem, List<string> Files);
 
         private readonly IUnmatchedScanQueueService _queue;
         private readonly IServiceScopeFactory _scopeFactory;
@@ -104,33 +105,14 @@ namespace Listenarr.Api.Services
             // Two-level grouping:
             // 1. Group by parent directory (folder = one audiobook in the common case).
             // 2. Within each directory that has multiple files, sub-group by a normalized
-            //    title stem extracted from the filename.  Files that share the same stem
-            //    (e.g. "01 - BookTitle.m4b" and "02 - BookTitle.m4b") are parts of the
-            //    same audiobook.  Files with distinct stems (e.g. an author folder that
-            //    contains several different titles) become separate scan entries.
+            //    title stem extracted from the filename. Files that share the same stem
+            //    are parts of the same audiobook. Distinct stems remain separate entries,
+            //    except for ancillary tracks like "Foreword" or "Introduction", which stay
+            //    attached when there is only one primary book group in the folder.
             var groupList = unmatched
                 .GroupBy(f => Path.GetFullPath(Path.GetDirectoryName(f) ?? rootFolderPath))
-                .SelectMany(folderGroup =>
-                {
-                    var allFiles = folderGroup.ToList();
-                    if (allFiles.Count == 1)
-                        return new[] { (BookFolder: folderGroup.Key, Files: allFiles) };
-
-                    // Sub-group by normalized title stem.
-                    var byTitle = allFiles
-                        .GroupBy(f => ExtractTitleStem(f, folderGroup.Key))
-                        .ToList();
-
-                    // All files resolve to the same stem (including all-empty = numbered
-                    // parts): keep them as one multi-part audiobook entry.
-                    if (byTitle.Count == 1)
-                        return new[] { (BookFolder: folderGroup.Key, Files: allFiles) };
-
-                    // Multiple distinct title stems → each stem = its own audiobook entry.
-                    return byTitle
-                        .Select(g => (BookFolder: folderGroup.Key, Files: g.ToList()))
-                        .ToArray();
-                })
+                .SelectMany(folderGroup => BuildGroupedFilesForFolder(folderGroup, folderGroup.Key)
+                    .Select(files => (BookFolder: folderGroup.Key, Files: files)))
                 .ToList();
 
             // Resolve ffprobe path once for the whole scan (null = not available)
@@ -138,13 +120,16 @@ namespace Listenarr.Api.Services
 
             var results = new System.Collections.Concurrent.ConcurrentBag<UnmatchedFileResult>();
 
-            // Parallel.ForEachAsync only allocates active slots — avoids creating all tasks upfront
+            // Parallel.ForEachAsync only allocates active slots and avoids creating all tasks up front.
             await Parallel.ForEachAsync(groupList,
                 new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = ct },
                 async (item, token) =>
                 {
                     var (bookFolder, files) = item;
-                    var representative = files.OrderBy(f => f).First();
+                    var plans = MultiFileImportPlanner.BuildPlans(
+                        files.Select(f => (f, (string?)Path.GetRelativePath(bookFolder, f))));
+                    var orderedFiles = plans.Select(p => p.FullPath).ToList();
+                    var representative = orderedFiles.First();
                     var parsed = PathMetadataParser.Parse(representative, rootFolderPath);
 
                     if (!string.IsNullOrEmpty(ffprobePath))
@@ -172,10 +157,11 @@ namespace Listenarr.Api.Services
                     results.Add(new UnmatchedFileResult
                     {
                         FullPath = representative,
+                        SourceFiles = orderedFiles,
                         RelativePath = relativeFolder,
                         BookFolder = bookFolder,
                         Size = totalSize,
-                        FileCount = files.Count,
+                        FileCount = orderedFiles.Count,
                         Title = parsed.Title,
                         Author = parsed.Author,
                         Series = parsed.Series,
@@ -190,6 +176,43 @@ namespace Listenarr.Api.Services
                 });
 
             return results.OrderBy(r => r.Author).ThenBy(r => r.Series).ThenBy(r => r.Title).ToList();
+        }
+
+        internal static List<List<string>> BuildGroupedFilesForFolder(IEnumerable<string> files, string folderPath)
+        {
+            var allFiles = files
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (allFiles.Count <= 1)
+            {
+                return new List<List<string>> { allFiles };
+            }
+
+            var byTitle = allFiles
+                .GroupBy(f => ExtractTitleStem(f, folderPath), StringComparer.OrdinalIgnoreCase)
+                .Select(g => new StemGroup(g.Key, g.ToList()))
+                .ToList();
+
+            if (byTitle.Count <= 1)
+            {
+                return new List<List<string>> { allFiles };
+            }
+
+            var primaryGroups = byTitle
+                .Where(g => !IsAncillaryStem(g.Stem))
+                .ToList();
+
+            if (primaryGroups.Count == 1)
+            {
+                return new List<List<string>>
+                {
+                    byTitle.SelectMany(g => g.Files).ToList()
+                };
+            }
+
+            return byTitle.Select(g => g.Files).ToList();
         }
 
         private List<string> CollectAudioFiles(string rootFolderPath)
@@ -219,7 +242,7 @@ namespace Listenarr.Api.Services
                     }
                     foreach (var sub in Directory.EnumerateDirectories(normalizedDir))
                     {
-                        // Skip reparse points (symlinks, junctions) — they can point outside the root
+                        // Skip reparse points (symlinks, junctions) because they can point outside the root.
                         if (new DirectoryInfo(sub).Attributes.HasFlag(FileAttributes.ReparsePoint))
                         {
                             _logger.LogDebug("Skipping reparse point {Dir}", sub);
@@ -251,7 +274,7 @@ namespace Listenarr.Api.Services
         /// Strips leading track numbers, trailing Part/CD/Disc numbers, year and
         /// series decorations in brackets. Files that resolve to the same stem are
         /// treated as parts of the same audiobook. Returns the folder name as fallback
-        /// when the stem would otherwise be empty (e.g. purely numeric filenames).
+        /// when the stem would otherwise be empty (for example purely numeric filenames).
         /// </summary>
         private static string ExtractTitleStem(string filePath, string folderPath)
         {
@@ -265,18 +288,50 @@ namespace Listenarr.Api.Services
             name = Regex.Replace(name, @"\s*\(\d{4}\)", "");
             // Strip square bracket content: [Series 3], [Chaos Seeds 1]
             name = Regex.Replace(name, @"\s*\[.*?\]", "");
-            // NOTE: plain numeric parens like (1), (2) are intentionally kept —
-            // they distinguish separate books in a series (e.g. "The Land (1)" vs "The Land (2)")
-            // Normalize whitespace
-            name = Regex.Replace(name, @"\s+", " ").Trim().ToLowerInvariant();
+            // Plain numeric parens like (1), (2) are intentionally kept because they
+            // distinguish separate books in a series.
+            name = NormalizeGroupKey(name);
 
-            // Purely numeric or empty after stripping → use folder name so that
-            // numbered-part files (1.m4b, 2.m4b) still group together under their folder.
+            // Purely numeric or empty after stripping: use the folder name so numbered-part
+            // files like 1.m4b and 2.m4b still group together under their folder.
             if (string.IsNullOrEmpty(name) || Regex.IsMatch(name, @"^\d+$"))
-                return Path.GetFileName(folderPath).ToLowerInvariant();
+                return NormalizeGroupKey(Path.GetFileName(folderPath));
 
             return name;
         }
+
+        private static bool IsAncillaryStem(string stem)
+        {
+            if (string.IsNullOrWhiteSpace(stem))
+            {
+                return false;
+            }
+
+            var normalized = stem.Trim();
+            normalized = Regex.Replace(normalized, @"^[\s\(\[\{""'`_-]+|[\s\)\]\}""'`_-]+$", "");
+            normalized = NormalizeGroupKey(normalized);
+
+            if (string.IsNullOrEmpty(normalized))
+            {
+                return false;
+            }
+
+            return Regex.IsMatch(
+                    normalized,
+                    @"^(?:foreword|afterword|preface|prologue|epilogue|appendix|dedication|interlude)(?:\b.*)?$",
+                    RegexOptions.IgnoreCase)
+                || Regex.IsMatch(
+                    normalized,
+                    @"^(?:introduction|intro)(?:$|\s+by\b.*)",
+                    RegexOptions.IgnoreCase)
+                || Regex.IsMatch(
+                    normalized,
+                    @"^(?:acknowledg(?:e)?ments?|credits|opening credits|closing credits|author'?s note|note from the author|about the author|bonus chapter|bonus material|preview|sample)(?:\b.*)?$",
+                    RegexOptions.IgnoreCase);
+        }
+
+        private static string NormalizeGroupKey(string value) =>
+            Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim().ToLowerInvariant();
 
         private static string NormalizePath(string path) =>
             Path.GetFullPath(path).Replace('\\', '/').TrimEnd('/');

@@ -134,12 +134,19 @@ namespace Listenarr.Api.Services
                         try
                         {
                             var files = System.IO.Directory.GetFiles(finalPath, "*", System.IO.SearchOption.AllDirectories)
-                                .Where(f => FileUtils.IsAudioFile(f))
+                                .Where(f => !FileUtils.ShouldSkipImportFile(f, settings.ImportBlacklistExtensions))
                                 .ToArray();
-                            if (files != null && files.Length > 0)
+                            var directImportFiles = settings.ExtractArchives
+                                ? files.Where(f => !_archiveExtractor.IsArchive(f)).ToArray()
+                                : files;
+
+                            List<ImportResult>? importResults = null;
+                            if (directImportFiles.Length > 0)
                             {
-                                var importResults = await _fileFinalizer.ImportFilesFromDirectoryAsync(downloadId, download?.AudiobookId, files, settings);
+                                importResults = await _fileFinalizer.ImportFilesFromDirectoryAsync(downloadId, download?.AudiobookId, directImportFiles, settings);
                                 _logger.LogInformation("FileFinalizer.ImportFilesFromDirectoryAsync returned {Count} results for download {DownloadId}", importResults?.Count ?? 0, downloadId);
+                            }
+
                             // if any successful imports returned final paths, set Download.FinalPath to the first one
                             try
                             {
@@ -269,7 +276,7 @@ namespace Listenarr.Api.Services
                                         if (!string.IsNullOrWhiteSpace(tempDirExtracted) && System.IO.Directory.Exists(tempDirExtracted))
                                         {
                                             var extractedFiles = System.IO.Directory.GetFiles(tempDirExtracted, "*", System.IO.SearchOption.AllDirectories)
-                                                .Where(f => FileUtils.IsAudioFile(f))
+                                                .Where(f => !FileUtils.ShouldSkipImportFile(f, settings.ImportBlacklistExtensions))
                                                 .ToArray();
                                             if (extractedFiles != null && extractedFiles.Length > 0)
                                             {
@@ -341,8 +348,8 @@ namespace Listenarr.Api.Services
                                         }
                                     }
                                 }
-                            }                            }
-                            else
+                            }
+                            else if (directImportFiles.Length == 0)
                             {
                                 _logger.LogInformation("ProcessCompletedDownloadAsync: directory {FinalPath} contains no files to import (DownloadId: {DownloadId})", finalPath, downloadId);
                             }
@@ -365,7 +372,7 @@ namespace Listenarr.Api.Services
                                     if (!string.IsNullOrWhiteSpace(tempExtractDir) && System.IO.Directory.Exists(tempExtractDir))
                                     {
                                         var extractedFiles = System.IO.Directory.GetFiles(tempExtractDir, "*", System.IO.SearchOption.AllDirectories)
-                                            .Where(f => FileUtils.IsAudioFile(f))
+                                            .Where(f => !FileUtils.ShouldSkipImportFile(f, settings.ImportBlacklistExtensions))
                                             .ToArray();
                                         if (extractedFiles != null && extractedFiles.Length > 0)
                                         {

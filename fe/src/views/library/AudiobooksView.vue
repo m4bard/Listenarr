@@ -646,6 +646,57 @@
       @close="() => { showCustomFilterModal = false }"
     />
 
+    <DeleteConfirmationModal
+      :visible="showDeleteDialog"
+      title="Delete Audiobook"
+      :confirmText="deleting ? 'Deleting...' : 'Delete'"
+      @close="cancelDelete"
+      @confirm="executeDelete"
+    >
+      <template #default>
+        <p>
+          Are you sure you want to delete
+          <strong>{{ deleteTarget?.title || 'this audiobook' }}</strong
+          >?
+        </p>
+        <p class="warning-text">
+          This action cannot be undone. The audiobook data and cached images will be
+          permanently removed.
+        </p>
+        <div class="delete-options">
+          <div class="checkbox-row">
+            <label class="checkbox-wrapper checkbox-label">
+              <input
+                v-model="deleteFilesOnDisk"
+                type="checkbox"
+                class="checkbox-input"
+                aria-label="Remove audiobook files from disk"
+              />
+              <div class="checkbox-content">
+                <span class="checkbox-title">Remove audiobook files from disk</span>
+                <small>Delete tracked audiobook media files in addition to the library entry.</small>
+              </div>
+            </label>
+          </div>
+
+          <div class="checkbox-row">
+            <label class="checkbox-wrapper checkbox-label">
+              <input
+                v-model="deleteFolderOnDisk"
+                type="checkbox"
+                class="checkbox-input"
+                aria-label="Remove audiobook folder from disk"
+              />
+              <div class="checkbox-content">
+                <span class="checkbox-title">Also remove the audiobook folder</span>
+                <small>Deletes the containing audiobook folder when it is safe to do so. This also removes tracked files.</small>
+              </div>
+            </label>
+          </div>
+        </div>
+      </template>
+    </DeleteConfirmationModal>
+
     <!-- Confirm delete custom filter handled via global showConfirm() -->
   </div>
 </template>
@@ -684,6 +735,7 @@ import { buildApiPath } from '@/services/apiBase'
 import { logger } from '@/utils/logger'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
+import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
 import FiltersDropdown from '@/components/ui/FiltersDropdown.vue'
 import CustomFilterModal from '@/components/domain/collection/CustomFilterModal.vue'
@@ -1534,8 +1586,11 @@ const totalHeight = computed(() => {
     : LIST_ROW_HEIGHT)
 })
 
-// deletion dialog handled via global showConfirm()
 const deleting = ref(false)
+const showDeleteDialog = ref(false)
+const deleteTarget = ref<Audiobook | null>(null)
+const deleteFilesOnDisk = ref(false)
+const deleteFolderOnDisk = ref(false)
 const qualityProfiles = ref<QualityProfile[]>([])
 const showBulkEditModal = ref(false)
 const showEditModal = ref(false)
@@ -1943,25 +1998,39 @@ async function refreshLibrary() {
 }
 
 async function confirmDelete(audiobook: Audiobook) {
-  const message = `Are you sure you want to delete "${audiobook.title}"? This action cannot be undone. The audiobook data and cached images will be permanently removed.`
-  const ok = await showConfirm(message, 'Confirm Deletion', {
-    danger: true,
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
-  })
-  if (!ok) return
+  deleteTarget.value = audiobook
+  resetDeleteOptions()
+  showDeleteDialog.value = true
+}
+
+function cancelDelete() {
+  resetDeleteOptions()
+  deleteTarget.value = null
+  showDeleteDialog.value = false
+}
+
+async function executeDelete() {
+  if (deleting.value || !deleteTarget.value) return
 
   deleting.value = true
   try {
-    await libraryStore.removeFromLibrary(audiobook.id)
+    const shouldDeleteFolder = deleteFolderOnDisk.value
+    const shouldDeleteFiles = deleteFilesOnDisk.value || shouldDeleteFolder
+    await libraryStore.removeFromLibrary(deleteTarget.value.id, {
+      deleteFiles: shouldDeleteFiles,
+      deleteFolder: shouldDeleteFolder,
+    })
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'AudiobooksView',
-      operation: 'confirmDelete',
-      metadata: { audiobookId: audiobook.id },
+      operation: 'executeDelete',
+      metadata: { audiobookId: deleteTarget.value?.id },
     })
   } finally {
     deleting.value = false
+    resetDeleteOptions()
+    deleteTarget.value = null
+    showDeleteDialog.value = false
   }
 }
 
@@ -1990,6 +2059,23 @@ async function confirmBulkDelete() {
     deleting.value = false
   }
 }
+
+function resetDeleteOptions() {
+  deleteFilesOnDisk.value = false
+  deleteFolderOnDisk.value = false
+}
+
+watch(deleteFolderOnDisk, (checked) => {
+  if (checked && !deleteFilesOnDisk.value) {
+    deleteFilesOnDisk.value = true
+  }
+})
+
+watch(deleteFilesOnDisk, (checked) => {
+  if (!checked && deleteFolderOnDisk.value) {
+    deleteFolderOnDisk.value = false
+  }
+})
 
 function showBulkEdit() {
   showBulkEditModal.value = true

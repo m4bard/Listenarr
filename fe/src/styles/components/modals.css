@@ -310,6 +310,14 @@
   box-shadow: 0 6px 16px rgba(231, 76, 60, 0.08);
 }
 
+.modal-actions .modal-delete-button,
+.modal-footer .modal-delete-button {
+  background-color: #e74c3c;
+  color: #fff;
+  border-color: rgba(231, 76, 60, 0.9);
+  box-shadow: 0 10px 24px rgba(231, 76, 60, 0.22);
+}
+
 .modal-actions .delete-button:hover:not(:disabled),
 .modal-footer .delete-button:hover:not(:disabled),
 .modal-actions .modal-delete-button:hover:not(:disabled),
@@ -318,6 +326,13 @@
   color: #fff;
   transform: translateY(-1px);
   box-shadow: 0 8px 20px rgba(231, 76, 60, 0.18);
+}
+
+.modal-actions .modal-delete-button:hover:not(:disabled),
+.modal-footer .modal-delete-button:hover:not(:disabled) {
+  background-color: #cf3d31;
+  border-color: #cf3d31;
+  box-shadow: 0 12px 28px rgba(231, 76, 60, 0.28);
 }
 
 /* Custom checkbox & radio styles scoped to modals */
@@ -371,6 +386,56 @@
 .modal-content .checkbox-wrapper input[type="checkbox"]:focus-visible + .checkbox-content::before,
 .modal-content .radio-label input[type="radio"]:focus-visible + .radio-content::before {
   outline: 3px solid rgba(var(--brand-rgb), 0.12); outline-offset: 2px;
+}
+
+/* Shared delete dialog option layout */
+.modal-content .delete-options {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.modal-content .delete-options .checkbox-row {
+  margin-top: 0;
+}
+
+.modal-content .delete-options .checkbox-label {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.modal-content .delete-options .checkbox-label:hover {
+  border-color: rgba(var(--brand-rgb), 0.35);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.modal-content .delete-options .checkbox-input {
+  margin-top: 2px;
+  accent-color: var(--brand-500);
+}
+
+.modal-content .delete-options .checkbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.modal-content .delete-options .checkbox-title {
+  color: #f5f7fa;
+  font-weight: 600;
+}
+
+.modal-content .delete-options .checkbox-content small {
+  color: #b9c0c8;
+  line-height: 1.4;
 }
 
 /* Small modal size variations */

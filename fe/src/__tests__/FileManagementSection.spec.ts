@@ -14,6 +14,7 @@ describe('FileManagementSection', () => {
           folderNamingPattern: '{Author}/{Series}/{Title}',
           fileNamingPattern: '{Title}',
           completedFileAction: 'Move',
+          importBlacklistExtensions: ['.nfo'],
         },
       },
     })
@@ -32,6 +33,12 @@ describe('FileManagementSection', () => {
     await sel.setValue('Hardlink/Copy')
     last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.completedFileAction).toBe('Hardlink/Copy')
+
+    const textarea = wrapper.find('textarea')
+    await textarea.setValue('.nfo\njpg')
+    await textarea.trigger('change')
+    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    expect(last.importBlacklistExtensions).toEqual(['.nfo', '.jpg'])
   })
 
   it('shows preview for multi-file pattern with chapter numbers', async () => {

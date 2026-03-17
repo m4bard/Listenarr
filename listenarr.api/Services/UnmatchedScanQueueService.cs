@@ -6,6 +6,7 @@ namespace Listenarr.Api.Services
     public class UnmatchedFileResult
     {
         public string FullPath { get; set; } = string.Empty;
+        public List<string> SourceFiles { get; set; } = new();
         public string RelativePath { get; set; } = string.Empty;
         public string BookFolder { get; set; } = string.Empty;
         public long Size { get; set; }

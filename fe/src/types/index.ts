@@ -275,6 +275,7 @@ export interface ApplicationSettings {
   missingSourceMaxRetries?: number
   enableNotifications: boolean
   allowedFileExtensions: string[]
+  importBlacklistExtensions?: string[]
   // Action to perform for completed downloads.
   completedFileAction?: 'Move' | 'Copy' | 'Hardlink/Copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
@@ -706,6 +707,8 @@ export interface ManualImportRequest {
   path: string
   mode?: 'automatic' | 'interactive'
   inputMode?: 'move' | 'copy' | 'hardlink/copy'
+  includeCompanionFiles?: boolean
+  cleanupEmptySourceFolders?: boolean
   items?: ManualImportRequestItem[]
 }
 
@@ -795,6 +798,7 @@ export interface SearchResponse {
 
 export interface UnmatchedFileItem {
   fullPath: string
+  sourceFiles?: string[]
   relativePath: string
   bookFolder: string
   size: number

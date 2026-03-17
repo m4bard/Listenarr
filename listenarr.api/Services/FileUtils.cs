@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Listenarr.Api.Services
 {
@@ -25,6 +26,69 @@ namespace Listenarr.Api.Services
         {
             var ext = Path.GetExtension(filePath);
             return !string.IsNullOrEmpty(ext) && AudioExtensions.Contains(ext);
+        }
+
+        public static HashSet<string> NormalizeExtensions(IEnumerable<string>? extensions)
+        {
+            var normalized = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (extensions == null)
+            {
+                return normalized;
+            }
+
+            foreach (var rawValue in extensions)
+            {
+                if (string.IsNullOrWhiteSpace(rawValue))
+                {
+                    continue;
+                }
+
+                var tokens = rawValue.Split(new[] { ',', ';', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var token in tokens)
+                {
+                    var extension = token.Trim();
+                    if (string.IsNullOrWhiteSpace(extension))
+                    {
+                        continue;
+                    }
+
+                    if (!extension.StartsWith(".", StringComparison.Ordinal))
+                    {
+                        extension = "." + extension;
+                    }
+
+                    normalized.Add(extension);
+                }
+            }
+
+            return normalized;
+        }
+
+        public static bool IsBlacklistedImportFile(string filePath, IEnumerable<string>? blacklistExtensions)
+        {
+            var extension = Path.GetExtension(filePath);
+            if (string.IsNullOrWhiteSpace(extension))
+            {
+                return false;
+            }
+
+            var normalized = NormalizeExtensions(blacklistExtensions);
+            return normalized.Contains(extension);
+        }
+
+        public static bool ShouldSkipImportFile(string filePath, IEnumerable<string>? blacklistExtensions)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return true;
+            }
+
+            if (filePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return IsBlacklistedImportFile(filePath, blacklistExtensions);
         }
 
         /// <summary>
@@ -56,6 +120,184 @@ namespace Listenarr.Api.Services
             }
             catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 return desiredPath;
+            }
+        }
+
+        /// <summary>
+        /// Appends a stable sequence suffix (e.g. "-01") to the final filename segment.
+        /// Keeps any parent directories intact.
+        /// </summary>
+        public static string AppendSequenceSuffix(string desiredPath, int sequenceNumber)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(desiredPath))
+                    return desiredPath;
+
+                var directory = Path.GetDirectoryName(desiredPath);
+                var filename = Path.GetFileNameWithoutExtension(desiredPath);
+                var extension = Path.GetExtension(desiredPath);
+
+                if (string.IsNullOrWhiteSpace(filename))
+                    return desiredPath;
+
+                var suffixed = $"{filename}-{sequenceNumber:00}{extension}";
+                return string.IsNullOrWhiteSpace(directory)
+                    ? suffixed
+                    : Path.Combine(directory, suffixed);
+            }
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
+                return desiredPath;
+            }
+        }
+
+        public static bool IsPathWithinRoot(string childPath, string rootPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(childPath) || string.IsNullOrWhiteSpace(rootPath))
+                    return false;
+
+                var normalizedChild = Path.GetFullPath(childPath);
+                var normalizedRoot = Path.GetFullPath(rootPath)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    + Path.DirectorySeparatorChar;
+
+                return normalizedChild.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
+            }
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
+                return false;
+            }
+        }
+
+        public static string? GetCommonDirectory(IEnumerable<string> paths)
+        {
+            try
+            {
+                var directories = paths
+                    .Select(path =>
+                    {
+                        if (string.IsNullOrWhiteSpace(path))
+                        {
+                            return null;
+                        }
+
+                        var fullPath = Path.GetFullPath(path);
+                        return Path.GetDirectoryName(fullPath) ?? fullPath;
+                    })
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Cast<string>()
+                    .ToList();
+
+                if (directories.Count == 0)
+                {
+                    return null;
+                }
+
+                if (directories.Count == 1)
+                {
+                    return directories[0];
+                }
+
+                var commonPath = directories[0];
+                foreach (var directory in directories.Skip(1))
+                {
+                    commonPath = GetCommonPath(commonPath, directory);
+                    if (string.IsNullOrWhiteSpace(commonPath))
+                    {
+                        break;
+                    }
+                }
+
+                return string.IsNullOrWhiteSpace(commonPath) ? directories[0] : commonPath;
+            }
+            catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
+                return null;
+            }
+        }
+
+        public static void DeleteEmptyDirectories(string rootPath)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(rootPath) || !Directory.Exists(rootPath))
+                {
+                    return;
+                }
+
+                foreach (var directory in Directory.GetDirectories(rootPath, "*", SearchOption.AllDirectories)
+                    .OrderByDescending(path => path.Length))
+                {
+                    TryDeleteDirectoryIfEmpty(directory);
+                }
+
+                TryDeleteDirectoryIfEmpty(rootPath);
+            }
+            catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {
+                System.Diagnostics.Debug.WriteLine($"Suppressed empty-directory cleanup failure for '{rootPath}': {caughtEx_5.Message}");
+            }
+        }
+
+        private static string GetCommonPath(string firstPath, string secondPath)
+        {
+            var normalizedFirst = Path.GetFullPath(firstPath);
+            var normalizedSecond = Path.GetFullPath(secondPath);
+            var minLength = Math.Min(normalizedFirst.Length, normalizedSecond.Length);
+            var commonLength = 0;
+
+            for (var i = 0; i < minLength; i++)
+            {
+                if (normalizedFirst[i] != normalizedSecond[i])
+                {
+                    break;
+                }
+
+                commonLength++;
+            }
+
+            if (commonLength == 0)
+            {
+                return string.Empty;
+            }
+
+            if (commonLength < normalizedFirst.Length)
+            {
+                var lastSeparator = normalizedFirst.LastIndexOfAny(
+                    new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar },
+                    Math.Max(0, commonLength - 1));
+                commonLength = lastSeparator >= 0 ? lastSeparator + 1 : 0;
+            }
+
+            var commonPath = normalizedFirst.Substring(0, commonLength)
+                .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+            if (Directory.Exists(commonPath))
+            {
+                return commonPath;
+            }
+
+            return Directory.GetParent(commonPath)?.FullName ?? commonPath;
+        }
+
+        private static void TryDeleteDirectoryIfEmpty(string path)
+        {
+            try
+            {
+                if (!Directory.Exists(path))
+                {
+                    return;
+                }
+
+                if (Directory.EnumerateFileSystemEntries(path).Any())
+                {
+                    return;
+                }
+
+                Directory.Delete(path, recursive: false);
+            }
+            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) {
+                System.Diagnostics.Debug.WriteLine($"Suppressed empty-directory delete failure for '{path}': {caughtEx_6.Message}");
             }
         }
     }

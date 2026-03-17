@@ -20,6 +20,7 @@ using Listenarr.Domain.Models;
 using System.Text.Json;
 using System.Runtime.InteropServices;
 using System.IO;
+using System.Linq;
 
 namespace Listenarr.Api.Services
 {
@@ -182,6 +183,10 @@ namespace Listenarr.Api.Services
                                         {
                                             metadata.Bitrate = bitRate;
                                         }
+                                        if (fmt.TryGetProperty("tags", out var formatTags) && formatTags.ValueKind == JsonValueKind.Object)
+                                        {
+                                            ApplyTagMetadata(metadata, formatTags);
+                                        }
                                     }
 
                                     // Streams: look for audio stream for sample rate, channels
@@ -206,6 +211,10 @@ namespace Listenarr.Api.Services
                                                 if (s.TryGetProperty("codec_name", out var codecName) && codecName.ValueKind == JsonValueKind.String)
                                                 {
                                                     metadata.Codec = codecName.GetString();
+                                                }
+                                                if (s.TryGetProperty("tags", out var streamTags) && streamTags.ValueKind == JsonValueKind.Object)
+                                                {
+                                                    ApplyTagMetadata(metadata, streamTags);
                                                 }
                                                 break;
                                             }
@@ -256,6 +265,83 @@ namespace Listenarr.Api.Services
                 _logger.LogError(ex, $"Error extracting metadata from file: {filePath}");
                 return new AudioMetadata();
             }
+        }
+
+        private static void ApplyTagMetadata(AudioMetadata metadata, JsonElement tags)
+        {
+            metadata.Title = FirstNonEmpty(metadata.Title, GetTag(tags, "title", "TITLE"));
+            metadata.Artist = FirstNonEmpty(metadata.Artist, GetTag(tags, "artist", "ARTIST"));
+            metadata.Album = FirstNonEmpty(metadata.Album, GetTag(tags, "album", "ALBUM"));
+            metadata.AlbumArtist = FirstNonEmpty(metadata.AlbumArtist, GetTag(tags, "album_artist", "ALBUM_ARTIST", "album artist"));
+
+            metadata.TrackNumber ??= ParseNumericTag(tags, "track", "TRACK", "tracknumber", "TRACKNUMBER");
+            metadata.DiscNumber ??= ParseNumericTag(tags, "disc", "DISC", "discnumber", "DISCNUMBER");
+            metadata.Year ??= ParseNumericTag(tags, "date", "DATE", "year", "YEAR");
+        }
+
+        private static string FirstNonEmpty(params string?[] candidates)
+        {
+            foreach (var candidate in candidates)
+            {
+                if (!string.IsNullOrWhiteSpace(candidate))
+                {
+                    return candidate!;
+                }
+            }
+
+            return string.Empty;
+        }
+
+        private static string? GetTag(JsonElement tags, params string[] names)
+        {
+            foreach (var name in names)
+            {
+                if (TryGetTagValue(tags, name, out var value) && !string.IsNullOrWhiteSpace(value))
+                {
+                    return value.Trim();
+                }
+            }
+
+            return null;
+        }
+
+        private static int? ParseNumericTag(JsonElement tags, params string[] names)
+        {
+            var raw = GetTag(tags, names);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return null;
+            }
+
+            var token = raw.Split('/', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? raw;
+            var match = System.Text.RegularExpressions.Regex.Match(token, @"\d+");
+            return match.Success && int.TryParse(match.Value, out var parsed) ? parsed : null;
+        }
+
+        private static bool TryGetTagValue(JsonElement tags, string name, out string? value)
+        {
+            if (tags.TryGetProperty(name, out var direct) && direct.ValueKind == JsonValueKind.String)
+            {
+                value = direct.GetString();
+                return true;
+            }
+
+            foreach (var property in tags.EnumerateObject())
+            {
+                if (!string.Equals(property.Name, name, StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                if (property.Value.ValueKind == JsonValueKind.String)
+                {
+                    value = property.Value.GetString();
+                    return true;
+                }
+            }
+
+            value = null;
+            return false;
         }
 
         public async Task ApplyMetadataAsync(string filePath, AudioMetadata metadata)

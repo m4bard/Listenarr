@@ -8,6 +8,7 @@ import type { SearchResult, AudibleBookMetadata, UnmatchedFileItem } from '@/typ
 export interface LibraryImportItem {
   id: string            // = fullPath (unique key)
   fullPath: string      // path to audio file
+  sourceFiles: string[] // all source files represented by this row
   folderPath: string    // bookFolder (parent directory)
   relativePath: string  // relative to root folder
   folderName: string    // search term: last non-empty path segment
@@ -79,6 +80,7 @@ function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
   return {
     id: item.fullPath,
     fullPath: item.fullPath,
+    sourceFiles: item.sourceFiles && item.sourceFiles.length > 0 ? item.sourceFiles : [item.fullPath],
     folderPath: item.bookFolder,
     relativePath: item.relativePath,
     folderName: extractFolderName(item.relativePath),
@@ -485,7 +487,12 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
           path: item.folderPath,
           mode: 'interactive',
           inputMode: inputMode.value,
-          items: [{ fullPath: item.fullPath, matchedAudiobookId: audiobookId }],
+          includeCompanionFiles: true,
+          cleanupEmptySourceFolders: inputMode.value === 'move',
+          items: item.sourceFiles.map((fullPath) => ({
+            fullPath,
+            matchedAudiobookId: audiobookId,
+          })),
         })
         // Remove imported item from store
         const updated = { ...items.value }

@@ -212,6 +212,7 @@ namespace Listenarr.Api.Services
 
                 // Defensive: ensure collection/complex properties are non-null so callers
                 // can safely work with them without needing null checks
+                settings.ImportBlacklistExtensions ??= new List<string>();
                 settings.EnabledNotificationTriggers ??= new List<string>();
                 settings.Webhooks ??= new List<WebhookConfiguration>();
 
@@ -317,6 +318,7 @@ namespace Listenarr.Api.Services
                     _dbContext.Entry(existing).CurrentValues.SetValues(settings);
                     // Manually update list property
                     existing.AllowedFileExtensions = settings.AllowedFileExtensions;
+                    existing.ImportBlacklistExtensions = settings.ImportBlacklistExtensions ?? new List<string>();
 
                     // Explicitly update collection/complex properties so EF's current values
                     // replacement doesn't inadvertently skip or null them (ensures conversions

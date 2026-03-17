@@ -548,6 +548,81 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        [Trait("Scenario", "DirectoryImportIncludesCompanionFilesAndRespectsBlacklist")]
+        public async Task ProcessCompletedDownloadAsync_Directory_PassesCompanionFilesExceptBlacklisted()
+        {
+            var downloadId = Guid.NewGuid().ToString();
+            var tempDir = System.IO.Path.Join(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(tempDir);
+            var audioPath = System.IO.Path.Join(tempDir, "file1.mp3");
+            var coverPath = System.IO.Path.Join(tempDir, "cover.jpg");
+            var nfoPath = System.IO.Path.Join(tempDir, "release.nfo");
+            System.IO.File.WriteAllText(audioPath, "dummy");
+            System.IO.File.WriteAllText(coverPath, "cover");
+            System.IO.File.WriteAllText(nfoPath, "nfo");
+
+            var repo = new TestDownloadRepository();
+            await repo.AddAsync(new Download { Id = downloadId, Status = DownloadStatus.Downloading });
+
+            string[]? capturedFiles = null;
+            var fileFinalizerMock = new Mock<IFileFinalizer>();
+            fileFinalizerMock
+                .Setup(f => f.ImportFilesFromDirectoryAsync(downloadId, null, It.IsAny<IEnumerable<string>>(), It.IsAny<ApplicationSettings>()))
+                .Callback<string, int?, IEnumerable<string>, ApplicationSettings>((_, _, files, _) => capturedFiles = files.ToArray())
+                .ReturnsAsync((string _, int? _, IEnumerable<string> files, ApplicationSettings _) =>
+                    files.Select(f => new ImportResult
+                    {
+                        Success = true,
+                        SourcePath = f,
+                        FinalPath = f
+                    }).ToList());
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings
+            {
+                ExtractArchives = false,
+                ImportBlacklistExtensions = new List<string> { ".nfo" }
+            });
+
+            var scopeFactoryMock = new Mock<IServiceScopeFactory>();
+            var scopeMock = new Mock<IServiceScope>();
+            var spMock = new Mock<IServiceProvider>();
+            spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
+            scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
+            scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
+
+            var importMock = new Mock<IImportService>();
+            var queueMock = new Mock<IDownloadQueueService>();
+            queueMock.Setup(q => q.GetQueueAsync()).ReturnsAsync(new List<Listenarr.Domain.Models.QueueItem>());
+            var hubContextMock = new Mock<IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+            var loggerMock = new Mock<ILogger<CompletedDownloadProcessor>>();
+            var archiveExtractor = new ArchiveExtractor(new Mock<ILogger<ArchiveExtractor>>().Object);
+
+            var processor = new CompletedDownloadProcessor(
+                repo,
+                fileFinalizerMock.Object,
+                configMock.Object,
+                scopeFactoryMock.Object,
+                importMock.Object,
+                archiveExtractor,
+                queueMock.Object,
+                hubContextMock.Object,
+                loggerMock.Object);
+
+            await processor.ProcessCompletedDownloadAsync(downloadId, tempDir);
+
+            Assert.NotNull(capturedFiles);
+            Assert.Contains(audioPath, capturedFiles!);
+            Assert.Contains(coverPath, capturedFiles!);
+            Assert.DoesNotContain(nfoPath, capturedFiles!);
+
+            TryDeleteFile(audioPath);
+            TryDeleteFile(coverPath);
+            TryDeleteFile(nfoPath);
+            TryDeleteDirectory(tempDir, recursive: true);
+        }
+
+        [Fact]
         [Trait("Scenario", "RecursiveDirectoryImportsNestedFile")]
         public async Task ProcessCompletedDownloadAsync_RecursiveDirectory_ImportsNestedFile()
         {

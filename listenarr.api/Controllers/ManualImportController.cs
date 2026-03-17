@@ -120,22 +120,44 @@ public class ManualImportController : ControllerBase
                 var usedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 // Fetch root folders once for the whole batch (used for path containment validation)
                 var batchRootFolders = await _rootFolderService.GetAllAsync();
+                var appSettings = await _configService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
+                var importBlacklist = FileUtils.NormalizeExtensions(appSettings.ImportBlacklistExtensions);
+                var orderedItems = BuildOrderedItems(request.Items);
 
                 // Count files per audiobook to determine if multi-file import
-                var filesPerAudiobook = request.Items
+                var filesPerAudiobook = orderedItems
                     .GroupBy(i => i.MatchedAudiobookId)
                     .ToDictionary(g => g.Key, g => g.Count());
 
-                _logger.LogDebug("Manual import batch: {ItemCount} items, filesPerAudiobook: {AudiobookFileCount}", request.Items.Count, string.Join(";", filesPerAudiobook.Select(x => $"{x.Key}:{x.Value}")));
+                _logger.LogDebug("Manual import batch: {ItemCount} items, filesPerAudiobook: {AudiobookFileCount}", orderedItems.Count, string.Join(";", filesPerAudiobook.Select(x => $"{x.Key}:{x.Value}")));
 
-                foreach (var item in request.Items)
+                foreach (var item in orderedItems)
                 {
                     var isMultiFile = filesPerAudiobook.TryGetValue(item.MatchedAudiobookId, out var count) && count > 1;
-                    _logger.LogDebug("Importing item {Index}: {Path} for audiobook {AudiobookId}, isMultiFile: {IsMultiFile}", request.Items.IndexOf(item), item.FullPath, item.MatchedAudiobookId, isMultiFile);
-                    var result = await ImportFileAsync(item, request.InputMode ?? "copy", usedDestinations, isMultiFile, batchRootFolders);
-                    _logger.LogDebug("Import result {Index}: Success={Success}, Destination={Destination}, Error={Error}", request.Items.IndexOf(item), result.Success, result.DestinationPath, result.Error);
+                    _logger.LogDebug("Importing item {Index}: {Path} for audiobook {AudiobookId}, isMultiFile: {IsMultiFile}", orderedItems.IndexOf(item), item.FullPath, item.MatchedAudiobookId, isMultiFile);
+                    var result = await ImportFileAsync(item, request.InputMode ?? "copy", usedDestinations, isMultiFile, batchRootFolders, normalized);
+                    _logger.LogDebug("Import result {Index}: Success={Success}, Destination={Destination}, Error={Error}", orderedItems.IndexOf(item), result.Success, result.DestinationPath, result.Error);
                     results.Add(result);
                 }
+
+                if (request.IncludeCompanionFiles)
+                {
+                    var companionImportCount = await ImportCompanionFilesAsync(
+                        request,
+                        orderedItems,
+                        results,
+                        normalized,
+                        usedDestinations,
+                        importBlacklist);
+                    _logger.LogInformation("Manual import companion-file pass completed with {Count} imported companion file(s)", companionImportCount);
+                }
+
+                if (request.CleanupEmptySourceFolders && string.Equals(request.InputMode, "move", StringComparison.OrdinalIgnoreCase))
+                {
+                    FileUtils.DeleteEmptyDirectories(normalized);
+                }
+
+                await EnqueueFocusedScansAsync(results);
 
                 var successCount = results.Count(r => r.Success);
                 _logger.LogInformation("Manual import batch completed: {SuccessCount}/{TotalCount} succeeded, usedDestinations: {DestinationCount}", successCount, results.Count, usedDestinations.Count);
@@ -155,7 +177,7 @@ public class ManualImportController : ControllerBase
         }
     }
 
-    private async Task<ManualImportResult> ImportFileAsync(ManualImportItem item, string inputMode, HashSet<string>? usedDestinations = null, bool isMultiFile = false, IEnumerable<Listenarr.Domain.Models.RootFolder>? rootFolders = null)
+    private async Task<ManualImportResult> ImportFileAsync(ManualImportItem item, string inputMode, HashSet<string>? usedDestinations = null, bool isMultiFile = false, IEnumerable<Listenarr.Domain.Models.RootFolder>? rootFolders = null, string? sourceRootPath = null)
     {
         try
         {
@@ -196,22 +218,25 @@ public class ManualImportController : ControllerBase
             // Validate source is within a configured root folder (prevents path traversal)
             var normalizedSource = Path.GetFullPath(item.FullPath);
             var allRootFolders = rootFolders ?? await _rootFolderService.GetAllAsync();
-            var isUnderRoot = allRootFolders.Any(r =>
+            var isUnderRequestedRoot = !string.IsNullOrWhiteSpace(sourceRootPath)
+                && (string.Equals(normalizedSource, Path.GetFullPath(sourceRootPath), StringComparison.OrdinalIgnoreCase)
+                    || FileUtils.IsPathWithinRoot(normalizedSource, sourceRootPath));
+            var isUnderConfiguredRoot = allRootFolders.Any(r =>
             {
                 try
                 {
-                    var root = Path.GetFullPath(r.Path).TrimEnd(Path.DirectorySeparatorChar) + Path.DirectorySeparatorChar;
-                    return normalizedSource.StartsWith(root, StringComparison.OrdinalIgnoreCase);
+                    return FileUtils.IsPathWithinRoot(normalizedSource, r.Path)
+                        || string.Equals(normalizedSource, Path.GetFullPath(r.Path), StringComparison.OrdinalIgnoreCase);
                 }
                 catch { return false; }
             });
-            if (!isUnderRoot)
+            if (!isUnderRequestedRoot && !isUnderConfiguredRoot)
             {
-                _logger.LogWarning("Rejected manual import: {Path} is not within a configured root folder", item.FullPath);
+                _logger.LogWarning("Rejected manual import: {Path} is not within the requested path or a configured root folder", item.FullPath);
                 return new ManualImportResult
                 {
                     Success = false,
-                    Error = "Source file is not within a configured root folder",
+                    Error = "Source file is not within the requested import path or a configured root folder",
                     FilePath = item.FullPath
                 };
             }
@@ -249,7 +274,7 @@ public class ManualImportController : ControllerBase
             }
 
             // Generate destination path using appropriate naming pattern
-            var destinationPath = await GenerateManualImportPathAsync(audiobook, metadata, item.FullPath, isMultiFile);
+            var destinationPath = await GenerateManualImportPathAsync(audiobook, metadata, item, isMultiFile);
 
             // Ensure destination directory exists
             var destinationDir = Path.GetDirectoryName(destinationPath);
@@ -294,6 +319,8 @@ public class ManualImportController : ControllerBase
                 throw;
             }
             // Write ASIN to embedded file tags (non-critical — failure is logged, not thrown)
+            await EnsureAudiobookBasePathAsync(audiobook, destinationPath);
+
             if (!string.IsNullOrWhiteSpace(audiobook.Asin))
                 await _metadataService.WriteAsinTagAsync(destinationPath, audiobook.Asin);
 
@@ -313,31 +340,6 @@ public class ManualImportController : ControllerBase
             catch (InvalidOperationException ex)
             {
                 _logger.LogDebug(ex, "Failed tracking used destination during manual import for {Destination}", destinationPath);
-            }
-            // After a successful move/copy, enqueue a focused scan for the matched audiobook
-            try
-            {
-                if (_scanQueueService != null)
-                {
-                    var scanJobId = await _scanQueueService.EnqueueScanAsync(audiobook.Id, destinationPath);
-                    _logger.LogInformation("Enqueued focused scan {ScanJobId} for audiobook {AudiobookId} (path: {Path}) after manual import", scanJobId, audiobook.Id, destinationPath);
-                }
-                else
-                {
-                    _logger.LogDebug("IScanQueueService not available - skipping enqueue of focused scan for audiobook {AudiobookId}", audiobook.Id);
-                }
-            }
-            catch (ObjectDisposedException ex)
-            {
-                _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", audiobook.Id);
-            }
-            catch (InvalidOperationException ex)
-            {
-                _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", audiobook.Id);
-            }
-            catch (OperationCanceledException ex)
-            {
-                _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", audiobook.Id);
             }
 
             return new ManualImportResult
@@ -360,8 +362,104 @@ public class ManualImportController : ControllerBase
         }
     }
 
-    private async Task<string> GenerateManualImportPathAsync(Audiobook audiobook, AudioMetadata metadata, string sourceFilePath, bool isMultiFile = false)
+    private async Task EnqueueFocusedScansAsync(IEnumerable<ManualImportResult> results)
     {
+        if (_scanQueueService == null)
+        {
+            _logger.LogDebug("IScanQueueService not available - skipping focused scan enqueue after manual import");
+            return;
+        }
+
+        var groupedResults = results
+            .Where(r => r.Success && r.AudiobookId.HasValue && !string.IsNullOrWhiteSpace(r.DestinationPath))
+            .GroupBy(r => r.AudiobookId!.Value);
+
+        foreach (var group in groupedResults)
+        {
+            var scanPath = DetermineScanPath(group
+                .Select(r => r.DestinationPath!)
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .ToList());
+
+            if (string.IsNullOrWhiteSpace(scanPath))
+            {
+                _logger.LogDebug("No focused scan path could be determined for audiobook {AudiobookId} after manual import", group.Key);
+                continue;
+            }
+
+            await PersistAudiobookBasePathAsync(group.Key, scanPath);
+
+            try
+            {
+                var scanJobId = await _scanQueueService.EnqueueScanAsync(group.Key, scanPath);
+                _logger.LogInformation(
+                    "Enqueued focused scan {ScanJobId} for audiobook {AudiobookId} (path: {Path}) after manual import batch of {FileCount} file(s)",
+                    scanJobId,
+                    group.Key,
+                    scanPath,
+                    group.Count());
+            }
+            catch (ObjectDisposedException ex)
+            {
+                _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", group.Key);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", group.Key);
+            }
+            catch (OperationCanceledException ex)
+            {
+                _logger.LogWarning(ex, "Failed to enqueue scan for audiobook {AudiobookId} after manual import", group.Key);
+            }
+        }
+    }
+
+    private async Task PersistAudiobookBasePathAsync(int audiobookId, string scanPath)
+    {
+        if (string.IsNullOrWhiteSpace(scanPath))
+        {
+            return;
+        }
+
+        try
+        {
+            var audiobook = await _audiobookRepository.GetByIdAsync(audiobookId);
+            if (audiobook == null)
+            {
+                return;
+            }
+
+            var normalizedCurrent = string.IsNullOrWhiteSpace(audiobook.BasePath)
+                ? string.Empty
+                : Path.GetFullPath(audiobook.BasePath);
+            var normalizedScanPath = Path.GetFullPath(scanPath);
+
+            if (string.Equals(normalizedCurrent, normalizedScanPath, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+
+            audiobook.BasePath = normalizedScanPath;
+            await _audiobookRepository.UpdateAsync(audiobook);
+            _logger.LogInformation(
+                "Updated audiobook {AudiobookId} BasePath to imported scan root {BasePath} after manual import",
+                audiobookId,
+                normalizedScanPath);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            _logger.LogWarning(ex, "Failed to persist BasePath for audiobook {AudiobookId} after manual import", audiobookId);
+        }
+    }
+
+    private static string? DetermineScanPath(IReadOnlyList<string> destinationPaths)
+    {
+        return FileUtils.GetCommonDirectory(destinationPaths);
+    }
+
+    private async Task<string> GenerateManualImportPathAsync(Audiobook audiobook, AudioMetadata metadata, ManualImportItem item, bool isMultiFile = false)
+    {
+        var sourceFilePath = item.FullPath ?? string.Empty;
         // Get the configured folder/file naming patterns from settings
         var settings = await _configService.GetApplicationSettingsAsync();
         var folderPattern = settings.FolderNamingPattern;
@@ -433,14 +531,30 @@ public class ManualImportController : ControllerBase
         
         if (!string.IsNullOrWhiteSpace(audiobook.PublishYear))
             variables["Year"] = audiobook.PublishYear;
-        
-        if (metadata.DiscNumber.HasValue && metadata.DiscNumber.Value > 0)
-            variables["DiskNumber"] = metadata.DiscNumber.Value.ToString("00");
-        
-        if (metadata.TrackNumber.HasValue && metadata.TrackNumber.Value > 0)
-            variables["ChapterNumber"] = metadata.TrackNumber.Value.ToString();
+
+        var effectiveDiskNumber = item.DiskNumberHint
+            ?? (metadata.DiscNumber.HasValue && metadata.DiscNumber.Value > 0 ? metadata.DiscNumber.Value : null);
+        var effectiveChapterNumber = item.ChapterNumberHint
+            ?? (metadata.TrackNumber.HasValue && metadata.TrackNumber.Value > 0 ? metadata.TrackNumber.Value : null);
+
+        if (isMultiFile)
+        {
+            effectiveDiskNumber ??= effectiveChapterNumber;
+            effectiveChapterNumber ??= effectiveDiskNumber;
+        }
+
+        if (effectiveDiskNumber.HasValue && effectiveDiskNumber.Value > 0)
+            variables["DiskNumber"] = effectiveDiskNumber.Value;
+
+        if (effectiveChapterNumber.HasValue && effectiveChapterNumber.Value > 0)
+            variables["ChapterNumber"] = effectiveChapterNumber.Value;
+
+        var stableSuffixNumber = effectiveChapterNumber ?? effectiveDiskNumber ?? item.SequenceNumberHint;
 
         string relativePath;
+        var patternHasNumberTokens = !string.IsNullOrWhiteSpace(filePattern)
+            && (filePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                || filePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0);
 
         if (string.IsNullOrWhiteSpace(folderPattern))
         {
@@ -478,9 +592,18 @@ public class ManualImportController : ControllerBase
 
             var fileRelative = _fileNamingService.ApplyNamingPattern(effectiveFilePattern, variables, treatAsFilename: !patternAllowsSubfolders);
 
+            if (isMultiFile && !patternHasNumberTokens && stableSuffixNumber.HasValue)
+                fileRelative = FileUtils.AppendSequenceSuffix(fileRelative, stableSuffixNumber.Value);
+
             relativePath = string.IsNullOrWhiteSpace(folderRelative)
                 ? fileRelative
                 : CombineWithOptionalBase(folderRelative, fileRelative);
+        }
+
+        if (string.IsNullOrWhiteSpace(folderPattern) || isCustomBasePath)
+        {
+            if (isMultiFile && !patternHasNumberTokens && stableSuffixNumber.HasValue)
+                relativePath = FileUtils.AppendSequenceSuffix(relativePath, stableSuffixNumber.Value);
         }
 
         // Ensure it has the correct extension
@@ -492,6 +615,59 @@ public class ManualImportController : ControllerBase
         return string.IsNullOrWhiteSpace(basePath)
             ? relativePath
             : CombineWithOptionalBase(basePath, relativePath);
+    }
+
+    private async Task EnsureAudiobookBasePathAsync(Audiobook audiobook, string destinationPath)
+    {
+        if (string.IsNullOrWhiteSpace(destinationPath))
+        {
+            return;
+        }
+
+        string? associationBasePath;
+        try
+        {
+            associationBasePath = Path.GetDirectoryName(Path.GetFullPath(destinationPath));
+        }
+        catch
+        {
+            associationBasePath = Path.GetDirectoryName(destinationPath);
+        }
+
+        if (string.IsNullOrWhiteSpace(associationBasePath))
+        {
+            return;
+        }
+
+        if (!string.IsNullOrWhiteSpace(audiobook.BasePath))
+        {
+            try
+            {
+                var normalizedCurrent = Path.GetFullPath(audiobook.BasePath);
+                if (string.Equals(normalizedCurrent, associationBasePath, StringComparison.OrdinalIgnoreCase)
+                    || FileUtils.IsPathWithinRoot(destinationPath, normalizedCurrent))
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                if (string.Equals(audiobook.BasePath, associationBasePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+
+        try
+        {
+            audiobook.BasePath = associationBasePath;
+            await _audiobookRepository.UpdateAsync(audiobook);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            _logger.LogDebug(ex, "Failed to persist BasePath {BasePath} for audiobook {AudiobookId} after manual import", associationBasePath, audiobook.Id);
+        }
     }
 
     private static string CombineWithOptionalBase(string? basePath, string candidatePath)
@@ -520,6 +696,131 @@ public class ManualImportController : ControllerBase
             : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
     }
 
+    private static List<ManualImportItem> BuildOrderedItems(IEnumerable<ManualImportItem> items)
+    {
+        var ordered = new List<ManualImportItem>();
+
+        foreach (var group in items.GroupBy(i => i.MatchedAudiobookId))
+        {
+            var validItems = group
+                .Where(i => !string.IsNullOrWhiteSpace(i.FullPath))
+                .ToList();
+
+            if (validItems.Count == 0)
+            {
+                continue;
+            }
+
+            var plans = MultiFileImportPlanner.BuildPlans(validItems.Select(i => (i.FullPath!, string.IsNullOrWhiteSpace(i.RelativePath) ? null : i.RelativePath)));
+            var itemLookup = validItems.ToDictionary(i => i.FullPath!, StringComparer.OrdinalIgnoreCase);
+            var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plans, p => p.DiskNumberHint);
+            var chapterNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plans, p => p.ChapterNumberHint);
+
+            foreach (var plan in plans)
+            {
+                if (!itemLookup.TryGetValue(plan.FullPath, out var item))
+                {
+                    continue;
+                }
+
+                item.SequenceNumberHint = plan.SequenceNumber;
+                item.DiskNumberHint = diskNumbersForNaming.TryGetValue(plan.FullPath, out var diskNumber) ? diskNumber : plan.DiskNumberHint;
+                item.ChapterNumberHint = chapterNumbersForNaming.TryGetValue(plan.FullPath, out var chapterNumber) ? chapterNumber : plan.ChapterNumberHint;
+                ordered.Add(item);
+            }
+        }
+
+        foreach (var invalidItem in items.Where(i => string.IsNullOrWhiteSpace(i.FullPath)))
+        {
+            ordered.Add(invalidItem);
+        }
+
+        return ordered;
+    }
+
+    private async Task<int> ImportCompanionFilesAsync(
+        ManualImportRequest request,
+        IReadOnlyCollection<ManualImportItem> orderedItems,
+        IReadOnlyCollection<ManualImportResult> results,
+        string sourceRootPath,
+        HashSet<string> usedDestinations,
+        IReadOnlyCollection<string> importBlacklist)
+    {
+        var audiobookIds = orderedItems
+            .Select(item => item.MatchedAudiobookId)
+            .Distinct()
+            .ToList();
+
+        if (audiobookIds.Count != 1)
+        {
+            _logger.LogDebug("Skipping companion-file import because the batch contains {Count} audiobook targets", audiobookIds.Count);
+            return 0;
+        }
+
+        var destinationRoot = DetermineScanPath(results
+            .Where(r => r.Success && !string.IsNullOrWhiteSpace(r.DestinationPath))
+            .Select(r => r.DestinationPath!)
+            .ToList());
+
+        if (string.IsNullOrWhiteSpace(destinationRoot))
+        {
+            _logger.LogDebug("Skipping companion-file import because no destination root could be resolved for {SourceRoot}", sourceRootPath);
+            return 0;
+        }
+
+        var selectedSourceFiles = new HashSet<string>(
+            orderedItems
+                .Where(item => !string.IsNullOrWhiteSpace(item.FullPath))
+                .Select(item => Path.GetFullPath(item.FullPath!)),
+            StringComparer.OrdinalIgnoreCase);
+
+        var companionFiles = Directory.EnumerateFiles(sourceRootPath, "*", SearchOption.AllDirectories)
+            .Where(file => !FileUtils.ShouldSkipImportFile(file, importBlacklist))
+            .Select(Path.GetFullPath)
+            .Where(file => !selectedSourceFiles.Contains(file))
+            .ToList();
+
+        var importedCount = 0;
+        foreach (var companionFile in companionFiles)
+        {
+            try
+            {
+                var relativePath = Path.GetRelativePath(sourceRootPath, companionFile);
+                if (relativePath.StartsWith("..", StringComparison.Ordinal))
+                {
+                    continue;
+                }
+
+                var destinationPath = CombineWithOptionalBase(destinationRoot, relativePath);
+                var destinationDir = Path.GetDirectoryName(destinationPath);
+                if (!string.IsNullOrWhiteSpace(destinationDir))
+                {
+                    Directory.CreateDirectory(destinationDir);
+                }
+
+                destinationPath = FileUtils.GetUniqueDestinationPath(destinationPath, System.IO.File.Exists, usedDestinations);
+
+                if (string.Equals(request.InputMode, "move", StringComparison.OrdinalIgnoreCase))
+                {
+                    System.IO.File.Move(companionFile, destinationPath, overwrite: false);
+                }
+                else
+                {
+                    System.IO.File.Copy(companionFile, destinationPath, overwrite: false);
+                }
+
+                usedDestinations.Add(destinationPath);
+                importedCount++;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to import companion file {FilePath} during manual import", companionFile);
+            }
+        }
+
+        return importedCount;
+    }
+
     private static string FormatSize(long bytes)
     {
         if (bytes < 1024) return $"{bytes} B";
@@ -545,6 +846,12 @@ public class ManualImportRequest
 
     [JsonPropertyName("inputMode")]
     public string? InputMode { get; set; } // "move" or "copy"
+
+    [JsonPropertyName("includeCompanionFiles")]
+    public bool IncludeCompanionFiles { get; set; }
+
+    [JsonPropertyName("cleanupEmptySourceFolders")]
+    public bool CleanupEmptySourceFolders { get; set; }
 
     [JsonPropertyName("items")]
     public List<ManualImportItem>? Items { get; set; }
@@ -573,6 +880,15 @@ public class ManualImportItem
 
     [JsonPropertyName("size")]
     public string? Size { get; set; }
+
+    [JsonIgnore]
+    public int? SequenceNumberHint { get; set; }
+
+    [JsonIgnore]
+    public int? DiskNumberHint { get; set; }
+
+    [JsonIgnore]
+    public int? ChapterNumberHint { get; set; }
 }
 
 public class ManualImportResult

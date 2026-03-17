@@ -59,19 +59,23 @@ namespace Listenarr.Api.Services
                     var audiobook = await db.Audiobooks.FindAsync(audiobookId);
                     if (audiobook != null && !string.IsNullOrWhiteSpace(audiobook.FilePath))
                     {
-                        var existingDir = Path.GetFullPath(Path.GetDirectoryName(audiobook.FilePath) ?? string.Empty);
-                        var candidateDir = Path.GetFullPath(Path.GetDirectoryName(filePath) ?? string.Empty);
-                        var candidateFull = Path.GetFullPath(filePath);
+                        var existingDir = NormalizePath(Path.GetDirectoryName(audiobook.FilePath));
+                        var candidateDir = NormalizePath(Path.GetDirectoryName(filePath));
+                        var candidateFull = NormalizePath(filePath);
+                        var normalizedBasePath = NormalizePath(audiobook.BasePath);
 
-                        if (!string.IsNullOrEmpty(existingDir) && !string.IsNullOrEmpty(candidateDir))
+                        if (!string.IsNullOrEmpty(existingDir)
+                            && !string.IsNullOrEmpty(candidateDir)
+                            && !string.IsNullOrEmpty(candidateFull))
                         {
                             // Ensure candidate is the same directory or a subdirectory of the existing dir
                             var isInExistingDir = candidateDir.Equals(existingDir, StringComparison.OrdinalIgnoreCase) ||
-                                                   candidateDir.StartsWith(existingDir + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
-                            
+                                                  FileUtils.IsPathWithinRoot(candidateDir, existingDir);
+
                             // Also allow if file is within the audiobook's BasePath (multi-file migration)
-                            var isInBasePath = !string.IsNullOrWhiteSpace(audiobook.BasePath) &&
-                                               candidateFull.StartsWith(Path.GetFullPath(audiobook.BasePath) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+                            var isInBasePath = !string.IsNullOrWhiteSpace(normalizedBasePath) &&
+                                               (candidateDir.Equals(normalizedBasePath, StringComparison.OrdinalIgnoreCase)
+                                                || FileUtils.IsPathWithinRoot(candidateFull, normalizedBasePath));
 
                             if (!isInExistingDir && !isInBasePath)
                             {
@@ -311,6 +315,24 @@ namespace Listenarr.Api.Services
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to create AudiobookFile record for audiobook {AudiobookId} at {Path}", audiobookId, filePath);
                 return false;
+            }
+        }
+
+        private static string? NormalizePath(string? path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            try
+            {
+                return Path.GetFullPath(path)
+                    .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            catch
+            {
+                return null;
             }
         }
     }

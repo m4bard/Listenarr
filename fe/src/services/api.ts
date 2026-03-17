@@ -1074,8 +1074,16 @@ class ApiService {
     })
   }
 
-  async removeFromLibrary(id: number): Promise<{ message: string; id: number }> {
-    return this.request<{ message: string; id: number }>(`/library/${id}`, {
+  async removeFromLibrary(
+    id: number,
+    options?: { deleteFiles?: boolean; deleteFolder?: boolean },
+  ): Promise<{ message: string; id: number }> {
+    const params = new URLSearchParams()
+    if (options?.deleteFiles !== undefined) params.set('deleteFiles', String(options.deleteFiles))
+    if (options?.deleteFolder !== undefined)
+      params.set('deleteFolder', String(options.deleteFolder))
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    return this.request<{ message: string; id: number }>(`/library/${id}${suffix}`, {
       method: 'DELETE',
     })
   }

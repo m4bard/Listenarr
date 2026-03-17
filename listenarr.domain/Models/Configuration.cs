@@ -152,6 +152,7 @@ namespace Listenarr.Domain.Models
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;
+        public List<string> ImportBlacklistExtensions { get; set; } = new();
 
         /// <summary>
         /// Webhook URL for sending notifications (legacy single webhook).
