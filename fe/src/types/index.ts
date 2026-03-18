@@ -56,6 +56,7 @@ export interface MetadataSearchResult extends BaseSearchResult {
   isbn?: string
   series?: string
   seriesNumber?: string
+  seriesAsin?: string
   seriesList?: string[]
   genres?: string[] // Genres from metadata sources (e.g., Audimeta)
   productUrl?: string // Direct link to Amazon/Audible product page
@@ -100,6 +101,7 @@ export interface SearchResult extends BaseSearchResult {
   isbn?: string
   series?: string
   seriesNumber?: string
+  seriesAsin?: string
   seriesList?: string[]
   genres?: string[] // Genres from metadata sources (e.g., Audimeta)
   productUrl?: string // Direct link to Amazon/Audible product page
@@ -264,6 +266,7 @@ export interface ApplicationSettings {
   enableCoverArtDownload: boolean
   audnexusApiUrl: string
   maxConcurrentDownloads: number
+  unmatchedScanConcurrency?: number
   pollingIntervalSeconds?: number
   // How many seconds a download must be observed as complete by the client before finalization begins
   downloadCompletionStabilitySeconds?: number
@@ -272,8 +275,9 @@ export interface ApplicationSettings {
   missingSourceMaxRetries?: number
   enableNotifications: boolean
   allowedFileExtensions: string[]
-  // Action to perform for completed downloads: 'Move' or 'Copy'
-  completedFileAction?: 'Move' | 'Copy'
+  importBlacklistExtensions?: string[]
+  // Action to perform for completed downloads.
+  completedFileAction?: 'Move' | 'Copy' | 'Hardlink/Copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
   // Failed download handling
@@ -348,6 +352,7 @@ export interface AudibleBookMetadata {
   publishYear?: string
   series?: string
   seriesNumber?: string
+  seriesAsin?: string
   seriesList?: string[]
   description?: string
   genres?: string[]
@@ -702,6 +707,8 @@ export interface ManualImportRequest {
   path: string
   mode?: 'automatic' | 'interactive'
   inputMode?: 'move' | 'copy' | 'hardlink/copy'
+  includeCompanionFiles?: boolean
+  cleanupEmptySourceFolders?: boolean
   items?: ManualImportRequestItem[]
 }
 
@@ -785,4 +792,38 @@ export interface SearchResponse {
   indexerResults: IndexerSearchResult[]
   metadataResults: MetadataSearchResult[]
   totalCount: number
+}
+
+// Unmatched file scan types
+
+export interface UnmatchedFileItem {
+  fullPath: string
+  sourceFiles?: string[]
+  relativePath: string
+  bookFolder: string
+  size: number
+  fileCount: number
+  title?: string
+  author?: string
+  series?: string
+  seriesNumber?: string
+  year?: string
+  narrator?: string
+  description?: string
+  coverPath?: string
+  asin?: string
+  format: string
+  duration?: string
+}
+
+export interface UnmatchedFilesResponse {
+  jobId: string
+  status: 'Queued' | 'Processing' | 'Completed' | 'Failed'
+  error?: string
+  items: UnmatchedFileItem[]
+}
+
+export interface SavedUnmatchedResponse {
+  lastScannedAt?: string
+  items: UnmatchedFileItem[]
 }

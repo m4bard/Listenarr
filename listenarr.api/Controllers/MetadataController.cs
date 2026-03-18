@@ -13,6 +13,7 @@ namespace Listenarr.Api.Controllers
         private readonly IAudiobookMetadataService _metadataService;
         private readonly ILogger<MetadataController> _logger;
         private readonly AudimetaService _audimetaService;
+        private readonly IAudnexusService _audnexusService;
         private readonly IImageCacheService _imageCacheService;
         private readonly IMemoryCache _cache;
         private readonly IAudiobookRepository _audiobookRepository;
@@ -21,6 +22,7 @@ namespace Listenarr.Api.Controllers
         public MetadataController(
             IAudiobookMetadataService metadataService,
             AudimetaService audimetaService,
+            IAudnexusService audnexusService,
             IImageCacheService imageCacheService,
             IMemoryCache cache,
             IAudiobookRepository audiobookRepository,
@@ -29,6 +31,7 @@ namespace Listenarr.Api.Controllers
         {
             _metadataService = metadataService;
             _audimetaService = audimetaService;
+            _audnexusService = audnexusService;
             _imageCacheService = imageCacheService;
             _cache = cache;
             _audiobookRepository = audiobookRepository;
@@ -205,24 +208,54 @@ namespace Listenarr.Api.Controllers
                 }
 
                 var info = await _audimetaService.LookupAuthorAsync(normalizedName, region);
+
+                string? resolvedAsin = info?.Asin;
+                string? resolvedName = info?.Name;
+                string? resolvedImage = info?.Image;
+
                 if (info == null)
                 {
-                    _cache.Set(cacheKey, new AuthorLookupCacheEntry
+                    // Audimeta returned nothing — try Audnexus as fallback
+                    try
                     {
-                        NotFound = true,
-                        Name = normalizedName
-                    }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(6) });
+                        var audnexResults = await _audnexusService.SearchAuthorsAsync(normalizedName, region);
+                        var audnexAuthor = audnexResults?.FirstOrDefault(a =>
+                            !string.IsNullOrWhiteSpace(a.Name) &&
+                            a.Name.Equals(normalizedName, StringComparison.OrdinalIgnoreCase))
+                            ?? audnexResults?.FirstOrDefault();
 
-                    return NotFound("Author not found");
+                        if (audnexAuthor != null)
+                        {
+                            resolvedAsin = audnexAuthor.Asin;
+                            resolvedName = audnexAuthor.Name;
+                            resolvedImage = audnexAuthor.Image;
+                            _logger.LogInformation("Author '{Author}' resolved via Audnexus fallback (ASIN: {Asin})", normalizedName, resolvedAsin);
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        _logger.LogWarning(ex, "Audnexus author fallback failed for '{Author}'", normalizedName);
+                    }
+
+                    if (resolvedName == null)
+                    {
+                        _cache.Set(cacheKey, new AuthorLookupCacheEntry
+                        {
+                            NotFound = true,
+                            Name = normalizedName
+                        }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(6) });
+
+                        return NotFound("Author not found");
+                    }
                 }
 
                 string? cached = null;
                 try
                 {
-                    if (!string.IsNullOrWhiteSpace(info.Asin))
+                    if (!string.IsNullOrWhiteSpace(resolvedAsin))
                     {
                         // Attempt to ensure author image is cached under authors storage
-                        cached = await _imageCacheService.MoveToAuthorLibraryStorageAsync(info.Asin, info.Image);
+                        cached = await _imageCacheService.MoveToAuthorLibraryStorageAsync(resolvedAsin, resolvedImage);
                         if (!string.IsNullOrWhiteSpace(cached)) cached = "/" + cached.TrimStart('/');
                     }
                 }
@@ -231,17 +264,17 @@ namespace Listenarr.Api.Controllers
                 }
 
                 var result = new {
-                    asin = info.Asin,
-                    name = info.Name,
-                    image = info.Image,
+                    asin = resolvedAsin,
+                    name = resolvedName,
+                    image = resolvedImage,
                     cachedPath = cached
                 };
 
                 _cache.Set(cacheKey, new AuthorLookupCacheEntry
                 {
-                    Asin = info.Asin,
-                    Name = info.Name ?? normalizedName,
-                    Image = info.Image,
+                    Asin = resolvedAsin,
+                    Name = resolvedName ?? normalizedName,
+                    Image = resolvedImage,
                     CachedPath = cached,
                     NotFound = false
                 }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });

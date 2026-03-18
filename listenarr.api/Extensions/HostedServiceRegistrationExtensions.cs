@@ -56,6 +56,9 @@ namespace Listenarr.Api.Extensions
             // Register background service for download processing queue
             services.AddHostedService<DownloadProcessingBackgroundService>();
 
+            // Background worker that processes unmatched-file scan jobs
+            services.AddHostedService<UnmatchedScanBackgroundService>();
+
             return services;
         }
     }

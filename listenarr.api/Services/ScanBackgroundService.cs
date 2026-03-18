@@ -290,8 +290,18 @@ namespace Listenarr.Api.Services
                             var basePath = CalculateBasePath(foundFiles);
                             if (!string.IsNullOrEmpty(basePath))
                             {
+                                var basePathChanged = !string.Equals(audiobook.BasePath, basePath, StringComparison.OrdinalIgnoreCase);
                                 audiobook.BasePath = basePath;
                                 _logger.LogInformation("Set base path for audiobook '{Title}' (ID: {AudiobookId}): {BasePath}", audiobook.Title, audiobook.Id, basePath);
+
+                                // Persist the recalculated base path before delegating to AudioFileService.
+                                // That service resolves the audiobook in a separate scope/db context and
+                                // uses BasePath for containment checks, so delayed SaveChanges can cause
+                                // legitimate sibling parts to be rejected during multifile scans.
+                                if (basePathChanged)
+                                {
+                                    await db.SaveChangesAsync();
+                                }
                             }
 
                             var createdFiles = 0;

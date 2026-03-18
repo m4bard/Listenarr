@@ -37,6 +37,14 @@ namespace Listenarr.Infrastructure.Models.Configurations
             builder.Property(e => e.AllowedFileExtensions)
                 .Metadata.SetValueComparer(StringListComparer());
 
+            builder.Property(e => e.ImportBlacklistExtensions)
+                .HasConversion(
+                    v => string.Join("|", v ?? new List<string>()),
+                    v => string.IsNullOrWhiteSpace(v) ? new List<string>() : v.Split('|', System.StringSplitOptions.RemoveEmptyEntries).ToList()
+                );
+            builder.Property(e => e.ImportBlacklistExtensions)
+                .Metadata.SetValueComparer(StringListComparer());
+
             // EnabledNotificationTriggers stored as pipe-delimited list
             builder.Property(e => e.EnabledNotificationTriggers)
                 .HasConversion(

@@ -142,12 +142,17 @@ namespace Listenarr.Domain.Models
         // Whether to extract archive files (zip/rar/7z) when discovered in a completed download
         public bool ExtractArchives { get; set; } = true;
 
+        // Maximum number of concurrent ffprobe processes during an unmatched scan.
+        // Lower values reduce NAS/disk I/O pressure; higher values speed up large libraries.
+        public int UnmatchedScanConcurrency { get; set; } = 2;
+
         // Whether to show completed downloads from external clients in the Activity view
         public bool ShowCompletedExternalDownloads { get; set; } = false;
 
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;
+        public List<string> ImportBlacklistExtensions { get; set; } = new();
 
         /// <summary>
         /// Webhook URL for sending notifications (legacy single webhook).

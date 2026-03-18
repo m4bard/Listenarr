@@ -65,7 +65,33 @@ namespace Listenarr.Api.Services
                     Title = Path.GetFileNameWithoutExtension(sourcePath) ?? "Unknown Title"
                 };
 
-                // If download references an audiobook, prefer DB metadata
+                AudioMetadata? extractedMetadata = null;
+                if (_metadataService != null && File.Exists(sourcePath))
+                {
+                    try
+                    {
+                        extractedMetadata = await _metadataService.ExtractFileMetadataAsync(sourcePath);
+                        if (extractedMetadata != null)
+                        {
+                            metadata.Title = FirstNonEmpty(metadata.Title, extractedMetadata.Title);
+                            metadata.Artist = FirstNonEmpty(metadata.Artist, extractedMetadata.Artist, extractedMetadata.AlbumArtist);
+                            metadata.Album = FirstNonEmpty(metadata.Album, extractedMetadata.Album);
+                            metadata.SeriesPosition ??= extractedMetadata.SeriesPosition;
+                            metadata.TrackNumber ??= extractedMetadata.TrackNumber;
+                            metadata.DiscNumber ??= extractedMetadata.DiscNumber;
+                            metadata.Year ??= extractedMetadata.Year;
+                            metadata.Bitrate ??= extractedMetadata.Bitrate;
+                            metadata.Format ??= extractedMetadata.Format;
+                            _logger.LogDebug("ImportSingleFile: merged extracted metadata for {File}", sourcePath);
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        _logger.LogWarning(ex, "ImportSingleFile: failed to extract metadata from {File}, using defaults", sourcePath);
+                    }
+                }
+
+                // If download references an audiobook, prefer DB metadata for the shared book fields,
+                // but keep file-specific numbering/quality data from the extracted source file.
                 AudioMetadata? namingMetadata = null;
                 if (audiobookId != null)
                 {
@@ -75,15 +101,7 @@ namespace Listenarr.Api.Services
                         var audiobook = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
                         if (audiobook != null)
                         {
-                            namingMetadata = new AudioMetadata
-                            {
-                                Title = audiobook.Title ?? metadata.Title,
-                                Artist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : "Unknown Author",
-                                AlbumArtist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : "Unknown Author",
-                                Series = audiobook.Series ?? string.Empty,
-                                SeriesPosition = !string.IsNullOrWhiteSpace(audiobook.SeriesNumber) && int.TryParse(audiobook.SeriesNumber, out var sp) ? sp : null,
-                                Year = !string.IsNullOrWhiteSpace(audiobook.PublishYear) && int.TryParse(audiobook.PublishYear, out var y) ? y : null,
-                            };
+                            namingMetadata = BuildNamingMetadata(audiobook, extractedMetadata, metadata.Title);
                             _logger.LogDebug("ImportSingleFile: Using audiobook metadata for naming (Download {DownloadId}): {Title} by {Artist}", downloadId, namingMetadata.Title, namingMetadata.Artist);
                         }
                     }
@@ -92,32 +110,7 @@ namespace Listenarr.Api.Services
                     }
                 }
 
-                // Optionally extract file metadata (only when no audiobook naming metadata)
-                if (namingMetadata == null && _metadataService != null && File.Exists(sourcePath))
-                {
-                    try
-                    {
-                        var extracted = await _metadataService.ExtractFileMetadataAsync(sourcePath);
-                        if (extracted != null)
-                        {
-                            metadata.Title = FirstNonEmpty(metadata.Title, extracted.Title);
-                            metadata.Artist = FirstNonEmpty(metadata.Artist, extracted.Artist, extracted.AlbumArtist);
-                            metadata.Album = FirstNonEmpty(metadata.Album, extracted.Album);
-                            metadata.SeriesPosition ??= extracted.SeriesPosition;
-                            metadata.TrackNumber ??= extracted.TrackNumber;
-                            metadata.DiscNumber ??= extracted.DiscNumber;
-                            metadata.Year ??= extracted.Year;
-                            metadata.Bitrate ??= extracted.Bitrate;
-                            metadata.Format ??= extracted.Format;
-                            _logger.LogDebug("ImportSingleFile: merged extracted metadata for {File}", sourcePath);
-                        }
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "ImportSingleFile: failed to extract metadata from {File}, using defaults", sourcePath);
-                    }
-                }
-
-                var metadataForNaming = namingMetadata ?? metadata;
+                var metadataForNaming = namingMetadata ?? BuildNamingMetadata(null, extractedMetadata, metadata.Title);
 
                 // If linked to an audiobook, prevent importing worse quality than existing files
                 if (audiobookId != null)
@@ -331,6 +324,14 @@ namespace Listenarr.Api.Services
                     result.FinalPath = uniqueFinal;
                     result.Success = true;
 
+                    if (audiobookId.HasValue)
+                    {
+                        await EnsureAudiobookBasePathAsync(
+                            audiobookId.Value,
+                            Path.GetDirectoryName(uniqueFinal) ?? basePathForFile,
+                            ct);
+                    }
+
                     // Note: single-file imports do not register the audiobook file immediately here.
                     // Registration and any quality gating is handled by the caller (DownloadService)
                 }
@@ -362,6 +363,24 @@ namespace Listenarr.Api.Services
             var results = new List<ImportResult>();
             var folderPattern = settings.FolderNamingPattern;
             var filePattern = settings.FileNamingPattern;
+            var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
+            var sourceFiles = files
+                .Where(file => !FileUtils.ShouldSkipImportFile(file, normalizedBlacklist))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
+                sourceFiles
+                    .Where(FileUtils.IsAudioFile)
+                    .Select(f => (f, (string?)null)));
+            var planByPath = plannedAudioFiles.ToDictionary(p => p.FullPath, StringComparer.OrdinalIgnoreCase);
+            var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.DiskNumberHint);
+            var chapterNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plannedAudioFiles, p => p.ChapterNumberHint);
+            var orderedFiles = plannedAudioFiles.Select(p => p.FullPath)
+                .Concat(sourceFiles.Where(f => !planByPath.ContainsKey(f)))
+                .ToList();
+            var isMultiFileBatch = plannedAudioFiles.Count > 1;
+            var sourceRootPath = FileUtils.GetCommonDirectory(sourceFiles);
+            var completedFileAction = settings.CompletedFileAction ?? "Move";
 
             try
             {
@@ -369,6 +388,7 @@ namespace Listenarr.Api.Services
                 Audiobook? batchAudiobook = null;
                 string? bestExisting = null;
                 QualityProfile? abProfile = null;
+                string? batchDestinationRoot = null;
 
                 if (audiobookId != null)
                 {
@@ -381,6 +401,7 @@ namespace Listenarr.Api.Services
                             .FirstOrDefaultAsync(a => a.Id == audiobookId.Value, ct);
 
                         abProfile = batchAudiobook?.QualityProfile;
+                        batchDestinationRoot = string.IsNullOrWhiteSpace(batchAudiobook?.BasePath) ? null : batchAudiobook!.BasePath;
 
                         if (batchAudiobook != null && batchAudiobook.Files != null && batchAudiobook.Files.Any())
                         {
@@ -417,23 +438,102 @@ namespace Listenarr.Api.Services
                     }
                 }
 
-                foreach (var file in files)
+                foreach (var file in orderedFiles)
                 {
                     var res = new ImportResult { SourcePath = file };
 
-                    // Skip non-audio files (cover images, NFOs, etc.) to prevent registering
-                    // them as AudiobookFile records that the scanner would later remove.
                     if (!FileUtils.IsAudioFile(file))
                     {
-                        res.Success = false;
-                        res.SkippedReason = "not an audio file";
+                        var hasSuccessfulAudioImport = results.Any(r =>
+                            r.Success
+                            && !string.IsNullOrWhiteSpace(r.FinalPath)
+                            && !string.IsNullOrWhiteSpace(r.SourcePath)
+                            && FileUtils.IsAudioFile(r.SourcePath!));
+
+                        if (!hasSuccessfulAudioImport || string.IsNullOrWhiteSpace(batchDestinationRoot))
+                        {
+                            res.Success = false;
+                            res.SkippedReason = "no successful audio import in batch";
+                            results.Add(res);
+                            _logger.LogDebug("ImportFilesFromDirectory: Skipping companion file {File} because no successful audio import was recorded for the batch", file);
+                            continue;
+                        }
+
+                        try
+                        {
+                            var relativePath = !string.IsNullOrWhiteSpace(sourceRootPath)
+                                ? Path.GetRelativePath(sourceRootPath, file)
+                                : Path.GetFileName(file);
+                            if (relativePath.StartsWith("..", StringComparison.Ordinal))
+                            {
+                                relativePath = Path.GetFileName(file);
+                            }
+
+                            var finalCompanionPath = CombineWithOptionalBase(batchDestinationRoot, relativePath);
+                            var companionDir = Path.GetDirectoryName(finalCompanionPath);
+                            if (!string.IsNullOrWhiteSpace(companionDir))
+                            {
+                                Directory.CreateDirectory(companionDir);
+                            }
+
+                            finalCompanionPath = FileUtils.GetUniqueDestinationPath(finalCompanionPath);
+
+                            if (string.Equals(completedFileAction, "Copy", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var ok = await _fileMover.CopyFileAsync(file, finalCompanionPath);
+                                if (!ok)
+                                {
+                                    throw new IOException("Copy failed");
+                                }
+
+                                res.WasCopied = true;
+                            }
+                            else if (string.Equals(completedFileAction, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
+                            {
+                                var ok = await _fileMover.HardlinkFileAsync(file, finalCompanionPath);
+                                if (!ok)
+                                {
+                                    _logger.LogWarning("ImportFilesFromDirectory: Hardlink failed for companion file {Source}, attempting copy fallback", file);
+                                    ok = await _fileMover.CopyFileAsync(file, finalCompanionPath);
+                                }
+
+                                if (!ok)
+                                {
+                                    throw new IOException("Hardlink/Copy failed");
+                                }
+
+                                res.WasCopied = true;
+                            }
+                            else
+                            {
+                                var ok = await _fileMover.MoveFileAsync(file, finalCompanionPath);
+                                if (!ok)
+                                {
+                                    throw new IOException("Move failed");
+                                }
+
+                                res.WasMoved = true;
+                            }
+
+                            res.FinalPath = finalCompanionPath;
+                            res.Success = true;
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            res.Success = false;
+                            res.Message = ex.Message;
+                            _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed companion-file import for {File}", file);
+                        }
+
                         results.Add(res);
-                        _logger.LogDebug("ImportFilesFromDirectory: Skipping non-audio file {File}", file);
                         continue;
                     }
 
                     try
                     {
+                        planByPath.TryGetValue(file, out var plan);
+                        diskNumbersForNaming.TryGetValue(file, out var namingDiskNumber);
+                        chapterNumbersForNaming.TryGetValue(file, out var namingChapterNumber);
                         var candidateMetadata = (AudioMetadata?)null;
                         if (_metadataService != null)
                         {
@@ -480,22 +580,15 @@ namespace Listenarr.Api.Services
                         if (string.IsNullOrWhiteSpace(destDirForFile)) destDirForFile = settings.OutputPath ?? "./completed";
 
                         // Build naming metadata: prefer audiobook metadata when available, otherwise use extracted candidate metadata
-                        var namingMetadata = new AudioMetadata();
-                        if (abForNaming != null)
+                        var namingMetadata = BuildNamingMetadata(abForNaming, candidateMetadata, Path.GetFileNameWithoutExtension(file));
+                        var effectiveDiskNumber = namingDiskNumber > 0 ? namingDiskNumber : (namingMetadata.DiscNumber ?? plan?.DiskNumberHint);
+                        var effectiveChapterNumber = namingChapterNumber > 0 ? namingChapterNumber : (namingMetadata.TrackNumber ?? plan?.ChapterNumberHint);
+                        if (isMultiFileBatch)
                         {
-                            namingMetadata.Title = abForNaming.Title ?? Path.GetFileNameWithoutExtension(file);
-                            namingMetadata.Artist = (abForNaming.Authors != null && abForNaming.Authors.Any()) ? string.Join(", ", abForNaming.Authors) : string.Empty;
-                            namingMetadata.AlbumArtist = namingMetadata.Artist;
-                            namingMetadata.Series = abForNaming.Series;
+                            effectiveDiskNumber ??= effectiveChapterNumber;
+                            effectiveChapterNumber ??= effectiveDiskNumber;
                         }
-                        else if (candidateMetadata != null)
-                        {
-                            namingMetadata = candidateMetadata;
-                        }
-                        else
-                        {
-                            namingMetadata.Title = Path.GetFileNameWithoutExtension(file);
-                        }
+                        var stableSuffixNumber = effectiveChapterNumber ?? effectiveDiskNumber ?? plan?.SequenceNumber;
 
                         // Build variables for naming patterns (used for both folder and file patterns)
                         var variablesForFile = new Dictionary<string, object>
@@ -503,11 +596,11 @@ namespace Listenarr.Api.Services
                             { "Author", namingMetadata.Artist ?? "Unknown Author" },
                             { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
                             { "Title", namingMetadata.Title ?? Path.GetFileNameWithoutExtension(file) },
-                            { "SeriesNumber", namingMetadata.SeriesPosition?.ToString() ?? namingMetadata.TrackNumber?.ToString() ?? string.Empty },
+                            { "SeriesNumber", namingMetadata.SeriesPosition?.ToString() ?? effectiveChapterNumber?.ToString() ?? string.Empty },
                             { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
                             { "Quality", (namingMetadata.Bitrate.HasValue ? namingMetadata.Bitrate.ToString() + "kbps" : null) ?? namingMetadata.Format ?? string.Empty },
-                            { "DiskNumber", namingMetadata.DiscNumber?.ToString() ?? string.Empty },
-                            { "ChapterNumber", namingMetadata.TrackNumber?.ToString() ?? string.Empty }
+                            { "DiskNumber", effectiveDiskNumber?.ToString() ?? string.Empty },
+                            { "ChapterNumber", effectiveChapterNumber?.ToString() ?? string.Empty }
                         };
 
                         if ((abForNaming == null || string.IsNullOrWhiteSpace(abForNaming.BasePath)) && !string.IsNullOrWhiteSpace(folderPattern))
@@ -518,6 +611,8 @@ namespace Listenarr.Api.Services
                                 destDirForFile = CombineWithOptionalBase(destDirForFile, folderRelative);
                             }
                         }
+
+                        batchDestinationRoot ??= destDirForFile;
 
                         // Ensure destination directory exists (create if missing)
                         // For directory imports we create the destination directory when possible so multi-file releases
@@ -546,7 +641,7 @@ namespace Listenarr.Api.Services
                             continue;
                         }
 
-                        var isMultiFile = namingMetadata.DiscNumber.HasValue || namingMetadata.TrackNumber.HasValue;
+                        var isMultiFile = isMultiFileBatch || effectiveDiskNumber.HasValue || effectiveChapterNumber.HasValue;
                         var baseFilePattern = isMultiFile ? settings.MultiFileNamingPattern : settings.FileNamingPattern;
                         var filenamePattern = abForNaming != null
                             ? (string.IsNullOrWhiteSpace(baseFilePattern) ? "{Title}" : baseFilePattern)
@@ -557,6 +652,9 @@ namespace Listenarr.Api.Services
                             filenamePattern = "{Title}";
 
                         var ext = Path.GetExtension(file);
+                        var patternHasNumberTokens = !string.IsNullOrWhiteSpace(filenamePattern)
+                            && (filenamePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
+                                || filenamePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0);
 
                         var patternAllowsSubfolders = filenamePattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0
                             || filenamePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
@@ -565,6 +663,10 @@ namespace Listenarr.Api.Services
                         var treatAsFilename = abForNaming != null ? true : !patternAllowsSubfolders;
 
                         var filename = _fileNamingService.ApplyNamingPattern(filenamePattern, variablesForFile, treatAsFilename);
+                        if (isMultiFile && !patternHasNumberTokens && stableSuffixNumber.HasValue)
+                        {
+                            filename = FileUtils.AppendSequenceSuffix(filename, stableSuffixNumber.Value);
+                        }
                         if (!filename.EndsWith(ext, StringComparison.OrdinalIgnoreCase)) filename += ext;
 
                         if (!patternAllowsSubfolders)
@@ -594,8 +696,7 @@ namespace Listenarr.Api.Services
                         var initialDest = Path.Combine(destDirForFile, Path.GetFileName(file));
                         var uniqueInitial = FileUtils.GetUniqueDestinationPath(initialDest);
 
-                        var action = settings.CompletedFileAction ?? "Move";
-                        if (string.Equals(action, "Copy", StringComparison.OrdinalIgnoreCase))
+                        if (string.Equals(completedFileAction, "Copy", StringComparison.OrdinalIgnoreCase))
                         {
                             var ok = await _fileMover.CopyFileAsync(file, uniqueInitial);
                             if (ok)
@@ -604,7 +705,7 @@ namespace Listenarr.Api.Services
                                 res.WasCopied = true;
                             }
                         }
-                        else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
+                        else if (string.Equals(completedFileAction, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
                         {
                             var ok = await _fileMover.HardlinkFileAsync(file, uniqueInitial);
                             if (!ok)
@@ -661,6 +762,11 @@ namespace Listenarr.Api.Services
                         res.FinalPath = uniqueFinal;
                         res.Success = true;
 
+                        if (audiobookId.HasValue)
+                        {
+                            await EnsureAudiobookBasePathAsync(audiobookId.Value, destDirForFile, ct);
+                        }
+
                         // Register audiobook file if linked
                         if (audiobookId != null)
                         {
@@ -696,6 +802,12 @@ namespace Listenarr.Api.Services
                 _logger.LogWarning(ex, "ImportFilesFromDirectory: Failed to import files from directory for download {DownloadId}", downloadId);
             }
 
+            if (string.Equals(completedFileAction, "Move", StringComparison.OrdinalIgnoreCase)
+                && !string.IsNullOrWhiteSpace(sourceRootPath))
+            {
+                FileUtils.DeleteEmptyDirectories(sourceRootPath);
+            }
+
             return results;
         }
 
@@ -703,6 +815,99 @@ namespace Listenarr.Api.Services
         {
             // For reprocessing we can reuse ImportSingleFileAsync semantics
             return ImportSingleFileAsync(downloadId, audiobookId, sourcePath, settings, ct);
+        }
+
+        private static AudioMetadata BuildNamingMetadata(Audiobook? audiobook, AudioMetadata? extractedMetadata, string fallbackTitle)
+        {
+            if (audiobook != null)
+            {
+                var author = (audiobook.Authors != null && audiobook.Authors.Any())
+                    ? string.Join(", ", audiobook.Authors)
+                    : (FirstNonEmpty(extractedMetadata?.Artist, extractedMetadata?.AlbumArtist, "Unknown Author"));
+
+                return new AudioMetadata
+                {
+                    Title = FirstNonEmpty(audiobook.Title, extractedMetadata?.Title, fallbackTitle, "Unknown Title"),
+                    Artist = author,
+                    AlbumArtist = author,
+                    Album = FirstNonEmpty(extractedMetadata?.Album, audiobook.Title, fallbackTitle),
+                    Series = FirstNonEmpty(audiobook.Series, extractedMetadata?.Series),
+                    SeriesPosition = !string.IsNullOrWhiteSpace(audiobook.SeriesNumber) && decimal.TryParse(audiobook.SeriesNumber, out var sp)
+                        ? sp
+                        : (extractedMetadata?.SeriesPosition),
+                    Year = !string.IsNullOrWhiteSpace(audiobook.PublishYear) && int.TryParse(audiobook.PublishYear, out var year)
+                        ? year
+                        : extractedMetadata?.Year,
+                    TrackNumber = extractedMetadata?.TrackNumber,
+                    DiscNumber = extractedMetadata?.DiscNumber,
+                    Bitrate = extractedMetadata?.Bitrate,
+                    Format = extractedMetadata?.Format
+                };
+            }
+
+            if (extractedMetadata != null)
+            {
+                if (string.IsNullOrWhiteSpace(extractedMetadata.Title))
+                {
+                    extractedMetadata.Title = fallbackTitle;
+                }
+
+                if (string.IsNullOrWhiteSpace(extractedMetadata.Artist))
+                {
+                    extractedMetadata.Artist = FirstNonEmpty(extractedMetadata.AlbumArtist, "Unknown Author");
+                }
+
+                if (string.IsNullOrWhiteSpace(extractedMetadata.AlbumArtist))
+                {
+                    extractedMetadata.AlbumArtist = extractedMetadata.Artist;
+                }
+
+                return extractedMetadata;
+            }
+
+            return new AudioMetadata
+            {
+                Title = fallbackTitle,
+                Artist = "Unknown Author",
+                AlbumArtist = "Unknown Author"
+            };
+        }
+
+        private async Task EnsureAudiobookBasePathAsync(int audiobookId, string? candidateBasePath, CancellationToken ct)
+        {
+            if (string.IsNullOrWhiteSpace(candidateBasePath))
+            {
+                return;
+            }
+
+            try
+            {
+                var normalizedCandidate = Path.GetFullPath(candidateBasePath);
+
+                await using var db = await _dbFactory.CreateDbContextAsync(ct);
+                var audiobook = await db.Audiobooks.FindAsync(new object[] { audiobookId }, ct);
+                if (audiobook == null)
+                {
+                    return;
+                }
+
+                if (!string.IsNullOrWhiteSpace(audiobook.BasePath))
+                {
+                    var normalizedExisting = Path.GetFullPath(audiobook.BasePath);
+                    if (string.Equals(normalizedExisting, normalizedCandidate, StringComparison.OrdinalIgnoreCase)
+                        || FileUtils.IsPathWithinRoot(normalizedCandidate, normalizedExisting))
+                    {
+                        return;
+                    }
+                }
+
+                audiobook.BasePath = normalizedCandidate;
+                await db.SaveChangesAsync(ct);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to update audiobook {AudiobookId} BasePath to {BasePath} before file association", audiobookId, candidateBasePath);
+            }
         }
 
         private static string CombineWithOptionalBase(string? basePath, string candidatePath)
@@ -804,6 +1009,19 @@ namespace Listenarr.Api.Services
             // Same format is a reimport (not a downgrade), and we can't reliably
             // rank different format names against each other.
             return true;
+        }
+
+        private static string FirstNonEmpty(params string?[] candidates)
+        {
+            foreach (var candidate in candidates)
+            {
+                if (!string.IsNullOrWhiteSpace(candidate))
+                {
+                    return candidate!;
+                }
+            }
+
+            return string.Empty;
         }
     }
 }

@@ -78,6 +78,10 @@ namespace Listenarr.Infrastructure.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("ImportBlacklistExtensions")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("AudnexusApiUrl")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -176,6 +180,9 @@ namespace Listenarr.Infrastructure.Migrations
                         .HasColumnType("INTEGER");
 
                     b.Property<bool>("ShowCompletedExternalDownloads")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("UnmatchedScanConcurrency")
                         .HasColumnType("INTEGER");
 
                     b.Property<string>("WebhookUrl")

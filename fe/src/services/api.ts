@@ -28,6 +28,8 @@ import type {
   QualityScore,
   AudiobookExternalIdentifier,
   AudiobookExternalIdentifierInput,
+  UnmatchedFilesResponse,
+  SavedUnmatchedResponse,
 } from '@/types'
 import { getStartupConfigCached, getCachedStartupConfig, resetCache as resetStartupConfigCache } from './startupConfigCache'
 import { sessionTokenManager } from '@/utils/sessionToken'
@@ -416,8 +418,11 @@ class ApiService {
     cap?: number
   }): Promise<SearchResult[]> {
     const body: Record<string, unknown> = { mode: 'Advanced' }
+    const hasAsin = !!params.asin
     if (params.title) (body as Record<string, unknown>).title = params.title
-    if (params.author) (body as Record<string, unknown>).author = params.author
+    // ASIN searches are exact identifier lookups; omit author to avoid
+    // accidentally narrowing or perturbing identifier-based requests.
+    if (params.author && !hasAsin) (body as Record<string, unknown>).author = params.author
     if (params.isbn) (body as Record<string, unknown>).isbn = params.isbn
     if (params.series) (body as Record<string, unknown>).series = params.series
     if (params.asin) (body as Record<string, unknown>).asin = params.asin
@@ -754,6 +759,20 @@ class ApiService {
     return this.request<{ message?: string }>(`/rootfolders/${id}${qs}`, { method: 'DELETE' })
   }
 
+  async scanUnmatchedFiles(rootFolderId: number): Promise<{ jobId: string }> {
+    return this.request<{ jobId: string }>(`/rootfolders/${rootFolderId}/scan-unmatched`, {
+      method: 'POST',
+    })
+  }
+
+  async getUnmatchedResults(jobId: string): Promise<UnmatchedFilesResponse> {
+    return this.request<UnmatchedFilesResponse>(`/rootfolders/unmatched-results/${jobId}`)
+  }
+
+  async getSavedUnmatchedFiles(rootFolderId: number): Promise<SavedUnmatchedResponse> {
+    return this.request<SavedUnmatchedResponse>(`/rootfolders/${rootFolderId}/unmatched`)
+  }
+
   // Discord integration helpers
   async getDiscordStatus(): Promise<{
     success: boolean
@@ -934,12 +953,19 @@ class ApiService {
     },
   ): Promise<{ message: string; audiobook: Audiobook }> {
     const normalizedMetadata = this.normalizeMetadataForApi(metadata)
+    const sr = options?.searchResult
+    const normalizedSearchResult = sr
+      ? {
+          ...sr,
+          isbn: Array.isArray(sr.isbn) ? sr.isbn : sr.isbn ? [sr.isbn] : [],
+        }
+      : undefined
     const request = {
       metadata: normalizedMetadata,
       monitored: options?.monitored ?? true,
       qualityProfileId: options?.qualityProfileId,
       autoSearch: options?.autoSearch ?? false,
-      searchResult: options?.searchResult,
+      searchResult: normalizedSearchResult,
       destinationPath: options?.destinationPath,
     }
     return this.request<{ message: string; audiobook: Audiobook }>('/library/add', {
@@ -1048,8 +1074,16 @@ class ApiService {
     })
   }
 
-  async removeFromLibrary(id: number): Promise<{ message: string; id: number }> {
-    return this.request<{ message: string; id: number }>(`/library/${id}`, {
+  async removeFromLibrary(
+    id: number,
+    options?: { deleteFiles?: boolean; deleteFolder?: boolean },
+  ): Promise<{ message: string; id: number }> {
+    const params = new URLSearchParams()
+    if (options?.deleteFiles !== undefined) params.set('deleteFiles', String(options.deleteFiles))
+    if (options?.deleteFolder !== undefined)
+      params.set('deleteFolder', String(options.deleteFolder))
+    const suffix = params.toString() ? `?${params.toString()}` : ''
+    return this.request<{ message: string; id: number }>(`/library/${id}${suffix}`, {
       method: 'DELETE',
     })
   }

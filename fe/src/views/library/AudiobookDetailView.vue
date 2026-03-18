@@ -168,11 +168,11 @@
         <div class="details-grid">
           <div class="detail-card">
             <h3>Author Information</h3>
-            <div class="detail-row" v-if="audiobook.authors">
+            <div class="detail-row" v-if="audiobook.authors?.length">
               <span class="label">Author(s):</span>
               <span class="value">{{ audiobook.authors.map(safeText).join(', ') }}</span>
             </div>
-            <div class="detail-row" v-if="audiobook.narrators">
+            <div class="detail-row" v-if="audiobook.narrators?.length">
               <span class="label">Narrator(s):</span>
               <span class="value">{{ audiobook.narrators.map(safeText).join(', ') }}</span>
             </div>
@@ -405,12 +405,43 @@
       </div>
     </div>
 
-    <DeleteConfirmationModal :visible="showDeleteDialog" title="Delete Audiobook" @close="cancelDelete"
+    <DeleteConfirmationModal :visible="showDeleteDialog" title="Delete Audiobook" :confirmText="deleting ? 'Deleting...' : 'Delete'" @close="cancelDelete"
       @confirm="executeDelete">
       <template #default>
         <p>Are you sure you want to delete <strong>{{ audiobook.title }}</strong>?</p>
         <p class="warning-text">This action cannot be undone. The audiobook data and cached images will be permanently
           removed.</p>
+        <div class="delete-options">
+          <div class="checkbox-row">
+            <label class="checkbox-wrapper checkbox-label">
+              <input
+                v-model="deleteFilesOnDisk"
+                type="checkbox"
+                class="checkbox-input"
+                aria-label="Remove all files in the audiobook folder from disk"
+              />
+              <div class="checkbox-content">
+                <span class="checkbox-title">Remove all files in the audiobook folder from disk</span>
+                <small>Deletes every file inside the audiobook folder when it can be identified safely. Leave the folder itself unless you also choose the option below.</small>
+              </div>
+            </label>
+          </div>
+
+          <div class="checkbox-row">
+            <label class="checkbox-wrapper checkbox-label">
+              <input
+                v-model="deleteFolderOnDisk"
+                type="checkbox"
+                class="checkbox-input"
+                aria-label="Remove audiobook folder from disk"
+              />
+              <div class="checkbox-content">
+                <span class="checkbox-title">Also remove the audiobook folder</span>
+                <small>Deletes the audiobook folder itself when it is safe to do so. This also removes everything inside it.</small>
+              </div>
+            </label>
+          </div>
+        </div>
       </template>
     </DeleteConfirmationModal>
   </div>
@@ -523,6 +554,8 @@ const activeTab = ref<DetailTab>('details')
 const showDeleteDialog = ref(false)
 const showManualSearchModal = ref(false)
 const deleting = ref(false)
+const deleteFilesOnDisk = ref(false)
+const deleteFolderOnDisk = ref(false)
 const showFullDescription = ref(false)
 const scanning = ref(false)
 const rescanningMetadata = ref(false)
@@ -1226,10 +1259,12 @@ function toggleMonitored() {
 }
 
 function confirmDelete() {
+  resetDeleteOptions()
   showDeleteDialog.value = true
 }
 
 function cancelDelete() {
+  resetDeleteOptions()
   showDeleteDialog.value = false
 }
 
@@ -1238,10 +1273,26 @@ async function executeDelete() {
 
   deleting.value = true
   try {
-    const success = await libraryStore.removeFromLibrary(audiobook.value.id)
+    const shouldDeleteFolder = deleteFolderOnDisk.value
+    const shouldDeleteFiles = deleteFilesOnDisk.value || shouldDeleteFolder
+    const success = await libraryStore.removeFromLibrary(audiobook.value.id, {
+      deleteFiles: shouldDeleteFiles,
+      deleteFolder: shouldDeleteFolder,
+    })
     if (success) {
+      const toast = useToast()
+      if (shouldDeleteFolder) {
+        toast.success('Audiobook deleted', 'The audiobook, its files, and its folder were removed.')
+      } else if (shouldDeleteFiles) {
+        toast.success('Audiobook deleted', 'The audiobook and its tracked files were removed.')
+      } else {
+        toast.success('Audiobook deleted', 'The audiobook was removed from the library.')
+      }
       // Navigate back to library after successful deletion
       router.push('/audiobooks')
+    } else {
+      const toast = useToast()
+      toast.error('Delete failed', libraryStore.error || 'Failed to delete audiobook')
     }
   } catch (err) {
     errorTracking.captureException(err as Error, {
@@ -1251,9 +1302,27 @@ async function executeDelete() {
     })
   } finally {
     deleting.value = false
+    resetDeleteOptions()
     showDeleteDialog.value = false
   }
 }
+
+function resetDeleteOptions() {
+  deleteFilesOnDisk.value = false
+  deleteFolderOnDisk.value = false
+}
+
+watch(deleteFolderOnDisk, (checked) => {
+  if (checked && !deleteFilesOnDisk.value) {
+    deleteFilesOnDisk.value = true
+  }
+})
+
+watch(deleteFilesOnDisk, (checked) => {
+  if (!checked && deleteFolderOnDisk.value) {
+    deleteFolderOnDisk.value = false
+  }
+})
 
 function openEditModal() {
   showEditModal.value = true
@@ -1423,16 +1492,17 @@ function formatDate(dateString?: string): string {
 
 <style scoped>
 .audiobook-detail {
+  --detail-top-nav-height: 60px;
   min-height: 100vh;
   background-color: #1a1a1a;
-  padding-top: 60px;
+  padding-top: var(--detail-top-nav-height);
   /* Add padding to account for fixed local nav */
 }
 
 .top-nav {
   position: fixed;
-  top: 60px;
-  /* Account for global header nav */
+  top: var(--app-top-offset, 60px);
+  /* Account for global header nav + optional warning banner */
   left: 200px;
   /* Account for sidebar width */
   right: 0;
@@ -2801,6 +2871,54 @@ a.identifier-link:hover {
 
 /* Delete dialog styling is centralized in `src/assets/modals.css` */
 /* Legacy .dialog classes are still used in a few places (e.g., Audiobook detail delete), but visual styles are now centralized. */
+.delete-options {
+  margin-top: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.delete-options .checkbox-row {
+  margin-top: 0;
+}
+
+.delete-options .checkbox-label {
+  display: flex;
+  gap: 0.75rem;
+  align-items: flex-start;
+  text-align: left;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.03);
+  transition: border-color 0.2s ease, background-color 0.2s ease;
+}
+
+.delete-options .checkbox-label:hover {
+  border-color: rgba(var(--brand-rgb), 0.35);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.delete-options .checkbox-input {
+  margin-top: 2px;
+  accent-color: var(--brand-500);
+}
+
+.delete-options .checkbox-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.delete-options .checkbox-title {
+  color: #f5f7fa;
+  font-weight: 600;
+}
+
+.delete-options .checkbox-content small {
+  color: #b9c0c8;
+  line-height: 1.4;
+}
 
 /* Ensure visible spacing between secondary action buttons across breakpoints */
 .secondary-actions {

@@ -143,6 +143,262 @@ namespace Listenarr.Api.Tests
             TryDeleteDirectory(outputRoot, recursive: true);
         }
 
+        [Fact]
+        public async Task ImportFilesFromDirectory_WithLegacyFilePathAndNoBasePath_RegistersImportedFiles()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+
+            var part2 = Path.Join(sourceDir, "Part 2.mp3");
+            var part1 = Path.Join(sourceDir, "Part 1.mp3");
+            await File.WriteAllTextAsync(part2, "two");
+            await File.WriteAllTextAsync(part1, "one");
+
+            var legacyDir = Path.Join(Path.GetTempPath(), $"import-legacy-{Guid.NewGuid()}");
+            var legacyPath = Path.Join(legacyDir, "legacy.mp3");
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using (var seed = new ListenArrDbContext(options))
+            {
+                seed.Audiobooks.Add(new Audiobook
+                {
+                    Id = 456,
+                    Title = "Jack of Shadows",
+                    Authors = new System.Collections.Generic.List<string> { "Roger Zelazny" },
+                    FilePath = legacyPath,
+                    BasePath = null
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Copy",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.IsAny<string>()))
+                .ReturnsAsync(new AudioMetadata { Title = "Jack of Shadows", Format = "mp3", Bitrate = 128000 });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock
+                .Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(() => new ListenArrDbContext(options));
+
+            using var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddScoped(_ => new ListenArrDbContext(options));
+                services.AddMemoryCache();
+                services.AddSingleton<MetadataExtractionLimiter>();
+                services.AddSingleton<IMetadataService>(metadataMock.Object);
+            });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var results = await importService.ImportFilesFromDirectoryAsync(
+                "legacy-basepath",
+                456,
+                new[] { part2, part1 },
+                settings);
+
+            Assert.Equal(2, results.Count(r => r.Success));
+
+            await using var verify = new ListenArrDbContext(options);
+            var audiobook = await verify.Audiobooks.FindAsync(456);
+            var files = await verify.AudiobookFiles.Where(f => f.AudiobookId == 456).ToListAsync();
+
+            Assert.NotNull(audiobook);
+            Assert.Equal(Path.GetFullPath(outputRoot), audiobook!.BasePath);
+            Assert.Equal(2, files.Count);
+            Assert.Contains(files, f => f.Path == Path.Combine(outputRoot, "Jack of Shadows-01.mp3"));
+            Assert.Contains(files, f => f.Path == Path.Combine(outputRoot, "Jack of Shadows-02.mp3"));
+
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        [Fact]
+        public async Task ImportFilesFromDirectory_ForewordAndChapterOne_GetStableUniqueSequenceNames()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+
+            var foreword = Path.Join(sourceDir, "(Foreword by Joe Haldeman).mp3");
+            var chapter1 = Path.Join(sourceDir, "Chapter 01.mp3");
+            var chapter2 = Path.Join(sourceDir, "Chapter 02.mp3");
+            await File.WriteAllTextAsync(foreword, "foreword");
+            await File.WriteAllTextAsync(chapter1, "chapter1");
+            await File.WriteAllTextAsync(chapter2, "chapter2");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Copy",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.Is<string>(path => path.EndsWith("(Foreword by Joe Haldeman).mp3", StringComparison.OrdinalIgnoreCase))))
+                .ReturnsAsync(new AudioMetadata { Title = "Jack of Shadows", Format = "mp3", TrackNumber = 1 });
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.Is<string>(path => path.EndsWith("Chapter 01.mp3", StringComparison.OrdinalIgnoreCase))))
+                .ReturnsAsync(new AudioMetadata { Title = "Jack of Shadows", Format = "mp3", TrackNumber = 1 });
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.Is<string>(path => path.EndsWith("Chapter 02.mp3", StringComparison.OrdinalIgnoreCase))))
+                .ReturnsAsync(new AudioMetadata { Title = "Jack of Shadows", Format = "mp3", TrackNumber = 2 });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            using var provider = TestServiceFactory.BuildServiceProvider(_ => { });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var results = await importService.ImportFilesFromDirectoryAsync(
+                "foreword-order",
+                audiobookId: null,
+                new[] { foreword, chapter1, chapter2 },
+                settings);
+
+            var mapped = results
+                .Where(r => r.Success && !string.IsNullOrWhiteSpace(r.SourcePath) && !string.IsNullOrWhiteSpace(r.FinalPath))
+                .ToDictionary(r => r.SourcePath!, r => r.FinalPath!, StringComparer.OrdinalIgnoreCase);
+
+            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-01.mp3"), mapped[foreword]);
+            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-02.mp3"), mapped[chapter1]);
+            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-03.mp3"), mapped[chapter2]);
+
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        [Fact]
+        public async Task ImportFilesFromDirectory_MoveImportsCompanionFilesAndDeletesSourceFolder()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+
+            var audioFile = Path.Join(sourceDir, "Track 01.mp3");
+            var coverFile = Path.Join(sourceDir, "cover.jpg");
+            var notesFile = Path.Join(sourceDir, "notes.txt");
+            await File.WriteAllTextAsync(audioFile, "audio");
+            await File.WriteAllTextAsync(coverFile, "cover");
+            await File.WriteAllTextAsync(notesFile, "notes");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Move",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}",
+                ImportBlacklistExtensions = new System.Collections.Generic.List<string>()
+            };
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(audioFile))
+                .ReturnsAsync(new AudioMetadata { Title = "Companion Book", Format = "mp3", Bitrate = 128000 });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            using var provider = TestServiceFactory.BuildServiceProvider(_ => { });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var results = await importService.ImportFilesFromDirectoryAsync(
+                "companion-download",
+                audiobookId: null,
+                new[] { audioFile, coverFile, notesFile },
+                settings);
+
+            Assert.Equal(3, results.Count(r => r.Success));
+            Assert.Contains(results, r => string.Equals(Path.GetFileName(r.FinalPath), "Companion Book-01.mp3", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(results, r => string.Equals(Path.GetFileName(r.FinalPath), "cover.jpg", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(results, r => string.Equals(Path.GetFileName(r.FinalPath), "notes.txt", StringComparison.OrdinalIgnoreCase));
+            Assert.False(Directory.Exists(sourceDir));
+
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        [Fact]
+        public async Task ImportFilesFromDirectory_BlacklistedCompanionFilesAreSkipped()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+
+            var audioFile = Path.Join(sourceDir, "Track 01.mp3");
+            var coverFile = Path.Join(sourceDir, "cover.jpg");
+            var notesFile = Path.Join(sourceDir, "notes.txt");
+            await File.WriteAllTextAsync(audioFile, "audio");
+            await File.WriteAllTextAsync(coverFile, "cover");
+            await File.WriteAllTextAsync(notesFile, "notes");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Move",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}",
+                ImportBlacklistExtensions = new System.Collections.Generic.List<string> { ".txt" }
+            };
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(audioFile))
+                .ReturnsAsync(new AudioMetadata { Title = "Companion Book", Format = "mp3", Bitrate = 128000 });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            using var provider = TestServiceFactory.BuildServiceProvider(_ => { });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var results = await importService.ImportFilesFromDirectoryAsync(
+                "companion-download-blacklist",
+                audiobookId: null,
+                new[] { audioFile, coverFile, notesFile },
+                settings);
+
+            Assert.Equal(2, results.Count(r => r.Success));
+            Assert.Contains(results, r => string.Equals(Path.GetFileName(r.FinalPath), "Companion Book-01.mp3", StringComparison.OrdinalIgnoreCase));
+            Assert.Contains(results, r => string.Equals(Path.GetFileName(r.FinalPath), "cover.jpg", StringComparison.OrdinalIgnoreCase));
+            Assert.DoesNotContain(results, r => string.Equals(Path.GetFileName(r.FinalPath), "notes.txt", StringComparison.OrdinalIgnoreCase));
+            Assert.True(Directory.Exists(sourceDir));
+            Assert.True(File.Exists(notesFile));
+
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
         private static void TryDeleteDirectory(string path, bool recursive = false)
         {
             try

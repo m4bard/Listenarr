@@ -296,11 +296,13 @@ namespace Listenarr.Api.Tests
                 var json = System.Text.Json.JsonSerializer.Serialize(raw);
                 using var doc = System.Text.Json.JsonDocument.Parse(json);
                 var root = doc.RootElement;
-                Assert.Equal(System.Text.Json.JsonValueKind.Array, root.ValueKind);
+                // Advanced search now returns { results: [...], totalResults: N }
+                var resultsRoot = root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("results", out var rr) ? rr : root;
+                Assert.Equal(System.Text.Json.JsonValueKind.Array, resultsRoot.ValueKind);
 
                 // Verify the indexer result DTO is present and contains expected fields
                 bool foundIndexer = false;
-                foreach (var el in root.EnumerateArray())
+                foreach (var el in resultsRoot.EnumerateArray())
                 {
                     if (el.TryGetProperty("guid", out var g))
                     {
@@ -328,7 +330,7 @@ namespace Listenarr.Api.Tests
                 {
                     // As a fallback, some responses may return Audimeta-like objects; assert that an ASIN entry exists
                     bool foundAsin = false;
-                    foreach (var el in root.EnumerateArray())
+                    foreach (var el in resultsRoot.EnumerateArray())
                     {
                         if (el.TryGetProperty("asin", out var a))
                         {
@@ -513,8 +515,10 @@ namespace Listenarr.Api.Tests
             var json = System.Text.Json.JsonSerializer.Serialize(raw);
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             var root = doc.RootElement;
-            Assert.Equal(System.Text.Json.JsonValueKind.Array, root.ValueKind);
-            Assert.Equal(50, root.GetArrayLength());
+            // Advanced search now returns { results: [...], totalResults: N }
+            var resultsEl = root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("results", out var rr) ? rr : root;
+            Assert.Equal(System.Text.Json.JsonValueKind.Array, resultsEl.ValueKind);
+            Assert.Equal(50, resultsEl.GetArrayLength());
         }
 
         [Fact]
@@ -593,8 +597,10 @@ namespace Listenarr.Api.Tests
             var json = System.Text.Json.JsonSerializer.Serialize(raw);
             using var doc = System.Text.Json.JsonDocument.Parse(json);
             var root = doc.RootElement;
-            Assert.Equal(System.Text.Json.JsonValueKind.Array, root.ValueKind);
-            var first = root[0];
+            // Advanced search now returns { results: [...], totalResults: N }
+            var resultsEl2 = root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("results", out var rr2) ? rr2 : root;
+            Assert.Equal(System.Text.Json.JsonValueKind.Array, resultsEl2.ValueKind);
+            var first = resultsEl2[0];
             Assert.Equal("B999", first.GetProperty("asin").GetString());
             Assert.Equal("/api/v1/images/B999", first.GetProperty("imageUrl").GetString());
         }

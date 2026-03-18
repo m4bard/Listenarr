@@ -194,7 +194,6 @@
                   :class="{ loaded: authorImageLoaded[collection.name] }"
                 ></div>
                 <img
-                  v-if="getAuthorImageUrl(collection)"
                   class="audiobook-poster author-cover lazy-img"
                   :class="{ loaded: authorImageLoaded[collection.name] }"
                   :src="
@@ -341,7 +340,7 @@
       :class="['audiobooks-scroll-container', { 'has-selection': selectedCount > 0 }]"
       @scroll="updateVisibleRange"
     >
-      <div class="audiobooks-scroll-spacer">
+      <div class="audiobooks-scroll-spacer" :style="{ height: totalHeight + 'px' }">
         <div
           v-if="viewMode === 'grid'"
           class="audiobooks-grid"
@@ -647,6 +646,57 @@
       @close="() => { showCustomFilterModal = false }"
     />
 
+    <DeleteConfirmationModal
+      :visible="showDeleteDialog"
+      title="Delete Audiobook"
+      :confirmText="deleting ? 'Deleting...' : 'Delete'"
+      @close="cancelDelete"
+      @confirm="executeDelete"
+    >
+      <template #default>
+        <p>
+          Are you sure you want to delete
+          <strong>{{ deleteTarget?.title || 'this audiobook' }}</strong
+          >?
+        </p>
+        <p class="warning-text">
+          This action cannot be undone. The audiobook data and cached images will be
+          permanently removed.
+        </p>
+        <div class="delete-options">
+          <div class="checkbox-row">
+            <label class="checkbox-wrapper checkbox-label">
+              <input
+                v-model="deleteFilesOnDisk"
+                type="checkbox"
+                class="checkbox-input"
+                aria-label="Remove all files in the audiobook folder from disk"
+              />
+              <div class="checkbox-content">
+                <span class="checkbox-title">Remove all files in the audiobook folder from disk</span>
+                <small>Deletes every file inside the audiobook folder when it can be identified safely. Leave the folder itself unless you also choose the option below.</small>
+              </div>
+            </label>
+          </div>
+
+          <div class="checkbox-row">
+            <label class="checkbox-wrapper checkbox-label">
+              <input
+                v-model="deleteFolderOnDisk"
+                type="checkbox"
+                class="checkbox-input"
+                aria-label="Remove audiobook folder from disk"
+              />
+              <div class="checkbox-content">
+                <span class="checkbox-title">Also remove the audiobook folder</span>
+                <small>Deletes the audiobook folder itself when it is safe to do so. This also removes everything inside it.</small>
+              </div>
+            </label>
+          </div>
+        </div>
+      </template>
+    </DeleteConfirmationModal>
+
     <!-- Confirm delete custom filter handled via global showConfirm() -->
   </div>
 </template>
@@ -685,6 +735,7 @@ import { buildApiPath } from '@/services/apiBase'
 import { logger } from '@/utils/logger'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
+import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
 import FiltersDropdown from '@/components/ui/FiltersDropdown.vue'
 import CustomFilterModal from '@/components/domain/collection/CustomFilterModal.vue'
@@ -1053,6 +1104,7 @@ const audiobooks = computed(() => filteredAndSortedAudiobooks.value)
 // Reactive map of fetched author cover overrides (keyed by author name)
 const authorCoverOverrides = reactive<Record<string, string>>({})
 const authorCoverLoading = reactive<Record<string, boolean>>({})
+const authorCoverNotFound = new Set<string>()
 const authorImageLoaded = reactive<Record<string, boolean>>({})
 
 function isPlaceholderCoverUrl(url: string | undefined): boolean {
@@ -1111,22 +1163,31 @@ function handleAuthorImageError(authorName: string, event: Event) {
 async function ensureAuthorCover(authorName: string) {
   if (!authorName) return
   if (authorCoverOverrides[authorName]) return
+  if (authorCoverNotFound.has(authorName)) return
   if (authorCoverLoading[authorName]) return
   authorCoverLoading[authorName] = true
   try {
     if (typeof apiService.getAuthorLookup !== 'function') return
     const info = await apiService.getAuthorLookup(authorName)
-    if (!info) return
+    if (!info) {
+      authorCoverNotFound.add(authorName)
+      return
+    }
     if (info.cachedPath) {
       authorCoverOverrides[authorName] = info.cachedPath
     } else if (info.asin) {
       authorCoverOverrides[authorName] = buildApiPath(`/images/${encodeURIComponent(info.asin)}`)
+    } else if (info.image) {
+      authorCoverOverrides[authorName] = info.image
+    } else {
+      authorCoverNotFound.add(authorName)
     }
     try {
       await nextTick()
       observeLazyImages()
     } catch {}
   } catch (e: unknown) {
+    authorCoverNotFound.add(authorName)
     errorTracking.captureException(e as Error, {
       component: 'AudiobooksView',
       operation: 'ensureAuthorCover',
@@ -1317,6 +1378,8 @@ function observeAuthorCards() {
   }
 
   for (const card of cards) {
+    const name = card.dataset.authorName
+    if (name && (authorCoverOverrides[name] || authorCoverNotFound.has(name))) continue
     authorCardObserver.observe(card)
   }
 }
@@ -1406,6 +1469,7 @@ function clearFilters() {
   // Reset author image caches so images reload after clearing filters
   Object.keys(authorCoverOverrides).forEach((k) => delete authorCoverOverrides[k])
   Object.keys(authorImageLoaded).forEach((k) => delete authorImageLoaded[k])
+  authorCoverNotFound.clear()
   clearProtectedImages()
   nextTick(() => typeof observeLazyImages === 'function' && observeLazyImages())
 }
@@ -1514,8 +1578,19 @@ const topPadding = computed(() => {
   return firstVisibleRow * getRowHeight()
 })
 
-// deletion dialog handled via global showConfirm()
+// Total scroll height so the container scrollbar reflects the full list
+const totalHeight = computed(() => {
+  const totalRows = Math.ceil(audiobooks.value.length / ITEMS_PER_ROW.value)
+  return totalRows * (viewMode.value === 'grid'
+    ? GRID_ROW_HEIGHT + (showItemDetails.value ? GRID_DETAILS_EXTRA_HEIGHT : 0)
+    : LIST_ROW_HEIGHT)
+})
+
 const deleting = ref(false)
+const showDeleteDialog = ref(false)
+const deleteTarget = ref<Audiobook | null>(null)
+const deleteFilesOnDisk = ref(false)
+const deleteFolderOnDisk = ref(false)
 const qualityProfiles = ref<QualityProfile[]>([])
 const showBulkEditModal = ref(false)
 const showEditModal = ref(false)
@@ -1923,25 +1998,39 @@ async function refreshLibrary() {
 }
 
 async function confirmDelete(audiobook: Audiobook) {
-  const message = `Are you sure you want to delete "${audiobook.title}"? This action cannot be undone. The audiobook data and cached images will be permanently removed.`
-  const ok = await showConfirm(message, 'Confirm Deletion', {
-    danger: true,
-    confirmText: 'Delete',
-    cancelText: 'Cancel',
-  })
-  if (!ok) return
+  deleteTarget.value = audiobook
+  resetDeleteOptions()
+  showDeleteDialog.value = true
+}
+
+function cancelDelete() {
+  resetDeleteOptions()
+  deleteTarget.value = null
+  showDeleteDialog.value = false
+}
+
+async function executeDelete() {
+  if (deleting.value || !deleteTarget.value) return
 
   deleting.value = true
   try {
-    await libraryStore.removeFromLibrary(audiobook.id)
+    const shouldDeleteFolder = deleteFolderOnDisk.value
+    const shouldDeleteFiles = deleteFilesOnDisk.value || shouldDeleteFolder
+    await libraryStore.removeFromLibrary(deleteTarget.value.id, {
+      deleteFiles: shouldDeleteFiles,
+      deleteFolder: shouldDeleteFolder,
+    })
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'AudiobooksView',
-      operation: 'confirmDelete',
-      metadata: { audiobookId: audiobook.id },
+      operation: 'executeDelete',
+      metadata: { audiobookId: deleteTarget.value?.id },
     })
   } finally {
     deleting.value = false
+    resetDeleteOptions()
+    deleteTarget.value = null
+    showDeleteDialog.value = false
   }
 }
 
@@ -1970,6 +2059,23 @@ async function confirmBulkDelete() {
     deleting.value = false
   }
 }
+
+function resetDeleteOptions() {
+  deleteFilesOnDisk.value = false
+  deleteFolderOnDisk.value = false
+}
+
+watch(deleteFolderOnDisk, (checked) => {
+  if (checked && !deleteFilesOnDisk.value) {
+    deleteFilesOnDisk.value = true
+  }
+})
+
+watch(deleteFilesOnDisk, (checked) => {
+  if (!checked && deleteFolderOnDisk.value) {
+    deleteFolderOnDisk.value = false
+  }
+})
 
 function showBulkEdit() {
   showBulkEditModal.value = true

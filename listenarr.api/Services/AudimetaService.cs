@@ -1,6 +1,7 @@
+using System;
 using System.Text.Json;
 using System.Text.Json.Serialization;
-using System;
+using HtmlAgilityPack;
 namespace Listenarr.Api.Services
 {
     public class AudimetaService
@@ -177,47 +178,8 @@ namespace Listenarr.Api.Services
 
             try
             {
-                // 1) Lookup author ASIN via /author?name=
-                var authorLookupUrl = $"{BASE_URL}/author?cache=true&region={region}&name={Uri.EscapeDataString(author)}";
-                if (!string.IsNullOrWhiteSpace(language)) authorLookupUrl += $"&language={Uri.EscapeDataString(language)}";
-                _logger.LogInformation("Looking up author on audimeta.de: {Url}", authorLookupUrl);
-                var lookupResp = await GetWithTimeoutAsync(authorLookupUrl);
-                if (lookupResp == null)
-                {
-                    _logger.LogWarning("Author lookup request timed out for author {Author}", author);
-                    var fallbackUrl = $"{BASE_URL}/search?products_sort_by=Title&cache=true&page={page}&limit={limit}&query={Uri.EscapeDataString(title + " " + author)}&region={region}";
-                    return await ExecuteSearchAsync(fallbackUrl, $"{title} by {author} (page {page})");
-                }
-                if (!lookupResp.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Author lookup returned status {Status} for author {Author}", lookupResp.StatusCode, author);
-                    // fallback to generic search
-                    var fallbackUrl = $"{BASE_URL}/search?products_sort_by=Title&cache=true&page={page}&limit={limit}&query={Uri.EscapeDataString(title + " " + author)}&region={region}";
-                    return await ExecuteSearchAsync(fallbackUrl, $"{title} by {author} (page {page})");
-                }
-
-                var lookupJson = await lookupResp.Content.ReadAsStringAsync();
-                string? authorAsin = null;
-                try
-                {
-                    // Response may be an array or envelope; try parse as array and pick first item's asin
-                    var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                    if (!string.IsNullOrWhiteSpace(lookupJson) && lookupJson.TrimStart()[0] == '[')
-                    {
-                        var list = JsonSerializer.Deserialize<List<AuthorLookupItem>>(lookupJson, opts);
-                        authorAsin = list?.FirstOrDefault()?.Asin;
-                    }
-                    else
-                    {
-                        var doc = JsonSerializer.Deserialize<AuthorLookupEnvelope>(lookupJson, opts);
-                        authorAsin = doc?.Asin ?? doc?.Results?.FirstOrDefault()?.Asin;
-                    }
-                }
-                catch (JsonException ex)
-                {
-                    _logger.LogWarning(ex, "Failed to parse author lookup JSON for author {Author}", author);
-                }
-
+                var authorLookupItems = await LookupAuthorItemsAsync(author, region, language);
+                var authorAsin = authorLookupItems.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.Asin))?.Asin;
                 if (string.IsNullOrWhiteSpace(authorAsin))
                 {
                     _logger.LogWarning("No author ASIN found for author '{Author}', falling back to search endpoint", author);
@@ -225,12 +187,7 @@ namespace Listenarr.Api.Services
                     return await ExecuteSearchAsync(fallbackUrl2, $"{title} by {author} (page {page})");
                 }
 
-                // 2) Fetch author's books
-                var booksUrl = $"{BASE_URL}/author/books/{Uri.EscapeDataString(authorAsin)}?limit={limit}&page={page}&cache=true&region={region}";
-                if (!string.IsNullOrWhiteSpace(language)) booksUrl += $"&language={Uri.EscapeDataString(language)}";
-                _logger.LogInformation("Fetching books for author ASIN {AuthorAsin}: {Url}", authorAsin, booksUrl);
-                var booksResult = await ExecuteSearchAsync(booksUrl, $"author:{author} (authorAsin:{authorAsin}) page {page}");
-
+                var booksResult = await GetBooksByResolvedAuthorAsync(author, authorAsin, page, limit, region, language);
                 if (booksResult == null || booksResult.Results == null) return booksResult;
 
                 // 3) Apply server-side filtering using provided title, isbn, asin, language if present
@@ -298,55 +255,15 @@ namespace Listenarr.Api.Services
 
         public virtual async Task<AudimetaSearchResponse?> SearchByAuthorAsync(string author, int page = 1, int limit = 50, string region = "us", string? language = null)
         {
-            // 1) Lookup author ASIN via /author?name=
-            var authorLookupUrl = $"{BASE_URL}/author?cache=true&region={region}&name={Uri.EscapeDataString(author)}";
-            if (!string.IsNullOrWhiteSpace(language)) authorLookupUrl += $"&language={Uri.EscapeDataString(language)}";
-            _logger.LogInformation("Looking up author on audimeta.de: {Url}", authorLookupUrl);
-            var lookupResp = await GetWithTimeoutAsync(authorLookupUrl);
-            if (lookupResp == null)
-            {
-                _logger.LogWarning("Author lookup request timed out for author {Author}", author);
-                return null;
-            }
-            if (!lookupResp.IsSuccessStatusCode)
-            {
-                _logger.LogWarning("Author lookup returned status {Status} for author {Author}", lookupResp.StatusCode, author);
-                return null;
-            }
-
-            var lookupJson = await lookupResp.Content.ReadAsStringAsync();
-            string? authorAsin = null;
-            try
-            {
-                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                if (!string.IsNullOrWhiteSpace(lookupJson) && lookupJson.TrimStart()[0] == '[')
-                {
-                    var list = JsonSerializer.Deserialize<List<AuthorLookupItem>>(lookupJson, opts);
-                    authorAsin = list?.FirstOrDefault()?.Asin;
-                }
-                else
-                {
-                    var doc = JsonSerializer.Deserialize<AuthorLookupEnvelope>(lookupJson, opts);
-                    authorAsin = doc?.Asin ?? doc?.Results?.FirstOrDefault()?.Asin;
-                }
-            }
-            catch (JsonException ex)
-            {
-                _logger.LogWarning(ex, "Failed to parse author lookup JSON for author {Author}", author);
-            }
-
+            var authorLookupItems = await LookupAuthorItemsAsync(author, region, language);
+            var authorAsin = authorLookupItems.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.Asin))?.Asin;
             if (string.IsNullOrWhiteSpace(authorAsin))
             {
                 _logger.LogWarning("No author ASIN found for author '{Author}'", author);
                 return null;
             }
 
-            // 2) Fetch author's books
-            var booksUrl = $"{BASE_URL}/author/books/{Uri.EscapeDataString(authorAsin)}?limit={limit}&page={page}&cache=true&region={region}";
-            if (!string.IsNullOrWhiteSpace(language)) booksUrl += $"&language={Uri.EscapeDataString(language)}";
-            _logger.LogInformation("Fetching books for author ASIN {AuthorAsin}: {Url}", authorAsin, booksUrl);
-            var booksResult = await ExecuteSearchAsync(booksUrl, $"author:{author} (authorAsin:{authorAsin}) page {page}");
-            return booksResult;
+            return await GetBooksByResolvedAuthorAsync(author, authorAsin, page, limit, region, language);
         }
 
         /// <summary>
@@ -358,40 +275,271 @@ namespace Listenarr.Api.Services
 
             try
             {
-                var authorLookupUrl = $"{BASE_URL}/author?cache=true&region={region}&name={Uri.EscapeDataString(author)}";
-                _logger.LogInformation("Looking up author on audimeta.de: {Url}", authorLookupUrl);
-                var lookupResp = await GetWithTimeoutAsync(authorLookupUrl);
-                if (lookupResp == null)
-                {
-                    _logger.LogWarning("Author lookup request timed out for author {Author}", author);
-                    return null;
-                }
-                if (!lookupResp.IsSuccessStatusCode)
-                {
-                    _logger.LogWarning("Author lookup returned status {Status} for author {Author}", lookupResp.StatusCode, author);
-                    return null;
-                }
-
-                var lookupJson = await lookupResp.Content.ReadAsStringAsync();
-                var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-
-                if (!string.IsNullOrWhiteSpace(lookupJson) && lookupJson.TrimStart()[0] == '[')
-                {
-                    var list = JsonSerializer.Deserialize<List<AuthorLookupItem>>(lookupJson, opts);
-                    return list?.FirstOrDefault();
-                }
-                else
-                {
-                    var doc = JsonSerializer.Deserialize<AuthorLookupEnvelope>(lookupJson, opts);
-                    if (doc == null) return null;
-                    if (!string.IsNullOrWhiteSpace(doc.Asin)) return new AuthorLookupItem { Asin = doc.Asin, Name = doc.Results?.FirstOrDefault()?.Name, Image = doc.Results?.FirstOrDefault()?.Image };
-                    return doc.Results?.FirstOrDefault();
-                }
+                var authorLookupItems = await LookupAuthorItemsAsync(author, region);
+                return authorLookupItems.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.Asin)) ?? authorLookupItems.FirstOrDefault();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to lookup author {Author}", author);
                 return null;
             }
+        }
+
+        private async Task<List<AuthorLookupItem>> LookupAuthorItemsAsync(string author, string region = "us", string? language = null)
+        {
+            var authorLookupUrl = $"{BASE_URL}/author?cache=true&region={region}&name={Uri.EscapeDataString(author)}";
+            if (!string.IsNullOrWhiteSpace(language)) authorLookupUrl += $"&language={Uri.EscapeDataString(language)}";
+            _logger.LogInformation("Looking up author on audimeta.de: {Url}", authorLookupUrl);
+
+            var lookupResp = await GetWithTimeoutAsync(authorLookupUrl);
+            if (lookupResp == null)
+            {
+                _logger.LogWarning("Author lookup request timed out for author {Author}", author);
+                return new List<AuthorLookupItem>();
+            }
+
+            if (!lookupResp.IsSuccessStatusCode)
+            {
+                _logger.LogWarning("Author lookup returned status {Status} for author {Author}", lookupResp.StatusCode, author);
+                return new List<AuthorLookupItem>();
+            }
+
+            var lookupJson = await lookupResp.Content.ReadAsStringAsync();
+            try
+            {
+                return ParseAuthorLookupItems(lookupJson);
+            }
+            catch (JsonException ex)
+            {
+                _logger.LogWarning(ex, "Failed to parse author lookup JSON for author {Author}", author);
+                return new List<AuthorLookupItem>();
+            }
+        }
+
+        private async Task<AudimetaSearchResponse?> GetBooksByResolvedAuthorAsync(string author, string authorAsin, int page = 1, int limit = 50, string region = "us", string? language = null)
+        {
+            var booksResult = await GetBooksByAuthorAsinAsync(authorAsin, page, limit, region, language);
+            if (booksResult != null) return booksResult;
+
+            _logger.LogWarning(
+                "Audimeta author/books lookup failed for author {Author} (ASIN {AuthorAsin}); falling back to Audible author page scraping",
+                author,
+                authorAsin);
+
+            return await ScrapeAudibleAuthorPageAsync(author, authorAsin, page, limit, region, language);
+        }
+
+        private async Task<AudimetaSearchResponse?> ScrapeAudibleAuthorPageAsync(string author, string authorAsin, int page = 1, int limit = 50, string region = "us", string? language = null)
+        {
+            try
+            {
+                var authorPageUrl = BuildAudibleAuthorPageUrl(author, authorAsin, region);
+                _logger.LogInformation("Scraping Audible author page as fallback: {Url}", authorPageUrl);
+
+                var response = await GetWithTimeoutAsync(authorPageUrl, timeoutSeconds: 10);
+                if (response == null)
+                {
+                    _logger.LogWarning("Audible author page request timed out for author {Author}", author);
+                    return null;
+                }
+
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Audible author page returned status code {StatusCode} for author {Author}", response.StatusCode, author);
+                    return null;
+                }
+
+                var html = await response.Content.ReadAsStringAsync();
+                if (string.IsNullOrWhiteSpace(html))
+                {
+                    _logger.LogWarning("Audible author page returned empty HTML for author {Author}", author);
+                    return null;
+                }
+
+                var htmlDoc = new HtmlDocument();
+                htmlDoc.LoadHtml(html);
+
+                var tiles = htmlDoc.DocumentNode.SelectNodes("//adbl-full-width-product-tile");
+                if (tiles == null || tiles.Count == 0)
+                {
+                    _logger.LogWarning("Audible author page contained no product tiles for author {Author}", author);
+                    return null;
+                }
+
+                var parsedTiles = tiles
+                    .Select(tile => ParseAudibleAuthorTile(tile, author, authorAsin, region))
+                    .Where(r => r != null)
+                    .Cast<AudimetaSearchResult>()
+                    .ToList();
+
+                if (parsedTiles.Count == 0)
+                {
+                    _logger.LogWarning("Audible author page tiles could not be parsed for author {Author}", author);
+                    return null;
+                }
+
+                var authorMatchedTiles = parsedTiles
+                    .Where(r => r.Authors?.Any(a => string.Equals(a.Name, author, StringComparison.OrdinalIgnoreCase)) == true)
+                    .ToList();
+                var filteredTiles = authorMatchedTiles.Count > 0 ? authorMatchedTiles : parsedTiles;
+
+                if (!string.IsNullOrWhiteSpace(language))
+                {
+                    filteredTiles = filteredTiles
+                        .Where(r => !string.IsNullOrWhiteSpace(r.Language) && string.Equals(r.Language, language, StringComparison.OrdinalIgnoreCase))
+                        .ToList();
+                }
+
+                var skip = Math.Max(0, (page - 1) * Math.Max(1, limit));
+                var pagedTiles = filteredTiles.Skip(skip).Take(Math.Max(1, limit)).ToList();
+
+                _logger.LogInformation(
+                    "Audible author page fallback returned {PagedCount} of {TotalCount} parsed title(s) for author {Author}",
+                    pagedTiles.Count,
+                    filteredTiles.Count,
+                    author);
+
+                return new AudimetaSearchResponse
+                {
+                    Results = pagedTiles,
+                    TotalResults = filteredTiles.Count
+                };
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to scrape Audible author page fallback for author {Author}", author);
+                return null;
+            }
+        }
+
+        private static List<AuthorLookupItem> ParseAuthorLookupItems(string lookupJson)
+        {
+            var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+            if (string.IsNullOrWhiteSpace(lookupJson)) return new List<AuthorLookupItem>();
+
+            var trimmed = lookupJson.TrimStart();
+            if (trimmed.StartsWith("[", StringComparison.Ordinal))
+            {
+                return JsonSerializer.Deserialize<List<AuthorLookupItem>>(lookupJson, opts) ?? new List<AuthorLookupItem>();
+            }
+
+            var doc = JsonSerializer.Deserialize<AuthorLookupEnvelope>(lookupJson, opts);
+            if (doc == null) return new List<AuthorLookupItem>();
+            if (doc.Results?.Any() == true) return doc.Results;
+            if (!string.IsNullOrWhiteSpace(doc.Asin))
+            {
+                return new List<AuthorLookupItem>
+                {
+                    new AuthorLookupItem
+                    {
+                        Asin = doc.Asin,
+                        Name = doc.Name,
+                        Image = doc.Image,
+                        Region = doc.Region
+                    }
+                };
+            }
+
+            return new List<AuthorLookupItem>();
+        }
+
+        private static AudimetaSearchResult? ParseAudibleAuthorTile(HtmlNode tile, string author, string authorAsin, string region)
+        {
+            var productImageNode = tile.SelectSingleNode(".//adbl-product-image");
+            var asin = productImageNode?.GetAttributeValue("data-asin", string.Empty);
+            if (string.IsNullOrWhiteSpace(asin)) return null;
+
+            var title = HtmlEntity.DeEntitize(tile.SelectSingleNode(".//*[@slot='title']")?.InnerText ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(title)) return null;
+
+            var subtitle = HtmlEntity.DeEntitize(tile.SelectSingleNode(".//*[@slot='subtitle']")?.InnerText ?? string.Empty).Trim();
+            var imageUrl = productImageNode?.SelectSingleNode(".//img")?.GetAttributeValue("src", string.Empty);
+            var relativeUrl = productImageNode?.GetAttributeValue("data-url", string.Empty);
+            if (string.IsNullOrWhiteSpace(relativeUrl))
+            {
+                relativeUrl = tile.SelectSingleNode(".//adbl-button[@href]")?.GetAttributeValue("href", string.Empty);
+            }
+
+            var authors = ParseAudibleAuthorTileAuthors(tile, author, authorAsin, region);
+            if (authors.Count == 0 && !string.IsNullOrWhiteSpace(author))
+            {
+                authors.Add(new AudimetaAuthor { Asin = authorAsin, Name = author, Region = region });
+            }
+
+            return new AudimetaSearchResult
+            {
+                Asin = asin,
+                Title = title,
+                Subtitle = string.IsNullOrWhiteSpace(subtitle) ? null : subtitle,
+                Authors = authors,
+                ImageUrl = string.IsNullOrWhiteSpace(imageUrl) ? null : imageUrl,
+                Link = NormalizeAudibleUrl(relativeUrl, region)
+            };
+        }
+
+        private static List<AudimetaAuthor> ParseAudibleAuthorTileAuthors(HtmlNode tile, string author, string authorAsin, string region)
+        {
+            var authors = new List<AudimetaAuthor>();
+            var metadataJson = tile.SelectSingleNode(".//adbl-product-metadata/script[@type='application/json']")?.InnerText;
+            if (string.IsNullOrWhiteSpace(metadataJson)) return authors;
+
+            try
+            {
+                var metadata = JsonSerializer.Deserialize<AudibleAuthorTileMetadata>(metadataJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                if (metadata?.Authors == null) return authors;
+
+                foreach (var metadataAuthor in metadata.Authors)
+                {
+                    if (string.IsNullOrWhiteSpace(metadataAuthor.Name)) continue;
+                    authors.Add(new AudimetaAuthor
+                    {
+                        Asin = string.Equals(metadataAuthor.Name, author, StringComparison.OrdinalIgnoreCase) ? authorAsin : null,
+                        Name = metadataAuthor.Name,
+                        Region = region
+                    });
+                }
+            }
+            catch (JsonException)
+            {
+                // Ignore malformed metadata blobs and fall back to the requested author name.
+            }
+
+            return authors;
+        }
+
+        private static string BuildAudibleAuthorPageUrl(string author, string authorAsin, string region)
+        {
+            var authorSlug = string.IsNullOrWhiteSpace(author)
+                ? authorAsin
+                : Uri.EscapeDataString(author.Trim().Replace(' ', '-'));
+            return $"{GetAudibleBaseUrl(region)}/author/{authorSlug}/{Uri.EscapeDataString(authorAsin)}";
+        }
+
+        private static string? NormalizeAudibleUrl(string? url, string region)
+        {
+            if (string.IsNullOrWhiteSpace(url)) return null;
+            if (Uri.TryCreate(url, UriKind.Absolute, out var absoluteUri)
+                && !string.Equals(absoluteUri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
+            {
+                return absoluteUri.ToString();
+            }
+            return $"{GetAudibleBaseUrl(region)}{url}";
+        }
+
+        private static string GetAudibleBaseUrl(string region)
+        {
+            return region?.Trim().ToLowerInvariant() switch
+            {
+                "au" => "https://www.audible.com.au",
+                "ca" => "https://www.audible.ca",
+                "de" => "https://www.audible.de",
+                "es" => "https://www.audible.es",
+                "fr" => "https://www.audible.fr",
+                "in" => "https://www.audible.in",
+                "it" => "https://www.audible.it",
+                "jp" => "https://www.audible.co.jp",
+                "uk" => "https://www.audible.co.uk",
+                _ => "https://www.audible.com"
+            };
         }
 
         public virtual async Task<AudimetaSearchResponse?> SearchByIsbnAsync(string isbn, int page = 1, int limit = 50, string region = "us", string? language = null)
@@ -716,6 +864,15 @@ namespace Listenarr.Api.Services
 
     // Helper types for simple author lookup parsing
     public class AuthorLookupItem { public string? Asin { get; set; } public string? Name { get; set; } public string? Image { get; set; } public string? Region { get; set; } }
-    public class AuthorLookupEnvelope { public string? Asin { get; set; } public List<AuthorLookupItem>? Results { get; set; } }
+    public class AuthorLookupEnvelope
+    {
+        public string? Asin { get; set; }
+        public string? Name { get; set; }
+        public string? Image { get; set; }
+        public string? Region { get; set; }
+        public List<AuthorLookupItem>? Results { get; set; }
+    }
+    public class AudibleAuthorTileMetadata { public List<AudibleAuthorTileAuthor>? Authors { get; set; } }
+    public class AudibleAuthorTileAuthor { public string? Name { get; set; } }
 }
 

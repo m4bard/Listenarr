@@ -4,6 +4,9 @@ using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using System.Collections.Generic;
 using System;
+using System.Linq;
+using Microsoft.EntityFrameworkCore;
+using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Controllers
 {
@@ -13,10 +16,14 @@ namespace Listenarr.Api.Controllers
     public class RootFoldersController : ControllerBase
     {
         private readonly IRootFolderService _service;
+        private readonly IUnmatchedScanQueueService _unmatchedQueue;
+        private readonly ListenArrDbContext _db;
 
-        public RootFoldersController(IRootFolderService service)
+        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue, ListenArrDbContext db)
         {
             _service = service;
+            _unmatchedQueue = unmatchedQueue;
+            _db = db;
         }
 
         /// <summary>
@@ -120,6 +127,77 @@ namespace Listenarr.Api.Controllers
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 return StatusCode(500, new { message = "Failed to delete root folder", error = ex.Message });
             }
+        }
+
+        /// <summary>
+        /// Enqueues a background scan of a root folder to find audio files not in the library.
+        /// Returns a jobId; subscribe to SignalR "UnmatchedScanComplete" for completion notification.
+        /// </summary>
+        [HttpPost("{id}/scan-unmatched")]
+        public async Task<IActionResult> ScanUnmatched(int id)
+        {
+            var folder = await _service.GetByIdAsync(id);
+            if (folder == null) return NotFound(new { message = "Root folder not found" });
+
+            var jobId = await _unmatchedQueue.EnqueueAsync(folder.Path);
+            return Ok(new { jobId = jobId.ToString() });
+        }
+
+        /// <summary>
+        /// Returns the status and results of a previously enqueued unmatched scan job.
+        /// </summary>
+        [HttpGet("unmatched-results/{jobId}")]
+        public IActionResult GetUnmatchedResults(Guid jobId)
+        {
+            if (!_unmatchedQueue.TryGetJob(jobId, out var job) || job == null)
+                return NotFound(new { message = "Scan job not found" });
+
+            return Ok(new
+            {
+                jobId = job.Id.ToString(),
+                status = job.Status,
+                error = job.Error,
+                items = job.Results ?? new List<UnmatchedFileResult>()
+            });
+        }
+
+        /// <summary>
+        /// Returns the cached results from the last completed unmatched scan for a root folder.
+        /// Returns an empty list if no scan has been run yet this session.
+        /// </summary>
+        [HttpGet("{id}/unmatched")]
+        public async Task<IActionResult> GetSavedUnmatched(int id)
+        {
+            var folder = await _service.GetByIdAsync(id);
+            if (folder == null) return NotFound(new { message = "Root folder not found" });
+
+            if (_unmatchedQueue.TryGetLastJobForPath(folder.Path, out var job) && job != null)
+            {
+                // Filter out items already added to the library since the scan ran
+                var trackedFromFiles = await _db.AudiobookFiles
+                    .Where(f => f.Path != null)
+                    .Select(f => f.Path!)
+                    .ToListAsync();
+                var trackedFromAudiobooks = await _db.Audiobooks
+                    .Where(a => a.FilePath != null)
+                    .Select(a => a.FilePath!)
+                    .ToListAsync();
+                var tracked = new HashSet<string>(
+                    trackedFromFiles.Concat(trackedFromAudiobooks),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var filtered = (job.Results ?? new List<UnmatchedFileResult>())
+                    .Where(r => !tracked.Contains(r.FullPath) && System.IO.File.Exists(r.FullPath))
+                    .ToList();
+
+                return Ok(new
+                {
+                    lastScannedAt = job.CompletedAt,
+                    items = filtered
+                });
+            }
+
+            return Ok(new { lastScannedAt = (DateTime?)null, items = new List<UnmatchedFileResult>() });
         }
     }
 }

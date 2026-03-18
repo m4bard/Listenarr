@@ -276,6 +276,67 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task ImportFilesFromDirectory_MultipartFiles_KeepNaturalOrderWhenRenamed()
+        {
+            var outputDir = Path.Join(Path.GetTempPath(), "listenarr-import-ordered", Guid.NewGuid().ToString());
+            Directory.CreateDirectory(outputDir);
+
+            var srcDir = Path.Join(Path.GetTempPath(), "listenarr-import-ordered-src", Guid.NewGuid().ToString());
+            Directory.CreateDirectory(srcDir);
+            var part10 = Path.Join(srcDir, "Part 10.mp3");
+            var part2 = Path.Join(srcDir, "Part 2.mp3");
+            var part1 = Path.Join(srcDir, "Part 1.mp3");
+            await File.WriteAllTextAsync(part10, "ten");
+            await File.WriteAllTextAsync(part2, "two");
+            await File.WriteAllTextAsync(part1, "one");
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.IsAny<string>()))
+                .ReturnsAsync(new AudioMetadata { Title = "Ordered Download", Format = "mp3", Bitrate = 128000 });
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings
+            {
+                OutputPath = outputDir,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}",
+                CompletedFileAction = "Copy"
+            });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            var services = new ServiceCollection();
+            using var provider = services.BuildServiceProvider();
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new Microsoft.Extensions.Logging.Abstractions.NullLogger<ImportService>());
+
+            var results = await importService.ImportFilesFromDirectoryAsync(
+                "ordered-download",
+                audiobookId: null,
+                new[] { part10, part2, part1 },
+                await configMock.Object.GetApplicationSettingsAsync());
+
+            var mapped = results
+                .Where(r => r.Success && !string.IsNullOrWhiteSpace(r.FinalPath) && !string.IsNullOrWhiteSpace(r.SourcePath))
+                .ToDictionary(r => r.SourcePath!, r => r.FinalPath!, StringComparer.OrdinalIgnoreCase);
+
+            Assert.Equal(Path.Combine(outputDir, "Ordered Download-01.mp3"), mapped[part1]);
+            Assert.Equal(Path.Combine(outputDir, "Ordered Download-02.mp3"), mapped[part2]);
+            Assert.Equal(Path.Combine(outputDir, "Ordered Download-10.mp3"), mapped[part10]);
+            Assert.Equal("one", await File.ReadAllTextAsync(mapped[part1]));
+            Assert.Equal("two", await File.ReadAllTextAsync(mapped[part2]));
+            Assert.Equal("ten", await File.ReadAllTextAsync(mapped[part10]));
+
+            TryDeleteDirectory(outputDir, recursive: true);
+            TryDeleteDirectory(srcDir, recursive: true);
+        }
+
+        [Fact]
         public async Task GetQueue_DoesNotPurge_WhenSabnzbdHistoryContainsMatch()
         {
             await using var db = CreateInMemoryDb();

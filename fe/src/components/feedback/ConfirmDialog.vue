@@ -6,7 +6,7 @@
 
     <template #footer>
       <button class="btn cancel" @click="onCancel">{{ cancelText }}</button>
-      <button class="btn confirm" :class="{ danger }" @click="onConfirm">{{ confirmText }}</button>
+      <button class="btn confirm" :class="danger ? 'btn-danger' : 'btn-info'" @click="onConfirm">{{ confirmText }}</button>
     </template>
   </Modal>
 </template>

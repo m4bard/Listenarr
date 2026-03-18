@@ -61,6 +61,19 @@
           <option value="Hardlink/Copy">Hardlink/Copy</option>
         </select>
       </FormRow>
+
+      <FormRow
+        label="Import Blacklist Extensions"
+        help="Extensions to skip during library import and completed-download import. Separate values with commas or new lines, for example: .nfo, .sfv, .jpg"
+      >
+        <textarea
+          class="blacklist-textarea"
+          :value="formatExtensionList(settings.importBlacklistExtensions)"
+          placeholder=".nfo&#10;.sfv&#10;.jpg"
+          rows="4"
+          @change="e => updateField('importBlacklistExtensions', parseExtensionList((e.target as HTMLTextAreaElement).value))"
+        />
+      </FormRow>
     </div>
 
     <!-- Pattern Help Modal -->
@@ -203,6 +216,18 @@ function updateField(field: keyof ApplicationSettings, value: unknown) {
   emit('update:settings', payload)
 }
 
+function parseExtensionList(value: string): string[] {
+  return value
+    .split(/[\r\n,;]+/)
+    .map(entry => entry.trim())
+    .filter(Boolean)
+    .map(entry => (entry.startsWith('.') ? entry : `.${entry}`))
+}
+
+function formatExtensionList(value: string[] | undefined): string {
+  return Array.isArray(value) ? value.join('\n') : ''
+}
+
 // --- Path length estimation ---
 const WINDOWS_MAX_PATH = 259
 
@@ -262,6 +287,25 @@ h3 svg {
   border: 1px solid #333; 
   box-shadow: 0 4px 14px rgba(0,0,0,0.6); 
   background-color: #232323; 
+}
+
+.blacklist-textarea {
+  width: 100%;
+  min-height: 7rem;
+  padding: 0.9rem 0.85rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background-color: #1a1a1a;
+  color: #fff;
+  font-size: 0.95rem;
+  font-family: inherit;
+  resize: vertical;
+}
+
+.blacklist-textarea:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.08);
 }
 
 .form-group { margin-bottom: 1.25rem }

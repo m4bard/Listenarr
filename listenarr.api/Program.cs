@@ -683,6 +683,9 @@ else
 {
     Log.Logger.Information("[Startup] Hosted/background services are enabled");
 }
+// Register the queue singleton outside the hosted-services guard so controllers
+// (e.g. RootFoldersController) can resolve it even when hosted services are disabled (tests).
+builder.Services.AddSingleton<Listenarr.Api.Services.IUnmatchedScanQueueService, Listenarr.Api.Services.UnmatchedScanQueueService>();
 if (!disableHostedServices)
 {
     builder.Services.AddListenarrHostedServices(builder.Configuration);
