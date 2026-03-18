@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.59] - 2026-03-18
+
+### Added
+- **Release docs rebuild hook:** Added a post-release repository dispatch in GitHub Actions to trigger the docs-site rebuild after published Listenarr releases.
+- **Non-.NET 9 lock compatibility:** Added conditional `Backport.System.Threading.Lock` support so the newer lock implementation can also be used on older target frameworks.
+
+### Changed
+- **Internal synchronization primitives:** Replaced several manual `SemaphoreSlim` and `object` locks with `System.Threading.Lock`, `AsyncKeyedLocker`, and `AsyncNonKeyedLocker` across image caching, metadata extraction, search enrichment, completed-download handling, and test-host cleanup to reduce lock bookkeeping and tighten concurrency control.
+- **Lookup-path cleanup:** Normalized several request-query, metadata, and JSON-object access paths to use `TryGetValue` and `TryGetPropertyValue` patterns for cleaner single-pass lookups.
+- **API launch profile cleanup:** Normalized the API `launchSettings.json` structure and schema placement for a cleaner local-development profile definition.
+
+### Fixed
+- **Download completion-candidate cleanup:** Fixed monitor flows to remove stale completion candidates in a single dictionary operation when items stop appearing complete in qBittorrent, SABnzbd, and NZBGet.
+- **Intelligent-search prefix handling:** Fixed intelligent-search prefix parsing so trimmed ASIN, ISBN, author, and title values are reused consistently across logging, branch selection, and Audimeta lookups.
+- **Metadata extraction and image-cache locking:** Fixed several async paths to release metadata-extraction and per-image download locks via scoped disposables instead of manual wait/release pairs, reducing the chance of mismatched lock cleanup.
+- **Safer state and notification lookups:** Fixed download terminal-state detection and Discord notification embed trimming to avoid redundant key checks and repeated dictionary/JSON access.
+
+### Removed
+- **Unused application placeholder:** Removed the empty `listenarr.application/Class1.cs` placeholder file.
+
 ## [0.2.58] - 2026-03-16
 
 ### Added
