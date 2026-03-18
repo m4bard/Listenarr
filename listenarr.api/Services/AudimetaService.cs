@@ -517,7 +517,11 @@ namespace Listenarr.Api.Services
         private static string? NormalizeAudibleUrl(string? url, string region)
         {
             if (string.IsNullOrWhiteSpace(url)) return null;
-            if (Uri.TryCreate(url, UriKind.Absolute, out var absoluteUri)) return absoluteUri.ToString();
+            if (Uri.TryCreate(url, UriKind.Absolute, out var absoluteUri)
+                && !string.Equals(absoluteUri.Scheme, Uri.UriSchemeFile, StringComparison.OrdinalIgnoreCase))
+            {
+                return absoluteUri.ToString();
+            }
             return $"{GetAudibleBaseUrl(region)}{url}";
         }
 

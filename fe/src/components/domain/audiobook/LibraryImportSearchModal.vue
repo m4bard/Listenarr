@@ -37,7 +37,12 @@
             class="result-item"
             @click="select(result)"
           >
-            <img v-if="result.imageUrl" :src="result.imageUrl" class="result-thumb" alt="" />
+            <img
+              v-if="result.imageUrl"
+              :src="getProtectedImageSrc(result.imageUrl, `library-import-search-${result.asin ?? result.title}`, placeholderUrl)"
+              class="result-thumb"
+              alt=""
+            />
             <div class="result-info">
               <span class="result-title">{{ result.title }}</span>
               <span class="result-meta">
@@ -66,8 +71,10 @@ import { ref, onMounted, nextTick } from 'vue'
 import { PhSpinner } from '@phosphor-icons/vue'
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
 import { apiService } from '@/services/api'
+import { useProtectedImages } from '@/composables/useProtectedImages'
 import type { LibraryImportItem } from '@/stores/libraryImport'
 import { buildLibraryImportInitialAuthor, buildLibraryImportInitialQuery } from '@/utils/libraryImportSearch'
+import { getPlaceholderUrl } from '@/utils/placeholder'
 import type { SearchResult } from '@/types'
 
 const props = defineProps<{ item: LibraryImportItem }>()
@@ -76,7 +83,9 @@ const emit = defineEmits<{
   select: [result: SearchResult]
 }>()
 
+const { getProtectedImageSrc } = useProtectedImages()
 const inputEl = ref<HTMLInputElement | null>(null)
+const placeholderUrl = getPlaceholderUrl()
 // Build the initial query: ASIN → filename stem (when more specific than folder) → folderName
 // detectedTitle comes from the audio file's "album" tag which is often the series name — skip it
 function initialQuery(): string {
