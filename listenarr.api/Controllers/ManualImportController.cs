@@ -123,6 +123,13 @@ public class ManualImportController : ControllerBase
                 var appSettings = await _configService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
                 var importBlacklist = FileUtils.NormalizeExtensions(appSettings.ImportBlacklistExtensions);
                 var orderedItems = BuildOrderedItems(request.Items);
+                var selectedAudioProfiles = request.IncludeCompanionFiles
+                    ? await BuildAudioMatchProfilesAsync(
+                        orderedItems
+                            .Where(item => !string.IsNullOrWhiteSpace(item.FullPath))
+                            .Select(item => item.FullPath!)
+                            .Where(FileUtils.IsAudioFile))
+                    : Array.Empty<FileUtils.AudioMatchProfile>();
 
                 // Count files per audiobook to determine if multi-file import
                 var filesPerAudiobook = orderedItems
@@ -147,6 +154,7 @@ public class ManualImportController : ControllerBase
                         orderedItems,
                         results,
                         normalized,
+                        selectedAudioProfiles,
                         usedDestinations,
                         importBlacklist);
                     _logger.LogInformation("Manual import companion-file pass completed with {Count} imported companion file(s)", companionImportCount);
@@ -743,8 +751,9 @@ public class ManualImportController : ControllerBase
         IReadOnlyCollection<ManualImportItem> orderedItems,
         IReadOnlyCollection<ManualImportResult> results,
         string sourceRootPath,
+        IReadOnlyCollection<FileUtils.AudioMatchProfile> selectedAudioProfiles,
         HashSet<string> usedDestinations,
-        IReadOnlyCollection<string> importBlacklist)
+        ISet<string> importBlacklist)
     {
         var audiobookIds = orderedItems
             .Select(item => item.MatchedAudiobookId)
@@ -785,6 +794,18 @@ public class ManualImportController : ControllerBase
         {
             try
             {
+                if (FileUtils.IsAudioFile(companionFile))
+                {
+                    var profile = await BuildAudioMatchProfileAsync(companionFile);
+                    if (profile == null || !FileUtils.LikelyMatchesAnyReference(profile, selectedAudioProfiles))
+                    {
+                        _logger.LogInformation(
+                            "Skipping unmatched audio companion file {FilePath} during manual import because it does not match the selected audiobook batch",
+                            companionFile);
+                        continue;
+                    }
+                }
+
                 var relativePath = Path.GetRelativePath(sourceRootPath, companionFile);
                 if (relativePath.StartsWith("..", StringComparison.Ordinal))
                 {
@@ -819,6 +840,43 @@ public class ManualImportController : ControllerBase
         }
 
         return importedCount;
+    }
+
+    private async Task<IReadOnlyCollection<FileUtils.AudioMatchProfile>> BuildAudioMatchProfilesAsync(IEnumerable<string> filePaths)
+    {
+        var profiles = new List<FileUtils.AudioMatchProfile>();
+        foreach (var filePath in filePaths
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var profile = await BuildAudioMatchProfileAsync(filePath);
+            if (profile != null)
+            {
+                profiles.Add(profile);
+            }
+        }
+
+        return profiles;
+    }
+
+    private async Task<FileUtils.AudioMatchProfile?> BuildAudioMatchProfileAsync(string filePath)
+    {
+        if (string.IsNullOrWhiteSpace(filePath))
+        {
+            return null;
+        }
+
+        AudioMetadata? metadata = null;
+        try
+        {
+            metadata = await _metadataService.ExtractFileMetadataAsync(filePath);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
+            _logger.LogDebug(ex, "Failed to extract metadata while classifying manual-import companion file {FilePath}", filePath);
+        }
+
+        return FileUtils.CreateAudioMatchProfile(filePath, metadata);
     }
 
     private static string FormatSize(long bytes)

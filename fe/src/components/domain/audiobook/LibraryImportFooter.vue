@@ -1,14 +1,17 @@
 <template>
   <div class="import-footer">
-    <!-- Left: input mode + rate limit warning -->
     <div class="footer-left">
       <label class="footer-label">
-        <select v-model="store.inputMode" class="mode-select">
+        <select v-model="store.inputMode" class="mode-select" :disabled="isImporting">
           <option value="move">Move</option>
           <option value="hardlink/copy">Hardlink / Copy</option>
         </select>
         <span class="footer-to">to:</span>
-        <select v-model="destinationFolderId" class="mode-select destination-select">
+        <select
+          v-model="destinationFolderId"
+          class="mode-select destination-select"
+          :disabled="isImporting"
+        >
           <option v-for="f in props.folders" :key="f.id" :value="f.id">
             {{ f.path }}
           </option>
@@ -17,15 +20,15 @@
 
       <div v-if="store.metadataFetchCount > 100" class="rate-limit-warning">
         <PhWarning :size="14" />
-        {{ store.metadataFetchCount }} API lookups — rate limit: 150/window
+        {{ store.metadataFetchCount }} API lookups - rate limit: 150/window
       </div>
     </div>
 
-    <!-- Center: processing controls -->
     <div class="footer-center">
       <button
         v-if="store.hasUnprocessedItems && !store.isProcessing"
         class="btn btn-secondary btn-sm"
+        :disabled="isImporting"
         @click="store.startProcessing()"
       >
         <PhPlay :size="14" />
@@ -35,34 +38,34 @@
       <template v-if="store.isProcessing">
         <PhSpinner class="ph-spin" :size="14" />
         <span class="processing-label">
-          Processing {{ store.processedCount }} / {{ store.itemList.length }}…
+          Processing {{ store.processedCount }} / {{ store.itemList.length }}...
         </span>
-        <button class="btn btn-secondary btn-sm" @click="store.stopProcessing()">
+        <button class="btn btn-secondary btn-sm" :disabled="isImporting" @click="store.stopProcessing()">
           <PhStop :size="14" />
           Cancel
         </button>
       </template>
     </div>
 
-    <!-- Right: import button -->
     <div class="footer-right">
-      <span v-if="store.selectedCount > 0" class="selected-label">
-        {{ store.selectedCount }} selected
+      <span v-if="displayImportCount > 0" class="selected-label">
+        {{ displayImportCount }} selected
       </span>
       <button
         class="btn btn-primary"
-        :disabled="store.selectedCount === 0 || store.isProcessing"
+        :disabled="store.selectedCount === 0 || store.isProcessing || isImporting"
         @click="handleImport"
       >
-        <PhDownload :size="14" />
-        Import {{ store.selectedCount > 0 ? store.selectedCount : '' }} Book{{ store.selectedCount !== 1 ? 's' : '' }}
+        <PhSpinner v-if="isImporting" class="ph-spin" :size="14" />
+        <PhDownload v-else :size="14" />
+        {{ importButtonLabel }}
       </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { computed, ref } from 'vue'
 import { PhWarning, PhPlay, PhStop, PhSpinner, PhDownload } from '@phosphor-icons/vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
 import { useToast } from '@/services/toastService'
@@ -74,21 +77,48 @@ const store = useLibraryImportStore()
 const toast = useToast()
 
 const destinationFolderId = ref<number | null>(props.folders[0]?.id ?? null)
+const isImporting = ref(false)
+const importingCount = ref(0)
+
 const destinationPath = computed(
   () => props.folders.find((f) => f.id === destinationFolderId.value)?.path ?? '',
 )
 
-async function handleImport() {
-  const { imported, errors } = await store.importSelected(destinationPath.value)
+const displayImportCount = computed(() =>
+  isImporting.value ? importingCount.value : store.selectedCount,
+)
 
-  if (imported > 0) {
-    let msg = `${imported} book${imported !== 1 ? 's' : ''} imported`
-    if (store.metadataFetchCount > 0) msg += ` · ${store.metadataFetchCount} metadata lookups`
-    toast.success('Import complete', msg)
+const importButtonLabel = computed(() => {
+  const count = displayImportCount.value
+  const noun = `Book${count !== 1 ? 's' : ''}`
+  if (isImporting.value) {
+    return `Importing ${count > 0 ? count : ''} ${noun}...`.replace(/\s+/g, ' ').trim()
   }
 
-  if (errors.length > 0) {
-    toast.error('Import errors', `${errors.length} item${errors.length !== 1 ? 's' : ''} failed — check logs`)
+  return `Import ${count > 0 ? count : ''} ${noun}`.replace(/\s+/g, ' ').trim()
+})
+
+async function handleImport() {
+  if (isImporting.value || store.selectedCount === 0) return
+
+  importingCount.value = store.selectedCount
+  isImporting.value = true
+
+  try {
+    const { imported, errors } = await store.importSelected(destinationPath.value)
+
+    if (imported > 0) {
+      let msg = `${imported} book${imported !== 1 ? 's' : ''} imported`
+      if (store.metadataFetchCount > 0) msg += ` - ${store.metadataFetchCount} metadata lookups`
+      toast.success('Import complete', msg)
+    }
+
+    if (errors.length > 0) {
+      toast.error('Import errors', `${errors.length} item${errors.length !== 1 ? 's' : ''} failed - check logs`)
+    }
+  } finally {
+    isImporting.value = false
+    importingCount.value = 0
   }
 }
 </script>
@@ -137,6 +167,11 @@ async function handleImport() {
   height: var(--control-height, 40px);
   box-sizing: border-box;
   cursor: pointer;
+}
+
+.mode-select:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
 }
 
 .destination-select {

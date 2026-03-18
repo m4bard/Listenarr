@@ -1619,7 +1619,7 @@ namespace Listenarr.Api.Controllers
         /// Delete an audiobook from the library, including its cached cover image.
         /// </summary>
         /// <param name="id">Audiobook ID.</param>
-        /// <param name="deleteFiles">When true, delete tracked audiobook files from disk before removing the library record.</param>
+        /// <param name="deleteFiles">When true, delete all files within the audiobook folder when it can be done safely; otherwise fall back to tracked audiobook files before removing the library record.</param>
         /// <param name="deleteFolder">When true, also delete the audiobook folder when it can be done safely.</param>
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteAudiobook(int id, [FromQuery] bool deleteFiles = false, [FromQuery] bool deleteFolder = false)
@@ -1727,19 +1727,33 @@ namespace Listenarr.Api.Controllers
             public List<string> Warnings { get; } = new List<string>();
         }
 
+        private sealed class DeleteFolderTarget
+        {
+            public required string FolderPath { get; init; }
+            public required IReadOnlyCollection<string> ProtectedRoots { get; init; }
+        }
+
         private async Task<DeleteFilesystemResult> DeleteAudiobookFilesystemAsync(Audiobook audiobook, bool deleteFolder)
         {
             var result = new DeleteFilesystemResult();
             var trackedFilePaths = CollectTrackedFilePaths(audiobook);
+            var deleteTarget = await ResolveDeleteFolderTargetAsync(audiobook, trackedFilePaths, result);
 
-            foreach (var trackedFilePath in trackedFilePaths)
+            if (deleteTarget != null)
             {
-                TryDeleteFile(trackedFilePath, result);
+                TryDeleteFolderContents(deleteTarget.FolderPath, result);
+
+                if (deleteFolder)
+                {
+                    await TryDeleteAudiobookFolderAsync(audiobook, deleteTarget, result);
+                }
             }
-
-            if (deleteFolder)
+            else
             {
-                await TryDeleteAudiobookFolderAsync(audiobook, trackedFilePaths, result);
+                foreach (var trackedFilePath in trackedFilePaths)
+                {
+                    TryDeleteFile(trackedFilePath, result);
+                }
             }
 
             return result;
@@ -1794,14 +1808,76 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        private async Task TryDeleteAudiobookFolderAsync(Audiobook audiobook, IReadOnlyList<string> trackedFilePaths, DeleteFilesystemResult result)
+        private void TryDeleteFolderContents(string folderPath, DeleteFilesystemResult result)
+        {
+            if (!Directory.Exists(folderPath))
+            {
+                return;
+            }
+
+            string[] files;
+            try
+            {
+                files = Directory.GetFiles(folderPath, "*", SearchOption.AllDirectories);
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                result.Warnings.Add("Could not enumerate the audiobook folder contents for deletion.");
+                _logger.LogWarning(ex, "Failed to enumerate audiobook folder contents for {FolderPath}", LogRedaction.SanitizeFilePath(folderPath));
+                return;
+            }
+
+            foreach (var filePath in files)
+            {
+                TryDeleteFile(filePath, result);
+            }
+
+            string[] directories;
+            try
+            {
+                directories = Directory.GetDirectories(folderPath, "*", SearchOption.AllDirectories)
+                    .OrderByDescending(path => path.Length)
+                    .ToArray();
+            }
+            catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+            {
+                result.Warnings.Add("Some nested folders could not be cleaned up after file deletion.");
+                _logger.LogWarning(ex, "Failed to enumerate nested audiobook directories for {FolderPath}", LogRedaction.SanitizeFilePath(folderPath));
+                return;
+            }
+
+            foreach (var directoryPath in directories)
+            {
+                try
+                {
+                    if (!Directory.Exists(directoryPath))
+                    {
+                        continue;
+                    }
+
+                    if (!Directory.EnumerateFileSystemEntries(directoryPath).Any())
+                    {
+                        Directory.Delete(directoryPath, recursive: false);
+                    }
+                }
+                catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
+                {
+                    _logger.LogDebug(ex, "Failed to remove nested audiobook directory {FolderPath}", LogRedaction.SanitizeFilePath(directoryPath));
+                }
+            }
+        }
+
+        private async Task<DeleteFolderTarget?> ResolveDeleteFolderTargetAsync(
+            Audiobook audiobook,
+            IReadOnlyList<string> trackedFilePaths,
+            DeleteFilesystemResult result)
         {
             var protectedRoots = await GetProtectedRootPathsAsync();
             var folderPath = ResolveAudiobookFolderPath(audiobook, trackedFilePaths);
             if (string.IsNullOrWhiteSpace(folderPath))
             {
-                result.Warnings.Add("Audiobook folder could not be determined, so the folder was not deleted.");
-                return;
+                result.Warnings.Add("Audiobook folder could not be determined, so only tracked audiobook files were deleted.");
+                return null;
             }
 
             if (protectedRoots.Any(root => PathsEqual(root, folderPath)))
@@ -1817,19 +1893,19 @@ namespace Listenarr.Api.Controllers
 
             if (IsFilesystemRoot(folderPath))
             {
-                result.Warnings.Add("Refused to delete a filesystem root folder.");
-                return;
+                result.Warnings.Add("Refused to delete all files in a filesystem root folder.");
+                return null;
             }
 
             if (protectedRoots.Any(root => PathsEqual(root, folderPath)))
             {
-                result.Warnings.Add("Refused to delete a configured library root folder.");
-                return;
+                result.Warnings.Add("Refused to delete all files in a configured library root folder.");
+                return null;
             }
 
             if (!Directory.Exists(folderPath))
             {
-                return;
+                return null;
             }
 
             var otherFilePaths = await _dbContext.AudiobookFiles
@@ -1842,8 +1918,8 @@ namespace Listenarr.Api.Controllers
                 .Select(NormalizePath)
                 .Any(p => !string.IsNullOrWhiteSpace(p) && IsSamePathOrWithin(p!, folderPath)))
             {
-                result.Warnings.Add("Refused to delete the audiobook folder because other audiobook files are inside it.");
-                return;
+                result.Warnings.Add("Refused to delete all files in the audiobook folder because other audiobook files are inside it.");
+                return null;
             }
 
             var otherAudiobookPaths = await _dbContext.Audiobooks
@@ -1858,29 +1934,43 @@ namespace Listenarr.Api.Controllers
                 if (!string.IsNullOrWhiteSpace(otherBasePath)
                     && (IsSamePathOrWithin(otherBasePath, folderPath) || IsSamePathOrWithin(folderPath, otherBasePath)))
                 {
-                    result.Warnings.Add("Refused to delete the audiobook folder because another audiobook references that location.");
-                    return;
+                    result.Warnings.Add("Refused to delete all files in the audiobook folder because another audiobook references that location.");
+                    return null;
                 }
 
                 var otherFilePath = NormalizePath(otherPath.FilePath);
                 if (!string.IsNullOrWhiteSpace(otherFilePath) && IsSamePathOrWithin(otherFilePath, folderPath))
                 {
-                    result.Warnings.Add("Refused to delete the audiobook folder because another audiobook file is inside it.");
-                    return;
+                    result.Warnings.Add("Refused to delete all files in the audiobook folder because another audiobook file is inside it.");
+                    return null;
                 }
+            }
+
+            return new DeleteFolderTarget
+            {
+                FolderPath = folderPath,
+                ProtectedRoots = protectedRoots
+            };
+        }
+
+        private async Task TryDeleteAudiobookFolderAsync(Audiobook audiobook, DeleteFolderTarget deleteTarget, DeleteFilesystemResult result)
+        {
+            if (!Directory.Exists(deleteTarget.FolderPath))
+            {
+                return;
             }
 
             try
             {
-                Directory.Delete(folderPath, recursive: true);
+                Directory.Delete(deleteTarget.FolderPath, recursive: true);
                 result.DeletedFolder = true;
-                _logger.LogInformation("Deleted audiobook folder {FolderPath}", LogRedaction.SanitizeFilePath(folderPath));
-                await TryDeleteEmptyAuthorFolderAsync(audiobook, folderPath, protectedRoots, result);
+                _logger.LogInformation("Deleted audiobook folder {FolderPath}", LogRedaction.SanitizeFilePath(deleteTarget.FolderPath));
+                await TryDeleteEmptyAuthorFolderAsync(audiobook, deleteTarget.FolderPath, deleteTarget.ProtectedRoots, result);
             }
             catch (Exception ex) when (ex is IOException || ex is UnauthorizedAccessException)
             {
                 result.Warnings.Add("Failed to delete the audiobook folder.");
-                _logger.LogWarning(ex, "Failed to delete audiobook folder {FolderPath}", LogRedaction.SanitizeFilePath(folderPath));
+                _logger.LogWarning(ex, "Failed to delete audiobook folder {FolderPath}", LogRedaction.SanitizeFilePath(deleteTarget.FolderPath));
             }
         }
 

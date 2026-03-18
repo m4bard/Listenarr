@@ -363,8 +363,9 @@ namespace Listenarr.Api.Services
             var results = new List<ImportResult>();
             var folderPattern = settings.FolderNamingPattern;
             var filePattern = settings.FileNamingPattern;
+            var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
             var sourceFiles = files
-                .Where(file => !FileUtils.ShouldSkipImportFile(file, settings.ImportBlacklistExtensions))
+                .Where(file => !FileUtils.ShouldSkipImportFile(file, normalizedBlacklist))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(

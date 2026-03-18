@@ -15,7 +15,7 @@ namespace Listenarr.Infrastructure.Migrations
                 table: "ApplicationSettings",
                 type: "INTEGER",
                 nullable: false,
-                defaultValue: 0);
+                defaultValue: 2);
         }
 
         /// <inheritdoc />

@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
+import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
 import type { SearchResult, AudibleBookMetadata, UnmatchedFileItem } from '@/types'
 
 export interface LibraryImportItem {
@@ -225,7 +226,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     // Register before POST — if scan is fast, SignalR may fire before scanUnmatchedFiles() returns.
     // Allow the event if jobId is not yet assigned (jobId === '') — it must be ours.
     offSignalR = signalRService.onUnmatchedScanComplete(async (payload) => {
-      if (jobId && payload.jobId !== jobId) return
+      if (!jobId || payload.jobId !== jobId) return
       if (payload.error) { onFailed(payload.error); return }
       await onComplete(payload.jobId)
     })
@@ -331,10 +332,8 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       items.value = { ...items.value, [id]: { ...item, isSearching: true } }
 
       try {
-        const byAsin = !!item.detectedAsin
-        const searchParams = byAsin
-          ? { asin: item.detectedAsin, cap: 5 }
-          : { title: buildSearchTitle(item), cap: 5 }
+        const searchParams = buildLibraryImportSearchParams(item, 5)
+        const byAsin = !!searchParams.asin
         const results = await apiService.advancedSearch(searchParams)
         metadataFetchCount.value++
         // ASIN results are authoritative — take the first result directly without author comparison

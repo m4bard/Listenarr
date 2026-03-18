@@ -14,6 +14,7 @@ describe('sortLibraryImportItems', () => {
     {
       id: '1',
       folderName: 'Alpha',
+      detectedTitle: 'Zeta Book',
       fullPath: '/books/Alpha/book-2.mp3',
       format: 'MP3',
       fileCount: 2,
@@ -37,7 +38,7 @@ describe('sortLibraryImportItems', () => {
 
   it('sorts by folder ascending', () => {
     const sorted = sortLibraryImportItems(items, 'folder', 'asc')
-    expect(sorted.map((item) => item.id)).toEqual(['1', '2', '3'])
+    expect(sorted.map((item) => item.id)).toEqual(['2', '3', '1'])
   })
 
   it('sorts by format descending and uses file count as a tiebreaker', () => {

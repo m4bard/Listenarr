@@ -418,11 +418,11 @@
                 v-model="deleteFilesOnDisk"
                 type="checkbox"
                 class="checkbox-input"
-                aria-label="Remove audiobook files from disk"
+                aria-label="Remove all files in the audiobook folder from disk"
               />
               <div class="checkbox-content">
-                <span class="checkbox-title">Remove audiobook files from disk</span>
-                <small>Delete tracked audiobook media files in addition to the library entry.</small>
+                <span class="checkbox-title">Remove all files in the audiobook folder from disk</span>
+                <small>Deletes every file inside the audiobook folder when it can be identified safely. Leave the folder itself unless you also choose the option below.</small>
               </div>
             </label>
           </div>
@@ -437,7 +437,7 @@
               />
               <div class="checkbox-content">
                 <span class="checkbox-title">Also remove the audiobook folder</span>
-                <small>Deletes the containing audiobook folder when it is safe to do so. This also removes tracked files.</small>
+                <small>Deletes the audiobook folder itself when it is safe to do so. This also removes everything inside it.</small>
               </div>
             </label>
           </div>

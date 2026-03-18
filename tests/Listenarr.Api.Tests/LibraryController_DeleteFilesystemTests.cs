@@ -19,6 +19,63 @@ namespace Listenarr.Api.Tests
     public class LibraryController_DeleteFilesystemTests
     {
         [Fact]
+        public async Task DeleteAudiobook_DeleteFiles_RemovesAllFilesInFolderButPreservesDirectory()
+        {
+            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
+            var bookFolder = Path.Combine(tempRoot, "Jack of Shadows");
+            var extrasFolder = Path.Combine(bookFolder, "Extras");
+            var audioPath = Path.Combine(bookFolder, "Jack of Shadows.mp3");
+            var sidecarPath = Path.Combine(bookFolder, "cover.jpg");
+            var notePath = Path.Combine(extrasFolder, "notes.txt");
+
+            Directory.CreateDirectory(extrasFolder);
+            await File.WriteAllTextAsync(audioPath, "audio");
+            await File.WriteAllTextAsync(sidecarPath, "cover");
+            await File.WriteAllTextAsync(notePath, "notes");
+
+            try
+            {
+                await using var dbContext = CreateDbContext();
+                var audiobook = new Audiobook
+                {
+                    Id = 50,
+                    Title = "Jack of Shadows",
+                    BasePath = bookFolder,
+                    FilePath = audioPath,
+                    Files = new List<AudiobookFile>
+                    {
+                        new AudiobookFile
+                        {
+                            Id = 51,
+                            AudiobookId = 50,
+                            Path = audioPath
+                        }
+                    }
+                };
+
+                dbContext.Audiobooks.Add(audiobook);
+                dbContext.AudiobookFiles.AddRange(audiobook.Files);
+                await dbContext.SaveChangesAsync();
+
+                var controller = CreateController(dbContext);
+
+                var result = await controller.DeleteAudiobook(audiobook.Id, deleteFiles: true, deleteFolder: false);
+
+                var ok = Assert.IsType<OkObjectResult>(result);
+                Assert.Equal(200, ok.StatusCode ?? 200);
+                Assert.False(File.Exists(audioPath));
+                Assert.False(File.Exists(sidecarPath));
+                Assert.False(File.Exists(notePath));
+                Assert.True(Directory.Exists(bookFolder));
+                Assert.False(Directory.Exists(extrasFolder));
+            }
+            finally
+            {
+                TryDeleteDirectory(tempRoot);
+            }
+        }
+
+        [Fact]
         public async Task DeleteAudiobook_DeleteFilesAndFolder_RemovesTrackedFilesAndDirectory()
         {
             var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));

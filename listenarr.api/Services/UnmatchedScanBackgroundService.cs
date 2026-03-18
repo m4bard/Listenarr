@@ -12,6 +12,7 @@ namespace Listenarr.Api.Services
     {
         private static readonly string[] AudioExtensions = { ".m4b", ".mp3", ".flac", ".ogg", ".opus", ".m4a", ".aac", ".wav" };
         private sealed record StemGroup(string Stem, List<string> Files);
+        private sealed record GroupCandidate(string FilePath, string Stem, bool IsAncillary, string TitleKey, string AuthorKey);
 
         private readonly IUnmatchedScanQueueService _queue;
         private readonly IServiceScopeFactory _scopeFactory;
@@ -36,9 +37,7 @@ namespace Listenarr.Api.Services
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("UnmatchedScanBackgroundService started");
-            if (_queue is not UnmatchedScanQueueService sq) return;
-
-            await foreach (var job in sq.Reader.ReadAllAsync(stoppingToken))
+            await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken))
             {
                 try
                 {
@@ -109,10 +108,8 @@ namespace Listenarr.Api.Services
             //    are parts of the same audiobook. Distinct stems remain separate entries,
             //    except for ancillary tracks like "Foreword" or "Introduction", which stay
             //    attached when there is only one primary book group in the folder.
-            var groupList = unmatched
+            var folderGroups = unmatched
                 .GroupBy(f => Path.GetFullPath(Path.GetDirectoryName(f) ?? rootFolderPath))
-                .SelectMany(folderGroup => BuildGroupedFilesForFolder(folderGroup, folderGroup.Key)
-                    .Select(files => (BookFolder: folderGroup.Key, Files: files)))
                 .ToList();
 
             // Resolve ffprobe path once for the whole scan (null = not available)
@@ -121,64 +118,82 @@ namespace Listenarr.Api.Services
             var results = new System.Collections.Concurrent.ConcurrentBag<UnmatchedFileResult>();
 
             // Parallel.ForEachAsync only allocates active slots and avoids creating all tasks up front.
-            await Parallel.ForEachAsync(groupList,
+            await Parallel.ForEachAsync(folderGroups,
                 new ParallelOptions { MaxDegreeOfParallelism = concurrency, CancellationToken = ct },
-                async (item, token) =>
+                async (folderGroup, token) =>
                 {
-                    var (bookFolder, files) = item;
-                    var plans = MultiFileImportPlanner.BuildPlans(
-                        files.Select(f => (f, (string?)Path.GetRelativePath(bookFolder, f))));
-                    var orderedFiles = plans.Select(p => p.FullPath).ToList();
-                    var representative = orderedFiles.First();
-                    var parsed = PathMetadataParser.Parse(representative, rootFolderPath);
+                    var bookFolder = folderGroup.Key;
+                    var folderFiles = folderGroup.ToList();
+                    IReadOnlyDictionary<string, PathParsedMetadata>? embeddedTagsByFile = null;
 
-                    if (!string.IsNullOrEmpty(ffprobePath))
+                    var groupedFiles = BuildGroupedFilesForFolder(folderFiles, bookFolder);
+                    if (groupedFiles.Count > 1 && !string.IsNullOrEmpty(ffprobePath))
                     {
-                        var tags = await PathMetadataParser.ReadEmbeddedTagsAsync(representative, ffprobePath, token);
-                        if (!string.IsNullOrEmpty(tags.Title))        parsed.Title = tags.Title;
-                        if (!string.IsNullOrEmpty(tags.Author))       parsed.Author = tags.Author;
-                        if (!string.IsNullOrEmpty(tags.Narrator))     parsed.Narrator = tags.Narrator;
-                        if (!string.IsNullOrEmpty(tags.Series))       parsed.Series = tags.Series;
-                        if (!string.IsNullOrEmpty(tags.SeriesNumber)) parsed.SeriesNumber = tags.SeriesNumber;
-                        if (!string.IsNullOrEmpty(tags.Year))         parsed.Year = tags.Year;
-                        if (!string.IsNullOrEmpty(tags.Description))  parsed.Description = tags.Description;
-                        if (!string.IsNullOrEmpty(tags.Asin))         parsed.Asin = tags.Asin;
+                        embeddedTagsByFile = await ReadEmbeddedTagsForFilesAsync(folderFiles, ffprobePath, token);
+                        groupedFiles = BuildGroupedFilesForFolder(folderFiles, bookFolder, embeddedTagsByFile);
                     }
 
-                    var relativeFolder = bookFolder.Length > rootFolderPath.Length
-                        ? bookFolder[(rootFolderPath.Length)..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                        : bookFolder;
-
-                    var totalSize = files.Sum(f =>
+                    foreach (var files in groupedFiles)
                     {
-                        try { return new FileInfo(f).Length; } catch { return 0L; }
-                    });
+                        var plans = MultiFileImportPlanner.BuildPlans(
+                            files.Select(f => (f, (string?)Path.GetRelativePath(bookFolder, f))));
+                        var orderedFiles = plans.Select(p => p.FullPath).ToList();
+                        var representative = orderedFiles.First();
+                        var parsed = PathMetadataParser.Parse(representative, rootFolderPath);
 
-                    results.Add(new UnmatchedFileResult
-                    {
-                        FullPath = representative,
-                        SourceFiles = orderedFiles,
-                        RelativePath = relativeFolder,
-                        BookFolder = bookFolder,
-                        Size = totalSize,
-                        FileCount = orderedFiles.Count,
-                        Title = parsed.Title,
-                        Author = parsed.Author,
-                        Series = parsed.Series,
-                        SeriesNumber = parsed.SeriesNumber,
-                        Year = parsed.Year,
-                        Narrator = parsed.Narrator,
-                        Description = parsed.Description,
-                        CoverPath = parsed.CoverPath,
-                        Asin = parsed.Asin,
-                        Format = Path.GetExtension(representative).TrimStart('.').ToUpperInvariant()
-                    });
+                        PathParsedMetadata? tags = null;
+                        if (embeddedTagsByFile != null && embeddedTagsByFile.TryGetValue(representative, out var cachedTags))
+                        {
+                            tags = cachedTags;
+                        }
+                        else if (!string.IsNullOrEmpty(ffprobePath))
+                        {
+                            tags = await PathMetadataParser.ReadEmbeddedTagsAsync(representative, ffprobePath, token);
+                        }
+
+                        if (tags != null)
+                        {
+                            ApplyEmbeddedTags(parsed, tags);
+                        }
+
+                        var relativeFolder = bookFolder.Length > rootFolderPath.Length
+                            ? bookFolder[(rootFolderPath.Length)..].TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                            : bookFolder;
+
+                        var totalSize = files.Sum(f =>
+                        {
+                            try { return new FileInfo(f).Length; } catch { return 0L; }
+                        });
+
+                        results.Add(new UnmatchedFileResult
+                        {
+                            FullPath = representative,
+                            SourceFiles = orderedFiles,
+                            RelativePath = relativeFolder,
+                            BookFolder = bookFolder,
+                            Size = totalSize,
+                            FileCount = orderedFiles.Count,
+                            Title = parsed.Title,
+                            Author = parsed.Author,
+                            Series = parsed.Series,
+                            SeriesNumber = parsed.SeriesNumber,
+                            Year = parsed.Year,
+                            Narrator = parsed.Narrator,
+                            Description = parsed.Description,
+                            CoverPath = parsed.CoverPath,
+                            Asin = parsed.Asin,
+                            Format = Path.GetExtension(representative).TrimStart('.').ToUpperInvariant()
+                        });
+                    }
                 });
 
             return results.OrderBy(r => r.Author).ThenBy(r => r.Series).ThenBy(r => r.Title).ToList();
         }
 
-        internal static List<List<string>> BuildGroupedFilesForFolder(IEnumerable<string> files, string folderPath)
+        internal static List<List<string>> BuildGroupedFilesForFolder(
+            IEnumerable<string> files,
+            string folderPath,
+            IReadOnlyDictionary<string, PathParsedMetadata>? embeddedTagsByFile = null)
         {
             var allFiles = files
                 .Where(f => !string.IsNullOrWhiteSpace(f))
@@ -190,6 +205,91 @@ namespace Listenarr.Api.Services
                 return new List<List<string>> { allFiles };
             }
 
+            if (embeddedTagsByFile != null)
+            {
+                var metadataAwareGroups = BuildMetadataAwareGroups(allFiles, folderPath, embeddedTagsByFile);
+                if (metadataAwareGroups.Count > 0)
+                {
+                    return metadataAwareGroups;
+                }
+            }
+
+            return BuildStemGroups(allFiles, folderPath);
+        }
+
+        private static List<List<string>> BuildMetadataAwareGroups(
+            IReadOnlyCollection<string> files,
+            string folderPath,
+            IReadOnlyDictionary<string, PathParsedMetadata> embeddedTagsByFile)
+        {
+            var folderKey = NormalizeGroupKey(Path.GetFileName(folderPath));
+            var candidates = files
+                .Select(file => CreateGroupCandidate(file, folderPath, embeddedTagsByFile))
+                .ToList();
+
+            if (!candidates.Any(candidate => !string.IsNullOrWhiteSpace(candidate.TitleKey)))
+            {
+                return new List<List<string>>();
+            }
+
+            var metadataGroups = new List<List<GroupCandidate>>();
+            foreach (var candidate in candidates.Where(candidate => !string.IsNullOrWhiteSpace(candidate.TitleKey)))
+            {
+                var matchingGroup = metadataGroups.FirstOrDefault(group => group.Any(existing => TitlesAndAuthorsMatch(existing, candidate)));
+                if (matchingGroup != null)
+                {
+                    matchingGroup.Add(candidate);
+                }
+                else
+                {
+                    metadataGroups.Add(new List<GroupCandidate> { candidate });
+                }
+            }
+
+            if (metadataGroups.Count == 0)
+            {
+                return new List<List<string>>();
+            }
+
+            var attachedFiles = new HashSet<string>(
+                metadataGroups.SelectMany(group => group).Select(candidate => candidate.FilePath),
+                StringComparer.OrdinalIgnoreCase);
+
+            foreach (var candidate in candidates.Where(candidate => !attachedFiles.Contains(candidate.FilePath)))
+            {
+                var compatibleGroups = metadataGroups
+                    .Where(group => group.Any(existing => AuthorsCompatible(existing.AuthorKey, candidate.AuthorKey)))
+                    .ToList();
+
+                if (compatibleGroups.Count == 1
+                    && (candidate.IsAncillary
+                        || string.IsNullOrWhiteSpace(candidate.Stem)
+                        || string.Equals(candidate.Stem, folderKey, StringComparison.OrdinalIgnoreCase)))
+                {
+                    compatibleGroups[0].Add(candidate);
+                    attachedFiles.Add(candidate.FilePath);
+                }
+            }
+
+            var leftovers = candidates
+                .Where(candidate => !attachedFiles.Contains(candidate.FilePath))
+                .Select(candidate => candidate.FilePath)
+                .ToList();
+
+            var grouped = metadataGroups
+                .Select(group => group.Select(candidate => candidate.FilePath).Distinct(StringComparer.OrdinalIgnoreCase).ToList())
+                .ToList();
+
+            if (leftovers.Count > 0)
+            {
+                grouped.AddRange(BuildStemGroups(leftovers, folderPath));
+            }
+
+            return grouped;
+        }
+
+        private static List<List<string>> BuildStemGroups(IReadOnlyCollection<string> allFiles, string folderPath)
+        {
             var byTitle = allFiles
                 .GroupBy(f => ExtractTitleStem(f, folderPath), StringComparer.OrdinalIgnoreCase)
                 .Select(g => new StemGroup(g.Key, g.ToList()))
@@ -197,7 +297,7 @@ namespace Listenarr.Api.Services
 
             if (byTitle.Count <= 1)
             {
-                return new List<List<string>> { allFiles };
+                return new List<List<string>> { allFiles.ToList() };
             }
 
             var primaryGroups = byTitle
@@ -213,6 +313,67 @@ namespace Listenarr.Api.Services
             }
 
             return byTitle.Select(g => g.Files).ToList();
+        }
+
+        private static GroupCandidate CreateGroupCandidate(
+            string filePath,
+            string folderPath,
+            IReadOnlyDictionary<string, PathParsedMetadata> embeddedTagsByFile)
+        {
+            embeddedTagsByFile.TryGetValue(filePath, out var tags);
+            var stem = ExtractTitleStem(filePath, folderPath);
+            return new GroupCandidate(
+                filePath,
+                stem,
+                IsAncillaryStem(stem),
+                FileUtils.NormalizeComparisonValue(tags?.Title),
+                FileUtils.NormalizeComparisonValue(tags?.Author));
+        }
+
+        private static bool TitlesAndAuthorsMatch(GroupCandidate left, GroupCandidate right)
+        {
+            if (!FileUtils.ValuesOverlap(left.TitleKey, right.TitleKey))
+            {
+                return false;
+            }
+
+            return AuthorsCompatible(left.AuthorKey, right.AuthorKey);
+        }
+
+        private static bool AuthorsCompatible(string? leftAuthor, string? rightAuthor)
+        {
+            if (string.IsNullOrWhiteSpace(leftAuthor) || string.IsNullOrWhiteSpace(rightAuthor))
+            {
+                return true;
+            }
+
+            return FileUtils.ValuesOverlap(leftAuthor, rightAuthor);
+        }
+
+        private static async Task<IReadOnlyDictionary<string, PathParsedMetadata>> ReadEmbeddedTagsForFilesAsync(
+            IEnumerable<string> files,
+            string ffprobePath,
+            CancellationToken ct)
+        {
+            var result = new Dictionary<string, PathParsedMetadata>(StringComparer.OrdinalIgnoreCase);
+            foreach (var file in files)
+            {
+                result[file] = await PathMetadataParser.ReadEmbeddedTagsAsync(file, ffprobePath, ct);
+            }
+
+            return result;
+        }
+
+        private static void ApplyEmbeddedTags(PathParsedMetadata target, PathParsedMetadata tags)
+        {
+            if (!string.IsNullOrEmpty(tags.Title))        target.Title = tags.Title;
+            if (!string.IsNullOrEmpty(tags.Author))       target.Author = tags.Author;
+            if (!string.IsNullOrEmpty(tags.Narrator))     target.Narrator = tags.Narrator;
+            if (!string.IsNullOrEmpty(tags.Series))       target.Series = tags.Series;
+            if (!string.IsNullOrEmpty(tags.SeriesNumber)) target.SeriesNumber = tags.SeriesNumber;
+            if (!string.IsNullOrEmpty(tags.Year))         target.Year = tags.Year;
+            if (!string.IsNullOrEmpty(tags.Description))  target.Description = tags.Description;
+            if (!string.IsNullOrEmpty(tags.Asin))         target.Asin = tags.Asin;
         }
 
         private List<string> CollectAudioFiles(string rootFolderPath)

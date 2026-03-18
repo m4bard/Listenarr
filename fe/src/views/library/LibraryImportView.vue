@@ -108,7 +108,7 @@
               <th class="sortable-header" :aria-sort="getAriaSort('folder')">
                 <button type="button" class="sort-button" @click="setSort('folder')">
                   <span class="header-content">
-                    Folder
+                    Book
                     <component :is="getSortIcon('folder')" class="sort-icon" />
                   </span>
                 </button>
@@ -218,7 +218,7 @@ const columnWidths = ref<LibraryImportColumnWidths>({ ...DEFAULT_LIBRARY_IMPORT_
 const resizingColumn = ref<LibraryImportResizableColumnKey | null>(null)
 
 const sortOptions: Array<{ value: LibraryImportSortKey; label: string }> = [
-  { value: 'folder', label: 'Folder' },
+  { value: 'folder', label: 'Book' },
   { value: 'path', label: 'Path' },
   { value: 'format', label: 'Format' },
   { value: 'match', label: 'Match' },
@@ -236,7 +236,7 @@ const sortedItems = computed(() =>
 )
 
 const currentSortLabel = computed(
-  () => sortOptions.find((option) => option.value === sortKey.value)?.label ?? 'Folder',
+  () => sortOptions.find((option) => option.value === sortKey.value)?.label ?? 'Book',
 )
 
 const sortDirectionLabel = computed(() =>

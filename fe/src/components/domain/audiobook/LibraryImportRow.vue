@@ -9,15 +9,35 @@
       />
     </td>
 
-    <td class="cell-folder" data-label="Folder">
-      <span class="folder-name" :title="item.relativePath">{{ item.folderName }}</span>
-      <span class="folder-meta" v-if="item.detectedTitle || item.detectedAuthor">
-        {{ [item.detectedTitle, item.detectedAuthor].filter(Boolean).join(' - ') }}
+    <td class="cell-folder" data-label="Book">
+      <span class="folder-name" :title="bookDisplayTitle">{{ bookDisplayTitle }}</span>
+      <span class="folder-meta" v-if="bookMetaLine">{{ bookMetaLine }}</span>
+      <span
+        v-if="item.detectedTitle && item.detectedTitle.trim() && item.detectedTitle.trim() !== item.folderName"
+        class="folder-origin"
+        :title="item.folderName"
+      >
+        Folder: {{ item.folderName }}
       </span>
     </td>
 
     <td class="cell-file-path" data-label="Path">
       <span class="file-path" :title="item.fullPath">{{ item.fullPath }}</span>
+      <details v-if="item.sourceFiles.length > 1" class="grouped-files">
+        <summary class="grouped-files-summary">
+          View grouped files ({{ item.sourceFiles.length }})
+        </summary>
+        <ul class="grouped-files-list">
+          <li
+            v-for="sourceFile in item.sourceFiles"
+            :key="sourceFile"
+            class="grouped-file-item"
+          >
+            <span class="grouped-file-label" :title="sourceFile">{{ formatGroupedFileLabel(sourceFile) }}</span>
+            <span v-if="sourceFile === item.fullPath" class="grouped-file-badge">Row path</span>
+          </li>
+        </ul>
+      </details>
     </td>
 
     <td class="cell-format" data-label="Format">
@@ -82,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import {
   PhSpinner,
   PhCheckCircle,
@@ -99,6 +119,14 @@ const props = defineProps<{ item: LibraryImportItem }>()
 const store = useLibraryImportStore()
 const showSearchModal = ref(false)
 
+const bookDisplayTitle = computed(() => props.item.detectedTitle?.trim() || props.item.folderName)
+const bookMetaLine = computed(() =>
+  [
+    props.item.detectedAuthor,
+    props.item.detectedSeries,
+  ].filter(Boolean).join(' - '),
+)
+
 function isAuthorMismatch(item: LibraryImportItem): boolean {
   if (!item.detectedAuthor || !item.selectedMatch?.authors?.length) return false
   const detected = item.detectedAuthor.toLowerCase()
@@ -108,6 +136,17 @@ function isAuthorMismatch(item: LibraryImportItem): boolean {
 
 function applyMatch(result: SearchResult) {
   store.selectMatch(props.item.id, result)
+}
+
+function formatGroupedFileLabel(sourceFile: string): string {
+  const normalizedSource = sourceFile.replace(/\\/g, '/')
+  const normalizedFolder = props.item.folderPath.replace(/\\/g, '/').replace(/\/+$/, '')
+
+  if (normalizedFolder && normalizedSource.startsWith(`${normalizedFolder}/`)) {
+    return normalizedSource.slice(normalizedFolder.length + 1)
+  }
+
+  return normalizedSource.split('/').pop() ?? sourceFile
 }
 </script>
 
@@ -162,6 +201,16 @@ function applyMatch(result: SearchResult) {
   overflow-wrap: anywhere;
 }
 
+.folder-origin {
+  display: block;
+  margin-top: 0.18rem;
+  font-size: 0.68rem;
+  color: #5f6877;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 .cell-file-path {
   min-width: 320px;
 }
@@ -176,6 +225,81 @@ function applyMatch(result: SearchResult) {
   white-space: normal;
   overflow-wrap: anywhere;
   word-break: break-word;
+}
+
+.grouped-files {
+  margin-top: 0.45rem;
+}
+
+.grouped-files-summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  cursor: pointer;
+  color: #a7b0c0;
+  font-size: 0.72rem;
+  font-weight: 600;
+  list-style: none;
+}
+
+.grouped-files-summary::-webkit-details-marker {
+  display: none;
+}
+
+.grouped-files-summary::before {
+  content: '>';
+  display: inline-block;
+  font-size: 0.7rem;
+  line-height: 1;
+  transform: rotate(0deg);
+  transition: transform 0.16s ease;
+  color: #7f8a9a;
+}
+
+.grouped-files[open] .grouped-files-summary::before {
+  transform: rotate(90deg);
+}
+
+.grouped-files-list {
+  margin: 0.45rem 0 0;
+  padding: 0.55rem 0.65rem;
+  list-style: none;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.025);
+  display: grid;
+  gap: 0.35rem;
+}
+
+.grouped-file-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.grouped-file-label {
+  min-width: 0;
+  font-family: monospace;
+  font-size: 0.7rem;
+  color: #8f99aa;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.grouped-file-badge {
+  flex-shrink: 0;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #d2d8e7;
+  background: rgba(99, 102, 241, 0.16);
+  border: 1px solid rgba(129, 140, 248, 0.24);
+  border-radius: 999px;
+  padding: 0.14rem 0.42rem;
 }
 
 .cell-format {
@@ -454,6 +578,28 @@ function applyMatch(result: SearchResult) {
     -webkit-line-clamp: 2;
     -webkit-box-orient: vertical;
     overflow: hidden;
+  }
+
+  .grouped-files {
+    margin-top: 0.5rem;
+  }
+
+  .grouped-files-list {
+    padding: 0.55rem 0.6rem;
+  }
+
+  .grouped-file-item {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.22rem;
+  }
+
+  .grouped-file-label {
+    white-space: normal;
+    overflow: visible;
+    text-overflow: unset;
+    overflow-wrap: anywhere;
+    word-break: break-word;
   }
 
   .btn-clear-match {

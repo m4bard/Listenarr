@@ -6,6 +6,7 @@ export type LibraryImportColumnWidths = Record<LibraryImportResizableColumnKey, 
 
 export interface LibraryImportSortableItem {
   folderName: string
+  detectedTitle?: string
   fullPath: string
   format: string
   fileCount: number
@@ -38,6 +39,10 @@ function compareText(a: string | null | undefined, b: string | null | undefined)
   const left = (a ?? '').trim()
   const right = (b ?? '').trim()
   return collator.compare(left, right)
+}
+
+function getBookSortValue(item: LibraryImportSortableItem): string {
+  return (item.detectedTitle ?? '').trim() || item.folderName
 }
 
 function compareOptionalText(
@@ -83,7 +88,7 @@ export function sortLibraryImportItems<T extends LibraryImportSortableItem>(
 
     switch (sortKey) {
       case 'folder':
-        result = compareText(a.folderName, b.folderName)
+        result = compareText(getBookSortValue(a), getBookSortValue(b))
         break
       case 'path':
         result = compareText(a.fullPath, b.fullPath)

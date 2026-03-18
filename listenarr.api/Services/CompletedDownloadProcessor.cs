@@ -122,6 +122,7 @@ namespace Listenarr.Api.Services
                     _logger.LogWarning(ex, "ProcessCompletedDownloadAsync: Failed to load application settings, using defaults");
                     settings = new ApplicationSettings();
                 }
+                var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
 
                 if (string.IsNullOrWhiteSpace(finalPath))
                 {
@@ -134,11 +135,17 @@ namespace Listenarr.Api.Services
                         try
                         {
                             var files = System.IO.Directory.GetFiles(finalPath, "*", System.IO.SearchOption.AllDirectories)
-                                .Where(f => !FileUtils.ShouldSkipImportFile(f, settings.ImportBlacklistExtensions))
+                                .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
                                 .ToArray();
-                            var directImportFiles = settings.ExtractArchives
-                                ? files.Where(f => !_archiveExtractor.IsArchive(f)).ToArray()
-                                : files;
+                            var archiveFiles = files.Where(f => _archiveExtractor.IsArchive(f)).ToArray();
+                            var directImportFiles = files
+                                .Where(f => !_archiveExtractor.IsArchive(f))
+                                .ToArray();
+
+                            if (directImportFiles.Length > 1)
+                            {
+                                directImportFiles = await FilterDirectoryAudioFilesAsync(download, directImportFiles);
+                            }
 
                             List<ImportResult>? importResults = null;
                             if (directImportFiles.Length > 0)
@@ -266,7 +273,6 @@ namespace Listenarr.Api.Services
                             // Process archives inside the directory (extract and import)
                             if (settings.ExtractArchives)
                             {
-                                var archiveFiles = files.Where(f => _archiveExtractor.IsArchive(f)).ToList();
                                 foreach (var archivePath in archiveFiles)
                                 {
                                     string? tempDirExtracted = null;
@@ -276,7 +282,7 @@ namespace Listenarr.Api.Services
                                         if (!string.IsNullOrWhiteSpace(tempDirExtracted) && System.IO.Directory.Exists(tempDirExtracted))
                                         {
                                             var extractedFiles = System.IO.Directory.GetFiles(tempDirExtracted, "*", System.IO.SearchOption.AllDirectories)
-                                                .Where(f => !FileUtils.ShouldSkipImportFile(f, settings.ImportBlacklistExtensions))
+                                                .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
                                                 .ToArray();
                                             if (extractedFiles != null && extractedFiles.Length > 0)
                                             {
@@ -372,7 +378,7 @@ namespace Listenarr.Api.Services
                                     if (!string.IsNullOrWhiteSpace(tempExtractDir) && System.IO.Directory.Exists(tempExtractDir))
                                     {
                                         var extractedFiles = System.IO.Directory.GetFiles(tempExtractDir, "*", System.IO.SearchOption.AllDirectories)
-                                            .Where(f => !FileUtils.ShouldSkipImportFile(f, settings.ImportBlacklistExtensions))
+                                            .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
                                             .ToArray();
                                         if (extractedFiles != null && extractedFiles.Length > 0)
                                         {
@@ -1032,6 +1038,101 @@ namespace Listenarr.Api.Services
                     ex.Message ?? "Unexpected import processing error",
                     ex,
                     forceBlock: false);
+            }
+        }
+
+        private async Task<string[]> FilterDirectoryAudioFilesAsync(Download? download, string[] files)
+        {
+            var audioFiles = files
+                .Where(FileUtils.IsAudioFile)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            if (audioFiles.Length <= 1)
+            {
+                return files;
+            }
+
+            try
+            {
+                using var scope = _serviceScopeFactory.CreateScope();
+                var metadataService = scope.ServiceProvider.GetService<IMetadataService>();
+                var db = scope.ServiceProvider.GetService<ListenArrDbContext>();
+
+                Audiobook? audiobook = null;
+                if (download?.AudiobookId != null && db != null)
+                {
+                    audiobook = await db.Audiobooks.FindAsync(download.AudiobookId.Value);
+                }
+
+                var targetTitle = FileUtils.NormalizeComparisonValue(audiobook?.Title ?? download?.Title);
+                var targetAlbum = FileUtils.NormalizeComparisonValue(download?.Album);
+                var targetArtist = FileUtils.NormalizeComparisonValue(
+                    audiobook?.Authors?.FirstOrDefault()
+                    ?? download?.Artist);
+
+                if (string.IsNullOrWhiteSpace(targetTitle)
+                    && string.IsNullOrWhiteSpace(targetAlbum)
+                    && string.IsNullOrWhiteSpace(targetArtist))
+                {
+                    return files;
+                }
+
+                var profiles = new List<FileUtils.AudioMatchProfile>();
+                foreach (var audioFile in audioFiles)
+                {
+                    AudioMetadata? metadata = null;
+                    if (metadataService != null)
+                    {
+                        try
+                        {
+                            metadata = await metadataService.ExtractFileMetadataAsync(audioFile);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            _logger.LogDebug(ex, "Failed to extract metadata while classifying completed-download audio file {FilePath}", audioFile);
+                        }
+                    }
+
+                    profiles.Add(FileUtils.CreateAudioMatchProfile(audioFile, metadata));
+                }
+
+                var grouped = profiles
+                    .GroupBy(profile => profile.GroupKey, StringComparer.OrdinalIgnoreCase)
+                    .Select(group => new
+                    {
+                        Files = group.Select(profile => profile.FilePath).ToArray(),
+                        Score = group.Sum(profile => FileUtils.ScoreAgainstTarget(profile, targetTitle, targetAlbum, targetArtist))
+                    })
+                    .OrderByDescending(group => group.Score)
+                    .ToList();
+
+                if (grouped.Count <= 1 || grouped[0].Score <= 0)
+                {
+                    return files;
+                }
+
+                if (grouped.Count > 1 && grouped[0].Score == grouped[1].Score)
+                {
+                    return files;
+                }
+
+                var selectedAudio = new HashSet<string>(grouped[0].Files, StringComparer.OrdinalIgnoreCase);
+                var filtered = files
+                    .Where(file => !FileUtils.IsAudioFile(file) || selectedAudio.Contains(file))
+                    .ToArray();
+
+                _logger.LogInformation(
+                    "Filtered completed-download directory import from {OriginalCount} to {FilteredCount} file(s) after separating mixed audio groups for download {DownloadId}",
+                    files.Length,
+                    filtered.Length,
+                    download?.Id ?? "(unknown)");
+
+                return filtered;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to classify mixed audio files for completed-download import; falling back to importing the full directory");
+                return files;
             }
         }
 

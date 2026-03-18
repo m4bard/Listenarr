@@ -400,6 +400,97 @@ namespace Listenarr.Api.Tests
 
             try { Directory.Delete(destinationRoot, true); } catch { }
         }
+
+        [Fact]
+        public async Task InteractiveManualImport_CompanionPass_SkipsDifferentAudiobookAudioInSameFolder()
+        {
+            var destinationRoot = Path.Combine(Path.GetTempPath(), "listenarr-manual-mixed-dest", Guid.NewGuid().ToString());
+            Directory.CreateDirectory(destinationRoot);
+
+            var book = new Audiobook { Id = 334, Title = "Companion Book", BasePath = destinationRoot };
+
+            var sourceDir = Path.Combine(Path.GetTempPath(), "listenarr-manual-mixed-src", Guid.NewGuid().ToString());
+            Directory.CreateDirectory(sourceDir);
+            var selectedAudio = Path.Combine(sourceDir, "Companion Book.mp3");
+            var foreignAudio = Path.Combine(sourceDir, "Different Book.mp3");
+            var coverFile = Path.Combine(sourceDir, "cover.jpg");
+            await File.WriteAllTextAsync(selectedAudio, "selected");
+            await File.WriteAllTextAsync(foreignAudio, "foreign");
+            await File.WriteAllTextAsync(coverFile, "cover");
+
+            var repoMock = new Mock<IAudiobookRepository>();
+            repoMock.Setup(r => r.GetByIdAsync(It.IsAny<int>())).ReturnsAsync((int id) => id == book.Id ? book : null);
+            repoMock.Setup(r => r.UpdateAsync(It.IsAny<Audiobook>())).ReturnsAsync(true);
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(selectedAudio))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = "Companion Book",
+                    Album = "Companion Book",
+                    Artist = "Author A",
+                    Format = "mp3"
+                });
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(foreignAudio))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = "Different Book",
+                    Album = "Different Book",
+                    Artist = "Author A",
+                    Format = "mp3"
+                });
+            metadataMock.Setup(m => m.WriteAsinTagAsync(It.IsAny<string>(), It.IsAny<string>()))
+                .Returns(Task.CompletedTask);
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = destinationRoot,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}",
+                ImportBlacklistExtensions = new System.Collections.Generic.List<string>()
+            };
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+
+            var scanMock = new Mock<IScanQueueService>();
+            scanMock.Setup(s => s.EnqueueScanAsync(It.IsAny<int>(), It.IsAny<string>())).ReturnsAsync(Guid.NewGuid());
+
+            var rootFolderMock = new Mock<IRootFolderService>();
+            rootFolderMock.Setup(r => r.GetAllAsync()).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.RootFolder>());
+
+            var controller = new ManualImportController(
+                Mock.Of<Microsoft.Extensions.Logging.ILogger<ManualImportController>>(),
+                repoMock.Object,
+                metadataMock.Object,
+                new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance),
+                configMock.Object,
+                scanMock.Object,
+                rootFolderMock.Object
+            );
+
+            var request = new ManualImportRequest
+            {
+                Path = sourceDir,
+                Mode = "interactive",
+                InputMode = "copy",
+                IncludeCompanionFiles = true,
+                Items = new System.Collections.Generic.List<ManualImportItem>
+                {
+                    new ManualImportItem { FullPath = selectedAudio, MatchedAudiobookId = book.Id }
+                }
+            };
+
+            var action = await controller.Start(request);
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+
+            Assert.True(File.Exists(Path.Combine(destinationRoot, "Companion Book.mp3")));
+            Assert.True(File.Exists(Path.Combine(destinationRoot, "cover.jpg")));
+            Assert.False(File.Exists(Path.Combine(destinationRoot, "Different Book.mp3")));
+
+            try { Directory.Delete(destinationRoot, true); } catch { }
+            try { Directory.Delete(sourceDir, true); } catch { }
+        }
     }
 }
 

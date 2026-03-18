@@ -2,11 +2,27 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
+using Listenarr.Domain.Models;
 
 namespace Listenarr.Api.Services
 {
     internal static class FileUtils
     {
+        internal sealed record AudioMatchProfile(
+            string FilePath,
+            string StemKey,
+            string TitleKey,
+            string AlbumKey,
+            string ArtistKey)
+        {
+            public string GroupKey =>
+                !string.IsNullOrWhiteSpace(AlbumKey) ? AlbumKey :
+                !string.IsNullOrWhiteSpace(TitleKey) ? TitleKey :
+                !string.IsNullOrWhiteSpace(StemKey) ? StemKey :
+                Path.GetFileName(FilePath);
+        }
+
         /// <summary>
         /// Audio file extensions recognized by the import and scan pipelines.
         /// Centralized here so that the scan service, import service, and completed download
@@ -76,6 +92,17 @@ namespace Listenarr.Api.Services
             return normalized.Contains(extension);
         }
 
+        public static bool IsBlacklistedImportFile(string filePath, ISet<string>? blacklistExtensions)
+        {
+            var extension = Path.GetExtension(filePath);
+            if (string.IsNullOrWhiteSpace(extension) || blacklistExtensions == null || blacklistExtensions.Count == 0)
+            {
+                return false;
+            }
+
+            return blacklistExtensions.Contains(extension);
+        }
+
         public static bool ShouldSkipImportFile(string filePath, IEnumerable<string>? blacklistExtensions)
         {
             if (string.IsNullOrWhiteSpace(filePath))
@@ -89,6 +116,135 @@ namespace Listenarr.Api.Services
             }
 
             return IsBlacklistedImportFile(filePath, blacklistExtensions);
+        }
+
+        public static bool ShouldSkipImportFile(string filePath, ISet<string>? blacklistExtensions)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return true;
+            }
+
+            if (filePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return IsBlacklistedImportFile(filePath, blacklistExtensions);
+        }
+
+        public static string NormalizeComparisonValue(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var normalized = Regex.Replace(value, @"[^\p{L}\p{Nd}]+", " ");
+            normalized = Regex.Replace(normalized, @"\s+", " ").Trim();
+            return normalized.ToLowerInvariant();
+        }
+
+        public static bool ValuesOverlap(string? left, string? right)
+        {
+            var normalizedLeft = NormalizeComparisonValue(left);
+            var normalizedRight = NormalizeComparisonValue(right);
+            if (string.IsNullOrWhiteSpace(normalizedLeft) || string.IsNullOrWhiteSpace(normalizedRight))
+            {
+                return false;
+            }
+
+            return string.Equals(normalizedLeft, normalizedRight, StringComparison.OrdinalIgnoreCase)
+                || normalizedLeft.Contains(normalizedRight, StringComparison.OrdinalIgnoreCase)
+                || normalizedRight.Contains(normalizedLeft, StringComparison.OrdinalIgnoreCase);
+        }
+
+        public static string ExtractComparableAudioStem(string filePath)
+        {
+            var name = Path.GetFileNameWithoutExtension(filePath) ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return string.Empty;
+            }
+
+            name = Regex.Replace(name, @"^(track|chapter|disc|cd|part|pt)\s*\d+[\s\-_\.]*", "", RegexOptions.IgnoreCase);
+            name = Regex.Replace(name, @"^\d+[\s\-_\.]*", "", RegexOptions.IgnoreCase);
+            name = Regex.Replace(name, @"[\s\-_]*(part|track|chapter|disc|cd|pt)\s*\d+$", "", RegexOptions.IgnoreCase);
+
+            var normalized = NormalizeComparisonValue(name);
+            return IsGenericTrackLabel(normalized) ? string.Empty : normalized;
+        }
+
+        public static AudioMatchProfile CreateAudioMatchProfile(string filePath, AudioMetadata? metadata)
+        {
+            var titleKey = NormalizeComparisonValue(metadata?.Title);
+            if (IsGenericTrackLabel(titleKey))
+            {
+                titleKey = string.Empty;
+            }
+
+            var albumKey = NormalizeComparisonValue(metadata?.Album);
+            var artistKey = NormalizeComparisonValue(FirstNonEmpty(metadata?.Artist, metadata?.AlbumArtist));
+            var stemKey = ExtractComparableAudioStem(filePath);
+
+            return new AudioMatchProfile(filePath, stemKey, titleKey, albumKey, artistKey);
+        }
+
+        public static bool LikelyMatchesAnyReference(AudioMatchProfile candidate, IReadOnlyCollection<AudioMatchProfile> references)
+        {
+            foreach (var reference in references)
+            {
+                var artistConflict = !string.IsNullOrWhiteSpace(candidate.ArtistKey)
+                    && !string.IsNullOrWhiteSpace(reference.ArtistKey)
+                    && !ValuesOverlap(candidate.ArtistKey, reference.ArtistKey);
+                if (artistConflict)
+                {
+                    continue;
+                }
+
+                var identityMatch =
+                    ValuesOverlap(candidate.AlbumKey, reference.AlbumKey)
+                    || ValuesOverlap(candidate.AlbumKey, reference.TitleKey)
+                    || ValuesOverlap(candidate.AlbumKey, reference.StemKey)
+                    || ValuesOverlap(candidate.TitleKey, reference.AlbumKey)
+                    || ValuesOverlap(candidate.TitleKey, reference.TitleKey)
+                    || ValuesOverlap(candidate.TitleKey, reference.StemKey)
+                    || ValuesOverlap(candidate.StemKey, reference.AlbumKey)
+                    || ValuesOverlap(candidate.StemKey, reference.TitleKey)
+                    || ValuesOverlap(candidate.StemKey, reference.StemKey);
+
+                if (identityMatch)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static int ScoreAgainstTarget(AudioMatchProfile candidate, string? targetTitle, string? targetAlbum, string? targetArtist)
+        {
+            var score = 0;
+            if (ValuesOverlap(candidate.AlbumKey, targetTitle)
+                || ValuesOverlap(candidate.TitleKey, targetTitle)
+                || ValuesOverlap(candidate.StemKey, targetTitle))
+            {
+                score += 3;
+            }
+
+            if (ValuesOverlap(candidate.AlbumKey, targetAlbum)
+                || ValuesOverlap(candidate.TitleKey, targetAlbum)
+                || ValuesOverlap(candidate.StemKey, targetAlbum))
+            {
+                score += 2;
+            }
+
+            if (ValuesOverlap(candidate.ArtistKey, targetArtist))
+            {
+                score += 1;
+            }
+
+            return score;
         }
 
         /// <summary>
@@ -299,6 +455,32 @@ namespace Listenarr.Api.Services
             catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) {
                 System.Diagnostics.Debug.WriteLine($"Suppressed empty-directory delete failure for '{path}': {caughtEx_6.Message}");
             }
+        }
+
+        private static bool IsGenericTrackLabel(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return true;
+            }
+
+            return Regex.IsMatch(
+                value,
+                @"^(track|chapter|disc|cd|part|pt|foreword|afterword|preface|prologue|epilogue|introduction|intro)\b(?:\s+\d+)?$",
+                RegexOptions.IgnoreCase);
+        }
+
+        private static string FirstNonEmpty(params string?[] values)
+        {
+            foreach (var value in values)
+            {
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    return value!;
+                }
+            }
+
+            return string.Empty;
         }
     }
 }
