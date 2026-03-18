@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Intelligent-search prefix handling:** Fixed intelligent-search prefix parsing so trimmed ASIN, ISBN, author, and title values are reused consistently across logging, branch selection, and Audimeta lookups.
 - **Metadata extraction and image-cache locking:** Fixed several async paths to release metadata-extraction and per-image download locks via scoped disposables instead of manual wait/release pairs, reducing the chance of mismatched lock cleanup.
 - **Safer state and notification lookups:** Fixed download terminal-state detection and Discord notification embed trimming to avoid redundant key checks and repeated dictionary/JSON access.
+- **Sensitive settings-field autofill:** Disabled browser autocomplete on API key and Discord bot token inputs across settings and modal forms to reduce accidental autofill of secret fields.
 
 ### Removed
 - **Unused application placeholder:** Removed the empty `listenarr.application/Class1.cs` placeholder file.
