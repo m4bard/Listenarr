@@ -597,26 +597,17 @@ namespace Listenarr.Api.Services
 
             // Check library storage first
             var libraryPath = GetImagePath(identifier, _libraryImagePath);
-            if (File.Exists(libraryPath))
-            {
-                if (IsValidCachedCoverFile(libraryPath, identifier, "library"))
-                    return Task.FromResult<string?>(GetRelativePath(libraryPath));
-            }
+            if (File.Exists(libraryPath) && IsValidCachedCoverFile(libraryPath, identifier, "library"))
+                return Task.FromResult<string?>(GetRelativePath(libraryPath));
 
             // Check authors storage next
             var authorPath = GetImagePath(identifier, _authorImagePath);
-            if (File.Exists(authorPath))
-            {
-                if (IsValidCachedCoverFile(authorPath, identifier, "author"))
-                    return Task.FromResult<string?>(GetRelativePath(authorPath));
-            }
+            if (File.Exists(authorPath) && IsValidCachedCoverFile(authorPath, identifier, "author"))
+                return Task.FromResult<string?>(GetRelativePath(authorPath));
 
             var seriesPath = GetImagePath(identifier, _seriesImagePath);
-            if (File.Exists(seriesPath))
-            {
-                if (IsValidCachedCoverFile(seriesPath, identifier, "series"))
-                    return Task.FromResult<string?>(GetRelativePath(seriesPath));
-            }
+            if (File.Exists(seriesPath) && IsValidCachedCoverFile(seriesPath, identifier, "series"))
+                return Task.FromResult<string?>(GetRelativePath(seriesPath));
 
             // Check temp cache and prefer non-placeholder images
             var tempBest = GetBestTempImagePathIfValid(identifier);
