@@ -49,19 +49,20 @@
               />
 
               <div class="language-select-wrapper">
-                <label for="language-select" class="language-label">Region:</label>
-                <select v-model="searchLanguage" id="language-select" class="language-select form-select" aria-label="Search region">
-                  <option value="english">United States (US)</option>
-                  <option value="english-uk">United Kingdom (UK)</option>
-                  <option value="english-ca">Canada (CA)</option>
-                  <option value="english-au">Australia (AU)</option>
-                  <option value="english-in">India (IN)</option>
-                  <option value="german">Germany (DE)</option>
-                  <option value="french">France (FR)</option>
-                  <option value="spanish">Spain (ES)</option>
-                  <option value="italian">Italy (IT)</option>
-                  <option value="portuguese">Brazil (BR)</option>
-                  <option value="japanese">Japan (JP)</option>
+                <label for="language-select" class="language-label">Language:</label>
+                <select
+                  v-model="preferredSearchLanguage"
+                  id="language-select"
+                  class="language-select form-select"
+                  aria-label="Filter results by language"
+                >
+                  <option
+                    v-for="option in preferredSearchLanguageOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
                 </select>
               </div>
 
@@ -197,25 +198,20 @@
                 </div>
 
                 <div class="form-group">
-                  <label for="adv-language">Region</label>
+                  <label for="adv-language">Language</label>
                   <select
                     id="adv-language"
-                    aria-label="Search region"
-                    v-model="advancedSearchParams.language"
+                    aria-label="Filter results by language"
+                    v-model="preferredSearchLanguage"
                     class="form-input"
                   >
-                    <option value="">Any Region</option>
-                    <option value="english">United States (US)</option>
-                    <option value="english-uk">United Kingdom (UK)</option>
-                    <option value="english-ca">Canada (CA)</option>
-                    <option value="english-au">Australia (AU)</option>
-                    <option value="english-in">India (IN)</option>
-                    <option value="german">Germany (DE)</option>
-                    <option value="french">France (FR)</option>
-                    <option value="spanish">Spain (ES)</option>
-                    <option value="italian">Italy (IT)</option>
-                    <option value="portuguese">Brazil (BR)</option>
-                    <option value="japanese">Japan (JP)</option>
+                    <option
+                      v-for="option in preferredSearchLanguageOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
                   </select>
                 </div>
               </div>
@@ -907,6 +903,13 @@ import {
   canAddOpenLibraryResult as canAddOpenLibraryResultHelper,
 } from '@/utils/searchResultHelpers'
 import { useProtectedImages, isLikelyBackendImageUrl } from '@/composables/useProtectedImages'
+import {
+  getPreferredSearchLanguageFilter,
+  normalizePreferredSearchLanguage,
+  normalizeSearchResultLanguage,
+  normalizeSearchRegion,
+  preferredSearchLanguageOptions,
+} from '@/utils/languageMapping'
 
 // Helper to normalize ISBN (strip hyphens/spaces, prefer ISBN-13 if present)
 function normalizeIsbn(input: unknown): string | undefined {
@@ -987,6 +990,7 @@ const { getProtectedImageSrc } = useProtectedImages()
 const {
   searchQuery,
   searchLanguage,
+  preferredSearchLanguage,
   searchType,
   isSearching,
   searchError,
@@ -1128,6 +1132,10 @@ const displayedTitleResults = computed(() => {
   if (isAudimetaPaged.value) return titleResults.value
   return pagedTitleResults.value
 })
+
+const selectedLanguageFilter = computed(() =>
+  getPreferredSearchLanguageFilter(preferredSearchLanguage.value),
+)
 
 // Compute converted ISBN-13 for display when user enters an ISBN-10
 const convertedIsbn = computed(() => {
@@ -1326,16 +1334,63 @@ const canLoadMore = computed(() => {
 
 // Unified Search Methods - now handled by useSearch composable
 
+const getResultLanguageKey = (result: Partial<SearchResult> | LooseResult): string | undefined => {
+  const candidate = result as LooseResult
+  const nested = candidate.searchResult as LooseResult | undefined
+  const rawLanguage =
+    candidate.language ??
+    candidate.Language ??
+    nested?.language ??
+    nested?.Language
+
+  if (Array.isArray(rawLanguage)) {
+    for (const entry of rawLanguage) {
+      if (typeof entry === 'string') {
+        const normalized = normalizeSearchResultLanguage(entry)
+        if (normalized) return normalized
+      }
+    }
+    return undefined
+  }
+
+  if (typeof rawLanguage === 'string') {
+    return normalizeSearchResultLanguage(rawLanguage)
+  }
+
+  return undefined
+}
+
+const filterResultsBySelectedLanguage = <T extends Partial<SearchResult> | LooseResult>(
+  results: T[],
+): T[] => {
+  const filter = selectedLanguageFilter.value
+  if (!filter) return results
+  return results.filter((result) => getResultLanguageKey(result) === filter)
+}
+
 const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> | LooseResult>) => {
     // Debug logging removed: avoid referencing undefined temporary variables
+  const filteredResults = filterResultsBySelectedLanguage(results)
+
   // Convert search results to title results format
   titleResults.value = []
   audibleResult.value = null
   searchType.value = 'title'
+  allAudimetaResults.value = filteredResults
+    .filter((result) => {
+      const rr = result as Record<string, unknown>
+      return Boolean(rr['asin'] ?? rr['Asin'] ?? rr['isEnriched'])
+    }) as unknown as AudimetaSearchResult[]
 
+  if (!filteredResults.length) {
+    totalTitleResultsCount.value = 0
+    searchStatus.value = ''
+    await checkExistingInLibrary()
+    toast.info('No results found for the selected language', 'Search')
+    return
+  }
 
-
-  for (const result of results) {
+  for (const result of filteredResults) {
     const r = result as LooseResult;
     const rr = r as Record<string, unknown>;
 
@@ -1401,14 +1456,8 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       (metadataSource && String(metadataSource).toLowerCase() === 'audimeta') ||
       Boolean(rr['isEnriched']) ||
       Boolean(rr['asin'])
-
+ 
     if (looksLikeAudimeta) {
-      // Keep a copy of the raw audimeta results for client-side paging and reference
-      try {
-        if (Array.isArray(results) && results.length && (results[0] as unknown as AudimetaSearchResult).asin) {
-          allAudimetaResults.value = results as unknown as AudimetaSearchResult[]
-        }
-      } catch {}
       // Populate commonly used Audimeta-like fields (flattened to top-level)
       const tr = titleResult as unknown as Record<string, unknown>
       const rrRes = result as unknown as Record<string, unknown>
@@ -1522,14 +1571,14 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
     titleResults.value.push(titleResult)
   }
 
-  totalTitleResultsCount.value = results.length
+  totalTitleResultsCount.value = filteredResults.length
   searchStatus.value = ''
 
   // Check library status
   await checkExistingInLibrary()
 
   // Notify user and scroll results into view (match Advanced Search behavior)
-  toast.info(`Found ${results.length} results`, 'Search')
+  toast.info(`Found ${filteredResults.length} results`, 'Search')
   try {
     await nextTick()
     const el = document.querySelector('.search-results') as HTMLElement | null
@@ -1572,7 +1621,6 @@ const performAdvancedSearch = async () => {
       series?: string
       isbn?: string
       asin?: string
-      language?: string
     }
     const hasAny = Boolean(
       (p.title && p.title.trim()) ||
@@ -1590,8 +1638,9 @@ const performAdvancedSearch = async () => {
     isSearching.value = true
     searchError.value = ''
 
-    try {
-      // Use the unified advanced search endpoint for all advanced queries.
+  try {
+    const languageFilter = getPreferredSearchLanguageFilter(preferredSearchLanguage.value)
+    // Use the unified advanced search endpoint for all advanced queries.
       // The backend returns enriched SearchResult objects which are mapped
       // into the UI by handleAdvancedSearchResults.
       isAudimetaPaged.value = false
@@ -1600,7 +1649,8 @@ const performAdvancedSearch = async () => {
       if (p.author && p.author.trim()) params.author = p.author.trim()
       if (p.isbn && p.isbn.trim()) params.isbn = p.isbn.trim()
       if (p.asin && p.asin.trim()) params.asin = p.asin.trim()
-      if (p.language) params.language = p.language
+      params.region = searchLanguage.value
+      if (languageFilter) params.language = languageFilter
 
       const seriesName = p.series ? p.series.trim() : ''
 
@@ -1608,11 +1658,13 @@ const performAdvancedSearch = async () => {
       // so the backend performs the Audimeta series lookup and conversion.
       if (seriesName && !params.title && !params.author && !params.isbn && !params.asin) {
         try {
-          const resp = await apiService.advancedSearch({
+          const seriesSearchParams: Record<string, unknown> = {
             series: seriesName,
-            language: p.language,
+            region: searchLanguage.value,
             pagination: { page: 1, limit: resultsPerPage.value },
-          })
+          }
+          if (languageFilter) seriesSearchParams.language = languageFilter
+          const resp = await apiService.advancedSearch(seriesSearchParams)
           // backend returns enriched SearchResult objects
           await handleAdvancedSearchResults(resp as Partial<SearchResult>[])
         } catch (e) {
@@ -1739,10 +1791,10 @@ const performAdvancedSearch = async () => {
       params.title = query
     }
 
-    // Also include language if set
-    if (advancedSearchParams.value.language) {
-      params.language = advancedSearchParams.value.language
-    }
+    // Always include the configured default region for Audimeta/Audible lookups
+    params.region = searchLanguage.value
+    const languageFilter = getPreferredSearchLanguageFilter(preferredSearchLanguage.value)
+    if (languageFilter) params.language = languageFilter
 
     // Include pagination/cap when calling advanced search from unified query
     params.pagination = { page: 1, limit: resultsPerPage.value }
@@ -1760,6 +1812,9 @@ const performAdvancedSearch = async () => {
 const clearAdvancedSearch = () => {
   // Reset form state via composable
   resetAdvancedSearch()
+  preferredSearchLanguage.value = normalizePreferredSearchLanguage(
+    configStore.applicationSettings?.defaultSearchLanguage,
+  )
   advancedSearchError.value = ''
   // Reset audimeta paging state
   audimetaPage.value = 1
@@ -2301,7 +2356,9 @@ const selectTitleResult = async (book: TitleSearchResult) => {
     if (asin) {
       logger.debug('Fetching metadata for ASIN:', asin)
       toast.info('Fetching metadata', `Getting book details from configured sources...`)
-      const response = await apiService.getAudibleMetadata<AudimetaMetadataResponse | AudimetaMetadataPayload>(asin)
+      const response = await apiService.getAudibleMetadata<
+        AudimetaMetadataResponse | AudimetaMetadataPayload
+      >(asin, searchLanguage.value)
       const responseObj = (response && typeof response === 'object')
         ? (response as AudimetaMetadataResponse | AudimetaMetadataPayload)
         : {}
@@ -2514,12 +2571,23 @@ const handleLibraryAdded = (audiobook: Audiobook) => {
 }
 
 const handleSimpleSearchResults = async (results: SearchResult[]) => {
+  const filteredResults = filterResultsBySelectedLanguage(results)
+
   // Convert search results to title results format
   titleResults.value = []
   audibleResult.value = null
   searchType.value = 'title'
+  allAudimetaResults.value = []
 
-  for (const result of results) {
+  if (!filteredResults.length) {
+    totalTitleResultsCount.value = 0
+    searchStatus.value = ''
+    await checkExistingInLibrary()
+    toast.info('No results found for the selected language', 'Search')
+    return
+  }
+
+  for (const result of filteredResults) {
     // Normalize common metadata keys from backend variations so the template
     // consistently finds `subtitle`/`subtitles`, `narrator` and `source`.
     try {
@@ -2719,14 +2787,14 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
     titleResults.value.push(titleResult)
   }
 
-  totalTitleResultsCount.value = results.length
+  totalTitleResultsCount.value = filteredResults.length
   searchStatus.value = ''
 
   // Check library status
   await checkExistingInLibrary()
 
   // Notify user and scroll results into view (match Advanced Search behavior)
-  toast.info(`Found ${results.length} results`, 'Search')
+  toast.info(`Found ${filteredResults.length} results`, 'Search')
   try {
     await nextTick()
     const el = document.querySelector('.search-results') as HTMLElement | null
@@ -2775,6 +2843,13 @@ const retrySearch = async () => {
 onMounted(async () => {
   await configStore.loadApplicationSettings()
   await configStore.loadApiConfigurations()
+
+  const defaultRegion = normalizeSearchRegion(configStore.applicationSettings?.defaultSearchRegion)
+  const defaultLanguage = normalizePreferredSearchLanguage(
+    configStore.applicationSettings?.defaultSearchLanguage,
+  )
+  searchLanguage.value = defaultRegion
+  preferredSearchLanguage.value = defaultLanguage
 
   // Audible integration removed: no auth status to check
 

@@ -21,6 +21,14 @@ import type {
   SearchSortDirection,
   AudimetaSearchResponse,
   AudibleBookMetadata,
+  AuthorCatalogResponse,
+  AuthorLookupResponse,
+  AuthorMonitoringStatusResponse,
+  MonitorAuthorResponse,
+  MonitorSeriesResponse,
+  SeriesMonitoringStatusResponse,
+  SeriesCatalogResponse,
+  SeriesLookupResponse,
   ManualImportPreviewResponse,
   ManualImportRequest,
   ManualImportResult,
@@ -380,27 +388,134 @@ class ApiService {
   async getAuthorLookup(
     name: string,
     region: string = 'us',
-  ): Promise<{ asin?: string; name?: string; image?: string; cachedPath?: string } | null> {
+    asin?: string,
+    refresh: boolean = false,
+  ): Promise<AuthorLookupResponse | null> {
     const params = new URLSearchParams({ name, region })
+    if (asin) params.append('asin', asin)
+    if (refresh) params.append('refresh', 'true')
     try {
-      return await this.request(`/metadata/author?${params.toString()}`)
+      return await this.request<AuthorLookupResponse>(`/metadata/author?${params.toString()}`)
     } catch {
       return null
     }
+  }
+
+  async getAuthorCatalog(
+    name: string,
+    region: string = 'us',
+    refresh: boolean = false,
+  ): Promise<AuthorCatalogResponse | null> {
+    const params = new URLSearchParams({ name, region })
+    if (refresh) params.append('refresh', 'true')
+    try {
+      return await this.request<AuthorCatalogResponse>(`/metadata/author/books?${params.toString()}`)
+    } catch {
+      return null
+    }
+  }
+
+  async getSeriesLookup(
+    name: string,
+    region: string = 'us',
+    asin?: string,
+    refresh: boolean = false,
+  ): Promise<SeriesLookupResponse | null> {
+    const params = new URLSearchParams({ name, region })
+    if (asin) params.append('asin', asin)
+    if (refresh) params.append('refresh', 'true')
+    try {
+      return await this.request<SeriesLookupResponse>(`/metadata/series?${params.toString()}`)
+    } catch {
+      return null
+    }
+  }
+
+  async getSeriesCatalog(
+    name: string,
+    region: string = 'us',
+    refresh: boolean = false,
+  ): Promise<SeriesCatalogResponse | null> {
+    const params = new URLSearchParams({ name, region })
+    if (refresh) params.append('refresh', 'true')
+    try {
+      return await this.request<SeriesCatalogResponse>(`/metadata/series/books?${params.toString()}`)
+    } catch {
+      return null
+    }
+  }
+
+  async getAuthorMonitoringStatus(
+    name: string,
+    region: string = 'us',
+    language: string = 'all',
+  ): Promise<AuthorMonitoringStatusResponse> {
+    const params = new URLSearchParams({ name, region, language })
+    return this.request<AuthorMonitoringStatusResponse>(
+      `/authors/monitoring/status?${params.toString()}`,
+    )
+  }
+
+  async monitorAuthor(payload: {
+    name: string
+    asin?: string
+    region?: string
+    language?: string
+  }): Promise<MonitorAuthorResponse> {
+    return this.request<MonitorAuthorResponse>('/authors/monitoring', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async unmonitorAuthor(id: number): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/authors/monitoring/${id}`, {
+      method: 'DELETE',
+    })
+  }
+
+  async getSeriesMonitoringStatus(
+    name: string,
+    region: string = 'us',
+    language: string = 'all',
+  ): Promise<SeriesMonitoringStatusResponse> {
+    const params = new URLSearchParams({ name, region, language })
+    return this.request<SeriesMonitoringStatusResponse>(
+      `/series/monitoring/status?${params.toString()}`,
+    )
+  }
+
+  async monitorSeries(payload: {
+    name: string
+    asin?: string
+    region?: string
+    language?: string
+  }): Promise<MonitorSeriesResponse> {
+    return this.request<MonitorSeriesResponse>('/series/monitoring', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    })
+  }
+
+  async unmonitorSeries(id: number): Promise<{ message: string }> {
+    return this.request<{ message: string }>(`/series/monitoring/${id}`, {
+      method: 'DELETE',
+    })
   }
 
 
 
   async searchByTitle(
     query: string,
-    options?: RequestInit & { language?: string },
+    options?: RequestInit & { region?: string; language?: string },
   ): Promise<SearchResult[]> {
-    const language = options?.language || 'english'
-    const region = getRegionFromLanguage(language)
+    const { region: explicitRegion, language, ...requestOptions } = options ?? {}
+    const region = explicitRegion || (language ? getRegionFromLanguage(language) : 'us')
     const body: Record<string, unknown> = { mode: 'Simple', query, region }
+    if (language) body.language = language
     const resp = await this.request<SearchResult[] | { results?: SearchResult[] } | null>(
       '/search',
-      { method: 'POST', body: JSON.stringify(body), ...options },
+      { method: 'POST', body: JSON.stringify(body), ...requestOptions },
     )
     // Backend returns either an array or an envelope { results: [...] } depending on mode.
     const results = Array.isArray(resp) ? resp : (resp?.results ?? [])
@@ -413,6 +528,7 @@ class ApiService {
     isbn?: string
     series?: string
     asin?: string
+    region?: string
     language?: string
     pagination?: { page?: number; limit?: number }
     cap?: number
@@ -426,8 +542,9 @@ class ApiService {
     if (params.isbn) (body as Record<string, unknown>).isbn = params.isbn
     if (params.series) (body as Record<string, unknown>).series = params.series
     if (params.asin) (body as Record<string, unknown>).asin = params.asin
-    if (params.language)
-      (body as Record<string, unknown>).region = getRegionFromLanguage(params.language)
+    const region = params.region || (params.language ? getRegionFromLanguage(params.language) : undefined)
+    if (region) (body as Record<string, unknown>).region = region
+    if (params.language) (body as Record<string, unknown>).language = params.language
     if (params.pagination) (body as Record<string, unknown>).pagination = params.pagination
     if (typeof params.cap === 'number') (body as Record<string, unknown>).cap = params.cap
     const resp = await this.request<SearchResult[] | { results?: SearchResult[] } | null>(
@@ -908,8 +1025,11 @@ class ApiService {
   }
 
   // Audible Metadata API
-  async getAudibleMetadata<T>(asin: string): Promise<T> {
-    return this.request<T>(`/metadata/${asin}`)
+  async getAudibleMetadata<T>(asin: string, region: string = 'us'): Promise<T> {
+    const params = new URLSearchParams()
+    if (region) params.append('region', region)
+    const query = params.toString()
+    return this.request<T>(`/metadata/${asin}${query ? `?${query}` : ''}`)
   }
 
   // Library API

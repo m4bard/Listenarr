@@ -12,6 +12,7 @@ namespace Listenarr.Api.Models
         public string? PublishedDate { get; set; }
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
+        public string[]? Genres { get; set; }
         public string? Asin { get; set; }
         public string? OpenLibraryId { get; set; }
         public string? Publisher { get; set; }

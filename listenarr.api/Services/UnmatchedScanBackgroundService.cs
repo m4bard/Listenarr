@@ -37,34 +37,44 @@ namespace Listenarr.Api.Services
         protected override async Task ExecuteAsync(CancellationToken stoppingToken)
         {
             _logger.LogInformation("UnmatchedScanBackgroundService started");
-            await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken))
+            try
             {
-                try
+                await foreach (var job in _queue.Reader.ReadAllAsync(stoppingToken))
                 {
-                    _logger.LogInformation("Processing unmatched scan job {JobId} for {Path}", job.Id, job.RootFolderPath);
-                    _queue.UpdateJob(job.Id, "Processing");
+                    try
+                    {
+                        _logger.LogInformation("Processing unmatched scan job {JobId} for {Path}", job.Id, job.RootFolderPath);
+                        _queue.UpdateJob(job.Id, "Processing");
 
-                    var results = await ScanAsync(job.RootFolderPath, stoppingToken);
+                        var results = await ScanAsync(job.RootFolderPath, stoppingToken);
 
-                    _queue.UpdateJob(job.Id, "Completed", results);
-                    _logger.LogInformation("Unmatched scan job {JobId} completed: {Count} unmatched items", job.Id, results.Count);
+                        _queue.UpdateJob(job.Id, "Completed", results);
+                        _logger.LogInformation("Unmatched scan job {JobId} completed: {Count} unmatched items", job.Id, results.Count);
 
-                    await _hubContext.Clients.All.SendAsync(
-                        "UnmatchedScanComplete",
-                        new { jobId = job.Id.ToString(), count = results.Count },
-                        stoppingToken);
+                        await _hubContext.Clients.All.SendAsync(
+                            "UnmatchedScanComplete",
+                            new { jobId = job.Id.ToString(), count = results.Count },
+                            stoppingToken);
+                    }
+                    catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                    {
+                        throw;
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogError(ex, "Unmatched scan job {JobId} failed", job.Id);
+                        _queue.UpdateJob(job.Id, "Failed", error: ex.Message);
+
+                        await _hubContext.Clients.All.SendAsync(
+                            "UnmatchedScanComplete",
+                            new { jobId = job.Id.ToString(), count = 0, error = ex.Message },
+                            stoppingToken);
+                    }
                 }
-                catch (OperationCanceledException) { throw; }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex, "Unmatched scan job {JobId} failed", job.Id);
-                    _queue.UpdateJob(job.Id, "Failed", error: ex.Message);
-
-                    await _hubContext.Clients.All.SendAsync(
-                        "UnmatchedScanComplete",
-                        new { jobId = job.Id.ToString(), count = 0, error = ex.Message },
-                        stoppingToken);
-                }
+            }
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            {
+                _logger.LogInformation("UnmatchedScanBackgroundService stopping due to host shutdown");
             }
         }
 

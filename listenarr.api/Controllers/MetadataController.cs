@@ -1,4 +1,5 @@
 using Listenarr.Api.Services;
+using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
@@ -18,6 +19,8 @@ namespace Listenarr.Api.Controllers
         private readonly IMemoryCache _cache;
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly IAsinLookupService _asinLookupService;
+        private readonly IAuthorCatalogService _authorCatalogService;
+        private readonly ISeriesCatalogService _seriesCatalogService;
 
         public MetadataController(
             IAudiobookMetadataService metadataService,
@@ -27,6 +30,8 @@ namespace Listenarr.Api.Controllers
             IMemoryCache cache,
             IAudiobookRepository audiobookRepository,
             IAsinLookupService asinLookupService,
+            IAuthorCatalogService authorCatalogService,
+            ISeriesCatalogService seriesCatalogService,
             ILogger<MetadataController> logger)
         {
             _metadataService = metadataService;
@@ -36,6 +41,8 @@ namespace Listenarr.Api.Controllers
             _cache = cache;
             _audiobookRepository = audiobookRepository;
             _asinLookupService = asinLookupService;
+            _authorCatalogService = authorCatalogService;
+            _seriesCatalogService = seriesCatalogService;
             _logger = logger;
         }
 
@@ -125,61 +132,53 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Lookup an author by name via Audimeta and ensure the author image is cached under authors folder.
-        /// Returns an object with `asin`, `name`, `image` and `cachedPath` (relative path under config/cache/images/authors).
+        /// Lookup an author by name via Audimeta, prefer cached portraits, and enrich with biography and similar authors.
         /// </summary>
         [HttpGet("author")]
-        [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+        [ProducesResponseType(typeof(AuthorLookupResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<object>> LookupAuthor([FromQuery] string name, [FromQuery] string region = "us")
+        public async Task<ActionResult<AuthorLookupResponse>> LookupAuthor(
+            [FromQuery] string name,
+            [FromQuery] string region = "us",
+            [FromQuery] string? asin = null,
+            [FromQuery] bool refresh = false)
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(name)) return BadRequest("Author name is required");
 
                 var normalizedName = name.Trim();
+                var normalizedAsin = string.IsNullOrWhiteSpace(asin) ? null : asin.Trim();
                 var cacheKey = $"author-lookup:{region}:{normalizedName.ToLowerInvariant()}";
+                string? seededName = null;
+                string? seededImage = null;
+                string? seededDescription = null;
+                string? seededCachedPath = null;
+                var seededSimilarAuthors = new List<RelatedAuthorItem>();
 
-                if (_cache.TryGetValue(cacheKey, out AuthorLookupCacheEntry? cachedEntry) && cachedEntry != null)
+                if (refresh)
                 {
+                    _cache.Remove(cacheKey);
+                }
+                else if (_cache.TryGetValue(cacheKey, out AuthorLookupCacheEntry? cachedEntry) && cachedEntry != null)
+                {
+                        cachedEntry.Asin ??= normalizedAsin;
+
                         // If previously marked NotFound, try to resolve an ASIN from the DB and check cache by ASIN
                         if (cachedEntry.NotFound)
                         {
-                            try
+                            var notFoundCacheProbe = await ProbeAuthorImageCacheAsync(normalizedName, region, cachedEntry.Asin);
+                            if (!string.IsNullOrWhiteSpace(notFoundCacheProbe.CachedPath))
                             {
-                                // Try to find a stored author ASIN in the DB matching this author name
-                                try
-                                {
-                                    var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
-                                    if (!string.IsNullOrWhiteSpace(authorAsin))
-                                    {
-                                        var diskPath = await _imageCacheService.GetCachedImagePathAsync(authorAsin);
-                                        if (!string.IsNullOrWhiteSpace(diskPath))
-                                        {
-                                            cachedEntry.Asin = authorAsin;
-                                            cachedEntry.CachedPath = "/" + diskPath.TrimStart('/');
-                                            cachedEntry.Name = cachedEntry.Name ?? normalizedName;
-                                            cachedEntry.NotFound = false;
-                                            _cache.Set(cacheKey, cachedEntry, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
+                                cachedEntry.Asin = notFoundCacheProbe.Asin ?? cachedEntry.Asin;
+                                cachedEntry.CachedPath = notFoundCacheProbe.CachedPath;
+                                cachedEntry.Name = cachedEntry.Name ?? normalizedName;
+                                cachedEntry.NotFound = false;
+                                _cache.Set(cacheKey, cachedEntry, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
 
-                                            return Ok(new
-                                            {
-                                                asin = cachedEntry.Asin,
-                                                name = cachedEntry.Name,
-                                                image = cachedEntry.Image,
-                                                cachedPath = cachedEntry.CachedPath
-                                            });
-                                        }
-                                    }
-                                }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                    _logger.LogWarning(ex, "Failed to probe DB/image cache for previously-missing author: {Author}", normalizedName);
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger.LogWarning(ex, "Failed to probe DB/image cache for previously-missing author: {Author}", normalizedName);
+                                return Ok(MapAuthorLookupResponse(cachedEntry, normalizedName));
                             }
 
                             return NotFound("Author not found");
@@ -188,48 +187,149 @@ namespace Listenarr.Api.Controllers
                     string? cachedPath = cachedEntry.CachedPath;
                     if (!string.IsNullOrWhiteSpace(cachedEntry.Asin))
                     {
-                        var diskPath = await _imageCacheService.GetCachedImagePathAsync(cachedEntry.Asin);
-                        if (!string.IsNullOrWhiteSpace(diskPath))
-                        {
-                            cachedPath = "/" + diskPath.TrimStart('/');
-                        }
+                        cachedPath = await ResolveCachedImagePathAsync(cachedEntry.Asin) ?? cachedPath;
                     }
 
-                    if (!string.IsNullOrWhiteSpace(cachedPath))
+                    cachedEntry.CachedPath = cachedPath;
+
+                    if (HasCompleteAuthorLookupData(cachedEntry.CachedPath, cachedEntry.Description, cachedEntry.SimilarAuthors))
                     {
-                        return Ok(new
-                        {
-                            asin = cachedEntry.Asin,
-                            name = cachedEntry.Name ?? normalizedName,
-                            image = cachedEntry.Image,
-                            cachedPath = cachedPath
-                        });
+                        return Ok(MapAuthorLookupResponse(cachedEntry, normalizedName));
+                    }
+
+                    normalizedAsin ??= cachedEntry.Asin;
+                    seededName = cachedEntry.Name;
+                    seededImage = cachedEntry.Image;
+                    seededDescription = cachedEntry.Description;
+                    seededCachedPath = cachedPath;
+                    seededSimilarAuthors = cachedEntry.SimilarAuthors?
+                        .Where(author => !string.IsNullOrWhiteSpace(author.Name))
+                        .ToList() ?? new List<RelatedAuthorItem>();
+                }
+
+                var persistedEntry = await ResolvePersistedAuthorCacheAsync(normalizedName, region, normalizedAsin);
+                if (persistedEntry != null)
+                {
+                    var persistedResponse = await MapPersistedAuthorLookupResponseAsync(persistedEntry, normalizedName);
+                    if (!refresh &&
+                        HasCompleteAuthorLookupData(persistedResponse.CachedPath, persistedResponse.Description, persistedResponse.SimilarAuthors))
+                    {
+                        CacheAuthorLookupResponse(cacheKey, persistedResponse);
+                        return Ok(persistedResponse);
+                    }
+
+                    normalizedAsin ??= persistedResponse.Asin;
+                    seededName ??= persistedResponse.Name;
+                    seededImage ??= persistedResponse.Image;
+                    seededDescription ??= persistedResponse.Description;
+                    seededCachedPath ??= persistedResponse.CachedPath;
+                    if (seededSimilarAuthors.Count == 0 && persistedResponse.SimilarAuthors.Count > 0)
+                    {
+                        seededSimilarAuthors = persistedResponse.SimilarAuthors
+                            .Where(author => !string.IsNullOrWhiteSpace(author.Name))
+                            .ToList();
                     }
                 }
 
-                var info = await _audimetaService.LookupAuthorAsync(normalizedName, region);
+                var cacheHint = await ProbeAuthorImageCacheAsync(normalizedName, region, normalizedAsin);
+                var resolvedAsin = normalizedAsin ?? cacheHint.Asin;
+                var cached = seededCachedPath ?? cacheHint.CachedPath;
+                var needsDescription = refresh || string.IsNullOrWhiteSpace(seededDescription);
+                var needsSimilarAuthors = refresh || seededSimilarAuthors.Count == 0;
+                var needsCachedImage = refresh || string.IsNullOrWhiteSpace(cached);
+                var needsAuthorDetails = string.IsNullOrWhiteSpace(resolvedAsin) ||
+                    string.IsNullOrWhiteSpace(seededName) ||
+                    string.IsNullOrWhiteSpace(seededImage) ||
+                    needsDescription ||
+                    needsCachedImage ||
+                    refresh;
 
-                string? resolvedAsin = info?.Asin;
-                string? resolvedName = info?.Name;
-                string? resolvedImage = info?.Image;
+                AuthorLookupItem? info = null;
+                AuthorLookupItem? authorDetails = null;
+                string? resolvedName = seededName;
+                string? resolvedImage = seededImage;
+                string? resolvedDescription = seededDescription;
 
-                if (info == null)
+                if (!string.IsNullOrWhiteSpace(resolvedAsin) && needsAuthorDetails)
+                {
+                    authorDetails = await _audimetaService.GetAuthorByAsinAsync(resolvedAsin, region);
+                }
+
+                if (authorDetails == null && needsAuthorDetails)
+                {
+                    info = await _audimetaService.LookupAuthorAsync(normalizedName, region);
+                }
+
+                resolvedAsin ??= authorDetails?.Asin ?? info?.Asin;
+
+                if (authorDetails == null && !string.IsNullOrWhiteSpace(resolvedAsin) && needsAuthorDetails)
+                {
+                    authorDetails = await _audimetaService.GetAuthorByAsinAsync(resolvedAsin, region);
+                }
+
+                resolvedName ??= authorDetails?.Name ?? info?.Name;
+
+                var audimetaImage = authorDetails?.Image ?? info?.Image;
+                if (!string.IsNullOrWhiteSpace(audimetaImage) &&
+                    (string.IsNullOrWhiteSpace(resolvedImage) || needsCachedImage))
+                {
+                    resolvedImage = audimetaImage;
+                }
+
+                var audimetaDescription = authorDetails?.Description ?? info?.Description;
+                if (!string.IsNullOrWhiteSpace(audimetaDescription))
+                {
+                    resolvedDescription = audimetaDescription;
+                }
+
+                AudnexusAuthorSearchResult? audnexusSearchAuthor = null;
+                AudnexusAuthorResponse? audnexusAuthor = null;
+                var shouldQueryAudnexus =
+                    refresh ||
+                    string.IsNullOrWhiteSpace(resolvedAsin) ||
+                    string.IsNullOrWhiteSpace(resolvedName) ||
+                    string.IsNullOrWhiteSpace(resolvedDescription) ||
+                    string.IsNullOrWhiteSpace(resolvedImage) ||
+                    needsSimilarAuthors ||
+                    (needsCachedImage && string.IsNullOrWhiteSpace(audimetaImage));
+
+                if (!string.IsNullOrWhiteSpace(resolvedAsin) && shouldQueryAudnexus)
+                {
+                    try
+                    {
+                        audnexusAuthor = await _audnexusService.GetAuthorAsync(resolvedAsin, region, update: false);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        _logger.LogWarning(ex, "Audnexus author details fallback failed for '{Author}'", normalizedName);
+                    }
+                }
+
+                if (shouldQueryAudnexus && (authorDetails == null || audnexusAuthor == null || string.IsNullOrWhiteSpace(resolvedDescription)))
                 {
                     // Audimeta returned nothing — try Audnexus as fallback
                     try
                     {
                         var audnexResults = await _audnexusService.SearchAuthorsAsync(normalizedName, region);
-                        var audnexAuthor = audnexResults?.FirstOrDefault(a =>
+                        audnexusSearchAuthor = audnexResults?.FirstOrDefault(a =>
                             !string.IsNullOrWhiteSpace(a.Name) &&
                             a.Name.Equals(normalizedName, StringComparison.OrdinalIgnoreCase))
+                            ?? audnexResults?.FirstOrDefault(a =>
+                                !string.IsNullOrWhiteSpace(a.Asin) &&
+                                string.Equals(a.Asin, resolvedAsin, StringComparison.OrdinalIgnoreCase))
                             ?? audnexResults?.FirstOrDefault();
 
-                        if (audnexAuthor != null)
+                        if (audnexusSearchAuthor != null)
                         {
-                            resolvedAsin = audnexAuthor.Asin;
-                            resolvedName = audnexAuthor.Name;
-                            resolvedImage = audnexAuthor.Image;
-                            _logger.LogInformation("Author '{Author}' resolved via Audnexus fallback (ASIN: {Asin})", normalizedName, resolvedAsin);
+                            resolvedAsin ??= audnexusSearchAuthor.Asin;
+                            resolvedName ??= audnexusSearchAuthor.Name;
+                            resolvedImage ??= audnexusSearchAuthor.Image;
+                            resolvedDescription ??= audnexusSearchAuthor.Description;
+
+                            if (audnexusAuthor == null && !string.IsNullOrWhiteSpace(audnexusSearchAuthor.Asin))
+                            {
+                                audnexusAuthor = await _audnexusService.GetAuthorAsync(audnexusSearchAuthor.Asin, region, update: false);
+                            }
                         }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -237,25 +337,58 @@ namespace Listenarr.Api.Controllers
                         _logger.LogWarning(ex, "Audnexus author fallback failed for '{Author}'", normalizedName);
                     }
 
-                    if (resolvedName == null)
-                    {
-                        _cache.Set(cacheKey, new AuthorLookupCacheEntry
-                        {
-                            NotFound = true,
-                            Name = normalizedName
-                        }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(6) });
-
-                        return NotFound("Author not found");
-                    }
                 }
 
-                string? cached = null;
+                if (audnexusAuthor != null)
+                {
+                    resolvedAsin ??= audnexusAuthor.Asin;
+                    resolvedName ??= audnexusAuthor.Name;
+                    resolvedDescription ??= audnexusAuthor.Description;
+                }
+
+                var audnexusImage = audnexusAuthor?.Image ?? audnexusSearchAuthor?.Image;
+                if (!string.IsNullOrWhiteSpace(audnexusImage) &&
+                    (string.IsNullOrWhiteSpace(resolvedImage) ||
+                        (needsCachedImage && string.IsNullOrWhiteSpace(audimetaImage))))
+                {
+                    resolvedImage = audnexusImage;
+                }
+
+                if (resolvedName == null)
+                {
+                    _cache.Set(cacheKey, new AuthorLookupCacheEntry
+                    {
+                        NotFound = true,
+                        Name = normalizedName
+                    }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(6) });
+
+                    return NotFound("Author not found");
+                }
+
                 try
                 {
-                    if (!string.IsNullOrWhiteSpace(resolvedAsin))
+                    if (!refresh &&
+                        string.IsNullOrWhiteSpace(cached) &&
+                        !string.IsNullOrWhiteSpace(resolvedAsin))
                     {
-                        // Attempt to ensure author image is cached under authors storage
-                        cached = await _imageCacheService.MoveToAuthorLibraryStorageAsync(resolvedAsin, resolvedImage);
+                        cached = await ResolveCachedImagePathAsync(resolvedAsin);
+                    }
+
+                    if ((refresh || string.IsNullOrWhiteSpace(cached)) &&
+                        !string.IsNullOrWhiteSpace(resolvedAsin))
+                    {
+                        var preferredImageForCaching =
+                            authorDetails?.Image ??
+                            info?.Image ??
+                            audnexusAuthor?.Image ??
+                            audnexusSearchAuthor?.Image ??
+                            resolvedImage;
+
+                        // Attempt to ensure author image is cached under authors storage.
+                        cached = await _imageCacheService.MoveToAuthorLibraryStorageAsync(
+                            resolvedAsin,
+                            preferredImageForCaching,
+                            forceRefresh: refresh);
                         if (!string.IsNullOrWhiteSpace(cached)) cached = "/" + cached.TrimStart('/');
                     }
                 }
@@ -263,21 +396,31 @@ namespace Listenarr.Api.Controllers
                     _logger.LogWarning(ex, "Failed to cache author image for {Author}", name);
                 }
 
-                var result = new {
-                    asin = resolvedAsin,
-                    name = resolvedName,
-                    image = resolvedImage,
-                    cachedPath = cached
-                };
+                var similarAuthors = MapSimilarAuthors(
+                    audnexusAuthor?.Similar ?? audnexusSearchAuthor?.Similar,
+                    normalizedName);
+                if (similarAuthors.Count == 0 && seededSimilarAuthors.Count > 0)
+                {
+                    similarAuthors = seededSimilarAuthors;
+                }
 
-                _cache.Set(cacheKey, new AuthorLookupCacheEntry
+                var result = new AuthorLookupResponse
                 {
                     Asin = resolvedAsin,
-                    Name = resolvedName ?? normalizedName,
+                    Name = resolvedName,
                     Image = resolvedImage,
                     CachedPath = cached,
-                    NotFound = false
-                }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
+                    Description = resolvedDescription,
+                    SimilarAuthors = similarAuthors
+                };
+
+                await PersistAuthorLookupAsync(
+                    persistedEntry,
+                    normalizedName,
+                    region,
+                    result);
+
+                CacheAuthorLookupResponse(cacheKey, result);
 
                 return Ok(result);
             }
@@ -287,13 +430,848 @@ namespace Listenarr.Api.Controllers
             }
         }
 
+        /// <summary>
+        /// Fetch the full catalog for an author using Audimeta's author/books flow.
+        /// </summary>
+        [HttpGet("author/books")]
+        [ProducesResponseType(typeof(AuthorCatalogResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<AuthorCatalogResponse>> GetAuthorBooks(
+            [FromQuery] string name,
+            [FromQuery] string region = "us",
+            [FromQuery] int limit = 250,
+            [FromQuery] bool refresh = false)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(name)) return BadRequest("Author name is required");
+
+                var normalizedName = name.Trim();
+                var catalog = await _authorCatalogService.GetCatalogAsync(
+                    normalizedName,
+                    region,
+                    limit,
+                    language: null,
+                    forceRefresh: refresh);
+
+                if (catalog == null || string.IsNullOrWhiteSpace(catalog.Author.Asin))
+                {
+                    return NotFound("Author not found");
+                }
+
+                return Ok(new AuthorCatalogResponse
+                {
+                    Author = new AuthorCatalogAuthorInfo
+                    {
+                        Asin = catalog.Author.Asin,
+                        Name = catalog.Author.Name ?? normalizedName,
+                        Image = catalog.Author.Image
+                    },
+                    Books = catalog.Books.Select(MapAuthorCatalogBook).ToList(),
+                    TotalBooks = catalog.TotalBooks
+                });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error fetching author catalog for {Name}", name);
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+        /// <summary>
+        /// Lookup a series by name via Audimeta, preferring cached series metadata and images.
+        /// </summary>
+        [HttpGet("series")]
+        [ProducesResponseType(typeof(SeriesLookupResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<SeriesLookupResponse>> LookupSeries(
+            [FromQuery] string name,
+            [FromQuery] string region = "us",
+            [FromQuery] string? asin = null,
+            [FromQuery] bool refresh = false)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(name)) return BadRequest("Series name is required");
+
+                var normalizedName = name.Trim();
+                var normalizedAsin = string.IsNullOrWhiteSpace(asin) ? null : asin.Trim();
+                var cacheKey = $"series-lookup:{region}:{normalizedName.ToLowerInvariant()}";
+
+                if (refresh)
+                {
+                    _cache.Remove(cacheKey);
+                }
+                else if (_cache.TryGetValue(cacheKey, out SeriesLookupCacheEntry? cachedEntry) && cachedEntry != null)
+                {
+                    cachedEntry.Asin ??= normalizedAsin;
+                    return Ok(MapSeriesLookupResponse(cachedEntry, normalizedName));
+                }
+
+                var persistedEntry = await ResolvePersistedSeriesCacheAsync(normalizedName, region, normalizedAsin);
+                if (!refresh && persistedEntry != null)
+                {
+                    var persistedResponse = await MapPersistedSeriesLookupResponseAsync(persistedEntry, normalizedName);
+                    CacheSeriesLookupResponse(cacheKey, persistedResponse);
+                    return Ok(persistedResponse);
+                }
+
+                normalizedAsin ??= persistedEntry?.SeriesAsin;
+
+                var resolvedSeries = !string.IsNullOrWhiteSpace(normalizedAsin)
+                    ? await _audimetaService.GetSeriesByAsinAsync(normalizedAsin, region)
+                    : null;
+
+                resolvedSeries ??= await _audimetaService.LookupSeriesAsync(normalizedName, region);
+                normalizedAsin ??= resolvedSeries?.Asin;
+
+                if (resolvedSeries == null && !string.IsNullOrWhiteSpace(normalizedAsin))
+                {
+                    resolvedSeries = await _audimetaService.GetSeriesByAsinAsync(normalizedAsin, region);
+                }
+
+                if (resolvedSeries == null || string.IsNullOrWhiteSpace(resolvedSeries.Name))
+                {
+                    return NotFound("Series not found");
+                }
+
+                var catalog = await _seriesCatalogService.GetCatalogAsync(
+                    resolvedSeries.Name ?? normalizedName,
+                    region,
+                    limit: 250,
+                    language: null,
+                    forceRefresh: refresh);
+
+                var imageUrl =
+                    resolvedSeries.Image ??
+                    catalog?.Books.FirstOrDefault(book => !string.IsNullOrWhiteSpace(book.ImageUrl))?.ImageUrl ??
+                    persistedEntry?.ImageUrl;
+
+                string? cachedPath = null;
+                if (!string.IsNullOrWhiteSpace(resolvedSeries.Asin))
+                {
+                    cachedPath = await ResolveCachedImagePathAsync(resolvedSeries.Asin);
+
+                    if ((refresh || string.IsNullOrWhiteSpace(cachedPath)) && !string.IsNullOrWhiteSpace(imageUrl))
+                    {
+                        try
+                        {
+                            cachedPath = await _imageCacheService.MoveToSeriesLibraryStorageAsync(
+                                resolvedSeries.Asin,
+                                imageUrl,
+                                forceRefresh: refresh);
+                            if (!string.IsNullOrWhiteSpace(cachedPath))
+                            {
+                                cachedPath = "/" + cachedPath.TrimStart('/');
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            _logger.LogWarning(ex, "Failed to cache series image for {Series}", normalizedName);
+                        }
+                    }
+                }
+
+                var result = new SeriesLookupResponse
+                {
+                    Asin = resolvedSeries.Asin,
+                    Name = resolvedSeries.Name ?? normalizedName,
+                    Image = imageUrl,
+                    CachedPath = cachedPath,
+                    Description = resolvedSeries.Description ?? persistedEntry?.Description,
+                    TotalBooks = catalog?.TotalBooks ?? persistedEntry?.CatalogBooks?.Count ?? 0
+                };
+
+                await PersistSeriesLookupAsync(
+                    persistedEntry,
+                    normalizedName,
+                    region,
+                    result,
+                    catalog?.Books);
+
+                CacheSeriesLookupResponse(cacheKey, result);
+
+                return Ok(result);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error looking up series: {Name}", name);
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+        /// <summary>
+        /// Fetch the full catalog for a series using Audimeta's series/books flow.
+        /// </summary>
+        [HttpGet("series/books")]
+        [ProducesResponseType(typeof(SeriesCatalogResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public async Task<ActionResult<SeriesCatalogResponse>> GetSeriesBooks(
+            [FromQuery] string name,
+            [FromQuery] string region = "us",
+            [FromQuery] int limit = 250,
+            [FromQuery] bool refresh = false)
+        {
+            try
+            {
+                if (string.IsNullOrWhiteSpace(name)) return BadRequest("Series name is required");
+
+                var normalizedName = name.Trim();
+                var catalog = await _seriesCatalogService.GetCatalogAsync(
+                    normalizedName,
+                    region,
+                    limit,
+                    language: null,
+                    forceRefresh: refresh);
+
+                if (catalog == null || string.IsNullOrWhiteSpace(catalog.Series.Asin))
+                {
+                    return NotFound("Series not found");
+                }
+
+                return Ok(new SeriesCatalogResponse
+                {
+                    Series = new SeriesCatalogInfo
+                    {
+                        Asin = catalog.Series.Asin,
+                        Name = catalog.Series.Name ?? normalizedName,
+                        Image = catalog.Series.Image,
+                        Description = catalog.Series.Description
+                    },
+                    Books = catalog.Books.Select(MapSeriesCatalogBook).ToList(),
+                    TotalBooks = catalog.TotalBooks
+                });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error fetching series catalog for {Name}", name);
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+        private static string BuildAuthorCatalogBookKey(AudimetaSearchResult book)
+        {
+            if (!string.IsNullOrWhiteSpace(book.Asin))
+            {
+                return $"asin:{NormalizeCatalogToken(book.Asin)}";
+            }
+
+            var title = NormalizeCatalogToken(book.Title);
+            var authors = string.Join("|", (book.Authors ?? new List<AudimetaAuthor>())
+                .Select(a => NormalizeCatalogToken(a.Name))
+                .Where(a => !string.IsNullOrWhiteSpace(a)));
+
+            return $"title:{title}:authors:{authors}";
+        }
+
+        private static string NormalizeCatalogToken(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            return new string(value.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
+        }
+
+        private static AuthorCatalogBookItem MapAuthorCatalogBook(AudimetaSearchResult book)
+        {
+            var primarySeries = book.Series?.FirstOrDefault();
+            var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
+
+            return new AuthorCatalogBookItem
+            {
+                Asin = book.Asin,
+                Title = book.Title ?? "Unknown Title",
+                Subtitle = book.Subtitle,
+                Authors = (book.Authors ?? new List<AudimetaAuthor>())
+                    .Select(a => a.Name)
+                    .Where(a => !string.IsNullOrWhiteSpace(a))
+                    .Cast<string>()
+                    .ToList(),
+                ImageUrl = book.ImageUrl,
+                Runtime = runtime,
+                Language = book.Language,
+                Publisher = book.Publisher,
+                Narrators = (book.Narrators ?? new List<AudimetaNarrator>())
+                    .Select(n => n.Name)
+                    .Where(n => !string.IsNullOrWhiteSpace(n))
+                    .Cast<string>()
+                    .ToList(),
+                Genres = (book.Genres ?? new List<AudimetaGenre>())
+                    .Select(g => g.Name)
+                    .Where(g => !string.IsNullOrWhiteSpace(g))
+                    .Cast<string>()
+                    .ToList(),
+                Series = primarySeries?.Name,
+                SeriesNumber = primarySeries?.Position,
+                PublishedDate = book.ReleaseDate,
+                Isbn = book.Isbn,
+                Link = book.Link,
+                MetadataSource = "Audimeta"
+            };
+        }
+
+        private static SeriesCatalogBookItem MapSeriesCatalogBook(AudimetaSearchResult book)
+        {
+            var primarySeries = book.Series?.FirstOrDefault();
+            var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
+
+            return new SeriesCatalogBookItem
+            {
+                Asin = book.Asin,
+                Title = book.Title ?? "Unknown Title",
+                Subtitle = book.Subtitle,
+                Authors = (book.Authors ?? new List<AudimetaAuthor>())
+                    .Select(a => a.Name)
+                    .Where(a => !string.IsNullOrWhiteSpace(a))
+                    .Cast<string>()
+                    .ToList(),
+                ImageUrl = book.ImageUrl,
+                Runtime = runtime,
+                Language = book.Language,
+                Publisher = book.Publisher,
+                Narrators = (book.Narrators ?? new List<AudimetaNarrator>())
+                    .Select(n => n.Name)
+                    .Where(n => !string.IsNullOrWhiteSpace(n))
+                    .Cast<string>()
+                    .ToList(),
+                Genres = (book.Genres ?? new List<AudimetaGenre>())
+                    .Select(g => g.Name)
+                    .Where(g => !string.IsNullOrWhiteSpace(g))
+                    .Cast<string>()
+                    .ToList(),
+                Series = primarySeries?.Name,
+                SeriesNumber = primarySeries?.Position,
+                PublishedDate = book.ReleaseDate,
+                Isbn = book.Isbn,
+                Link = book.Link,
+                MetadataSource = "Audimeta"
+            };
+        }
+
+        private async Task<(string? Asin, string? CachedPath)> ProbeAuthorImageCacheAsync(string normalizedName, string region, string? hintedAsin)
+        {
+            var candidateAsins = new List<string>();
+
+            if (!string.IsNullOrWhiteSpace(hintedAsin))
+            {
+                candidateAsins.Add(hintedAsin.Trim());
+            }
+
+            try
+            {
+                var cachedAuthor = await _audiobookRepository.GetCachedAuthorByNameAsync(normalizedName, region);
+                if (!string.IsNullOrWhiteSpace(cachedAuthor?.AuthorAsin)
+                    && !candidateAsins.Any(existing => string.Equals(existing, cachedAuthor.AuthorAsin, StringComparison.OrdinalIgnoreCase)))
+                {
+                    candidateAsins.Add(cachedAuthor.AuthorAsin);
+                }
+
+                var storedAuthorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
+                if (!string.IsNullOrWhiteSpace(storedAuthorAsin)
+                    && !candidateAsins.Any(existing => string.Equals(existing, storedAuthorAsin, StringComparison.OrdinalIgnoreCase)))
+                {
+                    candidateAsins.Add(storedAuthorAsin);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to probe DB for cached author ASIN: {Author}", normalizedName);
+            }
+
+            foreach (var candidateAsin in candidateAsins)
+            {
+                var cachedPath = await ResolveCachedImagePathAsync(candidateAsin);
+                if (!string.IsNullOrWhiteSpace(cachedPath))
+                {
+                    return (candidateAsin, cachedPath);
+                }
+            }
+
+            return (candidateAsins.FirstOrDefault(), null);
+        }
+
+        private async Task<string?> ResolveCachedImagePathAsync(string? asin)
+        {
+            if (string.IsNullOrWhiteSpace(asin)) return null;
+
+            try
+            {
+                var diskPath = await _imageCacheService.GetCachedImagePathAsync(asin);
+                return string.IsNullOrWhiteSpace(diskPath)
+                    ? null
+                    : "/" + diskPath.TrimStart('/');
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to resolve cached author image path for ASIN {Asin}", asin);
+                return null;
+            }
+        }
+
+        private async Task<AuthorCacheEntry?> ResolvePersistedAuthorCacheAsync(string normalizedName, string region, string? normalizedAsin)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(normalizedAsin))
+                {
+                    var byAsin = await _audiobookRepository.GetCachedAuthorByAsinAsync(normalizedAsin, region);
+                    if (byAsin != null)
+                    {
+                        return byAsin;
+                    }
+                }
+
+                var byName = await _audiobookRepository.GetCachedAuthorByNameAsync(normalizedName, region);
+                if (byName != null)
+                {
+                    return byName;
+                }
+
+                var storedAuthorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(normalizedName);
+                if (!string.IsNullOrWhiteSpace(storedAuthorAsin))
+                {
+                    return await _audiobookRepository.GetCachedAuthorByAsinAsync(storedAuthorAsin, region);
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to resolve persisted author cache for {Author}", normalizedName);
+            }
+
+            return null;
+        }
+
+        private async Task<AuthorLookupResponse> MapPersistedAuthorLookupResponseAsync(AuthorCacheEntry entry, string fallbackName)
+        {
+            var cachedPath = await ResolveCachedImagePathAsync(entry.AuthorAsin);
+            if (string.IsNullOrWhiteSpace(cachedPath) &&
+                !string.IsNullOrWhiteSpace(entry.AuthorAsin) &&
+                !string.IsNullOrWhiteSpace(entry.ImageUrl))
+            {
+                try
+                {
+                    cachedPath = await _imageCacheService.MoveToAuthorLibraryStorageAsync(entry.AuthorAsin, entry.ImageUrl);
+                    if (!string.IsNullOrWhiteSpace(cachedPath))
+                    {
+                        cachedPath = "/" + cachedPath.TrimStart('/');
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(ex, "Failed to backfill cached author image for ASIN {Asin}", entry.AuthorAsin);
+                }
+            }
+
+            return new AuthorLookupResponse
+            {
+                Asin = entry.AuthorAsin,
+                Name = string.IsNullOrWhiteSpace(entry.AuthorName) ? fallbackName : entry.AuthorName,
+                Image = entry.ImageUrl,
+                CachedPath = cachedPath,
+                Description = entry.Description,
+                SimilarAuthors = (entry.SimilarAuthors ?? new List<CachedRelatedAuthor>())
+                    .Where(author => !string.IsNullOrWhiteSpace(author.Name))
+                    .Select(author => new RelatedAuthorItem
+                    {
+                        Asin = author.Asin,
+                        Name = author.Name
+                    })
+                    .ToList()
+            };
+        }
+
+        private async Task PersistAuthorLookupAsync(
+            AuthorCacheEntry? existingEntry,
+            string normalizedName,
+            string region,
+            AuthorLookupResponse response)
+        {
+            if (string.IsNullOrWhiteSpace(response.Name))
+            {
+                return;
+            }
+
+            try
+            {
+                var entry = existingEntry ?? new AuthorCacheEntry();
+                entry.AuthorName = response.Name;
+                entry.AuthorNameNormalized = NormalizeAuthorCacheKey(normalizedName);
+                entry.AuthorAsin = response.Asin;
+                entry.Region = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
+                entry.ImageUrl = response.Image;
+                entry.Description = response.Description;
+                entry.SimilarAuthors = response.SimilarAuthors
+                    .Where(author => !string.IsNullOrWhiteSpace(author.Name))
+                    .Select(author => new CachedRelatedAuthor
+                    {
+                        Asin = author.Asin,
+                        Name = author.Name
+                    })
+                    .ToList();
+                entry.LastFetchedAt = DateTime.UtcNow;
+
+                await _audiobookRepository.UpsertCachedAuthorAsync(entry);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to persist author cache for {Author}", normalizedName);
+            }
+        }
+
+        private void CacheAuthorLookupResponse(string cacheKey, AuthorLookupResponse response)
+        {
+            _cache.Set(cacheKey, new AuthorLookupCacheEntry
+            {
+                Asin = response.Asin,
+                Name = response.Name,
+                Image = response.Image,
+                CachedPath = response.CachedPath,
+                Description = response.Description,
+                SimilarAuthors = response.SimilarAuthors,
+                NotFound = false
+            }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
+        }
+
+        private async Task<SeriesCacheEntry?> ResolvePersistedSeriesCacheAsync(string normalizedName, string region, string? normalizedAsin)
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(normalizedAsin))
+                {
+                    var byAsin = await _audiobookRepository.GetCachedSeriesByAsinAsync(normalizedAsin, region);
+                    if (byAsin != null)
+                    {
+                        return byAsin;
+                    }
+                }
+
+                return await _audiobookRepository.GetCachedSeriesByNameAsync(normalizedName, region);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to resolve persisted series cache for {Series}", normalizedName);
+            }
+
+            return null;
+        }
+
+        private async Task<SeriesLookupResponse> MapPersistedSeriesLookupResponseAsync(SeriesCacheEntry entry, string fallbackName)
+        {
+            var cachedPath = await ResolveCachedImagePathAsync(entry.SeriesAsin);
+            if (string.IsNullOrWhiteSpace(cachedPath) &&
+                !string.IsNullOrWhiteSpace(entry.SeriesAsin) &&
+                !string.IsNullOrWhiteSpace(entry.ImageUrl))
+            {
+                try
+                {
+                    cachedPath = await _imageCacheService.MoveToSeriesLibraryStorageAsync(entry.SeriesAsin, entry.ImageUrl);
+                    if (!string.IsNullOrWhiteSpace(cachedPath))
+                    {
+                        cachedPath = "/" + cachedPath.TrimStart('/');
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogWarning(ex, "Failed to backfill cached series image for ASIN {Asin}", entry.SeriesAsin);
+                }
+            }
+
+            return new SeriesLookupResponse
+            {
+                Asin = entry.SeriesAsin,
+                Name = string.IsNullOrWhiteSpace(entry.SeriesName) ? fallbackName : entry.SeriesName,
+                Image = entry.ImageUrl,
+                CachedPath = cachedPath,
+                Description = entry.Description,
+                TotalBooks = entry.CatalogBooks?.Count ?? 0
+            };
+        }
+
+        private async Task PersistSeriesLookupAsync(
+            SeriesCacheEntry? existingEntry,
+            string normalizedName,
+            string region,
+            SeriesLookupResponse response,
+            IEnumerable<AudimetaSearchResult>? catalogBooks = null)
+        {
+            if (string.IsNullOrWhiteSpace(response.Name))
+            {
+                return;
+            }
+
+            try
+            {
+                var entry = existingEntry ?? new SeriesCacheEntry();
+                entry.SeriesName = response.Name;
+                entry.SeriesNameNormalized = NormalizeSeriesCacheKey(normalizedName);
+                entry.SeriesAsin = response.Asin;
+                entry.Region = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
+                entry.ImageUrl = response.Image;
+                entry.Description = response.Description;
+                if (catalogBooks != null)
+                {
+                    entry.CatalogBooks = catalogBooks.Select(book => new CachedSeriesCatalogBook
+                    {
+                        Asin = book.Asin,
+                        Title = book.Title ?? "Unknown Title",
+                        Subtitle = book.Subtitle,
+                        Authors = (book.Authors ?? new List<AudimetaAuthor>())
+                            .Select(author => author.Name)
+                            .Where(author => !string.IsNullOrWhiteSpace(author))
+                            .Cast<string>()
+                            .ToList(),
+                        ImageUrl = book.ImageUrl,
+                        Runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes,
+                        Language = book.Language,
+                        Publisher = book.Publisher,
+                        Narrators = (book.Narrators ?? new List<AudimetaNarrator>())
+                            .Select(narrator => narrator.Name)
+                            .Where(narrator => !string.IsNullOrWhiteSpace(narrator))
+                            .Cast<string>()
+                            .ToList(),
+                        Genres = (book.Genres ?? new List<AudimetaGenre>())
+                            .Select(genre => genre.Name)
+                            .Where(genre => !string.IsNullOrWhiteSpace(genre))
+                            .Cast<string>()
+                            .ToList(),
+                        Series = book.Series?.FirstOrDefault()?.Name,
+                        SeriesNumber = book.Series?.FirstOrDefault()?.Position,
+                        PublishedDate = book.ReleaseDate,
+                        Isbn = book.Isbn,
+                        Link = book.Link,
+                        MetadataSource = "Audimeta"
+                    }).ToList();
+                }
+                entry.LastFetchedAt = DateTime.UtcNow;
+
+                await _audiobookRepository.UpsertCachedSeriesAsync(entry);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to persist series cache for {Series}", normalizedName);
+            }
+        }
+
+        private void CacheSeriesLookupResponse(string cacheKey, SeriesLookupResponse response)
+        {
+            _cache.Set(cacheKey, new SeriesLookupCacheEntry
+            {
+                Asin = response.Asin,
+                Name = response.Name,
+                Image = response.Image,
+                CachedPath = response.CachedPath,
+                Description = response.Description,
+                TotalBooks = response.TotalBooks
+            }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
+        }
+
+        private static string NormalizeAuthorCacheKey(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var cleaned = new string(value
+                .Where(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character))
+                .ToArray());
+            var parts = cleaned.Split(
+                new[] { ' ', '\t', '\n', '\r' },
+                StringSplitOptions.RemoveEmptyEntries);
+
+            return string.Join(' ', parts).ToLowerInvariant();
+        }
+
+        private static string NormalizeSeriesCacheKey(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var cleaned = new string(value
+                .Where(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character))
+                .ToArray());
+            var parts = cleaned.Split(
+                new[] { ' ', '\t', '\n', '\r' },
+                StringSplitOptions.RemoveEmptyEntries);
+
+            return string.Join(' ', parts).ToLowerInvariant();
+        }
+
+        private static AuthorLookupResponse MapAuthorLookupResponse(AuthorLookupCacheEntry entry, string fallbackName)
+        {
+            return new AuthorLookupResponse
+            {
+                Asin = entry.Asin,
+                Name = entry.Name ?? fallbackName,
+                Image = entry.Image,
+                CachedPath = entry.CachedPath,
+                Description = entry.Description,
+                SimilarAuthors = entry.SimilarAuthors ?? new List<RelatedAuthorItem>()
+            };
+        }
+
+        private static SeriesLookupResponse MapSeriesLookupResponse(SeriesLookupCacheEntry entry, string fallbackName)
+        {
+            return new SeriesLookupResponse
+            {
+                Asin = entry.Asin,
+                Name = entry.Name ?? fallbackName,
+                Image = entry.Image,
+                CachedPath = entry.CachedPath,
+                Description = entry.Description,
+                TotalBooks = entry.TotalBooks
+            };
+        }
+
+        private static List<RelatedAuthorItem> MapSimilarAuthors(IEnumerable<AudnexusSimilarAuthor>? authors, string currentAuthorName)
+        {
+            if (authors == null)
+            {
+                return new List<RelatedAuthorItem>();
+            }
+
+            return authors
+                .Where(author => !string.IsNullOrWhiteSpace(author.Name))
+                .Where(author => !string.Equals(author.Name, currentAuthorName, StringComparison.OrdinalIgnoreCase))
+                .GroupBy(author => author.Name!, StringComparer.OrdinalIgnoreCase)
+                .Select(group => new RelatedAuthorItem
+                {
+                    Asin = group.First().Asin,
+                    Name = group.First().Name ?? string.Empty
+                })
+                .ToList();
+        }
+
+        private static bool HasCompleteAuthorLookupData(
+            string? cachedPath,
+            string? description,
+            IEnumerable<RelatedAuthorItem>? similarAuthors)
+        {
+            return !string.IsNullOrWhiteSpace(cachedPath) &&
+                !string.IsNullOrWhiteSpace(description) &&
+                (similarAuthors?.Any(author => !string.IsNullOrWhiteSpace(author.Name)) ?? false);
+        }
+
         private sealed class AuthorLookupCacheEntry
         {
             public string? Asin { get; set; }
             public string? Name { get; set; }
             public string? Image { get; set; }
             public string? CachedPath { get; set; }
+            public string? Description { get; set; }
+            public List<RelatedAuthorItem>? SimilarAuthors { get; set; }
             public bool NotFound { get; set; }
+        }
+
+        private sealed class SeriesLookupCacheEntry
+        {
+            public string? Asin { get; set; }
+            public string? Name { get; set; }
+            public string? Image { get; set; }
+            public string? CachedPath { get; set; }
+            public string? Description { get; set; }
+            public int TotalBooks { get; set; }
+        }
+
+        public sealed class AuthorLookupResponse
+        {
+            public string? Asin { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string? Image { get; set; }
+            public string? CachedPath { get; set; }
+            public string? Description { get; set; }
+            public List<RelatedAuthorItem> SimilarAuthors { get; set; } = new();
+        }
+
+        public sealed class RelatedAuthorItem
+        {
+            public string? Asin { get; set; }
+            public string Name { get; set; } = string.Empty;
+        }
+
+        public sealed class SeriesLookupResponse
+        {
+            public string? Asin { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string? Image { get; set; }
+            public string? CachedPath { get; set; }
+            public string? Description { get; set; }
+            public int TotalBooks { get; set; }
+        }
+
+        public sealed class AuthorCatalogResponse
+        {
+            public AuthorCatalogAuthorInfo Author { get; set; } = new();
+            public List<AuthorCatalogBookItem> Books { get; set; } = new();
+            public int TotalBooks { get; set; }
+        }
+
+        public sealed class AuthorCatalogAuthorInfo
+        {
+            public string? Asin { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string? Image { get; set; }
+        }
+
+        public sealed class AuthorCatalogBookItem
+        {
+            public string? Asin { get; set; }
+            public string Title { get; set; } = string.Empty;
+            public string? Subtitle { get; set; }
+            public List<string> Authors { get; set; } = new();
+            public string? ImageUrl { get; set; }
+            public int? Runtime { get; set; }
+            public string? Language { get; set; }
+            public string? Publisher { get; set; }
+            public List<string> Narrators { get; set; } = new();
+            public List<string> Genres { get; set; } = new();
+            public string? Series { get; set; }
+            public string? SeriesNumber { get; set; }
+            public string? PublishedDate { get; set; }
+            public string? Isbn { get; set; }
+            public string? Link { get; set; }
+            public string? MetadataSource { get; set; }
+        }
+
+        public sealed class SeriesCatalogResponse
+        {
+            public SeriesCatalogInfo Series { get; set; } = new();
+            public List<SeriesCatalogBookItem> Books { get; set; } = new();
+            public int TotalBooks { get; set; }
+        }
+
+        public sealed class SeriesCatalogInfo
+        {
+            public string? Asin { get; set; }
+            public string Name { get; set; } = string.Empty;
+            public string? Image { get; set; }
+            public string? Description { get; set; }
+        }
+
+        public sealed class SeriesCatalogBookItem
+        {
+            public string? Asin { get; set; }
+            public string Title { get; set; } = string.Empty;
+            public string? Subtitle { get; set; }
+            public List<string> Authors { get; set; } = new();
+            public string? ImageUrl { get; set; }
+            public int? Runtime { get; set; }
+            public string? Language { get; set; }
+            public string? Publisher { get; set; }
+            public List<string> Narrators { get; set; } = new();
+            public List<string> Genres { get; set; } = new();
+            public string? Series { get; set; }
+            public string? SeriesNumber { get; set; }
+            public string? PublishedDate { get; set; }
+            public string? Isbn { get; set; }
+            public string? Link { get; set; }
+            public string? MetadataSource { get; set; }
         }
     }
 }

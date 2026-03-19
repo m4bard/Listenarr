@@ -1771,9 +1771,9 @@ namespace Listenarr.Api.Services
                     var allDownloads = await dbContext.Downloads.ToListAsync();
                     downloadRecord = allDownloads.FirstOrDefault(d => 
                         d.Metadata != null &&
-                        ((d.Metadata.TryGetValue("ClientDownloadId") &&
-                          string.Equals(d.Metadata["ClientDownloadId"]?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase)) ||
-                         d.Metadata.TryGetValue("TorrentHash", out var hashObj) &&
+                        ((d.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj) &&
+                          string.Equals(clientIdObj?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase)) ||
+                         (d.Metadata.TryGetValue("TorrentHash", out var hashObj) &&
                           string.Equals(hashObj?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase))));
                 }
 

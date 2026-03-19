@@ -1,17 +1,209 @@
 <template>
-  <div class="collection-view">
-    <!-- Top Navigation Bar -->
-    <div class="top-nav">
+    <div class="collection-view">
+      <!-- Top Navigation Bar -->
+    <div v-if="!isMetadataCollection" class="top-nav">
       <div class="nav-title">
         <h1>
-          <PhUser v-if="type === 'author'" />
-          <PhBooks v-else /> {{ name }}
+          <PhBooks /> {{ name }}
         </h1>
       </div>
     </div>
 
+    <section v-if="isAuthorCollection" class="hero-section author-hero-section">
+      <div class="backdrop author-hero-backdrop" :style="authorHeroBackdropStyle"></div>
+      <div class="hero-content author-hero-content">
+        <div class="poster-container author-hero-poster-container">
+          <img
+            :src="authorHeroImageUrl"
+            :alt="`${authorHeroName} author portrait`"
+            class="poster author-hero-poster"
+            loading="lazy"
+            decoding="async"
+            @error="handleImageError"
+          />
+        </div>
+
+        <div class="info-section author-hero-info">
+          <h1 class="title author-hero-title">{{ authorHeroName }}</h1>
+
+          <div class="meta-info author-hero-meta">
+            <span>
+              <PhGlobe />
+              {{ authorMonitoringContextLabel }}
+            </span>
+            <span v-if="authorHeroAsin" class="author-hero-asin">
+              ASIN {{ authorHeroAsin }}
+            </span>
+          </div>
+
+          <div class="status-badges author-hero-badges">
+            <Pill :variant="isCurrentAuthorMonitored ? 'primary' : 'default'">
+              <component :is="isCurrentAuthorMonitored ? PhEye : PhEyeSlash" />
+              {{ isCurrentAuthorMonitored ? 'Monitoring Author' : 'Not Monitored' }}
+            </Pill>
+            <Pill variant="success">
+              {{ authorLibraryCount }} in library
+            </Pill>
+            <Pill v-if="authorNotAddedCount > 0" variant="warning">
+              {{ authorNotAddedCount }} ready to add
+            </Pill>
+            <Pill variant="info">
+              {{ authorLanguageLabel }}
+            </Pill>
+          </div>
+
+          <div v-if="authorHeroBiography" class="description author-hero-description">
+            <div class="description-content author-hero-description-content" :class="{ expanded: showFullAuthorDescription }">
+              {{ authorHeroDescriptionText }}
+            </div>
+            <button
+              v-if="authorHeroCanToggleDescription"
+              class="show-more-btn author-hero-toggle"
+              @click="showFullAuthorDescription = !showFullAuthorDescription"
+            >
+              {{ showFullAuthorDescription ? 'Show Less' : 'Show More' }}
+            </button>
+          </div>
+
+          <div v-if="authorSimilarAuthors.length > 0" class="author-similar-authors">
+            <div class="author-similar-title">Related Authors</div>
+            <div class="author-similar-list">
+              <button
+                v-for="author in authorSimilarAuthors"
+                :key="`${author.asin || author.name}`"
+                class="author-similar-chip"
+                @click="goToRelatedAuthor(author.name)"
+              >
+                {{ safeText(author.name) }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section v-if="isSeriesCollection" class="hero-section author-hero-section series-hero-section">
+      <div class="backdrop author-hero-backdrop" :style="seriesHeroBackdropStyle"></div>
+      <div class="hero-content author-hero-content">
+        <div class="poster-container author-hero-poster-container series-hero-poster-container">
+          <div v-if="seriesHeroPosterBooks.length > 0" class="series-hero-poster-card">
+            <div class="series-hero-covers">
+              <template v-if="seriesHeroPosterBooks.length === 1 && seriesHeroSinglePosterBook">
+                <div class="series-hero-single-bg" :style="seriesHeroSingleBackgroundStyle"></div>
+                <div
+                  class="series-hero-cover-item"
+                  :class="{ 'is-not-added': !seriesHeroSinglePosterBook.inLibrary }"
+                  :style="getSeriesHeroCoverStyle(0, 1)"
+                >
+                  <img
+                    :src="
+                      getProtectedImageSrc(
+                        seriesHeroSinglePosterBook.imageUrl,
+                        `series-hero:${seriesHeroName}:0:${seriesHeroSinglePosterBook.imageUrl || ''}`,
+                        getPlaceholderUrl(),
+                      )
+                    "
+                    :alt="`${seriesHeroSinglePosterBook.title} cover`"
+                    class="series-hero-cover-image centered"
+                    loading="lazy"
+                    decoding="async"
+                    @error="handleImageError"
+                  />
+                </div>
+              </template>
+              <template v-else>
+                <div
+                  v-for="(book, index) in seriesHeroPosterBooks"
+                  :key="book.key"
+                  class="series-hero-cover-item"
+                  :class="{ 'is-not-added': !book.inLibrary }"
+                  :style="getSeriesHeroCoverStyle(index, seriesHeroPosterBooks.length)"
+                >
+                  <img
+                    :src="
+                      getProtectedImageSrc(
+                        book.imageUrl,
+                        `series-hero:${seriesHeroName}:${index}:${book.imageUrl || ''}`,
+                        getPlaceholderUrl(),
+                      )
+                    "
+                    :alt="`${book.title} cover`"
+                    class="series-hero-cover-image"
+                    loading="lazy"
+                    decoding="async"
+                    @error="handleImageError"
+                  />
+                </div>
+              </template>
+            </div>
+            <div v-if="seriesVisibleBookCount > 0" class="series-hero-count-badge">
+              {{ seriesVisibleBookCount }}
+            </div>
+          </div>
+          <img
+            v-else
+            :src="seriesHeroImageUrl"
+            :alt="`${seriesHeroName} series artwork`"
+            class="poster author-hero-poster"
+            loading="lazy"
+            decoding="async"
+            @error="handleImageError"
+          />
+        </div>
+
+        <div class="info-section author-hero-info">
+          <h1 class="title author-hero-title">{{ seriesHeroName }}</h1>
+
+          <div class="meta-info author-hero-meta">
+            <span>
+              <PhGlobe />
+              {{ seriesMetadataContextLabel }}
+            </span>
+            <span v-if="seriesHeroAsin" class="author-hero-asin">
+              ASIN {{ seriesHeroAsin }}
+            </span>
+          </div>
+
+          <div class="status-badges author-hero-badges">
+            <Pill :variant="isCurrentSeriesMonitored ? 'primary' : 'default'">
+              <component :is="isCurrentSeriesMonitored ? PhEye : PhEyeSlash" />
+              {{ isCurrentSeriesMonitored ? 'Monitoring Series' : 'Not Monitored' }}
+            </Pill>
+            <Pill variant="success">
+              {{ seriesLibraryCount }} in library
+            </Pill>
+            <Pill v-if="seriesNotAddedCount > 0" variant="warning">
+              {{ seriesNotAddedCount }} ready to add
+            </Pill>
+            <Pill variant="primary">
+              {{ seriesCatalogTotalCount }} total books
+            </Pill>
+            <Pill variant="info">
+              {{ seriesLanguageLabel }}
+            </Pill>
+          </div>
+
+          <div v-if="seriesHeroBiography" class="description author-hero-description">
+            <div
+              class="description-content author-hero-description-content"
+              :class="{ expanded: showFullSeriesDescription }"
+            >
+              {{ seriesHeroDescriptionText }}
+            </div>
+            <button
+              v-if="seriesHeroCanToggleDescription"
+              class="show-more-btn author-hero-toggle"
+              @click="showFullSeriesDescription = !showFullSeriesDescription"
+            >
+              {{ showFullSeriesDescription ? 'Show Less' : 'Show More' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Top Toolbar -->
-    <div class="toolbar">
+    <div class="toolbar" :class="{ 'toolbar-without-top-nav': isMetadataCollection }">
       <div class="toolbar-left">
         <button class="toolbar-btn" @click="goBack">
           <PhArrowLeft />
@@ -42,9 +234,9 @@
           Clear Selection
         </button>
         <button
-          v-if="audiobooks.length > 0 && selectedCount === 0"
+          v-if="selectableAudiobookCount > 0 && selectedCount === 0"
           class="toolbar-btn"
-          @click="libraryStore.selectAll()"
+          @click="selectAllVisible()"
         >
           <PhCheckSquare />
           Select All
@@ -59,6 +251,66 @@
         </button>
       </div>
       <div class="toolbar-right">
+        <div v-if="isAuthorCollection" class="author-monitoring-controls">
+          <div class="author-monitoring-context">
+            <Pill
+              class="author-monitoring-pill"
+              :variant="isCurrentAuthorMonitored ? 'success' : 'default'"
+            >
+              <component :is="isCurrentAuthorMonitored ? PhEye : PhEyeSlash" />
+              {{ isCurrentAuthorMonitored ? 'Monitoring Author' : 'Not Monitored' }}
+            </Pill>
+            <span class="author-monitoring-label">Using {{ authorMonitoringContextLabel }}</span>
+          </div>
+          <div class="author-monitoring-actions">
+            <button
+              class="toolbar-btn author-refresh-btn"
+              :disabled="authorMetadataRefreshBusy"
+              @click="refreshAuthorMetadata"
+              title="Refresh author metadata"
+            >
+              <PhArrowClockwise v-if="authorMetadataRefreshBusy" class="spin-icon" />
+              <PhArrowClockwise v-else />
+              Refresh Author Metadata
+            </button>
+            <button
+              class="toolbar-btn author-monitor-btn"
+              :class="{ active: isCurrentAuthorMonitored }"
+              :disabled="authorMonitoringBusy || authorMetadataRefreshBusy"
+              @click="toggleAuthorMonitoring"
+              :title="isCurrentAuthorMonitored ? 'Stop monitoring this author' : 'Monitor this author'"
+            >
+              <PhArrowClockwise v-if="authorMonitoringBusy" class="spin-icon" />
+              <component v-else :is="isCurrentAuthorMonitored ? PhEye : PhPlus" />
+              {{ isCurrentAuthorMonitored ? 'Monitoring Author' : 'Monitor Author' }}
+            </button>
+          </div>
+        </div>
+        <div v-else-if="isSeriesCollection" class="author-monitoring-controls">
+          <div class="author-monitoring-actions">
+            <button
+              class="toolbar-btn author-refresh-btn"
+              :disabled="seriesMetadataRefreshBusy"
+              @click="refreshSeriesMetadata"
+              title="Refresh series metadata"
+            >
+              <PhArrowClockwise v-if="seriesMetadataRefreshBusy" class="spin-icon" />
+              <PhArrowClockwise v-else />
+              Refresh Series Metadata
+            </button>
+            <button
+              class="toolbar-btn author-monitor-btn"
+              :class="{ active: isCurrentSeriesMonitored }"
+              :disabled="seriesMonitoringBusy || seriesMetadataRefreshBusy"
+              @click="toggleSeriesMonitoring"
+              :title="isCurrentSeriesMonitored ? 'Stop monitoring this series' : 'Monitor this series'"
+            >
+              <PhArrowClockwise v-if="seriesMonitoringBusy" class="spin-icon" />
+              <component v-else :is="isCurrentSeriesMonitored ? PhEye : PhPlus" />
+              {{ isCurrentSeriesMonitored ? 'Monitoring Series' : 'Monitor Series' }}
+            </button>
+          </div>
+        </div>
         <div class="toolbar-filters">
           <CustomSelect
             v-model="sortKeyProxy"
@@ -106,22 +358,34 @@
           <div class="col-actions">Actions</div>
         </div>
 
-        <div
-          v-for="audiobook in paginatedAudiobooks"
-          :key="audiobook.id"
+        <template v-for="section in paginatedAudiobookSections" :key="`list-${section.key}`">
+          <div
+            v-if="shouldShowAvailabilitySections && section.items.length > 0"
+            class="list-section-header"
+            :class="`is-${section.key}`"
+          >
+            <span class="section-title">{{ section.title }}</span>
+            <span class="section-count">{{ section.count }}</span>
+          </div>
+
+          <div
+            v-for="audiobook in section.items"
+            :key="`${section.key}-${audiobook.key}`"
           tabindex="0"
           @keydown.enter="handleRowClick(audiobook)"
           class="audiobook-list-item"
           :class="{
-            selected: isSelected(audiobook.id),
+            selected: audiobook.inLibrary && isSelected(audiobook.id),
             'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
             'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
             'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
             'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
+            'not-in-library': !audiobook.inLibrary,
           }"
           @click="handleRowClick(audiobook)"
         >
           <div
+            v-if="audiobook.inLibrary"
             class="selection-checkbox"
             @click.stop="handleCheckboxClick(audiobook, $event)"
             @mousedown.prevent
@@ -135,6 +399,7 @@
               "
             />
           </div>
+          <div v-else class="selection-checkbox-spacer" aria-hidden="true"></div>
 
           <img
             class="list-thumb"
@@ -192,20 +457,24 @@
               {{ statusText(getAudiobookStatus(audiobook)) }}
             </div>
             <div
-              v-if="getQualityProfileName(audiobook.qualityProfileId)"
+              v-if="audiobook.inLibrary && getQualityProfileName(audiobook.qualityProfileId)"
               class="quality-profile-badge"
             >
               <PhStar />
               {{ getQualityProfileName(audiobook.qualityProfileId) }}
             </div>
-            <div class="monitored-badge" :class="{ unmonitored: !audiobook.monitored }">
-              <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
-              {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
+            <div
+              class="monitored-badge"
+              :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+            >
+              <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
+              {{ getMonitoringLabel(audiobook) }}
             </div>
           </div>
 
           <div class="list-actions">
             <button
+              v-if="audiobook.inLibrary"
               class="action-btn edit-btn-small"
               @click.stop="editAudiobook(audiobook)"
               title="Edit"
@@ -213,32 +482,59 @@
               <PhPencil />
             </button>
             <button
+              v-if="audiobook.inLibrary"
               class="action-btn delete-btn-small"
               @click.stop="deleteAudiobook(audiobook)"
               title="Delete"
             >
               <PhTrash />
             </button>
+            <button
+              v-else
+              class="action-btn add-btn-small"
+              @click.stop="openAddToLibrary(audiobook)"
+              title="Add to Library"
+            >
+              <PhPlus />
+            </button>
           </div>
-        </div>
+          </div>
+        </template>
       </div>
 
       <!-- Grid View -->
-      <div v-else class="grid-view">
-        <div
-          v-for="audiobook in paginatedAudiobooks"
-          :key="audiobook.id"
+      <div v-else class="collection-sections">
+        <section
+          v-for="section in paginatedAudiobookSections"
+          :key="`grid-${section.key}`"
+          class="collection-section"
+        >
+          <div
+            v-if="shouldShowAvailabilitySections && section.items.length > 0"
+            class="collection-section-header"
+            :class="`is-${section.key}`"
+          >
+            <span class="section-title">{{ section.title }}</span>
+            <span class="section-count">{{ section.count }}</span>
+          </div>
+
+          <div class="grid-view">
+            <div
+              v-for="audiobook in section.items"
+              :key="`${section.key}-${audiobook.key}`"
           class="collection-card"
           :class="{
-            selected: isSelected(audiobook.id),
+            selected: audiobook.inLibrary && isSelected(audiobook.id),
             'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
             'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
             'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
             'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
+            'not-in-library': !audiobook.inLibrary,
           }"
           @click="handleCardClick(audiobook)"
         >
           <div
+            v-if="audiobook.inLibrary"
             class="selection-checkbox"
             @click.stop="handleCheckboxClick(audiobook, $event)"
             @mousedown.prevent
@@ -274,15 +570,18 @@
                 }}
               </div>
               <div
-                v-if="getQualityProfileName(audiobook.qualityProfileId)"
+                v-if="audiobook.inLibrary && getQualityProfileName(audiobook.qualityProfileId)"
                 class="quality-profile-badge"
               >
                 <PhStar />
                 {{ getQualityProfileName(audiobook.qualityProfileId) }}
               </div>
-              <div class="monitored-badge" :class="{ unmonitored: !audiobook.monitored }">
-                <component :is="audiobook.monitored ? PhEye : PhEyeSlash" />
-                {{ audiobook.monitored ? 'Monitored' : 'Unmonitored' }}
+              <div
+                class="monitored-badge"
+                :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+              >
+                <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
+                {{ getMonitoringLabel(audiobook) }}
               </div>
             </div>
           </div>
@@ -299,6 +598,7 @@
           <!-- Action buttons -->
           <div class="action-buttons">
             <button
+              v-if="audiobook.inLibrary"
               class="action-btn edit-btn-small"
               @click.stop="editAudiobook(audiobook)"
               title="Edit"
@@ -306,14 +606,25 @@
               <PhPencil />
             </button>
             <button
+              v-if="audiobook.inLibrary"
               class="action-btn delete-btn-small"
               @click.stop="deleteAudiobook(audiobook)"
               title="Delete"
             >
               <PhTrash />
             </button>
+            <button
+              v-else
+              class="action-btn add-btn-small"
+              @click.stop="openAddToLibrary(audiobook)"
+              title="Add to Library"
+            >
+              <PhPlus />
+            </button>
           </div>
-        </div>
+            </div>
+          </div>
+        </section>
       </div>
 
       <!-- Pagination -->
@@ -340,7 +651,7 @@
     <BulkEditModal
       :is-open="showBulkEditModal"
       :selected-count="selectedCount"
-      :selected-ids="libraryStore.selectedIds"
+      :selected-ids="selectedIdsForView"
       @close="closeBulkEdit"
       @saved="handleBulkEditSaved"
     />
@@ -403,6 +714,14 @@
         </div>
       </template>
     </DeleteConfirmationModal>
+
+    <AddLibraryModal
+      v-if="pendingAddBook"
+      :visible="true"
+      :book="pendingAddBook"
+      @close="closeAddLibraryModal"
+      @added="handleBookAdded"
+    />
   </div>
 </template>
 
@@ -411,7 +730,6 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   PhArrowLeft,
-  PhUser,
   PhBooks,
   PhGridFour,
   PhList,
@@ -428,32 +746,80 @@ import {
   PhStar,
   PhEye,
   PhEyeSlash,
+  PhPlus,
+  PhGlobe,
 } from '@phosphor-icons/vue'
+import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useDownloadsStore } from '@/stores/downloads'
 import { errorTracking } from '@/services/errorTracking'
+import { useToast } from '@/services/toastService'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
+import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import { showConfirm } from '@/composables/useConfirm'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import CustomSelect from '@/components/form/CustomSelect.vue'
-import { EmptyState, LoadingState } from '@/components/base'
-import type { Audiobook, AudiobookStatus } from '@/types'
+import { EmptyState, LoadingState, Pill } from '@/components/base'
+import type {
+  Audiobook,
+  AudiobookStatus,
+  AuthorCatalogBook,
+  AuthorCatalogResponse,
+  AuthorLookupResponse,
+  AudibleBookMetadata,
+  MonitoredAuthor,
+  MonitoredSeries,
+  RelatedAuthorItem,
+  SeriesCatalogBook,
+  SeriesCatalogResponse,
+  SeriesLookupResponse,
+} from '@/types'
 import { computeAudiobookStatus, formatAudiobookStatus } from '@/utils/audiobookStatus'
-import { safeText } from '@/utils/textUtils'
+import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
 import { useProtectedImages } from '@/composables/useProtectedImages'
+import {
+  getPreferredSearchLanguageFilter,
+  normalizePreferredSearchLanguage,
+  normalizeSearchRegion,
+  normalizeSearchResultLanguage,
+  preferredSearchLanguageOptions,
+  searchRegionOptions,
+} from '@/utils/languageMapping'
+
+interface CollectionDisplayItem extends Audiobook {
+  key: string
+  inLibrary: boolean
+  addMetadata?: AudibleBookMetadata | null
+}
+
+type RemoteCatalogBook = AuthorCatalogBook | SeriesCatalogBook
+
+type CollectionStatus = AudiobookStatus | 'not-added'
+
+interface AvailabilitySection {
+  key: 'in-library' | 'not-added' | 'all'
+  title: string
+  count: number
+  items: CollectionDisplayItem[]
+}
 
 const route = useRoute()
 const router = useRouter()
 const libraryStore = useLibraryStore()
 const configStore = useConfigurationStore()
 const downloadsStore = useDownloadsStore()
+const toast = useToast()
 const { getProtectedImageSrc } = useProtectedImages()
 
 const type = computed(() => route.params.type as string)
 const name = computed(() => decodeURIComponent(route.params.name as string))
+const isAuthorCollection = computed(() => type.value === 'author')
+const isSeriesCollection = computed(() => type.value === 'series')
+const isGenreCollection = computed(() => type.value === 'genre')
+const isMetadataCollection = computed(() => isAuthorCollection.value || isSeriesCollection.value)
 
 const viewMode = ref<'grid' | 'list'>('grid')
 const showItemDetails = ref(false)
@@ -462,32 +828,323 @@ const sortKey = ref('title')
 const currentPage = ref(1)
 const pageSize = ref(50)
 const editingAudiobook = ref<Audiobook | null>(null)
-
-const loading = computed(() => libraryStore.loading)
-const error = computed(() => libraryStore.error)
+const authorCatalog = ref<AuthorCatalogResponse | null>(null)
+const authorCatalogLoading = ref(false)
+const authorCatalogError = ref<string | null>(null)
+const authorCatalogRequestId = ref(0)
+const authorLookup = ref<AuthorLookupResponse | null>(null)
+const authorLookupLoading = ref(false)
+const authorLookupRequestId = ref(0)
+const authorMetadataRefreshBusy = ref(false)
+const seriesCatalog = ref<SeriesCatalogResponse | null>(null)
+const seriesCatalogLoading = ref(false)
+const seriesCatalogError = ref<string | null>(null)
+const seriesCatalogRequestId = ref(0)
+const seriesLookup = ref<SeriesLookupResponse | null>(null)
+const seriesLookupLoading = ref(false)
+const seriesLookupRequestId = ref(0)
+const seriesMetadataRefreshBusy = ref(false)
+const seriesMonitoringBusy = ref(false)
+const seriesMonitoringStatus = ref<MonitoredSeries | null>(null)
+const seriesMonitoringStatusRequestId = ref(0)
+const authorMonitoringBusy = ref(false)
+const authorMonitoringStatus = ref<MonitoredAuthor | null>(null)
+const authorMonitoringStatusRequestId = ref(0)
+const pendingAddBook = ref<AudibleBookMetadata | null>(null)
+const showFullAuthorDescription = ref(false)
+const showFullSeriesDescription = ref(false)
 
 const qualityProfiles = computed(() => configStore.qualityProfiles)
+const authorCatalogRegion = computed(() =>
+  normalizeSearchRegion(configStore.applicationSettings?.defaultSearchRegion ?? 'us'),
+)
+const authorRegionLabel = computed(
+  () =>
+    searchRegionOptions.find((option) => option.value === authorCatalogRegion.value)?.label ??
+    authorCatalogRegion.value.toUpperCase(),
+)
+const preferredAuthorMonitoringLanguage = computed(() =>
+  normalizePreferredSearchLanguage(configStore.applicationSettings?.defaultSearchLanguage ?? 'english'),
+)
+const preferredAuthorCatalogLanguageFilter = computed(() =>
+  getPreferredSearchLanguageFilter(configStore.applicationSettings?.defaultSearchLanguage),
+)
+const authorLanguageLabel = computed(() => {
+  if (preferredAuthorMonitoringLanguage.value === 'all') {
+    return 'All Languages'
+  }
 
-const audiobooks = computed(() => {
-  const allBooks = libraryStore.audiobooks
-  const filtered = allBooks.filter((book) => {
-    if (type.value === 'author') {
-      return book.authors?.includes(name.value)
-    } else if (type.value === 'series') {
-      return book.series === name.value
-    }
-    return false
-  })
+  return (
+    preferredSearchLanguageOptions.find(
+      (option) => option.value === preferredAuthorMonitoringLanguage.value,
+    )?.label ?? preferredAuthorMonitoringLanguage.value
+  )
+})
+const isCurrentAuthorMonitored = computed(() => Boolean(authorMonitoringStatus.value))
+const authorMonitoringContextLabel = computed(() => {
+  return `${authorRegionLabel.value} / ${authorLanguageLabel.value}`
+})
+const seriesCatalogRegion = authorCatalogRegion
+const seriesRegionLabel = authorRegionLabel
+const preferredSeriesMonitoringLanguage = preferredAuthorMonitoringLanguage
+const preferredSeriesCatalogLanguageFilter = preferredAuthorCatalogLanguageFilter
+const seriesLanguageLabel = authorLanguageLabel
+const isCurrentSeriesMonitored = computed(() => Boolean(seriesMonitoringStatus.value))
+const seriesMetadataContextLabel = computed(() => {
+  return `${seriesRegionLabel.value} / ${seriesLanguageLabel.value}`
+})
 
-  // Apply search
-  const searched = filtered.filter((book) =>
+function normalizeCollectionText(value: string | undefined | null): string {
+  if (!value) return ''
+  return value
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+}
+
+function normalizeIdentifier(value: string | undefined | null): string {
+  if (!value) return ''
+  return value.replace(/[^A-Za-z0-9]/g, '').toUpperCase()
+}
+
+function normalizeAuthorKey(authors: string[] | undefined): string {
+  return (authors || [])
+    .map((author) => normalizeCollectionText(author))
+    .filter(Boolean)
+    .sort()
+    .join('|')
+}
+
+function buildTitleAuthorKey(title: string | undefined, authors: string[] | undefined): string {
+  return `${normalizeCollectionText(title)}::${normalizeAuthorKey(authors)}`
+}
+
+function createSyntheticId(seed: string): number {
+  let hash = 0
+  for (let index = 0; index < seed.length; index += 1) {
+    hash = (hash * 31 + seed.charCodeAt(index)) | 0
+  }
+  return -Math.max(1, Math.abs(hash))
+}
+
+function matchesCurrentCollection(book: Audiobook): boolean {
+  if (isAuthorCollection.value) {
+    return (book.authors || []).some(
+      (author) => normalizeCollectionText(author) === normalizeCollectionText(name.value),
+    )
+  }
+
+  if (type.value === 'series') {
+    return normalizeCollectionText(book.series) === normalizeCollectionText(name.value)
+  }
+
+  if (isGenreCollection.value) {
+    return (book.genres || []).some(
+      (genre) => normalizeCollectionText(genre) === normalizeCollectionText(name.value),
+    )
+  }
+
+  return false
+}
+
+function mapLibraryItem(book: Audiobook): CollectionDisplayItem {
+  return {
+    ...book,
+    key: `library-${book.id}`,
+    inLibrary: true,
+    addMetadata: null,
+  }
+}
+
+function buildCatalogMetadata(book: RemoteCatalogBook): AudibleBookMetadata {
+  const authors = (book.authors || []).filter(Boolean)
+  const publishYear = book.publishedDate?.match(/\d{4}/)?.[0]
+
+  return {
+    asin: book.asin || '',
+    title: book.title || 'Unknown Title',
+    subtitle: book.subtitle,
+    authors,
+    imageUrl: book.imageUrl,
+    runtime: book.runtime,
+    language: book.language,
+    publisher: book.publisher,
+    narrators: book.narrators || [],
+    genres: book.genres || [],
+    series: book.series,
+    seriesNumber: book.seriesNumber,
+    publishedDate: book.publishedDate,
+    publishYear,
+    isbn: book.isbn,
+    source: book.metadataSource || 'Audimeta',
+    sourceLink: book.link,
+    metadataSource: book.metadataSource || 'Audimeta',
+  }
+}
+
+function mapCatalogItem(book: RemoteCatalogBook, sourcePrefix: 'author-catalog' | 'series-catalog'): CollectionDisplayItem {
+  const authors = (book.authors || []).filter(Boolean)
+  const syntheticKey = book.asin || buildTitleAuthorKey(book.title, authors) || book.title
+
+  return {
+    id: createSyntheticId(syntheticKey),
+    key: `${sourcePrefix}-${syntheticKey}`,
+    title: book.title || 'Unknown Title',
+    subtitle: book.subtitle,
+    authors,
+    imageUrl: book.imageUrl,
+    runtime: book.runtime,
+    language: book.language,
+    publisher: book.publisher,
+    narrators: book.narrators || [],
+    genres: book.genres || [],
+    series: book.series,
+    seriesNumber: book.seriesNumber,
+    publishedDate: book.publishedDate,
+    publishYear: book.publishedDate?.match(/\d{4}/)?.[0],
+    isbn: book.isbn,
+    asin: book.asin,
+    monitored: false,
+    inLibrary: false,
+    addMetadata: buildCatalogMetadata(book),
+  }
+}
+
+function findLibraryMatch(book: RemoteCatalogBook, libraryBooks: Audiobook[]): Audiobook | undefined {
+  const asin = normalizeIdentifier(book.asin)
+  if (asin) {
+    const asinMatch = libraryBooks.find((candidate) => normalizeIdentifier(candidate.asin) === asin)
+    if (asinMatch) return asinMatch
+  }
+
+  const isbn = normalizeIdentifier(book.isbn)
+  if (isbn) {
+    const isbnMatch = libraryBooks.find((candidate) => normalizeIdentifier(candidate.isbn) === isbn)
+    if (isbnMatch) return isbnMatch
+  }
+
+  const titleAuthorKey = buildTitleAuthorKey(book.title, book.authors)
+  if (titleAuthorKey) {
+    return libraryBooks.find(
+      (candidate) => buildTitleAuthorKey(candidate.title, candidate.authors) === titleAuthorKey,
+    )
+  }
+
+  return undefined
+}
+
+function shouldIncludeRemoteCatalogBook(
+  book: RemoteCatalogBook,
+  languageFilter: string | null | undefined,
+): boolean {
+  if (!languageFilter) return true
+  const normalizedBookLanguage = normalizeSearchResultLanguage(book.language)
+
+  if (!normalizedBookLanguage) return false
+
+  return normalizedBookLanguage === languageFilter
+}
+
+function getSortValue(book: CollectionDisplayItem): string {
+  switch (sortKey.value) {
+    case 'author':
+      return book.authors?.[0] || ''
+    case 'series':
+      return book.series || ''
+    case 'added':
+      return book.inLibrary ? String(book.id).padStart(12, '0') : 'zzzzzzzzzzzz'
+    default:
+      return book.title || ''
+  }
+}
+
+const libraryCollectionAudiobooks = computed(() =>
+  libraryStore.audiobooks.filter((book) => matchesCurrentCollection(book)),
+)
+
+const remoteCatalogBooks = computed<RemoteCatalogBook[]>(() => {
+  if (isAuthorCollection.value) {
+    return authorCatalog.value?.books || []
+  }
+
+  if (isSeriesCollection.value) {
+    return seriesCatalog.value?.books || []
+  }
+
+  return []
+})
+
+const loading = computed(
+  () =>
+    libraryStore.loading ||
+    (isAuthorCollection.value && (authorCatalogLoading.value || authorLookupLoading.value)) ||
+    (isSeriesCollection.value && (seriesCatalogLoading.value || seriesLookupLoading.value)),
+)
+
+const error = computed(() => {
+  if (libraryStore.error) return libraryStore.error
+  if (libraryCollectionAudiobooks.value.length > 0) return null
+  if (isAuthorCollection.value) return authorCatalogError.value
+  if (isSeriesCollection.value) return seriesCatalogError.value
+  return null
+})
+
+const audiobooks = computed<CollectionDisplayItem[]>(() => {
+  const localItems = libraryCollectionAudiobooks.value
+
+  let mergedItems: CollectionDisplayItem[]
+  if (isMetadataCollection.value) {
+    const matchedLibraryIds = new Set<number>()
+    const seenRemoteCatalogKeys = new Set<string>()
+    const sourcePrefix = isAuthorCollection.value ? 'author-catalog' : 'series-catalog'
+    const languageFilter = isAuthorCollection.value
+      ? preferredAuthorCatalogLanguageFilter.value
+      : preferredSeriesCatalogLanguageFilter.value
+    const catalogItems = remoteCatalogBooks.value.flatMap((book) => {
+      const libraryMatch = findLibraryMatch(book, localItems)
+      if (libraryMatch) {
+        if (matchedLibraryIds.has(libraryMatch.id)) {
+          return []
+        }
+        matchedLibraryIds.add(libraryMatch.id)
+        return [mapLibraryItem(libraryMatch)]
+      }
+
+      if (!shouldIncludeRemoteCatalogBook(book, languageFilter)) {
+        return []
+      }
+
+      const catalogItem = mapCatalogItem(book, sourcePrefix)
+      if (seenRemoteCatalogKeys.has(catalogItem.key)) {
+        return []
+      }
+
+      seenRemoteCatalogKeys.add(catalogItem.key)
+      return [catalogItem]
+    })
+
+    const unmatchedLibraryItems = localItems
+      .filter((book) => !matchedLibraryIds.has(book.id))
+      .map(mapLibraryItem)
+
+    mergedItems = [...catalogItems, ...unmatchedLibraryItems]
+  } else {
+    mergedItems = localItems.map(mapLibraryItem)
+  }
+
+  const searched = mergedItems.filter((book) =>
     book.title.toLowerCase().includes(searchQuery.value.toLowerCase()),
   )
 
-  // Apply sorting
   return searched.sort((a, b) => {
-    const aVal = safeText((a[sortKey.value as keyof Audiobook] as string) || '')
-    const bVal = safeText((b[sortKey.value as keyof Audiobook] as string) || '')
+    if (isMetadataCollection.value && a.inLibrary !== b.inLibrary) {
+      return a.inLibrary ? -1 : 1
+    }
+
+    const aVal = safeText(getSortValue(a))
+    const bVal = safeText(getSortValue(b))
     return aVal.localeCompare(bVal)
   })
 })
@@ -529,12 +1186,190 @@ const paginatedAudiobooks = computed(() => {
 })
 
 const totalPages = computed(() => Math.ceil(audiobooks.value.length / pageSize.value))
+const totalAddedAudiobooks = computed(() => audiobooks.value.filter((book) => book.inLibrary))
+const totalNotAddedAudiobooks = computed(() => audiobooks.value.filter((book) => !book.inLibrary))
+const authorLibraryCount = computed(() => totalAddedAudiobooks.value.length)
+const authorNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
+const authorVisibleBookCount = computed(() => audiobooks.value.length)
+const authorCatalogTotalCount = computed(
+  () => authorCatalog.value?.totalBooks ?? authorVisibleBookCount.value,
+)
+const seriesLibraryCount = computed(() => totalAddedAudiobooks.value.length)
+const seriesNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
+const seriesVisibleBookCount = computed(() => audiobooks.value.length)
+const seriesCatalogTotalCount = computed(
+  () => seriesCatalog.value?.totalBooks ?? seriesLookup.value?.totalBooks ?? seriesVisibleBookCount.value,
+)
 
-// Use the library store selection so changes are reactive across the app
-const selectedCount = computed(() => libraryStore.selectedIds.size)
+const authorHeroName = computed(
+  () => safeText(authorCatalog.value?.author?.name || authorLookup.value?.name || name.value) || name.value,
+)
+const authorHeroAsin = computed(
+  () =>
+    safeText(
+      authorLookup.value?.asin ||
+        authorCatalog.value?.author?.asin ||
+      authorMonitoringStatus.value?.authorAsin ||
+        '',
+    ) || '',
+)
+const authorHeroRawImageUrl = computed(() => {
+  const asin = authorHeroAsin.value
 
-const isSelected = (id: number) => libraryStore.isSelected(id)
-const toggleSelection = (id: number) => libraryStore.toggleSelection(id)
+  return (
+    authorLookup.value?.cachedPath ||
+    (asin ? `/images/${encodeURIComponent(asin)}` : undefined) ||
+    authorLookup.value?.image ||
+    authorCatalog.value?.author?.image
+  )
+})
+const authorHeroImageUrl = computed(() =>
+  getProtectedImageSrc(authorHeroRawImageUrl.value, `author-hero-${name.value}`, getPlaceholderUrl()),
+)
+const authorHeroBackdropStyle = computed(() => ({
+  backgroundImage: `linear-gradient(90deg, rgba(10, 12, 18, 0.9), rgba(10, 12, 18, 0.55)), url(${authorHeroImageUrl.value})`,
+}))
+const authorHeroBiography = computed(() => {
+  const raw = stripHtmlAndNormalize(authorLookup.value?.description)
+  return raw || ''
+})
+const authorHeroCanToggleDescription = computed(() => authorHeroBiography.value.length > 360)
+const authorHeroDescriptionText = computed(() =>
+  showFullAuthorDescription.value || !authorHeroCanToggleDescription.value
+    ? authorHeroBiography.value
+    : `${authorHeroBiography.value.slice(0, 360).trimEnd()}...`,
+)
+const authorSimilarAuthors = computed<RelatedAuthorItem[]>(() =>
+  (authorLookup.value?.similarAuthors || []).filter(
+    (author) =>
+      Boolean(author?.name) &&
+      normalizeCollectionText(author.name) !== normalizeCollectionText(authorHeroName.value),
+  ),
+)
+const seriesHeroName = computed(
+  () => safeText(seriesCatalog.value?.series?.name || seriesLookup.value?.name || name.value) || name.value,
+)
+const seriesHeroAsin = computed(
+  () => safeText(seriesLookup.value?.asin || seriesCatalog.value?.series?.asin || '') || '',
+)
+const seriesHeroRawImageUrl = computed(() => {
+  return (
+    seriesLookup.value?.cachedPath ||
+    seriesLookup.value?.image ||
+    seriesCatalog.value?.series?.image ||
+    seriesCatalog.value?.books.find((book) => Boolean(book.imageUrl))?.imageUrl
+  )
+})
+const seriesHeroImageUrl = computed(() =>
+  getProtectedImageSrc(seriesHeroRawImageUrl.value, `series-hero-${name.value}`, getPlaceholderUrl()),
+)
+const seriesHeroBackdropStyle = computed(() => ({
+  backgroundImage: `linear-gradient(90deg, rgba(10, 12, 18, 0.9), rgba(10, 12, 18, 0.55)), url(${seriesHeroImageUrl.value})`,
+}))
+const seriesHeroBiography = computed(() => {
+  const raw = stripHtmlAndNormalize(
+    seriesLookup.value?.description || seriesCatalog.value?.series?.description,
+  )
+  return raw || ''
+})
+const seriesHeroCanToggleDescription = computed(() => seriesHeroBiography.value.length > 360)
+const seriesHeroDescriptionText = computed(() =>
+  showFullSeriesDescription.value || !seriesHeroCanToggleDescription.value
+    ? seriesHeroBiography.value
+    : `${seriesHeroBiography.value.slice(0, 360).trimEnd()}...`,
+)
+const seriesHeroPosterBooks = computed(() =>
+  audiobooks.value.filter((book) => Boolean(book.imageUrl)).slice(0, 8),
+)
+const seriesHeroSinglePosterBook = computed(() => seriesHeroPosterBooks.value[0] ?? null)
+const seriesHeroSingleBackgroundStyle = computed(() => ({
+  backgroundImage: `url(${
+    getProtectedImageSrc(
+      seriesHeroSinglePosterBook.value?.imageUrl,
+      `series-hero-bg:${seriesHeroName.value}:${seriesHeroSinglePosterBook.value?.imageUrl || ''}`,
+      getPlaceholderUrl(),
+    ) || getPlaceholderUrl()
+  })`,
+}))
+
+function getSeriesHeroCoverStyle(index: number, count: number) {
+  const left = count <= 1 ? 25 : (index * 50) / Math.max(1, count - 1)
+  const zIndex = count <= 1 ? 1 : Math.max(1, 100 - index)
+
+  return {
+    width: '50%',
+    height: '100%',
+    top: '0%',
+    left: `${left}%`,
+    zIndex,
+    boxShadow: 'rgba(17, 17, 17, 0.4) 4px 0px 10px',
+    borderRadius: '12px',
+  }
+}
+const shouldShowAvailabilitySections = computed(
+  () =>
+    isMetadataCollection.value &&
+    totalAddedAudiobooks.value.length > 0 &&
+    totalNotAddedAudiobooks.value.length > 0,
+)
+const paginatedAudiobookSections = computed<AvailabilitySection[]>(() => {
+  if (!shouldShowAvailabilitySections.value) {
+    return [
+      {
+        key: 'all',
+        title: '',
+        count: paginatedAudiobooks.value.length,
+        items: paginatedAudiobooks.value,
+      },
+    ]
+  }
+
+  const sections: AvailabilitySection[] = []
+  const addedItems = paginatedAudiobooks.value.filter((book) => book.inLibrary)
+  const notAddedItems = paginatedAudiobooks.value.filter((book) => !book.inLibrary)
+
+  if (addedItems.length > 0) {
+    sections.push({
+      key: 'in-library',
+      title: 'In Library',
+      count: totalAddedAudiobooks.value.length,
+      items: addedItems,
+    })
+  }
+
+  if (notAddedItems.length > 0) {
+    sections.push({
+      key: 'not-added',
+      title: 'Not Added',
+      count: totalNotAddedAudiobooks.value.length,
+      items: notAddedItems,
+    })
+  }
+
+  return sections
+})
+
+const selectedIdsForView = computed(
+  () =>
+    new Set(
+      audiobooks.value
+        .filter((book) => book.inLibrary && libraryStore.isSelected(book.id))
+        .map((book) => book.id),
+    ),
+)
+
+const selectedCount = computed(() => selectedIdsForView.value.size)
+const selectableAudiobookCount = computed(
+  () => audiobooks.value.filter((book) => book.inLibrary).length,
+)
+
+const isSelected = (id: number) => id > 0 && libraryStore.isSelected(id)
+
+const toggleSelection = (id: number) => {
+  if (id > 0) {
+    libraryStore.toggleSelection(id)
+  }
+}
 
 const toggleViewMode = () => {
   viewMode.value = viewMode.value === 'grid' ? 'list' : 'grid'
@@ -550,6 +1385,7 @@ const showDeleteDialog = ref(false)
 const deleteTarget = ref<Audiobook | null>(null)
 const deleteFilesOnDisk = ref(false)
 const deleteFolderOnDisk = ref(false)
+const lastClickedIndex = ref<number | null>(null)
 
 function showBulkEdit() {
   showBulkEditModal.value = true
@@ -559,16 +1395,314 @@ function closeBulkEdit() {
   showBulkEditModal.value = false
 }
 
+async function loadAuthorCatalog(refresh = false): Promise<AuthorCatalogResponse | null> {
+  if (!isAuthorCollection.value) {
+    authorCatalog.value = null
+    authorCatalogError.value = null
+    authorCatalogLoading.value = false
+    return null
+  }
+
+  const requestId = ++authorCatalogRequestId.value
+  const previousCatalog = authorCatalog.value
+  authorCatalogLoading.value = true
+  authorCatalogError.value = null
+
+  try {
+    const response = await apiService.getAuthorCatalog(name.value, authorCatalogRegion.value, refresh)
+    if (requestId !== authorCatalogRequestId.value) return null
+
+    if (!response) {
+      if (!refresh) {
+        authorCatalog.value = null
+      }
+      authorCatalogError.value = 'Failed to load the full author catalog.'
+      return null
+    }
+
+    authorCatalog.value = response
+    return response
+  } catch (err) {
+    if (requestId !== authorCatalogRequestId.value) return null
+
+    if (!refresh) {
+      authorCatalog.value = null
+    } else {
+      authorCatalog.value = previousCatalog
+    }
+    authorCatalogError.value =
+      err instanceof Error ? err.message : 'Failed to load the full author catalog.'
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'loadAuthorCatalog',
+      metadata: { author: name.value, region: authorCatalogRegion.value, refresh },
+    })
+    return null
+  } finally {
+    if (requestId === authorCatalogRequestId.value) {
+      authorCatalogLoading.value = false
+    }
+  }
+}
+
+async function loadAuthorLookup(
+  authorAsin?: string,
+  refresh = false,
+): Promise<AuthorLookupResponse | null> {
+  if (!isAuthorCollection.value) {
+    authorLookup.value = null
+    authorLookupLoading.value = false
+    return null
+  }
+
+  const requestId = ++authorLookupRequestId.value
+  const previousLookup = authorLookup.value
+  authorLookupLoading.value = true
+
+  try {
+    const response = await apiService.getAuthorLookup(
+      name.value,
+      authorCatalogRegion.value,
+      authorAsin,
+      refresh,
+    )
+    if (requestId !== authorLookupRequestId.value) return null
+    authorLookup.value = response ?? (refresh ? previousLookup : null)
+    return response ?? null
+  } catch (err) {
+    if (requestId !== authorLookupRequestId.value) return null
+
+    if (!refresh) {
+      authorLookup.value = null
+    } else {
+      authorLookup.value = previousLookup
+    }
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'loadAuthorLookup',
+      metadata: { author: name.value, region: authorCatalogRegion.value, refresh },
+    })
+    return null
+  } finally {
+    if (requestId === authorLookupRequestId.value) {
+      authorLookupLoading.value = false
+    }
+  }
+}
+
+async function loadSeriesCatalog(refresh = false): Promise<SeriesCatalogResponse | null> {
+  if (!isSeriesCollection.value) {
+    seriesCatalog.value = null
+    seriesCatalogError.value = null
+    seriesCatalogLoading.value = false
+    return null
+  }
+
+  const requestId = ++seriesCatalogRequestId.value
+  const previousCatalog = seriesCatalog.value
+  seriesCatalogLoading.value = true
+  seriesCatalogError.value = null
+
+  try {
+    const response = await apiService.getSeriesCatalog(name.value, seriesCatalogRegion.value, refresh)
+    if (requestId !== seriesCatalogRequestId.value) return null
+
+    if (!response) {
+      if (!refresh) {
+        seriesCatalog.value = null
+      }
+      seriesCatalogError.value = 'Failed to load the full series catalog.'
+      return null
+    }
+
+    seriesCatalog.value = response
+    return response
+  } catch (err) {
+    if (requestId !== seriesCatalogRequestId.value) return null
+
+    if (!refresh) {
+      seriesCatalog.value = null
+    } else {
+      seriesCatalog.value = previousCatalog
+    }
+    seriesCatalogError.value =
+      err instanceof Error ? err.message : 'Failed to load the full series catalog.'
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'loadSeriesCatalog',
+      metadata: { series: name.value, region: seriesCatalogRegion.value, refresh },
+    })
+    return null
+  } finally {
+    if (requestId === seriesCatalogRequestId.value) {
+      seriesCatalogLoading.value = false
+    }
+  }
+}
+
+async function loadSeriesLookup(
+  seriesAsin?: string,
+  refresh = false,
+): Promise<SeriesLookupResponse | null> {
+  if (!isSeriesCollection.value) {
+    seriesLookup.value = null
+    seriesLookupLoading.value = false
+    return null
+  }
+
+  const requestId = ++seriesLookupRequestId.value
+  const previousLookup = seriesLookup.value
+  seriesLookupLoading.value = true
+
+  try {
+    const response = await apiService.getSeriesLookup(
+      name.value,
+      seriesCatalogRegion.value,
+      seriesAsin,
+      refresh,
+    )
+    if (requestId !== seriesLookupRequestId.value) return null
+    seriesLookup.value = response ?? (refresh ? previousLookup : null)
+    return response ?? null
+  } catch (err) {
+    if (requestId !== seriesLookupRequestId.value) return null
+
+    if (!refresh) {
+      seriesLookup.value = null
+    } else {
+      seriesLookup.value = previousLookup
+    }
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'loadSeriesLookup',
+      metadata: { series: name.value, region: seriesCatalogRegion.value, refresh },
+    })
+    return null
+  } finally {
+    if (requestId === seriesLookupRequestId.value) {
+      seriesLookupLoading.value = false
+    }
+  }
+}
+
+async function loadAuthorMonitoringStatus() {
+  if (!isAuthorCollection.value) {
+    authorMonitoringStatus.value = null
+    return
+  }
+
+  const requestId = ++authorMonitoringStatusRequestId.value
+
+  try {
+    const response = await apiService.getAuthorMonitoringStatus(
+      name.value,
+      authorCatalogRegion.value,
+      preferredAuthorMonitoringLanguage.value,
+    )
+
+    if (requestId !== authorMonitoringStatusRequestId.value) return
+    authorMonitoringStatus.value = response.monitoredAuthor ?? null
+  } catch (err) {
+    if (requestId !== authorMonitoringStatusRequestId.value) return
+
+    authorMonitoringStatus.value = null
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'loadAuthorMonitoringStatus',
+      metadata: {
+        author: name.value,
+        region: authorCatalogRegion.value,
+        language: preferredAuthorMonitoringLanguage.value,
+      },
+    })
+  }
+}
+
+async function loadSeriesMonitoringStatus() {
+  if (!isSeriesCollection.value) {
+    seriesMonitoringStatus.value = null
+    return
+  }
+
+  const requestId = ++seriesMonitoringStatusRequestId.value
+
+  try {
+    const response = await apiService.getSeriesMonitoringStatus(
+      name.value,
+      seriesCatalogRegion.value,
+      preferredSeriesMonitoringLanguage.value,
+    )
+
+    if (requestId !== seriesMonitoringStatusRequestId.value) return
+    seriesMonitoringStatus.value = response.monitoredSeries ?? null
+  } catch (err) {
+    if (requestId !== seriesMonitoringStatusRequestId.value) return
+
+    seriesMonitoringStatus.value = null
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'loadSeriesMonitoringStatus',
+      metadata: {
+        series: name.value,
+        region: seriesCatalogRegion.value,
+        language: preferredSeriesMonitoringLanguage.value,
+      },
+    })
+  }
+}
+
+async function loadCollectionData(forceLibrary = false, forceAuthorMetadataRefresh = false) {
+  const setupTasks: Promise<unknown>[] = []
+
+  if (forceLibrary || libraryStore.audiobooks.length === 0) {
+    setupTasks.push(libraryStore.fetchLibrary())
+  }
+
+  if (!configStore.applicationSettings) {
+    setupTasks.push(configStore.loadApplicationSettings())
+  }
+
+  await Promise.all(setupTasks)
+
+  if (isAuthorCollection.value) {
+    const refreshedCatalog = await loadAuthorCatalog(forceAuthorMetadataRefresh)
+    await loadAuthorMonitoringStatus()
+    await loadAuthorLookup(
+      refreshedCatalog?.author?.asin || authorCatalog.value?.author?.asin,
+      forceAuthorMetadataRefresh,
+    )
+  } else if (isSeriesCollection.value) {
+    const refreshedCatalog = await loadSeriesCatalog(forceAuthorMetadataRefresh)
+    await loadSeriesMonitoringStatus()
+    await loadSeriesLookup(
+      refreshedCatalog?.series?.asin || seriesCatalog.value?.series?.asin,
+      forceAuthorMetadataRefresh,
+    )
+  } else {
+    authorCatalog.value = null
+    authorCatalogError.value = null
+    authorLookup.value = null
+    authorLookupLoading.value = false
+    authorMonitoringStatus.value = null
+    seriesCatalog.value = null
+    seriesCatalogError.value = null
+    seriesLookup.value = null
+    seriesLookupLoading.value = false
+    seriesMonitoringStatus.value = null
+  }
+}
+
 async function handleBulkEditSaved() {
-  await libraryStore.fetchLibrary()
+  await loadCollectionData(true)
   libraryStore.clearSelection()
   showBulkEditModal.value = false
 }
 
 async function confirmBulkDelete() {
-  const count = libraryStore.selectedIds.size
-  if (count === 0) return
-  const message = `Are you sure you want to delete ${count} audiobook${count !== 1 ? 's' : ''}? This action cannot be undone.`
+  const idsToDelete = Array.from(selectedIdsForView.value)
+  if (idsToDelete.length === 0) return
+
+  const message = `Are you sure you want to delete ${idsToDelete.length} audiobook${idsToDelete.length !== 1 ? 's' : ''}? This action cannot be undone.`
   const ok = await showConfirm(message, 'Confirm Deletion', {
     danger: true,
     confirmText: 'Delete',
@@ -577,53 +1711,289 @@ async function confirmBulkDelete() {
   if (!ok) return
   deleting.value = true
   try {
-    const idsToDelete = Array.from(libraryStore.selectedIds)
     await libraryStore.bulkRemoveFromLibrary(idsToDelete)
   } catch (err) {
-    console.error('Bulk delete failed:', err)
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'confirmBulkDelete',
+      metadata: { count: idsToDelete.length },
+    })
   } finally {
     deleting.value = false
   }
 }
 
 const refreshLibrary = async () => {
-  await libraryStore.fetchLibrary()
+  libraryStore.clearSelection()
+  await loadCollectionData(true)
+}
+
+async function refreshAuthorMetadata() {
+  if (!isAuthorCollection.value || authorMetadataRefreshBusy.value) return
+
+  authorMetadataRefreshBusy.value = true
+  try {
+    const refreshedCatalog = await loadAuthorCatalog(true)
+    const refreshedLookup = await loadAuthorLookup(
+      refreshedCatalog?.author?.asin || authorCatalog.value?.author?.asin || authorHeroAsin.value,
+      true,
+    )
+
+    if (!refreshedCatalog && !refreshedLookup) {
+      toast.error(
+        'Author metadata refresh failed',
+        'Listenarr kept the existing author details because the refresh could not complete.',
+      )
+      return
+    }
+
+    if (!refreshedCatalog || !refreshedLookup) {
+      toast.warning(
+        'Author metadata partially refreshed',
+        'Some author details were updated, but at least one metadata source could not be refreshed.',
+      )
+      return
+    }
+
+    toast.success(
+      'Author metadata refreshed',
+      'Updated the author image, description, related authors, and catalog.',
+    )
+  } catch (err) {
+    const message =
+      err instanceof Error ? err.message : 'Failed to refresh author metadata.'
+    toast.error('Author metadata refresh failed', message)
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'refreshAuthorMetadata',
+      metadata: {
+        author: name.value,
+        region: authorCatalogRegion.value,
+        language: preferredAuthorMonitoringLanguage.value,
+      },
+    })
+  } finally {
+    authorMetadataRefreshBusy.value = false
+  }
+}
+
+async function refreshSeriesMetadata() {
+  if (!isSeriesCollection.value || seriesMetadataRefreshBusy.value) return
+
+  seriesMetadataRefreshBusy.value = true
+  try {
+    const refreshedCatalog = await loadSeriesCatalog(true)
+    const refreshedLookup = await loadSeriesLookup(
+      refreshedCatalog?.series?.asin || seriesCatalog.value?.series?.asin || seriesHeroAsin.value,
+      true,
+    )
+
+    if (!refreshedCatalog && !refreshedLookup) {
+      toast.error(
+        'Series metadata refresh failed',
+        'Listenarr kept the existing series details because the refresh could not complete.',
+      )
+      return
+    }
+
+    if (!refreshedCatalog || !refreshedLookup) {
+      toast.warning(
+        'Series metadata partially refreshed',
+        'Some series details were updated, but at least one metadata source could not be refreshed.',
+      )
+      return
+    }
+
+    toast.success(
+      'Series metadata refreshed',
+      'Updated the series image, description, and catalog.',
+    )
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to refresh series metadata.'
+    toast.error('Series metadata refresh failed', message)
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'refreshSeriesMetadata',
+      metadata: {
+        series: name.value,
+        region: seriesCatalogRegion.value,
+        language: seriesLanguageLabel.value,
+      },
+    })
+  } finally {
+    seriesMetadataRefreshBusy.value = false
+  }
 }
 
 const goBack = () => {
   router.back()
 }
 
-const lastClickedIndex = ref<number | null>(null)
+function goToRelatedAuthor(authorName: string) {
+  const trimmed = safeText(authorName)
+  if (!trimmed) return
+  if (normalizeCollectionText(trimmed) === normalizeCollectionText(name.value)) return
+  authorCatalogLoading.value = true
+  authorLookupLoading.value = true
+  void router.push(`/collection/author/${encodeURIComponent(trimmed)}`)
+}
 
-const handleRowClick = (audiobook: Audiobook) => {
-  if (selectedCount.value > 0) {
-    toggleSelection(audiobook.id)
-  } else {
-    router.push(`/audiobooks/${audiobook.id}`)
+function selectAllVisible() {
+  libraryStore.clearSelection()
+  for (const book of audiobooks.value) {
+    if (book.inLibrary) {
+      libraryStore.toggleSelection(book.id)
+    }
   }
 }
 
-const handleCardClick = (audiobook: Audiobook) => {
-  if (selectedCount.value > 0) {
-    toggleSelection(audiobook.id)
-  } else {
-    router.push(`/audiobooks/${audiobook.id}`)
+function openAddToLibrary(audiobook: CollectionDisplayItem) {
+  if (audiobook.inLibrary || !audiobook.addMetadata) return
+  pendingAddBook.value = audiobook.addMetadata
+}
+
+async function toggleAuthorMonitoring() {
+  if (!isAuthorCollection.value || authorMonitoringBusy.value) return
+
+  authorMonitoringBusy.value = true
+  try {
+    if (authorMonitoringStatus.value) {
+      await apiService.unmonitorAuthor(authorMonitoringStatus.value.id)
+      authorMonitoringStatus.value = null
+      toast.success(
+        'Author unmonitored',
+        `"${name.value}" will no longer be checked for future audiobooks.`,
+      )
+      return
+    }
+
+    const response = await apiService.monitorAuthor({
+      name: name.value,
+      asin: authorCatalog.value?.author?.asin,
+      region: authorCatalogRegion.value,
+      language: preferredAuthorMonitoringLanguage.value,
+    })
+
+    authorMonitoringStatus.value = response.monitoredAuthor
+
+    const details =
+      response.addedCount > 0
+        ? `Added ${response.addedCount} audiobook${response.addedCount === 1 ? '' : 's'} from the current catalog.`
+        : 'No new audiobooks needed to be added from the current catalog.'
+
+    toast.success('Author monitored', details)
+
+    if (response.failedCount > 0 || response.errorMessage) {
+      const warningMessage =
+        response.errorMessage ||
+        `${response.failedCount} audiobook${response.failedCount === 1 ? '' : 's'} could not be added automatically.`
+      toast.warning('Monitoring completed with warnings', warningMessage)
+    }
+
+    await loadCollectionData(true)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to update author monitoring.'
+    toast.error('Author monitoring failed', message)
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'toggleAuthorMonitoring',
+      metadata: {
+        author: name.value,
+        region: authorCatalogRegion.value,
+        language: preferredAuthorMonitoringLanguage.value,
+      },
+    })
+  } finally {
+    authorMonitoringBusy.value = false
   }
 }
 
-function handleCheckboxClick(audiobook: Audiobook, event: MouseEvent) {
-  // Prevent default native checkbox toggle; handle selection consistently
+async function toggleSeriesMonitoring() {
+  if (!isSeriesCollection.value || seriesMonitoringBusy.value) return
+
+  seriesMonitoringBusy.value = true
+  try {
+    if (seriesMonitoringStatus.value) {
+      await apiService.unmonitorSeries(seriesMonitoringStatus.value.id)
+      seriesMonitoringStatus.value = null
+      toast.success(
+        'Series unmonitored',
+        `"${name.value}" will no longer be checked for future audiobooks.`,
+      )
+      return
+    }
+
+    const response = await apiService.monitorSeries({
+      name: name.value,
+      asin: seriesCatalog.value?.series?.asin || seriesLookup.value?.asin,
+      region: seriesCatalogRegion.value,
+      language: preferredSeriesMonitoringLanguage.value,
+    })
+
+    seriesMonitoringStatus.value = response.monitoredSeries
+
+    const details =
+      response.addedCount > 0
+        ? `Added ${response.addedCount} audiobook${response.addedCount === 1 ? '' : 's'} from the current series catalog.`
+        : 'No new audiobooks needed to be added from the current series catalog.'
+
+    toast.success('Series monitored', details)
+
+    if (response.failedCount > 0 || response.errorMessage) {
+      const warningMessage =
+        response.errorMessage ||
+        `${response.failedCount} audiobook${response.failedCount === 1 ? '' : 's'} could not be added automatically.`
+      toast.warning('Monitoring completed with warnings', warningMessage)
+    }
+
+    await loadCollectionData(true)
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Failed to update series monitoring.'
+    toast.error('Series monitoring failed', message)
+    errorTracking.captureException(err as Error, {
+      component: 'CollectionView',
+      operation: 'toggleSeriesMonitoring',
+      metadata: {
+        series: name.value,
+        region: seriesCatalogRegion.value,
+        language: preferredSeriesMonitoringLanguage.value,
+      },
+    })
+  } finally {
+    seriesMonitoringBusy.value = false
+  }
+}
+
+const handleRowClick = (audiobook: CollectionDisplayItem) => {
+  if (selectedCount.value > 0 && audiobook.inLibrary) {
+    toggleSelection(audiobook.id)
+    return
+  }
+
+  if (audiobook.inLibrary) {
+    router.push(`/audiobooks/${audiobook.id}`)
+    return
+  }
+
+  openAddToLibrary(audiobook)
+}
+
+const handleCardClick = (audiobook: CollectionDisplayItem) => {
+  handleRowClick(audiobook)
+}
+
+function handleCheckboxClick(audiobook: CollectionDisplayItem, event: MouseEvent) {
+  if (!audiobook.inLibrary) return
   event.preventDefault()
 
-  const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
+  const currentIndex = audiobooks.value.findIndex((book) => book.key === audiobook.key)
   if (event.shiftKey && lastClickedIndex.value !== null) {
     const start = Math.min(lastClickedIndex.value, currentIndex)
     const end = Math.max(lastClickedIndex.value, currentIndex)
     libraryStore.clearSelection()
     for (let i = start; i <= end; i++) {
       const b = audiobooks.value[i]
-      if (b) libraryStore.toggleSelection(b.id)
+      if (b?.inLibrary) libraryStore.toggleSelection(b.id)
     }
   } else {
     libraryStore.toggleSelection(audiobook.id)
@@ -632,8 +2002,10 @@ function handleCheckboxClick(audiobook: Audiobook, event: MouseEvent) {
   lastClickedIndex.value = currentIndex
 }
 
-function onCheckboxChange(audiobook: Audiobook, event: Event) {
-  const currentIndex = audiobooks.value.findIndex((book) => book.id === audiobook.id)
+function onCheckboxChange(audiobook: CollectionDisplayItem, event: Event) {
+  if (!audiobook.inLibrary) return
+
+  const currentIndex = audiobooks.value.findIndex((book) => book.key === audiobook.key)
   const shift = (event as MouseEvent | KeyboardEvent).shiftKey
   if (shift && lastClickedIndex.value !== null) {
     const start = Math.min(lastClickedIndex.value, currentIndex)
@@ -641,7 +2013,7 @@ function onCheckboxChange(audiobook: Audiobook, event: Event) {
     libraryStore.clearSelection()
     for (let i = start; i <= end; i++) {
       const b = audiobooks.value[i]
-      if (b) libraryStore.toggleSelection(b.id)
+      if (b?.inLibrary) libraryStore.toggleSelection(b.id)
     }
   } else {
     libraryStore.toggleSelection(audiobook.id)
@@ -650,11 +2022,13 @@ function onCheckboxChange(audiobook: Audiobook, event: Event) {
   lastClickedIndex.value = currentIndex
 }
 
-const editAudiobook = (audiobook: Audiobook) => {
+const editAudiobook = (audiobook: CollectionDisplayItem) => {
+  if (!audiobook.inLibrary) return
   editingAudiobook.value = audiobook
 }
 
-const deleteAudiobook = (audiobook: Audiobook) => {
+const deleteAudiobook = (audiobook: CollectionDisplayItem) => {
+  if (!audiobook.inLibrary) return
   deleteTarget.value = audiobook
   resetDeleteOptions()
   showDeleteDialog.value = true
@@ -693,7 +2067,7 @@ async function executeDelete() {
 
 const onAudiobookSaved = () => {
   editingAudiobook.value = null
-  refreshLibrary()
+  void refreshLibrary()
 }
 
 const handleImageError = (event: Event) => {
@@ -748,17 +2122,25 @@ const activeDownloadAudiobookIds = computed(() => {
   return ids
 })
 
-function statusText(
-  status: AudiobookStatus,
-): string {
-  return formatAudiobookStatus(status)
+function statusText(status: CollectionStatus): string {
+  return status === 'not-added' ? 'Not Added' : formatAudiobookStatus(status)
 }
 
-function getAudiobookStatus(audiobook: Audiobook): AudiobookStatus {
+function getAudiobookStatus(audiobook: CollectionDisplayItem): CollectionStatus {
+  if (!audiobook.inLibrary) {
+    return 'not-added'
+  }
+
   return computeAudiobookStatus(audiobook, activeDownloadAudiobookIds.value, qualityProfiles.value)
 }
 
-function handleCheckboxKeydown(audiobook: Audiobook, event: KeyboardEvent) {
+function getMonitoringLabel(audiobook: CollectionDisplayItem): string {
+  if (!audiobook.inLibrary) return 'Not Added'
+  return audiobook.monitored ? 'Monitored' : 'Unmonitored'
+}
+
+function handleCheckboxKeydown(audiobook: CollectionDisplayItem, event: KeyboardEvent) {
+  if (!audiobook.inLibrary) return
   if (event.key === ' ') {
     event.preventDefault()
     toggleSelection(audiobook.id)
@@ -766,14 +2148,20 @@ function handleCheckboxKeydown(audiobook: Audiobook, event: KeyboardEvent) {
 }
 
 onMounted(async () => {
-  if (libraryStore.audiobooks.length === 0) {
-    await libraryStore.fetchLibrary()
-  }
+  await loadCollectionData(false)
 })
 
-// No need to watch for page changes - native loading="lazy" handles everything
 watch(searchQuery, () => {
   currentPage.value = 1
+})
+
+watch([type, name], async () => {
+  currentPage.value = 1
+  lastClickedIndex.value = null
+  showFullAuthorDescription.value = false
+  showFullSeriesDescription.value = false
+  libraryStore.clearSelection()
+  await loadCollectionData(false)
 })
 
 function resetDeleteOptions() {
@@ -792,6 +2180,15 @@ watch(deleteFilesOnDisk, (checked) => {
     deleteFolderOnDisk.value = false
   }
 })
+
+function closeAddLibraryModal() {
+  pendingAddBook.value = null
+}
+
+async function handleBookAdded() {
+  pendingAddBook.value = null
+  await loadCollectionData(true)
+}
 
 defineExpose({
   viewMode,
@@ -1020,7 +2417,367 @@ defineExpose({
   z-index: 99; /* below .top-nav */
 }
 
+.toolbar.toolbar-without-top-nav {
+  top: 60px;
+}
+
+.hero-section {
+  position: relative;
+  padding: 40px 20px 30px;
+  overflow: hidden;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.backdrop {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(20px) brightness(0.3);
+  transform: scale(1.1);
+}
+
+.hero-content {
+  position: relative;
+  display: flex;
+  gap: 40px;
+  max-width: 1600px;
+  margin: 0 auto;
+  z-index: 1;
+}
+
+.poster-container {
+  flex-shrink: 0;
+}
+
+.poster {
+  width: 320px;
+  height: 320px;
+  object-fit: cover;
+  border-radius: 10px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
+}
+
+.info-section {
+  flex: 1;
+  color: #fff;
+  min-width: 0;
+}
+
+.title {
+  font-size: 3rem;
+  font-weight: 500;
+  margin: 0 0 12px 0;
+  color: #fff;
+  line-height: 1.15;
+}
+
+.subtitle {
+  font-size: 1.2rem;
+  color: #ccc;
+  margin-bottom: 20px;
+}
+
+.meta-info {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 24px;
+  font-size: 15px;
+  color: #ccc;
+  flex-wrap: wrap;
+}
+
+.meta-info span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key-details {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.detail-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 6px;
+  font-size: 14px;
+}
+
+.status-badges {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.description {
+  color: #ccc;
+  line-height: 1.6;
+  max-width: 920px;
+}
+
+.description-content {
+  white-space: pre-wrap;
+}
+
+.show-more-btn {
+  margin-top: 12px;
+  padding: 8px 16px;
+  background-color: rgba(var(--brand-rgb), 0.1);
+  border: 1px solid var(--brand-500);
+  border-radius: 6px;
+  color: var(--brand-500);
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.show-more-btn:hover {
+  background-color: rgba(var(--brand-rgb), 0.2);
+  transform: translateY(-1px);
+}
+
+.author-hero-section {
+  padding-bottom: 28px;
+}
+
+.author-hero-backdrop {
+  filter: blur(22px) brightness(0.26);
+}
+
+.author-hero-content {
+  align-items: center;
+}
+
+.author-hero-poster-container {
+  align-self: flex-start;
+}
+
+.author-hero-poster {
+  width: 320px;
+  height: 320px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.series-hero-poster-container {
+  width: min(384px, calc(100vw - 32px));
+}
+
+.series-hero-poster-card {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  overflow: hidden;
+  border-radius: 12px;
+}
+
+.series-hero-covers {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.series-hero-cover-item {
+  position: absolute;
+  top: 0;
+  transition:
+    transform 0.18s ease,
+    filter 0.18s ease,
+    opacity 0.18s ease;
+}
+
+.series-hero-cover-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  border-radius: 12px;
+}
+
+.series-hero-cover-image.centered {
+  position: relative;
+}
+
+.series-hero-cover-item.is-not-added .series-hero-cover-image {
+  filter: grayscale(0.58) brightness(0.56) saturate(0.72);
+  opacity: 0.76;
+}
+
+.series-hero-single-bg {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+  filter: blur(10px) contrast(0.9) brightness(0.7);
+  transform: scale(1.05);
+}
+
+.series-hero-count-badge {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  min-width: 30px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(var(--brand-rgb), 0.95);
+  color: #fff;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  z-index: 120;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.22);
+}
+
+.author-hero-kicker {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: rgba(230, 238, 248, 0.72);
+  margin-bottom: 12px;
+}
+
+.author-hero-title {
+  max-width: 860px;
+}
+
+.author-hero-subtitle {
+  color: rgba(230, 238, 248, 0.82);
+}
+
+.author-hero-asin {
+  opacity: 0.86;
+}
+
+.author-hero-eyebrow {
+  margin-bottom: 10px;
+  color: rgba(230, 238, 248, 0.72);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.author-hero-summary {
+  max-width: 900px;
+  margin-bottom: 18px;
+  color: rgba(230, 238, 248, 0.82);
+  line-height: 1.6;
+}
+
+.author-hero-detail-item {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.author-hero-badges {
+  margin-bottom: 20px;
+}
+
+.author-hero-description {
+  margin-bottom: 18px;
+}
+
+.author-hero-description-content {
+  min-height: 3rem;
+}
+
+.author-similar-authors {
+  max-width: 920px;
+}
+
+.author-similar-title {
+  margin-bottom: 10px;
+  font-size: 0.78rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: rgba(230, 238, 248, 0.66);
+}
+
+.author-similar-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.author-similar-chip {
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: #f3f6fb;
+  cursor: pointer;
+  transition:
+    transform 0.12s ease,
+    background-color 0.12s ease,
+    border-color 0.12s ease;
+}
+
+.author-similar-chip:hover {
+  transform: translateY(-1px);
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
 @media (max-width: 768px) {
+  .hero-section {
+    padding: 30px 16px 24px;
+  }
+
+  .hero-content {
+    flex-direction: column;
+    gap: 20px;
+    align-items: center;
+  }
+
+  .poster-container {
+    margin: 0 auto;
+  }
+
+  .poster {
+    width: 240px;
+    height: 240px;
+  }
+
+  .title {
+    font-size: 2rem;
+    text-align: center;
+  }
+
+  .subtitle,
+  .meta-info,
+  .key-details,
+  .status-badges,
+  .author-similar-list {
+    justify-content: center;
+  }
+
+  .info-section,
+  .author-similar-authors {
+    text-align: center;
+  }
+
+  .author-hero-section {
+    padding-bottom: 22px;
+  }
+
+  .author-hero-poster {
+    width: 240px;
+    height: 240px;
+  }
+
+  .series-hero-poster-container {
+    width: min(100%, 320px);
+  }
+
   .toolbar {
     left: 0; /* Full width on mobile */
     gap: 8px;
@@ -1042,6 +2799,56 @@ defineExpose({
   gap: 10px;
   margin-left: auto; /* push filters to the right */
   justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+.author-monitoring-controls {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  padding: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.author-monitoring-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.author-monitoring-label {
+  color: rgba(230, 238, 248, 0.68);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.author-monitoring-pill {
+  flex-shrink: 0;
+}
+
+.author-monitoring-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.author-monitor-btn {
+  border-color: rgba(72, 187, 120, 0.3);
+}
+
+.author-monitor-btn.active {
+  border-color: rgba(72, 187, 120, 0.42);
+}
+
+.spin-icon {
+  animation: collection-toolbar-spin 0.9s linear infinite;
 }
 
 .toolbar-btn {
@@ -1131,6 +2938,31 @@ defineExpose({
   .select-dropdown {
     min-width: 120px;
     max-width: 160px;
+  }
+
+  .author-monitoring-controls {
+    width: 100%;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .author-monitoring-label {
+    font-size: 11px;
+  }
+
+  .author-monitoring-actions {
+    margin-left: 0;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@keyframes collection-toolbar-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
   }
 }
 
@@ -1308,6 +3140,79 @@ defineExpose({
   gap: 1rem;
 }
 
+.collection-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.collection-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.collection-section-header,
+.list-section-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: #cfd5df;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.collection-section-header {
+  margin-bottom: 0.1rem;
+}
+
+.list-section-header {
+  margin: 0.85rem 0 0.2rem;
+}
+
+.collection-section-header::after,
+.list-section-header::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.18), rgba(255, 255, 255, 0.02));
+}
+
+.section-title {
+  font-weight: 700;
+}
+
+.section-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #f3f6fb;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: normal;
+  text-transform: none;
+}
+
+.collection-section-header.is-in-library .section-count,
+.list-section-header.is-in-library .section-count {
+  background: var(--brand-500);
+  border-color: rgba(46, 204, 113, 0.32);
+  color: #fff;
+}
+
+.collection-section-header.is-not-added .section-count,
+.list-section-header.is-not-added .section-count {
+  background: var(--brand-500);
+  border-color: rgba(46, 204, 113, 0.32);
+  color: #fff;
+}
+
 .collection-card {
   background: var(--card-bg);
   border-radius: 6px;
@@ -1344,6 +3249,19 @@ defineExpose({
 .collection-card.selected .collection-cover {
   outline: 3px solid var(--brand-focus);
   outline-offset: 2px;
+}
+
+.collection-card.not-in-library {
+  border: 1px dashed rgba(255, 255, 255, 0.18);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.collection-card.not-in-library .collection-image {
+  filter: grayscale(0.5) brightness(0.5);
+}
+
+.collection-card.not-in-library:hover .collection-image {
+  filter: unset;
 }
 
 .collection-image {
@@ -1563,6 +3481,12 @@ defineExpose({
   color: #2ecc71;
 }
 
+.status-badge.not-added {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-color: rgba(255, 255, 255, 0.14);
+  color: #d3d7de;
+}
+
 .quality-profile-badge i {
   font-size: 12px;
   flex-shrink: 0;
@@ -1638,6 +3562,15 @@ defineExpose({
 
 .edit-btn-small:hover {
   background-color: rgba(41, 128, 185, 1);
+}
+
+.add-btn-small {
+  background-color: rgba(46, 204, 113, 0.9);
+  border-color: rgba(39, 174, 96, 0.5);
+}
+
+.add-btn-small:hover {
+  background-color: rgba(39, 174, 96, 1);
 }
 
 .loading-state,
@@ -1948,6 +3881,12 @@ defineExpose({
   justify-self: center;
 }
 
+.audiobooks-list .selection-checkbox-spacer {
+  width: 20px;
+  height: 20px;
+  justify-self: center;
+}
+
 .audiobooks-list .selection-checkbox::after {
   left: 6px;
   top: 2px;
@@ -2139,6 +4078,16 @@ defineExpose({
 .audiobook-list-item.selected {
   background-color: rgba(255, 255, 255, 0.02);
   transform: translateY(-1px);
+}
+
+.audiobook-list-item.not-in-library {
+  opacity: 0.92;
+  border: 1px dashed rgba(255, 255, 255, 0.14);
+  background-color: rgba(255, 255, 255, 0.02);
+}
+
+.audiobook-list-item.not-in-library .list-thumb {
+  filter: grayscale(0.12) brightness(0.88);
 }
 
 .list-thumb {

@@ -36,6 +36,7 @@ namespace Listenarr.Api.Controllers
         private readonly IOpenLibraryService? _openLibraryService;
         private readonly ILogger<ImagesController> _logger;
         private readonly IWebHostEnvironment _environment;
+        private readonly string _effectiveContentRootPath;
 
         [ActivatorUtilitiesConstructor]
         public ImagesController(
@@ -76,6 +77,7 @@ namespace Listenarr.Api.Controllers
             _openLibraryService = openLibraryService;
             _logger = logger;
             _environment = environment;
+            _effectiveContentRootPath = ResolveEffectiveContentRoot(environment.ContentRootPath);
         }
 
         /// <summary>
@@ -179,10 +181,10 @@ namespace Listenarr.Api.Controllers
                     _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", identifier, relativePath);
                     try
                     {
-                        var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath));
-                        var imagesRoot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "cache", "images"));
-                        var imagesRootConfig = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "config", "cache", "images"));
-                        var wwwroot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "wwwroot"));
+                        var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath));
+                        var imagesRoot = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "cache", "images"));
+                        var imagesRootConfig = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "config", "cache", "images"));
+                        var wwwroot = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "wwwroot"));
 
                         // Use Path.GetRelativePath to reliably determine whether candidateFull
                         // is inside one of the allowed roots. This works across separator styles.
@@ -244,10 +246,10 @@ namespace Listenarr.Api.Controllers
                                 // Validate moved path as well
                                 try
                                 {
-                                    var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_environment.ContentRootPath, moved));
-                                    var imagesRoot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "cache", "images"));
-                                    var imagesRootConfig = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "config", "cache", "images"));
-                                    var wwwroot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "wwwroot"));
+                                    var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, moved));
+                                    var imagesRoot = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "cache", "images"));
+                                    var imagesRootConfig = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "config", "cache", "images"));
+                                    var wwwroot = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "wwwroot"));
 
                                     if (movedFull.StartsWith(imagesRoot, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(imagesRootConfig, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(wwwroot, StringComparison.OrdinalIgnoreCase))
                                     {
@@ -902,34 +904,10 @@ namespace Listenarr.Api.Controllers
 
                     if (relativePath == null)
                     {
-                        // Attempt to serve the frontend placeholder first (fe/public/placeholder.svg)
-                        try
-                        {
-                            var frontendPlaceholder = Path.Combine(_environment.ContentRootPath, "..", "fe", "public", "placeholder.svg");
-                            if (System.IO.File.Exists(frontendPlaceholder))
-                            {
-                                _logger.LogInformation("Serving frontend placeholder image for missing identifier: {Identifier}", identifier);
-                                Response.Headers["Cache-Control"] = "public, max-age=300";
-                                return PhysicalFile(frontendPlaceholder, "image/svg+xml");
-                            }
-
-                            // Fallback to backend wwwroot placeholder if frontend file not present
-                            var placeholderPath = Path.Combine(_environment.ContentRootPath, "wwwroot", "placeholder.svg");
-                            if (System.IO.File.Exists(placeholderPath))
-                            {
-                                _logger.LogInformation("Serving backend placeholder image for missing identifier: {Identifier}", identifier);
-                                Response.Headers["Cache-Control"] = "public, max-age=300";
-                                return PhysicalFile(placeholderPath, "image/svg+xml");
-                            }
-                        }
-                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                        {
-                            _logger.LogDebug(ex, "Failed to serve placeholder for missing image {Identifier}", identifier);
-                        }
-
-                        // Return NotFound with short caching to reduce repeated filesystem lookups by other clients
-                        Response.Headers["Cache-Control"] = "public, max-age=300";
-                        return NotFound(new { message = "Image not found" });
+                        return CreatePlaceholderResult(
+                            logContext: "missing identifier",
+                            logValue: identifier,
+                            notFoundMessage: "Image not found");
                     }
                 }
 
@@ -943,37 +921,15 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // Build the full file path
-                var fullPath = ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath);
+                var fullPath = ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath);
 
                 if (!System.IO.File.Exists(fullPath))
                 {
                     _logger.LogWarning("Image file does not exist at path: {Path}", fullPath);
-                    // Try to serve the frontend placeholder first, then backend placeholder
-                    try
-                    {
-                        var frontendPlaceholder = Path.Combine(_environment.ContentRootPath, "..", "fe", "public", "placeholder.svg");
-                        if (System.IO.File.Exists(frontendPlaceholder))
-                        {
-                            _logger.LogInformation("Serving frontend placeholder image for missing file at path: {Path}", fullPath);
-                            Response.Headers["Cache-Control"] = "public, max-age=300";
-                            return PhysicalFile(frontendPlaceholder, "image/svg+xml");
-                        }
-
-                        var placeholderPath = Path.Combine(_environment.ContentRootPath, "wwwroot", "placeholder.svg");
-                        if (System.IO.File.Exists(placeholderPath))
-                        {
-                            _logger.LogInformation("Serving backend placeholder image for missing file at path: {Path}", fullPath);
-                            Response.Headers["Cache-Control"] = "public, max-age=300";
-                            return PhysicalFile(placeholderPath, "image/svg+xml");
-                        }
-                    }
-                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                    {
-                        _logger.LogDebug(ex, "Failed to serve placeholder for missing file {Path}", fullPath);
-                    }
-
-                    Response.Headers["Cache-Control"] = "public, max-age=300";
-                    return NotFound(new { message = "Image file not found" });
+                    return CreatePlaceholderResult(
+                        logContext: "missing file",
+                        logValue: fullPath,
+                        notFoundMessage: "Image file not found");
                 }
 
                 // Determine content type based on file extension
@@ -1103,6 +1059,180 @@ namespace Listenarr.Api.Controllers
                 : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
 
+        private IActionResult CreatePlaceholderResult(string logContext, string? logValue, string notFoundMessage)
+        {
+            try
+            {
+                var placeholderPath = ResolvePlaceholderPath();
+                if (!string.IsNullOrWhiteSpace(placeholderPath))
+                {
+                    _logger.LogInformation("Serving placeholder image for {LogContext}: {LogValue}", logContext, logValue);
+                    Response.Headers["Cache-Control"] = "public, max-age=300";
+                    return PhysicalFile(placeholderPath, "image/svg+xml");
+                }
+            }
+            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+            {
+                _logger.LogDebug(ex, "Failed to resolve placeholder for {LogContext}: {LogValue}", logContext, logValue);
+            }
+
+            // Fall back to the shared placeholder route before returning JSON 404. This
+            // keeps image consumers rendering an actual placeholder even when the local
+            // file cannot be resolved from the current content root.
+            if (!string.Equals(HttpContext?.Request?.Path.Value, "/placeholder.svg", StringComparison.OrdinalIgnoreCase))
+            {
+                Response.Headers["Cache-Control"] = "public, max-age=300";
+                return Redirect("/placeholder.svg");
+            }
+
+            Response.Headers["Cache-Control"] = "public, max-age=300";
+            return NotFound(new { message = notFoundMessage });
+        }
+
+        private string? ResolvePlaceholderPath()
+        {
+            foreach (var candidate in EnumeratePlaceholderCandidates())
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var fullPath = Path.GetFullPath(candidate);
+                    if (System.IO.File.Exists(fullPath))
+                    {
+                        return fullPath;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "Failed probing placeholder candidate path {Path}", candidate);
+                }
+            }
+
+            return null;
+        }
+
+        private string ResolveEffectiveContentRoot(string? contentRootPath)
+        {
+            var fallbackRoot = string.IsNullOrWhiteSpace(contentRootPath)
+                ? AppContext.BaseDirectory
+                : contentRootPath;
+
+            var resolvedRoot = TryResolveListenarrApiRoot(fallbackRoot);
+            if (!string.IsNullOrWhiteSpace(resolvedRoot) &&
+                !string.Equals(resolvedRoot, fallbackRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation(
+                    "Resolved image controller content root to repo path: {ResolvedRoot}",
+                    resolvedRoot);
+                return resolvedRoot;
+            }
+
+            return fallbackRoot;
+        }
+
+        private static string? TryResolveListenarrApiRoot(string? startingPath)
+        {
+            if (string.IsNullOrWhiteSpace(startingPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                var dir = new DirectoryInfo(Path.GetFullPath(startingPath));
+                const int maxDepth = 8;
+                var depth = 0;
+
+                while (dir != null && depth++ < maxDepth)
+                {
+                    if (LooksLikeListenarrApiRoot(dir.FullName))
+                    {
+                        return dir.FullName;
+                    }
+
+                    var nestedApiRoot = Path.Combine(dir.FullName, "listenarr.api");
+                    if (LooksLikeListenarrApiRoot(nestedApiRoot))
+                    {
+                        return nestedApiRoot;
+                    }
+
+                    dir = dir.Parent;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+
+            return null;
+        }
+
+        private static bool LooksLikeListenarrApiRoot(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            {
+                return false;
+            }
+
+            var hasConfigDirectory = Directory.Exists(Path.Combine(path, "config"));
+            var hasProjectMarkers =
+                System.IO.File.Exists(Path.Combine(path, "listenarr.api.csproj")) ||
+                Directory.Exists(Path.Combine(path, "wwwroot"));
+
+            return hasConfigDirectory && hasProjectMarkers;
+        }
+
+        private IEnumerable<string> EnumeratePlaceholderCandidates()
+        {
+            var baseDirectories = new[]
+            {
+                _effectiveContentRootPath,
+                AppContext.BaseDirectory,
+                Directory.GetCurrentDirectory()
+            }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path =>
+            {
+                try
+                {
+                    return Path.GetFullPath(path);
+                }
+                catch
+                {
+                    return path;
+                }
+            })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+            foreach (var baseDirectory in baseDirectories)
+            {
+                DirectoryInfo? current = null;
+                try
+                {
+                    current = new DirectoryInfo(baseDirectory);
+                }
+                catch
+                {
+                    current = null;
+                }
+
+                var depth = 0;
+                while (current != null && depth++ < 8)
+                {
+                    yield return Path.Combine(current.FullName, "wwwroot", "placeholder.svg");
+                    yield return Path.Combine(current.FullName, "fe", "public", "placeholder.svg");
+                    yield return Path.Combine(current.FullName, "listenarr.api", "wwwroot", "placeholder.svg");
+
+                    current = current.Parent;
+                }
+            }
+        }
+
         /// <summary>
         /// Delete a cached cover image by identifier.
         /// </summary>
@@ -1124,7 +1254,7 @@ namespace Listenarr.Api.Controllers
                     return NotFound(new { message = "Image not found" });
                 }
 
-                var fullPath = ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath);
+                var fullPath = ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath);
 
                 if (System.IO.File.Exists(fullPath))
                 {

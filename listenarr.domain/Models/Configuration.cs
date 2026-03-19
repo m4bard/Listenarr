@@ -248,6 +248,16 @@ namespace Listenarr.Domain.Models
         /// </summary>
         public bool EnableOpenLibrarySearch { get; set; } = true;
 
+        /// <summary>
+        /// Preferred default Audible/Audimeta market region for Add New searches.
+        /// </summary>
+        public string DefaultSearchRegion { get; set; } = "us";
+
+        /// <summary>
+        /// Preferred default language filter for Add New searches.
+        /// </summary>
+        public string DefaultSearchLanguage { get; set; } = "english";
+
         
     }
 }

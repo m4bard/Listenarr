@@ -14,6 +14,12 @@ namespace Listenarr.Api.Services
         Task<Audiobook?> GetByIsbnAsync(string isbn);
         Task<Audiobook?> GetByIdAsync(int id);
         Task<string?> GetAuthorAsinByNameAsync(string name);
+        Task<AuthorCacheEntry?> GetCachedAuthorByNameAsync(string name, string region);
+        Task<AuthorCacheEntry?> GetCachedAuthorByAsinAsync(string asin, string region);
+        Task<AuthorCacheEntry> UpsertCachedAuthorAsync(AuthorCacheEntry authorCacheEntry);
+        Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region);
+        Task<SeriesCacheEntry?> GetCachedSeriesByAsinAsync(string asin, string region);
+        Task<SeriesCacheEntry> UpsertCachedSeriesAsync(SeriesCacheEntry seriesCacheEntry);
         Task AddAsync(Audiobook audiobook);
         Task<bool> UpdateAsync(Audiobook audiobook);
         Task<bool> DeleteAsync(Audiobook audiobook);

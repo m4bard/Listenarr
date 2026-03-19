@@ -1,7 +1,7 @@
  
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { Mock } from 'vitest'
-import { mount } from '@vue/test-utils' 
+import { mount, flushPromises } from '@vue/test-utils' 
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import AddNewView from '@/views/content/AddNewView.vue'
@@ -17,6 +17,8 @@ describe('AddNewView pagination', () => {
     })
 
   beforeEach(() => {
+    vi.clearAllMocks()
+    window.localStorage.clear()
     const pinia = createPinia()
     setActivePinia(pinia)
   })
@@ -127,19 +129,19 @@ describe('AddNewView pagination', () => {
     expect(img.attributes('src')).toBe('http://img2')
   })
 
-  it('shows region names instead of language names in search selects', async () => {
+  it('shows language options in the add new search selects', async () => {
     const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
 
-    // Simple search language select should contain United States (US)
+    // Simple search language select should contain the supported language filters
     const simpleSelect = wrapper.find('select.language-select')
     expect(simpleSelect.exists()).toBe(true)
     const simpleOptions = simpleSelect.findAll('option').map((o) => o.text())
-    expect(simpleOptions).toContain('United States (US)')
+    expect(simpleOptions).toContain('All')
+    expect(simpleOptions).toContain('English')
 
-    // Advanced search select should be labeled Region and contain United Kingdom (UK)
+    // Advanced search select should be labeled Language and contain German
     await wrapper.vm.$nextTick()
-    // Toggle advanced
     const advToggle = wrapper.find('button.search-btn.advanced-btn')
     expect(advToggle.exists()).toBe(true)
     await advToggle.trigger('click')
@@ -147,7 +149,112 @@ describe('AddNewView pagination', () => {
     const advSelect = wrapper.find('select#adv-language')
     expect(advSelect.exists()).toBe(true)
     const advOptions = advSelect.findAll('option').map((o) => o.text())
-    expect(advOptions).toContain('United Kingdom (UK)')
+    expect(advOptions).toContain('German')
+    expect(wrapper.find('label[for="adv-language"]').text()).toBe('Language')
+  })
+
+  it('applies configured default region and language from application settings', async () => {
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
+    apiService.getApplicationSettings?.mockResolvedValue({
+      defaultSearchRegion: 'de',
+      defaultSearchLanguage: 'polish',
+    })
+
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      searchLanguage?: string
+      preferredSearchLanguage?: string
+      advancedSearchParams?: { language?: string }
+    }
+
+    expect(vm.searchLanguage).toBe('de')
+    expect(vm.preferredSearchLanguage).toBe('polish')
+  })
+
+  it('omits language filtering when default language is set to all', async () => {
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
+    apiService.getApplicationSettings?.mockResolvedValue({
+      defaultSearchRegion: 'de',
+      defaultSearchLanguage: 'all',
+    })
+    const advancedSearchSpy = vi
+      .spyOn(apiModule.apiService, 'advancedSearch')
+      .mockResolvedValue([])
+
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      searchQuery?: string
+      preferredSearchLanguage?: string
+      performSearch?: () => Promise<void>
+    }
+
+    expect(vm.preferredSearchLanguage).toBe('all')
+
+    vm.searchQuery = 'Dune'
+    await vm.performSearch?.()
+    await flushPromises()
+
+    expect(advancedSearchSpy).toHaveBeenCalled()
+    const lastCall = advancedSearchSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
+    expect(lastCall?.region).toBe('de')
+    expect(lastCall).not.toHaveProperty('language')
+    advancedSearchSpy.mockRestore()
+  })
+
+  it('filters mixed-language audimeta results using the selected language while keeping the default region', async () => {
+    const apiModule = await import('@/services/api')
+    const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
+    apiService.getApplicationSettings?.mockResolvedValue({
+      defaultSearchRegion: 'de',
+      defaultSearchLanguage: 'english',
+    })
+    const advancedSearchSpy = vi.spyOn(apiModule.apiService, 'advancedSearch').mockResolvedValue([
+      {
+        asin: 'BENGLISH',
+        title: 'English Result',
+        authors: [{ name: 'Author A' }],
+        imageUrl: 'http://img-en',
+        language: 'english',
+      },
+      {
+        asin: 'BGERMAN',
+        title: 'German Result',
+        authors: [{ name: 'Author B' }],
+        imageUrl: 'http://img-de',
+        language: 'de',
+      },
+    ])
+
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    await flushPromises()
+
+    const vm = wrapper.vm as unknown as {
+      searchQuery?: string
+      titleResults?: Array<{ title?: string }>
+      performSearch?: () => Promise<void>
+    }
+
+    vm.searchQuery = 'Dune'
+    await vm.performSearch?.()
+    await flushPromises()
+    await wrapper.vm.$nextTick()
+
+    expect(advancedSearchSpy).toHaveBeenCalled()
+    const lastCall = advancedSearchSpy.mock.calls.at(-1)?.[0] as Record<string, unknown> | undefined
+    expect(lastCall?.region).toBe('de')
+    expect(lastCall?.language).toBe('english')
+    expect(vm.titleResults?.length).toBe(1)
+    expect(vm.titleResults?.[0]?.title).toBe('English Result')
+    advancedSearchSpy.mockRestore()
   })
 
   it('defaults to title search for simple unprefixed queries (simple search)', async () => {
@@ -161,6 +268,7 @@ describe('AddNewView pagination', () => {
           title: 'Dune Simple',
           authors: [{ name: 'Frank Herbert' }],
           imageUrl: 'http://imgsimple',
+          language: 'english',
         },
       ],
     })
@@ -173,6 +281,7 @@ describe('AddNewView pagination', () => {
     vm.searchQuery = 'Dune Simple'
 
     await vm.performSearch()
+    await flushPromises()
     await wrapper.vm.$nextTick()
 
     // The UX hint should show 'Searching by title' when no prefix is present
@@ -196,6 +305,7 @@ describe('AddNewView pagination', () => {
           title: 'Dune Simple',
           authors: [{ name: 'Frank Herbert' }],
           imageUrl: 'http://imgsimple',
+          language: 'english',
         },
       ],
     })

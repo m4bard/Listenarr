@@ -318,6 +318,8 @@ export interface ApplicationSettings {
   // Search behavior settings
   // Enable OpenLibrary augmentation/search
   enableOpenLibrarySearch?: boolean
+  defaultSearchRegion?: string
+  defaultSearchLanguage?: string
 }
 
 export interface StartupConfig {
@@ -374,6 +376,142 @@ export interface AudibleBookMetadata {
   metadataSource?: string
   // Optional local mapping to a quality profile ID when viewing in the UI
   qualityProfileId?: number
+}
+
+export interface AuthorCatalogBook {
+  asin?: string
+  title: string
+  subtitle?: string
+  authors?: string[]
+  imageUrl?: string
+  runtime?: number
+  language?: string
+  publisher?: string
+  narrators?: string[]
+  genres?: string[]
+  series?: string
+  seriesNumber?: string
+  publishedDate?: string
+  isbn?: string
+  link?: string
+  metadataSource?: string
+}
+
+export interface AuthorCatalogResponse {
+  author: {
+    asin?: string
+    name: string
+    image?: string
+  }
+  books: AuthorCatalogBook[]
+  totalBooks: number
+}
+
+export interface RelatedAuthorItem {
+  asin?: string
+  name: string
+}
+
+export interface AuthorLookupResponse {
+  asin?: string
+  name: string
+  image?: string
+  cachedPath?: string
+  description?: string
+  similarAuthors?: RelatedAuthorItem[]
+}
+
+export interface SeriesCatalogBook {
+  asin?: string
+  title: string
+  subtitle?: string
+  authors?: string[]
+  imageUrl?: string
+  runtime?: number
+  language?: string
+  publisher?: string
+  narrators?: string[]
+  genres?: string[]
+  series?: string
+  seriesNumber?: string
+  publishedDate?: string
+  isbn?: string
+  link?: string
+  metadataSource?: string
+}
+
+export interface SeriesCatalogResponse {
+  series: {
+    asin?: string
+    name: string
+    image?: string
+    description?: string
+  }
+  books: SeriesCatalogBook[]
+  totalBooks: number
+}
+
+export interface SeriesLookupResponse {
+  asin?: string
+  name: string
+  image?: string
+  cachedPath?: string
+  description?: string
+  totalBooks?: number
+}
+
+export interface MonitoredAuthor {
+  id: number
+  authorName: string
+  authorAsin?: string
+  region: string
+  language: string
+  createdAt: string
+  updatedAt: string
+  lastCheckedAt?: string
+  lastSuccessfulSyncAt?: string
+  lastError?: string
+}
+
+export interface AuthorMonitoringStatusResponse {
+  isMonitored: boolean
+  monitoredAuthor?: MonitoredAuthor | null
+}
+
+export interface MonitorAuthorResponse {
+  message: string
+  monitoredAuthor: MonitoredAuthor
+  addedCount: number
+  existingCount: number
+  failedCount: number
+  errorMessage?: string
+}
+
+export interface MonitoredSeries {
+  id: number
+  seriesName: string
+  seriesAsin?: string
+  region: string
+  language: string
+  createdAt: string
+  updatedAt: string
+  lastCheckedAt?: string
+  lastSuccessfulSyncAt?: string
+  lastError?: string
+}
+
+export interface SeriesMonitoringStatusResponse {
+  isMonitored: boolean
+  monitoredSeries?: MonitoredSeries | null
+}
+
+export interface MonitorSeriesResponse {
+  message: string
+  monitoredSeries: MonitoredSeries
+  addedCount: number
+  existingCount: number
+  failedCount: number
+  errorMessage?: string
 }
 
 export type AudiobookExternalIdentifierType = 'Asin' | 'Isbn' | 'OpenLibraryId'

@@ -4,6 +4,52 @@
       <PhMagnifyingGlass /> Search Settings
     </h3>
     <div class="form-body">
+      <div class="form-row">
+        <div class="form-group">
+          <label for="default-search-region">Preferred Default Region</label>
+          <select
+            id="default-search-region"
+            :value="defaultSearchRegion"
+            class="form-select"
+            @change="updateDefaultSearchRegion"
+          >
+            <option
+              v-for="option in searchRegionOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+          <small class="form-help">
+            Used as the default market in Add New searches. You can still change it per
+            search.
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label for="default-search-language">Preferred Default Language</label>
+          <select
+            id="default-search-language"
+            :value="defaultSearchLanguage"
+            class="form-select"
+            @change="updateDefaultSearchLanguage"
+          >
+            <option
+              v-for="option in preferredSearchLanguageOptions"
+              :key="option.value"
+              :value="option.value"
+            >
+              {{ option.label }}
+            </option>
+          </select>
+          <small class="form-help">
+            Used as the default language filter for Add New searches. Choose All to
+            disable language filtering.
+          </small>
+        </div>
+      </div>
+
       <CheckboxCard :modelValue="settings.enableOpenLibrarySearch" @update:modelValue="updateEnableOpenLibrarySearch" title="Enable OpenLibrary Searching" description="Include OpenLibrary title augmentation and lookups when performing intelligent searches." />
 
     </div>
@@ -11,10 +57,17 @@
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import type { ApplicationSettings } from '@/types'
 import { PhMagnifyingGlass } from '@phosphor-icons/vue'
 // Checkbox usage handled via CheckboxCard; no direct Checkbox import needed here
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
+import {
+  normalizePreferredSearchLanguage,
+  normalizeSearchRegion,
+  preferredSearchLanguageOptions,
+  searchRegionOptions,
+} from '@/utils/languageMapping'
 
 const props = defineProps<{ settings: Partial<ApplicationSettings> }>()
 const emit = defineEmits<{
@@ -28,6 +81,22 @@ function updateField(field: keyof ApplicationSettings, value: unknown) {
 
 function updateEnableOpenLibrarySearch(value: boolean) {
   updateField('enableOpenLibrarySearch', value)
+}
+
+const defaultSearchRegion = computed(() =>
+  normalizeSearchRegion(props.settings.defaultSearchRegion),
+)
+
+const defaultSearchLanguage = computed(() =>
+  normalizePreferredSearchLanguage(props.settings.defaultSearchLanguage),
+)
+
+function updateDefaultSearchRegion(event: Event) {
+  updateField('defaultSearchRegion', (event.target as HTMLSelectElement).value)
+}
+
+function updateDefaultSearchLanguage(event: Event) {
+  updateField('defaultSearchLanguage', (event.target as HTMLSelectElement).value)
 }
 </script>
 
@@ -52,7 +121,11 @@ h3 {
 
 .form-group input[type='number'] { width: 100%; padding: 0.9rem 0.85rem; border: 1px solid #444; border-radius: 6px; background-color: #1a1a1a; color: #fff; font-size: 0.95rem }
 
-.form-group input:focus { outline:none; border-color:var(--brand-500); box-shadow:0 0 0 3px rgba(77,171,247,0.08); }
+.form-group select,
+.form-group input[type='number'] { width: 100%; padding: 0.9rem 0.85rem; border: 1px solid #444; border-radius: 6px; background-color: #1a1a1a; color: #fff; font-size: 0.95rem }
+
+.form-group input:focus,
+.form-group select:focus { outline:none; border-color:var(--brand-500); box-shadow:0 0 0 3px rgba(77,171,247,0.08); }
 .form-group input::placeholder { color: #6c757d }
 
 .form-help { display:block; margin-top:0.5rem; font-size:0.85rem; color:#adb5bd; line-height:1.5 }

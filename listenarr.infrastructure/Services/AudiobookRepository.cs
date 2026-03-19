@@ -131,27 +131,23 @@ namespace Listenarr.Api.Services
         {
             if (string.IsNullOrWhiteSpace(name)) return null;
 
-            static string Normalize(string s)
-            {
-                if (string.IsNullOrWhiteSpace(s)) return string.Empty;
-                // Remove punctuation, collapse whitespace, and lowercase
-                var cleaned = new string(s.Where(c => char.IsLetterOrDigit(c) || char.IsWhiteSpace(c)).ToArray());
-                var parts = cleaned.Split(new[] { ' ', '\t', '\n', '\r' }, System.StringSplitOptions.RemoveEmptyEntries);
-                return string.Join(' ', parts).ToLowerInvariant();
-            }
+            var target = NormalizeAuthorName(name);
 
-            var target = Normalize(name);
-
-            // Query audibooks that have author ASINs to limit work
+            // Materialize first because SQLite cannot translate list-property checks on our JSON-backed columns.
             var candidates = await _db.Audiobooks
-                .Where(a => a.AuthorAsins != null && a.AuthorAsins.Count > 0 && a.Authors != null && a.Authors.Count > 0)
+                .AsNoTracking()
                 .ToListAsync();
 
             foreach (var b in candidates)
             {
+                if (b.AuthorAsins == null || b.AuthorAsins.Count == 0 || b.Authors == null || b.Authors.Count == 0)
+                {
+                    continue;
+                }
+
                 foreach (var author in b.Authors ?? new List<string>())
                 {
-                    if (Normalize(author) == target)
+                    if (NormalizeAuthorName(author) == target)
                     {
                         var asin = b.AuthorAsins?.FirstOrDefault();
                         if (!string.IsNullOrWhiteSpace(asin)) return asin;
@@ -160,6 +156,207 @@ namespace Listenarr.Api.Services
             }
 
             return null;
+        }
+
+        public async Task<AuthorCacheEntry?> GetCachedAuthorByNameAsync(string name, string region)
+        {
+            var normalizedName = NormalizeAuthorName(name);
+            if (string.IsNullOrWhiteSpace(normalizedName))
+            {
+                return null;
+            }
+
+            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
+
+            return await _db.AuthorCacheEntries
+                .AsNoTracking()
+                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
+                .FirstOrDefaultAsync(entry =>
+                    entry.AuthorNameNormalized == normalizedName &&
+                    entry.Region == normalizedRegion);
+        }
+
+        public async Task<AuthorCacheEntry?> GetCachedAuthorByAsinAsync(string asin, string region)
+        {
+            var normalizedAsin = NormalizeAsin(asin);
+            if (string.IsNullOrWhiteSpace(normalizedAsin))
+            {
+                return null;
+            }
+
+            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
+
+            return await _db.AuthorCacheEntries
+                .AsNoTracking()
+                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
+                .FirstOrDefaultAsync(entry =>
+                    entry.AuthorAsin != null &&
+                    entry.AuthorAsin.ToUpper() == normalizedAsin &&
+                    entry.Region == normalizedRegion);
+        }
+
+        public async Task<AuthorCacheEntry> UpsertCachedAuthorAsync(AuthorCacheEntry authorCacheEntry)
+        {
+            ArgumentNullException.ThrowIfNull(authorCacheEntry);
+
+            var normalizedName = NormalizeAuthorName(authorCacheEntry.AuthorName);
+            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(authorCacheEntry.Region) ?? "us";
+            var normalizedAsin = NormalizeAsin(authorCacheEntry.AuthorAsin);
+
+            AuthorCacheEntry? existing = null;
+
+            if (!string.IsNullOrWhiteSpace(normalizedAsin))
+            {
+                existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry =>
+                    entry.AuthorAsin != null &&
+                    entry.AuthorAsin.ToUpper() == normalizedAsin &&
+                    entry.Region == normalizedRegion);
+            }
+
+            if (existing == null && !string.IsNullOrWhiteSpace(normalizedName))
+            {
+                existing = await _db.AuthorCacheEntries.FirstOrDefaultAsync(entry =>
+                    entry.AuthorNameNormalized == normalizedName &&
+                    entry.Region == normalizedRegion);
+            }
+
+            var now = DateTime.UtcNow;
+            if (existing == null)
+            {
+                existing = new AuthorCacheEntry
+                {
+                    CreatedAt = now
+                };
+
+                _db.AuthorCacheEntries.Add(existing);
+            }
+
+            existing.AuthorName = string.IsNullOrWhiteSpace(authorCacheEntry.AuthorName)
+                ? (string.IsNullOrWhiteSpace(existing.AuthorName) ? normalizedName : existing.AuthorName)
+                : authorCacheEntry.AuthorName.Trim();
+            existing.AuthorNameNormalized = string.IsNullOrWhiteSpace(normalizedName)
+                ? NormalizeAuthorName(existing.AuthorName)
+                : normalizedName;
+            existing.AuthorAsin = string.IsNullOrWhiteSpace(normalizedAsin)
+                ? existing.AuthorAsin
+                : normalizedAsin;
+            existing.Region = normalizedRegion;
+            existing.ImageUrl = authorCacheEntry.ImageUrl ?? existing.ImageUrl;
+            existing.Description = authorCacheEntry.Description ?? existing.Description;
+
+            if (authorCacheEntry.SimilarAuthors != null)
+            {
+                existing.SimilarAuthors = authorCacheEntry.SimilarAuthors;
+            }
+
+            if (authorCacheEntry.CatalogBooks != null)
+            {
+                existing.CatalogBooks = authorCacheEntry.CatalogBooks;
+            }
+
+            existing.LastFetchedAt = authorCacheEntry.LastFetchedAt ?? existing.LastFetchedAt ?? now;
+            existing.UpdatedAt = now;
+
+            await _db.SaveChangesAsync();
+            return existing;
+        }
+
+        public async Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region)
+        {
+            var normalizedName = NormalizeSeriesName(name);
+            if (string.IsNullOrWhiteSpace(normalizedName))
+            {
+                return null;
+            }
+
+            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
+
+            return await _db.SeriesCacheEntries
+                .AsNoTracking()
+                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
+                .FirstOrDefaultAsync(entry =>
+                    entry.SeriesNameNormalized == normalizedName &&
+                    entry.Region == normalizedRegion);
+        }
+
+        public async Task<SeriesCacheEntry?> GetCachedSeriesByAsinAsync(string asin, string region)
+        {
+            var normalizedAsin = NormalizeAsin(asin);
+            if (string.IsNullOrWhiteSpace(normalizedAsin))
+            {
+                return null;
+            }
+
+            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
+
+            return await _db.SeriesCacheEntries
+                .AsNoTracking()
+                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
+                .FirstOrDefaultAsync(entry =>
+                    entry.SeriesAsin != null &&
+                    entry.SeriesAsin.ToUpper() == normalizedAsin &&
+                    entry.Region == normalizedRegion);
+        }
+
+        public async Task<SeriesCacheEntry> UpsertCachedSeriesAsync(SeriesCacheEntry seriesCacheEntry)
+        {
+            ArgumentNullException.ThrowIfNull(seriesCacheEntry);
+
+            var normalizedName = NormalizeSeriesName(seriesCacheEntry.SeriesName);
+            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(seriesCacheEntry.Region) ?? "us";
+            var normalizedAsin = NormalizeAsin(seriesCacheEntry.SeriesAsin);
+
+            SeriesCacheEntry? existing = null;
+
+            if (!string.IsNullOrWhiteSpace(normalizedAsin))
+            {
+                existing = await _db.SeriesCacheEntries.FirstOrDefaultAsync(entry =>
+                    entry.SeriesAsin != null &&
+                    entry.SeriesAsin.ToUpper() == normalizedAsin &&
+                    entry.Region == normalizedRegion);
+            }
+
+            if (existing == null && !string.IsNullOrWhiteSpace(normalizedName))
+            {
+                existing = await _db.SeriesCacheEntries.FirstOrDefaultAsync(entry =>
+                    entry.SeriesNameNormalized == normalizedName &&
+                    entry.Region == normalizedRegion);
+            }
+
+            var now = DateTime.UtcNow;
+            if (existing == null)
+            {
+                existing = new SeriesCacheEntry
+                {
+                    CreatedAt = now
+                };
+
+                _db.SeriesCacheEntries.Add(existing);
+            }
+
+            existing.SeriesName = string.IsNullOrWhiteSpace(seriesCacheEntry.SeriesName)
+                ? (string.IsNullOrWhiteSpace(existing.SeriesName) ? normalizedName : existing.SeriesName)
+                : seriesCacheEntry.SeriesName.Trim();
+            existing.SeriesNameNormalized = string.IsNullOrWhiteSpace(normalizedName)
+                ? NormalizeSeriesName(existing.SeriesName)
+                : normalizedName;
+            existing.SeriesAsin = string.IsNullOrWhiteSpace(normalizedAsin)
+                ? existing.SeriesAsin
+                : normalizedAsin;
+            existing.Region = normalizedRegion;
+            existing.ImageUrl = seriesCacheEntry.ImageUrl ?? existing.ImageUrl;
+            existing.Description = seriesCacheEntry.Description ?? existing.Description;
+
+            if (seriesCacheEntry.CatalogBooks != null)
+            {
+                existing.CatalogBooks = seriesCacheEntry.CatalogBooks;
+            }
+
+            existing.LastFetchedAt = seriesCacheEntry.LastFetchedAt ?? existing.LastFetchedAt ?? now;
+            existing.UpdatedAt = now;
+
+            await _db.SaveChangesAsync();
+            return existing;
         }
 
         private static string NormalizeAsin(string? value)
@@ -172,6 +369,40 @@ namespace Listenarr.Api.Services
         {
             if (string.IsNullOrWhiteSpace(value)) return string.Empty;
             return new string(value.Where(char.IsLetterOrDigit).ToArray()).ToUpperInvariant();
+        }
+
+        private static string NormalizeAuthorName(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var cleaned = new string(value
+                .Where(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character))
+                .ToArray());
+            var parts = cleaned.Split(
+                new[] { ' ', '\t', '\n', '\r' },
+                StringSplitOptions.RemoveEmptyEntries);
+
+            return string.Join(' ', parts).ToLowerInvariant();
+        }
+
+        private static string NormalizeSeriesName(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return string.Empty;
+            }
+
+            var cleaned = new string(value
+                .Where(character => char.IsLetterOrDigit(character) || char.IsWhiteSpace(character))
+                .ToArray());
+            var parts = cleaned.Split(
+                new[] { ' ', '\t', '\n', '\r' },
+                StringSplitOptions.RemoveEmptyEntries);
+
+            return string.Join(' ', parts).ToLowerInvariant();
         }
     }
 }

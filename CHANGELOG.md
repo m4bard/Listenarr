@@ -5,16 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.2.59] - 2026-03-18
+## [0.2.59] - 2026-03-19
 
 ### Added
 - **Release docs rebuild hook:** Added a post-release repository dispatch in GitHub Actions to trigger the docs-site rebuild after published Listenarr releases.
 - **Non-.NET 9 lock compatibility:** Added conditional `Backport.System.Threading.Lock` support so the newer lock implementation can also be used on older target frameworks.
+- **Default search region/language settings:** Added General Settings controls for default Audimeta region and preferred search language, including an `All` language option that disables language filtering.
+- **Author collection metadata pages:** Added rich author collection pages with full remote catalogs, detail-style hero metadata, related authors, `Add to Library` actions for not-yet-added books, and persisted author metadata/image cache records.
+- **Author monitoring workflow:** Added monitored-author persistence, API endpoints, and a daily background sync that imports current and future author releases matching the configured region/language.
+- **Series collection metadata pages:** Added full series lookup/catalog pages with detail-style hero presentation, stacked-cover hero posters, persisted series metadata/image cache records, and refresh-on-demand metadata flows.
+- **Series monitoring workflow:** Added monitored-series persistence, API endpoints, and a daily background sync that imports current and future series entries matching the configured region/language.
+- **Collection navigation tags:** Added clickable author, series, and genre tags from audiobook details, plus genre collection pages for browsing other library audiobooks with the same genre.
+- **Regression coverage for new metadata flows:** Added focused backend/frontend tests for author lookup/catalog caching, series catalog handling, image-cache root resolution, placeholder fallback behavior, language normalization, collection routing, and monitoring workflows.
 
 ### Changed
 - **Internal synchronization primitives:** Replaced several manual `SemaphoreSlim` and `object` locks with `System.Threading.Lock`, `AsyncKeyedLocker`, and `AsyncNonKeyedLocker` across image caching, metadata extraction, search enrichment, completed-download handling, and test-host cleanup to reduce lock bookkeeping and tighten concurrency control.
 - **Lookup-path cleanup:** Normalized several request-query, metadata, and JSON-object access paths to use `TryGetValue` and `TryGetPropertyValue` patterns for cleaner single-pass lookups.
 - **API launch profile cleanup:** Normalized the API `launchSettings.json` structure and schema placement for a cleaner local-development profile definition.
+- **Add New search filtering:** Replaced the Add New region selector with language filtering, while using the saved General Settings region behind the scenes for Audimeta requests and the preferred language for client-side filtering.
+- **Author/series collection presentation:** Reworked metadata collection pages to separate `In Library` and `Not Added`, dim unmanaged items, improve list/grid alignment and hover behavior, and make author/series heroes feel closer to audiobook details.
+- **Author/series metadata sourcing:** Updated author and series metadata flows to prefer repo cache and persisted DB records first, then hydrate from Audimeta/Audnexus as needed and save repaired results back into cache/storage.
+- **Library detail navigation:** Updated audiobook detail metadata chips/tags so authors, series, and genres route directly into their respective collection pages.
 
 ### Fixed
 - **Download completion-candidate cleanup:** Fixed monitor flows to remove stale completion candidates in a single dictionary operation when items stop appearing complete in qBittorrent, SABnzbd, and NZBGet.
@@ -22,6 +33,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Metadata extraction and image-cache locking:** Fixed several async paths to release metadata-extraction and per-image download locks via scoped disposables instead of manual wait/release pairs, reducing the chance of mismatched lock cleanup.
 - **Safer state and notification lookups:** Fixed download terminal-state detection and Discord notification embed trimming to avoid redundant key checks and repeated dictionary/JSON access.
 - **Sensitive settings-field autofill:** Disabled browser autocomplete on API key and Discord bot token inputs across settings and modal forms to reduce accidental autofill of secret fields.
+- **API startup and migration application:** Fixed startup migration discovery, model-snapshot drift, and dev content-root/path issues so new settings, author-monitoring, author-cache, series-cache, and series-monitoring schema changes apply correctly at startup.
+- **Author/series image cache paths:** Fixed author and series image cache reads/writes to use the repo `config/cache/images/...` folders instead of `bin/Debug/...`, and aligned image-serving path resolution with the repaired cache root logic.
+- **Missing-image fallback behavior:** Fixed author-image and cached-image fallback handling so missing files serve placeholders correctly instead of dead responses, including author-collection placeholder recovery.
+- **Author/series metadata fallback handling:** Fixed Audimeta/Audible fallback parsing for author catalogs, including legacy Audible layouts, partial upstream outages, duplicate remote-to-local matches, and stale fallback cases that hid not-added books.
+- **Audimeta request compatibility:** Fixed false `403 Forbidden` responses from Audimeta author and series endpoints by using browser-like request headers instead of the prior custom client fingerprint.
+- **Author metadata enrichment and caching:** Fixed cache-first author lookups so missing descriptions, similar authors, and images are repaired from Audimeta/Audnexus and then persisted back into cache/DB instead of returning partial author records.
+- **Preferred-language filtering:** Fixed recursive language normalization, aligned language alias handling across Add New and metadata collection pages, and ensured not-added author/series books are filtered consistently against the preferred language.
+- **Author collection regressions:** Fixed author-page duplicate in-library matches, missing not-added titles during Audimeta outages, similar-author navigation loading feedback, and not-added row/card alignment issues.
+- **Image download lifetime issues:** Fixed `ImageCacheService` background download failures caused by disposed scoped `HttpClient` instances by aligning the service lifetime with long-running image-cache usage.
+- **Library genre collections:** Fixed the slim `/library` payload to include `genres`, allowing genre collection pages to display matching audiobooks from real API data instead of only mocked frontend state.
+- **Local dev shutdown noise:** Fixed host-shutdown cancellation handling in `UnmatchedScanBackgroundService` so startup bind failures no longer cascade into misleading fatal background-service logs.
+- **DownloadService build break:** Fixed the malformed `TryGetValue`/predicate refactor in `DownloadService` that caused the API project to fail compilation.
 
 ### Removed
 - **Unused application placeholder:** Removed the empty `listenarr.application/Class1.cs` placeholder file.

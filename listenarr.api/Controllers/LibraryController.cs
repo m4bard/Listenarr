@@ -73,7 +73,8 @@ namespace Listenarr.Api.Controllers
         private readonly IMoveQueueService? _moveQueueService;
         private readonly IFileNamingService _fileNamingService;
         private readonly NotificationService? _notificationService;
-            private readonly IRootFolderService? _rootFolderService;
+        private readonly IRootFolderService? _rootFolderService;
+        private readonly ILibraryAddService? _libraryAddService;
         /// <param name="repo">Repository for audiobook persistence and queries.</param>
         /// <param name="imageCacheService">Service for caching and moving cover images.</param>
         /// <param name="logger">Logger instance for diagnostic messages.</param>
@@ -84,6 +85,7 @@ namespace Listenarr.Api.Controllers
         /// <param name="moveQueueService">Optional background move queue service for processing move requests.</param>
         /// <param name="notificationService">Service for sending webhook notifications.</param>
         /// <param name="rootFolderService">Optional root folder service for managing and enumerating configured root folders used for validating explicit scan paths.</param>
+        /// <param name="libraryAddService">Optional shared add-to-library service used by runtime requests and background syncs.</param>
         public LibraryController(
             IAudiobookRepository repo,
             IImageCacheService imageCacheService,
@@ -94,7 +96,8 @@ namespace Listenarr.Api.Controllers
             IScanQueueService? scanQueueService = null,
             IMoveQueueService? moveQueueService = null,
             NotificationService? notificationService = null,
-            IRootFolderService? rootFolderService = null)
+            IRootFolderService? rootFolderService = null,
+            ILibraryAddService? libraryAddService = null)
         {
             _repo = repo;
             _imageCacheService = imageCacheService;
@@ -106,6 +109,7 @@ namespace Listenarr.Api.Controllers
             _moveQueueService = moveQueueService;
             _notificationService = notificationService;
             _rootFolderService = rootFolderService;
+            _libraryAddService = libraryAddService;
         }
 
         private static bool ComputeWantedFlag(Audiobook audiobook)
@@ -171,6 +175,28 @@ namespace Listenarr.Api.Controllers
         [HttpPost("add")]
         public async Task<IActionResult> AddToLibrary([FromBody] AddToLibraryRequest request)
         {
+            if (_libraryAddService != null)
+            {
+                var result = await _libraryAddService.AddToLibraryAsync(new LibraryAddOperationRequest
+                {
+                    Metadata = request.Metadata,
+                    Monitored = request.Monitored,
+                    QualityProfileId = request.QualityProfileId,
+                    AutoSearch = request.AutoSearch,
+                    DestinationPath = request.DestinationPath,
+                    SearchResult = request.SearchResult,
+                    HistorySource = "AddNew",
+                    HistoryMessage = $"Audiobook '{request.Metadata.Title}' added to library from Add New page"
+                });
+
+                if (result.AlreadyExists)
+                {
+                    return Conflict(new { message = result.Message, audiobook = result.Audiobook });
+                }
+
+                return Ok(new { message = result.Message, audiobook = result.Audiobook });
+            }
+
             var metadata = request.Metadata;
 
             _logger.LogInformation("AddToLibrary received metadata: Title={Title}, Asin={Asin}, PublishYear={PublishYear}, Authors={Authors}, Series={Series}",
@@ -608,6 +634,7 @@ namespace Listenarr.Api.Controllers
                     a.PublishedDate,
                     a.Series,
                     a.SeriesNumber,
+                    a.Genres,
                     a.Asin,
                     a.OpenLibraryId,
                     a.Publisher,
@@ -694,6 +721,7 @@ namespace Listenarr.Api.Controllers
                     PublishedDate = a.PublishedDate,
                     Series = a.Series,
                     SeriesNumber = a.SeriesNumber,
+                    Genres = a.Genres?.ToArray(),
                     Asin = a.Asin,
                     OpenLibraryId = a.OpenLibraryId,
                     Publisher = a.Publisher,

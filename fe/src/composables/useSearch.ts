@@ -2,6 +2,7 @@ import { ref, computed } from 'vue'
 import type { SearchResult } from '@/types'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
+import { getPreferredSearchLanguageFilter } from '@/utils/languageMapping'
 
 type AudibleMetadataRecord = Record<string, unknown> & {
   guid?: string
@@ -34,7 +35,8 @@ type AudibleMetadataResponse = {
 export function useSearch() {
   // Reactive state
   const searchQuery = ref('')
-  const searchLanguage = ref('english')
+  const searchLanguage = ref('us')
+  const preferredSearchLanguage = ref('english')
   const searchType = ref<'asin' | 'title' | 'isbn' | null>(null)
   const isSearching = ref(false)
   const searchError = ref('')
@@ -148,6 +150,7 @@ export function useSearch() {
     const detectedType = detectSearchType(query)
     logger.debug('Detected search type:', detectedType)
     searchType.value = detectedType
+    const languageFilter = getPreferredSearchLanguageFilter(preferredSearchLanguage.value)
 
     let results
     if (detectedType === 'asin') {
@@ -158,9 +161,10 @@ export function useSearch() {
       if (isbnMatch && isbnMatch[1]) {
         const params: Record<string, unknown> = {
           isbn: isbnMatch[1].trim(),
-          language: searchLanguage.value,
+          region: searchLanguage.value,
           pagination: { page: 1, limit: 50 }
         }
+        if (languageFilter) params.language = languageFilter
         try {
           isSearching.value = true
           searchError.value = ''
@@ -216,7 +220,8 @@ export function useSearch() {
       if (!foundAny) params.title = query
 
       // Include language and a reasonable default pagination
-      params.language = searchLanguage.value
+      params.region = searchLanguage.value
+      if (languageFilter) params.language = languageFilter
       params.pagination = { page: 1, limit: 50 }
 
       // Call the advanced search endpoint to get richer title results
@@ -271,7 +276,8 @@ export function useSearch() {
       // Use metadata endpoint to fetch canonical metadata for the ASIN and
       // convert into a SearchResult-like envelope the UI expects.
       const metaResp = await apiService.getAudibleMetadata<AudibleMetadataResponse>(
-        cleanAsin /* region defaults to 'us' */,
+        cleanAsin,
+        searchLanguage.value,
       )
 
       logger.debug('ASIN audible metadata response:', metaResp)
@@ -360,10 +366,14 @@ export function useSearch() {
       searchAbortController.value = new AbortController()
 
       // Use canonical /search/title endpoint
-      const results = await apiService.searchByTitle(query, {
+      const requestOptions: RequestInit & { region?: string; language?: string } = {
         signal: searchAbortController.value.signal,
-        language: searchLanguage.value,
-      })
+        region: searchLanguage.value,
+      }
+      const languageFilter = getPreferredSearchLanguageFilter(preferredSearchLanguage.value)
+      if (languageFilter) requestOptions.language = languageFilter
+
+      const results = await apiService.searchByTitle(query, requestOptions)
 
       logger.debug('Title search returned:', results)
       logger.debug('Number of results:', results?.length)
@@ -418,6 +428,7 @@ export function useSearch() {
     // State
     searchQuery,
     searchLanguage,
+    preferredSearchLanguage,
     searchType,
     isSearching,
     searchError,
