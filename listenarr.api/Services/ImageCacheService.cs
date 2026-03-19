@@ -60,11 +60,11 @@ namespace Listenarr.Api.Services
             _contentRootPath = ResolveEffectiveContentRoot(contentRootPath);
 
             // Set up cache directories relative to content root
-            var baseDir = Path.Combine(_contentRootPath, "config");
-            _tempCachePath = Path.Combine(baseDir, "cache", "images", "temp");
-            _libraryImagePath = Path.Combine(baseDir, "cache", "images", "library");
-            _authorImagePath = Path.Combine(baseDir, "cache", "images", "authors");
-            _seriesImagePath = Path.Combine(baseDir, "cache", "images", "series");
+            var baseDir = CombineRelativePath(_contentRootPath, "config");
+            _tempCachePath = CombineRelativePath(baseDir, "cache", "images", "temp");
+            _libraryImagePath = CombineRelativePath(baseDir, "cache", "images", "library");
+            _authorImagePath = CombineRelativePath(baseDir, "cache", "images", "authors");
+            _seriesImagePath = CombineRelativePath(baseDir, "cache", "images", "series");
 
             // Ensure directories exist
             Directory.CreateDirectory(_tempCachePath);
@@ -112,7 +112,7 @@ namespace Listenarr.Api.Services
                         return dir.FullName;
                     }
 
-                    var nestedApiRoot = Path.Combine(dir.FullName, "listenarr.api");
+                    var nestedApiRoot = CombineRelativePath(dir.FullName, "listenarr.api");
                     if (LooksLikeListenarrApiRoot(nestedApiRoot))
                     {
                         return nestedApiRoot;
@@ -136,12 +136,41 @@ namespace Listenarr.Api.Services
                 return false;
             }
 
-            var hasConfigDirectory = Directory.Exists(Path.Combine(path, "config"));
+            var hasConfigDirectory = Directory.Exists(CombineRelativePath(path, "config"));
             var hasProjectMarkers =
-                File.Exists(Path.Combine(path, "listenarr.api.csproj")) ||
-                Directory.Exists(Path.Combine(path, "wwwroot"));
+                File.Exists(CombineRelativePath(path, "listenarr.api.csproj")) ||
+                Directory.Exists(CombineRelativePath(path, "wwwroot"));
 
             return hasConfigDirectory && hasProjectMarkers;
+        }
+
+        private static string CombineRelativePath(string basePath, params string[] segments)
+        {
+            if (string.IsNullOrWhiteSpace(basePath))
+            {
+                throw new ArgumentException("Base path is required.", nameof(basePath));
+            }
+
+            var combined = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            foreach (var segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    continue;
+                }
+
+                var relativeSegment = segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (Path.IsPathRooted(relativeSegment))
+                {
+                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
+                }
+
+                combined = string.IsNullOrEmpty(combined)
+                    ? relativeSegment
+                    : combined + Path.DirectorySeparatorChar + relativeSegment;
+            }
+
+            return combined;
         }
 
         /// <summary>

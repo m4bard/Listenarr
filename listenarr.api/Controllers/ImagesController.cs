@@ -1066,7 +1066,7 @@ namespace Listenarr.Api.Controllers
                 throw new ArgumentException("Base path is required.", nameof(basePath));
             }
 
-            var combined = basePath;
+            var combined = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             foreach (var segment in segments)
             {
                 if (string.IsNullOrWhiteSpace(segment))
@@ -1074,12 +1074,15 @@ namespace Listenarr.Api.Controllers
                     continue;
                 }
 
-                if (Path.IsPathRooted(segment))
+                var relativeSegment = segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (Path.IsPathRooted(relativeSegment))
                 {
                     throw new ArgumentException("Path segments must be relative.", nameof(segments));
                 }
 
-                combined = Path.Combine(combined, segment);
+                combined = string.IsNullOrEmpty(combined)
+                    ? relativeSegment
+                    : combined + Path.DirectorySeparatorChar + relativeSegment;
             }
 
             return combined;
@@ -1250,9 +1253,9 @@ namespace Listenarr.Api.Controllers
                 var depth = 0;
                 while (current != null && depth++ < 8)
                 {
-                    yield return Path.Combine(current.FullName, "wwwroot", "placeholder.svg");
-                    yield return Path.Combine(current.FullName, "fe", "public", "placeholder.svg");
-                    yield return Path.Combine(current.FullName, "listenarr.api", "wwwroot", "placeholder.svg");
+                    yield return CombineRelativePath(current.FullName, "wwwroot", "placeholder.svg");
+                    yield return CombineRelativePath(current.FullName, "fe", "public", "placeholder.svg");
+                    yield return CombineRelativePath(current.FullName, "listenarr.api", "wwwroot", "placeholder.svg");
 
                     current = current.Parent;
                 }
