@@ -61,11 +61,6 @@ namespace Listenarr.Api.Controllers
             [FromBody] MonitorSeriesRequest request,
             CancellationToken cancellationToken = default)
         {
-            if (request == null || string.IsNullOrWhiteSpace(request.Name))
-            {
-                return BadRequest("Series name is required");
-            }
-
             try
             {
                 var result = await _seriesMonitoringService.MonitorSeriesAsync(request, cancellationToken);
@@ -90,7 +85,7 @@ namespace Listenarr.Api.Controllers
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Failed to enable monitoring for series {Series}", request.Name);
+                _logger.LogError(ex, "Failed to enable monitoring for series {Series}", request?.Name);
                 return StatusCode(StatusCodes.Status500InternalServerError, "Internal server error");
             }
         }

@@ -139,11 +139,36 @@ namespace Listenarr.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<AuthorLookupResponse>> LookupAuthor(
+        public Task<ActionResult<AuthorLookupResponse>> LookupAuthor(
             [FromQuery] string name,
             [FromQuery] string region = "us",
-            [FromQuery] string? asin = null,
-            [FromQuery] bool refresh = false)
+            [FromQuery] string? asin = null)
+        {
+            return LookupAuthorCore(name, region, asin, refresh: false);
+        }
+
+        /// <summary>
+        /// Refresh an author lookup by name via Audible, bypassing cached data.
+        /// </summary>
+        [HttpPost("author/refresh")]
+        [ProducesResponseType(typeof(AuthorLookupResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public Task<ActionResult<AuthorLookupResponse>> RefreshAuthor([FromBody] AuthorLookupRefreshRequest? request)
+        {
+            return LookupAuthorCore(
+                request?.Name ?? string.Empty,
+                request?.Region ?? "us",
+                request?.Asin,
+                refresh: true);
+        }
+
+        private async Task<ActionResult<AuthorLookupResponse>> LookupAuthorCore(
+            string name,
+            string region,
+            string? asin,
+            bool refresh)
         {
             try
             {
@@ -151,7 +176,7 @@ namespace Listenarr.Api.Controllers
 
                 var normalizedName = name.Trim();
                 var normalizedAsin = string.IsNullOrWhiteSpace(asin) ? null : asin.Trim();
-                var cacheKey = $"author-lookup:{region}:{normalizedName.ToLowerInvariant()}";
+                var cacheKey = BuildAuthorLookupCacheKey(region, normalizedName, normalizedAsin);
                 string? seededName = null;
                 string? seededImage = null;
                 string? seededDescription = null;
@@ -164,25 +189,25 @@ namespace Listenarr.Api.Controllers
                 }
                 else if (_cache.TryGetValue(cacheKey, out AuthorLookupCacheEntry? cachedEntry) && cachedEntry != null)
                 {
-                        cachedEntry.Asin ??= normalizedAsin;
+                    cachedEntry.Asin ??= normalizedAsin;
 
-                        // If previously marked NotFound, try to resolve an ASIN from the DB and check cache by ASIN
-                        if (cachedEntry.NotFound)
+                    // If previously marked NotFound, try to resolve an ASIN from the DB and check cache by ASIN
+                    if (cachedEntry.NotFound)
+                    {
+                        var notFoundCacheProbe = await ProbeAuthorImageCacheAsync(normalizedName, region, cachedEntry.Asin);
+                        if (!string.IsNullOrWhiteSpace(notFoundCacheProbe.CachedPath))
                         {
-                            var notFoundCacheProbe = await ProbeAuthorImageCacheAsync(normalizedName, region, cachedEntry.Asin);
-                            if (!string.IsNullOrWhiteSpace(notFoundCacheProbe.CachedPath))
-                            {
-                                cachedEntry.Asin = notFoundCacheProbe.Asin ?? cachedEntry.Asin;
-                                cachedEntry.CachedPath = notFoundCacheProbe.CachedPath;
-                                cachedEntry.Name = cachedEntry.Name ?? normalizedName;
-                                cachedEntry.NotFound = false;
-                                _cache.Set(cacheKey, cachedEntry, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
+                            cachedEntry.Asin = notFoundCacheProbe.Asin ?? cachedEntry.Asin;
+                            cachedEntry.CachedPath = notFoundCacheProbe.CachedPath;
+                            cachedEntry.Name ??= normalizedName;
+                            cachedEntry.NotFound = false;
+                            _cache.Set(cacheKey, cachedEntry, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
 
-                                return Ok(MapAuthorLookupResponse(cachedEntry, normalizedName));
-                            }
-
-                            return NotFound("Author not found");
+                            return Ok(MapAuthorLookupResponse(cachedEntry, normalizedName));
                         }
+
+                        return NotFound("Author not found");
+                    }
 
                     string? cachedPath = cachedEntry.CachedPath;
                     if (!string.IsNullOrWhiteSpace(cachedEntry.Asin))
@@ -421,6 +446,7 @@ namespace Listenarr.Api.Controllers
                     result);
 
                 CacheAuthorLookupResponse(cacheKey, result);
+                CacheAuthorLookupResponse(BuildAuthorLookupCacheKey(region, normalizedName, result.Asin), result);
 
                 return Ok(result);
             }
@@ -438,11 +464,36 @@ namespace Listenarr.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<AuthorCatalogResponse>> GetAuthorBooks(
+        public Task<ActionResult<AuthorCatalogResponse>> GetAuthorBooks(
             [FromQuery] string name,
             [FromQuery] string region = "us",
-            [FromQuery] int limit = 250,
-            [FromQuery] bool refresh = false)
+            [FromQuery] int limit = 250)
+        {
+            return GetAuthorBooksCore(name, region, limit, refresh: false);
+        }
+
+        /// <summary>
+        /// Refresh the full catalog for an author using Audible's author/books flow.
+        /// </summary>
+        [HttpPost("author/books/refresh")]
+        [ProducesResponseType(typeof(AuthorCatalogResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public Task<ActionResult<AuthorCatalogResponse>> RefreshAuthorBooks([FromBody] CatalogRefreshRequest? request)
+        {
+            return GetAuthorBooksCore(
+                request?.Name ?? string.Empty,
+                request?.Region ?? "us",
+                request?.Limit ?? 250,
+                refresh: true);
+        }
+
+        private async Task<ActionResult<AuthorCatalogResponse>> GetAuthorBooksCore(
+            string name,
+            string region,
+            int limit,
+            bool refresh)
         {
             try
             {
@@ -466,7 +517,7 @@ namespace Listenarr.Api.Controllers
                     Author = new AuthorCatalogAuthorInfo
                     {
                         Asin = catalog.Author.Asin,
-                        Name = catalog.Author.Name ?? normalizedName,
+                        Name = string.IsNullOrWhiteSpace(catalog.Author.Name) ? normalizedName : catalog.Author.Name,
                         Image = catalog.Author.Image
                     },
                     Books = catalog.Books.Select(MapAuthorCatalogBook).ToList(),
@@ -488,11 +539,36 @@ namespace Listenarr.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<SeriesLookupResponse>> LookupSeries(
+        public Task<ActionResult<SeriesLookupResponse>> LookupSeries(
             [FromQuery] string name,
             [FromQuery] string region = "us",
-            [FromQuery] string? asin = null,
-            [FromQuery] bool refresh = false)
+            [FromQuery] string? asin = null)
+        {
+            return LookupSeriesCore(name, region, asin, refresh: false);
+        }
+
+        /// <summary>
+        /// Refresh a series lookup by name via Audible, bypassing cached data.
+        /// </summary>
+        [HttpPost("series/refresh")]
+        [ProducesResponseType(typeof(SeriesLookupResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public Task<ActionResult<SeriesLookupResponse>> RefreshSeries([FromBody] SeriesLookupRefreshRequest? request)
+        {
+            return LookupSeriesCore(
+                request?.Name ?? string.Empty,
+                request?.Region ?? "us",
+                request?.Asin,
+                refresh: true);
+        }
+
+        private async Task<ActionResult<SeriesLookupResponse>> LookupSeriesCore(
+            string name,
+            string region,
+            string? asin,
+            bool refresh)
         {
             try
             {
@@ -540,7 +616,7 @@ namespace Listenarr.Api.Controllers
                 }
 
                 var catalog = await _seriesCatalogService.GetCatalogAsync(
-                    resolvedSeries.Name ?? normalizedName,
+                    resolvedSeries.Name!,
                     region,
                     limit: 250,
                     language: null,
@@ -579,7 +655,7 @@ namespace Listenarr.Api.Controllers
                 var result = new SeriesLookupResponse
                 {
                     Asin = resolvedSeries.Asin,
-                    Name = resolvedSeries.Name ?? normalizedName,
+                    Name = resolvedSeries.Name!,
                     Image = imageUrl,
                     CachedPath = cachedPath,
                     Description = resolvedSeries.Description ?? persistedEntry?.Description,
@@ -612,11 +688,36 @@ namespace Listenarr.Api.Controllers
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<SeriesCatalogResponse>> GetSeriesBooks(
+        public Task<ActionResult<SeriesCatalogResponse>> GetSeriesBooks(
             [FromQuery] string name,
             [FromQuery] string region = "us",
-            [FromQuery] int limit = 250,
-            [FromQuery] bool refresh = false)
+            [FromQuery] int limit = 250)
+        {
+            return GetSeriesBooksCore(name, region, limit, refresh: false);
+        }
+
+        /// <summary>
+        /// Refresh the full catalog for a series using Audible's series/books flow.
+        /// </summary>
+        [HttpPost("series/books/refresh")]
+        [ProducesResponseType(typeof(SeriesCatalogResponse), StatusCodes.Status200OK)]
+        [ProducesResponseType(StatusCodes.Status400BadRequest)]
+        [ProducesResponseType(StatusCodes.Status404NotFound)]
+        [ProducesResponseType(StatusCodes.Status500InternalServerError)]
+        public Task<ActionResult<SeriesCatalogResponse>> RefreshSeriesBooks([FromBody] CatalogRefreshRequest? request)
+        {
+            return GetSeriesBooksCore(
+                request?.Name ?? string.Empty,
+                request?.Region ?? "us",
+                request?.Limit ?? 250,
+                refresh: true);
+        }
+
+        private async Task<ActionResult<SeriesCatalogResponse>> GetSeriesBooksCore(
+            string name,
+            string region,
+            int limit,
+            bool refresh)
         {
             try
             {
@@ -640,7 +741,7 @@ namespace Listenarr.Api.Controllers
                     Series = new SeriesCatalogInfo
                     {
                         Asin = catalog.Series.Asin,
-                        Name = catalog.Series.Name ?? normalizedName,
+                        Name = string.IsNullOrWhiteSpace(catalog.Series.Name) ? normalizedName : catalog.Series.Name,
                         Image = catalog.Series.Image,
                         Description = catalog.Series.Description
                     },
@@ -936,6 +1037,17 @@ namespace Listenarr.Api.Controllers
             }, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromHours(12) });
         }
 
+        private static string BuildAuthorLookupCacheKey(string region, string name, string? asin = null)
+        {
+            var normalizedRegion = AudiobookIdentifierNormalizer.NormalizeRegion(region) ?? "us";
+            var normalizedName = NormalizeAuthorCacheKey(name);
+            var normalizedAsin = string.IsNullOrWhiteSpace(asin) ? null : asin.Trim().ToUpperInvariant();
+
+            return string.IsNullOrWhiteSpace(normalizedAsin)
+                ? $"author-lookup:{normalizedRegion}:{normalizedName}"
+                : $"author-lookup:{normalizedRegion}:{normalizedName}:{normalizedAsin}";
+        }
+
         private async Task<SeriesCacheEntry?> ResolvePersistedSeriesCacheAsync(string normalizedName, string region, string? normalizedAsin)
         {
             try
@@ -1189,6 +1301,13 @@ namespace Listenarr.Api.Controllers
             public List<RelatedAuthorItem> SimilarAuthors { get; set; } = new();
         }
 
+        public sealed class AuthorLookupRefreshRequest
+        {
+            public string Name { get; set; } = string.Empty;
+            public string Region { get; set; } = "us";
+            public string? Asin { get; set; }
+        }
+
         public sealed class RelatedAuthorItem
         {
             public string? Asin { get; set; }
@@ -1205,11 +1324,25 @@ namespace Listenarr.Api.Controllers
             public int TotalBooks { get; set; }
         }
 
+        public sealed class SeriesLookupRefreshRequest
+        {
+            public string Name { get; set; } = string.Empty;
+            public string Region { get; set; } = "us";
+            public string? Asin { get; set; }
+        }
+
         public sealed class AuthorCatalogResponse
         {
             public AuthorCatalogAuthorInfo Author { get; set; } = new();
             public List<AuthorCatalogBookItem> Books { get; set; } = new();
             public int TotalBooks { get; set; }
+        }
+
+        public sealed class CatalogRefreshRequest
+        {
+            public string Name { get; set; } = string.Empty;
+            public string Region { get; set; } = "us";
+            public int Limit { get; set; } = 250;
         }
 
         public sealed class AuthorCatalogAuthorInfo

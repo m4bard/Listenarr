@@ -153,7 +153,7 @@ namespace Listenarr.Api.Services
 
             await _dbContext.SaveChangesAsync(cancellationToken);
 
-            var syncResult = await SyncAuthorInternalAsync(monitoredAuthor, cancellationToken);
+            var syncResult = await SyncAuthorInternalAsync(monitoredAuthor, forceRefresh: false, cancellationToken);
             return new MonitorAuthorOperationResult
             {
                 MonitoredAuthor = monitoredAuthor,
@@ -193,7 +193,7 @@ namespace Listenarr.Api.Services
                 };
             }
 
-            return await SyncAuthorInternalAsync(monitoredAuthor, cancellationToken);
+            return await SyncAuthorInternalAsync(monitoredAuthor, forceRefresh: true, cancellationToken);
         }
 
         public async Task<int> SyncDueAuthorsAsync(CancellationToken cancellationToken = default)
@@ -209,7 +209,7 @@ namespace Listenarr.Api.Services
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var result = await SyncAuthorInternalAsync(author, cancellationToken);
+                var result = await SyncAuthorInternalAsync(author, forceRefresh: true, cancellationToken);
                 if (result.Succeeded)
                 {
                     syncedCount++;
@@ -221,6 +221,7 @@ namespace Listenarr.Api.Services
 
         private async Task<MonitorAuthorSyncResult> SyncAuthorInternalAsync(
             MonitoredAuthor monitoredAuthor,
+            bool forceRefresh,
             CancellationToken cancellationToken)
         {
             var result = new MonitorAuthorSyncResult();
@@ -232,6 +233,7 @@ namespace Listenarr.Api.Services
                     monitoredAuthor.Region,
                     limit: 500,
                     language: null,
+                    forceRefresh: forceRefresh,
                     cancellationToken: cancellationToken);
 
                 if (catalog == null)

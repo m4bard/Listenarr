@@ -577,7 +577,11 @@ namespace Listenarr.Api.Tests
                 seriesCatalogService.Object,
                 logger.Object);
 
-            var result = await controller.LookupAuthor("Andy Weir", "us", null, true);
+            var result = await controller.RefreshAuthor(new MetadataController.AuthorLookupRefreshRequest
+            {
+                Name = "Andy Weir",
+                Region = "us"
+            });
 
             var ok = Assert.IsType<OkObjectResult>(result.Result);
             var payload = Assert.IsType<MetadataController.AuthorLookupResponse>(ok.Value);
@@ -599,6 +603,102 @@ namespace Listenarr.Api.Tests
                     entry.SimilarAuthors.Count == 1 &&
                     entry.SimilarAuthors[0].Name == "Blake Crouch")),
                 Times.Once);
+        }
+
+        [Fact]
+        public async Task LookupAuthor_WhenAsinIsProvided_DoesNotReuseNameOnlyMemoryCacheEntry()
+        {
+            using var memoryCache = new MemoryCache(new MemoryCacheOptions());
+            var metadataService = new Mock<IAudiobookMetadataService>();
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audnexus = new Mock<IAudnexusService>();
+            var imageCache = new Mock<IImageCacheService>();
+            var audiobookRepository = new Mock<IAudiobookRepository>();
+            var asinLookup = new Mock<IAsinLookupService>();
+            var authorCatalogService = new Mock<IAuthorCatalogService>();
+            var seriesCatalogService = new Mock<ISeriesCatalogService>();
+            var logger = new Mock<ILogger<MetadataController>>();
+
+            imageCache
+                .Setup(service => service.GetCachedImagePathAsync("AUTHOR1"))
+                .ReturnsAsync("config/cache/images/authors/AUTHOR1.jpg");
+
+            imageCache
+                .Setup(service => service.GetCachedImagePathAsync("AUTHOR2"))
+                .ReturnsAsync("config/cache/images/authors/AUTHOR2.jpg");
+
+            audible
+                .Setup(service => service.LookupAuthorAsync("Alex Smith", "us"))
+                .ReturnsAsync(new AuthorLookupItem
+                {
+                    Asin = "AUTHOR1",
+                    Name = "Alex Smith",
+                    Image = "https://example.com/author-1.jpg",
+                    Description = "First Alex Smith"
+                });
+
+            audible
+                .Setup(service => service.GetAuthorByAsinAsync("AUTHOR2", "us"))
+                .ReturnsAsync(new AuthorLookupItem
+                {
+                    Asin = "AUTHOR2",
+                    Name = "Alex Smith",
+                    Image = "https://example.com/author-2.jpg",
+                    Description = "Second Alex Smith"
+                });
+
+            audnexus
+                .Setup(service => service.GetAuthorAsync("AUTHOR1", "us", false))
+                .ReturnsAsync(new AudnexusAuthorResponse
+                {
+                    Asin = "AUTHOR1",
+                    Name = "Alex Smith",
+                    Similar = new List<AudnexusSimilarAuthor>
+                    {
+                        new() { Asin = "SIM1", Name = "Author One Friend" }
+                    }
+                });
+
+            audnexus
+                .Setup(service => service.GetAuthorAsync("AUTHOR2", "us", false))
+                .ReturnsAsync(new AudnexusAuthorResponse
+                {
+                    Asin = "AUTHOR2",
+                    Name = "Alex Smith",
+                    Similar = new List<AudnexusSimilarAuthor>
+                    {
+                        new() { Asin = "SIM2", Name = "Author Two Friend" }
+                    }
+                });
+
+            var controller = new MetadataController(
+                metadataService.Object,
+                audible.Object,
+                audnexus.Object,
+                imageCache.Object,
+                memoryCache,
+                audiobookRepository.Object,
+                asinLookup.Object,
+                authorCatalogService.Object,
+                seriesCatalogService.Object,
+                logger.Object);
+
+            var initialResult = await controller.LookupAuthor("Alex Smith", "us");
+            var initialOk = Assert.IsType<OkObjectResult>(initialResult.Result);
+            var initialPayload = Assert.IsType<MetadataController.AuthorLookupResponse>(initialOk.Value);
+            Assert.Equal("AUTHOR1", initialPayload.Asin);
+
+            var specificResult = await controller.LookupAuthor("Alex Smith", "us", "AUTHOR2");
+            var specificOk = Assert.IsType<OkObjectResult>(specificResult.Result);
+            var specificPayload = Assert.IsType<MetadataController.AuthorLookupResponse>(specificOk.Value);
+
+            Assert.Equal("AUTHOR2", specificPayload.Asin);
+            Assert.Equal("Second Alex Smith", specificPayload.Description);
+            Assert.Equal("/config/cache/images/authors/AUTHOR2.jpg", specificPayload.CachedPath);
+            Assert.Single(specificPayload.SimilarAuthors);
+            Assert.Equal("Author Two Friend", specificPayload.SimilarAuthors[0].Name);
+
+            audible.Verify(service => service.GetAuthorByAsinAsync("AUTHOR2", "us"), Times.Once);
         }
     }
 }

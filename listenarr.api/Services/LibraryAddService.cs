@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Listenarr.Domain.Models;
@@ -81,7 +82,8 @@ namespace Listenarr.Api.Services
                 }
             }
 
-            var firstIsbn = metadata.Isbn.FirstOrDefault(i => !string.IsNullOrWhiteSpace(i));
+            var firstIsbn = (metadata.Isbn ?? Enumerable.Empty<string>())
+                .FirstOrDefault(i => !string.IsNullOrWhiteSpace(i));
             if (!string.IsNullOrWhiteSpace(firstIsbn))
             {
                 var existingByIsbn = await _repo.GetByIsbnAsync(firstIsbn);
@@ -192,7 +194,7 @@ namespace Listenarr.Api.Services
 
             if (!string.IsNullOrWhiteSpace(firstIsbn))
             {
-                var derivedKey = "img-" + ComputeShortHash(firstIsbn ?? metadata.ImageUrl ?? string.Empty);
+                var derivedKey = "img-" + ComputeShortHash(firstIsbn);
                 return await TryMoveImageAsync(derivedKey, metadata.ImageUrl) ?? imageUrl;
             }
 

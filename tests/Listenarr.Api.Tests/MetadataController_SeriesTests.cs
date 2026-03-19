@@ -154,7 +154,11 @@ namespace Listenarr.Api.Tests
                 seriesCatalogService.Object,
                 logger.Object);
 
-            var result = await controller.LookupSeries("Mistborn", "us", null, true);
+            var result = await controller.RefreshSeries(new MetadataController.SeriesLookupRefreshRequest
+            {
+                Name = "Mistborn",
+                Region = "us"
+            });
 
             var ok = Assert.IsType<OkObjectResult>(result.Result);
             var payload = Assert.IsType<MetadataController.SeriesLookupResponse>(ok.Value);

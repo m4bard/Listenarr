@@ -22,6 +22,19 @@ describe('WantedView image recache behavior', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     vi.clearAllMocks()
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation(() => ({
+        matches: false,
+        media: '',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    )
   })
 
   it('calls ensureImageCached for visible wanted items on mount', async () => {
@@ -100,5 +113,40 @@ describe('WantedView image recache behavior', () => {
 
     expect(vm.hasActiveDownload({ id: 202 })).toBe(false)
     expect(vm.getStatusText({ id: 202 })).toBe('Missing')
+  })
+
+  it('renders the full wanted list without virtualization on mobile', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    vi.stubGlobal(
+      'matchMedia',
+      vi.fn().mockImplementation(() => ({
+        matches: true,
+        media: '(max-width: 768px)',
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      })),
+    )
+
+    const libraryStore = useLibraryStore()
+    libraryStore.audiobooks = Array.from({ length: 30 }, (_, index) => ({
+      id: index + 1,
+      title: `Wanted Book ${index + 1}`,
+      monitored: true,
+      files: [],
+    })) as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    libraryStore.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(WantedView, { global: { plugins: [pinia] } })
+    await new Promise((resolve) => setTimeout(resolve, 10))
+
+    expect(wrapper.find('.wanted-list-container').classes()).toContain('is-static')
+    expect(wrapper.find('.wanted-list.is-static').exists()).toBe(true)
+    expect(wrapper.findAll('.wanted-item')).toHaveLength(30)
   })
 })

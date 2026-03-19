@@ -61,11 +61,6 @@ namespace Listenarr.Api.Controllers
             [FromBody] MonitorAuthorRequest request,
             CancellationToken cancellationToken = default)
         {
-            if (request == null || string.IsNullOrWhiteSpace(request.Name))
-            {
-                return BadRequest("Author name is required");
-            }
-
             try
             {
                 var result = await _authorMonitoringService.MonitorAuthorAsync(request, cancellationToken);
@@ -90,7 +85,7 @@ namespace Listenarr.Api.Controllers
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Failed to enable monitoring for author {Author}", request.Name);
+                _logger.LogError(ex, "Failed to enable monitoring for author {Author}", request?.Name);
                 return StatusCode(StatusCodes.Status500InternalServerError, "Internal server error");
             }
         }

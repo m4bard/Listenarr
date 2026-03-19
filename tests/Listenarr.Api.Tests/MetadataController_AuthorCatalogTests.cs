@@ -169,7 +169,12 @@ namespace Listenarr.Api.Tests
                 seriesCatalogService.Object,
                 logger.Object);
 
-            var result = await controller.GetAuthorBooks("Andy Weir", "us", 50, true);
+            var result = await controller.RefreshAuthorBooks(new MetadataController.CatalogRefreshRequest
+            {
+                Name = "Andy Weir",
+                Region = "us",
+                Limit = 50
+            });
 
             var ok = Assert.IsType<OkObjectResult>(result.Result);
             var payload = Assert.IsType<MetadataController.AuthorCatalogResponse>(ok.Value);

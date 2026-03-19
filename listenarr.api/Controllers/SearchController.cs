@@ -484,8 +484,8 @@ namespace Listenarr.Api.Controllers
                                             };
                                             try
                                             {
-                                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
-                                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty, req.Title, req.Author, fallbackImageUrl: null, fallbackLanguage: language);
+                                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
+                                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin, req.Title, req.Author, fallbackImageUrl: null, fallbackLanguage: language);
                                                 sr.IsEnriched = true;
                                                 sr.MetadataSource = "Audible";
                                                 SanitizeResultForPublicApi(sr, region);

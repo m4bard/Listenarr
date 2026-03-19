@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
@@ -119,6 +120,55 @@ namespace Listenarr.Api.Tests
             Assert.Equal("Andy Weir", storedAuthor.AuthorName);
             Assert.Equal("andy weir", storedAuthor.AuthorNameNormalized);
             Assert.Equal("AUTHOR123", storedAuthor.AuthorAsin);
+        }
+
+        [Fact]
+        public async Task SyncDueAuthorsAsync_ForceRefreshesPersistedCatalog()
+        {
+            var dbOptions = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(databaseName: $"author-monitor-refresh-{System.Guid.NewGuid():N}")
+                .Options;
+
+            await using var dbContext = new ListenArrDbContext(dbOptions);
+            dbContext.MonitoredAuthors.Add(new MonitoredAuthor
+            {
+                Id = 1,
+                AuthorName = "Andy Weir",
+                AuthorNameNormalized = "andy weir",
+                AuthorAsin = "AUTHOR123",
+                Region = "us",
+                Language = "english",
+                CreatedAt = DateTime.UtcNow.AddDays(-2),
+                UpdatedAt = DateTime.UtcNow.AddDays(-2),
+                LastCheckedAt = DateTime.UtcNow.AddDays(-2)
+            });
+            await dbContext.SaveChangesAsync();
+
+            var authorCatalogService = new Mock<IAuthorCatalogService>();
+            authorCatalogService
+                .Setup(service => service.GetCatalogAsync("Andy Weir", "us", 500, null, true, It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(new AuthorCatalogFetchResult
+                {
+                    Author = new AuthorLookupItem
+                    {
+                        Asin = "AUTHOR123",
+                        Name = "Andy Weir"
+                    },
+                    Books = new List<AudibleSearchResult>()
+                });
+
+            var service = new AuthorMonitoringService(
+                dbContext,
+                authorCatalogService.Object,
+                Mock.Of<ILibraryAddService>(),
+                Mock.Of<ILogger<AuthorMonitoringService>>());
+
+            var syncedCount = await service.SyncDueAuthorsAsync();
+
+            Assert.Equal(1, syncedCount);
+            authorCatalogService.Verify(
+                catalog => catalog.GetCatalogAsync("Andy Weir", "us", 500, null, true, It.IsAny<System.Threading.CancellationToken>()),
+                Times.Once);
         }
     }
 }

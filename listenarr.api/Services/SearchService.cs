@@ -563,8 +563,8 @@ namespace Listenarr.Api.Services
                                     ReleaseDate = book.ReleaseDate,
                                     Isbn = book.Isbn
                                 };
-                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
-                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
+                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
                                 sr.IsEnriched = true;
                                 sr.MetadataSource = "Audible";
                                 converted.Add(sr);
@@ -643,8 +643,8 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
-                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
+                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
                                 sr.IsEnriched = true;
                                 sr.MetadataSource = "Audible";
                                 converted.Add(sr);
@@ -788,8 +788,8 @@ namespace Listenarr.Api.Services
                                 }
                                 try
                                 {
-                                    var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
-                                    var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
+                                    var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
+                                    var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
                                     sr.IsEnriched = true;
                                     sr.MetadataSource = "Audible";
                                     converted.Add(sr);
@@ -830,8 +830,8 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
-                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
+                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
                                 sr.IsEnriched = true;
                                 sr.MetadataSource = "Audible";
                                 converted.Add(sr);
@@ -867,8 +867,8 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
-                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
+                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
                                 sr.IsEnriched = true;
                                 sr.MetadataSource = "Audible";
                                 converted.Add(sr);

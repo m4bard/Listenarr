@@ -391,10 +391,16 @@ class ApiService {
     asin?: string,
     refresh: boolean = false,
   ): Promise<AuthorLookupResponse | null> {
-    const params = new URLSearchParams({ name, region })
-    if (asin) params.append('asin', asin)
-    if (refresh) params.append('refresh', 'true')
     try {
+      if (refresh) {
+        return await this.request<AuthorLookupResponse>('/metadata/author/refresh', {
+          method: 'POST',
+          body: JSON.stringify({ name, region, asin }),
+        })
+      }
+
+      const params = new URLSearchParams({ name, region })
+      if (asin) params.append('asin', asin)
       return await this.request<AuthorLookupResponse>(`/metadata/author?${params.toString()}`)
     } catch {
       return null
@@ -406,9 +412,15 @@ class ApiService {
     region: string = 'us',
     refresh: boolean = false,
   ): Promise<AuthorCatalogResponse | null> {
-    const params = new URLSearchParams({ name, region })
-    if (refresh) params.append('refresh', 'true')
     try {
+      if (refresh) {
+        return await this.request<AuthorCatalogResponse>('/metadata/author/books/refresh', {
+          method: 'POST',
+          body: JSON.stringify({ name, region, limit: 250 }),
+        })
+      }
+
+      const params = new URLSearchParams({ name, region })
       return await this.request<AuthorCatalogResponse>(`/metadata/author/books?${params.toString()}`)
     } catch {
       return null
@@ -421,10 +433,16 @@ class ApiService {
     asin?: string,
     refresh: boolean = false,
   ): Promise<SeriesLookupResponse | null> {
-    const params = new URLSearchParams({ name, region })
-    if (asin) params.append('asin', asin)
-    if (refresh) params.append('refresh', 'true')
     try {
+      if (refresh) {
+        return await this.request<SeriesLookupResponse>('/metadata/series/refresh', {
+          method: 'POST',
+          body: JSON.stringify({ name, region, asin }),
+        })
+      }
+
+      const params = new URLSearchParams({ name, region })
+      if (asin) params.append('asin', asin)
       return await this.request<SeriesLookupResponse>(`/metadata/series?${params.toString()}`)
     } catch {
       return null
@@ -436,9 +454,15 @@ class ApiService {
     region: string = 'us',
     refresh: boolean = false,
   ): Promise<SeriesCatalogResponse | null> {
-    const params = new URLSearchParams({ name, region })
-    if (refresh) params.append('refresh', 'true')
     try {
+      if (refresh) {
+        return await this.request<SeriesCatalogResponse>('/metadata/series/books/refresh', {
+          method: 'POST',
+          body: JSON.stringify({ name, region, limit: 250 }),
+        })
+      }
+
+      const params = new URLSearchParams({ name, region })
       return await this.request<SeriesCatalogResponse>(`/metadata/series/books?${params.toString()}`)
     } catch {
       return null

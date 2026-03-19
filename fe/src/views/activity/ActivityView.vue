@@ -39,11 +39,17 @@
     <div
       v-if="filteredQueue.length > 0"
       ref="scrollContainer"
-      class="queue-list-container"
+      :class="['queue-list-container', { 'is-static': !useVirtualActivityList }]"
       @scroll="updateVisibleRange"
     >
-      <div class="queue-list-spacer" :style="{ height: `${totalHeight}px` }">
-        <div class="queue-list" :style="{ transform: `translateY(${topPadding}px)` }">
+      <div
+        :class="['queue-list-spacer', { 'is-static': !useVirtualActivityList }]"
+        :style="useVirtualActivityList ? { height: `${totalHeight}px` } : undefined"
+      >
+        <div
+          :class="['queue-list', { 'is-static': !useVirtualActivityList }]"
+          :style="useVirtualActivityList ? { transform: `translateY(${topPadding}px)` } : undefined"
+        >
           <div
             v-for="item in visibleQueueItems"
             :key="item.id"
@@ -273,15 +279,40 @@ const mobileTabOptions = computed(() => [
 const scrollContainer = ref<HTMLElement | null>(null)
 const ROW_HEIGHT = 120 // Approximate height of each queue item
 const BUFFER_ROWS = 3 // Extra rows to render above and below viewport
+const MOBILE_ACTIVITY_BREAKPOINT = 768
 
 const visibleRange = ref({ start: 0, end: 20 }) // Initially show first 20 items
+const isMobileActivityLayout = ref(false)
+const useVirtualActivityList = computed(() => !isMobileActivityLayout.value)
+
+const updateActivityLayoutMode = () => {
+  if (typeof window === 'undefined') return
+
+  if (typeof window.matchMedia === 'function') {
+    isMobileActivityLayout.value = window.matchMedia(
+      `(max-width: ${MOBILE_ACTIVITY_BREAKPOINT}px)`,
+    ).matches
+    return
+  }
+
+  isMobileActivityLayout.value = window.innerWidth <= MOBILE_ACTIVITY_BREAKPOINT
+}
 
 const visibleQueueItems = computed(() => {
+  if (!useVirtualActivityList.value) {
+    return filteredQueue.value
+  }
+
   return filteredQueue.value.slice(visibleRange.value.start, visibleRange.value.end)
 })
 
 // Update visible range based on scroll position
 const updateVisibleRange = () => {
+  if (!useVirtualActivityList.value) {
+    visibleRange.value = { start: 0, end: filteredQueue.value.length }
+    return
+  }
+
   if (!scrollContainer.value) return
 
   const scrollTop = scrollContainer.value.scrollTop
@@ -310,6 +341,16 @@ const totalHeight = computed(() => {
 const topPadding = computed(() => {
   return visibleRange.value.start * ROW_HEIGHT
 })
+
+const syncActivityLayout = async () => {
+  await nextTick()
+  updateVisibleRange()
+}
+
+const handleViewportResize = () => {
+  updateActivityLayoutMode()
+  void syncActivityLayout()
+}
 
 // Convert Download to QueueItem format for unified display
 const convertDownloadToQueueItem = (download: Download): QueueItem => {
@@ -642,6 +683,11 @@ const formatSize = (bytes: number): string => {
 
 // Subscribe to SignalR for real-time updates (NO POLLING!)
 onMounted(async () => {
+  updateActivityLayoutMode()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleViewportResize, { passive: true })
+  }
+
   // Load initial downloads (includes DDL)
   await downloadsStore.loadDownloads()
 
@@ -657,9 +703,7 @@ onMounted(async () => {
   await refreshQueue()
 
   // Initialize virtual scrolling
-  nextTick(() => {
-    updateVisibleRange()
-  })
+  await syncActivityLayout()
 
   // Fallback polling: slow refresh as backup to SignalR (30 seconds)
   // Primary updates come from SignalR real-time events
@@ -676,6 +720,10 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleViewportResize)
+  }
+
   // Clean up subscription
   if (unsubscribeQueue) {
     unsubscribeQueue()
@@ -708,9 +756,19 @@ onUnmounted(() => {
   position: relative;
 }
 
+.queue-list-container.is-static {
+  height: auto;
+  overflow-y: visible;
+  width: 100%;
+}
+
 .queue-list-spacer {
   position: relative;
   width: 100%;
+}
+
+.queue-list-spacer.is-static {
+  position: static;
 }
 
 .queue-list {
@@ -721,6 +779,10 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.queue-list.is-static {
+  position: static;
 }
 
 .page-header h1 {
