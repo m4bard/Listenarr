@@ -799,7 +799,7 @@ namespace Listenarr.Api.Services.Search.Providers
 
             _logger.LogDebug("Enriching {Count} MyAnonamouse results (topN={TopN})", candidates.Count, topN);
 
-            var sem = new AsyncNonKeyedLocker(4);
+            using var sem = new AsyncNonKeyedLocker(4);
             var tasks = candidates.Select(async r =>
             {
                 using var _ = await sem.LockAsync();

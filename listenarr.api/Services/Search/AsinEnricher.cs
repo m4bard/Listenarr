@@ -42,7 +42,7 @@ public class AsinEnricher
         string? query,
         CancellationToken ct = default)
     {
-        var semaphore = new AsyncNonKeyedLocker(5); // Increased from 3 to 5 for better throughput
+        using var semaphore = new AsyncNonKeyedLocker(5); // Increased from 3 to 5 for better throughput
         var enrichmentTasks = new List<Task>();
         var enriched = new ConcurrentBag<SearchResult>();
         var asinsNeedingFallback = new ConcurrentBag<string>();

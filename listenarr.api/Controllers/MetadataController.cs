@@ -610,13 +610,17 @@ namespace Listenarr.Api.Controllers
                     resolvedSeries = await _audibleService.GetSeriesByAsinAsync(normalizedAsin, region);
                 }
 
-                if (resolvedSeries == null || string.IsNullOrWhiteSpace(resolvedSeries.Name))
+                if (resolvedSeries == null)
                 {
                     return NotFound("Series not found");
                 }
 
+                var resolvedSeriesName = string.IsNullOrWhiteSpace(resolvedSeries.Name)
+                    ? normalizedName
+                    : resolvedSeries.Name;
+
                 var catalog = await _seriesCatalogService.GetCatalogAsync(
-                    resolvedSeries.Name!,
+                    resolvedSeriesName,
                     region,
                     limit: 250,
                     language: null,
@@ -655,7 +659,7 @@ namespace Listenarr.Api.Controllers
                 var result = new SeriesLookupResponse
                 {
                     Asin = resolvedSeries.Asin,
-                    Name = resolvedSeries.Name!,
+                    Name = resolvedSeriesName,
                     Image = imageUrl,
                     CachedPath = cachedPath,
                     Description = resolvedSeries.Description ?? persistedEntry?.Description,

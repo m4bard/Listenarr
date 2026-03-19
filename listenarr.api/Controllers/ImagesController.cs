@@ -182,9 +182,9 @@ namespace Listenarr.Api.Controllers
                     try
                     {
                         var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath));
-                        var imagesRoot = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "cache", "images"));
-                        var imagesRootConfig = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "config", "cache", "images"));
-                        var wwwroot = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "wwwroot"));
+                        var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
+                        var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
+                        var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
 
                         // Use Path.GetRelativePath to reliably determine whether candidateFull
                         // is inside one of the allowed roots. This works across separator styles.
@@ -247,9 +247,9 @@ namespace Listenarr.Api.Controllers
                                 try
                                 {
                                     var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, moved));
-                                    var imagesRoot = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "cache", "images"));
-                                    var imagesRootConfig = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "config", "cache", "images"));
-                                    var wwwroot = Path.GetFullPath(Path.Combine(_effectiveContentRootPath, "wwwroot"));
+                                    var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
+                                    var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
+                                    var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
 
                                     if (movedFull.StartsWith(imagesRoot, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(imagesRootConfig, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(wwwroot, StringComparison.OrdinalIgnoreCase))
                                     {
@@ -1059,6 +1059,32 @@ namespace Listenarr.Api.Controllers
                 : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
 
+        private static string CombineRelativePath(string basePath, params string[] segments)
+        {
+            if (string.IsNullOrWhiteSpace(basePath))
+            {
+                throw new ArgumentException("Base path is required.", nameof(basePath));
+            }
+
+            var combined = basePath;
+            foreach (var segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    continue;
+                }
+
+                if (Path.IsPathRooted(segment))
+                {
+                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
+                }
+
+                combined = Path.Combine(combined, segment);
+            }
+
+            return combined;
+        }
+
         private IActionResult CreatePlaceholderResult(string logContext, string? logValue, string notFoundMessage)
         {
             try
@@ -1154,7 +1180,7 @@ namespace Listenarr.Api.Controllers
                         return dir.FullName;
                     }
 
-                    var nestedApiRoot = Path.Combine(dir.FullName, "listenarr.api");
+                    var nestedApiRoot = CombineRelativePath(dir.FullName, "listenarr.api");
                     if (LooksLikeListenarrApiRoot(nestedApiRoot))
                     {
                         return nestedApiRoot;
@@ -1178,10 +1204,10 @@ namespace Listenarr.Api.Controllers
                 return false;
             }
 
-            var hasConfigDirectory = Directory.Exists(Path.Combine(path, "config"));
+            var hasConfigDirectory = Directory.Exists(CombineRelativePath(path, "config"));
             var hasProjectMarkers =
-                System.IO.File.Exists(Path.Combine(path, "listenarr.api.csproj")) ||
-                Directory.Exists(Path.Combine(path, "wwwroot"));
+                System.IO.File.Exists(CombineRelativePath(path, "listenarr.api.csproj")) ||
+                Directory.Exists(CombineRelativePath(path, "wwwroot"));
 
             return hasConfigDirectory && hasProjectMarkers;
         }
