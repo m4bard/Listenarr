@@ -1488,9 +1488,11 @@ const hasRootFolderConfigured = computed(() => {
 const scrollContainer = ref<HTMLElement | null>(null)
 const ITEMS_PER_ROW = ref(4) // Will be recalculated for grid; list uses 1
 const LIST_ROW_HEIGHT = 80
-const GRID_ROW_HEIGHT = 320 // base item height + gap for grid
+const GRID_ROW_HEIGHT_FALLBACK = 220
 const GRID_DETAILS_EXTRA_HEIGHT = 64 // extra height for showing details under poster
+const GRID_GAP = 20
 const BUFFER_ROWS = 2 // Extra rows to render above and below viewport
+const measuredRowHeight = ref<number | null>(null)
 
 // Local storage key for persisting view mode
 const VIEWMODE_KEY = 'listenarr.viewMode'
@@ -1518,6 +1520,13 @@ watch(showItemDetails, (v) => {
   } catch {}
 })
 
+watch(showItemDetails, async () => {
+  measuredRowHeight.value = null
+  await nextTick()
+  syncMeasuredRowHeight()
+  updateVisibleRange()
+})
+
 watch(
   () => route.query.group,
   (g) => {
@@ -1541,10 +1550,57 @@ function toggleItemDetails() {
 }
 
 function getRowHeight() {
+  if (measuredRowHeight.value && measuredRowHeight.value > 0) {
+    return measuredRowHeight.value
+  }
+
   if (viewMode.value === 'grid') {
-    return GRID_ROW_HEIGHT + (showItemDetails.value ? GRID_DETAILS_EXTRA_HEIGHT : 0)
+    if (scrollContainer.value && ITEMS_PER_ROW.value > 0) {
+      const contentWidth = Math.max(0, scrollContainer.value.clientWidth - 40)
+      const cardWidth = Math.max(
+        0,
+        Math.floor((contentWidth - GRID_GAP * (ITEMS_PER_ROW.value - 1)) / ITEMS_PER_ROW.value),
+      )
+
+      if (cardWidth > 0) {
+        return cardWidth + GRID_GAP + (showItemDetails.value ? GRID_DETAILS_EXTRA_HEIGHT : 0)
+      }
+    }
+
+    return GRID_ROW_HEIGHT_FALLBACK + (showItemDetails.value ? GRID_DETAILS_EXTRA_HEIGHT : 0)
   }
   return LIST_ROW_HEIGHT
+}
+
+function syncMeasuredRowHeight() {
+  if (!scrollContainer.value) return false
+
+  const itemSelector = viewMode.value === 'grid' ? '.audiobook-wrapper' : '.audiobook-list-item'
+  const item = scrollContainer.value.querySelector<HTMLElement>(itemSelector)
+
+  if (!item) {
+    if (measuredRowHeight.value !== null) {
+      measuredRowHeight.value = null
+      return true
+    }
+    return false
+  }
+
+  let nextRowHeight = Math.ceil(item.getBoundingClientRect().height)
+  if (viewMode.value === 'grid') {
+    const grid = scrollContainer.value.querySelector<HTMLElement>('.audiobooks-grid')
+    const rowGap = grid ? Number.parseFloat(getComputedStyle(grid).rowGap || '0') : GRID_GAP
+    nextRowHeight += Number.isFinite(rowGap) ? rowGap : GRID_GAP
+  }
+
+  if (nextRowHeight <= 0) return false
+
+  if (measuredRowHeight.value === null || Math.abs(measuredRowHeight.value - nextRowHeight) > 1) {
+    measuredRowHeight.value = nextRowHeight
+    return true
+  }
+
+  return false
 }
 
 // Update visible range based on scroll position
@@ -1581,9 +1637,7 @@ const topPadding = computed(() => {
 // Total scroll height so the container scrollbar reflects the full list
 const totalHeight = computed(() => {
   const totalRows = Math.ceil(audiobooks.value.length / ITEMS_PER_ROW.value)
-  return totalRows * (viewMode.value === 'grid'
-    ? GRID_ROW_HEIGHT + (showItemDetails.value ? GRID_DETAILS_EXTRA_HEIGHT : 0)
-    : LIST_ROW_HEIGHT)
+  return totalRows * getRowHeight()
 })
 
 const deleting = ref(false)
@@ -1696,11 +1750,21 @@ onMounted(async () => {
       } catch {}
     }
 
+    await nextTick()
+    if (syncMeasuredRowHeight()) {
+      updateVisibleRange()
+      await nextTick()
+    }
+
     // Re-run observer when visible range changes (virtual scrolling)
     stopVisibleRangeWatch = watch(
       () => visibleRange.value,
       async () => {
         await nextTick()
+        if (syncMeasuredRowHeight()) {
+          updateVisibleRange()
+          await nextTick()
+        }
         try {
           observeLazyImages()
         } catch (e: unknown) {
@@ -1716,6 +1780,7 @@ onMounted(async () => {
     resizeObserver = new ResizeObserver(() => {
       // Guard against null - element may be unmounted during navigation
       if (!scrollContainer.value) return
+      measuredRowHeight.value = null
       recalcItemsPerRow()
       updateVisibleRange()
     })
@@ -1723,9 +1788,11 @@ onMounted(async () => {
 
     // Watch for view mode changes to recalc item layout
     stopViewModeWatch = watch(viewMode, async () => {
+      measuredRowHeight.value = null
       recalcItemsPerRow()
       // wait a tick for layout to update then recalc range
       await nextTick()
+      syncMeasuredRowHeight()
       updateVisibleRange()
     })
 

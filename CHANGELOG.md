@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Audible naming cleanup:** Renamed active backend/frontend provider types, helpers, routes, strategy wiring, and tests from `Audimeta` terminology to `Audible` so the codebase and UI match the direct-provider implementation.
 
 ### Fixed
+- **Virtual scroller regression:** Fixed an issue where the space for virtual scroller was too small causing card to jump.
 - **Download completion-candidate cleanup:** Fixed monitor flows to remove stale completion candidates in a single dictionary operation when items stop appearing complete in qBittorrent, SABnzbd, and NZBGet.
 - **Intelligent-search prefix handling:** Fixed intelligent-search prefix parsing so trimmed ASIN, ISBN, author, and title values are reused consistently across logging, branch selection, and Audimeta lookups.
 - **Metadata extraction and image-cache locking:** Fixed several async paths to release metadata-extraction and per-image download locks via scoped disposables instead of manual wait/release pairs, reducing the chance of mismatched lock cleanup.
