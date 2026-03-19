@@ -15,7 +15,7 @@ namespace Listenarr.Api.Services
     {
         public SeriesLookupItem Series { get; set; } = new();
 
-        public List<AudimetaSearchResult> Books { get; set; } = new();
+        public List<AudibleSearchResult> Books { get; set; } = new();
 
         public int TotalBooks => Books.Count;
     }

@@ -13,7 +13,7 @@ namespace Listenarr.Api.Controllers
     {
         private readonly IAudiobookMetadataService _metadataService;
         private readonly ILogger<MetadataController> _logger;
-        private readonly AudimetaService _audimetaService;
+        private readonly AudibleService _audibleService;
         private readonly IAudnexusService _audnexusService;
         private readonly IImageCacheService _imageCacheService;
         private readonly IMemoryCache _cache;
@@ -24,7 +24,7 @@ namespace Listenarr.Api.Controllers
 
         public MetadataController(
             IAudiobookMetadataService metadataService,
-            AudimetaService audimetaService,
+            AudibleService audibleService,
             IAudnexusService audnexusService,
             IImageCacheService imageCacheService,
             IMemoryCache cache,
@@ -35,7 +35,7 @@ namespace Listenarr.Api.Controllers
             ILogger<MetadataController> logger)
         {
             _metadataService = metadataService;
-            _audimetaService = audimetaService;
+            _audibleService = audibleService;
             _audnexusService = audnexusService;
             _imageCacheService = imageCacheService;
             _cache = cache;
@@ -81,14 +81,14 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Get audiobook metadata from audimeta.de by ASIN.
+        /// Get audiobook metadata from the Audible-backed catalog provider by ASIN.
         /// </summary>
-        [HttpGet("audimeta/{asin}")]
-        [ProducesResponseType(typeof(AudimetaBookResponse), StatusCodes.Status200OK)]
+        [HttpGet("audible/{asin}")]
+        [ProducesResponseType(typeof(AudibleBookResponse), StatusCodes.Status200OK)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         [ProducesResponseType(StatusCodes.Status404NotFound)]
         [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-        public async Task<ActionResult<AudimetaBookResponse>> GetAudimetaMetadata(
+        public async Task<ActionResult<AudibleBookResponse>> GetAudibleMetadata(
             string asin,
             [FromQuery] string region = "us",
             [FromQuery] bool cache = true)
@@ -100,7 +100,7 @@ namespace Listenarr.Api.Controllers
                     return BadRequest("ASIN parameter is required");
                 }
 
-                var result = await _metadataService.GetAudimetaMetadataAsync(asin, region, cache);
+                var result = await _metadataService.GetAudibleMetadataAsync(asin, region, cache);
                 if (result == null)
                 {
                     return NotFound($"No metadata found for ASIN: {asin}");
@@ -109,7 +109,7 @@ namespace Listenarr.Api.Controllers
                 return Ok(result);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error fetching audimeta metadata for ASIN: {Asin}", asin);
+                _logger.LogError(ex, "Error fetching Audible metadata for ASIN: {Asin}", asin);
                 return StatusCode(500, "Internal server error");
             }
         }
@@ -132,7 +132,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Lookup an author by name via Audimeta, prefer cached portraits, and enrich with biography and similar authors.
+        /// Lookup an author by name via Audible, prefer cached portraits, and enrich with biography and similar authors.
         /// </summary>
         [HttpGet("author")]
         [ProducesResponseType(typeof(AuthorLookupResponse), StatusCodes.Status200OK)]
@@ -252,34 +252,34 @@ namespace Listenarr.Api.Controllers
 
                 if (!string.IsNullOrWhiteSpace(resolvedAsin) && needsAuthorDetails)
                 {
-                    authorDetails = await _audimetaService.GetAuthorByAsinAsync(resolvedAsin, region);
+                    authorDetails = await _audibleService.GetAuthorByAsinAsync(resolvedAsin, region);
                 }
 
                 if (authorDetails == null && needsAuthorDetails)
                 {
-                    info = await _audimetaService.LookupAuthorAsync(normalizedName, region);
+                    info = await _audibleService.LookupAuthorAsync(normalizedName, region);
                 }
 
                 resolvedAsin ??= authorDetails?.Asin ?? info?.Asin;
 
                 if (authorDetails == null && !string.IsNullOrWhiteSpace(resolvedAsin) && needsAuthorDetails)
                 {
-                    authorDetails = await _audimetaService.GetAuthorByAsinAsync(resolvedAsin, region);
+                    authorDetails = await _audibleService.GetAuthorByAsinAsync(resolvedAsin, region);
                 }
 
                 resolvedName ??= authorDetails?.Name ?? info?.Name;
 
-                var audimetaImage = authorDetails?.Image ?? info?.Image;
-                if (!string.IsNullOrWhiteSpace(audimetaImage) &&
+                var audibleImage = authorDetails?.Image ?? info?.Image;
+                if (!string.IsNullOrWhiteSpace(audibleImage) &&
                     (string.IsNullOrWhiteSpace(resolvedImage) || needsCachedImage))
                 {
-                    resolvedImage = audimetaImage;
+                    resolvedImage = audibleImage;
                 }
 
-                var audimetaDescription = authorDetails?.Description ?? info?.Description;
-                if (!string.IsNullOrWhiteSpace(audimetaDescription))
+                var audibleDescription = authorDetails?.Description ?? info?.Description;
+                if (!string.IsNullOrWhiteSpace(audibleDescription))
                 {
-                    resolvedDescription = audimetaDescription;
+                    resolvedDescription = audibleDescription;
                 }
 
                 AudnexusAuthorSearchResult? audnexusSearchAuthor = null;
@@ -291,7 +291,7 @@ namespace Listenarr.Api.Controllers
                     string.IsNullOrWhiteSpace(resolvedDescription) ||
                     string.IsNullOrWhiteSpace(resolvedImage) ||
                     needsSimilarAuthors ||
-                    (needsCachedImage && string.IsNullOrWhiteSpace(audimetaImage));
+                    (needsCachedImage && string.IsNullOrWhiteSpace(audibleImage));
 
                 if (!string.IsNullOrWhiteSpace(resolvedAsin) && shouldQueryAudnexus)
                 {
@@ -307,7 +307,7 @@ namespace Listenarr.Api.Controllers
 
                 if (shouldQueryAudnexus && (authorDetails == null || audnexusAuthor == null || string.IsNullOrWhiteSpace(resolvedDescription)))
                 {
-                    // Audimeta returned nothing — try Audnexus as fallback
+                    // Audible returned nothing — try Audnexus as fallback
                     try
                     {
                         var audnexResults = await _audnexusService.SearchAuthorsAsync(normalizedName, region);
@@ -349,7 +349,7 @@ namespace Listenarr.Api.Controllers
                 var audnexusImage = audnexusAuthor?.Image ?? audnexusSearchAuthor?.Image;
                 if (!string.IsNullOrWhiteSpace(audnexusImage) &&
                     (string.IsNullOrWhiteSpace(resolvedImage) ||
-                        (needsCachedImage && string.IsNullOrWhiteSpace(audimetaImage))))
+                        (needsCachedImage && string.IsNullOrWhiteSpace(audibleImage))))
                 {
                     resolvedImage = audnexusImage;
                 }
@@ -431,7 +431,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Fetch the full catalog for an author using Audimeta's author/books flow.
+        /// Fetch the full catalog for an author using Audible's author/books flow.
         /// </summary>
         [HttpGet("author/books")]
         [ProducesResponseType(typeof(AuthorCatalogResponse), StatusCodes.Status200OK)]
@@ -481,7 +481,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Lookup a series by name via Audimeta, preferring cached series metadata and images.
+        /// Lookup a series by name via Audible, preferring cached series metadata and images.
         /// </summary>
         [HttpGet("series")]
         [ProducesResponseType(typeof(SeriesLookupResponse), StatusCodes.Status200OK)]
@@ -523,15 +523,15 @@ namespace Listenarr.Api.Controllers
                 normalizedAsin ??= persistedEntry?.SeriesAsin;
 
                 var resolvedSeries = !string.IsNullOrWhiteSpace(normalizedAsin)
-                    ? await _audimetaService.GetSeriesByAsinAsync(normalizedAsin, region)
+                    ? await _audibleService.GetSeriesByAsinAsync(normalizedAsin, region)
                     : null;
 
-                resolvedSeries ??= await _audimetaService.LookupSeriesAsync(normalizedName, region);
+                resolvedSeries ??= await _audibleService.LookupSeriesAsync(normalizedName, region);
                 normalizedAsin ??= resolvedSeries?.Asin;
 
                 if (resolvedSeries == null && !string.IsNullOrWhiteSpace(normalizedAsin))
                 {
-                    resolvedSeries = await _audimetaService.GetSeriesByAsinAsync(normalizedAsin, region);
+                    resolvedSeries = await _audibleService.GetSeriesByAsinAsync(normalizedAsin, region);
                 }
 
                 if (resolvedSeries == null || string.IsNullOrWhiteSpace(resolvedSeries.Name))
@@ -605,7 +605,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Fetch the full catalog for a series using Audimeta's series/books flow.
+        /// Fetch the full catalog for a series using Audible's series/books flow.
         /// </summary>
         [HttpGet("series/books")]
         [ProducesResponseType(typeof(SeriesCatalogResponse), StatusCodes.Status200OK)]
@@ -655,7 +655,7 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        private static string BuildAuthorCatalogBookKey(AudimetaSearchResult book)
+        private static string BuildAuthorCatalogBookKey(AudibleSearchResult book)
         {
             if (!string.IsNullOrWhiteSpace(book.Asin))
             {
@@ -663,7 +663,7 @@ namespace Listenarr.Api.Controllers
             }
 
             var title = NormalizeCatalogToken(book.Title);
-            var authors = string.Join("|", (book.Authors ?? new List<AudimetaAuthor>())
+            var authors = string.Join("|", (book.Authors ?? new List<AudibleAuthor>())
                 .Select(a => NormalizeCatalogToken(a.Name))
                 .Where(a => !string.IsNullOrWhiteSpace(a)));
 
@@ -676,7 +676,7 @@ namespace Listenarr.Api.Controllers
             return new string(value.Trim().ToUpperInvariant().Where(char.IsLetterOrDigit).ToArray());
         }
 
-        private static AuthorCatalogBookItem MapAuthorCatalogBook(AudimetaSearchResult book)
+        private static AuthorCatalogBookItem MapAuthorCatalogBook(AudibleSearchResult book)
         {
             var primarySeries = book.Series?.FirstOrDefault();
             var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
@@ -686,7 +686,7 @@ namespace Listenarr.Api.Controllers
                 Asin = book.Asin,
                 Title = book.Title ?? "Unknown Title",
                 Subtitle = book.Subtitle,
-                Authors = (book.Authors ?? new List<AudimetaAuthor>())
+                Authors = (book.Authors ?? new List<AudibleAuthor>())
                     .Select(a => a.Name)
                     .Where(a => !string.IsNullOrWhiteSpace(a))
                     .Cast<string>()
@@ -695,12 +695,12 @@ namespace Listenarr.Api.Controllers
                 Runtime = runtime,
                 Language = book.Language,
                 Publisher = book.Publisher,
-                Narrators = (book.Narrators ?? new List<AudimetaNarrator>())
+                Narrators = (book.Narrators ?? new List<AudibleNarrator>())
                     .Select(n => n.Name)
                     .Where(n => !string.IsNullOrWhiteSpace(n))
                     .Cast<string>()
                     .ToList(),
-                Genres = (book.Genres ?? new List<AudimetaGenre>())
+                Genres = (book.Genres ?? new List<AudibleGenre>())
                     .Select(g => g.Name)
                     .Where(g => !string.IsNullOrWhiteSpace(g))
                     .Cast<string>()
@@ -710,11 +710,11 @@ namespace Listenarr.Api.Controllers
                 PublishedDate = book.ReleaseDate,
                 Isbn = book.Isbn,
                 Link = book.Link,
-                MetadataSource = "Audimeta"
+                MetadataSource = "Audible"
             };
         }
 
-        private static SeriesCatalogBookItem MapSeriesCatalogBook(AudimetaSearchResult book)
+        private static SeriesCatalogBookItem MapSeriesCatalogBook(AudibleSearchResult book)
         {
             var primarySeries = book.Series?.FirstOrDefault();
             var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
@@ -724,7 +724,7 @@ namespace Listenarr.Api.Controllers
                 Asin = book.Asin,
                 Title = book.Title ?? "Unknown Title",
                 Subtitle = book.Subtitle,
-                Authors = (book.Authors ?? new List<AudimetaAuthor>())
+                Authors = (book.Authors ?? new List<AudibleAuthor>())
                     .Select(a => a.Name)
                     .Where(a => !string.IsNullOrWhiteSpace(a))
                     .Cast<string>()
@@ -733,12 +733,12 @@ namespace Listenarr.Api.Controllers
                 Runtime = runtime,
                 Language = book.Language,
                 Publisher = book.Publisher,
-                Narrators = (book.Narrators ?? new List<AudimetaNarrator>())
+                Narrators = (book.Narrators ?? new List<AudibleNarrator>())
                     .Select(n => n.Name)
                     .Where(n => !string.IsNullOrWhiteSpace(n))
                     .Cast<string>()
                     .ToList(),
-                Genres = (book.Genres ?? new List<AudimetaGenre>())
+                Genres = (book.Genres ?? new List<AudibleGenre>())
                     .Select(g => g.Name)
                     .Where(g => !string.IsNullOrWhiteSpace(g))
                     .Cast<string>()
@@ -748,7 +748,7 @@ namespace Listenarr.Api.Controllers
                 PublishedDate = book.ReleaseDate,
                 Isbn = book.Isbn,
                 Link = book.Link,
-                MetadataSource = "Audimeta"
+                MetadataSource = "Audible"
             };
         }
 
@@ -996,7 +996,7 @@ namespace Listenarr.Api.Controllers
             string normalizedName,
             string region,
             SeriesLookupResponse response,
-            IEnumerable<AudimetaSearchResult>? catalogBooks = null)
+            IEnumerable<AudibleSearchResult>? catalogBooks = null)
         {
             if (string.IsNullOrWhiteSpace(response.Name))
             {
@@ -1019,7 +1019,7 @@ namespace Listenarr.Api.Controllers
                         Asin = book.Asin,
                         Title = book.Title ?? "Unknown Title",
                         Subtitle = book.Subtitle,
-                        Authors = (book.Authors ?? new List<AudimetaAuthor>())
+                        Authors = (book.Authors ?? new List<AudibleAuthor>())
                             .Select(author => author.Name)
                             .Where(author => !string.IsNullOrWhiteSpace(author))
                             .Cast<string>()
@@ -1028,12 +1028,12 @@ namespace Listenarr.Api.Controllers
                         Runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes,
                         Language = book.Language,
                         Publisher = book.Publisher,
-                        Narrators = (book.Narrators ?? new List<AudimetaNarrator>())
+                        Narrators = (book.Narrators ?? new List<AudibleNarrator>())
                             .Select(narrator => narrator.Name)
                             .Where(narrator => !string.IsNullOrWhiteSpace(narrator))
                             .Cast<string>()
                             .ToList(),
-                        Genres = (book.Genres ?? new List<AudimetaGenre>())
+                        Genres = (book.Genres ?? new List<AudibleGenre>())
                             .Select(genre => genre.Name)
                             .Where(genre => !string.IsNullOrWhiteSpace(genre))
                             .Cast<string>()
@@ -1043,7 +1043,7 @@ namespace Listenarr.Api.Controllers
                         PublishedDate = book.ReleaseDate,
                         Isbn = book.Isbn,
                         Link = book.Link,
-                        MetadataSource = "Audimeta"
+                        MetadataSource = "Audible"
                     }).ToList();
                 }
                 entry.LastFetchedAt = DateTime.UtcNow;

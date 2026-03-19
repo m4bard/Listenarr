@@ -23,9 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Lookup-path cleanup:** Normalized several request-query, metadata, and JSON-object access paths to use `TryGetValue` and `TryGetPropertyValue` patterns for cleaner single-pass lookups.
 - **API launch profile cleanup:** Normalized the API `launchSettings.json` structure and schema placement for a cleaner local-development profile definition.
 - **Add New search filtering:** Replaced the Add New region selector with language filtering, while using the saved General Settings region behind the scenes for Audimeta requests and the preferred language for client-side filtering.
+- **Direct Audible metadata/provider cutover:** Replaced the remaining runtime Audimeta-backed search, metadata, author, and series flows with direct Audible catalog/API calls while preserving existing Listenarr behavior for Add New, metadata collection pages, and monitoring workflows.
 - **Author/series collection presentation:** Reworked metadata collection pages to separate `In Library` and `Not Added`, dim unmanaged items, improve list/grid alignment and hover behavior, and make author/series heroes feel closer to audiobook details.
 - **Author/series metadata sourcing:** Updated author and series metadata flows to prefer repo cache and persisted DB records first, then hydrate from Audimeta/Audnexus as needed and save repaired results back into cache/storage.
 - **Library detail navigation:** Updated audiobook detail metadata chips/tags so authors, series, and genres route directly into their respective collection pages.
+- **Audible naming cleanup:** Renamed active backend/frontend provider types, helpers, routes, strategy wiring, and tests from `Audimeta` terminology to `Audible` so the codebase and UI match the direct-provider implementation.
 
 ### Fixed
 - **Download completion-candidate cleanup:** Fixed monitor flows to remove stale completion candidates in a single dictionary operation when items stop appearing complete in qBittorrent, SABnzbd, and NZBGet.
@@ -45,9 +47,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Library genre collections:** Fixed the slim `/library` payload to include `genres`, allowing genre collection pages to display matching audiobooks from real API data instead of only mocked frontend state.
 - **Local dev shutdown noise:** Fixed host-shutdown cancellation handling in `UnmatchedScanBackgroundService` so startup bind failures no longer cascade into misleading fatal background-service logs.
 - **DownloadService build break:** Fixed the malformed `TryGetValue`/predicate refactor in `DownloadService` that caused the API project to fail compilation.
+- **Audible-only runtime path cleanup:** Fixed lingering Audimeta-labeled runtime code paths, strategy wiring, and source-label helpers so the app no longer depends on retired Audimeta route aliases or compatibility checks during normal operation.
 
 ### Removed
 - **Unused application placeholder:** Removed the empty `listenarr.application/Class1.cs` placeholder file.
+- **Active Audimeta runtime dependency:** Removed active Audimeta HTTP calls, route aliases, and user-facing references from the running app, leaving only historical migration data needed for upgrade compatibility.
 
 ## [0.2.58] - 2026-03-16
 

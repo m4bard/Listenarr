@@ -12,9 +12,9 @@ namespace Listenarr.Api.Tests
     public class SeriesCatalogServiceTests
     {
         [Fact]
-        public async Task GetCatalogAsync_UsesPersistedCatalogCache_BeforeAudimeta()
+        public async Task GetCatalogAsync_UsesPersistedCatalogCache_BeforeAudible()
         {
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var logger = new Mock<ILogger<SeriesCatalogService>>();
 
@@ -48,7 +48,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new SeriesCatalogService(
-                audimeta.Object,
+                audible.Object,
                 audiobookRepository.Object,
                 logger.Object);
 
@@ -59,14 +59,14 @@ namespace Listenarr.Api.Tests
             Assert.Equal("The Final Empire", result.Books[0].Title);
             Assert.Equal("Mistborn", result.Series.Name);
 
-            audimeta.Verify(service => service.LookupSeriesAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-            audimeta.Verify(service => service.GetTypedBooksBySeriesAsinAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            audible.Verify(service => service.LookupSeriesAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            audible.Verify(service => service.GetTypedBooksBySeriesAsinAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
         public async Task GetCatalogAsync_ForceRefresh_BypassesPersistedCatalogCache_AndPersistsFreshBooks()
         {
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var logger = new Mock<ILogger<SeriesCatalogService>>();
 
@@ -94,24 +94,24 @@ namespace Listenarr.Api.Tests
                 .Setup(repository => repository.UpsertCachedSeriesAsync(It.IsAny<SeriesCacheEntry>()))
                 .ReturnsAsync((SeriesCacheEntry entry) => entry);
 
-            audimeta
+            audible
                 .Setup(service => service.GetTypedBooksBySeriesAsinAsync("SERIES123", "us"))
-                .ReturnsAsync(new List<AudimetaSearchResult>
+                .ReturnsAsync(new List<AudibleSearchResult>
                 {
                     new()
                     {
                         Asin = "BOOK1",
                         Title = "The Final Empire",
-                        Authors = new List<AudimetaAuthor> { new() { Name = "Brandon Sanderson" } },
+                        Authors = new List<AudibleAuthor> { new() { Name = "Brandon Sanderson" } },
                         ImageUrl = "final-empire.jpg",
                         Language = "english",
                         Link = "https://audible.example/final-empire",
-                        Series = new List<AudimetaSeries> { new() { Name = "Mistborn", Position = "1" } }
+                        Series = new List<AudibleSeries> { new() { Name = "Mistborn", Position = "1" } }
                     }
                 });
 
             var service = new SeriesCatalogService(
-                audimeta.Object,
+                audible.Object,
                 audiobookRepository.Object,
                 logger.Object);
 
@@ -121,7 +121,7 @@ namespace Listenarr.Api.Tests
             Assert.Single(result!.Books);
             Assert.Equal("The Final Empire", result.Books[0].Title);
 
-            audimeta.Verify(
+            audible.Verify(
                 svc => svc.GetTypedBooksBySeriesAsinAsync("SERIES123", "us"),
                 Times.Once);
             audiobookRepository.Verify(

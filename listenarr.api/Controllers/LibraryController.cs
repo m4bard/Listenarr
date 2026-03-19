@@ -466,11 +466,11 @@ namespace Listenarr.Api.Controllers
 
             await _repo.AddAsync(audiobook);
 
-            // Resolve author ASINs and cache author images via Audimeta when possible
+            // Resolve author ASINs and cache author images via Audible when possible
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var audimeta = scope.ServiceProvider.GetRequiredService<AudimetaService>();
+                var audible = scope.ServiceProvider.GetRequiredService<AudibleService>();
 
                 if (audiobook.Authors != null && audiobook.Authors.Any())
                 {
@@ -479,7 +479,7 @@ namespace Listenarr.Api.Controllers
                     {
                         try
                         {
-                            var info = await audimeta.LookupAuthorAsync(authorName);
+                            var info = await audible.LookupAuthorAsync(authorName);
                             if (info != null && !string.IsNullOrWhiteSpace(info.Asin))
                             {
                                 // Avoid duplicates
@@ -1026,7 +1026,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Re-fetch metadata for an audiobook from upstream sources (Audimeta / Audnexus) and update the local record.
+        /// Re-fetch metadata for an audiobook from upstream sources (Audible / Audnexus) and update the local record.
         /// </summary>
         /// <param name="id">Audiobook ID.</param>
         [HttpPost("{id}/rescan-metadata")]
@@ -1101,7 +1101,7 @@ namespace Listenarr.Api.Controllers
             var asinLookupAttemptCapHit = false;
             var isbnConversionAttemptCapHit = false;
 
-            AudimetaBookResponse? providerMetadata = null;
+            AudibleBookResponse? providerMetadata = null;
             string? providerSource = null;
             string? resolvedAsin = null;
             string? resolvedRegion = null;
@@ -1261,7 +1261,7 @@ namespace Listenarr.Api.Controllers
                 });
             }
 
-            var convertedMetadata = metadataConverters.ConvertAudimetaToMetadata(
+            var convertedMetadata = metadataConverters.ConvertAudibleToMetadata(
                 providerMetadata,
                 resolvedAsin,
                 string.IsNullOrWhiteSpace(providerSource) ? "Audible" : providerSource!);
@@ -4309,14 +4309,14 @@ namespace Listenarr.Api.Controllers
 
         private static bool TryExtractMetadataLookupResult(
             object? rawResult,
-            out AudimetaBookResponse? metadata,
+            out AudibleBookResponse? metadata,
             out string? source)
         {
             metadata = null;
             source = null;
             if (rawResult == null) return false;
 
-            if (rawResult is AudimetaBookResponse direct)
+            if (rawResult is AudibleBookResponse direct)
             {
                 metadata = direct;
                 return true;
@@ -4327,15 +4327,15 @@ namespace Listenarr.Api.Controllers
             if (metadataProp != null)
             {
                 var metadataValue = metadataProp.GetValue(rawResult);
-                if (metadataValue is AudimetaBookResponse audimeta)
+                if (metadataValue is AudibleBookResponse audible)
                 {
-                    metadata = audimeta;
+                    metadata = audible;
                 }
                 else if (metadataValue is JsonElement metadataElement && metadataElement.ValueKind == JsonValueKind.Object)
                 {
                     try
                     {
-                        metadata = metadataElement.Deserialize<AudimetaBookResponse>();
+                        metadata = metadataElement.Deserialize<AudibleBookResponse>();
                     }
                     catch (JsonException)
                     {

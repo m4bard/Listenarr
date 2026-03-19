@@ -12,7 +12,7 @@ public sealed class SwaggerTagOrderDocumentFilter : IDocumentFilter
     private static readonly (string Name, string Description)[] OrderedTags =
     [
         ("Library",                  "Audiobook CRUD, scanning, file moves, bulk operations, and manual import"),
-        ("Search",                   "Multi-API audiobook search, intelligent search, and Audimeta lookups"),
+        ("Search",                   "Multi-API audiobook search, intelligent search, and direct Audible lookups"),
         ("Metadata",                 "ASIN/ISBN metadata lookup and author search"),
         ("Downloads",                "Download queue, send to client, reprocessing, and download record management"),
         ("History",                  "Event history browsing, filtering, and cleanup"),

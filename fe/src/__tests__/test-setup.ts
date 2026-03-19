@@ -117,19 +117,19 @@ vi.mock('@/components/feedback', async (importOriginal) => {
 // expect these named exports to exist on the mocked module.
 vi.mock('@/services/api', () => {
   const apiService = {
-    searchAudimetaByTitleAndAuthor: vi.fn(async () => ({ totalResults: 0, results: [] })),
+    searchAudibleByTitleAndAuthor: vi.fn(async () => ({ totalResults: 0, results: [] })),
     advancedSearch: async (params: unknown) => {
       const p = params as { title?: string; author?: string } | undefined
       if (p?.title) {
         const mod = await import('@/services/api')
         const svc = mod.apiService as unknown as {
-          searchAudimetaByTitleAndAuthor?: (
+          searchAudibleByTitleAndAuthor?: (
             title: string,
             author?: string,
           ) => Promise<{ totalResults?: number; results?: unknown[] } | unknown>
         }
-        if (svc.searchAudimetaByTitleAndAuthor) {
-          const resp = (await svc.searchAudimetaByTitleAndAuthor(p.title, p.author)) as unknown
+        if (svc.searchAudibleByTitleAndAuthor) {
+          const resp = (await svc.searchAudibleByTitleAndAuthor(p.title, p.author)) as unknown
           const r = resp as unknown
           return (r?.results) || r || []
         }

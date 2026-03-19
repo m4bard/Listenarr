@@ -18,7 +18,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -35,14 +35,14 @@ namespace Listenarr.Api.Tests
                 .Setup(service => service.GetCachedImagePathAsync("AUTHOR123"))
                 .ReturnsAsync("config/cache/images/authors/AUTHOR123.jpg");
 
-            audimeta
+            audible
                 .Setup(service => service.GetAuthorByAsinAsync("AUTHOR123", "us"))
                 .ReturnsAsync(new AuthorLookupItem
                 {
                     Asin = "AUTHOR123",
                     Name = "Andy Weir",
                     Image = "https://example.com/andy-weir.jpg",
-                    Description = "Audimeta biography"
+                    Description = "Audible biography"
                 });
 
             audnexus
@@ -60,7 +60,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -78,7 +78,7 @@ namespace Listenarr.Api.Tests
             Assert.Equal("AUTHOR123", payload.Asin);
             Assert.Equal("Andy Weir", payload.Name);
             Assert.Equal("/config/cache/images/authors/AUTHOR123.jpg", payload.CachedPath);
-            Assert.Equal("Audimeta biography", payload.Description);
+            Assert.Equal("Audible biography", payload.Description);
             Assert.Collection(
                 payload.SimilarAuthors,
                 author => Assert.Equal("Blake Crouch", author.Name),
@@ -90,11 +90,11 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task LookupAuthor_UsesPersistedAuthorCache_BeforeAudimeta()
+        public async Task LookupAuthor_UsesPersistedAuthorCache_BeforeAudible()
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -125,7 +125,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -146,16 +146,16 @@ namespace Listenarr.Api.Tests
             Assert.Equal("/config/cache/images/authors/AUTHOR123.jpg", payload.CachedPath);
             Assert.Single(payload.SimilarAuthors);
 
-            audimeta.Verify(service => service.LookupAuthorAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-            audimeta.Verify(service => service.GetAuthorByAsinAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            audible.Verify(service => service.LookupAuthorAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            audible.Verify(service => service.GetAuthorByAsinAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
-        public async Task LookupAuthor_RefreshesMissingCachedImage_FromAudimetaAndStoresIt()
+        public async Task LookupAuthor_RefreshesMissingCachedImage_FromAudibleAndStoresIt()
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -189,22 +189,22 @@ namespace Listenarr.Api.Tests
                 .ReturnsAsync((string?)null);
 
             imageCache
-                .Setup(service => service.MoveToAuthorLibraryStorageAsync("AUTHOR123", "https://audimeta.example.com/andy-weir.jpg"))
+                .Setup(service => service.MoveToAuthorLibraryStorageAsync("AUTHOR123", "https://audible.example.com/andy-weir.jpg"))
                 .ReturnsAsync("config/cache/images/authors/AUTHOR123.jpg");
 
-            audimeta
+            audible
                 .Setup(service => service.GetAuthorByAsinAsync("AUTHOR123", "us"))
                 .ReturnsAsync(new AuthorLookupItem
                 {
                     Asin = "AUTHOR123",
                     Name = "Andy Weir",
-                    Image = "https://audimeta.example.com/andy-weir.jpg",
-                    Description = "Audimeta biography"
+                    Image = "https://audible.example.com/andy-weir.jpg",
+                    Description = "Audible biography"
                 });
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -220,17 +220,17 @@ namespace Listenarr.Api.Tests
             var payload = Assert.IsType<MetadataController.AuthorLookupResponse>(ok.Value);
 
             Assert.Equal("/config/cache/images/authors/AUTHOR123.jpg", payload.CachedPath);
-            Assert.Equal("https://audimeta.example.com/andy-weir.jpg", payload.Image);
-            Assert.Equal("Audimeta biography", payload.Description);
+            Assert.Equal("https://audible.example.com/andy-weir.jpg", payload.Image);
+            Assert.Equal("Audible biography", payload.Description);
 
             imageCache.Verify(
-                service => service.MoveToAuthorLibraryStorageAsync("AUTHOR123", "https://audimeta.example.com/andy-weir.jpg"),
+                service => service.MoveToAuthorLibraryStorageAsync("AUTHOR123", "https://audible.example.com/andy-weir.jpg"),
                 Times.Once);
             audnexus.Verify(service => service.GetAuthorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()), Times.Never);
             audiobookRepository.Verify(
                 repository => repository.UpsertCachedAuthorAsync(It.Is<AuthorCacheEntry>(entry =>
                     entry.AuthorAsin == "AUTHOR123" &&
-                    entry.ImageUrl == "https://audimeta.example.com/andy-weir.jpg")),
+                    entry.ImageUrl == "https://audible.example.com/andy-weir.jpg")),
                 Times.Once);
         }
 
@@ -239,7 +239,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -257,7 +257,7 @@ namespace Listenarr.Api.Tests
                     AuthorAsin = "AUTHOR123",
                     Region = "us",
                     ImageUrl = "https://example.com/andy-weir.jpg",
-                    Description = "Persisted Audimeta biography",
+                    Description = "Persisted Audible biography",
                     SimilarAuthors = new List<CachedRelatedAuthor>()
                 });
 
@@ -269,14 +269,14 @@ namespace Listenarr.Api.Tests
                 .Setup(service => service.GetCachedImagePathAsync("AUTHOR123"))
                 .ReturnsAsync("config/cache/images/authors/AUTHOR123.jpg");
 
-            audimeta
+            audible
                 .Setup(service => service.GetAuthorByAsinAsync("AUTHOR123", "us"))
                 .ReturnsAsync(new AuthorLookupItem
                 {
                     Asin = "AUTHOR123",
                     Name = "Andy Weir",
                     Image = "https://example.com/andy-weir.jpg",
-                    Description = "Persisted Audimeta biography"
+                    Description = "Persisted Audible biography"
                 });
 
             audnexus
@@ -294,7 +294,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -309,7 +309,7 @@ namespace Listenarr.Api.Tests
             var ok = Assert.IsType<OkObjectResult>(result.Result);
             var payload = Assert.IsType<MetadataController.AuthorLookupResponse>(ok.Value);
 
-            Assert.Equal("Persisted Audimeta biography", payload.Description);
+            Assert.Equal("Persisted Audible biography", payload.Description);
             Assert.Single(payload.SimilarAuthors);
             Assert.Equal("Blake Crouch", payload.SimilarAuthors[0].Name);
 
@@ -321,7 +321,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -351,7 +351,7 @@ namespace Listenarr.Api.Tests
                 .Setup(service => service.GetCachedImagePathAsync("AUTHOR123"))
                 .ReturnsAsync("config/cache/images/authors/AUTHOR123.jpg");
 
-            audimeta
+            audible
                 .Setup(service => service.GetAuthorByAsinAsync("AUTHOR123", "us"))
                 .ReturnsAsync(new AuthorLookupItem
                 {
@@ -375,7 +375,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -405,11 +405,11 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task LookupAuthor_FallsBackToAudnexus_WhenAudimetaCannotHydrateMissingFields()
+        public async Task LookupAuthor_FallsBackToAudnexus_WhenAudibleCannotHydrateMissingFields()
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -443,11 +443,11 @@ namespace Listenarr.Api.Tests
                 .Setup(service => service.MoveToAuthorLibraryStorageAsync("AUTHOR123", "https://audnexus.example.com/andy-weir.jpg"))
                 .ReturnsAsync("config/cache/images/authors/AUTHOR123.jpg");
 
-            audimeta
+            audible
                 .Setup(service => service.GetAuthorByAsinAsync("AUTHOR123", "us"))
                 .ReturnsAsync((AuthorLookupItem?)null);
 
-            audimeta
+            audible
                 .Setup(service => service.LookupAuthorAsync("Andy Weir", "us"))
                 .ReturnsAsync((AuthorLookupItem?)null);
 
@@ -467,7 +467,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -506,7 +506,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -543,7 +543,7 @@ namespace Listenarr.Api.Tests
                 .Setup(service => service.MoveToAuthorLibraryStorageAsync("AUTHOR123", "https://fresh.example.com/andy-weir.jpg", true))
                 .ReturnsAsync("config/cache/images/authors/AUTHOR123.jpg");
 
-            audimeta
+            audible
                 .Setup(service => service.GetAuthorByAsinAsync("AUTHOR123", "us"))
                 .ReturnsAsync(new AuthorLookupItem
                 {
@@ -567,7 +567,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -587,7 +587,7 @@ namespace Listenarr.Api.Tests
             Assert.Equal("Blake Crouch", payload.SimilarAuthors[0].Name);
             Assert.Equal("/config/cache/images/authors/AUTHOR123.jpg", payload.CachedPath);
 
-            audimeta.Verify(service => service.GetAuthorByAsinAsync("AUTHOR123", "us"), Times.Once);
+            audible.Verify(service => service.GetAuthorByAsinAsync("AUTHOR123", "us"), Times.Once);
             imageCache.Verify(
                 service => service.MoveToAuthorLibraryStorageAsync("AUTHOR123", "https://fresh.example.com/andy-weir.jpg", true),
                 Times.Once);

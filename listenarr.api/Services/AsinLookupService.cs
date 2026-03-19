@@ -5,12 +5,12 @@ namespace Listenarr.Api.Services
     /// </summary>
     public class AsinLookupService : IAsinLookupService
     {
-        private readonly AudimetaService _audimetaService;
+        private readonly AudibleService _audibleService;
         private readonly ILogger<AsinLookupService> _logger;
 
-        public AsinLookupService(AudimetaService audimetaService, ILogger<AsinLookupService> logger)
+        public AsinLookupService(AudibleService audibleService, ILogger<AsinLookupService> logger)
         {
-            _audimetaService = audimetaService;
+            _audibleService = audibleService;
             _logger = logger;
         }
 
@@ -31,13 +31,13 @@ namespace Listenarr.Api.Services
             {
                 ct.ThrowIfCancellationRequested();
 
-                var search = await _audimetaService.SearchByIsbnAsync(
+                var search = await _audibleService.SearchByIsbnAsync(
                     normalizedIsbn,
                     page: 1,
                     limit: 25,
                     region: "us");
 
-                var candidates = search?.Results ?? new List<AudimetaSearchResult>();
+                var candidates = search?.Results ?? new List<AudibleSearchResult>();
                 if (!candidates.Any())
                 {
                     return (false, null, "ASIN not found for ISBN");
@@ -93,7 +93,7 @@ namespace Listenarr.Api.Services
             {
                 ct.ThrowIfCancellationRequested();
 
-                var metadata = await _audimetaService.GetBookMetadataAsync(normalizedAsin, region: "us", useCache: true);
+                var metadata = await _audibleService.GetBookMetadataAsync(normalizedAsin, region: "us", useCache: true);
                 if (metadata == null)
                 {
                     return (false, false, "Metadata not found");

@@ -226,10 +226,10 @@
 
           <div class="detail-card">
             <h3>Identifiers</h3>
-            <div class="detail-row" v-if="audimetaSourceUrl">
+            <div class="detail-row" v-if="audibleSourceUrl">
               <span class="label">Metadata Source:</span>
               <span class="value">
-                <a :href="audimetaSourceUrl" target="_blank" rel="noopener noreferrer">Audimeta</a>
+                <a :href="audibleSourceUrl" target="_blank" rel="noopener noreferrer">Audible</a>
               </span>
             </div>
             <div class="detail-row detail-row-stacked" v-if="displayIdentifiers.length">
@@ -733,10 +733,10 @@ const primaryAsin = computed(() => {
   return legacy || null
 })
 
-const audimetaSourceUrl = computed(() => {
+const audibleSourceUrl = computed(() => {
   const asin = primaryAsin.value
   if (!asin) return null
-  return `https://audimeta.de/book/${encodeURIComponent(asin)}`
+  return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
 })
 
 const displayIdentifiers = computed<DetailIdentifierItem[]>(() => {

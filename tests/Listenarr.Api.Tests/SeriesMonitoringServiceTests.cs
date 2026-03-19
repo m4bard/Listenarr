@@ -39,30 +39,30 @@ namespace Listenarr.Api.Tests
                         Asin = "SERIES123",
                         Name = "Mistborn"
                     },
-                    Books = new List<AudimetaSearchResult>
+                    Books = new List<AudibleSearchResult>
                     {
                         new()
                         {
                             Title = "The Final Empire",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Brandon Sanderson" } },
+                            Authors = new List<AudibleAuthor> { new() { Name = "Brandon Sanderson" } },
                             Language = "en-us",
-                            Series = new List<AudimetaSeries> { new() { Name = "Mistborn", Position = "1" } }
+                            Series = new List<AudibleSeries> { new() { Name = "Mistborn", Position = "1" } }
                         },
                         new()
                         {
                             Asin = "BOOK2",
                             Title = "The Well of Ascension",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Brandon Sanderson" } },
+                            Authors = new List<AudibleAuthor> { new() { Name = "Brandon Sanderson" } },
                             Language = "english",
-                            Series = new List<AudimetaSeries> { new() { Name = "Mistborn", Position = "2" } }
+                            Series = new List<AudibleSeries> { new() { Name = "Mistborn", Position = "2" } }
                         },
                         new()
                         {
                             Asin = "BOOK3",
                             Title = "Held der Zeiten",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Brandon Sanderson" } },
+                            Authors = new List<AudibleAuthor> { new() { Name = "Brandon Sanderson" } },
                             Language = "de",
-                            Series = new List<AudimetaSeries> { new() { Name = "Mistborn", Position = "3" } }
+                            Series = new List<AudibleSeries> { new() { Name = "Mistborn", Position = "3" } }
                         }
                     }
                 });

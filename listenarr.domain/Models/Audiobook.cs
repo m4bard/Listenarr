@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -28,7 +28,7 @@ namespace Listenarr.Domain.Models
         public string? Title { get; set; }
         public string? Subtitle { get; set; }
         public List<string>? Authors { get; set; }
-        // ASINs for authors resolved from Audimeta (allows author images to be cached/served)
+        // ASINs for authors resolved from Audible (allows author images to be cached/served)
         public List<string>? AuthorAsins { get; set; }
         public string? ImageUrl { get; set; }
         public string? PublishYear { get; set; }

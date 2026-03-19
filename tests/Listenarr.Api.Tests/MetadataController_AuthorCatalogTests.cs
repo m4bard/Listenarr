@@ -19,7 +19,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -38,7 +38,7 @@ namespace Listenarr.Api.Tests
                         Name = "SenLinYu",
                         Image = "https://example.com/authors/senlinyu.jpg"
                     },
-                    Books = new List<AudimetaSearchResult>
+                    Books = new List<AudibleSearchResult>
                     {
                         CreateBook("B000000001", "Book 1", "Series Name", "1"),
                         CreateBook("B000000002", "Book 2", "Series Name", "2"),
@@ -50,7 +50,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -72,7 +72,7 @@ namespace Listenarr.Api.Tests
             Assert.Equal("Book 1", payload.Books[0].Title);
             Assert.Equal("Series Name", payload.Books[0].Series);
             Assert.Equal("1", payload.Books[0].SeriesNumber);
-            Assert.Equal("Audimeta", payload.Books[0].MetadataSource);
+            Assert.Equal("Audible", payload.Books[0].MetadataSource);
             Assert.Contains("SenLinYu", payload.Books[0].Authors);
             Assert.Contains("Narrator Example", payload.Books[0].Narrators);
         }
@@ -82,7 +82,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -100,7 +100,7 @@ namespace Listenarr.Api.Tests
                         Asin = "AUTHOR999",
                         Name = "Fallback Author"
                     },
-                    Books = new List<AudimetaSearchResult>
+                    Books = new List<AudibleSearchResult>
                     {
                         CreateBook("B000009999", "Fallback Book")
                     },
@@ -108,7 +108,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -133,7 +133,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -151,7 +151,7 @@ namespace Listenarr.Api.Tests
                         Asin = "AUTHOR123",
                         Name = "Andy Weir"
                     },
-                    Books = new List<AudimetaSearchResult>
+                    Books = new List<AudibleSearchResult>
                     {
                         CreateBook("B000000123", "Project Hail Mary")
                     },
@@ -159,7 +159,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -181,9 +181,9 @@ namespace Listenarr.Api.Tests
                 Times.Once);
         }
 
-        private static AudimetaSearchResult CreateBook(string asin, string title, string? series = null, string? seriesNumber = null)
+        private static AudibleSearchResult CreateBook(string asin, string title, string? series = null, string? seriesNumber = null)
         {
-            return new AudimetaSearchResult
+            return new AudibleSearchResult
             {
                 Asin = asin,
                 Title = title,
@@ -193,23 +193,23 @@ namespace Listenarr.Api.Tests
                 ReleaseDate = "2024-01-01",
                 Isbn = $"978{asin.Substring(Math.Max(0, asin.Length - 7))}",
                 Link = $"https://audible.example/{asin}",
-                Authors = new List<AudimetaAuthor>
+                Authors = new List<AudibleAuthor>
                 {
-                    new AudimetaAuthor { Name = "SenLinYu" }
+                    new AudibleAuthor { Name = "SenLinYu" }
                 },
-                Narrators = new List<AudimetaNarrator>
+                Narrators = new List<AudibleNarrator>
                 {
-                    new AudimetaNarrator { Name = "Narrator Example" }
+                    new AudibleNarrator { Name = "Narrator Example" }
                 },
-                Genres = new List<AudimetaGenre>
+                Genres = new List<AudibleGenre>
                 {
-                    new AudimetaGenre { Name = "Fantasy" }
+                    new AudibleGenre { Name = "Fantasy" }
                 },
                 Series = string.IsNullOrWhiteSpace(series)
                     ? null
-                    : new List<AudimetaSeries>
+                    : new List<AudibleSeries>
                     {
-                        new AudimetaSeries { Name = series, Position = seriesNumber }
+                        new AudibleSeries { Name = series, Position = seriesNumber }
                     }
             };
         }

@@ -117,7 +117,7 @@ public class AsinEnricher
                             _logger.LogWarning(ex, "Failed to convert OpenLibrary metadata for ASIN {Asin}", asin);
                         }
 
-                        // Skip calling Audimeta/Audnexus for OpenLibrary-augmented ASINs
+                        // Skip calling Audible/Audnexus for OpenLibrary-augmented ASINs
                         if (metadata != null)
                         {
                             // proceed to convert metadata below without trying other metadata sources

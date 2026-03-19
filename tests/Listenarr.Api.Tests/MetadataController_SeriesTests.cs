@@ -15,11 +15,11 @@ namespace Listenarr.Api.Tests
     public class MetadataController_SeriesTests
     {
         [Fact]
-        public async Task LookupSeries_UsesPersistedSeriesCache_BeforeAudimeta()
+        public async Task LookupSeries_UsesPersistedSeriesCache_BeforeAudible()
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -50,7 +50,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -71,7 +71,7 @@ namespace Listenarr.Api.Tests
             Assert.Equal("Persisted series description", payload.Description);
             Assert.Equal(1, payload.TotalBooks);
 
-            audimeta.Verify(service => service.LookupSeriesAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            audible.Verify(service => service.LookupSeriesAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
         }
 
         [Fact]
@@ -79,7 +79,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -112,7 +112,7 @@ namespace Listenarr.Api.Tests
                 .Setup(service => service.MoveToSeriesLibraryStorageAsync("SERIES123", "https://example.com/final-empire.jpg", true))
                 .ReturnsAsync("config/cache/images/series/SERIES123.jpg");
 
-            audimeta
+            audible
                 .Setup(service => service.GetSeriesByAsinAsync("SERIES123", "us"))
                 .ReturnsAsync(new SeriesLookupItem
                 {
@@ -131,7 +131,7 @@ namespace Listenarr.Api.Tests
                         Name = "Mistborn",
                         Description = "Fresh series description"
                     },
-                    Books = new List<AudimetaSearchResult>
+                    Books = new List<AudibleSearchResult>
                     {
                         new()
                         {
@@ -144,7 +144,7 @@ namespace Listenarr.Api.Tests
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,
@@ -182,7 +182,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -202,7 +202,7 @@ namespace Listenarr.Api.Tests
                         Image = "mistborn.jpg",
                         Description = "Series description"
                     },
-                    Books = new List<AudimetaSearchResult>
+                    Books = new List<AudibleSearchResult>
                     {
                         new()
                         {
@@ -210,16 +210,16 @@ namespace Listenarr.Api.Tests
                             Title = "The Final Empire",
                             ImageUrl = "book1.jpg",
                             Language = "english",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Brandon Sanderson" } },
-                            Narrators = new List<AudimetaNarrator> { new() { Name = "Narrator Example" } },
-                            Series = new List<AudimetaSeries> { new() { Name = "Mistborn", Position = "1" } }
+                            Authors = new List<AudibleAuthor> { new() { Name = "Brandon Sanderson" } },
+                            Narrators = new List<AudibleNarrator> { new() { Name = "Narrator Example" } },
+                            Series = new List<AudibleSeries> { new() { Name = "Mistborn", Position = "1" } }
                         }
                     }
                 });
 
             var controller = new MetadataController(
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 imageCache.Object,
                 memoryCache,

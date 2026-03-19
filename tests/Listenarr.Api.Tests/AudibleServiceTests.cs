@@ -5,11 +5,11 @@ using Xunit;
 
 namespace Listenarr.Api.Tests
 {
-    public class AudimetaServiceTests
+    public class AudibleServiceTests
     {
-        private static bool InvokeSearchResultIndicatesPodcast(AudimetaSearchResult r)
+        private static bool InvokeSearchResultIndicatesPodcast(AudibleSearchResult r)
         {
-            var method = typeof(AudimetaService).GetMethod("SearchResultIndicatesPodcast", BindingFlags.NonPublic | BindingFlags.Static);
+            var method = typeof(AudibleService).GetMethod("SearchResultIndicatesPodcast", BindingFlags.NonPublic | BindingFlags.Static);
             if (method == null) throw new InvalidOperationException("Could not find SearchResultIndicatesPodcast method");
             return (bool)method.Invoke(null, new object[] { r });
         }
@@ -17,7 +17,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public void ContentDeliveryBook_PreventsPodcastDetection()
         {
-            var r = new AudimetaSearchResult
+            var r = new AudibleSearchResult
             {
                 ContentType = "podcast",
                 ContentDeliveryType = "SinglePartBook"
@@ -30,7 +30,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public void ContentTypePodcast_DetectedWhenNoBookDelivery()
         {
-            var r = new AudimetaSearchResult
+            var r = new AudibleSearchResult
             {
                 ContentType = "podcast",
                 ContentDeliveryType = null

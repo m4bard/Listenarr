@@ -185,7 +185,7 @@ export function useSearch() {
       }
     } else {
       // For title-like queries, prefer the backend's advanced/title search which
-      // returns enriched SearchResult objects (Audimeta where available).
+      // returns enriched SearchResult objects (Audible where available).
 
       // Improved: parse advanced tokens (TITLE:, AUTHOR:, ISBN:, ASIN:, SERIES:) with multi-word support
 
@@ -293,7 +293,7 @@ export function useSearch() {
         artist: '',
         album: '',
         category: '',
-        source: String(metaResp?.source ?? 'audimeta'),
+        source: String(metaResp?.source ?? 'audible'),
         sourceLink: '',
         publishedDate: String(meta.releaseDate ?? meta.publishedDate ?? ''),
         format: '',
@@ -310,7 +310,7 @@ export function useSearch() {
               : typeof meta.coverImage === 'string'
                 ? meta.coverImage
                 : undefined,
-        metadataSource: String(metaResp?.source ?? 'audimeta'),
+        metadataSource: String(metaResp?.source ?? 'audible'),
         publisher:
           typeof meta.publisher === 'string'
             ? meta.publisher

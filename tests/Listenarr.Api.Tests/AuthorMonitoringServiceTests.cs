@@ -40,26 +40,26 @@ namespace Listenarr.Api.Tests
                         Asin = "AUTHOR123",
                         Name = "Andy Weir"
                     },
-                    Books = new List<AudimetaSearchResult>
+                    Books = new List<AudibleSearchResult>
                     {
                         new()
                         {
                             Title = "Project Hail Mary",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Andy Weir" } },
+                            Authors = new List<AudibleAuthor> { new() { Name = "Andy Weir" } },
                             Language = "en-us"
                         },
                         new()
                         {
                             Asin = "B000MARTIAN",
                             Title = "The Martian",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Andy Weir" } },
+                            Authors = new List<AudibleAuthor> { new() { Name = "Andy Weir" } },
                             Language = "english"
                         },
                         new()
                         {
                             Asin = "B000GERMAN",
                             Title = "Der Marsianer",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Andy Weir" } },
+                            Authors = new List<AudibleAuthor> { new() { Name = "Andy Weir" } },
                             Language = "de"
                         }
                     }

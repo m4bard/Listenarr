@@ -12,7 +12,7 @@ namespace Listenarr.Api.Services
         private readonly ILogger<LibraryAddService> _logger;
         private readonly ListenArrDbContext _dbContext;
         private readonly IQualityProfileService _qualityProfileService;
-        private readonly AudimetaService _audimetaService;
+        private readonly AudibleService _audibleService;
         private readonly IConfigurationService _configurationService;
         private readonly INotificationService? _notificationService;
 
@@ -22,7 +22,7 @@ namespace Listenarr.Api.Services
             ILogger<LibraryAddService> logger,
             ListenArrDbContext dbContext,
             IQualityProfileService qualityProfileService,
-            AudimetaService audimetaService,
+            AudibleService audibleService,
             IConfigurationService configurationService,
             INotificationService? notificationService = null)
         {
@@ -31,7 +31,7 @@ namespace Listenarr.Api.Services
             _logger = logger;
             _dbContext = dbContext;
             _qualityProfileService = qualityProfileService;
-            _audimetaService = audimetaService;
+            _audibleService = audibleService;
             _configurationService = configurationService;
             _notificationService = notificationService;
         }
@@ -255,7 +255,7 @@ namespace Listenarr.Api.Services
                 {
                     try
                     {
-                        var info = await _audimetaService.LookupAuthorAsync(authorName);
+                        var info = await _audibleService.LookupAuthorAsync(authorName);
                         if (info == null || string.IsNullOrWhiteSpace(info.Asin))
                         {
                             continue;

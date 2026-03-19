@@ -34,10 +34,10 @@ describe('AddNewView pagination', () => {
     expect(apiResponse.totalResults).toBe(0)
   })
 
-  it('maps audimeta metadata to result fields', async () => {
+  it('maps audible metadata to result fields', async () => {
     const apiModule = await import('@/services/api')
-    const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
-    apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
       totalResults: 1,
       results: [
         {
@@ -63,17 +63,17 @@ describe('AddNewView pagination', () => {
       showAdvancedSearch?: boolean
       advancedSearchParams?: Record<string, unknown>
       performAdvancedSearch?: () => Promise<void>
-      allAudimetaResults?: unknown[]
+      allAudibleResults?: unknown[]
       titleResults?: unknown[]
     }
 
-    // Use advanced search with title to trigger audimeta path
+    // Use advanced search with title to trigger audible path
     vm.showAdvancedSearch = true
     vm.advancedSearchParams = { title: 'Dune' }
 
     await vm.performAdvancedSearch()
 
-    expect(vm.allAudimetaResults.length).toBe(1)
+    expect(vm.allAudibleResults.length).toBe(1)
     expect(vm.titleResults.length).toBe(1)
     const tr = vm.titleResults[0] as unknown
     expect(tr.searchResult.narrator).toBe('Scott Brick')
@@ -92,8 +92,8 @@ describe('AddNewView pagination', () => {
 
   it('sets data-src for lazy images on advanced search results', async () => {
     const apiModule = await import('@/services/api')
-    const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
-    apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
       totalResults: 1,
       results: [
         {
@@ -113,7 +113,7 @@ describe('AddNewView pagination', () => {
       showAdvancedSearch?: boolean
       advancedSearchParams?: Record<string, unknown>
       performAdvancedSearch?: () => Promise<void>
-      allAudimetaResults?: unknown[]
+      allAudibleResults?: unknown[]
       titleResults?: unknown[]
     }
 
@@ -209,7 +209,7 @@ describe('AddNewView pagination', () => {
     advancedSearchSpy.mockRestore()
   })
 
-  it('filters mixed-language audimeta results using the selected language while keeping the default region', async () => {
+  it('filters mixed-language audible results using the selected language while keeping the default region', async () => {
     const apiModule = await import('@/services/api')
     const apiService = apiModule.apiService as unknown as { getApplicationSettings?: Mock }
     apiService.getApplicationSettings?.mockResolvedValue({
@@ -259,8 +259,8 @@ describe('AddNewView pagination', () => {
 
   it('defaults to title search for simple unprefixed queries (simple search)', async () => {
     const apiModule = await import('@/services/api')
-    const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
-    apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
       totalResults: 1,
       results: [
         {
@@ -296,8 +296,8 @@ describe('AddNewView pagination', () => {
 
   it('defaults to title search for simple unprefixed queries (advanced path)', async () => {
     const apiModule = await import('@/services/api')
-    const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
-    apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
       totalResults: 1,
       results: [
         {
@@ -327,8 +327,8 @@ describe('AddNewView pagination', () => {
 
   it('shows toast and scrolls to input when simple search returns no results', async () => {
     const apiModule = await import('@/services/api')
-    const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
-    apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({ totalResults: 0, results: [] })
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({ totalResults: 0, results: [] })
 
     const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
@@ -354,8 +354,8 @@ describe('AddNewView pagination', () => {
 
   it('maps runtime from runtimeLengthMin (minutes) and keeps as minutes', async () => {
     const apiModule = await import('@/services/api')
-    const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
-    apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
       totalResults: 1,
       results: [
         {
@@ -375,7 +375,7 @@ describe('AddNewView pagination', () => {
       showAdvancedSearch?: boolean
       advancedSearchParams?: Record<string, unknown>
       performAdvancedSearch?: () => Promise<void>
-      allAudimetaResults?: unknown[]
+      allAudibleResults?: unknown[]
       titleResults?: unknown[]
     }
 
@@ -390,8 +390,8 @@ describe('AddNewView pagination', () => {
 
   it('maps runtime from lengthMinutes (metadata field) and keeps as minutes', async () => {
     const apiModule = await import('@/services/api')
-    const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
-    apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
       totalResults: 1,
       results: [
         {
@@ -425,8 +425,8 @@ describe('AddNewView pagination', () => {
 
   it('renders formatted runtime string for advanced search results', async () => {
     const apiModule = await import('@/services/api')
-    const apiService = apiModule.apiService as unknown as { searchAudimetaByTitleAndAuthor?: Mock }
-    apiService.searchAudimetaByTitleAndAuthor?.mockResolvedValue({
+    const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }
+    apiService.searchAudibleByTitleAndAuthor?.mockResolvedValue({
       totalResults: 1,
       results: [
         {
@@ -446,7 +446,7 @@ describe('AddNewView pagination', () => {
       showAdvancedSearch?: boolean
       advancedSearchParams?: Record<string, unknown>
       performAdvancedSearch?: () => Promise<void>
-      allAudimetaResults?: unknown[]
+      allAudibleResults?: unknown[]
       titleResults?: unknown[]
     }
 
@@ -462,7 +462,7 @@ describe('AddNewView pagination', () => {
     expect(statEl.text()).toContain('20m')
   })
 
-  it('shows metadata badge linking to internal Audimeta endpoint and source badge linking to Audible product', async () => {
+  it('shows metadata badge linking to the Audible product page and source badge linking to Audible product', async () => {
     const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
     const vm = wrapper.vm as unknown as {
@@ -470,7 +470,7 @@ describe('AddNewView pagination', () => {
       audibleResult?: Record<string, unknown>
     }
 
-    // Simulate an ASIN-based audimeta result (single result view)
+    // Simulate an ASIN-based Audible-backed result (single result view)
     vm.searchType = 'asin'
     ;(vm as unknown).audibleResult = {
       asin: 'BAUD1',
@@ -478,7 +478,7 @@ describe('AddNewView pagination', () => {
       authors: [{ name: 'Author Name' }],
       narrators: [{ name: 'Narrator Name' }],
       imageUrl: 'http://example.com/cover.jpg',
-      metadataSource: 'Audimeta',
+      metadataSource: 'Audible',
       source: 'Audible',
       sourceLink: 'https://www.audible.com/pd/BAUD1',
       series: 'Series Name',
@@ -487,11 +487,11 @@ describe('AddNewView pagination', () => {
 
     await wrapper.vm.$nextTick()
 
-    // Metadata badge should link to /api/metadata/audimeta/{asin}
+    // Metadata badge should link to the Audible product page
     const metaLink = wrapper.find('.result-meta .metadata-source-link')
     expect(metaLink.exists()).toBe(true)
-    expect(metaLink.attributes('href')).toBe('https://audimeta.de/book/BAUD1')
-    expect(metaLink.text()).toContain('Audimeta')
+    expect(metaLink.attributes('href')).toBe('https://www.audible.com/pd/BAUD1')
+    expect(metaLink.text()).toContain('Audible')
 
     // Source link should prefer Audible product URL and show 'Audible'
     const sourceLink = wrapper.find('.result-meta .source-link')

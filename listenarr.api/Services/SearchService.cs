@@ -45,7 +45,7 @@ namespace Listenarr.Api.Services
         private readonly IHubContext<DownloadHub> _hubContext;
         private readonly IImageCacheService _imageCacheService;
         private readonly ListenArrDbContext _dbContext;
-        private readonly AudimetaService _audimetaService;
+        private readonly AudibleService _audibleService;
         private readonly IAudnexusService _audnexusService;
         private readonly MetadataConverters _metadataConverters;
         private readonly MetadataMerger _metadataMerger;
@@ -67,7 +67,7 @@ namespace Listenarr.Api.Services
             IImageCacheService imageCacheService,
             ListenArrDbContext dbContext,
             IHubContext<DownloadHub> hubContext,
-            AudimetaService audimetaService,
+            AudibleService audibleService,
             IAudnexusService audnexusService,
             MetadataConverters metadataConverters,
             MetadataMerger metadataMerger,
@@ -88,7 +88,7 @@ namespace Listenarr.Api.Services
             _imageCacheService = imageCacheService;
             _dbContext = dbContext;
             _hubContext = hubContext;
-            _audimetaService = audimetaService;
+            _audibleService = audibleService;
             _audnexusService = audnexusService;
             _metadataConverters = metadataConverters;
             _metadataMerger = metadataMerger;
@@ -126,7 +126,7 @@ namespace Listenarr.Api.Services
                 return ApplySorting(results, sortBy, sortDirection);
             }
 
-            // For manual/interactive search, use intelligent search (Audimeta/Audnexus/OpenLibrary) + indexers
+            // For manual/interactive search, use intelligent search (Audible/Audnexus/OpenLibrary) + indexers
             var intelligentResults = await IntelligentSearchAsync(query);
             if (intelligentResults.Any())
             {
@@ -529,7 +529,7 @@ namespace Listenarr.Api.Services
                     actualQuery = collapsed.Trim();
                 }
 
-                // Try Audimeta-first for various search types. If Audimeta returns results,
+                // Try Audible-first for various search types. If Audible returns results,
                 // convert them to SearchResult and return immediately to avoid scraping.
                 try
                 {
@@ -538,7 +538,7 @@ namespace Listenarr.Api.Services
                     // ISBN
                     if (searchType == "ISBN" && !string.IsNullOrEmpty(isbnVal))
                     {
-                        var amRes = await _audimetaService.SearchByIsbnAsync(isbnVal, 1, 50, region, language);
+                        var amRes = await _audibleService.SearchByIsbnAsync(isbnVal, 1, 50, region, language);
                         if (amRes?.Results != null && amRes.Results.Any())
                         {
                             var converted = new List<SearchResult>();
@@ -547,7 +547,7 @@ namespace Listenarr.Api.Services
                             foreach (var book in amFiltered)
                             {
                                 if (string.IsNullOrWhiteSpace(book.Asin)) continue;
-                                var bookResp = new AudimetaBookResponse
+                                var bookResp = new AudibleBookResponse
                                 {
                                     Asin = book.Asin,
                                     Title = book.Title,
@@ -563,10 +563,10 @@ namespace Listenarr.Api.Services
                                     ReleaseDate = book.ReleaseDate,
                                     Isbn = book.Isbn
                                 };
-                                var meta = _metadataConverters.ConvertAudimetaToMetadata(bookResp, book.Asin ?? string.Empty, "Audimeta");
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
                                 sr.IsEnriched = true;
-                                sr.MetadataSource = "Audimeta";
+                                sr.MetadataSource = "Audible";
                                 converted.Add(sr);
                             }
                             if (converted.Any()) return SearchResultConverters.ToMetadataList(converted);
@@ -576,11 +576,11 @@ namespace Listenarr.Api.Services
                     // AUTHOR-only
                     if (searchType == "AUTHOR" && !string.IsNullOrEmpty(authorVal))
                     {
-                        // Aggregate multiple pages from Audimeta until we reach candidateLimit
-                        var aggregated = new List<AudimetaSearchResult>();
+                        // Aggregate multiple pages from Audible until we reach candidateLimit
+                        var aggregated = new List<AudibleSearchResult>();
                         int page = 1;
                         int pageSize = Math.Min(50, Math.Max(10, candidateLimit));
-                        // For Audimeta author listings, do not artificially cap aggregation
+                        // For Audible author listings, do not artificially cap aggregation
                         // by the Amazon candidateLimit. Instead, fetch pages until a
                         // page returns fewer than pageSize results (natural end).
                         int maxPages = int.MaxValue;
@@ -588,10 +588,10 @@ namespace Listenarr.Api.Services
                         {
                             try
                             {
-                                var pageRes = await _audimetaService.SearchByAuthorAsync(authorVal, page, pageSize, region, language);
+                                var pageRes = await _audibleService.SearchByAuthorAsync(authorVal, page, pageSize, region, language);
                                 var pageCount = pageRes?.Results?.Count ?? 0;
-                                aggregated.AddRange(pageRes?.Results ?? Enumerable.Empty<AudimetaSearchResult>());
-                                _logger.LogInformation("Audimeta author page {Page} returned {PageCount} results (aggregated {AggregatedCount}) for author '{Author}'", page, pageCount, aggregated.Count, authorVal);
+                                aggregated.AddRange(pageRes?.Results ?? Enumerable.Empty<AudibleSearchResult>());
+                                _logger.LogInformation("Audible author page {Page} returned {PageCount} results (aggregated {AggregatedCount}) for author '{Author}'", page, pageCount, aggregated.Count, authorVal);
                                 if (pageRes?.Results == null || pageCount == 0)
                                 {
                                     _logger.LogInformation("Stopping aggregation: page {Page} returned no results for author '{Author}'", page, authorVal);
@@ -602,10 +602,10 @@ namespace Listenarr.Api.Services
                                     _logger.LogInformation("Stopping aggregation: page {Page} result count {PageCount} < pageSize {PageSize}", page, pageCount, pageSize);
                                     break; // last page
                                 }
-                                // Do not stop aggregating based on candidateLimit for audimeta
+                                // Do not stop aggregating based on candidateLimit for audible
                             }
                             catch (Exception exPage) when (exPage is not OperationCanceledException && exPage is not OutOfMemoryException && exPage is not StackOverflowException) {
-                                _logger.LogDebug(exPage, "Failed fetching audimeta author page {Page} for author {Author}", page, authorVal);
+                                _logger.LogDebug(exPage, "Failed fetching audible author page {Page} for author {Author}", page, authorVal);
                                 break;
                             }
                         }
@@ -628,7 +628,7 @@ namespace Listenarr.Api.Services
                             foreach (var book in authorFiltered)
                             {
                                 if (string.IsNullOrWhiteSpace(book.Asin)) continue;
-                                var bookResp = new AudimetaBookResponse
+                                var bookResp = new AudibleBookResponse
                                 {
                                     Asin = book.Asin,
                                     Title = book.Title,
@@ -643,54 +643,54 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudimetaToMetadata(bookResp, book.Asin ?? string.Empty, "Audimeta");
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
                                 sr.IsEnriched = true;
-                                sr.MetadataSource = "Audimeta";
+                                sr.MetadataSource = "Audible";
                                 converted.Add(sr);
                             }
                             if (converted.Any()) return SearchResultConverters.ToMetadataList(converted);
                         }
                     }
 
-                    // AUTHOR + TITLE: prefer author endpoint then filter by title/isbn to ensure consistent Audimeta enrichment
+                    // AUTHOR + TITLE: prefer author endpoint then filter by title/isbn to ensure consistent Audible enrichment
                     if (searchType == "AUTHOR_TITLE" && !string.IsNullOrEmpty(authorVal))
                     {
                         try { _logger.LogInformation("Entering AUTHOR_TITLE branch: author='{Author}', title='{Title}', isbn='{Isbn}'", authorVal, titleVal, isbnVal); } catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                         }
                         // Aggregate author pages up to candidateLimit to enrich matching
-                        var aggregated = new List<AudimetaSearchResult>();
+                        var aggregated = new List<AudibleSearchResult>();
                         int page = 1;
                         int pageSize = Math.Min(50, Math.Max(10, candidateLimit));
-                        // For Audimeta author/title combined flows, allow full aggregation
+                        // For Audible author/title combined flows, allow full aggregation
                         // across available pages; we will narrow/return a bounded set later.
                         int maxPages = int.MaxValue;
                         for (; page <= maxPages; page++)
                         {
                             try
                             {
-                                var pageRes = await _audimetaService.SearchByAuthorAsync(authorVal, page, pageSize, region, language);
+                                var pageRes = await _audibleService.SearchByAuthorAsync(authorVal, page, pageSize, region, language);
                                 var pageCount = pageRes?.Results?.Count ?? 0;
-                                aggregated.AddRange(pageRes?.Results ?? Enumerable.Empty<AudimetaSearchResult>());
-                                _logger.LogInformation("Audimeta AUTHOR_TITLE: page {Page} returned {PageCount} results (aggregated {AggregatedCount}) for author '{Author}'", page, pageCount, aggregated.Count, authorVal);
+                                aggregated.AddRange(pageRes?.Results ?? Enumerable.Empty<AudibleSearchResult>());
+                                _logger.LogInformation("Audible AUTHOR_TITLE: page {Page} returned {PageCount} results (aggregated {AggregatedCount}) for author '{Author}'", page, pageCount, aggregated.Count, authorVal);
                                 if (pageRes?.Results == null || pageCount == 0)
                                 {
-                                    _logger.LogInformation("Audimeta AUTHOR_TITLE: stopping aggregation — page {Page} returned no results", page);
+                                    _logger.LogInformation("Audible AUTHOR_TITLE: stopping aggregation — page {Page} returned no results", page);
                                     break;
                                 }
                                 if (pageCount < pageSize)
                                 {
-                                    _logger.LogInformation("Audimeta AUTHOR_TITLE: stopping aggregation — page {Page} count {PageCount} < pageSize {PageSize}", page, pageCount, pageSize);
+                                    _logger.LogInformation("Audible AUTHOR_TITLE: stopping aggregation — page {Page} count {PageCount} < pageSize {PageSize}", page, pageCount, pageSize);
                                     break;
                                 }
                             }
                             catch (Exception exPage) when (exPage is not OperationCanceledException && exPage is not OutOfMemoryException && exPage is not StackOverflowException) {
-                                _logger.LogDebug(exPage, "Failed fetching audimeta author page {Page} for author {Author}", page, authorVal);
+                                _logger.LogDebug(exPage, "Failed fetching audible author page {Page} for author {Author}", page, authorVal);
                                 break;
                             }
                         }
-                        _logger.LogInformation("Audimeta AUTHOR_TITLE: finished aggregating pages for '{Author}': aggregated={AggregatedCount}, pageSize={PageSize}, maxPages={MaxPages}", authorVal, aggregated.Count, pageSize, maxPages);
+                        _logger.LogInformation("Audible AUTHOR_TITLE: finished aggregating pages for '{Author}': aggregated={AggregatedCount}, pageSize={PageSize}, maxPages={MaxPages}", authorVal, aggregated.Count, pageSize, maxPages);
                             if (aggregated?.Any() == true)
                         {
                             // Deduplicate results based on ASIN to prevent repeated books across pages
@@ -703,7 +703,7 @@ namespace Listenarr.Api.Services
                             _logger.LogInformation("Deduplicated AUTHOR_TITLE results for '{Author}': {OriginalCount} -> {DeduplicatedCount}", authorVal, aggregated.Count, deduplicated.Count);
                             
                             var converted = new List<SearchResult>();
-                            try { _logger.LogInformation("Audimeta author lookup returned {Count} aggregated results for author '{Author}'", deduplicated.Count, authorVal); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
+                            try { _logger.LogInformation("Audible author lookup returned {Count} aggregated results for author '{Author}'", deduplicated.Count, authorVal); } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
 
@@ -726,7 +726,7 @@ namespace Listenarr.Api.Services
                             // If an ISBN was provided we must match against detailed metadata;
                             // instead of fetching metadata for every ASIN, scan a limited set
                             // of candidates and only fetch metadata until we find ISBN matches.
-                            var detailedMetaByAsin = new Dictionary<string, AudimetaBookResponse>(StringComparer.OrdinalIgnoreCase);
+                            var detailedMetaByAsin = new Dictionary<string, AudibleBookResponse>(StringComparer.OrdinalIgnoreCase);
                             if (!string.IsNullOrEmpty(isbnVal))
                             {
                                 // Limit how many author results to scan for ISBNs to avoid huge loads
@@ -740,7 +740,7 @@ namespace Listenarr.Api.Services
                                     if (string.IsNullOrWhiteSpace(c.Asin)) continue;
                                     try
                                     {
-                                        var meta = await _audimetaService.GetBookMetadataAsync(c.Asin, region, true, language);
+                                        var meta = await _audibleService.GetBookMetadataAsync(c.Asin, region, true, language);
                                         if (meta == null) continue;
                                         detailedMetaByAsin[c.Asin] = meta;
                                         if (!string.IsNullOrWhiteSpace(meta.Isbn) && string.Equals(meta.Isbn.Trim(), isbnVal, StringComparison.OrdinalIgnoreCase))
@@ -751,7 +751,7 @@ namespace Listenarr.Api.Services
                                         }
                                     }
                                     catch (Exception exMeta) when (exMeta is not OperationCanceledException && exMeta is not OutOfMemoryException && exMeta is not StackOverflowException) {
-                                        _logger.LogDebug(exMeta, "Failed fetching audimeta metadata for ASIN {Asin} while scanning for ISBN", c.Asin);
+                                        _logger.LogDebug(exMeta, "Failed fetching audible metadata for ASIN {Asin} while scanning for ISBN", c.Asin);
                                     }
                                 }
                             }
@@ -765,11 +765,11 @@ namespace Listenarr.Api.Services
                             foreach (var book in authorFiltered)
                             {
                                 if (string.IsNullOrWhiteSpace(book.Asin)) continue;
-                                AudimetaBookResponse? bookResp = null;
+                                AudibleBookResponse? bookResp = null;
                                 if (detailedMetaByAsin.TryGetValue(book.Asin, out var found)) bookResp = found;
                                 if (bookResp == null)
                                 {
-                                    bookResp = new AudimetaBookResponse
+                                    bookResp = new AudibleBookResponse
                                     {
                                         Asin = book.Asin,
                                         Title = book.Title,
@@ -788,14 +788,14 @@ namespace Listenarr.Api.Services
                                 }
                                 try
                                 {
-                                    var meta = _metadataConverters.ConvertAudimetaToMetadata(bookResp, book.Asin ?? string.Empty, "Audimeta");
+                                    var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
                                     var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
                                     sr.IsEnriched = true;
-                                    sr.MetadataSource = "Audimeta";
+                                    sr.MetadataSource = "Audible";
                                     converted.Add(sr);
                                 }
                                 catch (Exception exMetaConv) when (exMetaConv is not OperationCanceledException && exMetaConv is not OutOfMemoryException && exMetaConv is not StackOverflowException) {
-                                    _logger.LogDebug(exMetaConv, "Failed converting audimeta data for ASIN {Asin}", book.Asin);
+                                    _logger.LogDebug(exMetaConv, "Failed converting audible data for ASIN {Asin}", book.Asin);
                                 }
                             }
 
@@ -806,7 +806,7 @@ namespace Listenarr.Api.Services
                     // TITLE-only
                     if (searchType == "TITLE" && !string.IsNullOrEmpty(titleVal))
                     {
-                        var titleRes = await _audimetaService.SearchByTitleAsync(titleVal, 1, 50, region, language);
+                        var titleRes = await _audibleService.SearchByTitleAsync(titleVal, 1, 50, region, language);
                         if (titleRes?.Results != null && titleRes.Results.Any())
                         {
                             var converted = new List<SearchResult>();
@@ -815,7 +815,7 @@ namespace Listenarr.Api.Services
                             foreach (var book in titleFiltered)
                             {
                                 if (string.IsNullOrWhiteSpace(book.Asin)) continue;
-                                var bookResp = new AudimetaBookResponse
+                                var bookResp = new AudibleBookResponse
                                 {
                                     Asin = book.Asin,
                                     Title = book.Title,
@@ -830,20 +830,20 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudimetaToMetadata(bookResp, book.Asin ?? string.Empty, "Audimeta");
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
                                 sr.IsEnriched = true;
-                                sr.MetadataSource = "Audimeta";
+                                sr.MetadataSource = "Audible";
                                 converted.Add(sr);
                             }
                             if (converted.Any()) return SearchResultConverters.ToMetadataList(converted);
                         }
                     }
 
-                    // General/simple query - try audimeta search endpoint first
+                    // General/simple query - try audible search endpoint first
                     if (string.IsNullOrWhiteSpace(searchType) && !string.IsNullOrWhiteSpace(actualQuery))
                     {
-                        var simpleRes = await _audimetaService.SearchBooksAsync(actualQuery, 1, 50, region, language);
+                        var simpleRes = await _audibleService.SearchBooksAsync(actualQuery, 1, 50, region, language);
                         if (simpleRes?.Results != null && simpleRes.Results.Any())
                         {
                             var converted = new List<SearchResult>();
@@ -852,7 +852,7 @@ namespace Listenarr.Api.Services
                             foreach (var book in simpleFiltered)
                             {
                                 if (string.IsNullOrWhiteSpace(book.Asin)) continue;
-                                var bookResp = new AudimetaBookResponse
+                                var bookResp = new AudibleBookResponse
                                 {
                                     Asin = book.Asin,
                                     Title = book.Title,
@@ -867,18 +867,18 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudimetaToMetadata(bookResp, book.Asin ?? string.Empty, "Audimeta");
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin ?? string.Empty, "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty);
                                 sr.IsEnriched = true;
-                                sr.MetadataSource = "Audimeta";
+                                sr.MetadataSource = "Audible";
                                 converted.Add(sr);
                             }
                             if (converted.Any()) return SearchResultConverters.ToMetadataList(converted);
                         }
                     }
                 }
-                catch (Exception exAudimetaFirst) when (exAudimetaFirst is not OperationCanceledException && exAudimetaFirst is not OutOfMemoryException && exAudimetaFirst is not StackOverflowException) {
-                    _logger.LogWarning(exAudimetaFirst, "Audimeta-first attempt failed; falling back to provider searches for query: {Query}", query);
+                catch (Exception exAudibleFirst) when (exAudibleFirst is not OperationCanceledException && exAudibleFirst is not OutOfMemoryException && exAudibleFirst is not StackOverflowException) {
+                    _logger.LogWarning(exAudibleFirst, "Audible-first attempt failed; falling back to provider searches for query: {Query}", query);
                 }
 
                 // Flags controlling provider calls (enabled by default) - declare at outer scope
@@ -970,7 +970,7 @@ namespace Listenarr.Api.Services
                 {
                     // Only merge OpenLibrary-derived candidates when we did not obtain any enriched
                     // metadata from external sources. If we already have enriched metadata results
-                    // (e.g. from Audimeta/Audnexus), prefer those authoritative results and avoid
+                    // (e.g. from Audible/Audnexus), prefer those authoritative results and avoid
                     // adding OpenLibrary fallbacks that could dilute the final ranked list.
                     if ((openLibraryDerivedResults != null && openLibraryDerivedResults.Any()) && !enrichedList.Any())
                     {
@@ -1083,10 +1083,10 @@ namespace Listenarr.Api.Services
                         else // Relaxed
                         {
                             // If this result came from an authoritative metadata source
-                            // (e.g. Audimeta, Audnexus, Audible scrape, OpenLibrary),
+                            // (e.g. Audible, Audnexus, Audible scrape, OpenLibrary),
                             // treat it as authoritative and bypass the containment check.
                             var mdLower = (r.MetadataSource ?? string.Empty).ToLowerInvariant();
-                            var isAuthoritative = mdLower.Contains("audimeta") || mdLower.Contains("audnex") || mdLower.Contains("audnexus") || mdLower.Contains("audible") || mdLower.Contains("openlibrary");
+                            var isAuthoritative = mdLower.Contains("audible") || mdLower.Contains("audnex") || mdLower.Contains("audnexus") || mdLower.Contains("audible") || mdLower.Contains("openlibrary");
 
                             if (isAuthoritative)
                             {
@@ -1144,7 +1144,7 @@ namespace Listenarr.Api.Services
                     {
                         if (string.IsNullOrEmpty(r.MetadataSource)) return 0;
                         var md = r.MetadataSource.ToLowerInvariant();
-                        if (md.Contains("audimeta") || md.Contains("audnex") || md.Contains("audnexus")) return 3;
+                        if (md.Contains("audible") || md.Contains("audnex") || md.Contains("audnexus")) return 3;
                         if (string.Equals(md, "openlibrary", StringComparison.OrdinalIgnoreCase)) return 2;
                         return 1;
                     })

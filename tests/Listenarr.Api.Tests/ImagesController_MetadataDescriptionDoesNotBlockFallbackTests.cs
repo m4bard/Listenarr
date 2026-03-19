@@ -27,16 +27,16 @@ namespace Listenarr.Api.Tests
                 .ReturnsAsync(relativePath);
 
             var mockMetadata = new Mock<IAudiobookMetadataService>();
-            mockMetadata.Setup(m => m.GetAudimetaMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>()))
-                .ReturnsAsync(new AudimetaBookResponse
+            mockMetadata.Setup(m => m.GetAudibleMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>()))
+                .ReturnsAsync(new AudibleBookResponse
                 {
                     ImageUrl = null,
                     Description = "<p>Book description only, not an image URL</p>",
                     Isbn = null
                 });
 
-            using var audimetaHttpClient = new System.Net.Http.HttpClient();
-            var audimetaMock = new Mock<AudimetaService>(audimetaHttpClient, Mock.Of<ILogger<AudimetaService>>());
+            using var audibleHttpClient = new System.Net.Http.HttpClient();
+            var audibleMock = new Mock<AudibleService>(audibleHttpClient, Mock.Of<ILogger<AudibleService>>());
             var audnexusMock = new Mock<IAudnexusService>();
             audnexusMock.Setup(a => a.GetBookMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<bool>()))
                 .ReturnsAsync(new AudnexusBookResponse { Image = audnexusImageUrl });
@@ -52,7 +52,7 @@ namespace Listenarr.Api.Tests
             var controller = new ImagesController(
                 mockImageCache.Object,
                 mockMetadata.Object,
-                audimetaMock.Object,
+                audibleMock.Object,
                 audnexusMock.Object,
                 Mock.Of<IAudiobookRepository>(),
                 Mock.Of<ILogger<ImagesController>>(),

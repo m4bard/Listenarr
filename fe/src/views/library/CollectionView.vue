@@ -203,7 +203,13 @@
     </section>
 
     <!-- Top Toolbar -->
-    <div class="toolbar" :class="{ 'toolbar-without-top-nav': isMetadataCollection }">
+    <div
+      class="toolbar"
+      :class="{
+        'toolbar-without-top-nav': isMetadataCollection,
+        'toolbar-with-monitoring': isAuthorCollection || isSeriesCollection,
+      }"
+    >
       <div class="toolbar-left">
         <button class="toolbar-btn" @click="goBack">
           <PhArrowLeft />
@@ -252,16 +258,6 @@
       </div>
       <div class="toolbar-right">
         <div v-if="isAuthorCollection" class="author-monitoring-controls">
-          <div class="author-monitoring-context">
-            <Pill
-              class="author-monitoring-pill"
-              :variant="isCurrentAuthorMonitored ? 'success' : 'default'"
-            >
-              <component :is="isCurrentAuthorMonitored ? PhEye : PhEyeSlash" />
-              {{ isCurrentAuthorMonitored ? 'Monitoring Author' : 'Not Monitored' }}
-            </Pill>
-            <span class="author-monitoring-label">Using {{ authorMonitoringContextLabel }}</span>
-          </div>
           <div class="author-monitoring-actions">
             <button
               class="toolbar-btn author-refresh-btn"
@@ -978,9 +974,9 @@ function buildCatalogMetadata(book: RemoteCatalogBook): AudibleBookMetadata {
     publishedDate: book.publishedDate,
     publishYear,
     isbn: book.isbn,
-    source: book.metadataSource || 'Audimeta',
+    source: book.metadataSource || 'Audible',
     sourceLink: book.link,
-    metadataSource: book.metadataSource || 'Audimeta',
+    metadataSource: book.metadataSource || 'Audible',
   }
 }
 
@@ -2325,8 +2321,8 @@ defineExpose({
   outline-offset: 2px;
 }
 
-/* Mobile-friendly toolbar: hide text, show only icons on screens 1024px and below */
-@media (max-width: 1024px) {
+/* Mobile-friendly toolbar: hide text, show only icons on screens 1154px and below */
+@media (max-width: 1154px) {
   .toolbar-btn {
     padding: 8px;
     min-width: 36px;
@@ -2802,6 +2798,11 @@ defineExpose({
   flex-wrap: wrap;
 }
 
+.toolbar-with-monitoring .toolbar-left,
+.toolbar-with-monitoring .toolbar-right {
+  min-width: 0;
+}
+
 .author-monitoring-controls {
   display: inline-flex;
   align-items: center;
@@ -2907,8 +2908,47 @@ defineExpose({
   outline-offset: 2px;
 }
 
-/* Mobile-friendly toolbar: hide text, show only icons on screens 1024px and below */
-@media (max-width: 1024px) {
+/* Mobile-friendly toolbar: hide text, show only icons on screens 1154px and below */
+@media (max-width: 1280px) {
+  .toolbar-with-monitoring {
+    flex-wrap: nowrap;
+    gap: 10px;
+    height: auto;
+    align-items: center;
+    overflow-x: auto;
+    overflow-y: hidden;
+  }
+
+  .toolbar-with-monitoring .toolbar-left,
+  .toolbar-with-monitoring .toolbar-right {
+    width: auto;
+    flex: 0 0 auto;
+    flex-wrap: nowrap;
+  }
+
+  .toolbar-with-monitoring .toolbar-right {
+    margin-left: auto;
+    justify-content: flex-end;
+  }
+
+  .toolbar-with-monitoring .author-monitoring-controls {
+    flex: 0 0 auto;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+  }
+
+  .toolbar-with-monitoring .author-monitoring-actions {
+    margin-left: 0;
+    flex-wrap: nowrap;
+  }
+
+  .toolbar-with-monitoring .toolbar-btn,
+  .toolbar-with-monitoring .toolbar-filters {
+    flex: 0 0 auto;
+  }
+}
+
+@media (max-width: 1154px) {
   .toolbar-btn {
     padding: 8px;
     min-width: 36px;
@@ -2954,6 +2994,18 @@ defineExpose({
     margin-left: 0;
     width: 100%;
     justify-content: flex-end;
+  }
+
+  .toolbar-with-monitoring .author-monitoring-controls {
+    width: auto;
+    flex: 0 0 auto;
+    justify-content: flex-start;
+  }
+
+  .toolbar-with-monitoring .author-monitoring-actions {
+    width: auto;
+    justify-content: flex-start;
+    flex-wrap: nowrap;
   }
 }
 

@@ -43,16 +43,16 @@ namespace Listenarr.Api.Services
             ["all"] = "all"
         };
 
-        private readonly AudimetaService _audimetaService;
+        private readonly AudibleService _audibleService;
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly ILogger<SeriesCatalogService> _logger;
 
         public SeriesCatalogService(
-            AudimetaService audimetaService,
+            AudibleService audibleService,
             IAudiobookRepository audiobookRepository,
             ILogger<SeriesCatalogService> logger)
         {
-            _audimetaService = audimetaService;
+            _audibleService = audibleService;
             _audiobookRepository = audiobookRepository;
             _logger = logger;
         }
@@ -94,8 +94,8 @@ namespace Listenarr.Api.Services
                 return null;
             }
 
-            var books = await _audimetaService.GetTypedBooksBySeriesAsinAsync(series.Asin, normalizedRegion)
-                ?? new List<AudimetaSearchResult>();
+            var books = await _audibleService.GetTypedBooksBySeriesAsinAsync(series.Asin, normalizedRegion)
+                ?? new List<AudibleSearchResult>();
 
             var limitedBooks = books
                 .Where(book => book != null)
@@ -150,7 +150,7 @@ namespace Listenarr.Api.Services
                 return MapCachedSeries(cachedEntry, normalizedName, region);
             }
 
-            var series = await _audimetaService.LookupSeriesAsync(normalizedName, region);
+            var series = await _audibleService.LookupSeriesAsync(normalizedName, region);
             if (!string.IsNullOrWhiteSpace(series?.Asin))
             {
                 return series;
@@ -194,7 +194,7 @@ namespace Listenarr.Api.Services
             string seriesName,
             string region,
             SeriesLookupItem series,
-            List<AudimetaSearchResult> books,
+            List<AudibleSearchResult> books,
             CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -219,7 +219,7 @@ namespace Listenarr.Api.Services
             }
         }
 
-        private static string BuildSeriesCatalogBookKey(AudimetaSearchResult book)
+        private static string BuildSeriesCatalogBookKey(AudibleSearchResult book)
         {
             if (!string.IsNullOrWhiteSpace(book.Asin))
             {
@@ -227,7 +227,7 @@ namespace Listenarr.Api.Services
             }
 
             var title = NormalizeCatalogToken(book.Title);
-            var authors = string.Join("|", (book.Authors ?? new List<AudimetaAuthor>())
+            var authors = string.Join("|", (book.Authors ?? new List<AudibleAuthor>())
                 .Select(author => NormalizeCatalogToken(author.Name))
                 .Where(author => !string.IsNullOrWhiteSpace(author)));
 
@@ -263,8 +263,8 @@ namespace Listenarr.Api.Services
                 : trimmed.ToLowerInvariant();
         }
 
-        private static List<AudimetaSearchResult> FilterCatalogByLanguage(
-            IEnumerable<AudimetaSearchResult> books,
+        private static List<AudibleSearchResult> FilterCatalogByLanguage(
+            IEnumerable<AudibleSearchResult> books,
             string? normalizedLanguage)
         {
             var bookList = books.ToList();
@@ -296,7 +296,7 @@ namespace Listenarr.Api.Services
             };
         }
 
-        private static CachedSeriesCatalogBook MapCachedCatalogBook(AudimetaSearchResult book)
+        private static CachedSeriesCatalogBook MapCachedCatalogBook(AudibleSearchResult book)
         {
             var primarySeries = book.Series?.FirstOrDefault();
             var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
@@ -306,7 +306,7 @@ namespace Listenarr.Api.Services
                 Asin = book.Asin,
                 Title = book.Title ?? "Unknown Title",
                 Subtitle = book.Subtitle,
-                Authors = (book.Authors ?? new List<AudimetaAuthor>())
+                Authors = (book.Authors ?? new List<AudibleAuthor>())
                     .Select(author => author.Name)
                     .Where(author => !string.IsNullOrWhiteSpace(author))
                     .Cast<string>()
@@ -315,12 +315,12 @@ namespace Listenarr.Api.Services
                 Runtime = runtime,
                 Language = book.Language,
                 Publisher = book.Publisher,
-                Narrators = (book.Narrators ?? new List<AudimetaNarrator>())
+                Narrators = (book.Narrators ?? new List<AudibleNarrator>())
                     .Select(narrator => narrator.Name)
                     .Where(narrator => !string.IsNullOrWhiteSpace(narrator))
                     .Cast<string>()
                     .ToList(),
-                Genres = (book.Genres ?? new List<AudimetaGenre>())
+                Genres = (book.Genres ?? new List<AudibleGenre>())
                     .Select(genre => genre.Name)
                     .Where(genre => !string.IsNullOrWhiteSpace(genre))
                     .Cast<string>()
@@ -330,20 +330,20 @@ namespace Listenarr.Api.Services
                 PublishedDate = book.ReleaseDate,
                 Isbn = book.Isbn,
                 Link = book.Link,
-                MetadataSource = "Audimeta"
+                MetadataSource = "Audible"
             };
         }
 
-        private static AudimetaSearchResult MapCachedCatalogBook(CachedSeriesCatalogBook book)
+        private static AudibleSearchResult MapCachedCatalogBook(CachedSeriesCatalogBook book)
         {
-            return new AudimetaSearchResult
+            return new AudibleSearchResult
             {
                 Asin = book.Asin,
                 Title = book.Title,
                 Subtitle = book.Subtitle,
                 Authors = (book.Authors ?? new List<string>())
                     .Where(author => !string.IsNullOrWhiteSpace(author))
-                    .Select(author => new AudimetaAuthor { Name = author })
+                    .Select(author => new AudibleAuthor { Name = author })
                     .ToList(),
                 ImageUrl = book.ImageUrl,
                 LengthMinutes = book.Runtime,
@@ -351,15 +351,15 @@ namespace Listenarr.Api.Services
                 Publisher = book.Publisher,
                 Narrators = (book.Narrators ?? new List<string>())
                     .Where(narrator => !string.IsNullOrWhiteSpace(narrator))
-                    .Select(narrator => new AudimetaNarrator { Name = narrator })
+                    .Select(narrator => new AudibleNarrator { Name = narrator })
                     .ToList(),
                 Genres = (book.Genres ?? new List<string>())
                     .Where(genre => !string.IsNullOrWhiteSpace(genre))
-                    .Select(genre => new AudimetaGenre { Name = genre })
+                    .Select(genre => new AudibleGenre { Name = genre })
                     .ToList(),
                 Series = string.IsNullOrWhiteSpace(book.Series)
                     ? null
-                    : new List<AudimetaSeries>
+                    : new List<AudibleSeries>
                     {
                         new()
                         {

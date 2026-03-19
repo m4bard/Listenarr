@@ -331,7 +331,7 @@ namespace Listenarr.Api.Services
             }
         }
 
-        private static AudibleBookMetadata MapToMetadata(AudimetaSearchResult book)
+        private static AudibleBookMetadata MapToMetadata(AudibleSearchResult book)
         {
             var primarySeries = book.Series?.FirstOrDefault();
             var runtime = book.LengthMinutes ?? book.RuntimeLengthMin ?? book.RuntimeMinutes;
@@ -341,7 +341,7 @@ namespace Listenarr.Api.Services
                 Asin = book.Asin,
                 Title = book.Title,
                 Subtitle = book.Subtitle,
-                Authors = (book.Authors ?? new List<AudimetaAuthor>())
+                Authors = (book.Authors ?? new List<AudibleAuthor>())
                     .Select(author => author.Name)
                     .Where(author => !string.IsNullOrWhiteSpace(author))
                     .Cast<string>()
@@ -350,12 +350,12 @@ namespace Listenarr.Api.Services
                 Runtime = runtime,
                 Language = book.Language,
                 Publisher = book.Publisher,
-                Narrators = (book.Narrators ?? new List<AudimetaNarrator>())
+                Narrators = (book.Narrators ?? new List<AudibleNarrator>())
                     .Select(narrator => narrator.Name)
                     .Where(narrator => !string.IsNullOrWhiteSpace(narrator))
                     .Cast<string>()
                     .ToList(),
-                Genres = (book.Genres ?? new List<AudimetaGenre>())
+                Genres = (book.Genres ?? new List<AudibleGenre>())
                     .Select(genre => genre.Name)
                     .Where(genre => !string.IsNullOrWhiteSpace(genre))
                     .Cast<string>()
@@ -365,12 +365,12 @@ namespace Listenarr.Api.Services
                 PublishedDate = book.ReleaseDate,
                 PublishYear = TryExtractPublishYear(book.ReleaseDate),
                 Isbn = string.IsNullOrWhiteSpace(book.Isbn) ? new List<string>() : new List<string> { book.Isbn },
-                Source = "Audimeta"
+                Source = "Audible"
             };
         }
 
         private static Audiobook? FindExistingLibraryMatch(
-            AudimetaSearchResult book,
+            AudibleSearchResult book,
             IEnumerable<Audiobook> libraryBooks)
         {
             var asin = NormalizeIdentifier(book.Asin);
@@ -397,7 +397,7 @@ namespace Listenarr.Api.Services
 
             var titleAuthorKey = BuildTitleAuthorKey(
                 book.Title,
-                (book.Authors ?? new List<AudimetaAuthor>())
+                (book.Authors ?? new List<AudibleAuthor>())
                     .Select(author => author.Name)
                     .Where(author => !string.IsNullOrWhiteSpace(author))
                     .Cast<string>()
@@ -412,7 +412,7 @@ namespace Listenarr.Api.Services
                 BuildTitleAuthorKey(candidate.Title, candidate.Authors) == titleAuthorKey);
         }
 
-        private static bool ShouldIncludeBookForLanguage(AudimetaSearchResult book, string preferredLanguage)
+        private static bool ShouldIncludeBookForLanguage(AudibleSearchResult book, string preferredLanguage)
         {
             if (string.Equals(preferredLanguage, "all", StringComparison.OrdinalIgnoreCase))
             {

@@ -25,14 +25,14 @@ namespace Listenarr.Api.Tests
 
             var metadataService = new Mock<IAudiobookMetadataService>();
             metadataService
-                .Setup(m => m.GetAudimetaMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>()))
-                .ReturnsAsync((AudimetaBookResponse?)null);
+                .Setup(m => m.GetAudibleMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>()))
+                .ReturnsAsync((AudibleBookResponse?)null);
             metadataService
                 .Setup(m => m.GetMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>()))
                 .ReturnsAsync((object?)null);
 
-            var audimeta = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
-            audimeta
+            var audible = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            audible
                 .Setup(m => m.LookupAuthorAsync(identifier, It.IsAny<string>()))
                 .ReturnsAsync((AuthorLookupItem?)null);
 
@@ -60,7 +60,7 @@ namespace Listenarr.Api.Tests
             var controller = new ImagesController(
                 imageCache.Object,
                 metadataService.Object,
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 repo.Object,
                 Mock.Of<ILogger<ImagesController>>(),

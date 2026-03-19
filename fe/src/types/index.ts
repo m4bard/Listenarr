@@ -58,13 +58,13 @@ export interface MetadataSearchResult extends BaseSearchResult {
   seriesNumber?: string
   seriesAsin?: string
   seriesList?: string[]
-  genres?: string[] // Genres from metadata sources (e.g., Audimeta)
+  genres?: string[] // Genres from metadata sources (e.g., Audible)
   productUrl?: string // Direct link to Amazon/Audible product page
   isEnriched?: boolean
   metadataSource?: string // Which metadata API enriched this result
-  // Audimeta-style fields (when backend returns Audimeta-shaped JSON)
-  authors?: AudimetaAuthor[]
-  narrators?: AudimetaNarrator[]
+  // Audible-style fields (when backend returns Audible-shaped JSON)
+  authors?: AudibleAuthor[]
+  narrators?: AudibleNarrator[]
   lengthMinutes?: number
   link?: string
   releaseDate?: string
@@ -103,13 +103,13 @@ export interface SearchResult extends BaseSearchResult {
   seriesNumber?: string
   seriesAsin?: string
   seriesList?: string[]
-  genres?: string[] // Genres from metadata sources (e.g., Audimeta)
+  genres?: string[] // Genres from metadata sources (e.g., Audible)
   productUrl?: string // Direct link to Amazon/Audible product page
   isEnriched?: boolean
   metadataSource?: string // Which metadata API enriched this result
-  // Audimeta-style fields
-  authors?: AudimetaAuthor[]
-  narrators?: AudimetaNarrator[]
+  // Audible-style fields
+  authors?: AudibleAuthor[]
+  narrators?: AudibleNarrator[]
   lengthMinutes?: number
   link?: string
   releaseDate?: string
@@ -859,13 +859,13 @@ export interface ManualImportResult {
   error?: string
 }
 
-// Audimeta API Types
-export interface AudimetaBookResponse {
+// Audible API Types
+export interface AudibleBookResponse {
   asin?: string
   title?: string
   subtitle?: string
-  authors?: AudimetaAuthor[]
-  narrators?: AudimetaNarrator[]
+  authors?: AudibleAuthor[]
+  narrators?: AudibleNarrator[]
   publisher?: string
   publishDate?: string
   description?: string
@@ -873,8 +873,8 @@ export interface AudimetaBookResponse {
   lengthMinutes?: number
   runtime?: number
   language?: string
-  genres?: AudimetaGenre[]
-  series?: AudimetaSeries[]
+  genres?: AudibleGenre[]
+  series?: AudibleSeries[]
   explicit?: boolean
   releaseDate?: string
   isbn?: string
@@ -882,43 +882,43 @@ export interface AudimetaBookResponse {
   bookFormat?: string
 }
 
-export interface AudimetaAuthor {
+export interface AudibleAuthor {
   asin?: string
   name?: string
   region?: string
 }
 
-export interface AudimetaNarrator {
+export interface AudibleNarrator {
   name?: string
 }
 
-export interface AudimetaGenre {
+export interface AudibleGenre {
   asin?: string
   name?: string
   type?: string
 }
 
-export interface AudimetaSeries {
+export interface AudibleSeries {
   asin?: string
   name?: string
   position?: string
 }
 
-export interface AudimetaSearchResponse {
-  results?: AudimetaSearchResult[]
+export interface AudibleSearchResponse {
+  results?: AudibleSearchResult[]
   totalResults?: number
 }
 
-export interface AudimetaSearchResult {
+export interface AudibleSearchResult {
   asin?: string
   title?: string
-  authors?: AudimetaAuthor[]
+  authors?: AudibleAuthor[]
   imageUrl?: string
   lengthMinutes?: number
   language?: string
-  series?: AudimetaSeries[]
+  series?: AudibleSeries[]
   publisher?: string
-  narrators?: AudimetaNarrator[]
+  narrators?: AudibleNarrator[]
   releaseDate?: string
   link?: string
 }

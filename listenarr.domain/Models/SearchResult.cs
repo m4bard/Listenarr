@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -74,14 +74,14 @@ namespace Listenarr.Domain.Models
     }
 
     /// <summary>
-    /// Search result from audiobook metadata sources (Audimeta, Audnexus, etc.)
+    /// Search result from audiobook metadata sources (Audible, Audnexus, etc.)
     /// </summary>
     public class MetadataSearchResult : BaseSearchResult
     {
         // Additional properties for enhanced audiobook metadata
         public string? Description { get; set; }
         public string? Publisher { get; set; }
-        // Subtitle provided by metadata sources (e.g., Audible/Audimeta)
+        // Subtitle provided by metadata sources (e.g., Audible/Audible)
         public string? Subtitle { get; set; }
         // Publish year as provided by metadata (convenience for UI)
         public string? PublishYear { get; set; }
@@ -94,7 +94,7 @@ namespace Listenarr.Domain.Models
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string? ProductUrl { get; set; } // Direct link to Amazon/Audible product page
-        public List<string>? Genres { get; set; } // Genres from metadata sources (e.g., Audimeta)
+        public List<string>? Genres { get; set; } // Genres from metadata sources (e.g., Audible)
         // Indicates this result had a successful full metadata enrichment pass
         public bool IsEnriched { get; set; }
         // Tracks which metadata API was used to enrich this result
@@ -138,7 +138,7 @@ namespace Listenarr.Domain.Models
         // Metadata-specific properties
         public string? Description { get; set; }
         public string? Publisher { get; set; }
-        // Subtitle provided by metadata sources (e.g., Audible/Audimeta)
+        // Subtitle provided by metadata sources (e.g., Audible/Audible)
         public string? Subtitle { get; set; }
         // Publish year as provided by metadata (convenience for UI)
         public string? PublishYear { get; set; }
@@ -151,10 +151,10 @@ namespace Listenarr.Domain.Models
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string? ProductUrl { get; set; } // Direct link to Amazon/Audible product page
-        public List<string>? Genres { get; set; } // Genres from metadata sources (e.g., Audimeta)
+        public List<string>? Genres { get; set; } // Genres from metadata sources (e.g., Audible)
         // Indicates this result had a successful full metadata enrichment pass (Audible product scrape)
         public bool IsEnriched { get; set; }
-        // Tracks which metadata API was used to enrich this result (e.g., "Audimeta", "Audnexus", "Audible (Scraped)")
+        // Tracks which metadata API was used to enrich this result (e.g., "Audible", "Audnexus", "Audible (Scraped)")
         public string? MetadataSource { get; set; }
         public string? Subtitles { get; set; }
     }

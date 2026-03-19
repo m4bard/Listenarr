@@ -1,4 +1,4 @@
-﻿using Listenarr.Domain.Models;
+using Listenarr.Domain.Models;
 
 namespace Listenarr.Api.Services
 {
@@ -67,14 +67,14 @@ namespace Listenarr.Api.Services
         Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, Listenarr.Api.Models.SearchRequest? request = null);
 
         /// <summary>
-        /// Gets all enabled metadata sources (Audimeta, Audnexus, OpenLibrary, etc.)
+        /// Gets all enabled metadata sources (Audible, Audnexus, OpenLibrary, etc.)
         /// </summary>
         /// <returns>List of enabled metadata source configurations</returns>
         Task<List<ApiConfiguration>> GetEnabledMetadataSourcesAsync();
     }
 
     /// <summary>
-    /// Provides audiobook metadata lookup across configured providers (Audimeta, Audnexus, etc.).
+    /// Provides audiobook metadata lookup across configured providers (Audible, Audnexus, etc.).
     /// </summary>
     public interface IAudiobookMetadataService
     {
@@ -88,13 +88,13 @@ namespace Listenarr.Api.Services
         Task<object?> GetMetadataAsync(string asin, string region = "us", bool cache = true);
 
         /// <summary>
-        /// Gets audiobook metadata directly from Audimeta.
+        /// Gets audiobook metadata directly from Audible.
         /// </summary>
         /// <param name="asin">ASIN identifier.</param>
         /// <param name="region">Region code (default: us).</param>
         /// <param name="cache">Whether provider caching should be used.</param>
-        /// <returns>Audimeta metadata or null when unavailable.</returns>
-        Task<AudimetaBookResponse?> GetAudimetaMetadataAsync(string asin, string region = "us", bool cache = true);
+        /// <returns>Audible metadata or null when unavailable.</returns>
+        Task<AudibleBookResponse?> GetAudibleMetadataAsync(string asin, string region = "us", bool cache = true);
     }
 
     /// <summary>

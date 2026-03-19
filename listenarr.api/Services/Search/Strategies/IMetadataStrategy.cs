@@ -4,12 +4,12 @@ using Listenarr.Infrastructure.Models;
 namespace Listenarr.Api.Services.Search.Strategies;
 
 /// <summary>
-/// Strategy for fetching metadata from different sources (Audimeta, Audnexus, scrapers, etc.).
+/// Strategy for fetching metadata from different sources (Audible, Audnexus, scrapers, etc.).
 /// </summary>
 public interface IMetadataStrategy
 {
     /// <summary>
-    /// Name of the metadata source (e.g., "Audimeta", "Audnexus").
+    /// Name of the metadata source (e.g., "Audible", "Audnexus").
     /// </summary>
     string SourceName { get; }
 

@@ -48,7 +48,7 @@ namespace Listenarr.Api.Tests
                 var controller = new ImagesController(
                     imageCache.Object,
                     Mock.Of<IAudiobookMetadataService>(),
-                    new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false }.Object,
+                    new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false }.Object,
                     Mock.Of<IAudnexusService>(),
                     Mock.Of<IAudiobookRepository>(),
                     Mock.Of<ILogger<ImagesController>>(),

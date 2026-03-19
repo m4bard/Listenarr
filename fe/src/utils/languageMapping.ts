@@ -1,4 +1,4 @@
-// Language to region code mapping for Audible/Audimeta API
+// Language to region code mapping for Audible/Audible API
 // Maps user-friendly language names to Audible market region codes
 // Supported regions: us, ca, uk, au, fr, de, jp, it, in, es, br
 

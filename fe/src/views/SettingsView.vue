@@ -235,7 +235,7 @@
                 id="api-name"
                 v-model="apiForm.name"
                 type="text"
-                placeholder="e.g., Audimeta"
+                placeholder="e.g., Audible"
                 required
               />
             </div>

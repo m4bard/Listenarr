@@ -19,7 +19,7 @@ import type {
   QualityProfile,
   SearchSortBy,
   SearchSortDirection,
-  AudimetaSearchResponse,
+  AudibleSearchResponse,
   AudibleBookMetadata,
   AuthorCatalogResponse,
   AuthorLookupResponse,
@@ -339,44 +339,44 @@ class ApiService {
     return this.request<boolean>(`/search/test/${apiId}`, { method: 'POST' })
   }
 
-  // Audimeta API
-  async searchAudimeta(
+  // Audible catalog API
+  async searchAudible(
     query: string,
     page: number = 1,
     limit: number = 50,
     region: string = 'us',
     language?: string,
-  ): Promise<AudimetaSearchResponse> {
+  ): Promise<AudibleSearchResponse> {
     const params = new URLSearchParams({ query, page: String(page), limit: String(limit), region })
     if (language) params.append('language', language)
-    return this.request<AudimetaSearchResponse>(`/search/audimeta?${params}`)
+    return this.request<AudibleSearchResponse>(`/search/audible?${params}`)
   }
 
-  // Audimeta series helpers (proxied through backend)
-  async searchAudimetaSeries(name: string, region: string = 'us'): Promise<unknown> {
+  // Audible series helpers (proxied through backend)
+  async searchAudibleSeries(name: string, region: string = 'us'): Promise<unknown> {
     const params = new URLSearchParams({ name, region })
-    return this.request<unknown>(`/search/audimeta/series?${params}`)
+    return this.request<unknown>(`/search/audible/series?${params}`)
   }
 
-  async getAudimetaSeriesBooks(seriesAsin: string, region: string = 'us'): Promise<unknown> {
+  async getAudibleSeriesBooks(seriesAsin: string, region: string = 'us'): Promise<unknown> {
     const params = new URLSearchParams({ region })
     return this.request<unknown>(
-      `/search/audimeta/series/books/${encodeURIComponent(seriesAsin)}?${params}`,
+      `/search/audible/series/books/${encodeURIComponent(seriesAsin)}?${params}`,
     )
   }
 
-  async searchAudimetaByTitleAndAuthor(
+  async searchAudibleByTitleAndAuthor(
     title: string,
     author: string,
     page: number = 1,
     limit: number = 50,
     region: string = 'us',
     language?: string,
-  ): Promise<AudimetaSearchResponse> {
-    // Use unified POST /search in Advanced mode to route author/title flows to Audimeta
+  ): Promise<AudibleSearchResponse> {
+    // Use unified POST /search in Advanced mode to route author/title flows to Audible
     const body: Record<string, unknown> = { mode: 'Advanced', title, author, page, limit, region }
     if (language) (body as Record<string, unknown>).language = language
-    const resp = await this.request<AudimetaSearchResponse | null>('/search', {
+    const resp = await this.request<AudibleSearchResponse | null>('/search', {
       method: 'POST',
       body: JSON.stringify(body),
     })
@@ -1480,7 +1480,7 @@ class ApiService {
 
   /**
    * Ensure the backend image cache has a cached copy for the given image endpoint.
-   * Attempts to resolve candidate image URLs from Audimeta and Audnexus metadata,
+   * Attempts to resolve candidate image URLs from Audible and Audnexus metadata,
    * caches discovered candidate URLs, and triggers a backend fetch for each candidate URL.
    * Returns true if any candidate (or the base image endpoint) returned a successful response.
    */
@@ -2046,7 +2046,7 @@ export const scoreSearchResults = (profileId: number, searchResults: SearchResul
 export const testDownloadClient = (config: Partial<DownloadClientConfiguration>) =>
   apiService.testDownloadClient(config)
 
-// Audimeta helpers
+// Audible helpers
 // ...existing code...
 // ...existing code...
 export const ensureImageCached = apiService.ensureImageCached.bind(apiService);

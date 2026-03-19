@@ -4,7 +4,7 @@ import type { SearchResult } from '@/types'
 
 /**
  * Map an OpenLibraryBook to the canonical SearchResult structure.
- * This ensures OpenLibrary results are compatible with Audimeta/Audnexus results.
+ * This ensures OpenLibrary results are compatible with Audible/Audnexus results.
  */
 export function mapOpenLibraryBookToSearchResult(book: OpenLibraryBook): SearchResult {
   return {

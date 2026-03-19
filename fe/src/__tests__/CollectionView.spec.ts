@@ -366,7 +366,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'local.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
         {
           asin: 'B000REMOTE1',
@@ -374,7 +374,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'remote.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
       ],
     })
@@ -457,7 +457,7 @@ describe('CollectionView', () => {
           authors: ['Brandon Sanderson'],
           imageUrl: 'book1.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
           series: 'Mistborn',
           seriesNumber: '1',
         },
@@ -467,7 +467,7 @@ describe('CollectionView', () => {
           authors: ['Brandon Sanderson'],
           imageUrl: 'book2.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
           series: 'Mistborn',
           seriesNumber: '2',
         },
@@ -477,7 +477,7 @@ describe('CollectionView', () => {
           authors: ['Brandon Sanderson'],
           imageUrl: 'book3.jpg',
           language: 'german',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
           series: 'Mistborn',
           seriesNumber: '3',
         },
@@ -565,7 +565,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'local.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
       ],
     })
@@ -665,7 +665,7 @@ describe('CollectionView', () => {
           authors: ['SenLinYu'],
           imageUrl: 'local.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
         {
           asin: 'B000REMOTE1',
@@ -673,7 +673,7 @@ describe('CollectionView', () => {
           authors: ['SenLinYu'],
           imageUrl: 'remote.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
       ],
     })
@@ -752,7 +752,7 @@ describe('CollectionView', () => {
           authors: ['SenLinYu'],
           imageUrl: 'local.jpg',
           language: 'german',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
         {
           asin: 'B000REMOTE1',
@@ -760,7 +760,7 @@ describe('CollectionView', () => {
           authors: ['SenLinYu'],
           imageUrl: 'remote-en.jpg',
           language: 'en-us',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
         {
           asin: 'B000REMOTE2',
@@ -768,7 +768,7 @@ describe('CollectionView', () => {
           authors: ['SenLinYu'],
           imageUrl: 'remote-de.jpg',
           language: 'de',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
         {
           asin: 'B000REMOTE3',
@@ -838,7 +838,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'local-1.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
         {
           asin: 'B000LOCAL02',
@@ -846,7 +846,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'local-2.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
         {
           asin: 'B000REMOTE1',
@@ -854,7 +854,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'remote.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
       ],
     })
@@ -920,7 +920,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'remote.jpg',
           language: 'de',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
       ],
     })
@@ -1001,7 +1001,7 @@ describe('CollectionView', () => {
           authors: ['Brandon Sanderson'],
           imageUrl: 'remote.jpg',
           language: 'de',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
           series: 'Mistborn',
           seriesNumber: '1',
         },
@@ -1096,7 +1096,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'local.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
         {
           asin: 'B000REMOTE1',
@@ -1104,7 +1104,7 @@ describe('CollectionView', () => {
           authors: ['Andy Weir'],
           imageUrl: 'remote.jpg',
           language: 'english',
-          metadataSource: 'Audimeta',
+          metadataSource: 'Audible',
         },
       ],
     })

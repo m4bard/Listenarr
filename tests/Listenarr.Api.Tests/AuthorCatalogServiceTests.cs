@@ -15,13 +15,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetCatalogAsync_SupplementsSparseFallbackCatalog_WithSearchResults()
         {
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var searchService = new Mock<ISearchService>();
             var logger = new Mock<ILogger<AuthorCatalogService>>();
 
-            audimeta
+            audible
                 .Setup(service => service.LookupAuthorAsync("Andy Weir", "us"))
                 .ReturnsAsync(new AuthorLookupItem
                 {
@@ -29,17 +29,17 @@ namespace Listenarr.Api.Tests
                     Name = "Andy Weir"
                 });
 
-            audimeta
-                .Setup(service => service.GetBooksByAuthorAsync("Andy Weir", "B00G0WYW92", 1, 10, "us", null))
-                .ReturnsAsync(new AudimetaSearchResponse
+            audible
+                .Setup(service => service.GetAllBooksByAuthorAsync("Andy Weir", "B00G0WYW92", 10, "us", null))
+                .ReturnsAsync(new AudibleSearchResponse
                 {
-                    Results = new List<AudimetaSearchResult>
+                    Results = new List<AudibleSearchResult>
                     {
                         new()
                         {
                             Asin = "B08G9PRS1K",
                             Title = "Project Hail Mary",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Andy Weir" } },
+                            Authors = new List<AudibleAuthor> { new() { Name = "Andy Weir" } },
                             ImageUrl = "project-hail-mary.jpg"
                         }
                     },
@@ -91,7 +91,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new AuthorCatalogService(
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 audiobookRepository.Object,
                 searchService.Object,
@@ -108,9 +108,9 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task GetCatalogAsync_UsesPersistedCatalogCache_BeforeAudimeta()
+        public async Task GetCatalogAsync_UsesPersistedCatalogCache_BeforeAudible()
         {
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var searchService = new Mock<ISearchService>();
@@ -145,7 +145,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new AuthorCatalogService(
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 audiobookRepository.Object,
                 searchService.Object,
@@ -158,14 +158,15 @@ namespace Listenarr.Api.Tests
             Assert.Equal("Project Hail Mary", result.Books[0].Title);
             Assert.Equal("Andy Weir", result.Author.Name);
 
-            audimeta.Verify(service => service.LookupAuthorAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
-            audimeta.Verify(service => service.GetBooksByAuthorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+            audible.Verify(service => service.LookupAuthorAsync(It.IsAny<string>(), It.IsAny<string>()), Times.Never);
+            audible.Verify(service => service.GetBooksByAuthorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
+            audible.Verify(service => service.GetAllBooksByAuthorAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>()), Times.Never);
         }
 
         [Fact]
         public async Task GetCatalogAsync_ForceRefresh_BypassesPersistedCatalogCache_AndPersistsFreshBooks()
         {
-            var audimeta = new Mock<AudimetaService>(new HttpClient(), Mock.Of<ILogger<AudimetaService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var searchService = new Mock<ISearchService>();
@@ -195,17 +196,17 @@ namespace Listenarr.Api.Tests
                 .Setup(repository => repository.UpsertCachedAuthorAsync(It.IsAny<AuthorCacheEntry>()))
                 .ReturnsAsync((AuthorCacheEntry entry) => entry);
 
-            audimeta
-                .Setup(service => service.GetBooksByAuthorAsync("Brandon Sanderson", "B001IGFHW6", 1, 10, "us", null))
-                .ReturnsAsync(new AudimetaSearchResponse
+            audible
+                .Setup(service => service.GetAllBooksByAuthorAsync("Brandon Sanderson", "B001IGFHW6", 10, "us", null))
+                .ReturnsAsync(new AudibleSearchResponse
                 {
-                    Results = new List<AudimetaSearchResult>
+                    Results = new List<AudibleSearchResult>
                     {
                         new()
                         {
                             Asin = "B002V8H13U",
                             Title = "The Way of Kings",
-                            Authors = new List<AudimetaAuthor> { new() { Name = "Brandon Sanderson" } },
+                            Authors = new List<AudibleAuthor> { new() { Name = "Brandon Sanderson" } },
                             ImageUrl = "way-of-kings.jpg",
                             Language = "english",
                             Link = "https://audible.example/way-of-kings"
@@ -215,7 +216,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new AuthorCatalogService(
-                audimeta.Object,
+                audible.Object,
                 audnexus.Object,
                 audiobookRepository.Object,
                 searchService.Object,
@@ -227,8 +228,8 @@ namespace Listenarr.Api.Tests
             Assert.Single(result!.Books);
             Assert.Equal("The Way of Kings", result.Books[0].Title);
 
-            audimeta.Verify(
-                svc => svc.GetBooksByAuthorAsync("Brandon Sanderson", "B001IGFHW6", 1, 10, "us", null),
+            audible.Verify(
+                svc => svc.GetAllBooksByAuthorAsync("Brandon Sanderson", "B001IGFHW6", 10, "us", null),
                 Times.Once);
             audiobookRepository.Verify(
                 repository => repository.UpsertCachedAuthorAsync(It.Is<AuthorCacheEntry>(entry =>
