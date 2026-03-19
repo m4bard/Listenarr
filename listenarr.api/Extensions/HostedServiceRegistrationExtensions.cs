@@ -47,6 +47,12 @@ namespace Listenarr.Api.Extensions
             // Register background service for automatic audiobook searching
             services.AddHostedService<AutomaticSearchService>();
 
+            // Register background service for syncing monitored author catalogs
+            services.AddHostedService<AuthorMonitoringBackgroundService>();
+
+            // Register background service for syncing monitored series catalogs
+            services.AddHostedService<SeriesMonitoringBackgroundService>();
+
             // Background installer for ffprobe - run in background so startup isn't blocked
             services.AddHostedService<FfmpegInstallBackgroundService>();
 

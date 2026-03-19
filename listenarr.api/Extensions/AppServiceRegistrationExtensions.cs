@@ -27,6 +27,11 @@ namespace Listenarr.Api.Extensions
             services.AddScoped<ISearchService, SearchService>();
             services.AddScoped<IMetadataService, MetadataService>();
             services.AddScoped<IAudioFileService, AudioFileService>();
+            services.AddScoped<IAuthorCatalogService, AuthorCatalogService>();
+            services.AddScoped<ISeriesCatalogService, SeriesCatalogService>();
+            services.AddScoped<ILibraryAddService, LibraryAddService>();
+            services.AddScoped<IAuthorMonitoringService, AuthorMonitoringService>();
+            services.AddScoped<ISeriesMonitoringService, SeriesMonitoringService>();
             // Metadata extraction limiter to bound concurrent ffprobe calls
             services.AddSingleton<MetadataExtractionLimiter>();
             // Ffmpeg installer: provides a bundled ffprobe binary when not present on the system
@@ -55,7 +60,7 @@ namespace Listenarr.Api.Extensions
             services.AddScoped<IDownloadQueueService, DownloadQueueService>();
             services.AddScoped<IFileProcessingHandler, FileProcessingHandler>();
             services.AddScoped<IOpenLibraryService, OpenLibraryService>();
-            services.AddScoped<IImageCacheService>(sp => new ImageCacheService(
+            services.AddSingleton<IImageCacheService>(sp => new ImageCacheService(
                 sp.GetRequiredService<ILogger<ImageCacheService>>(),
                 sp.GetRequiredService<IHttpClientFactory>(),
                 sp.GetRequiredService<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().ContentRootPath

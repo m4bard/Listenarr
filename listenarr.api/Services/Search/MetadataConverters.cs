@@ -22,44 +22,44 @@ public class MetadataConverters
     }
 
     /// <summary>
-    /// Converts Audimeta API response to AudibleBookMetadata.
+    /// Converts Audible API response to AudibleBookMetadata.
     /// </summary>
-    public AudibleBookMetadata ConvertAudimetaToMetadata(AudimetaBookResponse audimetaData, string asin, string source = "Audible")
+    public AudibleBookMetadata ConvertAudibleToMetadata(AudibleBookResponse audibleData, string asin, string source = "Audible")
     {
         var metadata = new AudibleBookMetadata
         {
-            Asin = audimetaData.Asin ?? asin,
+            Asin = audibleData.Asin ?? asin,
             Source = source, // Use the original search source (Amazon or Audible)
-            Title = audimetaData.Title,
-            Subtitle = audimetaData.Subtitle,
-            Authors = audimetaData.Authors?.Select(a => a.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
-            Narrators = audimetaData.Narrators?.Select(n => n.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
-            Publisher = audimetaData.Publisher,
-            Description = audimetaData.Description,
-            Genres = audimetaData.Genres?.Select(g => g.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
-            Language = audimetaData.Language,
-            Isbn = !string.IsNullOrWhiteSpace(audimetaData.Isbn) ? new List<string> { audimetaData.Isbn! } : new List<string>(),
-            ImageUrl = audimetaData.ImageUrl,
-            Abridged = audimetaData.BookFormat?.Contains("abridged", StringComparison.OrdinalIgnoreCase) ?? false,
-            Explicit = audimetaData.Explicit ?? false
+            Title = audibleData.Title,
+            Subtitle = audibleData.Subtitle,
+            Authors = audibleData.Authors?.Select(a => a.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
+            Narrators = audibleData.Narrators?.Select(n => n.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
+            Publisher = audibleData.Publisher,
+            Description = audibleData.Description,
+            Genres = audibleData.Genres?.Select(g => g.Name).Where(n => !string.IsNullOrEmpty(n)).Select(n => n!).ToList(),
+            Language = audibleData.Language,
+            Isbn = !string.IsNullOrWhiteSpace(audibleData.Isbn) ? new List<string> { audibleData.Isbn! } : new List<string>(),
+            ImageUrl = audibleData.ImageUrl,
+            Abridged = audibleData.BookFormat?.Contains("abridged", StringComparison.OrdinalIgnoreCase) ?? false,
+            Explicit = audibleData.Explicit ?? false
         };
 
-        // Handle series (audimeta returns array, we just take the first one)
-        if (audimetaData.Series != null && audimetaData.Series.Any())
+        // Handle series (audible returns array, we just take the first one)
+        if (audibleData.Series != null && audibleData.Series.Any())
         {
-            var firstSeries = audimetaData.Series.First();
+            var firstSeries = audibleData.Series.First();
             metadata.Series = firstSeries.Name;
             metadata.SeriesNumber = firstSeries.Position;
         }
 
-        // Convert runtime from minutes to minutes (audimeta returns lengthMinutes)
-        if (audimetaData.LengthMinutes.HasValue && audimetaData.LengthMinutes > 0)
+        // Convert runtime from minutes to minutes (audible returns lengthMinutes)
+        if (audibleData.LengthMinutes.HasValue && audibleData.LengthMinutes > 0)
         {
-            metadata.Runtime = audimetaData.LengthMinutes.Value;
+            metadata.Runtime = audibleData.LengthMinutes.Value;
         }
 
         // Extract year from releaseDate (format: "2023-10-24T00:00:00.000+00:00")
-        string? dateStr = audimetaData.ReleaseDate ?? audimetaData.PublishDate;
+        string? dateStr = audibleData.ReleaseDate ?? audibleData.PublishDate;
         if (!string.IsNullOrEmpty(dateStr))
         {
             var yearMatch = Regex.Match(dateStr, @"\d{4}");
@@ -84,7 +84,7 @@ public class MetadataConverters
             }
         }
 
-        _logger.LogInformation("Converted audimeta data for {Asin}: Title={Title}, Runtime={Runtime}min, Year={Year}, Series={Series}, ImageUrl={ImageUrl}",
+        _logger.LogInformation("Converted audible data for {Asin}: Title={Title}, Runtime={Runtime}min, Year={Year}, Series={Series}, ImageUrl={ImageUrl}",
             asin, metadata.Title, metadata.Runtime, metadata.PublishYear, metadata.Series, metadata.ImageUrl);
 
         return metadata;

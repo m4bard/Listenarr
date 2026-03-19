@@ -30,18 +30,19 @@ namespace Listenarr.Api.Controllers
     {
         private readonly IImageCacheService _imageCacheService;
         private readonly IAudiobookMetadataService _audiobookMetadataService;
-        private readonly AudimetaService _audimetaService;
+        private readonly AudibleService _audibleService;
         private readonly IAudnexusService _audnexusService;
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly IOpenLibraryService? _openLibraryService;
         private readonly ILogger<ImagesController> _logger;
         private readonly IWebHostEnvironment _environment;
+        private readonly string _effectiveContentRootPath;
 
         [ActivatorUtilitiesConstructor]
         public ImagesController(
             IImageCacheService imageCacheService,
             IAudiobookMetadataService audiobookMetadataService,
-            AudimetaService audimetaService,
+            AudibleService audibleService,
             IAudnexusService audnexusService,
             IAudiobookRepository audiobookRepository,
             ILogger<ImagesController> logger,
@@ -49,7 +50,7 @@ namespace Listenarr.Api.Controllers
             : this(
                 imageCacheService,
                 audiobookMetadataService,
-                audimetaService,
+                audibleService,
                 audnexusService,
                 audiobookRepository,
                 openLibraryService: null,
@@ -61,7 +62,7 @@ namespace Listenarr.Api.Controllers
         public ImagesController(
             IImageCacheService imageCacheService,
             IAudiobookMetadataService audiobookMetadataService,
-            AudimetaService audimetaService,
+            AudibleService audibleService,
             IAudnexusService audnexusService,
             IAudiobookRepository audiobookRepository,
             IOpenLibraryService? openLibraryService,
@@ -70,12 +71,13 @@ namespace Listenarr.Api.Controllers
         {
             _imageCacheService = imageCacheService;
             _audiobookMetadataService = audiobookMetadataService;
-            _audimetaService = audimetaService;
+            _audibleService = audibleService;
             _audnexusService = audnexusService;
             _audiobookRepository = audiobookRepository;
             _openLibraryService = openLibraryService;
             _logger = logger;
             _environment = environment;
+            _effectiveContentRootPath = ResolveEffectiveContentRoot(environment.ContentRootPath);
         }
 
         /// <summary>
@@ -179,10 +181,10 @@ namespace Listenarr.Api.Controllers
                     _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", identifier, relativePath);
                     try
                     {
-                        var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath));
-                        var imagesRoot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "cache", "images"));
-                        var imagesRootConfig = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "config", "cache", "images"));
-                        var wwwroot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "wwwroot"));
+                        var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath));
+                        var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
+                        var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
+                        var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
 
                         // Use Path.GetRelativePath to reliably determine whether candidateFull
                         // is inside one of the allowed roots. This works across separator styles.
@@ -244,10 +246,10 @@ namespace Listenarr.Api.Controllers
                                 // Validate moved path as well
                                 try
                                 {
-                                    var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_environment.ContentRootPath, moved));
-                                    var imagesRoot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "cache", "images"));
-                                    var imagesRootConfig = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "config", "cache", "images"));
-                                    var wwwroot = Path.GetFullPath(Path.Combine(_environment.ContentRootPath, "wwwroot"));
+                                    var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, moved));
+                                    var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
+                                    var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
+                                    var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
 
                                     if (movedFull.StartsWith(imagesRoot, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(imagesRootConfig, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(wwwroot, StringComparison.OrdinalIgnoreCase))
                                     {
@@ -300,7 +302,7 @@ namespace Listenarr.Api.Controllers
                     _logger.LogWarning("Image not found for identifier: {Identifier}", identifier);
 
                     // Cache is missing and caller did not provide a URL. Try metadata providers:
-                    // ASIN => Audimeta, then Audnexus; ISBN => OpenLibrary cover URL.
+                    // ASIN => Audible, then Audnexus; ISBN => OpenLibrary cover URL.
                     try
                     {
                         var region = Request.Query["region"].ToString();
@@ -464,19 +466,19 @@ namespace Listenarr.Api.Controllers
 
                         if (string.IsNullOrWhiteSpace(relativePath))
                         {
-                        var audimeta = await _audiobookMetadataService.GetAudimetaMetadataAsync(identifier, region, cache: true);
+                        var audible = await _audiobookMetadataService.GetAudibleMetadataAsync(identifier, region, cache: true);
 
-                        if (audimeta != null)
+                        if (audible != null)
                         {
-                            AddCandidateUrl(audimeta.ImageUrl, "Audimeta");
-                            if (!string.IsNullOrWhiteSpace(audimeta.Isbn))
+                            AddCandidateUrl(audible.ImageUrl, "Audible");
+                            if (!string.IsNullOrWhiteSpace(audible.Isbn))
                             {
-                                candidateIsbn = NormalizeIsbn(audimeta.Isbn);
+                                candidateIsbn = NormalizeIsbn(audible.Isbn);
                             }
                         }
 
                         // Try Audnexus for ASINs as an additional candidate source even when
-                        // Audimeta returned an image (Audimeta images can be placeholders or stale).
+                        // Audible returned an image (Audible images can be placeholders or stale).
                         if (LooksLikeAsin(identifier))
                         {
                             try
@@ -512,13 +514,13 @@ namespace Listenarr.Api.Controllers
                             {
                                 try
                                 {
-                                    var altAudimeta = await _audiobookMetadataService.GetAudimetaMetadataAsync(altAsin, region, cache: true);
-                                    if (altAudimeta != null)
+                                    var altAudible = await _audiobookMetadataService.GetAudibleMetadataAsync(altAsin, region, cache: true);
+                                    if (altAudible != null)
                                     {
-                                        AddCandidateUrl(altAudimeta.ImageUrl, "AudimetaAltAsin");
-                                        if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(altAudimeta.Isbn))
+                                        AddCandidateUrl(altAudible.ImageUrl, "AudibleAltAsin");
+                                        if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(altAudible.Isbn))
                                         {
-                                            candidateIsbn = NormalizeIsbn(altAudimeta.Isbn);
+                                            candidateIsbn = NormalizeIsbn(altAudible.Isbn);
                                         }
                                     }
                                 }
@@ -528,7 +530,7 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogDebug(ex, "Audimeta alternate ASIN lookup failed for {Identifier} via {AltAsin}", identifier, altAsin);
+                                    _logger.LogDebug(ex, "Audible alternate ASIN lookup failed for {Identifier} via {AltAsin}", identifier, altAsin);
                                 }
 
                                 try
@@ -579,7 +581,7 @@ namespace Listenarr.Api.Controllers
                         // Legacy fallback path through configured source envelope for compatibility.
                         if (string.IsNullOrWhiteSpace(candidateUrl) || string.IsNullOrWhiteSpace(candidateIsbn))
                         {
-                            _logger.LogDebug("No image found in audimeta, attempting fallback GetMetadataAsync for {Identifier}", identifier);
+                            _logger.LogDebug("No image found in audible, attempting fallback GetMetadataAsync for {Identifier}", identifier);
                             try
                             {
                                 var metadataEnvelope = await _audiobookMetadataService.GetMetadataAsync(identifier, region, cache: true);
@@ -587,8 +589,8 @@ namespace Listenarr.Api.Controllers
                                 {
                                     try
                                     {
-                                        // If the service returned an AudimetaBookResponse directly
-                                        if (metadataEnvelope is global::Listenarr.Api.Services.AudimetaBookResponse directMeta)
+                                        // If the service returned an AudibleBookResponse directly
+                                        if (metadataEnvelope is global::Listenarr.Api.Services.AudibleBookResponse directMeta)
                                         {
                                             AddCandidateUrl(directMeta.ImageUrl, "MetadataEnvelopeDirect");
                                         }
@@ -598,10 +600,10 @@ namespace Listenarr.Api.Controllers
                                             dynamic env = metadataEnvelope;
                                             object? mdObj = env.metadata as object;
 
-                                            // If it's already the Audimeta type, use it
-                                            if (mdObj is global::Listenarr.Api.Services.AudimetaBookResponse mdMeta)
+                                            // If it's already the Audible type, use it
+                                            if (mdObj is global::Listenarr.Api.Services.AudibleBookResponse mdMeta)
                                             {
-                                                AddCandidateUrl(mdMeta.ImageUrl, "MetadataEnvelopeAudimeta");
+                                                AddCandidateUrl(mdMeta.ImageUrl, "MetadataEnvelopeAudible");
                                             }
                                             else if (mdObj != null)
                                             {
@@ -748,14 +750,14 @@ namespace Listenarr.Api.Controllers
                                     _logger.LogDebug(ex, "Failed to lookup stored author ASIN for identifier {Identifier}", identifier);
                                 }
 
-                                // If we didn't find a cached author image via stored ASIN, fallback to Audimeta lookup by name
+                                // If we didn't find a cached author image via stored ASIN, fallback to Audible lookup by name
                                 if (string.IsNullOrWhiteSpace(relativePath))
                                 {
-                                    var authorLookup = await _audimetaService.LookupAuthorAsync(identifier, region);
+                                    var authorLookup = await _audibleService.LookupAuthorAsync(identifier, region);
                                     if (authorLookup != null && !string.IsNullOrWhiteSpace(authorLookup.Image) && (authorLookup.Image.StartsWith("http://") || authorLookup.Image.StartsWith("https://")))
                                     {
-                                        AddCandidateUrl(authorLookup.Image, "AudimetaAuthor");
-                                        _logger.LogInformation("Found author image from Audimeta for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                        AddCandidateUrl(authorLookup.Image, "AudibleAuthor");
+                                        _logger.LogInformation("Found author image from Audible for identifier {Identifier}: {Url}", identifier, candidateUrl);
                                     }
                                 }
                             }
@@ -765,7 +767,7 @@ namespace Listenarr.Api.Controllers
                             }
                             catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
-                                _logger.LogDebug(ex, "Audimeta author lookup failed for {Identifier}", identifier);
+                                _logger.LogDebug(ex, "Audible author lookup failed for {Identifier}", identifier);
                             }
 
                             // 2) Audnexus author search fallback
@@ -902,34 +904,10 @@ namespace Listenarr.Api.Controllers
 
                     if (relativePath == null)
                     {
-                        // Attempt to serve the frontend placeholder first (fe/public/placeholder.svg)
-                        try
-                        {
-                            var frontendPlaceholder = Path.Combine(_environment.ContentRootPath, "..", "fe", "public", "placeholder.svg");
-                            if (System.IO.File.Exists(frontendPlaceholder))
-                            {
-                                _logger.LogInformation("Serving frontend placeholder image for missing identifier: {Identifier}", identifier);
-                                Response.Headers["Cache-Control"] = "public, max-age=300";
-                                return PhysicalFile(frontendPlaceholder, "image/svg+xml");
-                            }
-
-                            // Fallback to backend wwwroot placeholder if frontend file not present
-                            var placeholderPath = Path.Combine(_environment.ContentRootPath, "wwwroot", "placeholder.svg");
-                            if (System.IO.File.Exists(placeholderPath))
-                            {
-                                _logger.LogInformation("Serving backend placeholder image for missing identifier: {Identifier}", identifier);
-                                Response.Headers["Cache-Control"] = "public, max-age=300";
-                                return PhysicalFile(placeholderPath, "image/svg+xml");
-                            }
-                        }
-                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                        {
-                            _logger.LogDebug(ex, "Failed to serve placeholder for missing image {Identifier}", identifier);
-                        }
-
-                        // Return NotFound with short caching to reduce repeated filesystem lookups by other clients
-                        Response.Headers["Cache-Control"] = "public, max-age=300";
-                        return NotFound(new { message = "Image not found" });
+                        return CreatePlaceholderResult(
+                            logContext: "missing identifier",
+                            logValue: identifier,
+                            notFoundMessage: "Image not found");
                     }
                 }
 
@@ -943,37 +921,15 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // Build the full file path
-                var fullPath = ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath);
+                var fullPath = ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath);
 
                 if (!System.IO.File.Exists(fullPath))
                 {
                     _logger.LogWarning("Image file does not exist at path: {Path}", fullPath);
-                    // Try to serve the frontend placeholder first, then backend placeholder
-                    try
-                    {
-                        var frontendPlaceholder = Path.Combine(_environment.ContentRootPath, "..", "fe", "public", "placeholder.svg");
-                        if (System.IO.File.Exists(frontendPlaceholder))
-                        {
-                            _logger.LogInformation("Serving frontend placeholder image for missing file at path: {Path}", fullPath);
-                            Response.Headers["Cache-Control"] = "public, max-age=300";
-                            return PhysicalFile(frontendPlaceholder, "image/svg+xml");
-                        }
-
-                        var placeholderPath = Path.Combine(_environment.ContentRootPath, "wwwroot", "placeholder.svg");
-                        if (System.IO.File.Exists(placeholderPath))
-                        {
-                            _logger.LogInformation("Serving backend placeholder image for missing file at path: {Path}", fullPath);
-                            Response.Headers["Cache-Control"] = "public, max-age=300";
-                            return PhysicalFile(placeholderPath, "image/svg+xml");
-                        }
-                    }
-                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                    {
-                        _logger.LogDebug(ex, "Failed to serve placeholder for missing file {Path}", fullPath);
-                    }
-
-                    Response.Headers["Cache-Control"] = "public, max-age=300";
-                    return NotFound(new { message = "Image file not found" });
+                    return CreatePlaceholderResult(
+                        logContext: "missing file",
+                        logValue: fullPath,
+                        notFoundMessage: "Image file not found");
                 }
 
                 // Determine content type based on file extension
@@ -1103,6 +1059,225 @@ namespace Listenarr.Api.Controllers
                 : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
 
+        private static string CombineRelativePath(string basePath, params string[] segments)
+        {
+            if (string.IsNullOrWhiteSpace(basePath))
+            {
+                throw new ArgumentException("Base path is required.", nameof(basePath));
+            }
+
+            var combined = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            foreach (var segment in segments)
+            {
+                if (string.IsNullOrWhiteSpace(segment))
+                {
+                    continue;
+                }
+
+                var relativeSegment = segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                if (Path.IsPathRooted(relativeSegment))
+                {
+                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
+                }
+
+                combined = string.IsNullOrEmpty(combined)
+                    ? relativeSegment
+                    : combined + Path.DirectorySeparatorChar + relativeSegment;
+            }
+
+            return combined;
+        }
+
+        private IActionResult CreatePlaceholderResult(string logContext, string? logValue, string notFoundMessage)
+        {
+            try
+            {
+                var placeholderPath = ResolvePlaceholderPath();
+                if (!string.IsNullOrWhiteSpace(placeholderPath))
+                {
+                    _logger.LogInformation("Serving placeholder image for {LogContext}: {LogValue}", logContext, logValue);
+                    Response.Headers["Cache-Control"] = "public, max-age=300";
+                    return PhysicalFile(placeholderPath, "image/svg+xml");
+                }
+            }
+            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+            {
+                _logger.LogDebug(ex, "Failed to resolve placeholder for {LogContext}: {LogValue}", logContext, logValue);
+            }
+
+            // Fall back to the shared placeholder route before returning JSON 404. This
+            // keeps image consumers rendering an actual placeholder even when the local
+            // file cannot be resolved from the current content root.
+            if (!string.Equals(HttpContext?.Request?.Path.Value, "/placeholder.svg", StringComparison.OrdinalIgnoreCase))
+            {
+                Response.Headers["Cache-Control"] = "public, max-age=300";
+                return Redirect("/placeholder.svg");
+            }
+
+            Response.Headers["Cache-Control"] = "public, max-age=300";
+            return NotFound(new { message = notFoundMessage });
+        }
+
+        private string? ResolvePlaceholderPath()
+        {
+            foreach (var candidate in EnumeratePlaceholderCandidates())
+            {
+                if (string.IsNullOrWhiteSpace(candidate))
+                {
+                    continue;
+                }
+
+                try
+                {
+                    var fullPath = Path.GetFullPath(candidate);
+                    if (System.IO.File.Exists(fullPath))
+                    {
+                        return fullPath;
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "Failed probing placeholder candidate path {Path}", candidate);
+                }
+            }
+
+            return null;
+        }
+
+        private string ResolveEffectiveContentRoot(string? contentRootPath)
+        {
+            var fallbackRoot = string.IsNullOrWhiteSpace(contentRootPath)
+                ? AppContext.BaseDirectory
+                : contentRootPath;
+
+            var resolvedRoot = TryResolveListenarrApiRoot(fallbackRoot);
+            if (!string.IsNullOrWhiteSpace(resolvedRoot) &&
+                !string.Equals(resolvedRoot, fallbackRoot, StringComparison.OrdinalIgnoreCase))
+            {
+                _logger.LogInformation(
+                    "Resolved image controller content root to repo path: {ResolvedRoot}",
+                    resolvedRoot);
+                return resolvedRoot;
+            }
+
+            return fallbackRoot;
+        }
+
+        private static string? TryResolveListenarrApiRoot(string? startingPath)
+        {
+            if (string.IsNullOrWhiteSpace(startingPath))
+            {
+                return null;
+            }
+
+            try
+            {
+                var dir = new DirectoryInfo(Path.GetFullPath(startingPath));
+                const int maxDepth = 8;
+                var depth = 0;
+
+                while (dir != null && depth++ < maxDepth)
+                {
+                    if (LooksLikeListenarrApiRoot(dir.FullName))
+                    {
+                        return dir.FullName;
+                    }
+
+                    var nestedApiRoot = CombineRelativePath(dir.FullName, "listenarr.api");
+                    if (LooksLikeListenarrApiRoot(nestedApiRoot))
+                    {
+                        return nestedApiRoot;
+                    }
+
+                    dir = dir.Parent;
+                }
+            }
+            catch (Exception ex) when (
+                ex is IOException or
+                UnauthorizedAccessException or
+                ArgumentException or
+                System.Security.SecurityException or
+                NotSupportedException or
+                PathTooLongException)
+            {
+                return null;
+            }
+
+            return null;
+        }
+
+        private static bool LooksLikeListenarrApiRoot(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
+            {
+                return false;
+            }
+
+            var hasConfigDirectory = Directory.Exists(CombineRelativePath(path, "config"));
+            var hasProjectMarkers =
+                System.IO.File.Exists(CombineRelativePath(path, "listenarr.api.csproj")) ||
+                Directory.Exists(CombineRelativePath(path, "wwwroot"));
+
+            return hasConfigDirectory && hasProjectMarkers;
+        }
+
+        private IEnumerable<string> EnumeratePlaceholderCandidates()
+        {
+            var baseDirectories = new[]
+            {
+                _effectiveContentRootPath,
+                AppContext.BaseDirectory,
+                Directory.GetCurrentDirectory()
+            }
+            .Where(path => !string.IsNullOrWhiteSpace(path))
+            .Select(path =>
+            {
+                try
+                {
+                    return Path.GetFullPath(path);
+                }
+                catch (Exception ex) when (
+                    ex is ArgumentException or
+                    ArgumentNullException or
+                    PathTooLongException or
+                    NotSupportedException or
+                    System.Security.SecurityException)
+                {
+                    return path;
+                }
+            })
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+            foreach (var baseDirectory in baseDirectories)
+            {
+                DirectoryInfo? current = null;
+                try
+                {
+                    current = new DirectoryInfo(baseDirectory);
+                }
+                catch (Exception ex) when (
+                    ex is ArgumentException or
+                    ArgumentNullException or
+                    PathTooLongException or
+                    NotSupportedException or
+                    System.Security.SecurityException)
+                {
+                    current = null;
+                }
+
+                var depth = 0;
+                while (current != null && depth++ < 8)
+                {
+                    yield return CombineRelativePath(current.FullName, "wwwroot", "placeholder.svg");
+                    yield return CombineRelativePath(current.FullName, "fe", "public", "placeholder.svg");
+                    yield return CombineRelativePath(current.FullName, "listenarr.api", "wwwroot", "placeholder.svg");
+
+                    current = current.Parent;
+                }
+            }
+        }
+
         /// <summary>
         /// Delete a cached cover image by identifier.
         /// </summary>
@@ -1124,7 +1299,7 @@ namespace Listenarr.Api.Controllers
                     return NotFound(new { message = "Image not found" });
                 }
 
-                var fullPath = ResolvePathWithOptionalBase(_environment.ContentRootPath, relativePath);
+                var fullPath = ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath);
 
                 if (System.IO.File.Exists(fullPath))
                 {

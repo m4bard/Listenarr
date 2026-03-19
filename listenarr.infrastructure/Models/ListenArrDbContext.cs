@@ -23,6 +23,10 @@ namespace Listenarr.Infrastructure.Models
         public DbSet<RemotePathMapping> RemotePathMappings { get; set; }
         public DbSet<ProcessExecutionLog> ProcessExecutionLogs { get; set; }
         public DbSet<RootFolder> RootFolders { get; set; }
+        public DbSet<MonitoredAuthor> MonitoredAuthors { get; set; }
+        public DbSet<MonitoredSeries> MonitoredSeries { get; set; }
+        public DbSet<AuthorCacheEntry> AuthorCacheEntries { get; set; }
+        public DbSet<SeriesCacheEntry> SeriesCacheEntries { get; set; }
         public DbSet<UserSession> UserSessions { get; set; }
 
         public ListenArrDbContext(DbContextOptions<ListenArrDbContext> options)
@@ -63,6 +67,14 @@ namespace Listenarr.Infrastructure.Models
 
             modelBuilder.Entity<Audiobook>().HasIndex(a => a.Monitored);
             modelBuilder.Entity<Audiobook>().HasIndex(a => a.LastSearchTime);
+            modelBuilder.Entity<MonitoredAuthor>().HasIndex(a => new { a.AuthorNameNormalized, a.Region, a.Language }).IsUnique();
+            modelBuilder.Entity<MonitoredAuthor>().HasIndex(a => a.LastCheckedAt);
+            modelBuilder.Entity<MonitoredSeries>().HasIndex(s => new { s.SeriesNameNormalized, s.Region, s.Language }).IsUnique();
+            modelBuilder.Entity<MonitoredSeries>().HasIndex(s => s.LastCheckedAt);
+            modelBuilder.Entity<AuthorCacheEntry>().HasIndex(a => new { a.AuthorNameNormalized, a.Region }).IsUnique();
+            modelBuilder.Entity<AuthorCacheEntry>().HasIndex(a => new { a.AuthorAsin, a.Region });
+            modelBuilder.Entity<SeriesCacheEntry>().HasIndex(s => new { s.SeriesNameNormalized, s.Region }).IsUnique();
+            modelBuilder.Entity<SeriesCacheEntry>().HasIndex(s => new { s.SeriesAsin, s.Region });
 
             modelBuilder.Entity<History>().HasIndex(h => h.Timestamp);
 

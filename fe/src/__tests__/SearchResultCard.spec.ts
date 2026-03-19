@@ -14,7 +14,7 @@ describe('SearchResultCard', () => {
     first_publish_year: 1965,
     key: 'OL123M',
     imageUrl: 'https://example.com/dune.jpg',
-    metadataSource: 'audimeta',
+    metadataSource: 'audible',
     searchResult: {
       title: 'Dune',
       authors: [{ name: 'Frank Herbert' }],
@@ -464,18 +464,18 @@ describe('SearchResultCard', () => {
   })
 
   describe('metadata source display', () => {
-    it('shows Audimeta label for audimeta source', () => {
+    it('shows Audible label for audible-backed metadata sources', () => {
       const wrapper = mount(SearchResultCard, {
         props: {
           book: {
             ...mockBook,
-            metadataSource: 'audimeta',
+            metadataSource: 'audible',
           },
         },
       })
 
       const text = wrapper.text()
-      expect(text).toContain('Audimeta')
+      expect(text).toContain('Audible')
     })
 
     it('shows custom metadata source for other sources', () => {

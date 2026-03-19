@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -31,9 +31,9 @@ namespace Listenarr.Api.Tests
                 .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "B0TESTASIN", Title = "Clean Title" } } as System.Collections.Generic.List<MetadataSearchResult>));
 
             var logger = Mock.Of<Microsoft.Extensions.Logging.ILogger<SearchController>>();
-            var audimeta = new TestEmptyAudimetaService();
+            var audible = new TestEmptyAudibleService();
             var metadata = Mock.Of<IAudiobookMetadataService>();
-            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audimeta, metadata);
+            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audible, metadata);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             var actionResult = await controller.IntelligentSearch("test-query");
@@ -55,9 +55,9 @@ namespace Listenarr.Api.Tests
                 .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "B000000001", Title = "Ingram: A Novel" }, new MetadataSearchResult { Asin = "B000000002", Title = "Different Book", Author = "Ingram" } } as System.Collections.Generic.List<MetadataSearchResult>));
 
             var logger = Mock.Of<Microsoft.Extensions.Logging.ILogger<SearchController>>();
-            var audimeta = new TestEmptyAudimetaService();
+            var audible = new TestEmptyAudibleService();
             var metadata = Mock.Of<IAudiobookMetadataService>();
-            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audimeta, metadata);
+            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audible, metadata);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             var actionResult = await controller.IntelligentSearch("TITLE:Ingram");
@@ -79,9 +79,9 @@ namespace Listenarr.Api.Tests
                 .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult>() as System.Collections.Generic.List<MetadataSearchResult>));
 
             var logger = Mock.Of<Microsoft.Extensions.Logging.ILogger<SearchController>>();
-            var audimeta = new TestEmptyAudimetaService();
+            var audible = new TestEmptyAudibleService();
             var metadata = Mock.Of<IAudiobookMetadataService>();
-            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audimeta, metadata);
+            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audible, metadata);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             var actionResult = await controller.IntelligentSearch("9780261103573");
@@ -101,9 +101,9 @@ namespace Listenarr.Api.Tests
                 .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "0563528885", Title = "The Lord of the Rings: The Trilogy", ImageUrl = "http://example.com/audio_cd.jpg" } } as System.Collections.Generic.List<MetadataSearchResult>));
 
             var logger = Mock.Of<Microsoft.Extensions.Logging.ILogger<SearchController>>();
-            var audimeta = new TestEmptyAudimetaService();
+            var audible = new TestEmptyAudibleService();
             var metadata = Mock.Of<IAudiobookMetadataService>();
-            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audimeta, (IAudiobookMetadataService)metadata);
+            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audible, (IAudiobookMetadataService)metadata);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             var actionResult = await controller.IntelligentSearch("9780261103573");
@@ -131,13 +131,13 @@ namespace Listenarr.Api.Tests
         }
     }
 
-    internal class TestEmptyAudimetaService : Listenarr.Api.Services.AudimetaService
+    internal class TestEmptyAudibleService : Listenarr.Api.Services.AudibleService
     {
-        public TestEmptyAudimetaService() : base(new System.Net.Http.HttpClient(), new Microsoft.Extensions.Logging.Abstractions.NullLogger<Listenarr.Api.Services.AudimetaService>()) { }
+        public TestEmptyAudibleService() : base(new System.Net.Http.HttpClient(), new Microsoft.Extensions.Logging.Abstractions.NullLogger<Listenarr.Api.Services.AudibleService>()) { }
 
-        public override Task<Listenarr.Api.Services.AudimetaBookResponse?> GetBookMetadataAsync(string asin, string region = "us", bool useCache = true, string? language = null)
+        public override Task<Listenarr.Api.Services.AudibleBookResponse?> GetBookMetadataAsync(string asin, string region = "us", bool useCache = true, string? language = null)
         {
-            return Task.FromResult<Listenarr.Api.Services.AudimetaBookResponse?>(null);
+            return Task.FromResult<Listenarr.Api.Services.AudibleBookResponse?>(null);
         }
     }
 
@@ -178,9 +178,14 @@ namespace Listenarr.Api.Tests
             return Task.FromResult<string?>("cache/images/library/test.jpg");
         }
 
-        public Task<string?> MoveToAuthorLibraryStorageAsync(string identifier, string? imageUrl = null)
+        public Task<string?> MoveToAuthorLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false)
         {
             return Task.FromResult<string?>("cache/images/authors/test.jpg");
+        }
+
+        public Task<string?> MoveToSeriesLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false)
+        {
+            return Task.FromResult<string?>("cache/images/series/test.jpg");
         }
 
         public Task<string?> GetCachedImagePathAsync(string identifier)

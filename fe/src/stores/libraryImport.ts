@@ -104,7 +104,7 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
       ? result.authors.map((a) => a.name ?? '').filter(Boolean)
       : []
 
-  // series may come back as AudimetaSeries[] from the search endpoint
+  // series may come back as AudibleSeries[] from the search endpoint
   const seriesRaw = result.series as unknown
   const seriesItem = Array.isArray(seriesRaw)
     ? (seriesRaw as Array<{ name?: string; asin?: string; position?: string }>)[0]
@@ -126,7 +126,7 @@ function matchToMetadata(result: SearchResult): AudibleBookMetadata {
     language: result.language,
     runtime: result.runtime ?? (result.lengthMinutes ? result.lengthMinutes * 60 : undefined),
     imageUrl: result.imageUrl,
-    // SearchResult.genres comes as objects {asin, name, type} from Audimeta;
+    // SearchResult.genres comes as objects {asin, name, type} from Audible;
     // AudibleBookMetadata.genres expects string[] (genre names only)
     genres: normalizeGenres(result.genres),
     narrators: result.narrators?.map((n) => n.name ?? '').filter(Boolean),
@@ -409,22 +409,22 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
   // ─── Import ───────────────────────────────────────────────────────────────
 
-  // Enrich metadata with full Audimeta data before adding to library.
+  // Enrich metadata with full Audible data before adding to library.
   // Search results often have authors: [{ asin, name: undefined }] — the full
   // metadata fetch is the only way to get real author/narrator names.
   async function _enrichMetadata(match: SearchResult): Promise<AudibleBookMetadata> {
     const base = matchToMetadata(match)
     if (!match.asin) return base
     try {
-      type AudimetaPayload = {
+      type AudiblePayload = {
         authors?: { name?: string }[]
         narrators?: { name?: string }[]
       }
       const resp = await apiService.getAudibleMetadata<
-        { source?: string; metadata?: AudimetaPayload } | AudimetaPayload
+        { source?: string; metadata?: AudiblePayload } | AudiblePayload
       >(match.asin)
-      const raw: AudimetaPayload =
-        resp && 'metadata' in resp && resp.metadata ? resp.metadata : (resp as AudimetaPayload)
+      const raw: AudiblePayload =
+        resp && 'metadata' in resp && resp.metadata ? resp.metadata : (resp as AudiblePayload)
       const enrichedAuthors = (raw.authors ?? []).map((a) => a?.name ?? '').filter(Boolean)
       const enrichedNarrators = (raw.narrators ?? []).map((n) => n?.name ?? '').filter(Boolean)
       return {

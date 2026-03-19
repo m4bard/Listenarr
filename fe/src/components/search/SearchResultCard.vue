@@ -278,7 +278,7 @@ const isAudibleHost = (url?: string): boolean => {
 const metadataSourceLabel = computed((): string => {
   if (!props.book.metadataSource) return ''
   const source = props.book.metadataSource.toLowerCase()
-  if (source.includes('audimeta')) return 'Audimeta'
+  if (source.includes('audible')) return 'Audible'
   return `Metadata: ${props.book.metadataSource}`
 })
 

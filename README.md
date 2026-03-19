@@ -508,7 +508,7 @@ The AGPL-3.0 license ensures that any modifications made to Listenarr, including
 ## Acknowledgments
 
 - [Audnexus](https://audnex.us/) - Audible metadata API
-- [Audimeta](https://audimeta.de) - Audible metadata API
+- [Audible](https://www.audible.com) - Direct catalog and metadata source
 - [Sonarr](https://sonarr.tv/) / [Radarr](https://radarr.video/) - Inspiration for the *arr naming and architecture
 - Vue.js and .NET communities
 - All the open-source libraries that make this project possible

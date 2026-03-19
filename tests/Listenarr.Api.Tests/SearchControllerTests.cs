@@ -1,4 +1,4 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
@@ -26,9 +26,9 @@ namespace Listenarr.Api.Tests
             var mockService = new TestSearchServiceForIntelligent(sample);
 
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
-            var controller = new SearchController(mockService, logger, mockAudimetaService.Object, mockMetadataService.Object);
+            var controller = new SearchController(mockService, logger, mockAudibleService.Object, mockMetadataService.Object);
             // Provide a default HttpContext so RequestAborted can be accessed in the controller
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
@@ -65,14 +65,14 @@ namespace Listenarr.Api.Tests
             mockService.Setup(s => s.SearchAsync(It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<List<string>?>(), It.IsAny<SearchSortBy>(), It.IsAny<SearchSortDirection>(), It.IsAny<bool>())).ReturnsAsync(new List<SearchResult>());
 
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
 
             var mockImageCache = new Mock<IImageCacheService>();
             mockImageCache.Setup(m => m.GetCachedImagePathAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
             mockImageCache.Setup(m => m.DownloadAndCacheImageAsync(It.IsAny<string>(), It.IsAny<string>())).ReturnsAsync("config/cache/images/B00001.jpg");
 
-            var controller = new SearchController(mockService.Object, logger, mockAudimetaService.Object, mockMetadataService.Object, imageCacheService: mockImageCache.Object);
+            var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object, imageCacheService: mockImageCache.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act
@@ -106,14 +106,14 @@ namespace Listenarr.Api.Tests
             mockService.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(sample);
 
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
 
             var mockImageCache = new Mock<IImageCacheService>();
             mockImageCache.Setup(m => m.GetCachedImagePathAsync(It.IsAny<string>())).ReturnsAsync("config/cache/images/B00001.jpg");
             mockImageCache.Setup(m => m.DownloadAndCacheImageAsync(It.IsAny<string>(), It.IsAny<string>())).ReturnsAsync("config/cache/images/B00001.jpg");
 
-            var controller = new SearchController(mockService.Object, logger, mockAudimetaService.Object, mockMetadataService.Object, imageCacheService: mockImageCache.Object);
+            var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object, imageCacheService: mockImageCache.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act
@@ -137,14 +137,14 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task SearchAudimetaByTitleAndAuthor_ReturnsBadRequest_WhenMissingParameters()
+        public async Task SearchAudibleByTitleAndAuthor_ReturnsBadRequest_WhenMissingParameters()
         {
             // Arrange
             var mockService = new Mock<ISearchService>();
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
-            var controller = new SearchController(mockService.Object, logger, mockAudimetaService.Object, mockMetadataService.Object);
+            var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act
@@ -158,7 +158,7 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task SearchAudimetaByTitleAndAuthor_ReturnsResults_WhenTitleProvided()
+        public async Task SearchAudibleByTitleAndAuthor_ReturnsResults_WhenTitleProvided()
         {
             // Arrange
             var mockService = new Mock<ISearchService>();
@@ -183,25 +183,25 @@ namespace Listenarr.Api.Tests
                     DownloadType = "Torrent"
                 }
             });            var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new FakeAudimetaService(new Listenarr.Api.Services.AudimetaSearchResponse
+            var mockAudibleService = new FakeAudibleService(new Listenarr.Api.Services.AudibleSearchResponse
             {
-                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudimetaSearchResult>
+                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudibleSearchResult>
                 {
-                    new Listenarr.Api.Services.AudimetaSearchResult { Asin = "B123", Title = "Test Book", ImageUrl = "http://example.com/cover.jpg", LengthMinutes = 90 }
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "B123", Title = "Test Book", ImageUrl = "http://example.com/cover.jpg", LengthMinutes = 90 }
                 },
                 TotalResults = 1
             });
-            // (FakeAudimetaService returns the sample response)
+            // (FakeAudibleService returns the sample response)
 
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
-            mockMetadataService.Setup(m => m.GetAudimetaMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(new Listenarr.Api.Services.AudimetaBookResponse { Asin = "B123", Title = "Test Book", ImageUrl = "http://example.com/cover.jpg", LengthMinutes = 90 });
+            mockMetadataService.Setup(m => m.GetAudibleMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(new Listenarr.Api.Services.AudibleBookResponse { Asin = "B123", Title = "Test Book", ImageUrl = "http://example.com/cover.jpg", LengthMinutes = 90 });
 
             var mockImageCache = new Mock<IImageCacheService>();
             // Simulate not cached initially, then a successful download
             mockImageCache.Setup(m => m.GetCachedImagePathAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
             mockImageCache.Setup(m => m.DownloadAndCacheImageAsync(It.IsAny<string>(), It.IsAny<string>())).ReturnsAsync("config/cache/images/temp/B123.jpg");
 
-            var controller = new SearchController(mockService.Object, logger, mockAudimetaService, mockMetadataService.Object, imageCacheService: mockImageCache.Object);
+            var controller = new SearchController(mockService.Object, logger, mockAudibleService, mockMetadataService.Object, imageCacheService: mockImageCache.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act
@@ -227,7 +227,7 @@ namespace Listenarr.Api.Tests
                 Source = "MyAnonamouse"
             };
             mockService2.Setup(s => s.SearchIndexerResultsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Listenarr.Api.Models.SearchRequest?>())).ReturnsAsync(new List<Listenarr.Domain.Models.IndexerSearchResult> { mamResult });
-            var controller2 = new SearchController(mockService2.Object, logger, mockAudimetaService, mockMetadataService.Object);
+            var controller2 = new SearchController(mockService2.Object, logger, mockAudibleService, mockMetadataService.Object);
             controller2.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
             var apiResult = await controller2.SearchByApi("1", "Dune Frank Herbert");
             Assert.NotNull(apiResult.Result ?? apiResult.Value);
@@ -255,7 +255,7 @@ namespace Listenarr.Api.Tests
             // New test: when caller provides MAM query params, they are passed into SearchIndexerResultsAsync as a SearchRequest
             var mockService3 = new Mock<ISearchService>();
             mockService3.Setup(s => s.SearchIndexerResultsAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<Listenarr.Api.Models.SearchRequest?>())).ReturnsAsync(new List<Listenarr.Domain.Models.IndexerSearchResult>());
-            var controller3 = new SearchController(mockService3.Object, logger, mockAudimetaService, mockMetadataService.Object);
+            var controller3 = new SearchController(mockService3.Object, logger, mockAudibleService, mockMetadataService.Object);
             controller3.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Call with mamFilter and mamSearchInFilenames set via query params
@@ -269,24 +269,24 @@ namespace Listenarr.Api.Tests
 
 
             // Assert
-            var audimetaReturned = actionResult.Value as Listenarr.Api.Services.AudimetaSearchResponse;
-            if (audimetaReturned == null && actionResult.Result is OkObjectResult ok)
-                audimetaReturned = ok.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+            var audibleReturned = actionResult.Value as Listenarr.Api.Services.AudibleSearchResponse;
+            if (audibleReturned == null && actionResult.Result is OkObjectResult ok)
+                audibleReturned = ok.Value as Listenarr.Api.Services.AudibleSearchResponse;
 
-            if (audimetaReturned != null && audimetaReturned.Results != null && audimetaReturned.Results.Count > 0)
+            if (audibleReturned != null && audibleReturned.Results != null && audibleReturned.Results.Count > 0)
             {
-                Assert.NotEmpty(audimetaReturned!.Results!);
-                Assert.Equal("B123", audimetaReturned.Results![0].Asin);
-                Assert.Equal($"/api/v1/images/B123", audimetaReturned.Results![0].ImageUrl);
+                Assert.NotEmpty(audibleReturned!.Results!);
+                Assert.Equal("B123", audibleReturned.Results![0].Asin);
+                Assert.Equal($"/api/v1/images/B123", audibleReturned.Results![0].ImageUrl);
                 Assert.True(
-                    audimetaReturned.Results![0].RuntimeLengthMin == 90
-                    || audimetaReturned.Results![0].LengthMinutes == 90
-                    || audimetaReturned.Results![0].RuntimeMinutes == 90,
+                    audibleReturned.Results![0].RuntimeLengthMin == 90
+                    || audibleReturned.Results![0].LengthMinutes == 90
+                    || audibleReturned.Results![0].RuntimeMinutes == 90,
                     "Runtime was not normalized into any expected field");
             }
             else
             {
-                // Fallback: unified search may return an Audimeta-like array of objects
+                // Fallback: unified search may return an Audible-like array of objects
                 object? raw = null;
                 if (actionResult.Value != null) raw = actionResult.Value;
                 else if (actionResult.Result is OkObjectResult ok2) raw = ok2.Value;
@@ -317,7 +317,7 @@ namespace Listenarr.Api.Tests
                         break;
                     }
 
-                    // Also accept Audimeta-like objects returned directly as results (lengthMinutes present)
+                    // Also accept Audible-like objects returned directly as results (lengthMinutes present)
                     if (el.TryGetProperty("lengthMinutes", out var lm))
                     {
                         foundIndexer = true;
@@ -328,7 +328,7 @@ namespace Listenarr.Api.Tests
 
                 if (!foundIndexer)
                 {
-                    // As a fallback, some responses may return Audimeta-like objects; assert that an ASIN entry exists
+                    // As a fallback, some responses may return Audible-like objects; assert that an ASIN entry exists
                     bool foundAsin = false;
                     foreach (var el in resultsRoot.EnumerateArray())
                     {
@@ -341,33 +341,33 @@ namespace Listenarr.Api.Tests
                         }
                     }
 
-                    Assert.True(foundAsin, "Expected either an indexer result with 'guid' or an Audimeta-like result with 'asin'");
+                    Assert.True(foundAsin, "Expected either an indexer result with 'guid' or an Audible-like result with 'asin'");
                 }
             }
         }
 
         [Fact]
-        public async Task SearchAudimetaByTitleAndAuthor_FallsBackToTitleOnly_WhenAuthorMissing()
+        public async Task SearchAudibleByTitleAndAuthor_FallsBackToTitleOnly_WhenAuthorMissing()
         {
             // Arrange
             var mockService = new Mock<ISearchService>();
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
-            var sampleResponse = new Listenarr.Api.Services.AudimetaSearchResponse
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            var sampleResponse = new Listenarr.Api.Services.AudibleSearchResponse
             {
-                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudimetaSearchResult>
+                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudibleSearchResult>
                 {
-                    new Listenarr.Api.Services.AudimetaSearchResult { Asin = "BHP1", Title = "Harry Potter and the Test", Language = "english" },
-                    new Listenarr.Api.Services.AudimetaSearchResult { Asin = "BHP2", Title = "Harry Potter en Français", Language = "french" }
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "BHP1", Title = "Harry Potter and the Test", Language = "english" },
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "BHP2", Title = "Harry Potter en Fran�ais", Language = "french" }
                 },
                 TotalResults = 2
             };
 
-            mockAudimetaService.Setup(a => a.SearchByTitleAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
+            mockAudibleService.Setup(a => a.SearchByTitleAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
 
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
 
-            var controller = new SearchController(mockService.Object, logger, mockAudimetaService.Object, mockMetadataService.Object);
+            var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act: provide title and empty author, and nonstandard region 'english' to exercise normalization
@@ -376,9 +376,9 @@ namespace Listenarr.Api.Tests
             var actionResult = await controller.Search(reqJson);
 
             // Assert
-            var returned = actionResult.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+            var returned = actionResult.Value as Listenarr.Api.Services.AudibleSearchResponse;
             if (returned == null && actionResult.Result is OkObjectResult ok)
-                returned = ok.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+                returned = ok.Value as Listenarr.Api.Services.AudibleSearchResponse;
 
             // Skipped: Language filtering and single result assertion no longer match unified endpoint behavior.
             // Assert.NotNull(returned);
@@ -386,31 +386,31 @@ namespace Listenarr.Api.Tests
             // Assert.Single(returned.Results!);
             // Assert.Equal("BHP1", returned.Results![0].Asin);
             // Assert.Equal("english", returned.Results![0].Language?.ToLowerInvariant());
-            // mockAudimetaService.Verify(a => a.SearchByTitleAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.Is<string>(r => r == "us"), It.IsAny<string>()), Times.Once);
+            // mockAudibleService.Verify(a => a.SearchByTitleAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.Is<string>(r => r == "us"), It.IsAny<string>()), Times.Once);
         }
 
         [Fact]
-        public async Task SearchAudimeta_FiltersByLanguage_WhenProvided()
+        public async Task SearchAudible_FiltersByLanguage_WhenProvided()
         {
             // Arrange
             var mockService = new Mock<ISearchService>();
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
-            var sampleResponse = new Listenarr.Api.Services.AudimetaSearchResponse
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            var sampleResponse = new Listenarr.Api.Services.AudibleSearchResponse
             {
-                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudimetaSearchResult>
+                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudibleSearchResult>
                 {
-                    new Listenarr.Api.Services.AudimetaSearchResult { Asin = "B1", Title = "One", Language = "english" },
-                    new Listenarr.Api.Services.AudimetaSearchResult { Asin = "B2", Title = "Deux", Language = "french" }
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "B1", Title = "One", Language = "english" },
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "B2", Title = "Deux", Language = "french" }
                 },
                 TotalResults = 2
             };
 
-            mockAudimetaService.Setup(a => a.SearchBooksAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
+            mockAudibleService.Setup(a => a.SearchBooksAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
 
 
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
-            var controller = new SearchController(mockService.Object, logger, mockAudimetaService.Object, mockMetadataService.Object);
+            var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act: request only English results
@@ -419,9 +419,9 @@ namespace Listenarr.Api.Tests
             var actionResult = await controller.Search(reqJson);
 
             // Assert
-            var returned = actionResult.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+            var returned = actionResult.Value as Listenarr.Api.Services.AudibleSearchResponse;
             if (returned == null && actionResult.Result is OkObjectResult ok)
-                returned = ok.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+                returned = ok.Value as Listenarr.Api.Services.AudibleSearchResponse;
 
             // Skipped: Language filtering and single result assertion no longer match unified endpoint behavior.
             // Assert.NotNull(returned);
@@ -431,25 +431,25 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task SearchAudimeta_NormalizesRuntimeFields_ReturnsRuntimeLengthMin()
+        public async Task SearchAudible_NormalizesRuntimeFields_ReturnsRuntimeLengthMin()
         {
             // Arrange
             var mockService = new Mock<ISearchService>();
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
-            var sampleResponse = new Listenarr.Api.Services.AudimetaSearchResponse
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            var sampleResponse = new Listenarr.Api.Services.AudibleSearchResponse
             {
-                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudimetaSearchResult>
+                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudibleSearchResult>
                 {
-                    new Listenarr.Api.Services.AudimetaSearchResult { Asin = "BRT1", Title = "Run Time Test", LengthMinutes = 123 }
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "BRT1", Title = "Run Time Test", LengthMinutes = 123 }
                 },
                 TotalResults = 1
             };
 
-            mockAudimetaService.Setup(a => a.SearchBooksAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
+            mockAudibleService.Setup(a => a.SearchBooksAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
 
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
-            var controller = new SearchController(mockService.Object, logger, mockAudimetaService.Object, mockMetadataService.Object);
+            var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act
@@ -458,9 +458,9 @@ namespace Listenarr.Api.Tests
             var actionResult = await controller.Search(reqJson);
 
             // Assert
-            var returned = actionResult.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+            var returned = actionResult.Value as Listenarr.Api.Services.AudibleSearchResponse;
             if (returned == null && actionResult.Result is OkObjectResult ok)
-                returned = ok.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+                returned = ok.Value as Listenarr.Api.Services.AudibleSearchResponse;
 
             // Skipped: Runtime normalization assertion no longer matches unified endpoint behavior.
             // Assert.NotNull(returned);
@@ -474,21 +474,21 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task SearchAudimetaByTitleAndAuthor_AggregatesPages_TitleOnly()
+        public async Task SearchAudibleByTitleAndAuthor_AggregatesPages_TitleOnly()
         {
             // Arrange
             var mockService = new Mock<ISearchService>();
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
 
-            var page1 = new Listenarr.Api.Services.AudimetaSearchResponse
+            var page1 = new Listenarr.Api.Services.AudibleSearchResponse
             {
-                Results = Enumerable.Range(1, 50).Select(i => new Listenarr.Api.Services.AudimetaSearchResult { Asin = $"P1_{i}", Title = "Paginated" }).ToList(),
+                Results = Enumerable.Range(1, 50).Select(i => new Listenarr.Api.Services.AudibleSearchResult { Asin = $"P1_{i}", Title = "Paginated" }).ToList(),
                 TotalResults = 60
             };
-            var page2 = new Listenarr.Api.Services.AudimetaSearchResponse
+            var page2 = new Listenarr.Api.Services.AudibleSearchResponse
             {
-                Results = Enumerable.Range(51, 9).Select(i => new Listenarr.Api.Services.AudimetaSearchResult { Asin = $"P2_{i}", Title = "Paginated" }).ToList(),
+                Results = Enumerable.Range(51, 9).Select(i => new Listenarr.Api.Services.AudibleSearchResult { Asin = $"P2_{i}", Title = "Paginated" }).ToList(),
                 TotalResults = 60
             };
 
@@ -497,7 +497,7 @@ namespace Listenarr.Api.Tests
             mockService.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(pagedResults);
 
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
-            var controller = new SearchController(mockService.Object, logger, new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>()).Object, mockMetadataService.Object);
+            var controller = new SearchController(mockService.Object, logger, new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>()).Object, mockMetadataService.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act
@@ -506,7 +506,7 @@ namespace Listenarr.Api.Tests
             var actionResult = await controller.Search(reqJson);
 
             // Assert: controller returns a flattened list of SearchResult for advanced searches
-            // Unified API may return a JSON array of Audimeta-like results for metadata candidates
+            // Unified API may return a JSON array of Audible-like results for metadata candidates
             object? raw = null;
             if (actionResult.Value != null) raw = actionResult.Value;
             else if (actionResult.Result is OkObjectResult ok) raw = ok.Value;
@@ -522,28 +522,28 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task SearchAudimeta_PreservesTotalResults_WhenLanguageFilterApplied()
+        public async Task SearchAudible_PreservesTotalResults_WhenLanguageFilterApplied()
         {
             // Arrange
             var mockService = new Mock<ISearchService>();
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudimetaService = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
-            var sampleResponse = new Listenarr.Api.Services.AudimetaSearchResponse
+            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            var sampleResponse = new Listenarr.Api.Services.AudibleSearchResponse
             {
-                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudimetaSearchResult>
+                Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudibleSearchResult>
                 {
-                    new Listenarr.Api.Services.AudimetaSearchResult { Asin = "BX1", Title = "One", Language = "english" },
-                    new Listenarr.Api.Services.AudimetaSearchResult { Asin = "BX2", Title = "Deux", Language = "french" }
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "BX1", Title = "One", Language = "english" },
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "BX2", Title = "Deux", Language = "french" }
                 },
                 TotalResults = 50 // provider indicates 50 results exist across pages
             };
 
-            mockAudimetaService.Setup(a => a.SearchBooksAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
+            mockAudibleService.Setup(a => a.SearchBooksAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
 
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
             
 
-            var controller = new SearchController(mockService.Object, logger, mockAudimetaService.Object, mockMetadataService.Object);
+            var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act: request only English results
@@ -552,9 +552,9 @@ namespace Listenarr.Api.Tests
             var actionResult = await controller.Search(reqJson);
 
             // Assert
-            var returned = actionResult.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+            var returned = actionResult.Value as Listenarr.Api.Services.AudibleSearchResponse;
             if (returned == null && actionResult.Result is OkObjectResult ok)
-                returned = ok.Value as Listenarr.Api.Services.AudimetaSearchResponse;
+                returned = ok.Value as Listenarr.Api.Services.AudibleSearchResponse;
 
             // Skipped: Language filtering and single result assertion no longer match unified endpoint behavior.
             // Assert.NotNull(returned);
@@ -565,13 +565,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task AdvancedSearch_TitleAuthor_EnsuresImagesAreCached()
         {
-            // Arrange: unified intelligent pipeline returns an audimeta-like result that needs image caching
+            // Arrange: unified intelligent pipeline returns an audible-like result that needs image caching
             var mockService = new Mock<ISearchService>();
             var intelligentResult = new List<MetadataSearchResult> { new MetadataSearchResult { Asin = "B999", Title = "Cache Me", ImageUrl = "http://example.com/cacheme.jpg" } };
             mockService.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(intelligentResult);
 
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
-            mockMetadataService.Setup(m => m.GetAudimetaMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(new Listenarr.Api.Services.AudimetaBookResponse { Asin = "B999", Title = "Cache Me", ImageUrl = "http://example.com/cacheme.jpg" });
+            mockMetadataService.Setup(m => m.GetAudibleMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(new Listenarr.Api.Services.AudibleBookResponse { Asin = "B999", Title = "Cache Me", ImageUrl = "http://example.com/cacheme.jpg", LengthMinutes = 90 });
 
             var mockImageCache = new Mock<IImageCacheService>();
             mockImageCache.Setup(m => m.GetCachedImagePathAsync(It.IsAny<string>())).ReturnsAsync((string?)null);
@@ -579,7 +579,7 @@ namespace Listenarr.Api.Tests
 
             var logger = Mock.Of<ILogger<SearchController>>();
 
-            var controller = new SearchController(mockService.Object, logger, new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>()).Object, mockMetadataService.Object, imageCacheService: mockImageCache.Object);
+            var controller = new SearchController(mockService.Object, logger, new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>()).Object, mockMetadataService.Object, imageCacheService: mockImageCache.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act
@@ -588,7 +588,7 @@ namespace Listenarr.Api.Tests
             var actionResult = await controller.Search(reqJson);
 
             // Assert: controller returns flattened list of SearchResult for advanced searches
-            // unified advanced search returns Audimeta-like JSON for metadata results
+            // unified advanced search returns Audible-like JSON for metadata results
             object? raw = null;
             if (actionResult.Value != null) raw = actionResult.Value;
             else if (actionResult.Result is OkObjectResult ok2) raw = ok2.Value;
@@ -606,20 +606,20 @@ namespace Listenarr.Api.Tests
         }
     }
 
-    // Fake audimeta service that returns a predetermined response for paged title+author searches
-    internal class FakeAudimetaService : AudimetaService
+    // Fake audible service that returns a predetermined response for paged title+author searches
+    internal class FakeAudibleService : AudibleService
     {
-        private readonly Listenarr.Api.Services.AudimetaSearchResponse _response;
+        private readonly Listenarr.Api.Services.AudibleSearchResponse _response;
 
-        public FakeAudimetaService(Listenarr.Api.Services.AudimetaSearchResponse response)
-            : base(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>())
+        public FakeAudibleService(Listenarr.Api.Services.AudibleSearchResponse response)
+            : base(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>())
         {
             _response = response;
         }
 
-        public override Task<Listenarr.Api.Services.AudimetaSearchResponse?> SearchByTitleAndAuthorPagedAsync(string title, string author, int page = 1, int limit = 100, string region = "us", string? language = null)
+        public override Task<Listenarr.Api.Services.AudibleSearchResponse?> SearchByTitleAndAuthorPagedAsync(string title, string author, int page = 1, int limit = 100, string region = "us", string? language = null)
         {
-            return Task.FromResult<Listenarr.Api.Services.AudimetaSearchResponse?>(_response);
+            return Task.FromResult<Listenarr.Api.Services.AudibleSearchResponse?>(_response);
         }
     }
 

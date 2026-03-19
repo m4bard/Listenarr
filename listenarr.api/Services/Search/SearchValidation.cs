@@ -160,7 +160,7 @@ public static class SearchValidation
         var hasRuntime = r.Runtime.HasValue && r.Runtime.Value > 5;
         var hasNarrator = !string.IsNullOrWhiteSpace(r.Narrator);
         var metadataSource = (r.MetadataSource ?? string.Empty).ToLowerInvariant();
-        var sourceIsTrustedAudio = metadataSource.Contains("audimeta") || metadataSource.Contains("audnex") || metadataSource.Contains("audnexus") || metadataSource.Contains("audible");
+        var sourceIsTrustedAudio = metadataSource.Contains("audible") || metadataSource.Contains("audnex") || metadataSource.Contains("audnexus") || metadataSource.Contains("audible");
 
         if (hasRuntime || hasNarrator || sourceIsTrustedAudio) return true;
 

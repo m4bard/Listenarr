@@ -27,8 +27,8 @@ namespace Listenarr.Api.Tests
                 .ReturnsAsync(relativePath);
 
             var mockMetadata = new Mock<IAudiobookMetadataService>();
-            using var audimetaHttpClient = new System.Net.Http.HttpClient();
-            var audimetaMock = new Mock<AudimetaService>(audimetaHttpClient, Mock.Of<ILogger<AudimetaService>>());
+            using var audibleHttpClient = new System.Net.Http.HttpClient();
+            var audibleMock = new Mock<AudibleService>(audibleHttpClient, Mock.Of<ILogger<AudibleService>>());
             var audnexusMock = new Mock<IAudnexusService>();
 
             var repoMock = new Mock<IAudiobookRepository>();
@@ -66,7 +66,7 @@ namespace Listenarr.Api.Tests
             var controller = new ImagesController(
                 mockImageCache.Object,
                 mockMetadata.Object,
-                audimetaMock.Object,
+                audibleMock.Object,
                 audnexusMock.Object,
                 repoMock.Object,
                 Mock.Of<ILogger<ImagesController>>(),

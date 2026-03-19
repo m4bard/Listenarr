@@ -1,4 +1,4 @@
-﻿using System.Text.Json;
+using System.Text.Json;
 using System.ComponentModel.DataAnnotations.Schema;
 
 namespace Listenarr.Domain.Models
@@ -247,6 +247,16 @@ namespace Listenarr.Domain.Models
         /// Enable using OpenLibrary augmentation during intelligent searches.
         /// </summary>
         public bool EnableOpenLibrarySearch { get; set; } = true;
+
+        /// <summary>
+        /// Preferred default Audible/Audible market region for Add New searches.
+        /// </summary>
+        public string DefaultSearchRegion { get; set; } = "us";
+
+        /// <summary>
+        /// Preferred default language filter for Add New searches.
+        /// </summary>
+        public string DefaultSearchLanguage { get; set; } = "english";
 
         
     }

@@ -36,7 +36,7 @@ namespace Listenarr.Api.Controllers
     {
         private readonly ISearchService _searchService;
         private readonly Microsoft.Extensions.Logging.ILogger _logger;
-        private readonly AudimetaService _audimetaService;
+        private readonly AudibleService _audibleService;
         private readonly IAudiobookMetadataService _metadataService;
         private readonly IImageCacheService? _imageCacheService;
         private readonly MetadataConverters _metadataConverters;
@@ -44,14 +44,14 @@ namespace Listenarr.Api.Controllers
         public SearchController(
             ISearchService searchService,
             Microsoft.Extensions.Logging.ILogger<SearchController> logger,
-            AudimetaService audimetaService,
+            AudibleService audibleService,
             IAudiobookMetadataService metadataService,
             IImageCacheService? imageCacheService = null,
             MetadataConverters? metadataConverters = null)
         {
             _searchService = searchService;
             _logger = logger;
-            _audimetaService = audimetaService;
+            _audibleService = audibleService;
             _metadataService = metadataService;
             _imageCacheService = imageCacheService;
             _metadataConverters = metadataConverters ?? new MetadataConverters(imageCacheService, Microsoft.Extensions.Logging.Abstractions.NullLogger<Listenarr.Api.Services.Search.MetadataConverters>.Instance);
@@ -210,8 +210,8 @@ namespace Listenarr.Api.Controllers
                         }
                     }
 
-                    // Map metadata results into Audimeta-like objects for public API consumers
-                    var mapped = await Task.WhenAll((results ?? new List<MetadataSearchResult>()).Select(r => MapMetadataResultToAudimetaAsync(r, region))).ConfigureAwait(false);
+                    // Map metadata results into Audible-shaped objects for public API consumers
+                    var mapped = await Task.WhenAll((results ?? new List<MetadataSearchResult>()).Select(r => MapMetadataResultToAudibleAsync(r, region))).ConfigureAwait(false);
                     _logger.LogDebug("[DBG] Search(simple) returning {Count} metadata results", mapped?.Length ?? 0);
                     return Ok(mapped);
                 }
@@ -280,18 +280,18 @@ namespace Listenarr.Api.Controllers
                         System.Diagnostics.Debug.WriteLine($"SearchController advanced-search debug logging failed: {ex.Message}");
                     }
 
-                    // If the advanced request contains an ASIN, prefer a direct Audimeta metadata
+                    // If the advanced request contains an ASIN, prefer a direct Audible metadata
                     // lookup and return a single enriched SearchResult. ASIN searches should
                     // be authoritative and ignore other advanced inputs.
                     if (!string.IsNullOrWhiteSpace(req.Asin))
                     {
                         try
                         {
-                            var audimeta = await _audimetaService.GetBookMetadataAsync(req.Asin, region, true);
-                            if (audimeta != null)
+                            var audible = await _audibleService.GetBookMetadataAsync(req.Asin, region, true);
+                            if (audible != null)
                             {
-                                // Convert audimeta response to internal metadata then to SearchResult
-                                var metadata = _metadataConverters.ConvertAudimetaToMetadata(audimeta, req.Asin, source: "Audimeta");
+                                // Convert audible response to internal metadata then to SearchResult
+                                var metadata = _metadataConverters.ConvertAudibleToMetadata(audible, req.Asin, source: "Audible");
                                 var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(metadata, req.Asin, req.Title, req.Author, fallbackImageUrl: null, fallbackLanguage: language);
                                 SanitizeResultForPublicApi(sr, region);
                                 // Convert to metadata result and normalize images for API response
@@ -324,16 +324,16 @@ namespace Listenarr.Api.Controllers
                                     return Ok(useSimplified ? SimplifySearchResults(asinResults) : asinResults);
                                 }
                             }
-                            // If audimeta didn't return a record, fall through to unified search below
+                            // If audible didn't return a record, fall through to unified search below
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogWarning(ex, "Audimeta lookup failed for ASIN {Asin} in advanced search; falling back to unified search", req.Asin);
+                            _logger.LogWarning(ex, "Audible metadata lookup failed for ASIN {Asin} in advanced search; falling back to unified search", req.Asin);
                         }
                     }
 
 
 
-                    // If a series name or series ASIN was provided, prefer Audimeta series endpoints
+                    // If a series name or series ASIN was provided, prefer Audible series endpoints
                     // If series is provided and no author is supplied, take the series-specialized path. If an author is present, prefer the author flow and later filter by series.
                     if (!string.IsNullOrWhiteSpace(req.Series) && string.IsNullOrWhiteSpace(req.Author))
                     {
@@ -343,7 +343,7 @@ namespace Listenarr.Api.Controllers
                             // If the provided value does not look like an ASIN, try to search by name
                             if (!(seriesAsin.StartsWith("B0", StringComparison.OrdinalIgnoreCase) && seriesAsin.Length >= 10))
                             {
-                                var seriesSearch = await _audimetaService.SearchSeriesByNameAsync(req.Series.Trim(), region);
+                                var seriesSearch = await _audibleService.SearchSeriesByNameAsync(req.Series.Trim(), region);
                                 if (seriesSearch == null)
                                 {
                                     _logger.LogInformation("No series matches found for '{SeriesName}'", req.Series);
@@ -411,7 +411,7 @@ namespace Listenarr.Api.Controllers
                                                     if (string.IsNullOrWhiteSpace(chosenAsin) && !string.IsNullOrWhiteSpace(elAsin)) chosenAsin = elAsin;
                                                 }
                                                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                                    _logger.LogDebug(ex, "Failed to parse audimeta series candidate element for series '{Series}'", req.Series);
+                                                    _logger.LogDebug(ex, "Failed to parse Audible series candidate element for series '{Series}'", req.Series);
                                                 }
                                             }
                                             if (!string.IsNullOrWhiteSpace(chosenAsin)) seriesAsin = chosenAsin;
@@ -425,7 +425,7 @@ namespace Listenarr.Api.Controllers
                                         }
                                     }
                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                        _logger.LogDebug(ex, "Failed to extract series ASIN from audimeta series search result for '{SeriesName}'", req.Series);
+                                        _logger.LogDebug(ex, "Failed to extract series ASIN from Audible series search result for '{SeriesName}'", req.Series);
                                     }
                                 }
                             }
@@ -433,29 +433,29 @@ namespace Listenarr.Api.Controllers
                             // If we now have a candidate series ASIN, fetch books for the series
                             if (!string.IsNullOrWhiteSpace(seriesAsin))
                             {
-                                var booksObj = await _audimetaService.GetBooksBySeriesAsinAsync(seriesAsin, region);
+                                var booksObj = await _audibleService.GetBooksBySeriesAsinAsync(seriesAsin, region);
                                 if (booksObj != null)
                                 {
                                     var json = JsonSerializer.Serialize(booksObj);
                                     var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                                    List<Listenarr.Api.Services.AudimetaSearchResult>? books = null;
+                                    List<Listenarr.Api.Services.AudibleSearchResult>? books = null;
                                     try
                                     {
-                                        var resp = JsonSerializer.Deserialize<List<Listenarr.Api.Services.AudimetaSearchResult>>(json, opts);
+                                        var resp = JsonSerializer.Deserialize<List<Listenarr.Api.Services.AudibleSearchResult>>(json, opts);
                                         books = resp;
                                     }
                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                        _logger.LogDebug(ex, "Failed to deserialize audimeta series books list for series ASIN {SeriesAsin}", seriesAsin);
+                                        _logger.LogDebug(ex, "Failed to deserialize Audible series books list for series ASIN {SeriesAsin}", seriesAsin);
                                     }
                                     if (books == null)
                                     {
                                         try
                                         {
-                                            var respEnv = JsonSerializer.Deserialize<Listenarr.Api.Services.AudimetaSearchResponse>(json, opts);
+                                            var respEnv = JsonSerializer.Deserialize<Listenarr.Api.Services.AudibleSearchResponse>(json, opts);
                                             books = respEnv?.Results;
                                         }
                                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                            _logger.LogDebug(ex, "Failed to deserialize audimeta series books envelope for series ASIN {SeriesAsin}", seriesAsin);
+                                            _logger.LogDebug(ex, "Failed to deserialize Audible series books envelope for series ASIN {SeriesAsin}", seriesAsin);
                                         }
                                     }
 
@@ -465,7 +465,7 @@ namespace Listenarr.Api.Controllers
                                         foreach (var book in books)
                                         {
                                             if (string.IsNullOrWhiteSpace(book.Asin)) continue;
-                                            var bookResp = new Listenarr.Api.Services.AudimetaBookResponse
+                                            var bookResp = new Listenarr.Api.Services.AudibleBookResponse
                                             {
                                                 Asin = book.Asin,
                                                 Title = book.Title,
@@ -484,15 +484,15 @@ namespace Listenarr.Api.Controllers
                                             };
                                             try
                                             {
-                                                var meta = _metadataConverters.ConvertAudimetaToMetadata(bookResp, book.Asin ?? string.Empty, "Audimeta");
-                                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin ?? string.Empty, req.Title, req.Author, fallbackImageUrl: null, fallbackLanguage: language);
+                                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
+                                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin, req.Title, req.Author, fallbackImageUrl: null, fallbackLanguage: language);
                                                 sr.IsEnriched = true;
-                                                sr.MetadataSource = "Audimeta";
+                                                sr.MetadataSource = "Audible";
                                                 SanitizeResultForPublicApi(sr, region);
                                                 converted.Add(sr);
                                             }
                                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                                _logger.LogWarning(ex, "Failed converting audimeta series book to SearchResult for ASIN {Asin}", book.Asin);
+                                                _logger.LogWarning(ex, "Failed converting Audible series book to SearchResult for ASIN {Asin}", book.Asin);
                                             }
                                         }
 
@@ -541,7 +541,7 @@ namespace Listenarr.Api.Controllers
                     // advanced searches separately. To ensure all advanced searches (author-only,
                     // author+title, title-only, ISBN, etc.) receive identical metadata
                     // enrichment and conversion, route advanced requests through the
-                    // unified IntelligentSearch pipeline below. This guarantees Audimeta
+                    // unified IntelligentSearch pipeline below. This guarantees Audible
                     // metadata is fetched and converted consistently.
 
                     // Compose a query string from advanced parameters for unified handling
@@ -621,8 +621,8 @@ namespace Listenarr.Api.Controllers
                         }
                     }
 
-                    // Flatten metadata results into Audimeta-like objects for public POST /api/search response
-                    var flatMapped = await Task.WhenAll((results ?? new List<MetadataSearchResult>()).Select(r => MapMetadataResultToAudimetaAsync(r, region))).ConfigureAwait(false);
+                    // Flatten metadata results into Audible-shaped objects for public POST /api/search response
+                    var flatMapped = await Task.WhenAll((results ?? new List<MetadataSearchResult>()).Select(r => MapMetadataResultToAudibleAsync(r, region))).ConfigureAwait(false);
                     return Ok(flatMapped);
                 }
             }
@@ -648,23 +648,23 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        // Map our internal MetadataSearchResult to a lightweight Audimeta-shaped object (async)
-        private async Task<object> MapMetadataResultToAudimetaAsync(MetadataSearchResult md, string region)
+        // Map our internal MetadataSearchResult to a lightweight Audible-shaped object (async)
+        private async Task<object> MapMetadataResultToAudibleAsync(MetadataSearchResult md, string region)
         {
-            // If we have an ASIN and the metadata was enriched, try to fetch the canonical Audimeta payload
-            Listenarr.Api.Services.AudimetaBookResponse? aud = null;
+            // If we have an ASIN and the metadata was enriched, try to fetch the canonical Audible payload
+            Listenarr.Api.Services.AudibleBookResponse? aud = null;
             try
             {
                 if (!string.IsNullOrWhiteSpace(md?.Asin))
                 {
-                    aud = await _metadataService.GetAudimetaMetadataAsync(md.Asin, region, true);
+                    aud = await _metadataService.GetAudibleMetadataAsync(md.Asin, region, true);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogDebug(ex, "Failed to retrieve audimeta metadata for ASIN {Asin}", md?.Asin);
+                _logger.LogDebug(ex, "Failed to retrieve Audible metadata for ASIN {Asin}", md?.Asin);
             }
 
-            // If audimeta provided a rich response, prefer it (but normalize image URLs to local /api/v{version}/images/{asin} when possible)
+            // If Audible provided a rich response, prefer it (but normalize image URLs to local /api/v{version}/images/{asin} when possible)
             if (aud != null)
             {
                 string? imageUrl = aud.ImageUrl;
@@ -691,10 +691,10 @@ namespace Listenarr.Api.Controllers
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogWarning(ex, "Failed to normalize audimeta image for {Asin}", aud.Asin);
+                    _logger.LogWarning(ex, "Failed to normalize Audible image for {Asin}", aud.Asin);
                 }
 
-                var authors = (aud.Authors ?? new List<Listenarr.Api.Services.AudimetaAuthor>()).Where(a => a != null).Select(a => new
+                var authors = (aud.Authors ?? new List<Listenarr.Api.Services.AudibleAuthor>()).Where(a => a != null).Select(a => new
                 {
                     asin = a!.Asin,
                     name = a!.Name,
@@ -704,9 +704,9 @@ namespace Listenarr.Api.Controllers
                     updatedAt = DateTime.UtcNow.ToString("o")
                 }).ToList();
 
-                var narrators = (aud.Narrators ?? new List<Listenarr.Api.Services.AudimetaNarrator>()).Where(n => n != null).Select(n => new { name = n!.Name, updatedAt = DateTime.UtcNow.ToString("o") }).ToList();
+                var narrators = (aud.Narrators ?? new List<Listenarr.Api.Services.AudibleNarrator>()).Where(n => n != null).Select(n => new { name = n!.Name, updatedAt = DateTime.UtcNow.ToString("o") }).ToList();
 
-                var genres = (aud.Genres ?? new List<Listenarr.Api.Services.AudimetaGenre>()).Where(g => g != null).Select(g => new
+                var genres = (aud.Genres ?? new List<Listenarr.Api.Services.AudibleGenre>()).Where(g => g != null).Select(g => new
                 {
                     asin = g!.Asin,
                     name = g!.Name,
@@ -715,7 +715,7 @@ namespace Listenarr.Api.Controllers
                     updatedAt = DateTime.UtcNow.ToString("o")
                 }).ToList();
 
-                var series = (aud.Series ?? new List<Listenarr.Api.Services.AudimetaSeries>()).Where(s => s != null).Select(s => new
+                var series = (aud.Series ?? new List<Listenarr.Api.Services.AudibleSeries>()).Where(s => s != null).Select(s => new
                 {
                     asin = s!.Asin,
                     name = s!.Name,
@@ -757,14 +757,14 @@ namespace Listenarr.Api.Controllers
                     narrators = narrators,
                     genres = genres,
                     series = series,
-                    // Indicate this was mapped from Audimeta and expose a simple series name list for the client tooltip
-                    metadataSource = "audimeta",
+                    // Expose a stable audible-backed metadata source label for the client.
+                    metadataSource = "audible",
                     seriesList = series?.Select(s => $"{s.name}{(s.position != null ? $" #{s.position}" : "")}").ToList(),
                     updatedAt = DateTime.UtcNow.ToString("o")
                 };
             }
 
-            // Fallback: build a permissive Audimeta-like object from available MetadataSearchResult fields
+            // Fallback: build a permissive Audible-like object from available MetadataSearchResult fields
             var fallbackAuthors = new List<object>();
             var fallbackNarrators = new List<object>();
             if (!string.IsNullOrWhiteSpace(md?.Narrator)) fallbackNarrators.Add(new { name = md.Narrator, updatedAt = (string?)null });
@@ -829,7 +829,7 @@ namespace Listenarr.Api.Controllers
             return twelve + check.ToString();
         }
 
-        private async Task EnsureCachedImagesForAudimetaResultsAsync(List<AudimetaSearchResult>? results)
+        private async Task EnsureCachedImagesForAudibleResultsAsync(List<AudibleSearchResult>? results)
         {
             if (results == null || results.Count == 0) return;
             if (_imageCacheService == null) return; // nothing to do in tests if not provided
@@ -1023,8 +1023,8 @@ namespace Listenarr.Api.Controllers
                 }
 
                 _logger.LogInformation("IntelligentSearch called for query: {Query}", LogRedaction.SanitizeText(query));
-                var region = Request.Query.ContainsKey("region") ? Request.Query["region"].ToString() ?? "us" : "us";
-                var language = Request.Query.ContainsKey("language") ? Request.Query["language"].ToString() : null;
+                var region = Request.Query.TryGetValue("region", out var regionValue) ? regionValue.ToString() ?? "us" : "us";
+                var language = Request.Query.TryGetValue("language", out var languageValue) ? languageValue.ToString() : null;
                 var results = await _searchService.IntelligentSearchAsync(query, candidateLimit, returnLimit, containmentMode, requireAuthorAndPublisher, fuzzyThreshold, region, language, HttpContext.RequestAborted);
                 // Normalize images for metadata results so the SPA receives local /api/v{version}/images/{asin} when possible
                 if (_imageCacheService != null && results != null)
@@ -1064,22 +1064,22 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Search for audiobook series by name using the Audimeta API.
+        /// Search for audiobook series by name using the Audible catalog provider.
         /// </summary>
         /// <param name="name">Series name to search for.</param>
         /// <param name="region">Audible marketplace region (default: us).</param>
-        [HttpGet("audimeta/series")]
-        public async Task<ActionResult<object>> SearchAudimetaSeries([FromQuery] string name, [FromQuery] string region = "us")
+        [HttpGet("audible/series")]
+        public async Task<ActionResult<object>> SearchAudibleSeries([FromQuery] string name, [FromQuery] string region = "us")
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(name)) return BadRequest("name query parameter is required");
-                var res = await _audimetaService.SearchSeriesByNameAsync(name, region);
+                var res = await _audibleService.SearchSeriesByNameAsync(name, region);
                 if (res == null) return NotFound();
                 return Ok(res);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error proxying audimeta series search for name {Name}", name);
+                _logger.LogError(ex, "Error proxying Audible series search for name {Name}", name);
                 return StatusCode(500, "Internal server error");
             }
         }
@@ -1089,18 +1089,18 @@ namespace Listenarr.Api.Controllers
         /// </summary>
         /// <param name="asin">Audible series ASIN.</param>
         /// <param name="region">Audible marketplace region (default: us).</param>
-        [HttpGet("audimeta/series/books/{asin}")]
-        public async Task<ActionResult<object>> GetAudimetaSeriesBooks(string asin, [FromQuery] string region = "us")
+        [HttpGet("audible/series/books/{asin}")]
+        public async Task<ActionResult<object>> GetAudibleSeriesBooks(string asin, [FromQuery] string region = "us")
         {
             try
             {
                 if (string.IsNullOrWhiteSpace(asin)) return BadRequest("asin is required");
-                var res = await _audimetaService.GetBooksBySeriesAsinAsync(asin, region);
+                var res = await _audibleService.GetBooksBySeriesAsinAsync(asin, region);
                 if (res == null) return NotFound();
                 return Ok(res);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error proxying audimeta series books for ASIN {Asin}", asin);
+                _logger.LogError(ex, "Error proxying Audible series books for ASIN {Asin}", asin);
                 return StatusCode(500, "Internal server error");
             }
         }
@@ -1135,13 +1135,13 @@ namespace Listenarr.Api.Controllers
 
                 // Support MyAnonamouse query string toggles (mamFilter, mamSearchInDescription, mamSearchInSeries, mamSearchInFilenames, mamLanguage, mamFreeleechWedge)
                 var mamOptions = new Listenarr.Api.Models.MyAnonamouseOptions();
-                if (Request.Query.ContainsKey("mamFilter") && Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(Request.Query["mamFilter"].ToString() ?? string.Empty, true, out var mamFilter))
+                if (Request.Query.TryGetValue("mamFilter", out var queryMamFilter) && Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(queryMamFilter.ToString() ?? string.Empty, true, out var mamFilter))
                     mamOptions.Filter = mamFilter;
-                if (Request.Query.ContainsKey("mamSearchInDescription") && bool.TryParse(Request.Query["mamSearchInDescription"], out var sd)) mamOptions.SearchInDescription = sd;
-                if (Request.Query.ContainsKey("mamSearchInSeries") && bool.TryParse(Request.Query["mamSearchInSeries"], out var ss)) mamOptions.SearchInSeries = ss;
-                if (Request.Query.ContainsKey("mamSearchInFilenames") && bool.TryParse(Request.Query["mamSearchInFilenames"], out var sf)) mamOptions.SearchInFilenames = sf;
-                if (Request.Query.ContainsKey("mamLanguage")) mamOptions.SearchLanguage = Request.Query["mamLanguage"].ToString();
-                if (Request.Query.ContainsKey("mamFreeleechWedge") && Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(Request.Query["mamFreeleechWedge"].ToString() ?? string.Empty, true, out var mw)) mamOptions.FreeleechWedge = mw;
+                if (Request.Query.TryGetValue("mamSearchInDescription", out var queryMamSearchInDescription) && bool.TryParse(queryMamSearchInDescription, out var sd)) mamOptions.SearchInDescription = sd;
+                if (Request.Query.TryGetValue("mamSearchInSeries", out var queryMamSearchInSeries) && bool.TryParse(queryMamSearchInSeries, out var ss)) mamOptions.SearchInSeries = ss;
+                if (Request.Query.TryGetValue("mamSearchInFilenames", out var queryMamSearchInFilenames) && bool.TryParse(queryMamSearchInFilenames, out var sf)) mamOptions.SearchInFilenames = sf;
+                if (Request.Query.TryGetValue("mamLanguage", out var queryMamLanguage)) mamOptions.SearchLanguage = queryMamLanguage.ToString();
+                if (Request.Query.TryGetValue("mamFreeleechWedge", out var queryMamFreeleechWedge) && Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(queryMamFreeleechWedge.ToString() ?? string.Empty, true, out var mw)) mamOptions.FreeleechWedge = mw;
 
                 var req = new Listenarr.Api.Models.SearchRequest { MyAnonamouse = mamOptions };
                 var results = await _searchService.SearchIndexersAsync(query, category, sortBy, sortDirection, isAutomaticSearch, req);
@@ -1201,10 +1201,10 @@ namespace Listenarr.Api.Controllers
         // }
 
         /// <summary>
-        /// Search for audiobooks using audimeta.de
+        /// Search the Audible catalog for audiobooks.
         /// </summary>
-        [HttpGet("audimeta")]
-        public async Task<ActionResult<AudimetaSearchResponse>> SearchAudimeta(
+        [HttpGet("audible")]
+        public async Task<ActionResult<AudibleSearchResponse>> SearchAudible(
             [FromQuery] string query,
             [FromQuery] string region = "us",
             [FromQuery] string? language = null)
@@ -1216,7 +1216,7 @@ namespace Listenarr.Api.Controllers
                     return BadRequest("Query parameter is required");
                 }
 
-                var result = await _audimetaService.SearchBooksAsync(query, region: region, language: language);
+                var result = await _audibleService.SearchBooksAsync(query, region: region, language: language);
                 if (result == null)
                 {
                     return NotFound("No results found");
@@ -1225,7 +1225,7 @@ namespace Listenarr.Api.Controllers
                 return Ok(result);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error searching audimeta for query: {Query}", query);
+                _logger.LogError(ex, "Error searching the Audible catalog for query: {Query}", query);
                 return StatusCode(500, "Internal server error");
             }
         }
@@ -1267,26 +1267,26 @@ namespace Listenarr.Api.Controllers
                     var asin = query.Trim();
                     _logger.LogInformation("Query appears to be an ASIN; attempting direct metadata lookup for: {Asin}", asin);
 
-                    // Try configured metadata sources (audimeta, audnexus, etc.) via AudimetaService first
+                    // Try the Audible-backed provider first, then fall back to other configured metadata sources.
                     try
                     {
-                        var audimeta = await _audimetaService.GetBookMetadataAsync(asin, region, true);
-                        if (audimeta != null)
+                        var audible = await _audibleService.GetBookMetadataAsync(asin, region, true);
+                        if (audible != null)
                         {
                             var metadataObj = new
                             {
-                                metadata = audimeta,
-                                source = "Audimeta",
-                                sourceUrl = "https://audimeta.de"
+                                metadata = audible,
+                                source = "Audible",
+                                sourceUrl = "https://www.audible.com"
                             };
                             return Ok(new List<object> { metadataObj });
                         }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "Audimeta lookup failed for ASIN {Asin}, trying other configured metadata sources", asin);
+                        _logger.LogWarning(ex, "Audible metadata lookup failed for ASIN {Asin}, trying other configured metadata sources", asin);
                     }
 
-                    // If audimeta didn't return anything, try configured metadata sources directly
+                    // If audible didn't return anything, try configured metadata sources directly
                     try
                     {
                         var meta = await _metadataService.GetMetadataAsync(asin, region, true);

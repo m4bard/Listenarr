@@ -170,7 +170,17 @@
             <h3>Author Information</h3>
             <div class="detail-row" v-if="audiobook.authors?.length">
               <span class="label">Author(s):</span>
-              <span class="value">{{ audiobook.authors.map(safeText).join(', ') }}</span>
+              <div class="value detail-link-tags">
+                <button
+                  v-for="author in audiobook.authors"
+                  :key="author"
+                  type="button"
+                  class="tag-badge detail-link-tag"
+                  @click="goToAuthorCollection(author)"
+                >
+                  {{ safeText(author) }}
+                </button>
+              </div>
             </div>
             <div class="detail-row" v-if="audiobook.narrators?.length">
               <span class="label">Narrator(s):</span>
@@ -198,7 +208,15 @@
             <h3>Series Information</h3>
             <div class="detail-row">
               <span class="label">Series:</span>
-              <span class="value">{{ safeText(audiobook.series) }}</span>
+              <div class="value detail-link-tags">
+                <button
+                  type="button"
+                  class="tag-badge detail-link-tag"
+                  @click="goToSeriesCollection(audiobook.series)"
+                >
+                  {{ safeText(audiobook.series) }}
+                </button>
+              </div>
             </div>
             <div class="detail-row" v-if="audiobook.seriesNumber && audiobook.seriesNumber.trim()">
               <span class="label">Book #:</span>
@@ -208,10 +226,10 @@
 
           <div class="detail-card">
             <h3>Identifiers</h3>
-            <div class="detail-row" v-if="audimetaSourceUrl">
+            <div class="detail-row" v-if="audibleSourceUrl">
               <span class="label">Metadata Source:</span>
               <span class="value">
-                <a :href="audimetaSourceUrl" target="_blank" rel="noopener noreferrer">Audimeta</a>
+                <a :href="audibleSourceUrl" target="_blank" rel="noopener noreferrer">Audible</a>
               </span>
             </div>
             <div class="detail-row detail-row-stacked" v-if="displayIdentifiers.length">
@@ -242,9 +260,15 @@
           <div class="detail-card" v-if="audiobook.genres && audiobook.genres.length">
             <h3>Genres</h3>
             <div class="genre-tags">
-              <span v-for="genre in audiobook.genres" :key="genre" class="genre-tag">
+              <button
+                v-for="genre in audiobook.genres"
+                :key="genre"
+                type="button"
+                class="genre-tag detail-link-tag detail-genre-tag"
+                @click="goToGenreCollection(genre)"
+              >
                 {{ genre }}
-              </span>
+              </button>
             </div>
           </div>
 
@@ -709,10 +733,10 @@ const primaryAsin = computed(() => {
   return legacy || null
 })
 
-const audimetaSourceUrl = computed(() => {
+const audibleSourceUrl = computed(() => {
   const asin = primaryAsin.value
   if (!asin) return null
-  return `https://audimeta.de/book/${encodeURIComponent(asin)}`
+  return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
 })
 
 const displayIdentifiers = computed<DetailIdentifierItem[]>(() => {
@@ -1104,6 +1128,27 @@ async function loadIdentifiersForDetail() {
 
 function goBack() {
   router.push('/audiobooks')
+}
+
+function goToAuthorCollection(author: string | undefined | null) {
+  const normalizedAuthor = author?.trim()
+  if (!normalizedAuthor) return
+
+  router.push(`/collection/author/${encodeURIComponent(normalizedAuthor)}`)
+}
+
+function goToSeriesCollection(series: string | undefined | null) {
+  const normalizedSeries = series?.trim()
+  if (!normalizedSeries) return
+
+  router.push(`/collection/series/${encodeURIComponent(normalizedSeries)}`)
+}
+
+function goToGenreCollection(genre: string | undefined | null) {
+  const normalizedGenre = genre?.trim()
+  if (!normalizedGenre) return
+
+  router.push(`/collection/genre/${encodeURIComponent(normalizedGenre)}`)
 }
 
 async function refresh() {
@@ -2259,6 +2304,31 @@ function formatDate(dateString?: string): string {
   text-align: right;
 }
 
+.detail-link-tags {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.detail-link-tag {
+  appearance: none;
+  font-size: 12px;
+  cursor: pointer;
+  line-height: 1.2;
+}
+
+.detail-link-tag:hover {
+  background: rgba(var(--brand-rgb), 0.2);
+  border-color: rgba(var(--brand-rgb), 0.52);
+  transform: translateY(-1px);
+}
+
+.detail-link-tag:focus-visible {
+  outline: 2px solid rgba(var(--brand-rgb), 0.5);
+  outline-offset: 2px;
+}
+
 .detail-row-stacked {
   align-items: flex-start;
   gap: 12px;
@@ -2328,12 +2398,20 @@ a.identifier-link:hover {
 }
 
 .genre-tag {
+  appearance: none;
+  cursor: pointer;
   padding: 6px 12px;
   background-color: #3a3a3a;
   border: 1px solid #555;
   border-radius: 6px;
   color: #fff;
   font-size: 12px;
+}
+
+.detail-genre-tag:hover {
+  background-color: #404040;
+  border-color: var(--brand-500);
+  color: #fff;
 }
 
 .tags-list {

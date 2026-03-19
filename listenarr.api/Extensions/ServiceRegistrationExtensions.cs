@@ -141,7 +141,7 @@ namespace Listenarr.Api.Extensions
 
             // Typed clients used by metadata services. Add consistent handlers + policies.
 
-            services.AddHttpClient<Listenarr.Api.Services.AudimetaService>()
+            services.AddHttpClient<Listenarr.Api.Services.AudibleService>()
                 .ConfigurePrimaryHttpMessageHandler(() => CreateExternalHandler(config))
                 .AddPolicyHandler(retryPolicy);
 

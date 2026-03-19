@@ -27,9 +27,9 @@ namespace Listenarr.Api.Tests
 
             mockImageCache.Setup(m => m.DownloadAndCacheImageAsync(imageUrl, identifier)).ReturnsAsync(relativePath);
 
-            var meta = new AudimetaBookResponse { ImageUrl = imageUrl };
+            var meta = new AudibleBookResponse { ImageUrl = imageUrl };
             var mockMetadata = new Mock<IAudiobookMetadataService>();
-            mockMetadata.Setup(m => m.GetAudimetaMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(meta);
+            mockMetadata.Setup(m => m.GetAudibleMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>())).ReturnsAsync(meta);
 
             // Create temporary content root and the cached image file
             var tempRoot = Path.Join(Path.GetTempPath(), "listenarr_test_contentroot");
@@ -40,9 +40,9 @@ namespace Listenarr.Api.Tests
             var mockEnv = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
             mockEnv.SetupGet(e => e.ContentRootPath).Returns(tempRoot);
 
-            var audimetaMock = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
+            var audibleMock = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
             var audnexusMock = Mock.Of<IAudnexusService>();
-            var controller = new ImagesController(mockImageCache.Object, mockMetadata.Object, audimetaMock.Object, audnexusMock, Mock.Of<IAudiobookRepository>(), Mock.Of<ILogger<ImagesController>>(), mockEnv.Object);
+            var controller = new ImagesController(mockImageCache.Object, mockMetadata.Object, audibleMock.Object, audnexusMock, Mock.Of<IAudiobookRepository>(), Mock.Of<ILogger<ImagesController>>(), mockEnv.Object);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act

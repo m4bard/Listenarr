@@ -118,7 +118,7 @@
           class="btn btn-primary"
           :disabled="bulkAdding"
           @click="addAllWithAsin"
-          title="Search Audimeta for every item with an ASIN and add matches automatically"
+          title="Search Audible metadata for every item with an ASIN and add matches automatically"
         >
           <PhRocketLaunch />
           Add All (ASIN match)
@@ -379,8 +379,8 @@ function ignore(item: UnmatchedFileItem) {
   items.value = items.value.filter((i) => i.fullPath !== item.fullPath)
 }
 
-// Minimal Audimeta response shape — only what we need for adding
-interface AudimetaPayload {
+// Minimal Audible response shape — only what we need for adding
+interface AudiblePayload {
   asin?: string
   title?: string
   subtitle?: string
@@ -396,7 +396,7 @@ interface AudimetaPayload {
   genres?: { name?: string }[]
 }
 
-function mapToAudible(meta: AudimetaPayload, fallback: UnmatchedFileItem): AudibleBookMetadata {
+function mapToAudible(meta: AudiblePayload, fallback: UnmatchedFileItem): AudibleBookMetadata {
   const year = (meta.publishDate || meta.releaseDate || '').split(/[-/]/)[0] || fallback.year
   const firstSeries = meta.series?.[0]
   return {
@@ -428,14 +428,14 @@ async function addAllWithAsin() {
 
   for (const item of candidates) {
     try {
-      // Fetch Audimeta metadata for this ASIN
+      // Fetch Audible-backed metadata for this ASIN
       const resp = await apiService.getAudibleMetadata<
-        { source?: string; metadata?: AudimetaPayload } | AudimetaPayload
+        { source?: string; metadata?: AudiblePayload } | AudiblePayload
       >(item.asin!)
 
-      // Unwrap response — may be { source, metadata } or direct Audimeta payload
+      // Unwrap response — may be { source, metadata } or direct Audible payload
       const raw =
-        resp && 'metadata' in resp && resp.metadata ? resp.metadata : (resp as AudimetaPayload)
+        resp && 'metadata' in resp && resp.metadata ? resp.metadata : (resp as AudiblePayload)
 
       if (!raw?.title) {
         // No metamatch — skip, leave in table
@@ -476,7 +476,7 @@ async function addAllWithAsin() {
   if (added > 0) {
     toast.success('Bulk add complete', `Added ${added} book${added !== 1 ? 's' : ''}${skipped > 0 ? `, ${skipped} skipped (no match)` : ''}`)
   } else {
-    toast.info('No matches found', 'No Audimeta records found for the ASINs in this scan')
+    toast.info('No matches found', 'No Audible metadata records found for the ASINs in this scan')
   }
 }
 </script>

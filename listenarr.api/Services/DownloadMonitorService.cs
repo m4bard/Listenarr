@@ -1213,9 +1213,8 @@ namespace Listenarr.Api.Services
                             else
                             {
                                 // Not complete anymore - remove candidate if present
-                                if (_completionCandidates.ContainsKey(dl.Id))
+                                if (_completionCandidates.Remove(dl.Id))
                                 {
-                                    _completionCandidates.Remove(dl.Id);
                                     _logger.LogDebug("Download {DownloadId} no longer appears complete in qBittorrent, removed from candidates", dl.Id);
                                     _ = BroadcastCandidateUpdateAsync(dl, false, cancellationToken);
                                 }
@@ -1559,9 +1558,8 @@ namespace Listenarr.Api.Services
                                 }
                                 else
                                 {
-                                    if (_completionCandidates.ContainsKey(dl.Id))
+                                    if (_completionCandidates.Remove(dl.Id))
                                     {
-                                        _completionCandidates.Remove(dl.Id);
                                         _ = BroadcastCandidateUpdateAsync(dl, false, cancellationToken);
                                     }
                                 }
@@ -2256,9 +2254,8 @@ namespace Listenarr.Api.Services
                                     failedMatch.Error,
                                     cancellationToken);
 
-                                if (_completionCandidates.ContainsKey(dl.Id))
+                                if (_completionCandidates.Remove(dl.Id))
                                 {
-                                    _completionCandidates.Remove(dl.Id);
                                     _ = BroadcastCandidateUpdateAsync(dl, false, cancellationToken);
                                 }
                                 continue;
@@ -2353,9 +2350,8 @@ namespace Listenarr.Api.Services
                                 // Not found in completed items - check if it's still in queue for progress updates
                                 // SABnzbd doesn't provide queue data in history API, so we can't update progress here
                                 // Progress updates for SABnzbd would need to be done via the queue API
-                                if (_completionCandidates.ContainsKey(dl.Id))
+                                if (_completionCandidates.Remove(dl.Id))
                                 {
-                                    _completionCandidates.Remove(dl.Id);
                                     _logger.LogDebug("Download {DownloadId} no longer appears complete in SABnzbd, removed from candidates", dl.Id);
                                     _ = BroadcastCandidateUpdateAsync(dl, false, cancellationToken);
                                 }
@@ -2625,9 +2621,8 @@ namespace Listenarr.Api.Services
                                     failedMatch.Error,
                                     cancellationToken);
 
-                                if (_completionCandidates.ContainsKey(dl.Id))
+                                if (_completionCandidates.Remove(dl.Id))
                                 {
-                                    _completionCandidates.Remove(dl.Id);
                                     _ = BroadcastCandidateUpdateAsync(dl, false, cancellationToken);
                                 }
                                 continue;
@@ -2682,9 +2677,8 @@ namespace Listenarr.Api.Services
                             else
                             {
                                 // Not found in completed items - remove from candidates if present
-                                if (_completionCandidates.ContainsKey(dl.Id))
+                                if (_completionCandidates.Remove(dl.Id))
                                 {
-                                    _completionCandidates.Remove(dl.Id);
                                     _logger.LogDebug("Download {DownloadId} no longer appears complete in NZBGet, removed from candidates", dl.Id);
                                     _ = BroadcastCandidateUpdateAsync(dl, false, cancellationToken);
                                 }

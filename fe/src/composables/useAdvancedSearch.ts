@@ -15,7 +15,6 @@ export interface AdvancedSearchParams {
   isbn?: string
   series?: string
   asin?: string
-  language?: string
 }
 
 /**
@@ -45,7 +44,6 @@ export const useAdvancedSearch = () => {
     isbn: '',
     series: '',
     asin: '',
-    language: '',
   })
 
   // Debounce timer for localStorage saves
@@ -112,7 +110,14 @@ export const useAdvancedSearch = () => {
             showAdvancedSearch.value = true
           }
           if (parsed.params && typeof parsed.params === 'object') {
-            advancedSearchParams.value = Object.assign({}, advancedSearchParams.value, parsed.params)
+            const params = parsed.params as Record<string, unknown>
+            advancedSearchParams.value = {
+              title: typeof params.title === 'string' ? params.title : '',
+              author: typeof params.author === 'string' ? params.author : '',
+              isbn: typeof params.isbn === 'string' ? params.isbn : '',
+              series: typeof params.series === 'string' ? params.series : '',
+              asin: typeof params.asin === 'string' ? params.asin : '',
+            }
           }
         }
       }
@@ -142,7 +147,6 @@ export const useAdvancedSearch = () => {
       isbn: '',
       series: '',
       asin: '',
-      language: '',
     }
     // Persist handled by watcher
   }

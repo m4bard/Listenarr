@@ -11,7 +11,7 @@ public class AsinSearchHandler
 {
     private readonly ILogger<AsinSearchHandler> _logger;
     private readonly IConfigurationService _configurationService;
-    private readonly AudimetaService _audimetaService;
+    private readonly AudibleService _audibleService;
     private readonly IAudnexusService _audnexusService;
     private readonly MetadataConverters _metadataConverters;
     private readonly SearchProgressReporter _searchProgressReporter;
@@ -19,14 +19,14 @@ public class AsinSearchHandler
     public AsinSearchHandler(
         ILogger<AsinSearchHandler> logger,
         IConfigurationService configurationService,
-        AudimetaService audimetaService,
+        AudibleService audibleService,
         IAudnexusService audnexusService,
         MetadataConverters metadataConverters,
         SearchProgressReporter searchProgressReporter)
     {
         _logger = logger;
         _configurationService = configurationService;
-        _audimetaService = audimetaService;
+        _audibleService = audibleService;
         _audnexusService = audnexusService;
         _metadataConverters = metadataConverters;
         _searchProgressReporter = searchProgressReporter;
@@ -34,7 +34,7 @@ public class AsinSearchHandler
 
     /// <summary>
     /// Searches for a specific ASIN using the following workflow:
-    /// 1. Audimeta.de /book/{asin} endpoint (primary)
+    /// 1. Audible catalog metadata (primary)
     /// 2. Audnexus fallback (if configured)
     /// </summary>
     public async Task<List<SearchResult>> SearchByAsinAsync(
@@ -50,29 +50,29 @@ public class AsinSearchHandler
         AudibleBookMetadata? metadata = null;
         string? metadataSourceName = null;
 
-        // Step 1: Try to get metadata from Audimeta.de first (primary source)
-        _logger.LogInformation("Attempting Audimeta.de for ASIN {Asin}", asin);
-        await _searchProgressReporter.BroadcastAsync($"Searching Audimeta.de for {asin}", null);
+        // Step 1: Try to get metadata from the Audible-backed provider first.
+        _logger.LogInformation("Attempting Audible catalog metadata for ASIN {Asin}", asin);
+        await _searchProgressReporter.BroadcastAsync($"Searching Audible for {asin}", null);
         
         try
         {
-            var audimetaData = await _audimetaService.GetBookMetadataAsync(asin, "us", true);
-            if (audimetaData != null)
+            var audibleData = await _audibleService.GetBookMetadataAsync(asin, "us", true);
+            if (audibleData != null)
             {
-                metadata = _metadataConverters.ConvertAudimetaToMetadata(audimetaData, asin, "Audible");
-                metadataSourceName = "Audimeta";
-                _logger.LogInformation("Successfully got metadata from Audimeta.de for ASIN {Asin}", asin);
+                metadata = _metadataConverters.ConvertAudibleToMetadata(audibleData, asin, "Audible");
+                metadataSourceName = "Audible";
+                _logger.LogInformation("Successfully got metadata from Audible for ASIN {Asin}", asin);
             }
             else
             {
-                _logger.LogInformation("Audimeta.de returned no data for ASIN {Asin}", asin);
+                _logger.LogInformation("Audible metadata returned no data for ASIN {Asin}", asin);
             }
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-            _logger.LogDebug(ex, "Failed to get metadata from Audimeta.de for ASIN {Asin}", asin);
+            _logger.LogDebug(ex, "Failed to get metadata from Audible for ASIN {Asin}", asin);
         }
 
-        // Step 2: If Audimeta failed, try other configured metadata sources (Audnexus)
+        // Step 2: If Audible failed, try other configured metadata sources (Audnexus)
         if (metadata == null && metadataSources != null && metadataSources.Any())
         {
             _logger.LogInformation("Trying {Count} fallback metadata source(s) for ASIN {Asin}", metadataSources.Count, asin);

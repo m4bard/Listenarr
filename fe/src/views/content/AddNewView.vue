@@ -49,19 +49,20 @@
               />
 
               <div class="language-select-wrapper">
-                <label for="language-select" class="language-label">Region:</label>
-                <select v-model="searchLanguage" id="language-select" class="language-select form-select" aria-label="Search region">
-                  <option value="english">United States (US)</option>
-                  <option value="english-uk">United Kingdom (UK)</option>
-                  <option value="english-ca">Canada (CA)</option>
-                  <option value="english-au">Australia (AU)</option>
-                  <option value="english-in">India (IN)</option>
-                  <option value="german">Germany (DE)</option>
-                  <option value="french">France (FR)</option>
-                  <option value="spanish">Spain (ES)</option>
-                  <option value="italian">Italy (IT)</option>
-                  <option value="portuguese">Brazil (BR)</option>
-                  <option value="japanese">Japan (JP)</option>
+                <label for="language-select" class="language-label">Language:</label>
+                <select
+                  v-model="preferredSearchLanguage"
+                  id="language-select"
+                  class="language-select form-select"
+                  aria-label="Filter results by language"
+                >
+                  <option
+                    v-for="option in preferredSearchLanguageOptions"
+                    :key="option.value"
+                    :value="option.value"
+                  >
+                    {{ option.label }}
+                  </option>
                 </select>
               </div>
 
@@ -106,7 +107,7 @@
               <h3 id="advanced-search-label"><PhFunnelSimple /> Advanced Search</h3>
               <p class="help-text">
                 Enter multiple search criteria for more precise results. When both Title and Author
-                are provided, uses Audimeta's combined search for maximum accuracy.
+                are provided, uses the Audible catalog for maximum accuracy.
               </p>
             </div>
             <button
@@ -197,25 +198,20 @@
                 </div>
 
                 <div class="form-group">
-                  <label for="adv-language">Region</label>
+                  <label for="adv-language">Language</label>
                   <select
                     id="adv-language"
-                    aria-label="Search region"
-                    v-model="advancedSearchParams.language"
+                    aria-label="Filter results by language"
+                    v-model="preferredSearchLanguage"
                     class="form-input"
                   >
-                    <option value="">Any Region</option>
-                    <option value="english">United States (US)</option>
-                    <option value="english-uk">United Kingdom (UK)</option>
-                    <option value="english-ca">Canada (CA)</option>
-                    <option value="english-au">Australia (AU)</option>
-                    <option value="english-in">India (IN)</option>
-                    <option value="german">Germany (DE)</option>
-                    <option value="french">France (FR)</option>
-                    <option value="spanish">Spain (ES)</option>
-                    <option value="italian">Italy (IT)</option>
-                    <option value="portuguese">Brazil (BR)</option>
-                    <option value="japanese">Japan (JP)</option>
+                    <option
+                      v-for="option in preferredSearchLanguageOptions"
+                      :key="option.value"
+                      :value="option.value"
+                    >
+                      {{ option.label }}
+                    </option>
                   </select>
                 </div>
               </div>
@@ -394,14 +390,14 @@
                   v-if="
                     audibleResult.asin &&
                     ((audibleResult.metadataSource &&
-                      audibleResult.metadataSource.toLowerCase().includes('audimeta')) ||
+                      audibleResult.metadataSource.toLowerCase().includes('audible')) ||
                       (audibleResult.searchResult &&
                         audibleResult.searchResult.metadataSource &&
                         audibleResult.searchResult.metadataSource
                           .toLowerCase()
-                          .includes('audimeta')))
+                          .includes('audible')))
                   "
-                  :href="`https://audimeta.de/book/${audibleResult.asin}`"
+                  :href="`https://www.audible.com/pd/${audibleResult.asin}`"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="metadata-source-link"
@@ -411,7 +407,7 @@
                   "
                 >
                   <PhGlobe />
-                  Audimeta
+                  Audible
                 </a>
                 <span
                   v-else-if="audibleResult.metadataSource"
@@ -519,30 +515,30 @@
         </h2>
         <div class="results-controls">
           <div
-            v-if="isAudimetaPaged && Math.ceil(audimetaTotal / audimetaLimit) > 1"
-            class="audimeta-pagination"
+            v-if="isAudiblePaged && Math.ceil(audibleTotal / audibleLimit) > 1"
+            class="audible-pagination"
           >
             <button
               class="btn btn-secondary"
-              :disabled="audimetaPage <= 1"
-              @click.prevent="changeAudimetaPage(audimetaPage - 1)"
+              :disabled="audiblePage <= 1"
+              @click.prevent="changeAudiblePage(audiblePage - 1)"
             >
               Prev
             </button>
             <span class="page-indicator"
-              >Page {{ audimetaPage }} of
-              {{ Math.max(1, Math.ceil(audimetaTotal / audimetaLimit)) }}</span
+              >Page {{ audiblePage }} of
+              {{ Math.max(1, Math.ceil(audibleTotal / audibleLimit)) }}</span
             >
             <button
               class="btn btn-secondary"
-              :disabled="audimetaPage * audimetaLimit >= audimetaTotal"
-              @click.prevent="changeAudimetaPage(audimetaPage + 1)"
+              :disabled="audiblePage * audibleLimit >= audibleTotal"
+              @click.prevent="changeAudiblePage(audiblePage + 1)"
             >
               Next
             </button>
           </div>
 
-          <div v-if="!isAudimetaPaged && totalPages > 1" class="client-pagination-controls">
+          <div v-if="!isAudiblePaged && totalPages > 1" class="client-pagination-controls">
             <div class="pagination-settings">
               <label class="small-label">Results per page</label>
               <select
@@ -683,8 +679,9 @@
                 >
                   <PhGlobe />
                   {{
-                    book.metadataSource && book.metadataSource.toLowerCase().includes('audimeta')
-                      ? 'Audimeta'
+                    book.metadataSource &&
+                    book.metadataSource.toLowerCase().includes('audible')
+                      ? 'Audible'
                       : `Metadata: ${book.metadataSource}`
                   }}
                 </a>
@@ -697,7 +694,7 @@
                   Metadata: {{ book.metadataSource }}
                 </span>
 
-                <!-- Prefer to show Audible as product source when metadata comes from Audimeta -->
+                <!-- Prefer to show Audible as product source when metadata comes from Audible -->
                 <a
                   v-if="getSourceUrl(book)"
                   :href="getSourceUrl(book)"
@@ -863,10 +860,10 @@ import type {
   AudibleBookMetadata,
   SearchResult,
   Audiobook,
-  AudimetaAuthor,
-  AudimetaNarrator,
-  AudimetaGenre,
-  AudimetaSearchResult,
+  AudibleAuthor,
+  AudibleNarrator,
+  AudibleGenre,
+  AudibleSearchResult,
 } from '@/types'
 import { apiService } from '@/services/api'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -907,6 +904,13 @@ import {
   canAddOpenLibraryResult as canAddOpenLibraryResultHelper,
 } from '@/utils/searchResultHelpers'
 import { useProtectedImages, isLikelyBackendImageUrl } from '@/composables/useProtectedImages'
+import {
+  getPreferredSearchLanguageFilter,
+  normalizePreferredSearchLanguage,
+  normalizeSearchResultLanguage,
+  normalizeSearchRegion,
+  preferredSearchLanguageOptions,
+} from '@/utils/languageMapping'
 
 // Helper to normalize ISBN (strip hyphens/spaces, prefer ISBN-13 if present)
 function normalizeIsbn(input: unknown): string | undefined {
@@ -943,17 +947,17 @@ type TitleSearchResult = Omit<OpenLibraryBook, 'isbn'> & {
 // Loose result type used for normalization of diverse backend shapes
 type LooseResult = Partial<SearchResult> & Record<string, unknown>
 
-interface AudimetaSeriesEntry {
+interface AudibleSeriesEntry {
   name?: string
   position?: string | number
 }
 
-interface AudimetaMetadataPayload {
+interface AudibleMetadataPayload {
   asin?: string
   title?: string
   subtitle?: string
-  authors?: AudimetaAuthor[]
-  narrators?: AudimetaNarrator[]
+  authors?: AudibleAuthor[]
+  narrators?: AudibleNarrator[]
   publisher?: string
   releaseDate?: string
   publishDate?: string
@@ -964,14 +968,14 @@ interface AudimetaMetadataPayload {
   runtime?: number
   lengthMinutes?: number
   language?: string
-  genres?: AudimetaGenre[]
-  series?: AudimetaSeriesEntry[]
+  genres?: AudibleGenre[]
+  series?: AudibleSeriesEntry[]
   bookFormat?: string
   isbn?: string
 }
 
-interface AudimetaMetadataResponse {
-  metadata?: AudimetaMetadataPayload
+interface AudibleMetadataResponse {
+  metadata?: AudibleMetadataPayload
   source?: string
 }
 
@@ -987,6 +991,7 @@ const { getProtectedImageSrc } = useProtectedImages()
 const {
   searchQuery,
   searchLanguage,
+  preferredSearchLanguage,
   searchType,
   isSearching,
   searchError,
@@ -1019,22 +1024,22 @@ const {
 
 const advancedSearchError = ref('')
 
-// Audimeta pagination state for advanced searches
-const audimetaPage = ref(1)
-const audimetaLimit = ref(50)
-const audimetaTotal = ref(0)
-const isAudimetaPaged = ref(false)
-const allAudimetaResults = ref<AudimetaSearchResult[]>([])
+// Audible pagination state for advanced searches
+const audiblePage = ref(1)
+const audibleLimit = ref(50)
+const audibleTotal = ref(0)
+const isAudiblePaged = ref(false)
+const allAudibleResults = ref<AudibleSearchResult[]>([])
 
 logger.debug('AddNewView component loaded')
 logger.debug('libraryStore:', libraryStore)
 
 onMounted(() => {
-  // If URL has a page query parameter (page=[num]), initialize audimetaPage
+  // If URL has a page query parameter (page=[num]), initialize audiblePage
   const p = route.query.page
   if (p) {
     const np = Number(p)
-    if (!isNaN(np) && np > 0) audimetaPage.value = np
+    if (!isNaN(np) && np > 0) audiblePage.value = np
   }
 })
 
@@ -1124,10 +1129,14 @@ const pagedTitleResults = computed(() => {
 })
 
 const displayedTitleResults = computed(() => {
-  // If the results come from Audimeta paged API, show full list (server-side paging)
-  if (isAudimetaPaged.value) return titleResults.value
+  // If the results come from Audible paged API, show full list (server-side paging)
+  if (isAudiblePaged.value) return titleResults.value
   return pagedTitleResults.value
 })
+
+const selectedLanguageFilter = computed(() =>
+  getPreferredSearchLanguageFilter(preferredSearchLanguage.value),
+)
 
 // Compute converted ISBN-13 for display when user enters an ISBN-10
 const convertedIsbn = computed(() => {
@@ -1326,16 +1335,63 @@ const canLoadMore = computed(() => {
 
 // Unified Search Methods - now handled by useSearch composable
 
+const getResultLanguageKey = (result: Partial<SearchResult> | LooseResult): string | undefined => {
+  const candidate = result as LooseResult
+  const nested = candidate.searchResult as LooseResult | undefined
+  const rawLanguage =
+    candidate.language ??
+    candidate.Language ??
+    nested?.language ??
+    nested?.Language
+
+  if (Array.isArray(rawLanguage)) {
+    for (const entry of rawLanguage) {
+      if (typeof entry === 'string') {
+        const normalized = normalizeSearchResultLanguage(entry)
+        if (normalized) return normalized
+      }
+    }
+    return undefined
+  }
+
+  if (typeof rawLanguage === 'string') {
+    return normalizeSearchResultLanguage(rawLanguage)
+  }
+
+  return undefined
+}
+
+const filterResultsBySelectedLanguage = <T extends Partial<SearchResult> | LooseResult>(
+  results: T[],
+): T[] => {
+  const filter = selectedLanguageFilter.value
+  if (!filter) return results
+  return results.filter((result) => getResultLanguageKey(result) === filter)
+}
+
 const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> | LooseResult>) => {
     // Debug logging removed: avoid referencing undefined temporary variables
+  const filteredResults = filterResultsBySelectedLanguage(results)
+
   // Convert search results to title results format
   titleResults.value = []
   audibleResult.value = null
   searchType.value = 'title'
+  allAudibleResults.value = filteredResults
+    .filter((result) => {
+      const rr = result as Record<string, unknown>
+      return Boolean(rr['asin'] ?? rr['Asin'] ?? rr['isEnriched'])
+    }) as unknown as AudibleSearchResult[]
 
+  if (!filteredResults.length) {
+    totalTitleResultsCount.value = 0
+    searchStatus.value = ''
+    await checkExistingInLibrary()
+    toast.info('No results found for the selected language', 'Search')
+    return
+  }
 
-
-  for (const result of results) {
+  for (const result of filteredResults) {
     const r = result as LooseResult;
     const rr = r as Record<string, unknown>;
 
@@ -1397,24 +1453,18 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       isbn: normalizedIsbn,
     };
 
-    const looksLikeAudimeta =
-      (metadataSource && String(metadataSource).toLowerCase() === 'audimeta') ||
+    const looksLikeAudibleMetadata =
+      (metadataSource && ['audible'].includes(String(metadataSource).toLowerCase())) ||
       Boolean(rr['isEnriched']) ||
       Boolean(rr['asin'])
-
-    if (looksLikeAudimeta) {
-      // Keep a copy of the raw audimeta results for client-side paging and reference
-      try {
-        if (Array.isArray(results) && results.length && (results[0] as unknown as AudimetaSearchResult).asin) {
-          allAudimetaResults.value = results as unknown as AudimetaSearchResult[]
-        }
-      } catch {}
-      // Populate commonly used Audimeta-like fields (flattened to top-level)
+ 
+    if (looksLikeAudibleMetadata) {
+      // Populate commonly used Audible-like fields (flattened to top-level)
       const tr = titleResult as unknown as Record<string, unknown>
       const rrRes = result as unknown as Record<string, unknown>
       const rr = result as unknown as Record<string, unknown>
       tr['subtitle'] = rrRes['subtitles'] ?? rrRes['Subtitles'] ?? rrRes['subtitle'] ?? rrRes['Subtitle'] ?? undefined
-      // Always normalize ISBN for Audimeta/Audnexus/OpenLibrary results too
+      // Always normalize ISBN for Audible/Audnexus/OpenLibrary results too
       tr['isbn'] = normalizeIsbn(rrRes['isbn'] ?? rrRes['ISBN'] ?? rrRes['isbns'] ?? rrRes['ISBNs']);
       tr['narrator'] = (() => {
         const narr = rrRes['narrators'] ?? rrRes['Narrators'] ?? rrRes['narrator'] ?? rrRes['Narrator']
@@ -1522,14 +1572,14 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
     titleResults.value.push(titleResult)
   }
 
-  totalTitleResultsCount.value = results.length
+  totalTitleResultsCount.value = filteredResults.length
   searchStatus.value = ''
 
   // Check library status
   await checkExistingInLibrary()
 
   // Notify user and scroll results into view (match Advanced Search behavior)
-  toast.info(`Found ${results.length} results`, 'Search')
+  toast.info(`Found ${filteredResults.length} results`, 'Search')
   try {
     await nextTick()
     const el = document.querySelector('.search-results') as HTMLElement | null
@@ -1572,7 +1622,6 @@ const performAdvancedSearch = async () => {
       series?: string
       isbn?: string
       asin?: string
-      language?: string
     }
     const hasAny = Boolean(
       (p.title && p.title.trim()) ||
@@ -1590,29 +1639,33 @@ const performAdvancedSearch = async () => {
     isSearching.value = true
     searchError.value = ''
 
-    try {
-      // Use the unified advanced search endpoint for all advanced queries.
+  try {
+    const languageFilter = getPreferredSearchLanguageFilter(preferredSearchLanguage.value)
+    // Use the unified advanced search endpoint for all advanced queries.
       // The backend returns enriched SearchResult objects which are mapped
       // into the UI by handleAdvancedSearchResults.
-      isAudimetaPaged.value = false
+      isAudiblePaged.value = false
       const params: Record<string, unknown> = {}
       if (p.title && p.title.trim()) params.title = p.title.trim()
       if (p.author && p.author.trim()) params.author = p.author.trim()
       if (p.isbn && p.isbn.trim()) params.isbn = p.isbn.trim()
       if (p.asin && p.asin.trim()) params.asin = p.asin.trim()
-      if (p.language) params.language = p.language
+      params.region = searchLanguage.value
+      if (languageFilter) params.language = languageFilter
 
       const seriesName = p.series ? p.series.trim() : ''
 
       // If the user only provided a series, use the unified advanced search POST
-      // so the backend performs the Audimeta series lookup and conversion.
+      // so the backend performs the Audible series lookup and conversion.
       if (seriesName && !params.title && !params.author && !params.isbn && !params.asin) {
         try {
-          const resp = await apiService.advancedSearch({
+          const seriesSearchParams: Record<string, unknown> = {
             series: seriesName,
-            language: p.language,
+            region: searchLanguage.value,
             pagination: { page: 1, limit: resultsPerPage.value },
-          })
+          }
+          if (languageFilter) seriesSearchParams.language = languageFilter
+          const resp = await apiService.advancedSearch(seriesSearchParams)
           // backend returns enriched SearchResult objects
           await handleAdvancedSearchResults(resp as Partial<SearchResult>[])
         } catch (e) {
@@ -1627,7 +1680,7 @@ const performAdvancedSearch = async () => {
 
       currentAdvancedPage.value = 1
 
-      // If both author and series provided, author takes priority; perform author search then filter by series (no extra Audimeta series lookup)
+      // If both author and series provided, author takes priority; perform author search then filter by series (no extra Audible series lookup)
       if (params.author && seriesName) {
         const results = (await apiService.advancedSearch(params)) as Partial<SearchResult>[]
 
@@ -1739,10 +1792,10 @@ const performAdvancedSearch = async () => {
       params.title = query
     }
 
-    // Also include language if set
-    if (advancedSearchParams.value.language) {
-      params.language = advancedSearchParams.value.language
-    }
+    // Always include the configured default region for Audible/Audible lookups
+    params.region = searchLanguage.value
+    const languageFilter = getPreferredSearchLanguageFilter(preferredSearchLanguage.value)
+    if (languageFilter) params.language = languageFilter
 
     // Include pagination/cap when calling advanced search from unified query
     params.pagination = { page: 1, limit: resultsPerPage.value }
@@ -1760,29 +1813,32 @@ const performAdvancedSearch = async () => {
 const clearAdvancedSearch = () => {
   // Reset form state via composable
   resetAdvancedSearch()
+  preferredSearchLanguage.value = normalizePreferredSearchLanguage(
+    configStore.applicationSettings?.defaultSearchLanguage,
+  )
   advancedSearchError.value = ''
-  // Reset audimeta paging state
-  audimetaPage.value = 1
-  audimetaTotal.value = 0
-  isAudimetaPaged.value = false
-  allAudimetaResults.value = []
+  // Reset audible paging state
+  audiblePage.value = 1
+  audibleTotal.value = 0
+  isAudiblePaged.value = false
+  allAudibleResults.value = []
 }
 
-const changeAudimetaPage = async (newPage: number) => {
+const changeAudiblePage = async (newPage: number) => {
   if (newPage < 1) return
-  audimetaPage.value = newPage
+  audiblePage.value = newPage
   // Update URL query param
   try {
     const q = { ...router.currentRoute.value.query } as Record<string, string>
-    q.page = String(audimetaPage.value)
+    q.page = String(audiblePage.value)
     router.replace({ query: q })
   } catch {}
 
   // If we have all results stored, just update the display without calling API
-  if (allAudimetaResults.value.length > 0) {
-    const startIndex = (audimetaPage.value - 1) * audimetaLimit.value
-    const endIndex = startIndex + audimetaLimit.value
-    const pageResults = allAudimetaResults.value.slice(startIndex, endIndex)
+  if (allAudibleResults.value.length > 0) {
+    const startIndex = (audiblePage.value - 1) * audibleLimit.value
+    const endIndex = startIndex + audibleLimit.value
+    const pageResults = allAudibleResults.value.slice(startIndex, endIndex)
     const converted = (pageResults as unknown[]).map((r: unknown) => {
       const rr = r as Record<string, unknown>
       return {
@@ -1810,7 +1866,7 @@ const changeAudimetaPage = async (newPage: number) => {
           return n > 20000 ? Math.round(n / 60) : Math.round(n)
         })(),
         language: rr['language'] ?? rr['Language'],
-        metadataSource: 'Audimeta',
+        metadataSource: 'Audible',
         id: (rr['asin'] ?? rr['sku'] ?? rr['sku'] ?? rr['title']) as string,
       } as Partial<SearchResult>
     }) as Partial<SearchResult>[]
@@ -2116,9 +2172,8 @@ const getMetadataSourceUrl = (book: TitleSearchResult): string | undefined => {
   if (!asin) return undefined
 
   // Map metadata source to URL for ASIN-based providers
-  if (source.toLowerCase().includes('audimeta')) {
-    // Link the metadata badge to the external Audimeta website for the book
-    return `https://audimeta.de/book/${encodeURIComponent(asin)}`
+  if (source.toLowerCase().includes('audible')) {
+    return buildAudibleProductUrl(asin)
   } else if (source.toLowerCase().includes('audnex')) {
     // Audnexus API format
     return `https://api.audnex.us/books/${asin}`
@@ -2136,10 +2191,10 @@ const getSourceUrl = (book: TitleSearchResult): string | undefined => {
   // Prefer explicit productUrl from the enriched SearchResult
   if (book.searchResult?.productUrl) return book.searchResult.productUrl
 
-  // If metadata indicates Audimeta (either top-level or attached searchResult), link to Audible product page for ASIN when available
+  // If metadata indicates Audible-backed metadata, link to the Audible product page when possible.
   const asin = getAsin(book)
   const metaSource = (book.metadataSource ?? ((book.searchResult as unknown as Record<string, unknown>)['metadataSource'] as string | undefined) ?? '').toString().toLowerCase()
-  if (metaSource.includes('audimeta') && asin) {
+  if (metaSource.includes('audible') && asin) {
     return buildAudibleProductUrl(asin)
   }
 
@@ -2301,40 +2356,42 @@ const selectTitleResult = async (book: TitleSearchResult) => {
     if (asin) {
       logger.debug('Fetching metadata for ASIN:', asin)
       toast.info('Fetching metadata', `Getting book details from configured sources...`)
-      const response = await apiService.getAudibleMetadata<AudimetaMetadataResponse | AudimetaMetadataPayload>(asin)
+      const response = await apiService.getAudibleMetadata<
+        AudibleMetadataResponse | AudibleMetadataPayload
+      >(asin, searchLanguage.value)
       const responseObj = (response && typeof response === 'object')
-        ? (response as AudimetaMetadataResponse | AudimetaMetadataPayload)
+        ? (response as AudibleMetadataResponse | AudibleMetadataPayload)
         : {}
-      const audimetaData = (
+      const audibleData = (
         'metadata' in responseObj &&
           responseObj.metadata &&
           typeof responseObj.metadata === 'object'
       )
         ? responseObj.metadata
-        : (responseObj as AudimetaMetadataPayload)
+        : (responseObj as AudibleMetadataPayload)
       const metadataSource = (
         'source' in responseObj && typeof responseObj.source === 'string'
           ? responseObj.source
           : undefined
       ) || book.metadataSource || 'configured metadata source'
-      logger.debug(`Metadata fetched from ${metadataSource}:`, audimetaData)
+      logger.debug(`Metadata fetched from ${metadataSource}:`, audibleData)
 
       // Store the metadata source in the book object so it shows in the UI
       book.metadataSource = metadataSource
 
       const hasUsableMetadata = !!(
-        audimetaData &&
+        audibleData &&
         (
-          (typeof audimetaData.title === 'string' && audimetaData.title.trim()) ||
-          (typeof audimetaData.asin === 'string' && audimetaData.asin.trim()) ||
-          (Array.isArray(audimetaData.authors) && audimetaData.authors.length > 0)
+          (typeof audibleData.title === 'string' && audibleData.title.trim()) ||
+          (typeof audibleData.asin === 'string' && audibleData.asin.trim()) ||
+          (Array.isArray(audibleData.authors) && audibleData.authors.length > 0)
         )
       )
 
       if (!hasUsableMetadata) {
         logger.warn('Metadata payload missing/invalid; falling back to selected result data', {
           asin,
-          responseType: typeof audimetaData,
+          responseType: typeof audibleData,
         })
         const result = book.searchResult
         const fallbackMetadata: AudibleBookMetadata = {
@@ -2366,44 +2423,44 @@ const selectTitleResult = async (book: TitleSearchResult) => {
 
       toast.success('Metadata retrieved', `Book details fetched from ${metadataSource}`)
 
-      const publishedDate = audimetaData.releaseDate || audimetaData.publishDate || audimetaData.publishedDate
+      const publishedDate = audibleData.releaseDate || audibleData.publishDate || audibleData.publishedDate
 
       const metadata: AudibleBookMetadata = {
-        asin: audimetaData.asin || asin || '',
-        title: audimetaData.title || 'Unknown Title',
-        subtitle: audimetaData.subtitle,
+        asin: audibleData.asin || asin || '',
+        title: audibleData.title || 'Unknown Title',
+        subtitle: audibleData.subtitle,
         authors:
-          (audimetaData.authors
-            ?.map((a: AudimetaAuthor) => a.name)
+          (audibleData.authors
+            ?.map((a: AudibleAuthor) => a.name)
             .filter((n: string | undefined) => n) as string[]) || [],
         narrators:
-          (audimetaData.narrators
-            ?.map((n: AudimetaNarrator) => n.name)
+          (audibleData.narrators
+            ?.map((n: AudibleNarrator) => n.name)
             .filter((n: string | undefined) => n) as string[]) || [],
-        publisher: audimetaData.publisher,
+        publisher: audibleData.publisher,
         publishedDate: publishedDate,
-        description: audimetaData.description,
-        imageUrl: audimetaData.imageUrl,
-        // Audimeta returns length in minutes; keep runtime in minutes for UI helpers
-        runtime: audimetaData.runtime || audimetaData.lengthMinutes || undefined,
-        language: audimetaData.language,
+        description: audibleData.description,
+        imageUrl: audibleData.imageUrl,
+        // Audible returns length in minutes; keep runtime in minutes for UI helpers
+        runtime: audibleData.runtime || audibleData.lengthMinutes || undefined,
+        language: audibleData.language,
         genres:
-          (audimetaData.genres
-            ?.map((g: AudimetaGenre) => g.name)
+          (audibleData.genres
+            ?.map((g: AudibleGenre) => g.name)
             .filter((n: string | undefined) => n) as string[]) || [],
-        series: audimetaData.series?.length
-          ? audimetaData.series.map((s) => s.name).filter((n): n is string => !!n).join(', ')
+        series: audibleData.series?.length
+          ? audibleData.series.map((s) => s.name).filter((n): n is string => !!n).join(', ')
           : undefined,
-        seriesList: (audimetaData.series?.map((s) => s.name).filter((n): n is string => !!n) as string[]) || [],
+        seriesList: (audibleData.series?.map((s) => s.name).filter((n): n is string => !!n) as string[]) || [],
         seriesNumber:
-          audimetaData.series?.[0]?.position !== undefined
-            ? String(audimetaData.series[0].position)
+          audibleData.series?.[0]?.position !== undefined
+            ? String(audibleData.series[0].position)
             : undefined, // Extract position from primary series
         abridged:
-          typeof audimetaData.bookFormat === 'string'
-            ? audimetaData.bookFormat.toLowerCase().includes('abridged')
+          typeof audibleData.bookFormat === 'string'
+            ? audibleData.bookFormat.toLowerCase().includes('abridged')
             : false,
-        isbn: audimetaData.isbn,
+        isbn: audibleData.isbn,
         source: metadataSource,
         openLibraryId: book.searchResult?.id || undefined,
       }
@@ -2514,12 +2571,23 @@ const handleLibraryAdded = (audiobook: Audiobook) => {
 }
 
 const handleSimpleSearchResults = async (results: SearchResult[]) => {
+  const filteredResults = filterResultsBySelectedLanguage(results)
+
   // Convert search results to title results format
   titleResults.value = []
   audibleResult.value = null
   searchType.value = 'title'
+  allAudibleResults.value = []
 
-  for (const result of results) {
+  if (!filteredResults.length) {
+    totalTitleResultsCount.value = 0
+    searchStatus.value = ''
+    await checkExistingInLibrary()
+    toast.info('No results found for the selected language', 'Search')
+    return
+  }
+
+  for (const result of filteredResults) {
     // Normalize common metadata keys from backend variations so the template
     // consistently finds `subtitle`/`subtitles`, `narrator` and `source`.
     try {
@@ -2545,9 +2613,11 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
         }
       }
 
-      // If backend indicates audimeta as metadataSource, present the user-facing
-      // source label as 'Audible' to match expectations
-      if (rr['metadataSource'] && String(rr['metadataSource']).toLowerCase().includes('audimeta')) {
+      // Normalize legacy/current Audible-backed metadata source values for display.
+      if (
+        rr['metadataSource'] &&
+        String(rr['metadataSource']).toLowerCase().includes('audible')
+      ) {
         rr['source'] = 'Audible'
       }
     } catch (e) {
@@ -2604,11 +2674,12 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
       return []
     })()
 
-    // If the result looks like an Audimeta-enriched audiobook (or explicitly marked),
+    // If the result looks like an Audible-backed audiobook result (or explicitly marked),
     // prefer to populate the richer audiobook-shaped fields so the Add New UI
     // can surface subtitles, narrators, runtime, publish date, etc.
-    const looksLikeAudimeta =
-      (result.metadataSource && String(result.metadataSource).toLowerCase() === 'audimeta') ||
+    const looksLikeAudibleMetadata =
+      (result.metadataSource &&
+        ['audible', 'audible'].includes(String(result.metadataSource).toLowerCase())) ||
       Boolean(result.isEnriched) ||
       Boolean(result.asin)
 
@@ -2622,9 +2693,9 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
       key: String(result.asin || result.id || ''),
       searchResult: result,
       imageUrl: result.imageUrl,
-      // prefer explicit metadataSource, but mark audimeta when detected so UI shows Audimeta-specific badges
-      metadataSource: (looksLikeAudimeta
-        ? 'audimeta'
+      // Prefer explicit metadataSource, but normalize Audible-backed results to a stable label.
+      metadataSource: (looksLikeAudibleMetadata
+        ? 'audible'
         : result.metadataSource ?? ((result as unknown as Record<string, unknown>)['searchResult'] ? ((result as unknown as Record<string, unknown>)['searchResult'] as Record<string, unknown>)['metadataSource'] : undefined)) as string | undefined,
       // forward publisher into the top-level TitleSearchResult so template's publisher check works
       publisher: Array.isArray(result.publisher)
@@ -2634,8 +2705,8 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
           : undefined,
     }
 
-    if (looksLikeAudimeta) {
-      // Populate commonly used Audimeta-like fields (flattened to top-level)
+    if (looksLikeAudibleMetadata) {
+      // Populate commonly used Audible-backed fields (flattened to top-level)
       const tr = titleResult as unknown as Record<string, unknown>
       const rrRes = result as unknown as Record<string, unknown>
       const rr = result as unknown as Record<string, unknown>
@@ -2719,14 +2790,14 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
     titleResults.value.push(titleResult)
   }
 
-  totalTitleResultsCount.value = results.length
+  totalTitleResultsCount.value = filteredResults.length
   searchStatus.value = ''
 
   // Check library status
   await checkExistingInLibrary()
 
   // Notify user and scroll results into view (match Advanced Search behavior)
-  toast.info(`Found ${results.length} results`, 'Search')
+  toast.info(`Found ${filteredResults.length} results`, 'Search')
   try {
     await nextTick()
     const el = document.querySelector('.search-results') as HTMLElement | null
@@ -2775,6 +2846,13 @@ const retrySearch = async () => {
 onMounted(async () => {
   await configStore.loadApplicationSettings()
   await configStore.loadApiConfigurations()
+
+  const defaultRegion = normalizeSearchRegion(configStore.applicationSettings?.defaultSearchRegion)
+  const defaultLanguage = normalizePreferredSearchLanguage(
+    configStore.applicationSettings?.defaultSearchLanguage,
+  )
+  searchLanguage.value = defaultRegion
+  preferredSearchLanguage.value = defaultLanguage
 
   // Audible integration removed: no auth status to check
 
@@ -3874,20 +3952,20 @@ select.form-input:focus {
   gap: 1rem;
 }
 
-/* Audimeta pagination controls for advanced searches */
-.audimeta-pagination {
+/* Audible pagination controls for advanced searches */
+.audible-pagination {
   display: flex;
   align-items: center;
   gap: 0.75rem;
   margin-bottom: 0.75rem;
 }
 
-.audimeta-pagination .page-indicator {
+.audible-pagination .page-indicator {
   color: #b6bcc4;
   font-size: 0.95rem;
 }
 
-.audimeta-pagination .btn {
+.audible-pagination .btn {
   padding: 0.45rem 0.9rem;
   border-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.06);

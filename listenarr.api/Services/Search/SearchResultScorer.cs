@@ -49,7 +49,7 @@ public class SearchResultScorer
         if (!string.IsNullOrEmpty(result.MetadataSource))
         {
             var md = result.MetadataSource.ToLowerInvariant();
-            if (md.Contains("audimeta") || md.Contains("audnex") || md.Contains("audnexus") || md.Contains("openlibrary"))
+            if (md.Contains("audible") || md.Contains("audnex") || md.Contains("audnexus") || md.Contains("openlibrary"))
                 sourcePriority = 2;
             else if (md == "amazon" || md == "audible")
                 sourcePriority = 1;

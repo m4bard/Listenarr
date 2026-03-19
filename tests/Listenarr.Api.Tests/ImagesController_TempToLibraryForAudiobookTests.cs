@@ -39,13 +39,13 @@ namespace Listenarr.Api.Tests
             var mockRepo = new Mock<IAudiobookRepository>();
             mockRepo.Setup(r => r.GetByAsinAsync(identifier)).ReturnsAsync(new Audiobook { Asin = identifier });
 
-            var audimetaMock = new Mock<AudimetaService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudimetaService>>());
+            var audibleMock = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
 
             // Set ContentRootPath on the mocked environment to our tempRoot
             var mockEnv = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
             mockEnv.SetupGet(e => e.ContentRootPath).Returns(tempRoot);
 
-            var controller = new ImagesController(mockImageCache.Object, Mock.Of<IAudiobookMetadataService>(), audimetaMock.Object, Mock.Of<IAudnexusService>(), mockRepo.Object, Mock.Of<ILogger<ImagesController>>(), mockEnv.Object);
+            var controller = new ImagesController(mockImageCache.Object, Mock.Of<IAudiobookMetadataService>(), audibleMock.Object, Mock.Of<IAudnexusService>(), mockRepo.Object, Mock.Of<ILogger<ImagesController>>(), mockEnv.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act

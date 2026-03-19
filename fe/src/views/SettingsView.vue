@@ -235,7 +235,7 @@
                 id="api-name"
                 v-model="apiForm.name"
                 type="text"
-                placeholder="e.g., Audimeta"
+                placeholder="e.g., Audible"
                 required
               />
             </div>
@@ -256,6 +256,7 @@
               <PasswordInput
                 id="api-key"
                 v-model="apiForm.apiKey"
+                autocomplete="off"
                 placeholder="Optional API key"
               />
               <small>Leave empty if not required</small>
@@ -1155,11 +1156,30 @@ async function loadTabContents(tab: string) {
               if (p !== undefined && p !== null) return Boolean(p)
               return fallback
             }
+            const pickString = (camel: string, pascal: string, fallback: string) => {
+              const c = rawObj[camel]
+              const p = rawObj[pascal]
+              if (typeof c === 'string' && c.trim().length > 0) return c
+              if (typeof p === 'string' && p.trim().length > 0) return p
+              return fallback
+            }
 
             const openlib = pickBool('enableOpenLibrarySearch', 'EnableOpenLibrarySearch', true)
+            const defaultSearchRegion = pickString(
+              'defaultSearchRegion',
+              'DefaultSearchRegion',
+              'us',
+            )
+            const defaultSearchLanguage = pickString(
+              'defaultSearchLanguage',
+              'DefaultSearchLanguage',
+              'english',
+            )
 
             // Assign normalized camelCase properties for the UI binding
             normalized.enableOpenLibrarySearch = openlib
+            normalized.defaultSearchRegion = defaultSearchRegion
+            normalized.defaultSearchLanguage = defaultSearchLanguage
 
             // Set camelCase properties for the UI binding and saving
             settings.value = normalized as unknown as ApplicationSettings
@@ -1202,10 +1222,27 @@ async function loadTabContents(tab: string) {
               if (p !== undefined && p !== null) return Boolean(p)
               return fallback
             }
+            const pickStringReq = (camel: string, pascal: string, fallback: string) => {
+              const c = rawReqObj[camel]
+              const p = rawReqObj[pascal]
+              if (typeof c === 'string' && c.trim().length > 0) return c
+              if (typeof p === 'string' && p.trim().length > 0) return p
+              return fallback
+            }
             normalizedReq.enableOpenLibrarySearch = pickBoolReq(
               'enableOpenLibrarySearch',
               'EnableOpenLibrarySearch',
               true,
+            )
+            normalizedReq.defaultSearchRegion = pickStringReq(
+              'defaultSearchRegion',
+              'DefaultSearchRegion',
+              'us',
+            )
+            normalizedReq.defaultSearchLanguage = pickStringReq(
+              'defaultSearchLanguage',
+              'DefaultSearchLanguage',
+              'english',
             )
             settings.value = normalizedReq as unknown as ApplicationSettings
             configStore.applicationSettings = settings.value

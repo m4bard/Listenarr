@@ -8,7 +8,7 @@
       <ModalBody>
         <p class="help-text">
           Enter multiple search criteria to find audiobooks. When both Title and Author are
-          provided, searches using Audimeta's combined search for more accurate results.
+          provided, searches using the Audible catalog for more accurate results.
         </p>
 
         <div class="form-group">

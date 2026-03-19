@@ -12,18 +12,18 @@ namespace Listenarr.Api.Services
     public class AudiobookMetadataService : IAudiobookMetadataService
     {
         private readonly ISearchService _searchService;
-        private readonly AudimetaService _audimetaService;
+        private readonly AudibleService _audibleService;
         private readonly IAudnexusService _audnexusService;
         private readonly ILogger<AudiobookMetadataService> _logger;
 
         public AudiobookMetadataService(
             ISearchService searchService,
-            AudimetaService audimetaService,
+            AudibleService audibleService,
             IAudnexusService audnexusService,
             ILogger<AudiobookMetadataService> logger)
         {
             _searchService = searchService;
-            _audimetaService = audimetaService;
+            _audibleService = audibleService;
             _audnexusService = audnexusService;
             _logger = logger;
         }
@@ -58,9 +58,9 @@ namespace Listenarr.Api.Services
 
                     object? result = null;
 
-                    if (source.BaseUrl.Contains("audimeta.de", StringComparison.OrdinalIgnoreCase))
+                    if (IsAudibleMetadataSource(source))
                     {
-                        result = await _audimetaService.GetBookMetadataAsync(asin, region, cache);
+                        result = await _audibleService.GetBookMetadataAsync(asin, region, cache);
                     }
                     else if (source.BaseUrl.Contains("audnex.us", StringComparison.OrdinalIgnoreCase) || source.BaseUrl.Contains("audnex", StringComparison.OrdinalIgnoreCase) || source.BaseUrl.Contains("audnexus", StringComparison.OrdinalIgnoreCase))
                     {
@@ -70,8 +70,8 @@ namespace Listenarr.Api.Services
                             var audnexusResult = await _audnexusService.GetBookMetadataAsync(asin, region, seedAuthors: true, update: false);
                             if (audnexusResult != null)
                             {
-                                // Convert AudnexusBookResponse to a general shape to return (reuse AudimetaBookResponse for compatibility where possible)
-                                var converted = new AudimetaBookResponse
+                                // Convert AudnexusBookResponse to a general shape to return (reuse AudibleBookResponse for compatibility where possible)
+                                var converted = new AudibleBookResponse
                                 {
                                     Asin = audnexusResult.Asin,
                                     Title = audnexusResult.Title,
@@ -84,9 +84,9 @@ namespace Listenarr.Api.Services
                                     Isbn = audnexusResult.Isbn,
                                     ReleaseDate = audnexusResult.ReleaseDate,
                                     Description = audnexusResult.Description ?? audnexusResult.Summary,
-                                    Authors = audnexusResult.Authors?.Select(a => new AudimetaAuthor { Asin = a.Asin, Name = a.Name, Region = audnexusResult.Region }).ToList(),
-                                    Narrators = audnexusResult.Narrators?.Select(n => new AudimetaNarrator { Name = n.Name }).ToList(),
-                                    Genres = audnexusResult.Genres?.Select(g => new AudimetaGenre { Asin = g.Asin, Name = g.Name, Type = g.Type }).ToList()
+                                    Authors = audnexusResult.Authors?.Select(a => new AudibleAuthor { Asin = a.Asin, Name = a.Name, Region = audnexusResult.Region }).ToList(),
+                                    Narrators = audnexusResult.Narrators?.Select(n => new AudibleNarrator { Name = n.Name }).ToList(),
+                                    Genres = audnexusResult.Genres?.Select(g => new AudibleGenre { Asin = g.Asin, Name = g.Name, Type = g.Type }).ToList()
                                 };
                                 result = converted;
                             }
@@ -122,15 +122,26 @@ namespace Listenarr.Api.Services
             return null;
         }
 
-        public async Task<AudimetaBookResponse?> GetAudimetaMetadataAsync(string asin, string region = "us", bool cache = true)
+        public async Task<AudibleBookResponse?> GetAudibleMetadataAsync(string asin, string region = "us", bool cache = true)
         {
             if (string.IsNullOrWhiteSpace(asin))
             {
-                _logger.LogWarning("GetAudimetaMetadataAsync called with empty ASIN");
+                _logger.LogWarning("GetAudibleMetadataAsync called with empty ASIN");
                 return null;
             }
 
-            return await _audimetaService.GetBookMetadataAsync(asin, region, cache);
+            return await _audibleService.GetBookMetadataAsync(asin, region, cache);
+        }
+
+        private static bool IsAudibleMetadataSource(ApiConfiguration source)
+        {
+            if (source == null) return false;
+
+            var name = source.Name ?? string.Empty;
+            var baseUrl = source.BaseUrl ?? string.Empty;
+
+            return name.Contains("Audible", StringComparison.OrdinalIgnoreCase) ||
+                baseUrl.Contains("api.audible", StringComparison.OrdinalIgnoreCase);
         }
     }
 }

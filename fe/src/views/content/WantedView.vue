@@ -50,11 +50,17 @@
     <div
       v-else-if="filteredWanted.length > 0"
       ref="scrollContainer"
-      class="wanted-list-container"
-      @scroll="updateVisibleRange"
+        :class="['wanted-list-container', { 'is-static': !useVirtualWantedList }]"
+        @scroll="updateVisibleRange"
     >
-      <div class="wanted-list-spacer" :style="{ height: `${totalHeight}px` }">
-        <div class="wanted-list" :style="{ transform: `translateY(${topPadding}px)` }">
+      <div
+        :class="['wanted-list-spacer', { 'is-static': !useVirtualWantedList }]"
+        :style="useVirtualWantedList ? { height: `${totalHeight}px` } : undefined"
+      >
+        <div
+          :class="['wanted-list', { 'is-static': !useVirtualWantedList }]"
+          :style="useVirtualWantedList ? { transform: `translateY(${topPadding}px)` } : undefined"
+        >
           <div
             v-for="item in visibleWanted"
             :key="item.id"
@@ -167,7 +173,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick, watch } from 'vue'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
 import { apiService } from '@/services/api'
@@ -208,11 +214,32 @@ const configurationStore = useConfigurationStore()
 const scrollContainer = ref<HTMLElement | null>(null)
 const ROW_HEIGHT = 165 // Height of wanted item: 120px poster + 40px padding (20px*2) + 5px gap/border
 const BUFFER_ROWS = 3
+const MOBILE_WANTED_BREAKPOINT = 768
 
 const visibleRange = ref({ start: 0, end: 20 })
+const isMobileWantedLayout = ref(false)
+const useVirtualWantedList = computed(() => !isMobileWantedLayout.value)
+
+const updateWantedLayoutMode = () => {
+  if (typeof window === 'undefined') return
+
+  if (typeof window.matchMedia === 'function') {
+    isMobileWantedLayout.value = window.matchMedia(
+      `(max-width: ${MOBILE_WANTED_BREAKPOINT}px)`,
+    ).matches
+    return
+  }
+
+  isMobileWantedLayout.value = window.innerWidth <= MOBILE_WANTED_BREAKPOINT
+}
 
 // Update visible range for virtual scrolling (defined early to avoid TDZ when called from onMounted)
 const updateVisibleRange = () => {
+  if (!useVirtualWantedList.value) {
+    visibleRange.value = { start: 0, end: filteredWanted.value.length }
+    return
+  }
+
   if (!scrollContainer.value) return
 
   const scrollTop = scrollContainer.value.scrollTop
@@ -258,16 +285,35 @@ const mobileTabOptions = computed(() => [
   { value: 'skipped', label: 'Skipped', icon: PhSkipForward },
 ])
 
+const syncWantedLayout = async () => {
+  await nextTick()
+  updateVisibleRange()
+}
+
+const handleViewportResize = () => {
+  updateWantedLayoutMode()
+  void syncWantedLayout()
+}
+
 onMounted(async () => {
+  updateWantedLayoutMode()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleViewportResize, { passive: true })
+  }
+
   loading.value = true
   await libraryStore.fetchLibrary()
   await configurationStore.loadQualityProfiles()
   loading.value = false
 
   // Initialize virtual scrolling
-  await nextTick()
-  updateVisibleRange()
+  await syncWantedLayout()
+})
 
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleViewportResize)
+  }
 })
 
 // Filter audiobooks that are monitored and missing files
@@ -339,16 +385,36 @@ const filteredWanted = computed(() => {
 })
 
 const visibleWanted = computed(() => {
+  if (!useVirtualWantedList.value) {
+    return filteredWanted.value
+  }
+
   return filteredWanted.value.slice(visibleRange.value.start, visibleRange.value.end)
 })
 
 const totalHeight = computed(() => {
+  if (!useVirtualWantedList.value) {
+    return 0
+  }
+
   return filteredWanted.value.length * ROW_HEIGHT
 })
 
 const topPadding = computed(() => {
+  if (!useVirtualWantedList.value) {
+    return 0
+  }
+
   return visibleRange.value.start * ROW_HEIGHT
 })
+
+watch(
+  filteredWanted,
+  () => {
+    void syncWantedLayout()
+  },
+  { flush: 'post' },
+)
 
 // Map audiobook IDs to active downloads (exclude terminal/completed states)
 const activeDownloadsByAudiobook = computed(() => {
@@ -602,6 +668,10 @@ const markAsSkipped = async (item: Audiobook) => {
   width: 100%;
 }
 
+.wanted-list-spacer.is-static {
+  position: static;
+}
+
 .wanted-list {
   position: absolute;
   top: 0;
@@ -610,6 +680,10 @@ const markAsSkipped = async (item: Audiobook) => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.wanted-list.is-static {
+  position: static;
 }
 
 .page-header h1 {
@@ -969,6 +1043,13 @@ const markAsSkipped = async (item: Audiobook) => {
 }
 
 @media (max-width: 768px) {
+  .wanted-list-container {
+    height: auto;
+    overflow-y: visible;
+    width: 100%;
+    padding-right: 0;
+  }
+
   .wanted-item {
     flex-direction: column;
     align-items: flex-start;

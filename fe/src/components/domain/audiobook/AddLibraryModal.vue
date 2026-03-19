@@ -74,8 +74,8 @@
                   <span class="label">Metadata Source:</span>
                   <span class="value">
                     <a
-                      v-if="audimetaSourceUrl"
-                      :href="audimetaSourceUrl"
+                      v-if="audibleSourceUrl"
+                      :href="audibleSourceUrl"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -297,15 +297,16 @@ const publishYear = computed(() => {
 const normalizedSourceName = computed(() => {
   const source = (metadataSource.value || props.book?.source || '').trim()
   if (!source) return ''
-  if (source.toLowerCase() === 'audimeta') return 'Audimeta'
+  if (source.toLowerCase().includes('audible'))
+    return 'Audible'
   return source
 })
 
-const audimetaSourceUrl = computed(() => {
+const audibleSourceUrl = computed(() => {
   const source = (metadataSource.value || props.book?.source || '').toLowerCase()
   const asin = props.book?.asin
-  if (source !== 'audimeta' || !asin) return null
-  return `https://audimeta.de/book/${encodeURIComponent(asin)}`
+  if (!source.includes('audible') || !asin) return null
+  return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
 })
 
 const audibleProductUrl = computed(() => {
@@ -390,23 +391,23 @@ const imageSrc = computed(() => {
   return base
 })
 
-// Local types for audimeta response to avoid `any`
-interface AudimetaPerson {
+// Local types for audible response to avoid `any`
+interface AudiblePerson {
   name?: string
 }
-interface AudimetaSeries {
+interface AudibleSeries {
   name?: string
   position?: string | number
 }
-interface AudimetaGenre {
+interface AudibleGenre {
   name?: string
 }
-interface Audimeta {
+interface Audible {
   asin?: string
   title?: string
   subtitle?: string
-  authors?: AudimetaPerson[]
-  narrators?: AudimetaPerson[]
+  authors?: AudiblePerson[]
+  narrators?: AudiblePerson[]
   publisher?: string
   publishDate?: string
   releaseDate?: string
@@ -414,63 +415,63 @@ interface Audimeta {
   imageUrl?: string
   lengthMinutes?: number
   language?: string
-  genres?: AudimetaGenre[]
-  series?: AudimetaSeries[]
+  genres?: AudibleGenre[]
+  series?: AudibleSeries[]
   bookFormat?: string
   isbn?: string
 }
 
-interface AudimetaMetadataResponse {
-  metadata?: Partial<Audimeta>
+interface AudibleMetadataResponse {
+  metadata?: Partial<Audible>
   source?: string
 }
 
-// Helper to map audimeta response to AudibleBookMetadata
-const mapAudimetaToAudible = (
-  audimeta: Partial<Audimeta> | undefined,
+// Helper to map audible response to AudibleBookMetadata
+const mapAudibleToAudible = (
+  audible: Partial<Audible> | undefined,
   source?: string,
 ): AudibleBookMetadata => {
   let publishYear: string | undefined
   let publishedDate: string | undefined
-  const dateStr = audimeta?.publishDate || audimeta?.releaseDate
+  const dateStr = audible?.publishDate || audible?.releaseDate
   if (dateStr && typeof dateStr === 'string') {
     publishedDate = dateStr
     const yearMatch = dateStr.match(/\d{4}/)
     publishYear = yearMatch ? yearMatch[0] : undefined
   }
 
-  const authors = (audimeta?.authors || []).map((a) => a?.name).filter(Boolean) as string[]
-  const narrators = (audimeta?.narrators || []).map((n) => n?.name).filter(Boolean) as string[]
-  const genres = (audimeta?.genres || []).map((g) => g?.name).filter(Boolean) as string[]
+  const authors = (audible?.authors || []).map((a) => a?.name).filter(Boolean) as string[]
+  const narrators = (audible?.narrators || []).map((n) => n?.name).filter(Boolean) as string[]
+  const genres = (audible?.genres || []).map((g) => g?.name).filter(Boolean) as string[]
 
   const firstSeries =
-    audimeta?.series && audimeta.series.length > 0 ? audimeta.series[0] : undefined
+    audible?.series && audible.series.length > 0 ? audible.series[0] : undefined
 
   return {
-    asin: audimeta?.asin || props.book?.asin || '',
-    title: audimeta?.title || props.book?.title || 'Unknown Title',
-    subtitle: audimeta?.subtitle,
+    asin: audible?.asin || props.book?.asin || '',
+    title: audible?.title || props.book?.title || 'Unknown Title',
+    subtitle: audible?.subtitle,
     authors: authors.length ? authors : props.book?.authors || [],
     narrators: narrators.length ? narrators : props.book?.narrators || [],
-    publisher: audimeta?.publisher || props.book?.publisher,
+    publisher: audible?.publisher || props.book?.publisher,
     publishYear: publishYear || props.book?.publishYear,
     publishedDate: publishedDate || props.book?.publishedDate,
-    description: audimeta?.description || props.book?.description,
-    imageUrl: audimeta?.imageUrl || props.book?.imageUrl,
+    description: audible?.description || props.book?.description,
+    imageUrl: audible?.imageUrl || props.book?.imageUrl,
     runtime:
-      typeof audimeta?.lengthMinutes === 'number'
-        ? audimeta.lengthMinutes
+      typeof audible?.lengthMinutes === 'number'
+        ? audible.lengthMinutes
         : props.book?.runtime,
-    language: audimeta?.language || props.book?.language,
+    language: audible?.language || props.book?.language,
     genres: genres.length ? genres : props.book?.genres || [],
     series: firstSeries?.name || props.book?.series,
     seriesNumber:
       firstSeries?.position !== undefined ? String(firstSeries.position) : (props.book?.seriesNumber && props.book.seriesNumber !== 'null' ? props.book.seriesNumber : undefined),
     abridged:
-      typeof audimeta?.bookFormat === 'string'
-        ? audimeta.bookFormat.toLowerCase().includes('abridged')
+      typeof audible?.bookFormat === 'string'
+        ? audible.bookFormat.toLowerCase().includes('abridged')
         : Boolean(props.book?.abridged),
-    isbn: audimeta?.isbn || props.book?.isbn,
+    isbn: audible?.isbn || props.book?.isbn,
     source: source || props.book?.source,
   }
 }
@@ -499,20 +500,20 @@ const seedPreview = async () => {
     if (props.book?.asin) {
       metadataLoading.value = true
       try {
-        const resp = await apiService.getAudibleMetadata<AudimetaMetadataResponse | Partial<Audimeta>>(
+        const resp = await apiService.getAudibleMetadata<AudibleMetadataResponse | Partial<Audible>>(
           props.book.asin,
         )
         const payload = (resp && typeof resp === 'object' ? resp : {}) as
-          | AudimetaMetadataResponse
-          | Partial<Audimeta>
+          | AudibleMetadataResponse
+          | Partial<Audible>
         const source = 'source' in payload && typeof payload.source === 'string' ? payload.source : undefined
         const metadata =
           'metadata' in payload && payload.metadata && typeof payload.metadata === 'object'
             ? payload.metadata
-            : (payload as Partial<Audimeta>)
+            : (payload as Partial<Audible>)
 
         if (metadata && typeof metadata === 'object') {
-          const enrichedMeta = mapAudimetaToAudible(metadata, source)
+          const enrichedMeta = mapAudibleToAudible(metadata, source)
           // Sanitize seriesNumber to filter out the string "null"
           if (enrichedMeta.seriesNumber === 'null') {
             enrichedMeta.seriesNumber = undefined

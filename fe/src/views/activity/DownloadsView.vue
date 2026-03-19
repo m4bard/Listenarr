@@ -55,11 +55,17 @@
       <div
         v-else
         ref="scrollContainer"
-        class="downloads-list-container"
+        :class="['downloads-list-container', { 'is-static': !useVirtualDownloadsList }]"
         @scroll="updateVisibleRange"
       >
-        <div class="downloads-list-spacer" :style="{ height: `${totalHeight}px` }">
-          <div class="downloads-list" :style="{ transform: `translateY(${topPadding}px)` }">
+        <div
+          :class="['downloads-list-spacer', { 'is-static': !useVirtualDownloadsList }]"
+          :style="useVirtualDownloadsList ? { height: `${totalHeight}px` } : undefined"
+        >
+          <div
+            :class="['downloads-list', { 'is-static': !useVirtualDownloadsList }]"
+            :style="useVirtualDownloadsList ? { transform: `translateY(${topPadding}px)` } : undefined"
+          >
             <div
               v-for="download in visibleDownloads"
               :key="download.id"
@@ -148,7 +154,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from 'vue'
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from 'vue'
 import { useDownloadsStore } from '@/stores/downloads'
 import CustomSelect from '@/components/form/CustomSelect.vue'
 import type { Download } from '@/types'
@@ -178,8 +184,24 @@ const mobileTabOptions = computed(() => [
 const scrollContainer = ref<HTMLElement | null>(null)
 const ROW_HEIGHT = 180 // Approximate height of each download card
 const BUFFER_ROWS = 3
+const MOBILE_DOWNLOADS_BREAKPOINT = 768
 
 const visibleRange = ref({ start: 0, end: 20 })
+const isMobileDownloadsLayout = ref(false)
+const useVirtualDownloadsList = computed(() => !isMobileDownloadsLayout.value)
+
+const updateDownloadsLayoutMode = () => {
+  if (typeof window === 'undefined') return
+
+  if (typeof window.matchMedia === 'function') {
+    isMobileDownloadsLayout.value = window.matchMedia(
+      `(max-width: ${MOBILE_DOWNLOADS_BREAKPOINT}px)`,
+    ).matches
+    return
+  }
+
+  isMobileDownloadsLayout.value = window.innerWidth <= MOBILE_DOWNLOADS_BREAKPOINT
+}
 
 const currentDownloads = computed(() => {
   switch (activeTab.value) {
@@ -195,10 +217,19 @@ const currentDownloads = computed(() => {
 })
 
 const visibleDownloads = computed(() => {
+  if (!useVirtualDownloadsList.value) {
+    return currentDownloads.value
+  }
+
   return currentDownloads.value.slice(visibleRange.value.start, visibleRange.value.end)
 })
 
 const updateVisibleRange = () => {
+  if (!useVirtualDownloadsList.value) {
+    visibleRange.value = { start: 0, end: currentDownloads.value.length }
+    return
+  }
+
   if (!scrollContainer.value) return
 
   const scrollTop = scrollContainer.value.scrollTop
@@ -223,6 +254,16 @@ const totalHeight = computed(() => {
 const topPadding = computed(() => {
   return visibleRange.value.start * ROW_HEIGHT
 })
+
+const syncDownloadsLayout = async () => {
+  await nextTick()
+  updateVisibleRange()
+}
+
+const handleViewportResize = () => {
+  updateDownloadsLayoutMode()
+  void syncDownloadsLayout()
+}
 
 const refreshDownloads = async () => {
   await downloadsStore.loadDownloads()
@@ -310,17 +351,26 @@ const formatDate = (dateString: string): string => {
   return new Date(dateString).toLocaleDateString() + ' ' + new Date(dateString).toLocaleTimeString()
 }
 
-onMounted(() => {
+onMounted(async () => {
+  updateDownloadsLayoutMode()
+  if (typeof window !== 'undefined') {
+    window.addEventListener('resize', handleViewportResize, { passive: true })
+  }
+
   // Load initial downloads from API
-  refreshDownloads()
+  await refreshDownloads()
 
   // Initialize virtual scrolling
-  nextTick(() => {
-    updateVisibleRange()
-  })
+  await syncDownloadsLayout()
 
   // No polling needed - SignalR pushes updates in real-time!
   // The downloads store automatically receives updates via WebSocket
+})
+
+onBeforeUnmount(() => {
+  if (typeof window !== 'undefined') {
+    window.removeEventListener('resize', handleViewportResize)
+  }
 })
 </script>
 
@@ -344,9 +394,19 @@ onMounted(() => {
   position: relative;
 }
 
+.downloads-list-container.is-static {
+  height: auto;
+  overflow-y: visible;
+  width: 100%;
+}
+
 .downloads-list-spacer {
   position: relative;
   width: 100%;
+}
+
+.downloads-list-spacer.is-static {
+  position: static;
 }
 
 .downloads-list {
@@ -357,6 +417,10 @@ onMounted(() => {
   display: flex;
   flex-direction: column;
   gap: 1rem;
+}
+
+.downloads-list.is-static {
+  position: static;
 }
 
 .downloads-header h2 {

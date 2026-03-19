@@ -33,16 +33,16 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.GetMetadataAsync("B0TESTASIN", "us", false))
                 .ReturnsAsync(new
                 {
-                    metadata = new AudimetaBookResponse
+                    metadata = new AudibleBookResponse
                     {
                         Asin = "B0TESTASIN",
                         Title = "Fixed Metadata Title",
                         Subtitle = "Recovered Subtitle",
-                        Authors = new List<AudimetaAuthor> { new() { Name = "Correct Author" } },
-                        Narrators = new List<AudimetaNarrator> { new() { Name = "Correct Narrator" } },
+                        Authors = new List<AudibleAuthor> { new() { Name = "Correct Author" } },
+                        Narrators = new List<AudibleNarrator> { new() { Name = "Correct Narrator" } },
                         Publisher = "Test Publisher",
                         Description = "<p>Recovered description</p>",
-                        Genres = new List<AudimetaGenre>
+                        Genres = new List<AudibleGenre>
                         {
                             new() { Name = "Fantasy" },
                             new() { Name = "Epic Fantasy" }
@@ -52,8 +52,8 @@ namespace Listenarr.Api.Tests
                         Language = "English",
                         Isbn = "9781234567897"
                     },
-                    source = "Audimeta",
-                    sourceUrl = "https://audimeta.de"
+                    source = "Audible",
+                    sourceUrl = "https://audible.de"
                 });
 
             var asinLookupMock = new Mock<IAsinLookupService>();
@@ -110,7 +110,7 @@ namespace Listenarr.Api.Tests
             using (var json = await JsonDocument.ParseAsync(stream))
             {
                 Assert.Equal("Metadata rescanned successfully", json.RootElement.GetProperty("message").GetString());
-                Assert.Equal("Audimeta", json.RootElement.GetProperty("source").GetString());
+                Assert.Equal("Audible", json.RootElement.GetProperty("source").GetString());
                 Assert.Equal("B0TESTASIN", json.RootElement.GetProperty("asin").GetString());
             }
 
@@ -162,12 +162,12 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.GetMetadataAsync("B0COOLDWN1", "us", false))
                 .ReturnsAsync(new
                 {
-                    metadata = new AudimetaBookResponse
+                    metadata = new AudibleBookResponse
                     {
                         Asin = "B0COOLDWN1",
                         Title = "Cooldown Test"
                     },
-                    source = "Audimeta"
+                    source = "Audible"
                 });
 
             var factory = _factory.WithWebHostBuilder(builder =>

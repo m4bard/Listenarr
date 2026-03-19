@@ -25,13 +25,13 @@ describe('ApiService.ensureImageCached', () => {
 
   it('uses cached candidate URLs to trigger backend cache fetches', async () => {
     ;(svc as ApiServiceWithCache).metadataUrlCache.set('ASIN000001', {
-      urls: ['https://audimeta.covers/cover1.jpg'],
+      urls: ['https://audible.covers/cover1.jpg'],
       fetchedAt: Date.now(),
     })
 
     vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
       const s = String(input)
-      if (s.includes(`${imageBasePath}/ASIN000001?url=`) && s.includes('audimeta.covers')) {
+      if (s.includes(`${imageBasePath}/ASIN000001?url=`) && s.includes('audible.covers')) {
         return { ok: true, status: 200 }
       }
       return { ok: false, status: 404 }

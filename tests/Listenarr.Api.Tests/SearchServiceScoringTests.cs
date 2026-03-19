@@ -24,7 +24,7 @@ namespace Listenarr.Api.Tests
             var imageCache = Mock.Of<IImageCacheService>();
             ListenArrDbContext dbContext = null!;
             var hubContext = Mock.Of<IHubContext<DownloadHub>>();
-            var audimeta = new AudimetaService(new System.Net.Http.HttpClient(), NullLogger<AudimetaService>.Instance);
+            var audible = new AudibleService(new System.Net.Http.HttpClient(), NullLogger<AudibleService>.Instance);
             var audnexus = new AudnexusService(new System.Net.Http.HttpClient(), NullLogger<AudnexusService>.Instance);
             var converters = new MetadataConverters(imageCache, NullLogger<MetadataConverters>.Instance);
             var merger = new MetadataMerger(NullLogger<MetadataMerger>.Instance);
@@ -34,7 +34,7 @@ namespace Listenarr.Api.Tests
             var collector = new AsinCandidateCollector(NullLogger<AsinCandidateCollector>.Instance, openLibraryService, converters, progress);
             var enricher = new AsinEnricher(NullLogger<AsinEnricher>.Instance, coordinator, converters, pipeline, progress);
             var scorer = new SearchResultScorer(NullLogger<SearchResultScorer>.Instance);
-            var handler = new AsinSearchHandler(NullLogger<AsinSearchHandler>.Instance, configuration, audimeta, Mock.Of<IAudnexusService>(), converters, progress);
+            var handler = new AsinSearchHandler(NullLogger<AsinSearchHandler>.Instance, configuration, audible, Mock.Of<IAudnexusService>(), converters, progress);
 
             return new SearchService(
                 client,
@@ -44,7 +44,7 @@ namespace Listenarr.Api.Tests
                 imageCache,
                 dbContext,
                 hubContext,
-                audimeta,
+                audible,
                 audnexus,
                 converters,
                 merger,

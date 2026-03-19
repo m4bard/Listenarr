@@ -56,7 +56,7 @@ export const extractAuthors = (result: NormalizedResult): string[] => {
     return [authorVal.trim()]
   }
 
-  // Authors array (from Audimeta or other sources)
+  // Authors array (from Audible or other sources)
   const authorsArray = (result.authors ?? result.Authors) as
     | Array<string | { name?: string; Name?: string }>
     | undefined
@@ -210,29 +210,30 @@ export const processSeries = (raw: unknown): { list: string[]; display: string }
  * @param source - Source identifier
  * @returns Display-friendly source name
  * @example
- * normalizeSource("audimeta") // "Audible"
+ * normalizeSource("audible") // "Audible"
  * normalizeSource("openlibrary") // "OpenLibrary"
  */
 export const normalizeSource = (source: string | undefined): string => {
   if (!source) return ''
 
   const lower = source.toLowerCase()
-  if (lower.includes('audimeta')) return 'Audible'
-  if (lower.includes('openlibrary')) return 'OpenLibrary'
   if (lower.includes('audible')) return 'Audible'
+  if (lower.includes('openlibrary')) return 'OpenLibrary'
 
   return source
 }
 
 /**
- * Check if result looks like Audimeta-enriched data
+ * Check if result looks like Audible-enriched data
  * Based on metadata source, enrichment flags, or presence of ASIN
  * @param result - Search result or metadata object
- * @returns True if result appears to be from Audimeta
+ * @returns True if result appears to be from Audible
  */
-export const isAudimetaSource = (result: NormalizedResult): boolean => {
+export const isAudibleSource = (result: NormalizedResult): boolean => {
+  const metadataSource = String(result.metadataSource ?? '').toLowerCase()
+
   return (
-    (result.metadataSource && String(result.metadataSource).toLowerCase() === 'audimeta') ||
+    metadataSource === 'audible' ||
     Boolean((result as Record<string, unknown>)['isEnriched']) ||
     Boolean(result.asin)
   )
@@ -336,7 +337,7 @@ export const normalizeResultMetadata = (
   publishers: string[]
   language?: string
   primaryId: string
-  isAudimeta: boolean
+  isAudible: boolean
 } => ({
   authors: extractAuthors(result),
   narrators: extractNarrators(result),
@@ -349,7 +350,7 @@ export const normalizeResultMetadata = (
   publishers: extractPublishers(result),
   language: extractLanguage(result),
   primaryId: getPrimaryId(result),
-  isAudimeta: isAudimetaSource(result),
+  isAudible: isAudibleSource(result),
 })
 
 /**

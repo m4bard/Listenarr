@@ -6,7 +6,7 @@ import {
   normalizeRuntime,
   processSeries,
   normalizeSource,
-  isAudimetaSource,
+  isAudibleSource,
   getPrimaryId,
   extractSubtitle,
   extractDescription,
@@ -195,9 +195,9 @@ describe('searchResultHelpers', () => {
   })
 
   describe('normalizeSource', () => {
-    it('converts audimeta to Audible', () => {
-      expect(normalizeSource('audimeta')).toBe('Audible')
-      expect(normalizeSource('AUDIMETA')).toBe('Audible')
+    it('converts audible to Audible', () => {
+      expect(normalizeSource('audible')).toBe('Audible')
+      expect(normalizeSource('AUDIBLE')).toBe('Audible')
     })
 
     it('handles openlibrary', () => {
@@ -221,23 +221,24 @@ describe('searchResultHelpers', () => {
     })
   })
 
-  describe('isAudimetaSource', () => {
-    it('detects audimeta by metadataSource', () => {
-      expect(isAudimetaSource({ metadataSource: 'audimeta' })).toBe(true)
-      expect(isAudimetaSource({ metadataSource: 'AUDIMETA' })).toBe(true)
+  describe('isAudibleSource', () => {
+    it('detects audible by metadataSource', () => {
+      expect(isAudibleSource({ metadataSource: 'audible' })).toBe(true)
+      expect(isAudibleSource({ metadataSource: 'AUDIBLE' })).toBe(true)
+      expect(isAudibleSource({ metadataSource: 'audible' })).toBe(true)
     })
 
-    it('detects audimeta by ASIN presence', () => {
-      expect(isAudimetaSource({ asin: 'B000123456' })).toBe(true)
+    it('detects audible by ASIN presence', () => {
+      expect(isAudibleSource({ asin: 'B000123456' })).toBe(true)
     })
 
-    it('detects audimeta by isEnriched flag', () => {
-      expect(isAudimetaSource({ isEnriched: true } as unknown as NormalizedResult)).toBe(true)
+    it('detects audible by isEnriched flag', () => {
+      expect(isAudibleSource({ isEnriched: true } as unknown as NormalizedResult)).toBe(true)
     })
 
-    it('returns false for non-audimeta sources', () => {
-      expect(isAudimetaSource({ metadataSource: 'openlibrary' })).toBe(false)
-      expect(isAudimetaSource({})).toBe(false)
+    it('returns false for non-audible sources', () => {
+      expect(isAudibleSource({ metadataSource: 'openlibrary' })).toBe(false)
+      expect(isAudibleSource({})).toBe(false)
     })
   })
 
@@ -353,7 +354,7 @@ describe('searchResultHelpers', () => {
       expect(normalized.language).toBe('english')
       expect(normalized.series.display).toBe('Dune #1')
       expect(normalized.primaryId).toBe('B123')
-      expect(normalized.isAudimeta).toBe(true)
+      expect(normalized.isAudible).toBe(true)
     })
 
     it('handles partial result', () => {
@@ -368,7 +369,7 @@ describe('searchResultHelpers', () => {
       expect(normalized.publishedDate).toBeUndefined()
       expect(normalized.runtime).toBeUndefined()
       expect(normalized.primaryId).toBe('Unknown Title')
-      expect(normalized.isAudimeta).toBe(false)
+      expect(normalized.isAudible).toBe(false)
     })
   })
 })

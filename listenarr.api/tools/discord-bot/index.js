@@ -985,9 +985,8 @@ async function handleSelectMenuInteraction(interaction) {
         const data = await resp.json()
         metadata = data.metadata || data
       } else {
-        // Fall back: try audimeta lookup
-        // Deprecated route replaced by /api/v{version}/metadata/audimeta/{asin}; keep compatibility header-wise
-        const fallback = await fetch(buildApiUrl(`/metadata/audimeta/${encodeURIComponent(asin)}`))
+        // Fall back: try the explicit Audible metadata route
+        const fallback = await fetch(buildApiUrl(`/metadata/audible/${encodeURIComponent(asin)}`))
         if (fallback.ok) {
           metadata = await fallback.json()
         }

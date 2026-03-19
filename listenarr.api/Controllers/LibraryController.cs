@@ -73,7 +73,8 @@ namespace Listenarr.Api.Controllers
         private readonly IMoveQueueService? _moveQueueService;
         private readonly IFileNamingService _fileNamingService;
         private readonly NotificationService? _notificationService;
-            private readonly IRootFolderService? _rootFolderService;
+        private readonly IRootFolderService? _rootFolderService;
+        private readonly ILibraryAddService? _libraryAddService;
         /// <param name="repo">Repository for audiobook persistence and queries.</param>
         /// <param name="imageCacheService">Service for caching and moving cover images.</param>
         /// <param name="logger">Logger instance for diagnostic messages.</param>
@@ -84,6 +85,7 @@ namespace Listenarr.Api.Controllers
         /// <param name="moveQueueService">Optional background move queue service for processing move requests.</param>
         /// <param name="notificationService">Service for sending webhook notifications.</param>
         /// <param name="rootFolderService">Optional root folder service for managing and enumerating configured root folders used for validating explicit scan paths.</param>
+        /// <param name="libraryAddService">Optional shared add-to-library service used by runtime requests and background syncs.</param>
         public LibraryController(
             IAudiobookRepository repo,
             IImageCacheService imageCacheService,
@@ -94,7 +96,8 @@ namespace Listenarr.Api.Controllers
             IScanQueueService? scanQueueService = null,
             IMoveQueueService? moveQueueService = null,
             NotificationService? notificationService = null,
-            IRootFolderService? rootFolderService = null)
+            IRootFolderService? rootFolderService = null,
+            ILibraryAddService? libraryAddService = null)
         {
             _repo = repo;
             _imageCacheService = imageCacheService;
@@ -106,6 +109,7 @@ namespace Listenarr.Api.Controllers
             _moveQueueService = moveQueueService;
             _notificationService = notificationService;
             _rootFolderService = rootFolderService;
+            _libraryAddService = libraryAddService;
         }
 
         private static bool ComputeWantedFlag(Audiobook audiobook)
@@ -171,6 +175,28 @@ namespace Listenarr.Api.Controllers
         [HttpPost("add")]
         public async Task<IActionResult> AddToLibrary([FromBody] AddToLibraryRequest request)
         {
+            if (_libraryAddService != null)
+            {
+                var result = await _libraryAddService.AddToLibraryAsync(new LibraryAddOperationRequest
+                {
+                    Metadata = request.Metadata,
+                    Monitored = request.Monitored,
+                    QualityProfileId = request.QualityProfileId,
+                    AutoSearch = request.AutoSearch,
+                    DestinationPath = request.DestinationPath,
+                    SearchResult = request.SearchResult,
+                    HistorySource = "AddNew",
+                    HistoryMessage = $"Audiobook '{request.Metadata.Title}' added to library from Add New page"
+                });
+
+                if (result.AlreadyExists)
+                {
+                    return Conflict(new { message = result.Message, audiobook = result.Audiobook });
+                }
+
+                return Ok(new { message = result.Message, audiobook = result.Audiobook });
+            }
+
             var metadata = request.Metadata;
 
             _logger.LogInformation("AddToLibrary received metadata: Title={Title}, Asin={Asin}, PublishYear={PublishYear}, Authors={Authors}, Series={Series}",
@@ -440,11 +466,11 @@ namespace Listenarr.Api.Controllers
 
             await _repo.AddAsync(audiobook);
 
-            // Resolve author ASINs and cache author images via Audimeta when possible
+            // Resolve author ASINs and cache author images via Audible when possible
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var audimeta = scope.ServiceProvider.GetRequiredService<AudimetaService>();
+                var audible = scope.ServiceProvider.GetRequiredService<AudibleService>();
 
                 if (audiobook.Authors != null && audiobook.Authors.Any())
                 {
@@ -453,7 +479,7 @@ namespace Listenarr.Api.Controllers
                     {
                         try
                         {
-                            var info = await audimeta.LookupAuthorAsync(authorName);
+                            var info = await audible.LookupAuthorAsync(authorName);
                             if (info != null && !string.IsNullOrWhiteSpace(info.Asin))
                             {
                                 // Avoid duplicates
@@ -608,6 +634,7 @@ namespace Listenarr.Api.Controllers
                     a.PublishedDate,
                     a.Series,
                     a.SeriesNumber,
+                    a.Genres,
                     a.Asin,
                     a.OpenLibraryId,
                     a.Publisher,
@@ -694,6 +721,7 @@ namespace Listenarr.Api.Controllers
                     PublishedDate = a.PublishedDate,
                     Series = a.Series,
                     SeriesNumber = a.SeriesNumber,
+                    Genres = a.Genres?.ToArray(),
                     Asin = a.Asin,
                     OpenLibraryId = a.OpenLibraryId,
                     Publisher = a.Publisher,
@@ -998,7 +1026,7 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Re-fetch metadata for an audiobook from upstream sources (Audimeta / Audnexus) and update the local record.
+        /// Re-fetch metadata for an audiobook from upstream sources (Audible / Audnexus) and update the local record.
         /// </summary>
         /// <param name="id">Audiobook ID.</param>
         [HttpPost("{id}/rescan-metadata")]
@@ -1073,7 +1101,7 @@ namespace Listenarr.Api.Controllers
             var asinLookupAttemptCapHit = false;
             var isbnConversionAttemptCapHit = false;
 
-            AudimetaBookResponse? providerMetadata = null;
+            AudibleBookResponse? providerMetadata = null;
             string? providerSource = null;
             string? resolvedAsin = null;
             string? resolvedRegion = null;
@@ -1233,7 +1261,7 @@ namespace Listenarr.Api.Controllers
                 });
             }
 
-            var convertedMetadata = metadataConverters.ConvertAudimetaToMetadata(
+            var convertedMetadata = metadataConverters.ConvertAudibleToMetadata(
                 providerMetadata,
                 resolvedAsin,
                 string.IsNullOrWhiteSpace(providerSource) ? "Audible" : providerSource!);
@@ -4281,14 +4309,14 @@ namespace Listenarr.Api.Controllers
 
         private static bool TryExtractMetadataLookupResult(
             object? rawResult,
-            out AudimetaBookResponse? metadata,
+            out AudibleBookResponse? metadata,
             out string? source)
         {
             metadata = null;
             source = null;
             if (rawResult == null) return false;
 
-            if (rawResult is AudimetaBookResponse direct)
+            if (rawResult is AudibleBookResponse direct)
             {
                 metadata = direct;
                 return true;
@@ -4299,15 +4327,15 @@ namespace Listenarr.Api.Controllers
             if (metadataProp != null)
             {
                 var metadataValue = metadataProp.GetValue(rawResult);
-                if (metadataValue is AudimetaBookResponse audimeta)
+                if (metadataValue is AudibleBookResponse audible)
                 {
-                    metadata = audimeta;
+                    metadata = audible;
                 }
                 else if (metadataValue is JsonElement metadataElement && metadataElement.ValueKind == JsonValueKind.Object)
                 {
                     try
                     {
-                        metadata = metadataElement.Deserialize<AudimetaBookResponse>();
+                        metadata = metadataElement.Deserialize<AudibleBookResponse>();
                     }
                     catch (JsonException)
                     {

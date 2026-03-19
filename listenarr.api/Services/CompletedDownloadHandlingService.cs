@@ -16,12 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.DependencyInjection;
-using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
+using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
 {
@@ -44,7 +40,7 @@ namespace Listenarr.Api.Services
         
         // Track downloads that are in the completion pipeline to avoid duplicate processing
         private readonly Dictionary<string, DateTime> _processingDownloads = new();
-        private readonly object _processingLock = new();
+        private readonly Lock _processingLock = new();
 
         public CompletedDownloadHandlingService(
             IServiceScopeFactory serviceScopeFactory,
@@ -200,9 +196,8 @@ namespace Listenarr.Api.Services
                         // Skip if already being processed
                         lock (_processingLock)
                         {
-                            if (_processingDownloads.ContainsKey(download.Id))
+                            if (_processingDownloads.TryGetValue(download.Id, out var firstSeen))
                             {
-                                var firstSeen = _processingDownloads[download.Id];
                                 if (DateTime.UtcNow - firstSeen > TimeSpan.FromMinutes(5))
                                 {
                                     // Been processing for too long, reset and retry

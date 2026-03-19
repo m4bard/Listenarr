@@ -305,8 +305,8 @@ builder.Services.AddScoped<Listenarr.Application.Services.IDownloadHistoryServic
 // Add in-memory cache for metadata prefetch / reuse
 builder.Services.AddMemoryCache();
 
-// Add HTTP client for Audimeta service
-builder.Services.AddHttpClient<AudimetaService>()
+// Add HTTP client for Audible service
+builder.Services.AddHttpClient<AudibleService>()
     .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler()
     {
         AutomaticDecompression = System.Net.DecompressionMethods.All
@@ -336,7 +336,7 @@ builder.Services.AddScoped<ISearchResultFilter, MissingInformationFilter>();
 builder.Services.AddScoped<SearchResultFilterPipeline>();
 
 // Add metadata fetching strategies
-builder.Services.AddScoped<IMetadataStrategy, AudimetaStrategy>();
+builder.Services.AddScoped<IMetadataStrategy, AudibleMetadataStrategy>();
 builder.Services.AddScoped<IMetadataStrategy, AudnexusStrategy>();
 builder.Services.AddScoped<MetadataStrategyCoordinator>();
 

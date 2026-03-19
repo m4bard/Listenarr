@@ -30,6 +30,7 @@ namespace Listenarr.Api.Tests
             {
                 Title = "Slim Book",
                 Authors = new System.Collections.Generic.List<string> { "Author One" },
+                Genres = new System.Collections.Generic.List<string> { "Fantasy", "Adventure" },
                 Monitored = true,
                 Description = "Detail-only field",
                 Subtitle = "Detail Subtitle",
@@ -85,6 +86,9 @@ namespace Listenarr.Api.Tests
 
             Assert.Equal("downloading", item.GetProperty("status").GetString());
             Assert.False(item.GetProperty("wanted").GetBoolean());
+            Assert.True(item.TryGetProperty("genres", out var genres));
+            Assert.Equal(2, genres.GetArrayLength());
+            Assert.Contains(genres.EnumerateArray().Select(g => g.GetString()), value => value == "Fantasy");
             Assert.True(item.TryGetProperty("openLibraryId", out var openLibraryId));
             Assert.Equal("OL123", openLibraryId.GetString());
             Assert.Equal(book.FilePath, item.GetProperty("filePath").GetString());

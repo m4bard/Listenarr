@@ -79,8 +79,8 @@
                   <span class="label">Metadata Source:</span>
                   <span class="value">
                     <a
-                      v-if="audimetaSourceUrl"
-                      :href="audimetaSourceUrl"
+                      v-if="audibleSourceUrl"
+                      :href="audibleSourceUrl"
                       target="_blank"
                       rel="noopener noreferrer"
                     >
@@ -221,15 +221,16 @@ const assignedProfileName = computed(() => {
 const normalizedSourceName = computed(() => {
   const source = props.book?.source?.trim()
   if (!source) return ''
-  if (source.toLowerCase() === 'audimeta') return 'Audimeta'
+  if (source.toLowerCase().includes('audible'))
+    return 'Audible'
   return source
 })
 
-const audimetaSourceUrl = computed(() => {
+const audibleSourceUrl = computed(() => {
   const source = props.book?.source?.toLowerCase()
   const asin = props.book?.asin
-  if (source !== 'audimeta' || !asin) return null
-  return `https://audimeta.de/book/${encodeURIComponent(asin)}`
+  if (!source?.includes('audible') || !asin) return null
+  return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
 })
 
 const audibleProductUrl = computed(() => {
