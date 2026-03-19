@@ -809,31 +809,27 @@ namespace Listenarr.Api.Services
 
             foreach (var chunk in Chunk(orderedAsins, 50))
             {
-                JsonDocument? doc = null;
-                try
+                var doc = chunk.Count == 1
+                    ? await GetAudibleProductDocumentAsync(chunk[0], normalizedRegion, DefaultBookResponseGroups)
+                    : await GetAudibleJsonDocumentAsync(
+                        $"{BuildAudibleApiBaseUrl(normalizedRegion)}/1.0/catalog/products/?" +
+                        $"{BuildQueryString(new Dictionary<string, string?>
+                        {
+                            ["asins"] = string.Join(",", chunk),
+                            ["response_groups"] = DefaultBookResponseGroups,
+                            ["image_sizes"] = "500,1000,2400,3200"
+                        })}",
+                        normalizedRegion,
+                        includeLocaleHeaders: false,
+                        timeoutSeconds: 15);
+
+                if (doc == null)
                 {
-                    if (chunk.Count == 1)
-                    {
-                        doc = await GetAudibleProductDocumentAsync(chunk[0], normalizedRegion, DefaultBookResponseGroups);
-                    }
-                    else
-                    {
-                        var url =
-                            $"{BuildAudibleApiBaseUrl(normalizedRegion)}/1.0/catalog/products/?" +
-                            $"{BuildQueryString(new Dictionary<string, string?>
-                            {
-                                ["asins"] = string.Join(",", chunk),
-                                ["response_groups"] = DefaultBookResponseGroups,
-                                ["image_sizes"] = "500,1000,2400,3200"
-                            })}";
-                        doc = await GetAudibleJsonDocumentAsync(url, normalizedRegion, includeLocaleHeaders: false, timeoutSeconds: 15);
-                    }
+                    continue;
+                }
 
-                    if (doc == null)
-                    {
-                        continue;
-                    }
-
+                using (doc)
+                {
                     var root = doc.RootElement;
                     if (root.TryGetProperty("products", out var products) && products.ValueKind == JsonValueKind.Array)
                     {
@@ -852,10 +848,6 @@ namespace Listenarr.Api.Services
                             results[mapped.Asin!] = mapped;
                         }
                     }
-                }
-                finally
-                {
-                    doc?.Dispose();
                 }
             }
 

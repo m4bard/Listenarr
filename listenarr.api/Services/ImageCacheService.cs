@@ -121,7 +121,13 @@ namespace Listenarr.Api.Services
                     dir = dir.Parent;
                 }
             }
-            catch
+            catch (Exception ex) when (
+                ex is IOException or
+                UnauthorizedAccessException or
+                ArgumentException or
+                System.Security.SecurityException or
+                NotSupportedException or
+                PathTooLongException)
             {
                 return null;
             }
@@ -193,34 +199,25 @@ namespace Listenarr.Api.Services
             {
                 // Check library storage first
                 var libraryPath = GetImagePath(identifier, _libraryImagePath);
-                if (File.Exists(libraryPath))
+                if (File.Exists(libraryPath) && IsValidCachedCoverFile(libraryPath, identifier, "library"))
                 {
-                    if (IsValidCachedCoverFile(libraryPath, identifier, "library"))
-                    {
-                        _logger.LogInformation("Image already in library storage: {Identifier}", identifier);
-                        return GetRelativePath(libraryPath);
-                    }
+                    _logger.LogInformation("Image already in library storage: {Identifier}", identifier);
+                    return GetRelativePath(libraryPath);
                 }
 
                 // Also check authors storage (author images may be stored separately)
                 var authorPath = GetImagePath(identifier, _authorImagePath);
-                if (File.Exists(authorPath))
+                if (File.Exists(authorPath) && IsValidCachedCoverFile(authorPath, identifier, "author"))
                 {
-                    if (IsValidCachedCoverFile(authorPath, identifier, "author"))
-                    {
-                        _logger.LogInformation("Image already in author storage: {Identifier}", identifier);
-                        return GetRelativePath(authorPath);
-                    }
+                    _logger.LogInformation("Image already in author storage: {Identifier}", identifier);
+                    return GetRelativePath(authorPath);
                 }
 
                 var seriesPath = GetImagePath(identifier, _seriesImagePath);
-                if (File.Exists(seriesPath))
+                if (File.Exists(seriesPath) && IsValidCachedCoverFile(seriesPath, identifier, "series"))
                 {
-                    if (IsValidCachedCoverFile(seriesPath, identifier, "series"))
-                    {
-                        _logger.LogInformation("Image already in series storage: {Identifier}", identifier);
-                        return GetRelativePath(seriesPath);
-                    }
+                    _logger.LogInformation("Image already in series storage: {Identifier}", identifier);
+                    return GetRelativePath(seriesPath);
                 }
 
                 // Check temp cache for a valid (non-placeholder) image
@@ -245,34 +242,25 @@ namespace Listenarr.Api.Services
 
                 // Re-check after acquiring lock
                 libraryPath = GetImagePath(identifier, _libraryImagePath);
-                if (File.Exists(libraryPath))
+                if (File.Exists(libraryPath) && IsValidCachedCoverFile(libraryPath, identifier, "library"))
                 {
-                    if (IsValidCachedCoverFile(libraryPath, identifier, "library"))
-                    {
-                        _logger.LogInformation("Image already in library storage (after wait): {Identifier}", identifier);
-                        return GetRelativePath(libraryPath);
-                    }
+                    _logger.LogInformation("Image already in library storage (after wait): {Identifier}", identifier);
+                    return GetRelativePath(libraryPath);
                 }
 
                 // Also check author storage after lock
                 authorPath = GetImagePath(identifier, _authorImagePath);
-                if (File.Exists(authorPath))
+                if (File.Exists(authorPath) && IsValidCachedCoverFile(authorPath, identifier, "author"))
                 {
-                    if (IsValidCachedCoverFile(authorPath, identifier, "author"))
-                    {
-                        _logger.LogInformation("Image already in author storage (after wait): {Identifier}", identifier);
-                        return GetRelativePath(authorPath);
-                    }
+                    _logger.LogInformation("Image already in author storage (after wait): {Identifier}", identifier);
+                    return GetRelativePath(authorPath);
                 }
 
                 seriesPath = GetImagePath(identifier, _seriesImagePath);
-                if (File.Exists(seriesPath))
+                if (File.Exists(seriesPath) && IsValidCachedCoverFile(seriesPath, identifier, "series"))
                 {
-                    if (IsValidCachedCoverFile(seriesPath, identifier, "series"))
-                    {
-                        _logger.LogInformation("Image already in series storage (after wait): {Identifier}", identifier);
-                        return GetRelativePath(seriesPath);
-                    }
+                    _logger.LogInformation("Image already in series storage (after wait): {Identifier}", identifier);
+                    return GetRelativePath(seriesPath);
                 }
 
                 tempExisting = GetBestTempImagePathIfValid(identifier);

@@ -27,8 +27,6 @@ namespace Listenarr.Api.Services
                 {
                     using var scope = _scopeFactory.CreateScope();
                     var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var metadataService = scope.ServiceProvider.GetRequiredService<IMetadataService>();
-
                     var candidates = await db.AudiobookFiles
                         .Where(f => f.DurationSeconds == null || f.Format == null || f.SampleRate == null)
                         // Ensure deterministic ordering when using Take() to avoid EF Core warnings
@@ -42,19 +40,26 @@ namespace Listenarr.Api.Services
                     }
 
                     var tasks = new List<Task>();
-                    foreach (var f in candidates)
+                    foreach (var candidate in candidates.Select(f => new { f.Id, f.Path }))
                     {
-                        using var releaser = await _sem.LockAsync(stoppingToken);
-
-                        // Capture loop variable
-                        var file = f;
-
                         // Start work without passing the stopping token into Task.Run to avoid
                         // TaskCanceledException bubbling up from the runtime; handle cancellation inside.
                         tasks.Add(Task.Run(async () =>
                         {
+                            using var releaser = await _sem.LockAsync(stoppingToken);
                             try
                             {
+                                using var taskScope = _scopeFactory.CreateScope();
+                                var taskDb = taskScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                                var taskMetadataService = taskScope.ServiceProvider.GetRequiredService<IMetadataService>();
+
+                                var file = await taskDb.AudiobookFiles.FirstOrDefaultAsync(f => f.Id == candidate.Id, stoppingToken);
+                                if (file == null)
+                                {
+                                    _logger.LogDebug("Skipping metadata rescan for missing file id={Id}", candidate.Id);
+                                    return;
+                                }
+
                                 _logger.LogInformation("Re-extracting metadata for file id={Id} path={Path}", file.Id, file.Path);
 
                                 // Bail early if cancellation requested
@@ -64,7 +69,7 @@ namespace Listenarr.Api.Services
                                     return;
                                 }
 
-                                var meta = await metadataService.ExtractFileMetadataAsync(file.Path ?? string.Empty);
+                                var meta = await taskMetadataService.ExtractFileMetadataAsync(file.Path ?? string.Empty);
                                 if (meta != null)
                                 {
                                     var fi = new System.IO.FileInfo(file.Path ?? string.Empty);
@@ -76,21 +81,17 @@ namespace Listenarr.Api.Services
                                     file.Channels = meta.Channels != 0 ? meta.Channels : file.Channels;
 
                                     // Save changes; respect cancellation
-                                    await db.SaveChangesAsync(stoppingToken);
+                                    await taskDb.SaveChangesAsync(stoppingToken);
                                     _logger.LogInformation("Updated metadata for file id={Id}", file.Id);
                                 }
                             }
                             catch (OperationCanceledException)
                             {
                                 // Cancellation requested - ignore and let the service shutdown gracefully
-                                _logger.LogDebug("Metadata rescan cancelled for file id={Id}", file.Id);
+                                _logger.LogDebug("Metadata rescan cancelled for file id={Id}", candidate.Id);
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger.LogWarning(ex, "Failed to rescan metadata for file id={Id} path={Path}", file.Id, file.Path);
-                            }
-                            finally
-                            {
-                                releaser.Dispose();
+                                _logger.LogWarning(ex, "Failed to rescan metadata for file id={Id} path={Path}", candidate.Id, candidate.Path);
                             }
                         }));
                     }

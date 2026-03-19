@@ -5,6 +5,7 @@ namespace Listenarr.Api.Services
 {
     public class AuthorCatalogService : IAuthorCatalogService
     {
+        private static readonly char[] AuthorCandidateSeparators = [',', ';', '&'];
         private static readonly Dictionary<string, string> LanguageAliases = new(StringComparer.OrdinalIgnoreCase)
         {
             ["english"] = "english",
@@ -372,10 +373,9 @@ namespace Listenarr.Api.Services
                     continue;
                 }
 
-                foreach (var trimmed in value
-                             .Split(new[] { ',', ';', '&' }, StringSplitOptions.RemoveEmptyEntries)
-                             .Select(token => token.Trim())
-                             .Where(trimmed => !string.IsNullOrWhiteSpace(trimmed)))
+                foreach (var trimmed in value.Split(
+                             AuthorCandidateSeparators,
+                             StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
                 {
                     yield return trimmed;
                 }
