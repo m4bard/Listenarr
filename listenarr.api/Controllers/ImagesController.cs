@@ -1192,7 +1192,13 @@ namespace Listenarr.Api.Controllers
                     dir = dir.Parent;
                 }
             }
-            catch
+            catch (Exception ex) when (
+                ex is IOException or
+                UnauthorizedAccessException or
+                ArgumentException or
+                System.Security.SecurityException or
+                NotSupportedException or
+                PathTooLongException)
             {
                 return null;
             }
@@ -1230,7 +1236,12 @@ namespace Listenarr.Api.Controllers
                 {
                     return Path.GetFullPath(path);
                 }
-                catch
+                catch (Exception ex) when (
+                    ex is ArgumentException or
+                    ArgumentNullException or
+                    PathTooLongException or
+                    NotSupportedException or
+                    System.Security.SecurityException)
                 {
                     return path;
                 }
@@ -1245,7 +1256,12 @@ namespace Listenarr.Api.Controllers
                 {
                     current = new DirectoryInfo(baseDirectory);
                 }
-                catch
+                catch (Exception ex) when (
+                    ex is ArgumentException or
+                    ArgumentNullException or
+                    PathTooLongException or
+                    NotSupportedException or
+                    System.Security.SecurityException)
                 {
                     current = null;
                 }

@@ -131,14 +131,10 @@ namespace Listenarr.Api.Services
                             continue;
                         }
 
-                        foreach (var row in rows.EnumerateArray())
-                        {
-                            var asin = GetString(row, "product_metadata", "asin");
-                            if (!string.IsNullOrWhiteSpace(asin))
-                            {
-                                collectedAsins.Add(asin);
-                            }
-                        }
+                        collectedAsins.AddRange(
+                            rows.EnumerateArray()
+                                .Select(row => GetString(row, "product_metadata", "asin"))
+                                .Where(asin => !string.IsNullOrWhiteSpace(asin))!);
 
                         continuationToken = GetString(section, "pagination");
                         if (rows.GetArrayLength() > 0)
@@ -328,12 +324,11 @@ namespace Listenarr.Api.Services
 
                     if (mapped.Series?.Any() == true)
                     {
-                        foreach (var series in mapped.Series.Where(series => string.Equals(series.Asin, seriesAsin, StringComparison.OrdinalIgnoreCase)))
+                        foreach (var series in mapped.Series.Where(series =>
+                                     string.Equals(series.Asin, seriesAsin, StringComparison.OrdinalIgnoreCase) &&
+                                     string.IsNullOrWhiteSpace(series.Position)))
                         {
-                            if (string.IsNullOrWhiteSpace(series.Position))
-                            {
-                                series.Position = relationship.Position;
-                            }
+                            series.Position = relationship.Position;
                         }
                     }
 
@@ -842,13 +837,11 @@ namespace Listenarr.Api.Services
                     var root = doc.RootElement;
                     if (root.TryGetProperty("products", out var products) && products.ValueKind == JsonValueKind.Array)
                     {
-                        foreach (var product in products.EnumerateArray())
+                        foreach (var mapped in products.EnumerateArray()
+                                     .Select(product => MapProductToBookResponse(product, normalizedRegion))
+                                     .Where(mapped => !string.IsNullOrWhiteSpace(mapped?.Asin)))
                         {
-                            var mapped = MapProductToBookResponse(product, normalizedRegion);
-                            if (!string.IsNullOrWhiteSpace(mapped?.Asin))
-                            {
-                                results[mapped.Asin!] = mapped;
-                            }
+                            results[mapped!.Asin!] = mapped;
                         }
                     }
                     else if (root.TryGetProperty("product", out var product) && product.ValueKind == JsonValueKind.Object)
@@ -1692,9 +1685,8 @@ namespace Listenarr.Api.Services
                 var metadata = JsonSerializer.Deserialize<AudibleAuthorTileMetadata>(metadataJson, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
                 if (metadata?.Authors == null) return authors;
 
-                foreach (var metadataAuthor in metadata.Authors)
+                foreach (var metadataAuthor in metadata.Authors.Where(metadataAuthor => !string.IsNullOrWhiteSpace(metadataAuthor.Name)))
                 {
-                    if (string.IsNullOrWhiteSpace(metadataAuthor.Name)) continue;
                     authors.Add(new AudibleAuthor
                     {
                         Asin = string.Equals(metadataAuthor.Name, author, StringComparison.OrdinalIgnoreCase) ? authorAsin : null,

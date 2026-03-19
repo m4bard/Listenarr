@@ -299,8 +299,8 @@ namespace Listenarr.Api.Services
 
                 // Determine file extension from content type or URL
                 var extension = GetImageExtension(finalUri.ToString(), response.Content.Headers.ContentType?.MediaType);
-                var fileName = $"{SanitizeFileName(identifier)}{extension}";
-                var filePath = Path.Combine(_tempCachePath, fileName);
+                var fileName = NormalizeRelativeFileName($"{SanitizeFileName(identifier)}{extension}");
+                var filePath = CombineRelativePath(_tempCachePath, fileName);
 
                 // Save to temp cache
                 await File.WriteAllBytesAsync(filePath, imageBytes);
@@ -645,7 +645,7 @@ namespace Listenarr.Api.Services
 
             foreach (var ext in extensions)
             {
-                var path = Path.Combine(_tempCachePath, sanitized + ext);
+                var path = CombineRelativePath(_tempCachePath, NormalizeRelativeFileName(sanitized + ext));
                 if (!File.Exists(path)) continue;
 
                 // Remove placeholder images (e.g. 1x1) from temp cache so fallback can continue.
@@ -702,13 +702,13 @@ namespace Listenarr.Api.Services
 
             foreach (var ext in extensions)
             {
-                var path = Path.Combine(basePath, sanitized + ext);
+                var path = CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ext));
                 if (File.Exists(path))
                     return path;
             }
 
             // Default to .jpg if not found
-            return Path.Combine(basePath, sanitized + ".jpg");
+            return CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ".jpg"));
         }
 
         private string GetRelativePath(string fullPath)
@@ -721,6 +721,12 @@ namespace Listenarr.Api.Services
         {
             var invalid = Path.GetInvalidFileNameChars();
             return string.Join("_", fileName.Split(invalid, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        private static string NormalizeRelativeFileName(string fileName)
+        {
+            var normalized = Path.GetFileName(fileName);
+            return normalized.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
         private string GetImageExtension(string url, string? contentType)

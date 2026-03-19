@@ -1,3 +1,4 @@
+using System.Linq;
 using Listenarr.Domain.Models;
 
 namespace Listenarr.Api.Services
@@ -371,13 +372,12 @@ namespace Listenarr.Api.Services
                     continue;
                 }
 
-                foreach (var token in value.Split(new[] { ',', ';', '&' }, StringSplitOptions.RemoveEmptyEntries))
+                foreach (var trimmed in value
+                             .Split(new[] { ',', ';', '&' }, StringSplitOptions.RemoveEmptyEntries)
+                             .Select(token => token.Trim())
+                             .Where(trimmed => !string.IsNullOrWhiteSpace(trimmed)))
                 {
-                    var trimmed = token.Trim();
-                    if (!string.IsNullOrWhiteSpace(trimmed))
-                    {
-                        yield return trimmed;
-                    }
+                    yield return trimmed;
                 }
             }
         }
