@@ -550,9 +550,7 @@ namespace Listenarr.Api.Services
 
             foreach (var segment in segments)
             {
-                var normalizedSegment = Path.IsPathRooted(segment)
-                    ? segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
-                    : segment;
+                var normalizedSegment = NormalizeRelativePathSegment(segment);
                 var candidatePath = Path.Combine(currentPath, normalizedSegment);
                 var canResolve = forceResolve || Directory.Exists(candidatePath) || File.Exists(candidatePath);
                 if (!canResolve)
@@ -571,6 +569,28 @@ namespace Listenarr.Api.Services
             }
 
             return currentPath;
+        }
+
+        private static string NormalizeRelativePathSegment(string segment)
+        {
+            if (string.IsNullOrEmpty(segment))
+            {
+                return string.Empty;
+            }
+
+            var normalizedSegment = segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (!Path.IsPathRooted(normalizedSegment))
+            {
+                return normalizedSegment;
+            }
+
+            var root = Path.GetPathRoot(normalizedSegment);
+            if (!string.IsNullOrEmpty(root) && normalizedSegment.Length >= root.Length)
+            {
+                normalizedSegment = normalizedSegment[root.Length..];
+            }
+
+            return normalizedSegment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
         private static string? TryResolveLongWindowsPath(string path)

@@ -262,5 +262,22 @@ namespace Listenarr.Api.Tests
                 @"C:\Library\Audiobook Imports\New Folder\Disc 1",
                 normalized);
         }
+
+        [Fact]
+        public void NormalizeStoredPath_DoesNotDropPrefix_WhenMalformedDriveSegmentAppears()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var normalized = FileUtils.NormalizeStoredPath(
+                @"C:\Books\D:\Files\Track 01.mp3",
+                candidatePath => candidatePath);
+
+            Assert.Equal(
+                @"C:\Books\Files\Track 01.mp3",
+                normalized);
+        }
     }
 }
