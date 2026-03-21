@@ -332,21 +332,31 @@ namespace Listenarr.Api.Services
                         return EmptySentinel;
                     }
 
+                    string renderedValue;
+
                     // Apply formatting if specified
                     if (!string.IsNullOrEmpty(format))
                     {
                         // For numeric values with format (e.g., {DiskNumber:00})
                         if (value is int intValue)
                         {
-                            return intValue.ToString(format);
+                            renderedValue = intValue.ToString(format);
                         }
                         else if (int.TryParse(value.ToString(), out var parsedInt))
                         {
-                            return parsedInt.ToString(format);
+                            renderedValue = parsedInt.ToString(format);
+                        }
+                        else
+                        {
+                            renderedValue = value.ToString() ?? string.Empty;
                         }
                     }
+                    else
+                    {
+                        renderedValue = value.ToString() ?? string.Empty;
+                    }
 
-                    return value.ToString() ?? string.Empty;
+                    return SanitizePathComponent(renderedValue);
                 }
 
                 // Variable not found, return sentinel so we can optionally remove surrounding chars
@@ -454,9 +464,13 @@ namespace Listenarr.Api.Services
                 return "Unknown";
             }
 
-            if (ReservedWindowsDeviceNames.Contains(result))
+            var extensionSeparator = result.IndexOf('.');
+            var deviceNameStem = extensionSeparator >= 0 ? result[..extensionSeparator] : result;
+            if (ReservedWindowsDeviceNames.Contains(deviceNameStem))
             {
-                result += "_";
+                result = extensionSeparator >= 0
+                    ? deviceNameStem + "_" + result[extensionSeparator..]
+                    : result + "_";
             }
 
             return result;

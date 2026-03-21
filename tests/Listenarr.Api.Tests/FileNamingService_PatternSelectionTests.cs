@@ -275,5 +275,21 @@ namespace Listenarr.Api.Tests
             Assert.Equal("NUL_.m4b", fileName);
             Assert.DoesNotContain("NUL. ", result);
         }
+
+        [Fact]
+        public void ApplyNamingPattern_WithSlashInVariable_DoesNotCreateNestedFolders()
+        {
+            var variables = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Author"] = "John Scalzi",
+                ["Series"] = "The Dispatcher",
+                ["Title"] = "Book 1/2"
+            };
+
+            var result = _service.ApplyNamingPattern("{Author}/{Series}/{Title}", variables, treatAsFilename: false);
+
+            Assert.Equal($"John Scalzi{Path.DirectorySeparatorChar}The Dispatcher{Path.DirectorySeparatorChar}Book 1 - 2", result);
+            Assert.DoesNotContain($"{Path.DirectorySeparatorChar}Book 1{Path.DirectorySeparatorChar}2", result);
+        }
     }
 }

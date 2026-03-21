@@ -406,7 +406,7 @@ namespace Listenarr.Api.Tests
         {
             var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
             var sourceRoot = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
-            var title = "Murder by Other Means: The Dispatcher, Book 2";
+            var title = "Murder by Other Means: The Dispatcher/Book 2";
             var author = "John Scalzi";
             var series = "The Dispatcher";
             var sanitizedTitle = SanitizePathComponentForCurrentPlatform(title);
@@ -461,12 +461,13 @@ namespace Listenarr.Api.Tests
             var actualRelativePath = Path.GetRelativePath(outputRoot, actualFullPath);
             var actualDirectory = Path.GetDirectoryName(actualRelativePath);
             var actualFileName = Path.GetFileName(actualRelativePath);
+            var pathSeparator = Path.DirectorySeparatorChar.ToString();
 
-            Assert.Equal(Path.Combine(author, series, sanitizedTitle), actualDirectory);
+            Assert.Equal(string.Join(pathSeparator, author, series, sanitizedTitle), actualDirectory);
             Assert.StartsWith(sanitizedTitle, actualFileName, StringComparison.OrdinalIgnoreCase);
             Assert.EndsWith(".m4b", actualFileName, StringComparison.OrdinalIgnoreCase);
 
-            var duplicatedSegment = Path.Combine(series, sanitizedTitle, series, sanitizedTitle);
+            var duplicatedSegment = string.Join(pathSeparator, series, sanitizedTitle, series, sanitizedTitle);
             Assert.DoesNotContain(duplicatedSegment, actualFullPath, StringComparison.OrdinalIgnoreCase);
 
             TryDeleteDirectory(sourceRoot, recursive: true);
