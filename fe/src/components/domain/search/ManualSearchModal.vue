@@ -1026,6 +1026,16 @@ function getScoreClass(score: number): string {
   border-bottom: 2px solid #3a3a3a;
 }
 
+.results-table th.col-actions {
+  position: sticky;
+  right: 0;
+  z-index: 3;
+  background-color: #2a2a2a;
+  box-shadow:
+    -1px 0 0 rgba(255, 255, 255, 0.06),
+    -10px 0 20px rgba(0, 0, 0, 0.22);
+}
+
 .sortable {
   cursor: pointer;
   user-select: none;
@@ -1069,6 +1079,10 @@ function getScoreClass(score: number): string {
   box-shadow: inset 2px 0 0 var(--brand-500);
 }
 
+.results-table tbody tr:hover .col-actions {
+  background-color: rgba(27, 39, 52, 0.96);
+}
+
 /* Remove row background change on hover — underline title text instead */
 .title-text {
   color: white;
@@ -1087,6 +1101,16 @@ function getScoreClass(score: number): string {
   padding: 0.75rem;
   color: #ddd;
   vertical-align: middle;
+}
+
+.results-table td.col-actions {
+  position: sticky;
+  right: 0;
+  z-index: 2;
+  background-color: #1e1e1e;
+  box-shadow:
+    -1px 0 0 rgba(255, 255, 255, 0.06),
+    -10px 0 20px rgba(0, 0, 0, 0.22);
 }
 
 .col-source {
