@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Xunit;
 using Moq;
@@ -219,6 +220,76 @@ namespace Listenarr.Api.Tests
             // Assert - should produce a valid path
             Assert.NotNull(result);
             Assert.NotEmpty(result);
+        }
+
+        [Fact]
+        public async Task GenerateFilePathAsync_NormalizesPortableInvalidCharacters()
+        {
+            var settings = new ApplicationSettings
+            {
+                OutputPath = "/audiobooks",
+                FolderNamingPattern = "{Author}/{Series}/{Title}",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+            _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+
+            var metadata = new AudioMetadata
+            {
+                Title = "Murder by Other Means: The Dispatcher/Book 2?",
+                Artist = "John Scalzi",
+                Series = "The Dispatcher"
+            };
+
+            var result = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
+
+            Assert.DoesNotContain(":", result);
+            Assert.DoesNotContain("?", result);
+            Assert.DoesNotContain($"{Path.DirectorySeparatorChar}Murder by Other Means - The Dispatcher - Book 2 - ", result);
+            Assert.Contains("Murder by Other Means - The Dispatcher - Book 2", result);
+            Assert.EndsWith(".m4b", result);
+        }
+
+        [Fact]
+        public async Task GenerateFilePathAsync_NormalizesReservedNamesAndTrailingDots()
+        {
+            var settings = new ApplicationSettings
+            {
+                OutputPath = "/audiobooks",
+                FolderNamingPattern = "{Author}",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+            _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+
+            var metadata = new AudioMetadata
+            {
+                Title = "NUL. ",
+                Artist = "CON"
+            };
+
+            var result = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
+            var fileName = Path.GetFileName(result);
+
+            Assert.Contains($"{Path.DirectorySeparatorChar}CON_{Path.DirectorySeparatorChar}", result);
+            Assert.Equal("NUL_.m4b", fileName);
+            Assert.DoesNotContain("NUL. ", result);
+        }
+
+        [Fact]
+        public void ApplyNamingPattern_WithSlashInVariable_DoesNotCreateNestedFolders()
+        {
+            var variables = new System.Collections.Generic.Dictionary<string, object>
+            {
+                ["Author"] = "John Scalzi",
+                ["Series"] = "The Dispatcher",
+                ["Title"] = "Book 1/2"
+            };
+
+            var result = _service.ApplyNamingPattern("{Author}/{Series}/{Title}", variables, treatAsFilename: false);
+
+            Assert.Equal($"John Scalzi{Path.DirectorySeparatorChar}The Dispatcher{Path.DirectorySeparatorChar}Book 1 - 2", result);
+            Assert.DoesNotContain($"{Path.DirectorySeparatorChar}Book 1{Path.DirectorySeparatorChar}2", result);
         }
     }
 }

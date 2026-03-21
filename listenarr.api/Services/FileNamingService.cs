@@ -7,6 +7,14 @@ namespace Listenarr.Api.Services
 {
     public class FileNamingService : IFileNamingService
     {
+        private static readonly HashSet<char> PortableInvalidFileNameChars = BuildPortableInvalidFileNameChars();
+        private static readonly HashSet<string> ReservedWindowsDeviceNames = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "CON", "PRN", "AUX", "NUL",
+            "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+        };
+
         private readonly IConfigurationService _configService;
         private readonly ILogger<FileNamingService> _logger;
 
@@ -324,21 +332,31 @@ namespace Listenarr.Api.Services
                         return EmptySentinel;
                     }
 
+                    string renderedValue;
+
                     // Apply formatting if specified
                     if (!string.IsNullOrEmpty(format))
                     {
                         // For numeric values with format (e.g., {DiskNumber:00})
                         if (value is int intValue)
                         {
-                            return intValue.ToString(format);
+                            renderedValue = intValue.ToString(format);
                         }
                         else if (int.TryParse(value.ToString(), out var parsedInt))
                         {
-                            return parsedInt.ToString(format);
+                            renderedValue = parsedInt.ToString(format);
+                        }
+                        else
+                        {
+                            renderedValue = value.ToString() ?? string.Empty;
                         }
                     }
+                    else
+                    {
+                        renderedValue = value.ToString() ?? string.Empty;
+                    }
 
-                    return value.ToString() ?? string.Empty;
+                    return SanitizePathComponent(renderedValue);
                 }
 
                 // Variable not found, return sentinel so we can optionally remove surrounding chars
@@ -410,14 +428,19 @@ namespace Listenarr.Api.Services
                 return "Unknown";
             }
 
-            // Get invalid filename characters
-            var invalidChars = Path.GetInvalidFileNameChars();
-
-            // Replace invalid characters with underscore
             var sanitized = new StringBuilder();
             foreach (var c in pathComponent)
             {
-                if (invalidChars.Contains(c))
+                if (char.IsControl(c))
+                {
+                    continue;
+                }
+
+                if (c == ':' || c == '/' || c == '\\')
+                {
+                    sanitized.Append(" - ");
+                }
+                else if (PortableInvalidFileNameChars.Contains(c))
                 {
                     sanitized.Append('_');
                 }
@@ -427,16 +450,47 @@ namespace Listenarr.Api.Services
                 }
             }
 
-            // Trim and handle edge cases
-            var result = sanitized.ToString().Trim();
+            var result = sanitized.ToString();
+            result = Regex.Replace(result, @"\s+", " ");
+            result = Regex.Replace(result, @"(?:\s*-\s*){2,}", " - ");
+            result = Regex.Replace(result, @"_+", "_");
+            result = result.Trim();
+            result = result.TrimEnd('.', ' ');
+            result = Regex.Replace(result, @"^\s*[-_]+\s*", string.Empty);
+            result = Regex.Replace(result, @"\s*[-_]+\s*$", string.Empty);
 
-            // Ensure it's not empty after sanitization
             if (string.IsNullOrWhiteSpace(result))
             {
                 return "Unknown";
             }
 
+            var extensionSeparator = result.IndexOf('.');
+            var deviceNameStem = extensionSeparator >= 0 ? result[..extensionSeparator] : result;
+            if (ReservedWindowsDeviceNames.Contains(deviceNameStem))
+            {
+                result = extensionSeparator >= 0
+                    ? deviceNameStem + "_" + result[extensionSeparator..]
+                    : result + "_";
+            }
+
             return result;
+        }
+
+        private static HashSet<char> BuildPortableInvalidFileNameChars()
+        {
+            var invalidChars = new HashSet<char>(Path.GetInvalidFileNameChars());
+
+            foreach (var c in "<>:\"/\\|?*")
+            {
+                invalidChars.Add(c);
+            }
+
+            for (int i = 0; i < 32; i++)
+            {
+                invalidChars.Add((char)i);
+            }
+
+            return invalidChars;
         }
 
         /// <summary>
