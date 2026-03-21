@@ -1684,6 +1684,7 @@ class ApiService {
   async importProwlarrIndexers(payload: {
     url: string
     port?: number
+    clearPort?: boolean
     apiKey?: string
     tagFilter?: string
   }): Promise<{
@@ -2096,7 +2097,7 @@ export const testIndexerDraft = (indexer: Omit<Indexer, 'id' | 'createdAt' | 'up
 export const toggleIndexer = (id: number) => apiService.toggleIndexer(id)
 export const getEnabledIndexers = () => apiService.getEnabledIndexers()
 export const getProwlarrImportSettings = () => apiService.getProwlarrImportSettings()
-export const importProwlarrIndexers = (payload: { url: string; port?: number; apiKey?: string; tagFilter?: string }) =>
+export const importProwlarrIndexers = (payload: { url: string; port?: number; clearPort?: boolean; apiKey?: string; tagFilter?: string }) =>
   apiService.importProwlarrIndexers(payload)
 
 // Export individual remote path mapping functions for convenience

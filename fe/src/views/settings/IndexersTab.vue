@@ -494,6 +494,7 @@ const importFromProwlarr = async () => {
     const result = await importProwlarrIndexers({
       url,
       port: portValue,
+      clearPort: portRaw.length === 0,
       tagFilter,
       ...(apiKey ? { apiKey } : {}),
     })

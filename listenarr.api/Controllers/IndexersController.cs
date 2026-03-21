@@ -410,7 +410,7 @@ namespace Listenarr.Api.Controllers
 
             var savedConnection = await _configurationService.GetProwlarrImportSettingsAsync(includeSecret: true);
             var effectiveUrl = string.IsNullOrWhiteSpace(request.Url) ? savedConnection.Url : request.Url.Trim();
-            var effectivePort = request.Port ?? savedConnection.Port;
+            var effectivePort = request.ClearPort ? null : request.Port ?? savedConnection.Port;
             var effectiveApiKey = string.IsNullOrWhiteSpace(request.ApiKey) ? savedConnection.ApiKey : request.ApiKey.Trim();
             var effectiveTagFilter = request.TagFilter == null
                 ? savedConnection.TagFilter?.Trim()
@@ -487,6 +487,13 @@ namespace Listenarr.Api.Controllers
             if (!string.IsNullOrWhiteSpace(effectiveTagFilter))
             {
                 tagMap = await TryFetchProwlarrTagMapAsync(baseUrl, effectiveApiKey.Trim());
+                if ((tagMap == null || tagMap.Count == 0) && PayloadRequiresProwlarrTagMap(doc.RootElement))
+                {
+                    _logger.LogWarning(
+                        "Prowlarr tag-filtered import for {Url} requires tag label lookup, but tags could not be loaded",
+                        LogRedaction.SanitizeUrl(baseUrl));
+                    return StatusCode(502, new { message = "Failed to load Prowlarr tags required for tag-filtered import" });
+                }
             }
 
             foreach (var element in doc.RootElement.EnumerateArray())
@@ -1421,6 +1428,122 @@ namespace Listenarr.Api.Controllers
             if (tagMap != null && tagMap.TryGetValue(trimmed, out var label) && !string.IsNullOrWhiteSpace(label))
             {
                 tags.Add(label.Trim());
+            }
+        }
+
+        private static bool PayloadRequiresProwlarrTagMap(JsonElement payload)
+        {
+            if (payload.ValueKind != JsonValueKind.Array)
+            {
+                return false;
+            }
+
+            foreach (var element in payload.EnumerateArray())
+            {
+                if (ElementRequiresProwlarrTagMap(element))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static bool ElementRequiresProwlarrTagMap(JsonElement element)
+        {
+            var hasTagData = false;
+            var hasTextualTagData = false;
+
+            if (element.TryGetProperty("tags", out var rawTags))
+            {
+                InspectProwlarrTagValue(rawTags, ref hasTagData, ref hasTextualTagData);
+            }
+
+            if (element.TryGetProperty("tagNames", out var tagNames))
+            {
+                InspectProwlarrTagValue(tagNames, ref hasTagData, ref hasTextualTagData);
+            }
+
+            if (element.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var field in fields.EnumerateArray())
+                {
+                    if (!field.TryGetProperty("name", out var nameProp) || nameProp.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    var fieldName = nameProp.GetString();
+                    if (!string.Equals(fieldName, "tags", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(fieldName, "tagNames", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (field.TryGetProperty("value", out var valueProp))
+                    {
+                        InspectProwlarrTagValue(valueProp, ref hasTagData, ref hasTextualTagData);
+                    }
+                }
+            }
+
+            return hasTagData && !hasTextualTagData;
+        }
+
+        private static void InspectProwlarrTagValue(JsonElement value, ref bool hasTagData, ref bool hasTextualTagData)
+        {
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.String:
+                    foreach (var part in value.GetString()?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>())
+                    {
+                        InspectProwlarrTagToken(part, ref hasTagData, ref hasTextualTagData);
+                    }
+                    break;
+                case JsonValueKind.Number:
+                    hasTagData = true;
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var item in value.EnumerateArray())
+                    {
+                        InspectProwlarrTagValue(item, ref hasTagData, ref hasTextualTagData);
+                    }
+                    break;
+                case JsonValueKind.Object:
+                    if (value.TryGetProperty("label", out var labelProp) && labelProp.ValueKind == JsonValueKind.String)
+                    {
+                        InspectProwlarrTagToken(labelProp.GetString(), ref hasTagData, ref hasTextualTagData);
+                    }
+                    else if (value.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String)
+                    {
+                        InspectProwlarrTagToken(nameProp.GetString(), ref hasTagData, ref hasTextualTagData);
+                    }
+                    else if (value.TryGetProperty("id", out var idProp))
+                    {
+                        if (idProp.ValueKind == JsonValueKind.Number)
+                        {
+                            hasTagData = true;
+                        }
+                        else if (idProp.ValueKind == JsonValueKind.String)
+                        {
+                            InspectProwlarrTagToken(idProp.GetString(), ref hasTagData, ref hasTextualTagData);
+                        }
+                    }
+                    break;
+            }
+        }
+
+        private static void InspectProwlarrTagToken(string? rawValue, ref bool hasTagData, ref bool hasTextualTagData)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return;
+            }
+
+            hasTagData = true;
+            if (!long.TryParse(rawValue.Trim(), out _))
+            {
+                hasTextualTagData = true;
             }
         }
 

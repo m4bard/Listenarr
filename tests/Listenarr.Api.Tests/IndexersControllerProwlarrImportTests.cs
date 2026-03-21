@@ -156,6 +156,35 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task ImportFromProwlarr_WhenRequestClearsSavedPort_DoesNotReuseStoredPort()
+        {
+            using var harness = new ControllerHarness(new CaptureHandler());
+
+            await harness.ConfigurationService.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
+            {
+                Url = "http://localhost",
+                Port = 9696,
+                ApiKey = "saved-test-key"
+            });
+
+            var result = await harness.Controller.ImportFromProwlarr(new ProwlarrImportRequest
+            {
+                Url = "http://localhost:7878",
+                ClearPort = true,
+                ApiKey = string.Empty
+            });
+
+            Assert.IsType<OkObjectResult>(result);
+            Assert.NotNull(harness.Handler.LastRequest);
+            Assert.Equal("http://localhost:7878/api/v1/indexer", harness.Handler.LastRequest!.RequestUri!.ToString());
+
+            var saved = await harness.ConfigurationService.GetProwlarrImportSettingsAsync(includeSecret: true);
+            Assert.Equal("http://localhost:7878", saved.Url);
+            Assert.Null(saved.Port);
+            Assert.Equal("saved-test-key", saved.ApiKey);
+        }
+
+        [Fact]
         public async Task ImportFromProwlarr_WhenTagFilterIsSet_ImportsMatchingTaggedIndexers_WithoutAudiobookCategories()
         {
             var indexerPayload = """
@@ -270,6 +299,100 @@ namespace Listenarr.Api.Tests
             Assert.Equal("Saved Tag Indexer (Prowlarr)", imported.Name);
             Assert.Equal("saved-tag-key", imported.ApiKey);
             Assert.Equal(string.Empty, imported.Categories);
+        }
+
+        [Fact]
+        public async Task ImportFromProwlarr_WhenTagFilterNeedsTagMap_AndLookupFails_ReturnsBadGateway()
+        {
+            var indexerPayload = """
+                [
+                  {
+                    "id": 15,
+                    "name": "Numeric Tag Indexer",
+                    "protocol": "torrent",
+                    "tags": [7],
+                    "categories": [5000],
+                    "enable": true
+                  }
+                ]
+                """;
+
+            using var harness = new ControllerHarness(new CaptureHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                if (path.EndsWith("/api/v1/tag", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                    {
+                        Content = new StringContent("Forbidden", Encoding.UTF8, "text/plain")
+                    };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(indexerPayload, Encoding.UTF8, "application/json")
+                };
+            }));
+
+            var result = await harness.Controller.ImportFromProwlarr(new ProwlarrImportRequest
+            {
+                Url = "http://localhost",
+                Port = 9696,
+                ApiKey = "tag-key",
+                TagFilter = "audiobooks"
+            });
+
+            var objectResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal((int)HttpStatusCode.BadGateway, objectResult.StatusCode);
+            Assert.Empty(await harness.Db.Indexers.AsNoTracking().ToListAsync());
+        }
+
+        [Fact]
+        public async Task ImportFromProwlarr_WhenTagNamesArePresent_AndLookupFails_StillImportsMatchingIndexer()
+        {
+            var indexerPayload = """
+                [
+                  {
+                    "id": 16,
+                    "name": "Named Tag Indexer",
+                    "protocol": "torrent",
+                    "tagNames": ["audiobooks"],
+                    "categories": [5000],
+                    "enable": true
+                  }
+                ]
+                """;
+
+            using var harness = new ControllerHarness(new CaptureHandler(request =>
+            {
+                var path = request.RequestUri?.AbsolutePath ?? string.Empty;
+                if (path.EndsWith("/api/v1/tag", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.Forbidden)
+                    {
+                        Content = new StringContent("Forbidden", Encoding.UTF8, "text/plain")
+                    };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent(indexerPayload, Encoding.UTF8, "application/json")
+                };
+            }));
+
+            var result = await harness.Controller.ImportFromProwlarr(new ProwlarrImportRequest
+            {
+                Url = "http://localhost",
+                Port = 9696,
+                ApiKey = "tag-key",
+                TagFilter = "audiobooks"
+            });
+
+            Assert.IsType<OkObjectResult>(result);
+
+            var imported = await harness.Db.Indexers.AsNoTracking().SingleAsync();
+            Assert.Equal("Named Tag Indexer (Prowlarr)", imported.Name);
+            Assert.Equal("Torznab", imported.Implementation);
         }
 
         [Fact]
