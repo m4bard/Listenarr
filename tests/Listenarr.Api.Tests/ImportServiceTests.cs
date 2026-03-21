@@ -402,6 +402,78 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task ImportFilesFromDirectory_NestedTorrentFolders_DoNotDuplicateSeriesAndTitleSegments()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var sourceRoot = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            var title = "Murder by Other Means: The Dispatcher, Book 2";
+            var author = "John Scalzi";
+            var series = "The Dispatcher";
+            var sanitizedTitle = SanitizePathComponentForCurrentPlatform(title);
+
+            var nestedSourceDir = Path.Join(sourceRoot, series, sanitizedTitle);
+            Directory.CreateDirectory(nestedSourceDir);
+
+            var sourceFile = Path.Join(nestedSourceDir, $"{sanitizedTitle}.m4b");
+            await File.WriteAllTextAsync(sourceFile, "dummy");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Copy",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "{Author}/{Series}/{Title}",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(sourceFile))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = title,
+                    Artist = author,
+                    AlbumArtist = author,
+                    Series = series,
+                    Format = "m4b"
+                });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            using var provider = TestServiceFactory.BuildServiceProvider(_ => { });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var results = await importService.ImportFilesFromDirectoryAsync(
+                "nested-torrent",
+                audiobookId: null,
+                new[] { sourceFile },
+                settings);
+
+            var success = Assert.Single(results, r => r.Success);
+            Assert.NotNull(success.FinalPath);
+
+            var actualFullPath = Path.GetFullPath(success.FinalPath!);
+            var actualRelativePath = Path.GetRelativePath(outputRoot, actualFullPath);
+            var actualDirectory = Path.GetDirectoryName(actualRelativePath);
+            var actualFileName = Path.GetFileName(actualRelativePath);
+
+            Assert.Equal(Path.Combine(author, series, sanitizedTitle), actualDirectory);
+            Assert.StartsWith(sanitizedTitle, actualFileName, StringComparison.OrdinalIgnoreCase);
+            Assert.EndsWith(".m4b", actualFileName, StringComparison.OrdinalIgnoreCase);
+
+            var duplicatedSegment = Path.Combine(series, sanitizedTitle, series, sanitizedTitle);
+            Assert.DoesNotContain(duplicatedSegment, actualFullPath, StringComparison.OrdinalIgnoreCase);
+
+            TryDeleteDirectory(sourceRoot, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        [Fact]
         public async Task ImportSingleFile_WithWindowsShortBasePath_NormalizesFinalPath()
         {
             if (!OperatingSystem.IsWindows())
@@ -501,6 +573,51 @@ namespace Listenarr.Api.Tests
             {
                 Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
             }
+        }
+
+        private static string SanitizePathComponentForCurrentPlatform(string value)
+        {
+            var sanitized = new StringBuilder();
+
+            foreach (var c in value)
+            {
+                if (char.IsControl(c))
+                {
+                    continue;
+                }
+
+                if (c == ':' || c == '/' || c == '\\')
+                {
+                    sanitized.Append(" - ");
+                }
+                else if (Path.GetInvalidFileNameChars().Contains(c) || "<>:\"/\\|?*".Contains(c))
+                {
+                    sanitized.Append('_');
+                }
+                else
+                {
+                    sanitized.Append(c);
+                }
+            }
+
+            var result = sanitized.ToString();
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"\s+", " ");
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"(?:\s*-\s*){2,}", " - ");
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"_+", "_");
+            result = result.Trim().TrimEnd('.', ' ');
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"^\s*[-_]+\s*", string.Empty);
+            result = System.Text.RegularExpressions.Regex.Replace(result, @"\s*[-_]+\s*$", string.Empty);
+
+            if (string.Equals(result, "CON", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(result, "PRN", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(result, "AUX", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(result, "NUL", StringComparison.OrdinalIgnoreCase)
+                || System.Text.RegularExpressions.Regex.IsMatch(result, @"^(COM|LPT)[1-9]$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+            {
+                result += "_";
+            }
+
+            return string.IsNullOrWhiteSpace(result) ? "Unknown" : result;
         }
 
         private static string? TryGetShortPathName(string longPath)

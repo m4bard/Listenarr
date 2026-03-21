@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.61] - 2026-03-21
+
+### Added
+- **Portable path-sanitization regression coverage:** Added focused backend tests covering SMB/Windows-safe naming normalization for forbidden characters, reserved device names, trailing dot/space handling, and nested torrent-style import paths to guard against repeated `Series/Title` folder segments.
+
+### Changed
+- **Cross-platform library path sanitization:** Updated generated audiobook folder/file naming to normalize Windows/SMB-hostile characters even when Listenarr is running on Linux or Docker, replacing path-breaking separators like `:`, `/`, and `\` with readable portable output.
+
+### Fixed
+- **Windows/SMB folder-name mangling from Docker imports:** Fixed generated library paths so titles containing Windows-forbidden characters no longer create SMB-hostile folder names that can appear as mangled aliases from Windows clients.
+- **Portable filename edge cases:** Fixed generated folder/file names to trim trailing periods/spaces, remove control characters, and avoid reserved Windows device names like `CON`, `NUL`, `COM1`, and `LPT1`.
+- **Nested torrent import path validation:** Added regression protection to ensure nested torrent-style source folders import into a single `Author/Series/Title` destination structure without duplicating the `Series/Title` segments in the final library path.
+
 ## [0.2.60] - 2026-03-20
 
 ### Added
