@@ -154,4 +154,59 @@ describe('IndexersTab', () => {
 
     wrapper.unmount()
   })
+
+  it('handles numeric prowlarrPort state when importing', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const importProwlarrIndexers = vi.fn().mockResolvedValue({
+      addedCount: 0,
+      skippedCount: 0,
+    })
+
+    vi.doMock('@/services/api', async (importOriginal) => {
+      const actual = await importOriginal()
+      return {
+        ...(actual as unknown),
+        getIndexers: vi.fn().mockResolvedValue([]),
+        getProwlarrImportSettings: vi.fn().mockResolvedValue({
+          url: 'http://localhost',
+          port: 9696,
+          tagFilter: '',
+          hasSavedApiKey: true,
+        }),
+        importProwlarrIndexers,
+      }
+    })
+
+    const sr = await import('@/services/signalr')
+    if (!sr.signalRService || typeof sr.signalRService.onIndexersUpdated !== 'function') {
+      ;(sr as unknown).signalRService = { onIndexersUpdated: () => () => {} } as unknown
+    }
+
+    const IndexersTab = (await import('@/views/settings/IndexersTab.vue')).default
+
+    const wrapper = mount(IndexersTab, {
+      attachTo: document.body,
+      global: { plugins: [pinia] },
+    })
+
+    ;(wrapper.vm as unknown as { openProwlarrImport: () => void }).openProwlarrImport()
+    await wrapper.vm.$nextTick()
+    await new Promise((resolve) => setTimeout(resolve, 0))
+    await wrapper.vm.$nextTick()
+
+    ;(wrapper.vm as unknown as { prowlarrPort: number }).prowlarrPort = 9696
+
+    await (wrapper.vm as unknown as { importFromProwlarr: () => Promise<void> }).importFromProwlarr()
+
+    expect(importProwlarrIndexers).toHaveBeenCalledWith({
+      url: 'http://localhost',
+      port: 9696,
+      clearPort: false,
+      tagFilter: '',
+    })
+
+    wrapper.unmount()
+  })
 })

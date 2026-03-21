@@ -464,7 +464,7 @@ const closeProwlarrModal = () => {
 const importFromProwlarr = async () => {
   const url = prowlarrUrl.value.trim()
   const apiKey = prowlarrApiKey.value.trim()
-  const portRaw = prowlarrPort.value.trim()
+  const portRaw = String(prowlarrPort.value ?? '').trim()
   const tagFilter = prowlarrTagFilter.value.trim()
 
   if (!url) {
