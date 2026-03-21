@@ -433,13 +433,6 @@ namespace Listenarr.Api.Controllers
                 return BadRequest(new { message = $"Blocked Prowlarr target: {blockedBaseUrlReason}" });
             }
 
-            await _configurationService.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
-            {
-                Url = effectiveUrl,
-                Port = effectivePort,
-                ApiKey = string.IsNullOrWhiteSpace(request.ApiKey) ? null : request.ApiKey.Trim(),
-                TagFilter = effectiveTagFilter,
-            });
             HttpResponseMessage response;
             string payload;
             try
@@ -477,6 +470,14 @@ namespace Listenarr.Api.Controllers
             {
                 return StatusCode(502, new { message = "Unexpected Prowlarr API response" });
             }
+
+            await _configurationService.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
+            {
+                Url = effectiveUrl,
+                Port = effectivePort,
+                ApiKey = string.IsNullOrWhiteSpace(request.ApiKey) ? null : request.ApiKey.Trim(),
+                TagFilter = effectiveTagFilter,
+            });
 
             var existingIndexers = await _dbContext.Indexers.AsNoTracking().ToListAsync();
             var createdIndexers = new List<Indexer>();

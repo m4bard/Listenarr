@@ -153,5 +153,48 @@ namespace Listenarr.Api.Tests
             Assert.Equal("audiobooks", serverView.TagFilter);
         }
 
+        [Fact]
+        public async Task SaveApplicationSettings_PreservesSavedProwlarrImportSettings_WhenPayloadOmitsThem()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddDbContext<ListenArrDbContext>(opts => opts.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+
+            var provider = services.BuildServiceProvider(validateScopes: true);
+
+            using var scope = provider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<ConfigurationService>>();
+
+            var svc = new ConfigurationService(
+                db,
+                logger,
+                new Mock<IUserService>().Object,
+                new Mock<IStartupConfigService>().Object);
+
+            await svc.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
+            {
+                Url = "http://localhost",
+                Port = 9696,
+                ApiKey = "saved-secret",
+                TagFilter = "audiobooks"
+            });
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                OutputPath = "C:\\updated-output"
+            });
+
+            var savedConnection = await svc.GetProwlarrImportSettingsAsync(includeSecret: true);
+            Assert.Equal("http://localhost", savedConnection.Url);
+            Assert.Equal(9696, savedConnection.Port);
+            Assert.Equal("saved-secret", savedConnection.ApiKey);
+            Assert.Equal("audiobooks", savedConnection.TagFilter);
+
+            var stored = await db.ApplicationSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
+            Assert.False(string.IsNullOrWhiteSpace(stored.ProwlarrApiKeyEncrypted));
+        }
+
     }
 }

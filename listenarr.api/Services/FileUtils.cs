@@ -550,7 +550,10 @@ namespace Listenarr.Api.Services
 
             foreach (var segment in segments)
             {
-                var candidatePath = Path.Combine(currentPath, segment);
+                var normalizedSegment = Path.IsPathRooted(segment)
+                    ? segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                    : segment;
+                var candidatePath = Path.Combine(currentPath, normalizedSegment);
                 var canResolve = forceResolve || Directory.Exists(candidatePath) || File.Exists(candidatePath);
                 if (!canResolve)
                 {
@@ -575,6 +578,11 @@ namespace Listenarr.Api.Services
             if (string.IsNullOrWhiteSpace(path))
             {
                 return null;
+            }
+
+            if (!OperatingSystem.IsWindows())
+            {
+                return path;
             }
 
             var buffer = new StringBuilder(Math.Max(260, path.Length + 16));

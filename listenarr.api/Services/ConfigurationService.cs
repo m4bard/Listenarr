@@ -323,12 +323,39 @@ namespace Listenarr.Api.Services
                         Triggers = w.Triggers?.ToList() ?? new List<string>(),
                         IsEnabled = w.IsEnabled
                     }).ToList();
+                    var priorProwlarrUrl = existing.ProwlarrUrl;
+                    var priorProwlarrPort = existing.ProwlarrPort;
+                    var priorProwlarrApiKeyEncrypted = existing.ProwlarrApiKeyEncrypted;
+                    var priorProwlarrTagFilter = existing.ProwlarrTagFilter;
 
                     // Update existing settings (this may set complex properties to null if omitted in the payload)
                     _dbContext.Entry(existing).CurrentValues.SetValues(settings);
                     // Manually update list property
                     existing.AllowedFileExtensions = settings.AllowedFileExtensions;
                     existing.ImportBlacklistExtensions = settings.ImportBlacklistExtensions ?? new List<string>();
+
+                    // Preserve saved Prowlarr import settings when unrelated settings payloads omit them.
+                    // The dedicated Prowlarr import flow manages these values separately.
+                    if (settings.ProwlarrUrl == null)
+                    {
+                        existing.ProwlarrUrl = priorProwlarrUrl;
+                    }
+
+                    if (settings.ProwlarrPort == null)
+                    {
+                        existing.ProwlarrPort = priorProwlarrPort;
+                    }
+
+                    if (settings.ProwlarrTagFilter == null)
+                    {
+                        existing.ProwlarrTagFilter = priorProwlarrTagFilter;
+                    }
+
+                    if (string.IsNullOrWhiteSpace(settings.ProwlarrApiKeyEncrypted)
+                        || string.Equals(settings.ProwlarrApiKeyEncrypted, ApiResponseRedactor.RedactedValue, StringComparison.Ordinal))
+                    {
+                        existing.ProwlarrApiKeyEncrypted = priorProwlarrApiKeyEncrypted;
+                    }
 
                     // Explicitly update collection/complex properties so EF's current values
                     // replacement doesn't inadvertently skip or null them (ensures conversions

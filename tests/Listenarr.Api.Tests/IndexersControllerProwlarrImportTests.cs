@@ -336,5 +336,51 @@ namespace Listenarr.Api.Tests
             var saved = await harness.ConfigurationService.GetProwlarrImportSettingsAsync();
             Assert.Null(saved.TagFilter);
         }
+
+        [Fact]
+        public async Task ImportFromProwlarr_WhenReplacementCredentialsFail_PreservesSavedConnectionSettings()
+        {
+            using var harness = new ControllerHarness(new CaptureHandler(request =>
+            {
+                if (request.Headers.TryGetValues("X-Api-Key", out var values)
+                    && values.Contains("bad-key"))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.Unauthorized)
+                    {
+                        Content = new StringContent("Unauthorized", Encoding.UTF8, "text/plain")
+                    };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.OK)
+                {
+                    Content = new StringContent("[]", Encoding.UTF8, "application/json")
+                };
+            }));
+
+            await harness.ConfigurationService.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
+            {
+                Url = "http://localhost",
+                Port = 9696,
+                ApiKey = "good-key",
+                TagFilter = "audiobooks"
+            });
+
+            var result = await harness.Controller.ImportFromProwlarr(new ProwlarrImportRequest
+            {
+                Url = "http://localhost",
+                Port = 9696,
+                ApiKey = "bad-key",
+                TagFilter = "other-tag"
+            });
+
+            var objectResult = Assert.IsType<ObjectResult>(result);
+            Assert.Equal((int)HttpStatusCode.Unauthorized, objectResult.StatusCode);
+
+            var saved = await harness.ConfigurationService.GetProwlarrImportSettingsAsync(includeSecret: true);
+            Assert.Equal("http://localhost", saved.Url);
+            Assert.Equal(9696, saved.Port);
+            Assert.Equal("good-key", saved.ApiKey);
+            Assert.Equal("audiobooks", saved.TagFilter);
+        }
     }
 }

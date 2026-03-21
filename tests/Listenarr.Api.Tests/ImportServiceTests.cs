@@ -505,6 +505,11 @@ namespace Listenarr.Api.Tests
 
         private static string? TryGetShortPathName(string longPath)
         {
+            if (!OperatingSystem.IsWindows() || string.IsNullOrWhiteSpace(longPath))
+            {
+                return null;
+            }
+
             var buffer = new StringBuilder(260);
             var result = GetShortPathName(longPath, buffer, buffer.Capacity);
             if (result == 0)
