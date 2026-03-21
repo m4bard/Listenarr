@@ -1,7 +1,33 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
+import * as apiModule from '@/services/api'
+
+const { apiService } = apiModule
+
+if (!(apiService as unknown as Record<string, unknown>).getEnabledIndexers) {
+  ;(apiService as unknown as { getEnabledIndexers: () => Promise<unknown[]> }).getEnabledIndexers =
+    async () => []
+}
+if (!(apiService as unknown as Record<string, unknown>).searchByApi) {
+  ;(apiService as unknown as { searchByApi: () => Promise<unknown[]> }).searchByApi = async () =>
+    []
+}
+if (!(apiService as unknown as Record<string, unknown>).getDefaultQualityProfile) {
+  ;(
+    apiService as unknown as {
+      getDefaultQualityProfile: () => Promise<{ id: number }>
+    }
+  ).getDefaultQualityProfile = async () => ({ id: 1 })
+}
+if (!(apiService as unknown as Record<string, unknown>).scoreSearchResults) {
+  ;(
+    apiService as unknown as {
+      scoreSearchResults: () => Promise<unknown[]>
+    }
+  ).scoreSearchResults = async () => []
+}
 
 type ManualSearchResult = {
   id: string
@@ -59,6 +85,10 @@ describe('ManualSearchModal.vue', () => {
       vm.results = r
     }
   }
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
 
   it('uses details page for Usenet title links instead of direct NZB', async () => {
     const wrapper = mount(ManualSearchModal, {
@@ -320,5 +350,61 @@ describe('ManualSearchModal.vue', () => {
     expect(badge.exists()).toBe(true)
     // Normalized components: Quality=90, Format=85, Seed=20 -> avg ~65
     expect(badge.text()).toContain('65')
+  })
+
+  it('loads and attaches score data after search completes', async () => {
+    vi.spyOn(apiService, 'getEnabledIndexers').mockResolvedValue([
+      { id: 1, name: 'Test', implementation: 'Test', additionalSettings: null } as never,
+    ])
+    vi.spyOn(apiService, 'searchByApi').mockResolvedValue([
+      {
+        guid: 'score-result-1',
+        title: 'Scored Result',
+        size: 1024,
+        publishDate: new Date().toISOString(),
+        indexer: 'TestIndexer',
+        indexerId: 1,
+      } as never,
+    ])
+    vi.spyOn(apiService, 'getDefaultQualityProfile').mockResolvedValue({ id: 77 } as never)
+    vi.spyOn(apiService, 'scoreSearchResults').mockImplementation(
+      async (_profileId, searchResults) =>
+        [
+          {
+            searchResult: searchResults[0],
+            totalScore: 88,
+            scoreBreakdown: { Quality: 88 },
+            rejectionReasons: [],
+            isRejected: false,
+          },
+        ] as never,
+    )
+
+    const wrapper = mount(ManualSearchModal, {
+      props: {
+        isOpen: false,
+        audiobook: { id: 99, title: 'Target Book', authors: ['Author Name'] },
+      },
+      global: { stubs },
+    })
+
+    await wrapper.setProps({ isOpen: true })
+
+    const start = Date.now()
+    while (Date.now() - start < 3000) {
+      await nextTick()
+      const badge = wrapper.find('.col-score .score-badge')
+      if (badge.exists() && badge.text().includes('88')) {
+        break
+      }
+      await new Promise((resolve) => setTimeout(resolve, 25))
+    }
+
+    expect(apiService.getDefaultQualityProfile).toHaveBeenCalledTimes(1)
+    expect(apiService.scoreSearchResults).toHaveBeenCalledTimes(1)
+
+    const badge = wrapper.find('.col-score .score-badge')
+    expect(badge.exists()).toBe(true)
+    expect(badge.text()).toContain('88')
   })
 })

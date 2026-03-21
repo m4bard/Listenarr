@@ -4,6 +4,7 @@ import type {
   ApiConfiguration,
   DownloadClientConfiguration,
   ApplicationSettings,
+  ProwlarrImportConnectionSettings,
   Audiobook,
   History,
   Indexer,
@@ -868,6 +869,10 @@ class ApiService {
     })
   }
 
+  async getProwlarrImportSettings(): Promise<ProwlarrImportConnectionSettings> {
+    return this.request<ProwlarrImportConnectionSettings>('/configuration/prowlarr-import')
+  }
+
   // Root Folders
   async getRootFolders(): Promise<RootFolder[]> {
     return this.request<RootFolder[]>('/rootfolders')
@@ -1679,7 +1684,9 @@ class ApiService {
   async importProwlarrIndexers(payload: {
     url: string
     port?: number
-    apiKey: string
+    clearPort?: boolean
+    apiKey?: string
+    tagFilter?: string
   }): Promise<{
     addedCount: number
     skippedCount: number
@@ -1762,7 +1769,65 @@ class ApiService {
 
   async downloadLogs(): Promise<void> {
     const url = `${EFFECTIVE_API_BASE}/system/logs/download`
-    window.open(url, '_blank')
+    const headers = this.buildAuthHeaders()
+    const resp = await fetch(url, {
+      method: 'GET',
+      headers,
+      credentials: 'include',
+    })
+
+    if (resp.status === 401) {
+      sessionTokenManager.clearToken()
+      this.antiforgeryToken = null
+      this.antiforgeryTokenSession = null
+      throw Object.assign(new Error('Unauthorized'), { status: 401 })
+    }
+
+    if (!resp.ok) {
+      const contentType = resp.headers.get('content-type') || ''
+      let message = `API error: ${resp.status}`
+
+      if (contentType.includes('application/json')) {
+        const body = await resp.json().catch(() => null) as { message?: string; error?: string } | null
+        const detail = body?.message || body?.error
+        if (detail) {
+          message = detail
+        }
+      } else {
+        const text = await resp.text().catch(() => '')
+        if (text) {
+          message = `API error: ${resp.status} ${text}`
+        }
+      }
+
+      throw Object.assign(new Error(message), { status: resp.status })
+    }
+
+    const contentDisposition = resp.headers.get('content-disposition') || ''
+    let filename = `listenarr-logs-${new Date().toISOString().slice(0, 10)}.log`
+    const match = /filename\*?=(?:UTF-8''|")?([^";]+)"?/i.exec(contentDisposition)
+    if (match?.[1]) {
+      try {
+        filename = decodeURIComponent(match[1])
+      } catch {
+        filename = match[1]
+      }
+    }
+
+    const blob = await resp.blob()
+    const objectUrl = URL.createObjectURL(blob)
+
+    try {
+      const anchor = document.createElement('a')
+      anchor.href = objectUrl
+      anchor.download = filename
+      anchor.style.display = 'none'
+      document.body.appendChild(anchor)
+      anchor.click()
+      document.body.removeChild(anchor)
+    } finally {
+      URL.revokeObjectURL(objectUrl)
+    }
   }
 
   // Quality Profile endpoints
@@ -2031,7 +2096,8 @@ export const testIndexerDraft = (indexer: Omit<Indexer, 'id' | 'createdAt' | 'up
   apiService.testIndexerDraft(indexer)
 export const toggleIndexer = (id: number) => apiService.toggleIndexer(id)
 export const getEnabledIndexers = () => apiService.getEnabledIndexers()
-export const importProwlarrIndexers = (payload: { url: string; port?: number; apiKey: string }) =>
+export const getProwlarrImportSettings = () => apiService.getProwlarrImportSettings()
+export const importProwlarrIndexers = (payload: { url: string; port?: number; clearPort?: boolean; apiKey?: string; tagFilter?: string }) =>
   apiService.importProwlarrIndexers(payload)
 
 // Export individual remote path mapping functions for convenience

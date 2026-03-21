@@ -55,6 +55,11 @@ public static class ApiResponseRedactor
             clone.DiscordBotToken = RedactedValue;
         }
 
+        if (!string.IsNullOrWhiteSpace(clone.ProwlarrApiKeyEncrypted))
+        {
+            clone.ProwlarrApiKeyEncrypted = RedactedValue;
+        }
+
         if (clone.Webhooks != null)
         {
             foreach (var webhook in clone.Webhooks.Where(w => !string.IsNullOrWhiteSpace(w.Url)))

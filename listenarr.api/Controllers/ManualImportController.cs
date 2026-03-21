@@ -266,7 +266,7 @@ public class ManualImportController : ControllerBase
                 }
 
                 // Use fallback path
-                audiobook.BasePath = fallbackPath;
+                audiobook.BasePath = FileUtils.NormalizeStoredPath(fallbackPath);
             }
 
             // Extract metadata from the file
@@ -439,11 +439,17 @@ public class ManualImportController : ControllerBase
 
             var normalizedCurrent = string.IsNullOrWhiteSpace(audiobook.BasePath)
                 ? string.Empty
-                : Path.GetFullPath(audiobook.BasePath);
-            var normalizedScanPath = Path.GetFullPath(scanPath);
+                : FileUtils.NormalizeStoredPath(audiobook.BasePath);
+            var normalizedScanPath = FileUtils.NormalizeStoredPath(scanPath);
 
             if (string.Equals(normalizedCurrent, normalizedScanPath, StringComparison.OrdinalIgnoreCase))
             {
+                if (!string.Equals(audiobook.BasePath, normalizedScanPath, StringComparison.Ordinal))
+                {
+                    audiobook.BasePath = normalizedScanPath;
+                    await _audiobookRepository.UpdateAsync(audiobook);
+                }
+
                 return;
             }
 
@@ -477,14 +483,16 @@ public class ManualImportController : ControllerBase
         // root folder), store directly under that path using file-only naming.
         // If BasePath IS a configured root folder, treat it as a library destination and
         // apply the full folder+file naming pattern so files are properly organised.
-        var basePath = audiobook.BasePath ?? string.Empty;
+        var basePath = string.IsNullOrWhiteSpace(audiobook.BasePath)
+            ? string.Empty
+            : FileUtils.NormalizeStoredPath(audiobook.BasePath);
         var configuredOutput = settings.OutputPath ?? string.Empty;
         var isCustomBasePath = false;
         try
         {
             if (!string.IsNullOrWhiteSpace(basePath))
             {
-                var baseFull = Path.GetFullPath(basePath);
+                var baseFull = FileUtils.NormalizeStoredPath(basePath);
                 var configuredFull = string.IsNullOrWhiteSpace(configuredOutput) ? string.Empty : Path.GetFullPath(configuredOutput);
                 isCustomBasePath = !string.Equals(baseFull, configuredFull, StringComparison.OrdinalIgnoreCase);
 
@@ -495,7 +503,7 @@ public class ManualImportController : ControllerBase
                     var rootFolders = await _rootFolderService.GetAllAsync();
                     var isRootFolder = rootFolders.Any(r =>
                     {
-                        try { return string.Equals(Path.GetFullPath(r.Path), baseFull, StringComparison.OrdinalIgnoreCase); }
+                        try { return string.Equals(FileUtils.NormalizeStoredPath(r.Path), baseFull, StringComparison.OrdinalIgnoreCase); }
                         catch { return false; }
                     });
                     if (isRootFolder) isCustomBasePath = false;
@@ -635,7 +643,7 @@ public class ManualImportController : ControllerBase
         string? associationBasePath;
         try
         {
-            associationBasePath = Path.GetDirectoryName(Path.GetFullPath(destinationPath));
+            associationBasePath = Path.GetDirectoryName(FileUtils.NormalizeStoredPath(destinationPath));
         }
         catch
         {
@@ -651,10 +659,17 @@ public class ManualImportController : ControllerBase
         {
             try
             {
-                var normalizedCurrent = Path.GetFullPath(audiobook.BasePath);
-                if (string.Equals(normalizedCurrent, associationBasePath, StringComparison.OrdinalIgnoreCase)
-                    || FileUtils.IsPathWithinRoot(destinationPath, normalizedCurrent))
+                var normalizedCurrent = FileUtils.NormalizeStoredPath(audiobook.BasePath);
+                var matchesCurrent = string.Equals(normalizedCurrent, associationBasePath, StringComparison.OrdinalIgnoreCase);
+                var destinationWithinCurrent = FileUtils.IsPathWithinRoot(destinationPath, normalizedCurrent);
+                if (matchesCurrent || destinationWithinCurrent)
                 {
+                    if (!string.Equals(audiobook.BasePath, normalizedCurrent, StringComparison.Ordinal))
+                    {
+                        audiobook.BasePath = normalizedCurrent;
+                        await _audiobookRepository.UpdateAsync(audiobook);
+                    }
+
                     return;
                 }
             }

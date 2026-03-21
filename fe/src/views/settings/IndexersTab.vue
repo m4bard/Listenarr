@@ -185,13 +185,34 @@
                   />
                 </FormRow>
 
-                <FormRow label="API Key" labelFor="prowlarr-key" help="Find this in Prowlarr Settings → General">
+                <FormRow
+                  label="Tag Filter (optional)"
+                  labelFor="prowlarr-tag-filter"
+                  help="Only import indexers with this Prowlarr tag. When set, this overrides the default audiobook category import."
+                >
+                  <input
+                    id="prowlarr-tag-filter"
+                    v-model="prowlarrTagFilter"
+                    type="text"
+                    class="form-input"
+                    placeholder="audiobooks"
+                    autocomplete="off"
+                  />
+                </FormRow>
+
+                <FormRow
+                  label="API Key"
+                  labelFor="prowlarr-key"
+                  :help="hasSavedProwlarrApiKey
+                    ? 'A saved API key is already stored securely on the server. Leave this blank to reuse it, or enter a new key to replace it.'
+                    : 'Find this in Prowlarr Settings → General'"
+                >
                   <PasswordInput
                     id="prowlarr-key"
                     v-model="prowlarrApiKey"
                     autocomplete="off"
                     class="form-input"
-                    placeholder="Prowlarr API Key"
+                    :placeholder="hasSavedProwlarrApiKey ? 'Leave blank to use saved API key' : 'Prowlarr API Key'"
                   />
                 </FormRow>
               </FormSection>
@@ -261,6 +282,7 @@ import {
   toggleIndexer as apiToggleIndexer,
   testIndexer as apiTestIndexer,
   deleteIndexer,
+  getProwlarrImportSettings,
   importProwlarrIndexers,
 } from '@/services/api'
 import { signalRService } from '@/services/signalr'
@@ -279,7 +301,9 @@ const lastTestResults = reactive<Record<number, 'success' | 'fail' | undefined>>
 // Prowlarr import state
 const prowlarrUrl = ref('')
 const prowlarrPort = ref('')
+const prowlarrTagFilter = ref('')
 const prowlarrApiKey = ref('')
+const hasSavedProwlarrApiKey = ref(false)
 const importingProwlarr = ref(false)
 const prowlarrSummary = ref<{ addedCount: number; skippedCount: number } | null>(null)
 const showProwlarrModal = ref(false)
@@ -411,7 +435,24 @@ const executeDeleteIndexer = async () => {
   }
 }
 
+const loadProwlarrImportSettings = async () => {
+  try {
+    const saved = await getProwlarrImportSettings()
+    prowlarrUrl.value = saved.url ?? ''
+    prowlarrPort.value = saved.port != null ? String(saved.port) : ''
+    prowlarrTagFilter.value = saved.tagFilter ?? ''
+    hasSavedProwlarrApiKey.value = saved.hasSavedApiKey === true
+    prowlarrApiKey.value = ''
+  } catch (error) {
+    errorTracking.captureException(error as Error, {
+      component: 'IndexersTab',
+      operation: 'loadProwlarrImportSettings',
+    })
+  }
+}
+
 const openProwlarrModal = () => {
+  void loadProwlarrImportSettings()
   showProwlarrModal.value = true
 }
 
@@ -423,14 +464,15 @@ const closeProwlarrModal = () => {
 const importFromProwlarr = async () => {
   const url = prowlarrUrl.value.trim()
   const apiKey = prowlarrApiKey.value.trim()
-  const portRaw = prowlarrPort.value.trim()
+  const portRaw = String(prowlarrPort.value ?? '').trim()
+  const tagFilter = prowlarrTagFilter.value.trim()
 
   if (!url) {
     toast.warning('Prowlarr', 'Please enter a Prowlarr URL or IP')
     return
   }
 
-  if (!apiKey) {
+  if (!apiKey && !hasSavedProwlarrApiKey.value) {
     toast.warning('Prowlarr', 'Please enter your Prowlarr API key')
     return
   }
@@ -452,7 +494,9 @@ const importFromProwlarr = async () => {
     const result = await importProwlarrIndexers({
       url,
       port: portValue,
-      apiKey,
+      clearPort: portRaw.length === 0,
+      tagFilter,
+      ...(apiKey ? { apiKey } : {}),
     })
 
     prowlarrSummary.value = {
@@ -460,14 +504,17 @@ const importFromProwlarr = async () => {
       skippedCount: result.skippedCount,
     }
 
+    await loadProwlarrImportSettings()
     await loadIndexers()
     toast.success('Prowlarr', `Imported ${result.addedCount} indexer(s)`)
+    closeProwlarrModal()
   } catch (error) {
     errorTracking.captureException(error as Error, {
       component: 'IndexersTab',
       operation: 'importProwlarrIndexers',
     })
     const errorMessage = formatApiError(error)
+    await loadProwlarrImportSettings()
     toast.error('Prowlarr import failed', errorMessage)
   } finally {
     importingProwlarr.value = false
@@ -483,6 +530,7 @@ function isNew(id: number) {
 
 onMounted(() => {
   loadIndexers()
+  void loadProwlarrImportSettings()
   // Subscribe to IndexersUpdated messages so external changes (eg. Prowlarr sync) refresh the list
   const unsub = signalRService.onIndexersUpdated((payload) => {
     const payloadIndexers = Array.isArray(payload?.indexers)

@@ -322,6 +322,13 @@ export interface ApplicationSettings {
   defaultSearchLanguage?: string
 }
 
+export interface ProwlarrImportConnectionSettings {
+  url: string
+  port?: number
+  tagFilter?: string
+  hasSavedApiKey: boolean
+}
+
 export interface StartupConfig {
   logLevel?: string
   enableSsl?: boolean

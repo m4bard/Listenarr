@@ -216,6 +216,12 @@ internal class TestConfigurationService : Listenarr.Api.Services.IConfigurationS
     public Task SaveApplicationSettingsAsync(Listenarr.Domain.Models.ApplicationSettings settings)
         => Task.CompletedTask;
 
+    public Task<Listenarr.Domain.Models.ProwlarrImportConnectionSettings> GetProwlarrImportSettingsAsync(bool includeSecret = false)
+        => Task.FromResult(new Listenarr.Domain.Models.ProwlarrImportConnectionSettings());
+
+    public Task<Listenarr.Domain.Models.ProwlarrImportConnectionSettings> SaveProwlarrImportSettingsAsync(Listenarr.Domain.Models.ProwlarrImportConnectionSettings settings)
+        => Task.FromResult(settings);
+
     public Task<Listenarr.Domain.Models.StartupConfig> GetStartupConfigAsync()
         => Task.FromResult(new Listenarr.Domain.Models.StartupConfig());
 

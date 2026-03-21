@@ -212,6 +212,27 @@ namespace Listenarr.Domain.Models
         public string? DiscordBotToken { get; set; }
 
         /// <summary>
+        /// Saved Prowlarr host/URL used by the indexer import flow.
+        /// </summary>
+        public string? ProwlarrUrl { get; set; }
+
+        /// <summary>
+        /// Optional saved Prowlarr port used by the indexer import flow.
+        /// </summary>
+        public int? ProwlarrPort { get; set; }
+
+        /// <summary>
+        /// Encrypted Prowlarr API key used by the indexer import flow.
+        /// </summary>
+        public string? ProwlarrApiKeyEncrypted { get; set; }
+
+        /// <summary>
+        /// Optional Prowlarr tag filter used by the indexer import flow.
+        /// When set, only indexers with this tag are imported and the audiobook category filter is bypassed.
+        /// </summary>
+        public string? ProwlarrTagFilter { get; set; }
+
+        /// <summary>
         /// Primary command group name (e.g. "request"). We'll create a slash command with this group and
         /// a subcommand for specific request types (e.g. "audiobook").
         /// </summary>

@@ -326,7 +326,7 @@ namespace Listenarr.Api.Services
 
             try
             {
-                return Path.GetFullPath(path)
+                return FileUtils.NormalizeStoredPath(path)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
             catch

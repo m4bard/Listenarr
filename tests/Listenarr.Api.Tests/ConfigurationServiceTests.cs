@@ -109,5 +109,92 @@ namespace Listenarr.Api.Tests
             Assert.Equal("DirectWebhook", reloaded.Webhooks![0].Name);
         }
 
+        [Fact]
+        public async Task ProwlarrImportSettings_ApiKey_IsEncryptedAtRest_AndRecoveredForServerUse()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddDbContext<ListenArrDbContext>(opts => opts.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+
+            var provider = services.BuildServiceProvider(validateScopes: true);
+
+            using var scope = provider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<ConfigurationService>>();
+
+            var mockUser = new Mock<IUserService>();
+            var mockStartup = new Mock<IStartupConfigService>();
+
+            var svc = new ConfigurationService(db, logger, mockUser.Object, mockStartup.Object);
+
+            await svc.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
+            {
+                Url = "http://localhost",
+                Port = 9696,
+                ApiKey = "super-secret-prowlarr-key",
+                TagFilter = "audiobooks",
+            });
+
+            var stored = await db.ApplicationSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
+            Assert.Equal("http://localhost", stored.ProwlarrUrl);
+            Assert.Equal(9696, stored.ProwlarrPort);
+            Assert.Equal("audiobooks", stored.ProwlarrTagFilter);
+            Assert.False(string.IsNullOrWhiteSpace(stored.ProwlarrApiKeyEncrypted));
+            Assert.NotEqual("super-secret-prowlarr-key", stored.ProwlarrApiKeyEncrypted);
+
+            var frontendView = await svc.GetProwlarrImportSettingsAsync(includeSecret: false);
+            Assert.True(frontendView.HasSavedApiKey);
+            Assert.Null(frontendView.ApiKey);
+            Assert.Equal("audiobooks", frontendView.TagFilter);
+
+            var serverView = await svc.GetProwlarrImportSettingsAsync(includeSecret: true);
+            Assert.True(serverView.HasSavedApiKey);
+            Assert.Equal("super-secret-prowlarr-key", serverView.ApiKey);
+            Assert.Equal("audiobooks", serverView.TagFilter);
+        }
+
+        [Fact]
+        public async Task SaveApplicationSettings_PreservesSavedProwlarrImportSettings_WhenPayloadOmitsThem()
+        {
+            var services = new ServiceCollection();
+            services.AddLogging();
+            services.AddDbContext<ListenArrDbContext>(opts => opts.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+
+            var provider = services.BuildServiceProvider(validateScopes: true);
+
+            using var scope = provider.CreateScope();
+            var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<ConfigurationService>>();
+
+            var svc = new ConfigurationService(
+                db,
+                logger,
+                new Mock<IUserService>().Object,
+                new Mock<IStartupConfigService>().Object);
+
+            await svc.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
+            {
+                Url = "http://localhost",
+                Port = 9696,
+                ApiKey = "saved-secret",
+                TagFilter = "audiobooks"
+            });
+
+            await svc.SaveApplicationSettingsAsync(new ApplicationSettings
+            {
+                Id = 1,
+                OutputPath = "C:\\updated-output"
+            });
+
+            var savedConnection = await svc.GetProwlarrImportSettingsAsync(includeSecret: true);
+            Assert.Equal("http://localhost", savedConnection.Url);
+            Assert.Equal(9696, savedConnection.Port);
+            Assert.Equal("saved-secret", savedConnection.ApiKey);
+            Assert.Equal("audiobooks", savedConnection.TagFilter);
+
+            var stored = await db.ApplicationSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
+            Assert.False(string.IsNullOrWhiteSpace(stored.ProwlarrApiKeyEncrypted));
+        }
+
     }
 }

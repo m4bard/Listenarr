@@ -559,7 +559,11 @@ namespace Listenarr.Api.Services
                 return string.Empty;
 
             // Convert all paths to directory paths (get parent directory for each file)
-            var directories = filePaths.Select(p => Path.GetDirectoryName(p) ?? p).Distinct().ToList();
+            var directories = filePaths
+                .Select(p => FileUtils.NormalizeStoredPath(Path.GetDirectoryName(p) ?? p))
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             if (directories.Count == 1)
             {
@@ -606,11 +610,12 @@ namespace Listenarr.Api.Services
             if (!paths.Any())
                 return string.Empty;
 
-            var firstPath = paths[0];
+            var firstPath = FileUtils.NormalizeStoredPath(paths[0]);
             var commonPath = firstPath;
 
-            foreach (var path in paths.Skip(1))
+            foreach (var rawPath in paths.Skip(1))
             {
+                var path = FileUtils.NormalizeStoredPath(rawPath);
                 var minLength = Math.Min(commonPath.Length, path.Length);
                 var commonLength = 0;
 

@@ -133,7 +133,7 @@ namespace Listenarr.Api.Services
                 Explicit = metadata.Explicit,
                 Abridged = metadata.Abridged,
                 Monitored = request.Monitored,
-                BasePath = string.IsNullOrWhiteSpace(request.DestinationPath) ? null : request.DestinationPath
+                BasePath = string.IsNullOrWhiteSpace(request.DestinationPath) ? null : FileUtils.NormalizeStoredPath(request.DestinationPath)
             };
 
             SyncImportedIdentifiersFromLegacyFields(audiobook);

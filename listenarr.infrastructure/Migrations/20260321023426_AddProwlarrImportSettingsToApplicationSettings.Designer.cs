@@ -3,6 +3,7 @@ using System;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 
 #nullable disable
@@ -10,9 +11,11 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    partial class ListenArrDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260321023426_AddProwlarrImportSettingsToApplicationSettings")]
+    partial class AddProwlarrImportSettingsToApplicationSettings
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.13");
@@ -192,9 +195,6 @@ namespace Listenarr.Infrastructure.Migrations
 
                     b.Property<int?>("ProwlarrPort")
                         .HasColumnType("INTEGER");
-
-                    b.Property<string>("ProwlarrTagFilter")
-                        .HasColumnType("TEXT");
 
                     b.Property<string>("ProwlarrUrl")
                         .HasColumnType("TEXT");
