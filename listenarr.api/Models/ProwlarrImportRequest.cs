@@ -22,6 +22,7 @@ namespace Listenarr.Api.Models
     {
         public string Url { get; set; } = string.Empty;
         public int? Port { get; set; }
-        public string ApiKey { get; set; } = string.Empty;
+        public string? ApiKey { get; set; }
+        public string? TagFilter { get; set; }
     }
 }

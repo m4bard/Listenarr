@@ -42,7 +42,7 @@ namespace Listenarr.Api.Tests
             var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
             var client = new HttpClient(handler);
 
-            return new Listenarr.Api.Controllers.IndexersController(db, logger, client);
+            return new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
         }
 
         [Fact]
@@ -384,7 +384,7 @@ namespace Listenarr.Api.Tests
 
             var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
             var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client);
+            var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
 
             // Act - Test persisted indexer
             var result = await controller.Test(indexer.Id);
@@ -434,7 +434,7 @@ namespace Listenarr.Api.Tests
 
             var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
             var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client);
+            var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
 
             // Act
             var result = await controller.Test(indexer.Id);

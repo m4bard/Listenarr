@@ -39,13 +39,15 @@ namespace Listenarr.Api.Controllers
         private readonly ILogger<IndexersController> _logger;
         private readonly HttpClient _httpClient;
         private readonly HttpClient _httpClientNoRedirect;
+        private readonly IConfigurationService _configurationService;
 
-        public IndexersController(ListenArrDbContext dbContext, ILogger<IndexersController> logger, HttpClient httpClient)
+        public IndexersController(ListenArrDbContext dbContext, ILogger<IndexersController> logger, HttpClient httpClient, IConfigurationService configurationService)
         {
             _dbContext = dbContext;
             _logger = logger;
             _httpClient = httpClient;
             _httpClientNoRedirect = httpClient;
+            _configurationService = configurationService;
         }
 
         private bool ShouldRedactIndexerSecretsForCaller()
@@ -393,7 +395,9 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Import audiobook-related indexers (category 3000/3030) from a Prowlarr instance.
+        /// Import indexers from a Prowlarr instance.
+        /// By default this imports audiobook-related indexers (category 3000/3030),
+        /// but a configured tag filter overrides that selection.
         /// </summary>
         /// <param name="request">Prowlarr server URL and API key.</param>
         [HttpPost("prowlarr/import")]
@@ -404,27 +408,43 @@ namespace Listenarr.Api.Controllers
                 return BadRequest(new { message = "Request body is required" });
             }
 
-            if (string.IsNullOrWhiteSpace(request.Url))
+            var savedConnection = await _configurationService.GetProwlarrImportSettingsAsync(includeSecret: true);
+            var effectiveUrl = string.IsNullOrWhiteSpace(request.Url) ? savedConnection.Url : request.Url.Trim();
+            var effectivePort = request.Port ?? savedConnection.Port;
+            var effectiveApiKey = string.IsNullOrWhiteSpace(request.ApiKey) ? savedConnection.ApiKey : request.ApiKey.Trim();
+            var effectiveTagFilter = request.TagFilter == null
+                ? savedConnection.TagFilter?.Trim()
+                : request.TagFilter.Trim();
+
+            if (string.IsNullOrWhiteSpace(effectiveUrl))
             {
                 return BadRequest(new { message = "Prowlarr URL is required" });
             }
 
-            if (string.IsNullOrWhiteSpace(request.ApiKey))
+            if (string.IsNullOrWhiteSpace(effectiveApiKey))
             {
                 return BadRequest(new { message = "Prowlarr API key is required" });
             }
 
-            var baseUrl = BuildProwlarrBaseUrl(request.Url, request.Port);
+            var baseUrl = BuildProwlarrBaseUrl(effectiveUrl, effectivePort);
             var blockedBaseUrlReason = await ValidateOutboundUrlForCallerAsync(baseUrl);
             if (!string.IsNullOrWhiteSpace(blockedBaseUrlReason))
             {
                 return BadRequest(new { message = $"Blocked Prowlarr target: {blockedBaseUrlReason}" });
             }
+
+            await _configurationService.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
+            {
+                Url = effectiveUrl,
+                Port = effectivePort,
+                ApiKey = string.IsNullOrWhiteSpace(request.ApiKey) ? null : request.ApiKey.Trim(),
+                TagFilter = effectiveTagFilter,
+            });
             HttpResponseMessage response;
             string payload;
             try
             {
-                (response, payload) = await FetchProwlarrIndexersAsync(baseUrl, request.ApiKey.Trim());
+                (response, payload) = await FetchProwlarrIndexersAsync(baseUrl, effectiveApiKey.Trim());
             }
             catch (HttpRequestException ex)
             {
@@ -461,6 +481,12 @@ namespace Listenarr.Api.Controllers
             var existingIndexers = await _dbContext.Indexers.AsNoTracking().ToListAsync();
             var createdIndexers = new List<Indexer>();
             var skipped = 0;
+            Dictionary<string, string>? tagMap = null;
+
+            if (!string.IsNullOrWhiteSpace(effectiveTagFilter))
+            {
+                tagMap = await TryFetchProwlarrTagMapAsync(baseUrl, effectiveApiKey.Trim());
+            }
 
             foreach (var element in doc.RootElement.EnumerateArray())
             {
@@ -472,7 +498,12 @@ namespace Listenarr.Api.Controllers
 
                 var indexerId = idProp.GetInt32();
                 var categoryIds = GetCategoryIdsFromProwlarrIndexer(element);
-                if (!categoryIds.Contains(3000) && !categoryIds.Contains(3030))
+                var prowlarrTags = GetProwlarrTagValues(element, tagMap);
+                var matchesImportFilter = string.IsNullOrWhiteSpace(effectiveTagFilter)
+                    ? categoryIds.Contains(3000) || categoryIds.Contains(3030)
+                    : prowlarrTags.Any(tag => string.Equals(tag, effectiveTagFilter, StringComparison.OrdinalIgnoreCase));
+
+                if (!matchesImportFilter)
                 {
                     skipped++;
                     continue;
@@ -498,7 +529,7 @@ namespace Listenarr.Api.Controllers
                 var exists = existingIndexers.FirstOrDefault(i =>
                     NormalizeProwlarrProxyUrl(i.Url) == normalizedUrl &&
                     string.Equals(i.Implementation, implementation, StringComparison.OrdinalIgnoreCase) &&
-                    string.Equals(i.ApiKey ?? string.Empty, request.ApiKey ?? string.Empty, StringComparison.Ordinal));
+                    string.Equals(i.ApiKey ?? string.Empty, effectiveApiKey ?? string.Empty, StringComparison.Ordinal));
 
                 if (exists != null)
                 {
@@ -525,7 +556,7 @@ namespace Listenarr.Api.Controllers
                     Type = type,
                     Implementation = implementation,
                     Url = normalizedUrl,
-                    ApiKey = string.IsNullOrWhiteSpace(request.ApiKey) ? null : request.ApiKey.Trim(),
+                    ApiKey = string.IsNullOrWhiteSpace(effectiveApiKey) ? null : effectiveApiKey.Trim(),
                     Categories = categories,
                     EnableRss = true,
                     EnableAutomaticSearch = true,
@@ -1226,6 +1257,170 @@ namespace Listenarr.Api.Controllers
             }
 
             return (lastResponse ?? new HttpResponseMessage(System.Net.HttpStatusCode.BadGateway), lastPayload);
+        }
+
+        private async Task<Dictionary<string, string>?> TryFetchProwlarrTagMapAsync(string baseUrl, string apiKey)
+        {
+            try
+            {
+                var encodedKey = System.Net.WebUtility.UrlEncode(apiKey);
+                var endpoints = new List<string>
+                {
+                    $"{baseUrl}/api/v1/tag",
+                    $"{baseUrl}/api/v1/tag?apikey={encodedKey}"
+                };
+
+                foreach (var endpoint in endpoints)
+                {
+                    using var response = await SendValidatedAsync(currentUri =>
+                    {
+                        var retryRequest = new HttpRequestMessage(HttpMethod.Get, currentUri);
+                        retryRequest.Headers.Add("X-Api-Key", apiKey);
+                        return retryRequest;
+                    }, endpoint);
+
+                    var body = await response.Content.ReadAsStringAsync();
+                    if (!response.IsSuccessStatusCode)
+                    {
+                        if (response.StatusCode != System.Net.HttpStatusCode.MethodNotAllowed &&
+                            response.StatusCode != System.Net.HttpStatusCode.Unauthorized &&
+                            response.StatusCode != System.Net.HttpStatusCode.Forbidden)
+                        {
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    using var doc = JsonDocument.Parse(body);
+                    if (doc.RootElement.ValueKind != JsonValueKind.Array)
+                    {
+                        return null;
+                    }
+
+                    var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (var tag in doc.RootElement.EnumerateArray())
+                    {
+                        if (!tag.TryGetProperty("id", out var idProp) || idProp.ValueKind != JsonValueKind.Number)
+                        {
+                            continue;
+                        }
+
+                        var id = idProp.GetInt32().ToString();
+                        var label =
+                            tag.TryGetProperty("label", out var labelProp) && labelProp.ValueKind == JsonValueKind.String
+                                ? labelProp.GetString()
+                                : tag.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String
+                                    ? nameProp.GetString()
+                                    : null;
+
+                        if (!string.IsNullOrWhiteSpace(label))
+                        {
+                            result[id] = label.Trim();
+                        }
+                    }
+
+                    return result;
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to load Prowlarr tags from {Url}", LogRedaction.SanitizeUrl(baseUrl));
+            }
+
+            return null;
+        }
+
+        private static HashSet<string> GetProwlarrTagValues(JsonElement element, IReadOnlyDictionary<string, string>? tagMap)
+        {
+            var tags = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            if (element.TryGetProperty("tags", out var rawTags))
+            {
+                AddTagValues(rawTags, tags, tagMap);
+            }
+
+            if (element.TryGetProperty("tagNames", out var tagNames))
+            {
+                AddTagValues(tagNames, tags, tagMap);
+            }
+
+            if (element.TryGetProperty("fields", out var fields) && fields.ValueKind == JsonValueKind.Array)
+            {
+                foreach (var field in fields.EnumerateArray())
+                {
+                    if (!field.TryGetProperty("name", out var nameProp) || nameProp.ValueKind != JsonValueKind.String)
+                    {
+                        continue;
+                    }
+
+                    var fieldName = nameProp.GetString();
+                    if (!string.Equals(fieldName, "tags", StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(fieldName, "tagNames", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    if (field.TryGetProperty("value", out var valueProp))
+                    {
+                        AddTagValues(valueProp, tags, tagMap);
+                    }
+                }
+            }
+
+            return tags;
+        }
+
+        private static void AddTagValues(JsonElement value, HashSet<string> tags, IReadOnlyDictionary<string, string>? tagMap)
+        {
+            switch (value.ValueKind)
+            {
+                case JsonValueKind.String:
+                    foreach (var part in value.GetString()?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? Array.Empty<string>())
+                    {
+                        AddTagValue(part, tags, tagMap);
+                    }
+                    break;
+                case JsonValueKind.Number:
+                    AddTagValue(value.ToString(), tags, tagMap);
+                    break;
+                case JsonValueKind.Array:
+                    foreach (var item in value.EnumerateArray())
+                    {
+                        AddTagValues(item, tags, tagMap);
+                    }
+                    break;
+                case JsonValueKind.Object:
+                    if (value.TryGetProperty("label", out var labelProp) && labelProp.ValueKind == JsonValueKind.String)
+                    {
+                        AddTagValue(labelProp.GetString(), tags, tagMap);
+                    }
+                    else if (value.TryGetProperty("name", out var nameProp) && nameProp.ValueKind == JsonValueKind.String)
+                    {
+                        AddTagValue(nameProp.GetString(), tags, tagMap);
+                    }
+                    else if (value.TryGetProperty("id", out var idProp) && idProp.ValueKind == JsonValueKind.Number)
+                    {
+                        AddTagValue(idProp.GetInt32().ToString(), tags, tagMap);
+                    }
+                    break;
+            }
+        }
+
+        private static void AddTagValue(string? rawValue, HashSet<string> tags, IReadOnlyDictionary<string, string>? tagMap)
+        {
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return;
+            }
+
+            var trimmed = rawValue.Trim();
+            tags.Add(trimmed);
+
+            if (tagMap != null && tagMap.TryGetValue(trimmed, out var label) && !string.IsNullOrWhiteSpace(label))
+            {
+                tags.Add(label.Trim());
+            }
         }
 
         private static string? GetFieldStringValue(JsonElement element, string fieldName)

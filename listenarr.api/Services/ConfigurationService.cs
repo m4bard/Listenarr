@@ -19,6 +19,7 @@
 using System.Text.Json;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
@@ -29,13 +30,22 @@ namespace Listenarr.Api.Services
         private readonly ILogger<ConfigurationService> _logger;
         private readonly IUserService _userService;
         private readonly IStartupConfigService _startupConfigService;
+        private readonly IDataProtector _prowlarrImportProtector;
 
-        public ConfigurationService(ListenArrDbContext dbContext, ILogger<ConfigurationService> logger, IUserService userService, IStartupConfigService startupConfigService)
+        public ConfigurationService(
+            ListenArrDbContext dbContext,
+            ILogger<ConfigurationService> logger,
+            IUserService userService,
+            IStartupConfigService startupConfigService,
+            IDataProtectionProvider? dataProtectionProvider = null)
         {
             _dbContext = dbContext;
             _logger = logger;
             _userService = userService;
             _startupConfigService = startupConfigService;
+            _prowlarrImportProtector =
+                (dataProtectionProvider ?? new EphemeralDataProtectionProvider())
+                    .CreateProtector("Listenarr.ConfigurationService.ProwlarrImport");
         }
 
         // API Configuration methods
@@ -430,6 +440,94 @@ namespace Listenarr.Api.Services
                 // Re-throw to let higher-level handlers surface the failure. We intentionally
                 // do not attempt to alter the schema automatically here.
                 throw;
+            }
+        }
+
+        public async Task<ProwlarrImportConnectionSettings> GetProwlarrImportSettingsAsync(bool includeSecret = false)
+        {
+            try
+            {
+                var settings = await _dbContext.ApplicationSettings
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(s => s.Id == 1);
+
+                if (settings == null)
+                {
+                    return new ProwlarrImportConnectionSettings();
+                }
+
+                var result = new ProwlarrImportConnectionSettings
+                {
+                    Url = settings.ProwlarrUrl?.Trim() ?? string.Empty,
+                    Port = settings.ProwlarrPort,
+                    TagFilter = settings.ProwlarrTagFilter?.Trim(),
+                    HasSavedApiKey = !string.IsNullOrWhiteSpace(settings.ProwlarrApiKeyEncrypted),
+                };
+
+                if (includeSecret && result.HasSavedApiKey)
+                {
+                    result.ApiKey = TryUnprotectProwlarrApiKey(settings.ProwlarrApiKeyEncrypted);
+                    if (string.IsNullOrWhiteSpace(result.ApiKey))
+                    {
+                        result.HasSavedApiKey = false;
+                    }
+                }
+
+                return result;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error loading saved Prowlarr import settings");
+                return new ProwlarrImportConnectionSettings();
+            }
+        }
+
+        public async Task<ProwlarrImportConnectionSettings> SaveProwlarrImportSettingsAsync(ProwlarrImportConnectionSettings settings)
+        {
+            try
+            {
+                var existing = await _dbContext.ApplicationSettings.FirstOrDefaultAsync(s => s.Id == 1);
+                if (existing == null)
+                {
+                    existing = new ApplicationSettings { Id = 1 };
+                    _dbContext.ApplicationSettings.Add(existing);
+                }
+
+                existing.ProwlarrUrl = string.IsNullOrWhiteSpace(settings.Url) ? string.Empty : settings.Url.Trim();
+                existing.ProwlarrPort = settings.Port;
+                existing.ProwlarrTagFilter = string.IsNullOrWhiteSpace(settings.TagFilter) ? null : settings.TagFilter.Trim();
+
+                if (!string.IsNullOrWhiteSpace(settings.ApiKey)
+                    && !string.Equals(settings.ApiKey, ApiResponseRedactor.RedactedValue, StringComparison.Ordinal))
+                {
+                    existing.ProwlarrApiKeyEncrypted = _prowlarrImportProtector.Protect(settings.ApiKey.Trim());
+                }
+
+                await _dbContext.SaveChangesAsync();
+                return await GetProwlarrImportSettingsAsync();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error saving Prowlarr import settings");
+                throw;
+            }
+        }
+
+        private string? TryUnprotectProwlarrApiKey(string? encryptedApiKey)
+        {
+            if (string.IsNullOrWhiteSpace(encryptedApiKey))
+            {
+                return null;
+            }
+
+            try
+            {
+                return _prowlarrImportProtector.Unprotect(encryptedApiKey);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "Failed to decrypt saved Prowlarr import API key");
+                return null;
             }
         }
 

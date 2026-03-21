@@ -21,6 +21,7 @@ using Listenarr.Api.Services;
 using Listenarr.Api.Hubs;
 using Microsoft.AspNetCore.Mvc;
 using System.Linq;
+using System.Text.Json;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Listenarr.Api.Controllers
@@ -386,7 +387,7 @@ namespace Listenarr.Api.Controllers
         {
             try
             {
-                var settings = await _configurationService.GetApplicationSettingsAsync();
+                var settings = PrepareApplicationSettingsResponse(await _configurationService.GetApplicationSettingsAsync());
                 if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
                 {
                     return Ok(ApiResponseRedactor.RedactApplicationSettings(settings));
@@ -414,7 +415,7 @@ namespace Listenarr.Api.Controllers
                 await _configurationService.SaveApplicationSettingsAsync(settings);
 
                 // Return the saved settings to confirm what was persisted
-                var savedSettings = await _configurationService.GetApplicationSettingsAsync();
+                var savedSettings = PrepareApplicationSettingsResponse(await _configurationService.GetApplicationSettingsAsync());
 
                 // Clear sensitive admin credentials from response (they are [NotMapped] but let's be safe)
                 savedSettings.AdminUsername = null;
@@ -434,6 +435,37 @@ namespace Listenarr.Api.Controllers
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error saving application settings");
                 return StatusCode(500, new { error = "Failed to save application settings", message = ex.Message });
+            }
+        }
+
+        private static ApplicationSettings PrepareApplicationSettingsResponse(ApplicationSettings settings)
+        {
+            var clone = JsonSerializer.Deserialize<ApplicationSettings>(JsonSerializer.Serialize(settings))
+                ?? new ApplicationSettings();
+            clone.AdminUsername = null;
+            clone.AdminPassword = null;
+            clone.ProwlarrApiKeyEncrypted = null;
+            return clone;
+        }
+
+        /// <summary>
+        /// Get the saved Prowlarr import connection metadata used by the Indexers tab.
+        /// The API key itself is never returned; callers only receive whether a saved key exists.
+        /// </summary>
+        [Tags("Settings")]
+        [HttpGet("prowlarr-import")]
+        public async Task<ActionResult<ProwlarrImportConnectionSettings>> GetProwlarrImportSettings()
+        {
+            try
+            {
+                var settings = await _configurationService.GetProwlarrImportSettingsAsync();
+                settings.ApiKey = null;
+                return Ok(settings);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error retrieving saved Prowlarr import settings");
+                return StatusCode(500, "Internal server error");
             }
         }
 

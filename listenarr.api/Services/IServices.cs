@@ -361,6 +361,18 @@ namespace Listenarr.Api.Services
         Task SaveApplicationSettingsAsync(ApplicationSettings settings);
 
         /// <summary>
+        /// Gets the saved Prowlarr import connection settings.
+        /// </summary>
+        /// <param name="includeSecret">When true, includes the decrypted API key for server-side use.</param>
+        Task<ProwlarrImportConnectionSettings> GetProwlarrImportSettingsAsync(bool includeSecret = false);
+
+        /// <summary>
+        /// Saves the Prowlarr import connection settings.
+        /// </summary>
+        /// <param name="settings">The connection settings to save.</param>
+        Task<ProwlarrImportConnectionSettings> SaveProwlarrImportSettingsAsync(ProwlarrImportConnectionSettings settings);
+
+        /// <summary>
         /// Gets the startup configuration
         /// </summary>
         /// <returns>Startup configuration</returns>

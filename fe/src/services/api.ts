@@ -4,6 +4,7 @@ import type {
   ApiConfiguration,
   DownloadClientConfiguration,
   ApplicationSettings,
+  ProwlarrImportConnectionSettings,
   Audiobook,
   History,
   Indexer,
@@ -868,6 +869,10 @@ class ApiService {
     })
   }
 
+  async getProwlarrImportSettings(): Promise<ProwlarrImportConnectionSettings> {
+    return this.request<ProwlarrImportConnectionSettings>('/configuration/prowlarr-import')
+  }
+
   // Root Folders
   async getRootFolders(): Promise<RootFolder[]> {
     return this.request<RootFolder[]>('/rootfolders')
@@ -1679,7 +1684,8 @@ class ApiService {
   async importProwlarrIndexers(payload: {
     url: string
     port?: number
-    apiKey: string
+    apiKey?: string
+    tagFilter?: string
   }): Promise<{
     addedCount: number
     skippedCount: number
@@ -2089,7 +2095,8 @@ export const testIndexerDraft = (indexer: Omit<Indexer, 'id' | 'createdAt' | 'up
   apiService.testIndexerDraft(indexer)
 export const toggleIndexer = (id: number) => apiService.toggleIndexer(id)
 export const getEnabledIndexers = () => apiService.getEnabledIndexers()
-export const importProwlarrIndexers = (payload: { url: string; port?: number; apiKey: string }) =>
+export const getProwlarrImportSettings = () => apiService.getProwlarrImportSettings()
+export const importProwlarrIndexers = (payload: { url: string; port?: number; apiKey?: string; tagFilter?: string }) =>
   apiService.importProwlarrIndexers(payload)
 
 // Export individual remote path mapping functions for convenience
