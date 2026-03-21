@@ -1128,6 +1128,12 @@ namespace Listenarr.Api.Services.Adapters
             // On API >= 2.6.1, ContentPath/OutputPath is already set correctly from content_path field
             if (!string.IsNullOrEmpty(result.ContentPath))
             {
+                var localPath = await _pathMappingService.TranslatePathAsync(client.Id, result.ContentPath);
+                if (!string.IsNullOrWhiteSpace(localPath))
+                {
+                    result.ContentPath = localPath;
+                }
+
                 _logger.LogDebug("Using existing ContentPath for import: {Path}", result.ContentPath);
                 return result;
             }

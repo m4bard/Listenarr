@@ -457,7 +457,7 @@ namespace Listenarr.Api.Controllers
             {
                 // User provided a custom destination path - store it as BasePath
                 // ImportService will recognize BasePath as set and use filename-only pattern
-                audiobook.BasePath = request.DestinationPath;
+                audiobook.BasePath = FileUtils.NormalizeStoredPath(request.DestinationPath);
                 _logger.LogInformation("Using custom destination path for audiobook '{Title}': {BasePath}",
                     audiobook.Title, audiobook.BasePath);
             }
@@ -1627,7 +1627,7 @@ namespace Listenarr.Api.Controllers
             // Allow updating BasePath (destination) from the frontend when provided
             if (updatedAudiobook.BasePath != null)
             {
-                existingAudiobook.BasePath = updatedAudiobook.BasePath;
+                existingAudiobook.BasePath = FileUtils.NormalizeStoredPath(updatedAudiobook.BasePath);
                 _logger.LogInformation("Updated BasePath for audiobook '{Title}' to: {BasePath}", LogRedaction.SanitizeText(existingAudiobook.Title), LogRedaction.SanitizeFilePath(updatedAudiobook.BasePath));
             }
 
@@ -2235,7 +2235,7 @@ namespace Listenarr.Api.Controllers
 
             try
             {
-                return Path.GetFullPath(path)
+                return FileUtils.NormalizeStoredPath(path)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
             catch
@@ -3926,7 +3926,11 @@ namespace Listenarr.Api.Controllers
                 return string.Empty;
 
             // Convert all paths to directory paths (get parent directory for each file)
-            var directories = filePaths.Select(p => Path.GetDirectoryName(p) ?? p).Distinct().ToList();
+            var directories = filePaths
+                .Select(p => FileUtils.NormalizeStoredPath(Path.GetDirectoryName(p) ?? p))
+                .Where(p => !string.IsNullOrWhiteSpace(p))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 
             if (directories.Count == 1)
             {
@@ -3980,11 +3984,12 @@ namespace Listenarr.Api.Controllers
             if (!paths.Any())
                 return string.Empty;
 
-            var firstPath = paths[0];
+            var firstPath = FileUtils.NormalizeStoredPath(paths[0]);
             var commonPath = firstPath;
 
-            foreach (var path in paths.Skip(1))
+            foreach (var rawPath in paths.Skip(1))
             {
+                var path = FileUtils.NormalizeStoredPath(rawPath);
                 var minLength = Math.Min(commonPath.Length, path.Length);
                 var commonLength = 0;
 

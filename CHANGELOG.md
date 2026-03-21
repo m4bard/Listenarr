@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.60] - 2026-03-20
+
+### Added
+- **Issue-specific regression coverage:** Added focused tests covering qBittorrent auto-import path resolution for both Docker-style remote path mappings and non-Docker local paths, plus authenticated log-download behavior when session login is enabled.
+
+### Fixed
+- **qBittorrent auto-import path mapping:** Fixed automatic import for completed qBittorrent downloads when `content_path` is already populated, ensuring remote path mappings are still applied before Listenarr checks the source path. This restores Docker-style imports where qBittorrent and Listenarr see different filesystem roots while preserving non-Docker local-path behavior.
+- **Authenticated log downloads:** Fixed `System > Recent Logs > Download Logs` when login is enabled by replacing the unauthenticated `window.open()` flow with an authenticated fetch/blob download path that carries the active session or API auth context.
+
 ## [0.2.59] - 2026-03-19
 
 ### Added

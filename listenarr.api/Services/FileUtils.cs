@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Models;
 
@@ -78,6 +80,46 @@ namespace Listenarr.Api.Services
             }
 
             return normalized;
+        }
+
+        public static string NormalizeStoredPath(string? path, Func<string, string?>? longPathResolver = null)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return string.Empty;
+            }
+
+            var trimmedPath = path.Trim();
+            string normalizedPath;
+            try
+            {
+                normalizedPath = Path.GetFullPath(trimmedPath);
+            }
+            catch (Exception caughtEx_0) when (caughtEx_0 is not OperationCanceledException && caughtEx_0 is not OutOfMemoryException && caughtEx_0 is not StackOverflowException)
+            {
+                normalizedPath = trimmedPath;
+            }
+
+            if (string.IsNullOrWhiteSpace(normalizedPath))
+            {
+                return trimmedPath;
+            }
+
+            var resolver = longPathResolver;
+            if (resolver == null && !OperatingSystem.IsWindows())
+            {
+                return normalizedPath;
+            }
+
+            resolver ??= TryResolveLongWindowsPath;
+            try
+            {
+                return ExpandKnownWindowsPathSegments(normalizedPath, resolver);
+            }
+            catch (Exception caughtEx_00) when (caughtEx_00 is not OperationCanceledException && caughtEx_00 is not OutOfMemoryException && caughtEx_00 is not StackOverflowException)
+            {
+                return normalizedPath;
+            }
         }
 
         public static bool IsBlacklistedImportFile(string filePath, IEnumerable<string>? blacklistExtensions)
@@ -314,8 +356,8 @@ namespace Listenarr.Api.Services
                 if (string.IsNullOrWhiteSpace(childPath) || string.IsNullOrWhiteSpace(rootPath))
                     return false;
 
-                var normalizedChild = Path.GetFullPath(childPath);
-                var normalizedRoot = Path.GetFullPath(rootPath)
+                var normalizedChild = NormalizeStoredPath(childPath);
+                var normalizedRoot = NormalizeStoredPath(rootPath)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                     + Path.DirectorySeparatorChar;
 
@@ -338,7 +380,7 @@ namespace Listenarr.Api.Services
                             return null;
                         }
 
-                        var fullPath = Path.GetFullPath(path);
+                        var fullPath = NormalizeStoredPath(path);
                         return Path.GetDirectoryName(fullPath) ?? fullPath;
                     })
                     .Where(path => !string.IsNullOrWhiteSpace(path))
@@ -397,8 +439,8 @@ namespace Listenarr.Api.Services
 
         private static string GetCommonPath(string firstPath, string secondPath)
         {
-            var normalizedFirst = Path.GetFullPath(firstPath);
-            var normalizedSecond = Path.GetFullPath(secondPath);
+            var normalizedFirst = NormalizeStoredPath(firstPath);
+            var normalizedSecond = NormalizeStoredPath(secondPath);
             var minLength = Math.Min(normalizedFirst.Length, normalizedSecond.Length);
             var commonLength = 0;
 
@@ -482,5 +524,80 @@ namespace Listenarr.Api.Services
 
             return string.Empty;
         }
+
+        private static string ExpandKnownWindowsPathSegments(string path, Func<string, string?> longPathResolver)
+        {
+            var pathRoot = Path.GetPathRoot(path);
+            if (string.IsNullOrWhiteSpace(pathRoot))
+            {
+                return path;
+            }
+
+            var remainingPath = path[pathRoot.Length..];
+            if (string.IsNullOrEmpty(remainingPath))
+            {
+                return path;
+            }
+
+            var hasTrailingSeparator = path.EndsWith(Path.DirectorySeparatorChar)
+                || path.EndsWith(Path.AltDirectorySeparatorChar);
+
+            var segments = remainingPath
+                .Split(new[] { Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar }, StringSplitOptions.RemoveEmptyEntries);
+
+            var currentPath = pathRoot;
+            var forceResolve = longPathResolver != TryResolveLongWindowsPath;
+
+            foreach (var segment in segments)
+            {
+                var candidatePath = Path.Combine(currentPath, segment);
+                var canResolve = forceResolve || Directory.Exists(candidatePath) || File.Exists(candidatePath);
+                if (!canResolve)
+                {
+                    currentPath = candidatePath;
+                    continue;
+                }
+
+                var resolvedPath = longPathResolver(candidatePath);
+                currentPath = string.IsNullOrWhiteSpace(resolvedPath) ? candidatePath : resolvedPath!;
+            }
+
+            if (hasTrailingSeparator && !currentPath.EndsWith(Path.DirectorySeparatorChar) && !currentPath.EndsWith(Path.AltDirectorySeparatorChar))
+            {
+                currentPath += Path.DirectorySeparatorChar;
+            }
+
+            return currentPath;
+        }
+
+        private static string? TryResolveLongWindowsPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            var buffer = new StringBuilder(Math.Max(260, path.Length + 16));
+            var result = GetLongPathName(path, buffer, buffer.Capacity);
+            if (result == 0)
+            {
+                return null;
+            }
+
+            if (result > buffer.Capacity)
+            {
+                buffer = new StringBuilder((int)result);
+                result = GetLongPathName(path, buffer, buffer.Capacity);
+                if (result == 0)
+                {
+                    return null;
+                }
+            }
+
+            return buffer.ToString();
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetLongPathName(string shortPath, StringBuilder longPathBuffer, int bufferLength);
     }
 }

@@ -289,6 +289,93 @@ namespace Listenarr.Api.Tests
             await Task.CompletedTask;
         }
 
+        [Fact]
+        [Trait("Area", "QbittorrentImportPathResolution")]
+        [Trait("Scenario", "DockerAutoImportAppliesRemotePathMapping")]
+        public async Task GetImportItemAsync_PrepopulatedContentPath_AppliesRemoteMapping_ForDockerAutoImport()
+        {
+            var pathMapMock = new Mock<Listenarr.Api.Services.IRemotePathMappingService>(MockBehavior.Strict);
+            pathMapMock
+                .Setup(m => m.TranslatePathAsync("qbit-client", "/qbit-downloads/Stephen King/It.m4b"))
+                .ReturnsAsync("D:/media/downloads/Stephen King/It.m4b");
+
+            using var http = new HttpClient(new DelegatingHandlerMock((_, _) =>
+                throw new InvalidOperationException("HTTP should not be called when qBittorrent content_path is already available.")));
+
+            var adapter = new QbittorrentAdapter(
+                new TestHttpClientFactory(http),
+                pathMapMock.Object,
+                Mock.Of<ITorrentFileDownloader>(),
+                NullLogger<QbittorrentAdapter>.Instance);
+
+            var client = new DownloadClientConfiguration
+            {
+                Id = "qbit-client",
+                Type = "qbittorrent",
+                Host = "localhost",
+                Port = 8080
+            };
+
+            var queueItem = new QueueItem
+            {
+                Id = "dl-qbit-docker",
+                Title = "It",
+                Status = "completed",
+                ContentPath = "/qbit-downloads/Stephen King/It.m4b",
+                DownloadClientId = client.Id
+            };
+
+            var resolved = await adapter.GetImportItemAsync(client, new Download { Id = queueItem.Id }, queueItem);
+
+            Assert.Equal("D:/media/downloads/Stephen King/It.m4b", NormalizePath(resolved.ContentPath));
+            pathMapMock.Verify(
+                m => m.TranslatePathAsync("qbit-client", "/qbit-downloads/Stephen King/It.m4b"),
+                Times.Once);
+        }
+
+        [Fact]
+        [Trait("Area", "QbittorrentImportPathResolution")]
+        [Trait("Scenario", "LocalAutoImportKeepsExistingPath")]
+        public async Task GetImportItemAsync_PrepopulatedContentPath_KeepsLocalPath_ForNonDockerAutoImport()
+        {
+            const string localPath = "D:\\media\\downloads\\Stephen King\\It.m4b";
+            var pathMapMock = new Mock<Listenarr.Api.Services.IRemotePathMappingService>(MockBehavior.Strict);
+            pathMapMock
+                .Setup(m => m.TranslatePathAsync("qbit-client", localPath))
+                .ReturnsAsync(localPath);
+
+            using var http = new HttpClient(new DelegatingHandlerMock((_, _) =>
+                throw new InvalidOperationException("HTTP should not be called when qBittorrent content_path is already available.")));
+
+            var adapter = new QbittorrentAdapter(
+                new TestHttpClientFactory(http),
+                pathMapMock.Object,
+                Mock.Of<ITorrentFileDownloader>(),
+                NullLogger<QbittorrentAdapter>.Instance);
+
+            var client = new DownloadClientConfiguration
+            {
+                Id = "qbit-client",
+                Type = "qbittorrent",
+                Host = "localhost",
+                Port = 8080
+            };
+
+            var queueItem = new QueueItem
+            {
+                Id = "dl-qbit-local",
+                Title = "It",
+                Status = "completed",
+                ContentPath = localPath,
+                DownloadClientId = client.Id
+            };
+
+            var resolved = await adapter.GetImportItemAsync(client, new Download { Id = queueItem.Id }, queueItem);
+
+            Assert.Equal("D:/media/downloads/Stephen King/It.m4b", NormalizePath(resolved.ContentPath));
+            pathMapMock.Verify(m => m.TranslatePathAsync("qbit-client", localPath), Times.Once);
+        }
+
         private static List<Dictionary<string, JsonElement>> ParseFiles(string json)
         {
             var root = JsonDocument.Parse(json).RootElement;

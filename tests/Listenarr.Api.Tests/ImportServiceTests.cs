@@ -1,6 +1,8 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -399,6 +401,92 @@ namespace Listenarr.Api.Tests
             TryDeleteDirectory(outputRoot, recursive: true);
         }
 
+        [Fact]
+        public async Task ImportSingleFile_WithWindowsShortBasePath_NormalizesFinalPath()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            var longBasePath = Path.Join(outputRoot, "A Very Long Audiobook Folder Name");
+            Directory.CreateDirectory(longBasePath);
+
+            var shortBasePath = TryGetShortPathName(longBasePath);
+            if (string.IsNullOrWhiteSpace(shortBasePath)
+                || string.Equals(shortBasePath, longBasePath, StringComparison.OrdinalIgnoreCase)
+                || !shortBasePath.Contains('~'))
+            {
+                TryDeleteDirectory(outputRoot, recursive: true);
+                return;
+            }
+
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+            var sourceFile = Path.Join(sourceDir, "source-track.m4b");
+            await File.WriteAllTextAsync(sourceFile, "dummy");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Move",
+                EnableMetadataProcessing = false,
+                FileNamingPattern = "{Title}"
+            };
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using (var seed = new ListenArrDbContext(options))
+            {
+                seed.Audiobooks.Add(new Audiobook
+                {
+                    Id = 321,
+                    Title = "A Great Book",
+                    Authors = new System.Collections.Generic.List<string> { "Test Author" },
+                    BasePath = shortBasePath
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock
+                .Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(() => new ListenArrDbContext(options));
+
+            using var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(dbFactoryMock.Object);
+                services.AddSingleton<IFileNamingService>(new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()));
+                services.AddSingleton<IMetadataService>(new Mock<IMetadataService>().Object);
+                services.AddSingleton<IImportService>(sp => new ImportService(
+                    dbFactoryMock.Object,
+                    sp.GetRequiredService<IServiceScopeFactory>(),
+                    sp.GetRequiredService<IFileNamingService>(),
+                    sp.GetService<IMetadataService>(),
+                    new NullLogger<ImportService>()));
+            });
+
+            var importService = provider.GetRequiredService<IImportService>();
+
+            var result = await importService.ImportSingleFileAsync("dl-short-path", 321, sourceFile, settings);
+
+            Assert.True(result.Success);
+            Assert.NotNull(result.FinalPath);
+            Assert.StartsWith(longBasePath.TrimEnd(Path.DirectorySeparatorChar), result.FinalPath!, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("~", result.FinalPath!, StringComparison.Ordinal);
+
+            await using var verify = new ListenArrDbContext(options);
+            var stored = await verify.Audiobooks.FindAsync(321);
+            Assert.NotNull(stored);
+            Assert.Equal(longBasePath, stored!.BasePath);
+
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
         private static void TryDeleteDirectory(string path, bool recursive = false)
         {
             try
@@ -414,5 +502,30 @@ namespace Listenarr.Api.Tests
                 Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
             }
         }
+
+        private static string? TryGetShortPathName(string longPath)
+        {
+            var buffer = new StringBuilder(260);
+            var result = GetShortPathName(longPath, buffer, buffer.Capacity);
+            if (result == 0)
+            {
+                return null;
+            }
+
+            if (result > buffer.Capacity)
+            {
+                buffer = new StringBuilder((int)result);
+                result = GetShortPathName(longPath, buffer, buffer.Capacity);
+                if (result == 0)
+                {
+                    return null;
+                }
+            }
+
+            return buffer.ToString();
+        }
+
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+        private static extern uint GetShortPathName(string longPath, StringBuilder shortPathBuffer, int bufferLength);
     }
 }

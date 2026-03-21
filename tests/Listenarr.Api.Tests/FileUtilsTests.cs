@@ -209,5 +209,58 @@ namespace Listenarr.Api.Tests
 
             try { Directory.Delete(dir, true); } catch { }
         }
+
+        [Fact]
+        public void NormalizeStoredPath_ExpandsResolvedShortSegments_WhenResolverProvided()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            string ResolveLongPath(string candidatePath)
+            {
+                return candidatePath switch
+                {
+                    @"C:\Books\ALD2A5~9" => @"C:\Books\A Long Directory Name",
+                    @"C:\Books\A Long Directory Name\FILES~1" => @"C:\Books\A Long Directory Name\Files",
+                    _ => candidatePath
+                };
+            }
+
+            var normalized = FileUtils.NormalizeStoredPath(
+                @"C:\Books\ALD2A5~9\FILES~1\Track 01.mp3",
+                ResolveLongPath);
+
+            Assert.Equal(
+                @"C:\Books\A Long Directory Name\Files\Track 01.mp3",
+                normalized);
+        }
+
+        [Fact]
+        public void NormalizeStoredPath_PreservesUnresolvedTail_WhenResolverProvided()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            string ResolveLongPath(string candidatePath)
+            {
+                return candidatePath switch
+                {
+                    @"C:\Library\AUDIOB~1" => @"C:\Library\Audiobook Imports",
+                    _ => candidatePath
+                };
+            }
+
+            var normalized = FileUtils.NormalizeStoredPath(
+                @"C:\Library\AUDIOB~1\New Folder\Disc 1",
+                ResolveLongPath);
+
+            Assert.Equal(
+                @"C:\Library\Audiobook Imports\New Folder\Disc 1",
+                normalized);
+        }
     }
 }

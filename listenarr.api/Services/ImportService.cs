@@ -201,7 +201,7 @@ namespace Listenarr.Api.Services
                         var ab = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
                         if (ab != null && !string.IsNullOrWhiteSpace(ab.BasePath))
                         {
-                            basePathForFile = ab.BasePath; // custom/base path
+                            basePathForFile = FileUtils.NormalizeStoredPath(ab.BasePath); // custom/base path
                             usingAudiobookBasePath = true;
                             _logger.LogDebug("ImportSingleFile: using audiobook base path for download {DownloadId}: {BasePath}", downloadId, basePathForFile);
                             // For audiobook base path, default to filename-only unless the user explicitly configures a file pattern
@@ -573,7 +573,7 @@ namespace Listenarr.Api.Services
                             {
                                 await using var db = await _dbFactory.CreateDbContextAsync(ct);
                                 abForNaming = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
-                                if (abForNaming != null && !string.IsNullOrWhiteSpace(abForNaming.BasePath)) destDirForFile = abForNaming.BasePath;
+                                if (abForNaming != null && !string.IsNullOrWhiteSpace(abForNaming.BasePath)) destDirForFile = FileUtils.NormalizeStoredPath(abForNaming.BasePath);
                             }
                             catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { destDirForFile = string.Empty; }
                         }
@@ -883,6 +883,7 @@ namespace Listenarr.Api.Services
             try
             {
                 var normalizedCandidate = Path.GetFullPath(candidateBasePath);
+                normalizedCandidate = FileUtils.NormalizeStoredPath(normalizedCandidate);
 
                 await using var db = await _dbFactory.CreateDbContextAsync(ct);
                 var audiobook = await db.Audiobooks.FindAsync(new object[] { audiobookId }, ct);
@@ -893,10 +894,17 @@ namespace Listenarr.Api.Services
 
                 if (!string.IsNullOrWhiteSpace(audiobook.BasePath))
                 {
-                    var normalizedExisting = Path.GetFullPath(audiobook.BasePath);
-                    if (string.Equals(normalizedExisting, normalizedCandidate, StringComparison.OrdinalIgnoreCase)
-                        || FileUtils.IsPathWithinRoot(normalizedCandidate, normalizedExisting))
+                    var normalizedExisting = FileUtils.NormalizeStoredPath(audiobook.BasePath);
+                    var matchesExisting = string.Equals(normalizedExisting, normalizedCandidate, StringComparison.OrdinalIgnoreCase);
+                    var candidateWithinExisting = FileUtils.IsPathWithinRoot(normalizedCandidate, normalizedExisting);
+                    if (matchesExisting || candidateWithinExisting)
                     {
+                        if (!string.Equals(audiobook.BasePath, normalizedExisting, StringComparison.Ordinal))
+                        {
+                            audiobook.BasePath = normalizedExisting;
+                            await db.SaveChangesAsync(ct);
+                        }
+
                         return;
                     }
                 }
