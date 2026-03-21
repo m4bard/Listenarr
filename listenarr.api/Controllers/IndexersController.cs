@@ -1438,15 +1438,7 @@ namespace Listenarr.Api.Controllers
                 return false;
             }
 
-            foreach (var element in payload.EnumerateArray())
-            {
-                if (ElementRequiresProwlarrTagMap(element))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return payload.EnumerateArray().Any(ElementRequiresProwlarrTagMap);
         }
 
         private static bool ElementRequiresProwlarrTagMap(JsonElement element)
