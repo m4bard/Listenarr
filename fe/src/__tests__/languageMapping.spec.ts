@@ -5,17 +5,32 @@ import {
 } from '@/utils/languageMapping'
 
 describe('languageMapping', () => {
-  it('falls back safely for unsupported legacy preferred language values', () => {
-    expect(normalizePreferredSearchLanguage('br')).toBe('english')
-    expect(normalizePreferredSearchLanguage('portuguese')).toBe('english')
-    expect(normalizePreferredSearchLanguage('jp')).toBe('english')
-    expect(normalizePreferredSearchLanguage('japanese')).toBe('english')
+  it('normalizes supported languages and their aliases', () => {
+    expect(normalizePreferredSearchLanguage('portuguese')).toBe('portuguese')
+    expect(normalizePreferredSearchLanguage('pt')).toBe('portuguese')
+    expect(normalizePreferredSearchLanguage('japanese')).toBe('japanese')
+    expect(normalizePreferredSearchLanguage('ja')).toBe('japanese')
+    expect(normalizePreferredSearchLanguage('swedish')).toBe('swedish')
+    expect(normalizePreferredSearchLanguage('sv')).toBe('swedish')
+    expect(normalizePreferredSearchLanguage('swe')).toBe('swedish')
   })
 
-  it('does not map unsupported result languages into a supported filter', () => {
-    expect(normalizeSearchResultLanguage('br')).toBeUndefined()
-    expect(normalizeSearchResultLanguage('portuguese')).toBeUndefined()
-    expect(normalizeSearchResultLanguage('jp')).toBeUndefined()
-    expect(normalizeSearchResultLanguage('japanese')).toBeUndefined()
+  it('falls back safely for unsupported legacy preferred language values', () => {
+    // Region codes that don't directly map to a supported language
+    expect(normalizePreferredSearchLanguage('br')).toBe('portuguese')
+    expect(normalizePreferredSearchLanguage('jp')).toBe('japanese')
+  })
+
+  it('maps result languages to supported filter values', () => {
+    expect(normalizeSearchResultLanguage('portuguese')).toBe('portuguese')
+    expect(normalizeSearchResultLanguage('japanese')).toBe('japanese')
+    expect(normalizeSearchResultLanguage('swedish')).toBe('swedish')
+    expect(normalizeSearchResultLanguage('br')).toBe('portuguese')
+    expect(normalizeSearchResultLanguage('jp')).toBe('japanese')
+  })
+
+  it('returns undefined for truly unsupported result languages', () => {
+    expect(normalizeSearchResultLanguage('klingon')).toBeUndefined()
+    expect(normalizeSearchResultLanguage('')).toBeUndefined()
   })
 })
