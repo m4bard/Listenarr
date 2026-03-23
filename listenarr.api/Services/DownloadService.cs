@@ -533,20 +533,29 @@ namespace Listenarr.Api.Services
             var downloadClientIdForModel = downloadClientId ?? string.Empty;
 
             // Guard against duplicate downloads for the same audiobook.
-            // If another download for this audiobook is already active (Queued/Downloading/
-            // Completed/ImportPending), skip creating a new record to prevent duplicate
-            // entries in the activity view.
+            // Only block when a truly active download exists (Queued/Downloading/ImportPending)
+            // for an enabled download client. Completed downloads don't block — ImportPending
+            // covers the "waiting for import" window, and stale records from deleted/reconfigured
+            // clients are excluded so they can't silently phantom-block re-downloads.
             if (audiobookId is int audiobookIdValue && audiobookIdValue > 0)
             {
                 try
                 {
                     var checkContext = await _dbContextFactory.CreateDbContextAsync();
+
+                    var downloadClients = await _configurationService.GetDownloadClientConfigurationsAsync();
+                    var enabledClientIds = downloadClients
+                        .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
+                        .Select(c => c.Id)
+                        .ToHashSet();
+
                     var existingActive = await checkContext.Downloads
                         .Where(d => d.AudiobookId == audiobookIdValue &&
                                     (d.Status == DownloadStatus.Queued ||
                                      d.Status == DownloadStatus.Downloading ||
-                                     d.Status == DownloadStatus.Completed ||
-                                     d.Status == DownloadStatus.ImportPending))
+                                     d.Status == DownloadStatus.ImportPending) &&
+                                    (d.DownloadClientId == "DDL" ||
+                                     (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId))))
                         .AnyAsync();
 
                     if (existingActive)
@@ -826,8 +835,9 @@ namespace Listenarr.Api.Services
                     return;
                 }
 
-                // Always use an authenticated client with a CookieContainer for MyAnonamouse downloads.
-                // Using a factory client can return global clients without a CookieContainer which may fail auth.
+                // Use factory client for the initial attempt (allows test injection).
+                // If auto-redirect drops the Cookie header, a fallback retry with
+                // CreateAuthenticatedHttpClient (AllowAutoRedirect=false) handles it below.
                 HttpClient httpClientToUse;
                 if (_httpClientFactory != null)
                 {
@@ -939,7 +949,63 @@ namespace Listenarr.Api.Services
 
                 if (!looksLikeTorrent)
                 {
-                    var snippet = System.Text.Encoding.UTF8.GetString(torrentBytes.Take(Math.Min(512, torrentBytes.Length)).ToArray());
+                    // The factory HttpClient may have auto-followed redirects, silently
+                    // dropping the Cookie header (AllowAutoRedirect=true is the default).
+                    // Retry with a dedicated client that disables auto-redirect so the
+                    // manual redirect loop can re-apply cookies on each hop.
+                    _logger.LogDebug("Factory client returned non-torrent payload for '{Title}', retrying with authenticated MAM client", searchResult.Title);
+                    response.Dispose();
+                    response = null;
+
+                    try
+                    {
+                        using var authClient = MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
+                        var retryUri = torrentUri;
+                        for (int retryHop = 0; retryHop < 6; retryHop++)
+                        {
+                            var retryReq = new HttpRequestMessage(HttpMethod.Get, retryUri);
+                            retryReq.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+                            retryReq.Headers.Referrer = new Uri("https://www.myanonamouse.net/");
+                            retryReq.Headers.Accept.ParseAdd("application/x-bittorrent, application/octet-stream, */*; q=0.01");
+                            if (!string.IsNullOrEmpty(mamId))
+                                retryReq.Headers.Add("Cookie", $"mam_id={mamId}");
+                            var retryHost = indexerUri.IsDefaultPort ? indexerUri.Host : $"{indexerUri.Host}:{indexerUri.Port}";
+                            retryReq.Headers.Host = retryHost;
+
+                            response = await authClient.SendAsync(retryReq);
+
+                            if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400 && response.Headers.Location != null)
+                            {
+                                retryUri = response.Headers.Location.IsAbsoluteUri
+                                    ? response.Headers.Location
+                                    : new Uri(retryUri, response.Headers.Location);
+                                response.Dispose();
+                                response = null;
+                                continue;
+                            }
+                            break;
+                        }
+
+                        if (response != null && response.IsSuccessStatusCode)
+                        {
+                            torrentBytes = await response.Content.ReadAsByteArrayAsync();
+                            looksLikeTorrent = torrentBytes != null && torrentBytes.Length > 0 &&
+                                ((torrentBytes[0] == (byte)'d') ||
+                                 System.Text.Encoding.ASCII.GetString(torrentBytes.Take(Math.Min(200, torrentBytes.Length)).ToArray())
+                                     .IndexOf("announce", StringComparison.OrdinalIgnoreCase) >= 0);
+                            if (looksLikeTorrent)
+                                _logger.LogInformation("Authenticated MAM client successfully downloaded torrent for '{Title}' ({Bytes} bytes)", searchResult.Title, torrentBytes!.Length);
+                        }
+                    }
+                    catch (Exception retryEx) when (retryEx is not OperationCanceledException && retryEx is not OutOfMemoryException && retryEx is not StackOverflowException)
+                    {
+                        _logger.LogDebug(retryEx, "Retry with authenticated MAM client also failed (non-fatal)");
+                    }
+                }
+
+                if (!looksLikeTorrent)
+                {
+                    var snippet = System.Text.Encoding.UTF8.GetString((torrentBytes ?? Array.Empty<byte>()).Take(Math.Min(512, torrentBytes?.Length ?? 0)).ToArray());
                     if (System.Text.RegularExpressions.Regex.IsMatch(snippet, "Unrecognized host|PassKey|Pass Key|Unrecognized", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                     {
                         _logger.LogWarning("MyAnonamouse torrent download for '{Title}' returned an authorization error page from tracker: {Snippet}", searchResult.Title, LogRedaction.RedactText(snippet, LogRedaction.GetSensitiveValuesFromEnvironment()));
@@ -949,12 +1015,15 @@ namespace Listenarr.Api.Services
                         _logger.LogWarning("MyAnonamouse torrent download for '{Title}' returned unexpected non-torrent payload (first 200 chars): {Snippet}", searchResult.Title, LogRedaction.RedactText(snippet, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     }
 
-                    response.Dispose();
+                    response?.Dispose();
                     return;
                 }
 
+                // torrentBytes is guaranteed non-null here: looksLikeTorrent check above returns early otherwise
+                if (torrentBytes == null) return;
+
                 // Additional debug info to help diagnose cases where content looks like a torrent but tracker still rejects it
-                var contentType = response.Content.Headers.ContentType?.ToString() ?? "(none)";
+                var contentType = response?.Content.Headers.ContentType?.ToString() ?? "(none)";
                 var firstBytesHex = BitConverter.ToString(torrentBytes.Take(Math.Min(16, torrentBytes.Length)).ToArray()).Replace("-", " ");
                 var containsAnnounce = System.Text.Encoding.ASCII.GetString(torrentBytes.Take(Math.Min(512, torrentBytes.Length)).ToArray()).IndexOf("announce", StringComparison.OrdinalIgnoreCase) >= 0;
                 _logger.LogDebug("MyAnonamouse torrent payload debug: ContentType={ContentType}, FirstBytes={FirstBytesHex}, ContainsAnnounce={ContainsAnnounce}", contentType, firstBytesHex, containsAnnounce);
@@ -1105,7 +1174,7 @@ namespace Listenarr.Api.Services
                 }
 
                 searchResult.TorrentFileContent = torrentBytes;
-                searchResult.TorrentFileName = MyAnonamouseHelper.ResolveTorrentFileName(response, searchResult.TorrentUrl);
+                searchResult.TorrentFileName = response != null ? MyAnonamouseHelper.ResolveTorrentFileName(response, searchResult.TorrentUrl) : "myanonamouse.torrent";
                 _logger.LogInformation("Cached MyAnonamouse torrent for '{Title}' ({Bytes} bytes)", searchResult.Title, torrentBytes.Length);
 
                 // If a downloadId was provided, store the cached torrent (bytes + filename) to the in-memory cache so it can be retrieved for diagnostics.
@@ -1146,7 +1215,7 @@ namespace Listenarr.Api.Services
                 catch (Exception exAnn) when (exAnn is not OperationCanceledException && exAnn is not OutOfMemoryException && exAnn is not StackOverflowException) {
                     _logger.LogDebug(exAnn, "Failed to extract announce URLs from cached torrent (non-fatal)");
                 }
-                response.Dispose();
+                response?.Dispose();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to cache MyAnonamouse torrent for '{Title}'", searchResult.Title);

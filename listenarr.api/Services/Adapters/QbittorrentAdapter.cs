@@ -385,6 +385,8 @@ namespace Listenarr.Api.Services.Adapters
 
                 await Task.Delay(1000, ct);
 
+                string? detectedHash = null;
+
                 // Request only necessary fields (hash and name) to reduce response size
                 var afterResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash,name", ct);
                 if (afterResp.IsSuccessStatusCode)
@@ -404,9 +406,9 @@ namespace Listenarr.Api.Services.Adapters
                                         var hash = hEl.GetString() ?? string.Empty;
                                         if (!existingHashes.Contains(hash))
                                         {
-                                            var name = t.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
                                             _logger.LogInformation("Detected new qBittorrent torrent: hash={Hash}", hash);
-                                            return hash;
+                                            detectedHash = hash;
+                                            break;
                                         }
                                     }
                                 }
@@ -418,14 +420,44 @@ namespace Listenarr.Api.Services.Adapters
                     }
                 }
 
-                if (!string.IsNullOrEmpty(extractedHash))
+                if (string.IsNullOrEmpty(detectedHash) && !string.IsNullOrEmpty(extractedHash))
                 {
                     _logger.LogInformation("Using extracted magnet hash as fallback: {Hash}", extractedHash);
-                    return extractedHash;
+                    detectedHash = extractedHash;
                 }
 
-                _logger.LogWarning("Unable to determine torrent hash after adding to qBittorrent for client {ClientId}", LogRedaction.SanitizeText(client.Id));
-                return null;
+                // Inject tracker URLs via addTrackers API as a fallback to ensure the tracker
+                // is registered even if qBittorrent didn't parse it from the torrent file.
+                if (!string.IsNullOrEmpty(detectedHash) && torrentFileData != null && torrentFileData.Length > 0)
+                {
+                    try
+                    {
+                        var announces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentFileData);
+                        if (announces != null && announces.Count > 0)
+                        {
+                            var trackerUrls = string.Join("\n", announces.Distinct());
+                            using var addTrackersData = new FormUrlEncodedContent(new[]
+                            {
+                                new KeyValuePair<string, string>("hash", detectedHash),
+                                new KeyValuePair<string, string>("urls", trackerUrls)
+                            });
+                            var trackersResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/addTrackers", addTrackersData, ct);
+                            if (trackersResp.IsSuccessStatusCode)
+                                _logger.LogInformation("Injected {Count} tracker(s) for torrent {Hash} via addTrackers API", announces.Count, detectedHash);
+                            else
+                                _logger.LogDebug("addTrackers API returned {Status} for torrent {Hash} (non-fatal)", trackersResp.StatusCode, detectedHash);
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        _logger.LogDebug(ex, "Non-fatal failure injecting trackers via addTrackers API");
+                    }
+                }
+
+                if (string.IsNullOrEmpty(detectedHash))
+                    _logger.LogWarning("Unable to determine torrent hash after adding to qBittorrent for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+
+                return detectedHash;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "qBittorrent AddAsync failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id));

@@ -433,7 +433,7 @@ namespace Listenarr.Api.Services
                         {
                             int peek = inStream.ReadByte();
                             if (peek == -1) break;
-                            if ((char)peek == 'e') break;
+                            if ((char)peek == 'e') break; // 'e' is consumed here; no extra read needed
                             inStream.Position -= 1;
                             // keys are strings
                             var keyLenStr = ReadNumberLocal();
@@ -453,7 +453,6 @@ namespace Listenarr.Api.Services
                             {
                                 // value is a list (possibly nested)
                                 ScanElement(); // will process nested lists/strings and add strings when encountered
-                                // continue (ScanElement consumes the list)
                             }
                             else
                             {
@@ -461,9 +460,6 @@ namespace Listenarr.Api.Services
                                 ScanElement();
                             }
                         }
-                        // consume trailing 'e'
-                        int trailing = inStream.ReadByte();
-                        // handle trailing if necessary
                     }
                     else if (ch == 'l')
                     {
@@ -472,7 +468,7 @@ namespace Listenarr.Api.Services
                         {
                             int peek = inStream.ReadByte();
                             if (peek == -1) break;
-                            if ((char)peek == 'e') break;
+                            if ((char)peek == 'e') break; // 'e' is consumed here; no extra read needed
                             inStream.Position -= 1;
                             // If element is a string, capture it; otherwise recurse
                             int next = inStream.ReadByte();
@@ -492,8 +488,6 @@ namespace Listenarr.Api.Services
                                 ScanElement();
                             }
                         }
-                        // consume trailing 'e'
-                        int trailing = inStream.ReadByte();
                     }
                     else if (ch == 'i')
                     {
@@ -511,7 +505,7 @@ namespace Listenarr.Api.Services
                         inStream.Position -= 1;
                         var lenStr = ReadNumberLocal();
                         if (!int.TryParse(lenStr, out var len)) return;
-                        inStream.ReadByte();
+                        // ReadNumberLocal already consumed the ':' separator, so read the string directly
                         var s = ReadStringLocal(len);
                         if (!string.IsNullOrWhiteSpace(s) && (s.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || s.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || s.StartsWith("udp://", StringComparison.OrdinalIgnoreCase)))
                         {

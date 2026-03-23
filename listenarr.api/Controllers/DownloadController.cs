@@ -87,6 +87,12 @@ namespace Listenarr.Api.Controllers
                     request.DownloadClientId,
                     request.AudiobookId
                 );
+
+                if (string.IsNullOrEmpty(downloadId))
+                {
+                    return Conflict(new { message = "A download for this audiobook is already active" });
+                }
+
                 return Ok(new { downloadId, message = "Sent to download client successfully" });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

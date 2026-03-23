@@ -338,7 +338,10 @@ namespace Listenarr.Api.Tests
 
             var stored = await dbContext.Audiobooks.FirstOrDefaultAsync();
             Assert.NotNull(stored);
-            Assert.Equal(customPath, stored.BasePath);
+            // NormalizeStoredPath calls Path.GetFullPath which is platform-dependent:
+            // on Windows "/custom/..." becomes "C:\custom\...", on Linux it stays "/custom/..."
+            var expectedPath = Path.GetFullPath(customPath);
+            Assert.Equal(expectedPath, stored.BasePath);
         }
     }
 }

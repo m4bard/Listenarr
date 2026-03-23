@@ -611,7 +611,7 @@ namespace Listenarr.Api.Controllers
             existing.Type = indexer.Type;
             existing.Implementation = indexer.Implementation;
             existing.Url = indexer.Url;
-            existing.ApiKey = indexer.ApiKey;
+            existing.ApiKey = indexer.ApiKey == ApiResponseRedactor.RedactedValue ? existing.ApiKey : indexer.ApiKey;
             existing.Categories = indexer.Categories;
             existing.AnimeCategories = indexer.AnimeCategories;
             existing.Tags = indexer.Tags;
@@ -624,7 +624,7 @@ namespace Listenarr.Api.Controllers
             existing.MinimumAge = indexer.MinimumAge;
             existing.Retention = indexer.Retention;
             existing.MaximumSize = indexer.MaximumSize;
-            existing.AdditionalSettings = indexer.AdditionalSettings;
+            existing.AdditionalSettings = ApiResponseRedactor.MergeAdditionalSettings(existing.AdditionalSettings, indexer.AdditionalSettings);
             existing.UpdatedAt = DateTime.UtcNow;
 
             await _dbContext.SaveChangesAsync();
