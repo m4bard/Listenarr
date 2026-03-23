@@ -1948,6 +1948,76 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   font-size: 32px; /* ensure consistent glyph size */
 }
 
+@media (max-width: 768px) {
+  .top-nav {
+    padding: 0 0.75rem;
+    gap: 0.75rem;
+  }
+
+  .nav-brand {
+    flex: 1 1 auto;
+    min-width: 0;
+    gap: 0.5rem;
+  }
+
+  .brand-link {
+    min-width: 0;
+    gap: 0.4rem;
+  }
+
+  .nav-brand h1 {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .version {
+    flex: 0 0 auto;
+    padding: 0.15rem 0.4rem;
+    font-size: 0.7rem;
+  }
+
+  .nav-actions {
+    flex: 0 0 auto;
+    gap: 0.5rem;
+  }
+
+  .top-nav .nav-btn {
+    padding: 0.35rem;
+  }
+
+  .top-nav .ph,
+  .top-nav .nav-user-btn .ph,
+  .top-nav .nav-btn .ph {
+    width: 40px;
+    height: 40px;
+    font-size: 26px;
+  }
+}
+
+@media (max-width: 420px) {
+  .top-nav {
+    padding: 0 0.5rem;
+    gap: 0.5rem;
+  }
+
+  .version {
+    display: none;
+  }
+
+  .nav-actions {
+    gap: 0.35rem;
+  }
+
+  .top-nav .ph,
+  .top-nav .nav-user-btn .ph,
+  .top-nav .nav-btn .ph {
+    width: 36px;
+    height: 36px;
+    font-size: 24px;
+  }
+}
+
 /* Sidebar navigation icons (Phosphor icons render as SVG) */
 .sidebar .nav-item svg,
 .sidebar .nav-item .ph {

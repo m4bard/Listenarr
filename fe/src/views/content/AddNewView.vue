@@ -513,7 +513,7 @@
         <h2>
           Found {{ totalTitleResultsCount }} Book{{ totalTitleResultsCount === 1 ? '' : 's' }}
         </h2>
-        <div class="results-controls">
+        <div v-if="hasTitleResultControls" class="results-controls">
           <div
             v-if="isAudiblePaged && Math.ceil(audibleTotal / audibleLimit) > 1"
             class="audible-pagination"
@@ -1122,6 +1122,14 @@ const totalPages = computed(() =>
     Math.ceil((totalTitleResultsCount.value || titleResults.value.length) / resultsPerPage.value),
   ),
 )
+
+const hasTitleResultControls = computed(() => {
+  if (isAudiblePaged.value) {
+    return Math.ceil(audibleTotal.value / audibleLimit.value) > 1
+  }
+
+  return totalPages.value > 1
+})
 
 const pagedTitleResults = computed(() => {
   const start = (currentAdvancedPage.value - 1) * resultsPerPage.value
@@ -3345,6 +3353,23 @@ select.form-input:focus {
 /* .btn-primary, .btn-secondary styles are global and reusable */
 
 /* Responsive Design */
+@media (max-width: 1200px) {
+  .client-pagination-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pagination-settings {
+    justify-content: center;
+  }
+
+  .pagination-nav {
+    justify-content: center;
+    flex-wrap: wrap;
+    margin-left: 0;
+  }
+}
+
 @media (max-width: 1024px) {
   .unified-search-form {
     flex-direction: column;
@@ -4140,9 +4165,17 @@ select.form-input:focus {
     width: 100%;
   }
 
+  .result-series,
+  .metadata-badges,
   .result-stats,
   .result-meta {
-    margin: 0 auto;
+    margin: 0.25rem auto;
+    justify-content: center;
+  }
+
+  .result-series,
+  .metadata-badges {
+    row-gap: 0.5rem;
   }
 
   .result-actions,
@@ -4200,23 +4233,13 @@ select.form-input:focus {
     scrollbar-gutter: stable both-edges;
   }
 
-  /* Make the results area scrollable on smaller viewports to keep the search bar visible and
-     allow users to quickly navigate long result sets without the page growing excessively tall. */
+  /* Keep mobile to a single continuous scroll container so sticky result controls
+     lock naturally as the page scrolls instead of inside a nested pane. */
   .search-results {
-    max-height: min(65vh, calc(100vh - 220px));
-    overflow-y: auto;
-    padding-right: 0.25rem; /* keep space for scrollbar */
-    scrollbar-width: thin;
-  }
-
-  .search-results::-webkit-scrollbar {
-    width: 12px;
-    height: 12px;
-  }
-
-  .search-results::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.06);
-    border-radius: 6px;
+    max-height: none;
+    overflow: visible;
+    padding-right: 0;
+    scrollbar-width: auto;
   }
 
   /* Allow long metadata badges and names to wrap instead of overflowing */
@@ -4253,6 +4276,8 @@ select.form-input:focus {
   background-color: #1a1a1a;
   z-index: 100;
   padding-bottom: 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   backdrop-filter: blur(10px);
 }
@@ -4263,24 +4288,69 @@ select.form-input:focus {
   align-items: center;
   gap: 1rem;
   flex-wrap: wrap;
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 .pagination-settings {
   display: flex;
   align-items: center;
   gap: 0.75rem;
+  min-width: 0;
 }
 
 .pagination-nav {
   display: flex;
   align-items: center;
   gap: 0.5rem;
+  min-width: 0;
+  margin-left: auto;
 }
 
 .page-indicator {
   color: #b6bcc4;
   font-size: 0.95rem;
   white-space: nowrap;
+  flex: 0 1 auto;
+  min-width: 0;
+  text-align: center;
+}
+
+.results-controls .btn {
+  min-width: 0;
+}
+
+.pagination-nav .btn {
+  flex: 0 1 auto;
+  padding-inline: 1rem;
+}
+
+@media (max-width: 1200px) {
+  .client-pagination-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .pagination-settings {
+    justify-content: center;
+  }
+
+  .pagination-nav {
+    width: 100%;
+    margin-left: 0;
+    justify-content: space-between;
+    flex-wrap: nowrap;
+  }
+
+  .pagination-nav .btn {
+    width: 100%;
+    max-width: 8.75rem;
+  }
+
+  .page-indicator {
+    flex: 0 0 auto;
+  }
 }
 
 .small-label {
@@ -4337,11 +4407,19 @@ select.form-input:focus {
     gap: 1rem;
   }
 
+  .results-controls {
+    top: 60px;
+    z-index: 200;
+    isolation: isolate;
+  }
+
   .pagination-settings {
     justify-content: center;
   }
 
   .pagination-nav {
+    width: 100%;
+    margin-left: 0;
     justify-content: center;
   }
 }

@@ -58,7 +58,8 @@ namespace Listenarr.Api.Tests
                 fileNamingMock.Object,
                 configMock.Object,
                 scanMock.Object,
-                rootFolderMock.Object
+                rootFolderMock.Object,
+                Mock.Of<IFileMover>()
             );
 
             var request = new ManualImportRequest
@@ -136,7 +137,8 @@ namespace Listenarr.Api.Tests
                 new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance),
                 configMock.Object,
                 scanMock.Object,
-                rootFolderMock.Object
+                rootFolderMock.Object,
+                Mock.Of<IFileMover>()
             );
 
             var request = new ManualImportRequest
@@ -220,7 +222,8 @@ namespace Listenarr.Api.Tests
                 new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance),
                 configMock.Object,
                 scanMock.Object,
-                rootFolderMock.Object
+                rootFolderMock.Object,
+                Mock.Of<IFileMover>()
             );
 
             var request = new ManualImportRequest
@@ -299,7 +302,8 @@ namespace Listenarr.Api.Tests
                 new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance),
                 configMock.Object,
                 scanMock.Object,
-                rootFolderMock.Object
+                rootFolderMock.Object,
+                Mock.Of<IFileMover>()
             );
 
             var request = new ManualImportRequest
@@ -374,7 +378,8 @@ namespace Listenarr.Api.Tests
                 new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance),
                 configMock.Object,
                 scanMock.Object,
-                rootFolderMock.Object
+                rootFolderMock.Object,
+                Mock.Of<IFileMover>()
             );
 
             var request = new ManualImportRequest
@@ -466,7 +471,8 @@ namespace Listenarr.Api.Tests
                 new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance),
                 configMock.Object,
                 scanMock.Object,
-                rootFolderMock.Object
+                rootFolderMock.Object,
+                Mock.Of<IFileMover>()
             );
 
             var request = new ManualImportRequest

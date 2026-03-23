@@ -19,6 +19,7 @@ public class ManualImportController : ControllerBase
     private readonly IConfigurationService _configService;
     private readonly IScanQueueService _scanQueueService;
     private readonly IRootFolderService _rootFolderService;
+    private readonly IFileMover _fileMover;
 
     public ManualImportController(
         ILogger<ManualImportController> logger,
@@ -27,7 +28,8 @@ public class ManualImportController : ControllerBase
         IFileNamingService fileNamingService,
         IConfigurationService configService,
         IScanQueueService scanQueueService,
-        IRootFolderService rootFolderService)
+        IRootFolderService rootFolderService,
+        IFileMover fileMover)
     {
         _logger = logger;
         _audiobookRepository = audiobookRepository;
@@ -36,6 +38,7 @@ public class ManualImportController : ControllerBase
         _configService = configService;
         _scanQueueService = scanQueueService;
         _rootFolderService = rootFolderService;
+        _fileMover = fileMover;
     }
 
     /// <summary>
@@ -309,11 +312,17 @@ public class ManualImportController : ControllerBase
             // Move or copy the file
             try
             {
-                _logger.LogDebug("Attempting to {Operation} file from {Source} to {Destination}", inputMode == "move" ? "move" : "copy", item.FullPath, destinationPath);
-                if (inputMode == "move")
+                _logger.LogDebug("Attempting to {Operation} file from {Source} to {Destination}", inputMode, item.FullPath, destinationPath);
+                if (string.Equals(inputMode, "move", StringComparison.OrdinalIgnoreCase))
                 {
                     System.IO.File.Move(item.FullPath, destinationPath, overwrite: false);
                     _logger.LogInformation("Moved file {Source} to {Destination}", item.FullPath, destinationPath);
+                }
+                else if (string.Equals(inputMode, "hardlink/copy", StringComparison.OrdinalIgnoreCase))
+                {
+                    var ok = await _fileMover.HardlinkFileAsync(item.FullPath, destinationPath);
+                    if (!ok) throw new IOException($"HardlinkFileAsync failed: {item.FullPath} -> {destinationPath}");
+                    _logger.LogInformation("Hardlinked file {Source} to {Destination}", item.FullPath, destinationPath);
                 }
                 else
                 {
@@ -840,6 +849,15 @@ public class ManualImportController : ControllerBase
                 {
                     System.IO.File.Move(companionFile, destinationPath, overwrite: false);
                 }
+                else if (string.Equals(request.InputMode, "hardlink/copy", StringComparison.OrdinalIgnoreCase))
+                {
+                    var ok = await _fileMover.HardlinkFileAsync(companionFile, destinationPath);
+                    if (!ok)
+                    {
+                        _logger.LogWarning("Hardlink failed for companion file {Source}, falling back to copy", companionFile);
+                        System.IO.File.Copy(companionFile, destinationPath, overwrite: false);
+                    }
+                }
                 else
                 {
                     System.IO.File.Copy(companionFile, destinationPath, overwrite: false);
@@ -918,7 +936,7 @@ public class ManualImportRequest
     public string Mode { get; set; } = "interactive";
 
     [JsonPropertyName("inputMode")]
-    public string? InputMode { get; set; } // "move" or "copy"
+    public string? InputMode { get; set; } // "move", "copy", or "hardlink/copy"
 
     [JsonPropertyName("includeCompanionFiles")]
     public bool IncludeCompanionFiles { get; set; }
