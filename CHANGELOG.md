@@ -5,6 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.62]
+
+### Fixed
+- **Hardlink mode ignored during manual import:** `ManualImportController` was silently falling back to a plain file copy for both primary audio files and companion files when `inputMode` was `hardlink/copy`. Fixed by injecting `IFileMover` into the controller and adding the missing hardlink branch in `ImportFileAsync` and `ImportCompanionFilesAsync`.
+- **Library Import default mode when general setting is "Copy":** The Library Import view was mapping a `completedFileAction` of `Copy` to `move` mode. It now correctly maps any non-Move setting (`Copy` or `Hardlink/Copy`) to `hardlink/copy`, which falls back to a plain copy automatically when hardlinking is not possible (e.g. cross-volume).
+
 ## [0.2.61] - 2026-03-21
 
 ### Added
