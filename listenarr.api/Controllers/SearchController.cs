@@ -552,6 +552,11 @@ namespace Listenarr.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(req.Title)) queryParts.Add($"TITLE:{req.Title}");
                     if (!string.IsNullOrWhiteSpace(req.Isbn)) queryParts.Add($"ISBN:{req.Isbn}");
                     if (!string.IsNullOrWhiteSpace(req.Asin)) queryParts.Add($"ASIN:{req.Asin}");
+                    // When only a series name was provided and the series-specific lookup above
+                    // didn't resolve, feed the series name as a TITLE: token so the unified
+                    // IntelligentSearch pipeline can still find matching products.
+                    if (queryParts.Count == 0 && !string.IsNullOrWhiteSpace(req.Series))
+                        queryParts.Add($"TITLE:{req.Series}");
                     var query = queryParts.Count > 0 ? string.Join(" ", queryParts) : (req.Query ?? string.Empty);
                     try { _logger.LogInformation("Advanced search request composed parts={Parts} -> query='{Query}'", string.Join("|", queryParts), LogRedaction.SanitizeText(query)); }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -606,14 +611,16 @@ namespace Listenarr.Api.Controllers
                         try
                         {
                             var seriesFilter = req.Series.Trim();
+                            var ci = System.Globalization.CultureInfo.InvariantCulture.CompareInfo;
+                            const System.Globalization.CompareOptions diOpts = System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace;
                             if (System.Text.RegularExpressions.Regex.IsMatch(seriesFilter, @"^B0[A-Z0-9]{8,}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                             {
-                                results = results.Where(r => (!string.IsNullOrWhiteSpace(r.Series) && r.Series.IndexOf(seriesFilter, StringComparison.OrdinalIgnoreCase) >= 0)
+                                results = results.Where(r => (!string.IsNullOrWhiteSpace(r.Series) && ci.IndexOf(r.Series, seriesFilter, diOpts) >= 0)
                                                             || (!string.IsNullOrWhiteSpace(r.Asin) && string.Equals(r.Asin, seriesFilter, StringComparison.OrdinalIgnoreCase))).ToList();
                             }
                             else
                             {
-                                results = results.Where(r => !string.IsNullOrWhiteSpace(r.Series) && r.Series.IndexOf(seriesFilter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                                results = results.Where(r => !string.IsNullOrWhiteSpace(r.Series) && ci.IndexOf(r.Series, seriesFilter, diOpts) >= 0).ToList();
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

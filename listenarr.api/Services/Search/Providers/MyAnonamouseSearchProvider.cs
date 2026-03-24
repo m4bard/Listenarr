@@ -1020,16 +1020,29 @@ namespace Listenarr.Api.Services.Search.Providers
             var upper = code.ToUpperInvariant();
             return upper switch
             {
+                "ARA" or "AR" => "Arabic",
+                "CHI" or "ZHO" or "ZH" => "Chinese",
+                "CZE" or "CES" or "CS" => "Czech",
+                "DAN" or "DA" => "Danish",
+                "DUT" or "NLD" or "NL" => "Dutch",
                 "ENG" or "EN" => "English",
-                "SPA" or "ES" => "Spanish",
+                "FIN" or "FI" => "Finnish",
                 "FRE" or "FRA" or "FR" => "French",
                 "GER" or "DEU" or "DE" => "German",
+                "GRE" or "ELL" or "EL" => "Greek",
+                "HEB" or "HE" or "IW" => "Hebrew",
+                "HIN" or "HI" => "Hindi",
+                "HUN" or "HU" => "Hungarian",
                 "ITA" or "IT" => "Italian",
+                "JPN" or "JA" => "Japanese",
+                "KOR" or "KO" => "Korean",
+                "NOR" or "NOB" or "NNO" or "NO" => "Norwegian",
+                "POL" or "PL" => "Polish",
                 "POR" or "PT" => "Portuguese",
                 "RUS" or "RU" => "Russian",
-                "JPN" or "JA" => "Japanese",
-                "CHI" or "ZH" => "Chinese",
-                "ARA" or "AR" => "Arabic",
+                "SPA" or "ES" => "Spanish",
+                "SWE" or "SV" => "Swedish",
+                "TUR" or "TR" => "Turkish",
                 _ => null
             };
         }
