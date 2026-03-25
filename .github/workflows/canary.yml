@@ -182,6 +182,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Login to ATCR
+        uses: docker/login-action@v2
+        with:
+          registry: atcr.io
+          username: ${{ secrets.ATCR_USERNAME }}
+          password: ${{ secrets.ATCR_TOKEN }}
+
       - name: Set image name
         id: set-tags
         run: |
@@ -189,6 +196,7 @@ jobs:
           echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
           # Publish GHCR images under the same owner namespace
           echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
+          echo "ATCR_IMAGE=atcr.io/therobbiedavis.com/listenarr" >> $GITHUB_OUTPUT
 
       - name: Find triggering Pull Request
         id: find_triggering_pr
@@ -394,6 +402,8 @@ jobs:
             ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:canary-${{ steps.resolve-version.outputs.VERSION }}
             ${{ steps.set-tags.outputs.GHCR_IMAGE }}:canary
             ${{ steps.set-tags.outputs.GHCR_IMAGE }}:canary-${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:canary
+            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:canary-${{ steps.resolve-version.outputs.VERSION }}
 
       - name: Notify Discord
         uses: rjstone/discord-webhook-notify@v2.2.1
@@ -403,7 +413,7 @@ jobs:
             description: v${{steps.resolve-version.outputs.VERSION}} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
             details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
             text: A new canary build has been released for docker.
-            webhookUrl: ${{ secrets.DISCORD_DOCKER_UPDATE_URL }}
+            webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
 
       # version bump was pushed via PR+auto-merge above
 
