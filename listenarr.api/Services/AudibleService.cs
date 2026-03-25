@@ -282,12 +282,16 @@ namespace Listenarr.Api.Services
                     !doc.RootElement.TryGetProperty("product", out var product) ||
                     product.ValueKind != JsonValueKind.Object)
                 {
+                    _logger.LogWarning("GetTypedBooksBySeriesAsinAsync: No product document for series ASIN {Asin} (doc={DocNull})", seriesAsin, doc == null);
                     return null;
                 }
 
                 if (!product.TryGetProperty("relationships", out var relationships) ||
                     relationships.ValueKind != JsonValueKind.Array)
                 {
+                    _logger.LogWarning("GetTypedBooksBySeriesAsinAsync: No relationships array for series ASIN {Asin}. Product has properties: {Props}",
+                        seriesAsin,
+                        string.Join(", ", product.EnumerateObject().Select(p => p.Name).Take(15)));
                     return new List<AudibleSearchResult>();
                 }
 
@@ -303,9 +307,15 @@ namespace Listenarr.Api.Services
                     .OrderBy(item => ParseSeriesPosition(item.Position))
                     .ToList();
 
+                _logger.LogInformation("GetTypedBooksBySeriesAsinAsync: Series ASIN {Asin} has {Count} relationship entries", seriesAsin, relationshipEntries.Count);
+
                 var books = await GetBooksMetadataByAsinsAsync(
                     relationshipEntries.Select(item => item.Asin!),
                     region);
+
+                _logger.LogInformation("GetTypedBooksBySeriesAsinAsync: Fetched metadata for {FetchedCount}/{TotalCount} books from series {Asin}",
+                    books.Count, relationshipEntries.Count, seriesAsin);
+
                 var booksByAsin = books
                     .Where(book => !string.IsNullOrWhiteSpace(book.Asin))
                     .ToDictionary(book => book.Asin!, StringComparer.OrdinalIgnoreCase);
@@ -694,10 +704,17 @@ namespace Listenarr.Api.Services
                 sortBy: "Relevance",
                 returnRawProducts: true));
 
+            var totalRawProducts = responses.Sum(r => r.RawProducts?.Count ?? 0);
+            _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}' region={Region}: title search returned {TitleCount} raw products, query search returned {QueryCount} raw products",
+                seriesName, region,
+                responses.ElementAtOrDefault(0)?.RawProducts?.Count ?? 0,
+                responses.ElementAtOrDefault(1)?.RawProducts?.Count ?? 0);
+
             var normalizedSeries = seriesName.Trim();
             var compareInfo = CultureInfo.InvariantCulture.CompareInfo;
             const CompareOptions diacriticIgnore = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
-            return responses
+
+            var allSeriesItems = responses
                 .SelectMany(response => response.RawProducts ?? new List<JsonElement>())
                 .SelectMany(product =>
                 {
@@ -713,6 +730,13 @@ namespace Listenarr.Api.Services
                         });
                 })
                 .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+                .ToList();
+
+            _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}': extracted {Count} series items from raw products. Unique names: {Names}",
+                seriesName, allSeriesItems.Count,
+                string.Join(", ", allSeriesItems.Select(i => i.Name).Distinct(StringComparer.OrdinalIgnoreCase).Take(10)));
+
+            var matched = allSeriesItems
                 .Where(item =>
                     compareInfo.Compare(item.Name, normalizedSeries, diacriticIgnore) == 0 ||
                     compareInfo.IndexOf(item.Name!, normalizedSeries, diacriticIgnore) >= 0 ||
@@ -721,6 +745,11 @@ namespace Listenarr.Api.Services
                 .Select(group => group.First())
                 .OrderBy(item => compareInfo.Compare(item.Name, normalizedSeries, diacriticIgnore) == 0 ? 0 : 1)
                 .ToList();
+
+            _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}': {MatchCount} series items matched after name filter",
+                seriesName, matched.Count);
+
+            return matched;
         }
 
         private sealed class SearchProductsDirectResponse
@@ -790,7 +819,7 @@ namespace Listenarr.Api.Services
                 ["response_groups"] = "media,contributors,series,product_attrs,product_desc,product_extended_attrs,category_ladders"
             };
 
-            if (!string.IsNullOrWhiteSpace(query)) parameters["query"] = query;
+            if (!string.IsNullOrWhiteSpace(query)) parameters["keywords"] = query;
             if (!string.IsNullOrWhiteSpace(title)) parameters["title"] = title;
             if (!string.IsNullOrWhiteSpace(author)) parameters["author"] = author;
             if (!string.IsNullOrWhiteSpace(narrator)) parameters["narrator"] = narrator;
@@ -1020,7 +1049,8 @@ namespace Listenarr.Api.Services
             }
 
             return results
-                .Where(result => string.Equals(result.Language, language, StringComparison.OrdinalIgnoreCase))
+                .Where(result => string.IsNullOrWhiteSpace(result.Language) ||
+                                 string.Equals(result.Language, language, StringComparison.OrdinalIgnoreCase))
                 .ToList();
         }
 

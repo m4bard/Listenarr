@@ -141,8 +141,11 @@ namespace Listenarr.Api.Tests
             var stubAudible = new StubAudibleService();
             var mockMeta = new Mock<IAudiobookMetadataService>();
 
-            // Simulate series search returning an array with 'asin' property
-            stubAudible.SeriesResponseToReturn = new[] { new { asin = "B0SERIES1234", region = "us" } };
+            // Simulate series search returning SeriesLookupItem list with ASIN
+            stubAudible.SeriesResponseToReturn = new List<Listenarr.Api.Services.SeriesLookupItem>
+            {
+                new() { Asin = "B0SERIES1234", Name = "Some Series", Region = "us" }
+            };
 
             var logger = new NullLogger<SearchController>();
             var controller = new SearchController(mockSearch.Object, logger, stubAudible, mockMeta.Object, null);
@@ -159,14 +162,18 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task AdvancedSearch_SeriesName_With_Url_Fallback_Extracts_Asin_And_Uses_It()
+        public async Task AdvancedSearch_SeriesName_With_NonMatching_Region_Falls_Back_To_First_Asin()
         {
             var mockSearch = new Mock<ISearchService>();
             var stubAudible = new StubAudibleService();
             var mockMeta = new Mock<IAudiobookMetadataService>();
 
-            // Simulate series search returning an array without 'asin' but with 'url' containing ASIN
-            stubAudible.SeriesResponseToReturn = new[] { new { url = "https://audible.de/series/B0FALLBACK123", region = "us" } };
+            // Simulate series search returning items whose region doesn't match the request —
+            // the code should still pick the first item with a valid ASIN as a fallback
+            stubAudible.SeriesResponseToReturn = new List<Listenarr.Api.Services.SeriesLookupItem>
+            {
+                new() { Asin = "B0FALLBACK123", Name = "Some Series", Region = "de" }
+            };
 
             var logger = new NullLogger<SearchController>();
             var controller = new SearchController(mockSearch.Object, logger, stubAudible, mockMeta.Object, null);
@@ -278,6 +285,117 @@ namespace Listenarr.Api.Tests
             var firstSeries = series.First();
             Assert.Equal("S1", firstSeries.GetProperty("asin").GetString());
         }
+
+        [Fact]
+        public async Task AdvancedSearch_SeriesFilter_Returns_Empty_When_No_Match()
+        {
+            var mockSearch = new Mock<ISearchService>();
+            var stubAudible = new StubAudibleService();
+            var mockMeta = new Mock<IAudiobookMetadataService>();
+
+            // IntelligentSearch returns results whose Series does NOT match the requested series
+            var md1 = new MetadataSearchResult { Asin = "B1", Title = "Unrelated Book", Series = "Wrong Series" };
+            var md2 = new MetadataSearchResult { Asin = "B2", Title = "Another Unrelated", Series = "Also Wrong" };
+            mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
+                      .ReturnsAsync(new List<MetadataSearchResult> { md1, md2 });
+
+            var logger = new NullLogger<SearchController>();
+            var controller = new SearchController(mockSearch.Object, logger, stubAudible, mockMeta.Object, null);
+            controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+
+            var req = new SearchRequest { Mode = SearchMode.Advanced, Author = "Some Author", Series = "Dune" };
+            var reqJson = System.Text.Json.JsonSerializer.SerializeToElement(req);
+            var res = await controller.Search(reqJson);
+
+            Assert.NotNull(res);
+            var ok = Assert.IsType<OkObjectResult>(res.Result);
+            var serialized = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+            using var doc = System.Text.Json.JsonDocument.Parse(serialized);
+            var root = doc.RootElement;
+            var resultsEl = root.ValueKind == System.Text.Json.JsonValueKind.Object && root.TryGetProperty("results", out var rr) ? rr : root;
+            Assert.Equal(System.Text.Json.JsonValueKind.Array, resultsEl.ValueKind);
+            // Should be empty — NOT the unfiltered unrelated results
+            Assert.Equal(0, resultsEl.GetArrayLength());
+        }
+
+        [Fact]
+        public async Task AdvancedSearch_SeriesBooks_With_NullLanguage_Are_Preserved()
+        {
+            var mockSearch = new Mock<ISearchService>();
+            var stubAudible = new StubAudibleService();
+            var mockMeta = new Mock<IAudiobookMetadataService>();
+
+            // Simulate series lookup returning a series ASIN
+            stubAudible.SeriesResponseToReturn = new List<Listenarr.Api.Services.SeriesLookupItem>
+            {
+                new() { Asin = "B0DUNE", Name = "Dune", Region = "us" }
+            };
+
+            // Override GetBooksBySeriesAsinAsync to return books with null Language
+            stubAudible.SeriesBooksOverride = new List<AudibleSearchResult>
+            {
+                new AudibleSearchResult { Asin = "BDUNE1", Title = "Dune", Language = null },
+                new AudibleSearchResult { Asin = "BDUNE2", Title = "Dune Messiah", Language = "English" }
+            };
+
+            mockMeta.Setup(m => m.GetAudibleMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()))
+                    .ReturnsAsync((string asin, string region, bool force) => new AudibleBookResponse { Asin = asin, Title = "Test" });
+
+            var logger = new NullLogger<SearchController>();
+            var controller = new SearchController(mockSearch.Object, logger, stubAudible, mockMeta.Object, null);
+            controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+
+            // Search with language=english — books with null Language should still be included
+            var req = new SearchRequest { Mode = SearchMode.Advanced, Series = "Dune", Region = "us", Language = "english" };
+            var reqJson = System.Text.Json.JsonSerializer.SerializeToElement(req);
+            var res = await controller.Search(reqJson);
+
+            Assert.NotNull(res);
+            var ok = Assert.IsType<OkObjectResult>(res.Result);
+            var serialized = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+            using var arrDoc = System.Text.Json.JsonDocument.Parse(serialized);
+            var arr = arrDoc.RootElement;
+            Assert.Equal(System.Text.Json.JsonValueKind.Array, arr.ValueKind);
+            // Both books should be present — the null-language one is NOT filtered out
+            Assert.Equal(2, arr.GetArrayLength());
+        }
+
+        [Fact]
+        public async Task AdvancedSearch_SeriesOnly_Returns_Books_From_Series_Lookup()
+        {
+            var mockSearch = new Mock<ISearchService>();
+            var stubAudible = new StubAudibleService();
+            var mockMeta = new Mock<IAudiobookMetadataService>();
+
+            // Simulate series lookup
+            stubAudible.SeriesResponseToReturn = new List<Listenarr.Api.Services.SeriesLookupItem>
+            {
+                new() { Asin = "B0SERIES", Name = "Test Series", Region = "us" }
+            };
+
+            mockMeta.Setup(m => m.GetAudibleMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>()))
+                    .ReturnsAsync((string asin, string region, bool force) => new AudibleBookResponse { Asin = asin, Title = "Book in series" });
+
+            var logger = new NullLogger<SearchController>();
+            var controller = new SearchController(mockSearch.Object, logger, stubAudible, mockMeta.Object, null);
+            controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+
+            var req = new SearchRequest { Mode = SearchMode.Advanced, Series = "Test Series", Region = "us" };
+            var reqJson = System.Text.Json.JsonSerializer.SerializeToElement(req);
+            var res = await controller.Search(reqJson);
+
+            Assert.NotNull(res);
+            // Should have called GetBooksBySeriesAsinAsync
+            Assert.Equal("GetBooksBySeriesAsinAsync", stubAudible.LastMethod);
+            Assert.Equal("B0SERIES", stubAudible.LastSeriesAsin);
+
+            var ok = Assert.IsType<OkObjectResult>(res.Result);
+            var serialized = System.Text.Json.JsonSerializer.Serialize(ok.Value);
+            using var arrDoc = System.Text.Json.JsonDocument.Parse(serialized);
+            var arr = arrDoc.RootElement;
+            Assert.Equal(System.Text.Json.JsonValueKind.Array, arr.ValueKind);
+            Assert.True(arr.GetArrayLength() > 0, "Series-only search should return at least one book");
+        }
     }
 
     internal class StubAudibleService : AudibleService
@@ -292,6 +410,7 @@ namespace Listenarr.Api.Tests
 
         public object? SeriesResponseToReturn { get; set; }
         public string? LastSeriesAsin { get; set; }
+        public List<AudibleSearchResult>? SeriesBooksOverride { get; set; }
 
         public StubAudibleService() : base(new HttpClient(), new NullLogger<AudibleService>()) { }
 
@@ -311,20 +430,16 @@ namespace Listenarr.Api.Tests
             return Task.FromResult(SeriesResponseToReturn);
         }
 
-        public override async Task<object?> GetBooksBySeriesAsinAsync(string seriesAsin, string region = "us")
+        public override Task<object?> GetBooksBySeriesAsinAsync(string seriesAsin, string region = "us")
         {
             LastMethod = "GetBooksBySeriesAsinAsync";
             LastSeriesAsin = seriesAsin;
-            // Return a minimal AudibleSearchResponse-like envelope for downstream parsing
-            var response = new AudibleSearchResponse
+            // Return List<AudibleSearchResult> directly — controller casts with "as List<AudibleSearchResult>"
+            var books = SeriesBooksOverride ?? new List<AudibleSearchResult>
             {
-                Results = new System.Collections.Generic.List<AudibleSearchResult>
-                {
-                    new AudibleSearchResult { Asin = seriesAsin, Title = "Book in series" }
-                },
-                TotalResults = 1
+                new AudibleSearchResult { Asin = seriesAsin, Title = "Book in series" }
             };
-            return await Task.FromResult<object>(response);
+            return Task.FromResult<object?>(books);
         }
 
         public override Task<AudibleSearchResponse?> SearchByTitleAndAuthorPagedAsync(string title, string author, int page = 1, int limit = 50, string region = "us", string? language = null)
