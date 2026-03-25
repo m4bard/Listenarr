@@ -11,7 +11,7 @@ ENV DOCKER_ENV=true
 # helper Node process (tools/discord-bot/index.js). We keep this minimal and clean
 # up apt caches to keep the image small.
 RUN apt-get update \
-	&& apt-get install -y curl ca-certificates gnupg2 --no-install-recommends \
+	&& apt-get install -y curl ca-certificates gnupg2 gosu --no-install-recommends \
 	&& curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 	&& apt-get install -y nodejs --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
@@ -36,4 +36,8 @@ WORKDIR /app
 # Ensure database directory exists
 RUN mkdir -p /app/config/database
 
-ENTRYPOINT ["dotnet", "Listenarr.Api.dll"]
+# Copy entrypoint script for PUID/PGID/UMASK support
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]
