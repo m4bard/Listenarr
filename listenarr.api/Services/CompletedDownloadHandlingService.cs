@@ -400,13 +400,20 @@ namespace Listenarr.Api.Services
 
                     bool deleteFiles = removalPolicy == "remove_and_delete";
 
-                    // Resolve the client-side ID (prefer TorrentHash for torrents)
+                    // Resolve the client-side ID (prefer TorrentHash for torrents, then ClientDownloadId for usenet)
                     string? torrentHash = null;
                     if (download.Metadata != null && download.Metadata.TryGetValue("TorrentHash", out var hashObj))
                     {
                         torrentHash = hashObj?.ToString();
                     }
-                    string clientId = !string.IsNullOrEmpty(torrentHash) ? torrentHash : download.Id;
+                    string? clientDownloadId = null;
+                    if (download.Metadata != null && download.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
+                    {
+                        clientDownloadId = clientIdObj?.ToString();
+                    }
+                    string clientId = !string.IsNullOrEmpty(torrentHash) ? torrentHash
+                        : !string.IsNullOrEmpty(clientDownloadId) ? clientDownloadId
+                        : download.Id;
 
                     // Attempt 1: Try primary client
                     bool removed = false;

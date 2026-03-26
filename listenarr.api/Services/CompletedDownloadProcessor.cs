@@ -824,7 +824,7 @@ namespace Listenarr.Api.Services
                                         _logger.LogDebug("Using torrent hash {Hash} instead of download ID for {ClientType} removal", torrentHash, clientConfig.Type);
                                     }
                                 }
-                                else if (clientConfig.Type.Equals("nzbget", StringComparison.OrdinalIgnoreCase) && 
+                                else if (clientConfig.Type.Equals("nzbget", StringComparison.OrdinalIgnoreCase) &&
                                          downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("TorrentHash", out var droneIdObj))
                                 {
                                     // For NZBGet, TorrentHash actually contains the droneId (GUID)
@@ -833,6 +833,16 @@ namespace Listenarr.Api.Services
                                     {
                                         clientId = droneId;
                                         _logger.LogDebug("Using droneId {DroneId} instead of download ID for NZBGet removal", droneId);
+                                    }
+                                }
+                                else if (clientConfig.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase) &&
+                                         downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("ClientDownloadId", out var sabIdObj))
+                                {
+                                    var sabId = sabIdObj?.ToString();
+                                    if (!string.IsNullOrEmpty(sabId))
+                                    {
+                                        clientId = sabId;
+                                        _logger.LogDebug("Using ClientDownloadId {NzoId} instead of download ID for SABnzbd removal", sabId);
                                     }
                                 }
                                 
