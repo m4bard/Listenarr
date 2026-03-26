@@ -2,7 +2,7 @@
 set -e
 
 PUID=${PUID:-0}
-PGID=${PGID:-0}
+PGID=${PGID:-${PUID}}
 UMASK=${UMASK:-022}
 
 umask "$UMASK"
@@ -11,7 +11,9 @@ umask "$UMASK"
 if [ "$(id -u)" = "0" ] && { [ "$PUID" != "0" ] || [ "$PGID" != "0" ]; }; then
     echo "Starting Listenarr with UID=$PUID GID=$PGID UMASK=$UMASK"
 
-    groupmod -o -g "$PGID" listenarr 2>/dev/null || addgroup --gid "$PGID" listenarr
+    if [ "$PGID" != "0" ]; then
+        groupmod -o -g "$PGID" listenarr 2>/dev/null || addgroup --gid "$PGID" listenarr
+    fi
     usermod -o -u "$PUID" -g "$PGID" listenarr 2>/dev/null || adduser --uid "$PUID" --gid "$PGID" --disabled-password --gecos "" --no-create-home listenarr
 
     chown -R "$PUID:$PGID" /app/config

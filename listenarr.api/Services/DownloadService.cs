@@ -963,7 +963,7 @@ namespace Listenarr.Api.Services
                         var retryUri = torrentUri;
                         for (int retryHop = 0; retryHop < 6; retryHop++)
                         {
-                            var retryReq = new HttpRequestMessage(HttpMethod.Get, retryUri);
+                            using var retryReq = new HttpRequestMessage(HttpMethod.Get, retryUri);
                             retryReq.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
                             retryReq.Headers.Referrer = new Uri("https://www.myanonamouse.net/");
                             retryReq.Headers.Accept.ParseAdd("application/x-bittorrent, application/octet-stream, */*; q=0.01");

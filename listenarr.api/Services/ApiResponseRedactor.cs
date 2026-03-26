@@ -123,16 +123,9 @@ public static class ApiResponseRedactor
                 return incomingJson;
 
             // Quick scan: any values are "REDACTED"?
-            bool hasRedacted = false;
-            foreach (var prop in incomingDoc.RootElement.EnumerateObject())
-            {
-                if (prop.Value.ValueKind == JsonValueKind.String &&
-                    prop.Value.GetString() == RedactedValue)
-                {
-                    hasRedacted = true;
-                    break;
-                }
-            }
+            bool hasRedacted = incomingDoc.RootElement.EnumerateObject().Any(prop =>
+                prop.Value.ValueKind == JsonValueKind.String &&
+                prop.Value.GetString() == RedactedValue);
 
             if (!hasRedacted)
                 return incomingJson;
@@ -282,7 +275,7 @@ public static class ApiResponseRedactor
                || k.Contains("token")
                || k.Contains("secret")
                || k.Contains("password")
-               || k == "mam_id"
+               || k.Contains("mam")
                || k.Contains("cookie")
                || k.Contains("authorization");
     }

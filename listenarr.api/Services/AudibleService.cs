@@ -704,7 +704,6 @@ namespace Listenarr.Api.Services
                 sortBy: "Relevance",
                 returnRawProducts: true));
 
-            var totalRawProducts = responses.Sum(r => r.RawProducts?.Count ?? 0);
             _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}' region={Region}: title search returned {TitleCount} raw products, query search returned {QueryCount} raw products",
                 seriesName, region,
                 responses.ElementAtOrDefault(0)?.RawProducts?.Count ?? 0,
