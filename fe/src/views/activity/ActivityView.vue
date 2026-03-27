@@ -65,7 +65,8 @@
           >
             <div class="col-title">
               <div class="title-cell">
-                <span class="title-text">{{ item.title }}</span>
+                <RouterLink v-if="item.audiobookId" :to="`/audiobooks/${item.audiobookId}`" class="title-link">{{ getDisplayTitle(item) }}</RouterLink>
+                <span v-else class="title-text">{{ getDisplayTitle(item) }}</span>
               </div>
             </div>
             <div class="col-quality">
@@ -157,7 +158,7 @@
             remove it from Listenarr only (this will delete the record from Listenarr's downloads)?
           </p>
           <div class="remove-item-info">
-            <strong>{{ itemToRemove?.title }}</strong>
+            <strong>{{ itemToRemove ? getDisplayTitle(itemToRemove) : '' }}</strong>
             <div class="item-details">
               <span v-if="itemToRemove?.downloadClient">
                 <PhDesktop />
@@ -218,12 +219,14 @@ import { errorTracking } from '@/services/errorTracking'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { useDownloadsStore } from '@/stores/downloads'
+import { useLibraryStore } from '@/stores/library'
 import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
 import { useConfigurationStore } from '@/stores/configuration'
 import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 
 const downloadsStore = useDownloadsStore()
+const libraryStore = useLibraryStore()
 const configStore = useConfigurationStore()
 
 const filterText = ref('')
@@ -429,6 +432,7 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
   return {
     id: download.id,
     title: download.title,
+    audiobookId: download.audiobookId,
     status: status,
     progress: download.progress,
     size: download.totalSize,
@@ -510,13 +514,32 @@ const allActivityItems = computed(() => {
   return Array.from(finalMap.values())
 })
 
+// Build a lookup map from audiobook ID -> title for resolving friendly names
+const audiobookTitleMap = computed(() => {
+  const map = new Map<number, string>()
+  for (const ab of libraryStore.audiobooks) {
+    if (ab.id && ab.title) map.set(ab.id, ab.title)
+  }
+  return map
+})
+
+const getDisplayTitle = (item: QueueItem): string => {
+  if (item.audiobookId) {
+    const abTitle = audiobookTitleMap.value.get(item.audiobookId)
+    if (abTitle) return abTitle
+  }
+  return item.title
+}
+
 // Filter by text search across title, client, status
 const filteredQueue = computed(() => {
   const text = filterText.value.trim().toLowerCase()
   if (!text) return allActivityItems.value
 
   return allActivityItems.value.filter((item) => {
+    const displayTitle = getDisplayTitle(item)
     return (
+      (displayTitle && displayTitle.toLowerCase().includes(text)) ||
       (item.title && item.title.toLowerCase().includes(text)) ||
       (item.downloadClient && item.downloadClient.toLowerCase().includes(text)) ||
       (item.status && item.status.toLowerCase().includes(text)) ||
@@ -821,7 +844,7 @@ onUnmounted(() => {
 
 /* Grid container with virtual scrolling */
 .queue-grid-container {
-  height: calc(100vh - 170px);
+  height: calc(100vh - 200px);
   overflow-y: auto;
   position: relative;
   border: 1px solid rgba(255, 255, 255, 0.06);
@@ -923,12 +946,21 @@ onUnmounted(() => {
   min-width: 0;
 }
 
-.title-text {
+.title-text,
+.title-link {
   color: white;
   font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.title-link {
+  text-decoration: none;
+}
+
+.title-link:hover {
+  color: #4dabf7;
 }
 
 .quality-tag {

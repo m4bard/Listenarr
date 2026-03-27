@@ -1077,46 +1077,18 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug(rex2, "Failed to rewrite numeric IPs inside torrent (non-fatal)");
                         }
 
-                        // 3) Replace any announce host entries (e.g., t.myanonamouse.net) with the configured indexer host so tracker sees expected host/passkey pairing
+                        // 3) Log announce URLs for diagnostics — do NOT rewrite legitimate tracker subdomains
+                        //    (e.g., t.myanonamouse.net is the actual tracker and must not be changed to www.myanonamouse.net)
                         try
                         {
                             var announces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentBytes);
                             if (announces != null && announces.Count > 0)
                             {
-                                foreach (var ann in announces.Distinct().ToList())
-                                {
-                                    try
-                                    {
-                                        if (Uri.TryCreate(ann, UriKind.Absolute, out var annUri))
-                                        {
-                                            var annHost = annUri.Host;
-                                            // skip if same host or local/private IP
-                                            if (string.IsNullOrEmpty(annHost) || string.Equals(annHost, indexerUri.Host, StringComparison.OrdinalIgnoreCase))
-                                                continue;
-
-                                            // Skip local/private IPs
-                                            if (annHost.StartsWith("127.") || annHost.StartsWith("10.") || annHost.StartsWith("192.168.") || annHost.StartsWith("172."))
-                                                continue;
-
-                                            var replacedAnn = MyAnonamouseHelper.ReplaceHostInTorrent(torrentBytes, annHost, indexerUri.Host);
-                                            if (replacedAnn != null && replacedAnn.Length > 0)
-                                            {
-                                                torrentBytes = replacedAnn;
-                                                _logger.LogInformation("Rewrote torrent announce host from {OldHost} to {NewHost} for '{Title}'", annHost, indexerUri.Host, searchResult.Title);
-                                                // Refresh ascii and announces for any further replacements
-                                                ascii = System.Text.Encoding.ASCII.GetString(torrentBytes);
-                                                announces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentBytes);
-                                            }
-                                        }
-                                    }
-                                    catch (Exception subEx) when (subEx is not OperationCanceledException && subEx is not OutOfMemoryException && subEx is not StackOverflowException) {
-                                        _logger.LogDebug(subEx, "Non-fatal failure while attempting to rewrite announce URL {Ann} for '{Title}'", ann, searchResult.Title);
-                                    }
-                                }
+                                _logger.LogDebug("Torrent announce URLs for '{Title}': {Announces}", searchResult.Title, string.Join(", ", announces.Distinct()));
                             }
                         }
                         catch (Exception rex3) when (rex3 is not OperationCanceledException && rex3 is not OutOfMemoryException && rex3 is not StackOverflowException) {
-                            _logger.LogDebug(rex3, "Failed to rewrite announce hosts inside torrent (non-fatal)");
+                            _logger.LogDebug(rex3, "Failed to extract announce URLs from torrent (non-fatal)");
                         }
                     }
                 }
@@ -1139,6 +1111,12 @@ namespace Listenarr.Api.Services
                         foreach (var ann in (currentAnnounces ?? new System.Collections.Generic.List<string>()).Distinct())
                         {
                             if (string.IsNullOrWhiteSpace(ann)) continue;
+                            // Only append mam_id to actual tracker announce URLs, not file/web-seed URLs
+                            if (!ann.Contains("/announce", StringComparison.OrdinalIgnoreCase) && !ann.Contains("/tracker", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _logger.LogDebug("Skipping non-tracker URL for mam_id append: {Url}", ann);
+                                continue;
+                            }
                             // don't double-append if already present
                             if (ann.IndexOf("mam_id=", StringComparison.OrdinalIgnoreCase) >= 0)
                             {

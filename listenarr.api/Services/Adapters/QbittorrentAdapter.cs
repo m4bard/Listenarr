@@ -433,9 +433,13 @@ namespace Listenarr.Api.Services.Adapters
                     try
                     {
                         var announces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentFileData);
-                        if (announces != null && announces.Count > 0)
+                        // Filter to only actual tracker announce URLs — exclude file/web-seed URLs
+                        var trackerAnnounces = announces?.Where(a =>
+                            a.Contains("/announce", StringComparison.OrdinalIgnoreCase) ||
+                            a.Contains("/tracker", StringComparison.OrdinalIgnoreCase)).ToList();
+                        if (trackerAnnounces != null && trackerAnnounces.Count > 0)
                         {
-                            var trackerUrls = string.Join("\n", announces.Distinct());
+                            var trackerUrls = string.Join("\n", trackerAnnounces.Distinct());
                             using var addTrackersData = new FormUrlEncodedContent(new[]
                             {
                                 new KeyValuePair<string, string>("hash", detectedHash),
@@ -443,7 +447,7 @@ namespace Listenarr.Api.Services.Adapters
                             });
                             var trackersResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/addTrackers", addTrackersData, ct);
                             if (trackersResp.IsSuccessStatusCode)
-                                _logger.LogInformation("Injected {Count} tracker(s) for torrent {Hash} via addTrackers API", announces.Count, detectedHash);
+                                _logger.LogInformation("Injected {Count} tracker(s) for torrent {Hash} via addTrackers API", trackerAnnounces.Count, detectedHash);
                             else
                                 _logger.LogDebug("addTrackers API returned {Status} for torrent {Hash} (non-fatal)", trackersResp.StatusCode, detectedHash);
                         }

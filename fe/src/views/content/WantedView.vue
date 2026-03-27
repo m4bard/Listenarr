@@ -80,15 +80,20 @@
                 <span v-if="hasActiveDownload(item)" class="download-indicator" title="Downloading">
                   <PhDownloadSimple :size="14" weight="fill" />
                 </span>
-                <span class="title-text">{{ safeText(item.title) }}</span>
+                <RouterLink :to="`/audiobooks/${item.id}`" class="title-link">{{ safeText(item.title) }}</RouterLink>
               </div>
             </div>
             <div class="col-author">
-              <span class="author-text">{{ item.authors?.map((a) => safeText(a)).join(', ') || '-' }}</span>
+              <template v-if="item.authors?.length">
+                <template v-for="(a, i) in item.authors" :key="a">
+                  <RouterLink :to="`/collection/author/${encodeURIComponent(a)}`" class="author-link">{{ safeText(a) }}</RouterLink><span v-if="i < item.authors.length - 1">, </span>
+                </template>
+              </template>
+              <span v-else class="author-text">-</span>
             </div>
             <div class="col-series">
               <span v-if="item.series" class="series-text">
-                {{ safeText(item.series) }}<span v-if="item.seriesNumber"> #{{ item.seriesNumber }}</span>
+                <RouterLink :to="`/collection/series/${encodeURIComponent(item.series)}`" class="series-link">{{ safeText(item.series) }}</RouterLink><span v-if="item.seriesNumber"> #{{ item.seriesNumber }}</span>
               </span>
               <span v-else class="muted">-</span>
             </div>
@@ -711,6 +716,19 @@ const markAsSkipped = async (item: Audiobook) => {
   white-space: nowrap;
 }
 
+.title-link {
+  color: white;
+  font-weight: 500;
+  text-decoration: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.title-link:hover {
+  color: #4dabf7;
+}
+
 .download-indicator {
   color: #51cf66;
   display: inline-flex;
@@ -730,10 +748,30 @@ const markAsSkipped = async (item: Audiobook) => {
   font-size: 0.8rem;
 }
 
+.author-link {
+  color: #4dabf7;
+  font-size: 0.8rem;
+  text-decoration: none;
+}
+
+.author-link:hover {
+  text-decoration: underline;
+}
+
 /* Series cell */
 .series-text {
   color: #868e96;
   font-size: 0.8rem;
+}
+
+.series-link {
+  color: #868e96;
+  text-decoration: none;
+}
+
+.series-link:hover {
+  color: #adb5bd;
+  text-decoration: underline;
 }
 
 .muted {

@@ -129,6 +129,11 @@ namespace Listenarr.Domain.Models
         public double? Ratio { get; set; }
 
         /// <summary>
+        /// Link to the audiobook record this download is associated with (if any).
+        /// </summary>
+        public int? AudiobookId { get; set; }
+
+        /// <summary>
         /// The path as reported by the download client (may be in different mount point)
         /// </summary>
         public string? RemotePath { get; set; }

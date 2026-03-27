@@ -150,6 +150,7 @@ export interface Download {
 export interface QueueItem {
   id: string
   title: string
+  audiobookId?: number
   author?: string
   series?: string
   seriesNumber?: string

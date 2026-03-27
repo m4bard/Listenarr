@@ -213,6 +213,11 @@ namespace Listenarr.Api.Services
                                     queueItem.Author = matchedDownload.Artist;
                                 }
 
+                                if (matchedDownload.AudiobookId.HasValue)
+                                {
+                                    queueItem.AudiobookId = matchedDownload.AudiobookId;
+                                }
+
                                 _logger.LogDebug(
                                     "Enriched queue item (original: {OriginalId}) with DB metadata from download {DownloadId}",
                                     originalClientId,
@@ -456,6 +461,7 @@ namespace Listenarr.Api.Services
                             AddedAt = download.StartedAt,
                             CanPause = false,
                             CanRemove = true,
+                            AudiobookId = download.AudiobookId,
                             RemotePath = download.DownloadPath,
                             LocalPath = download.FinalPath,
                             ContentPath = download.FinalPath ?? download.DownloadPath
