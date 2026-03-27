@@ -755,6 +755,12 @@ namespace Listenarr.Api.Tests
         private class TestDownloadQueueService : IDownloadQueueService
         {
             public Task<List<QueueItem>> GetQueueAsync() => Task.FromResult(new List<QueueItem>());
+
+            public Task<QueueSnapshot> GetQueueSnapshotAsync() => Task.FromResult(new QueueSnapshot
+            {
+                Items = new List<QueueItem>(),
+                GeneratedAt = DateTime.UtcNow
+            });
         }
 
         private class TestCompletedDownloadProcessor : ICompletedDownloadProcessor

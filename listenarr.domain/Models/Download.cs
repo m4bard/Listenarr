@@ -104,6 +104,7 @@ namespace Listenarr.Domain.Models
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string Quality { get; set; } = string.Empty;
+        public string? Language { get; set; }
         public string Status { get; set; } = string.Empty; // downloading, paused, queued, completed, failed
         public double Progress { get; set; } // 0-100
         public long Size { get; set; } // in bytes
@@ -116,6 +117,11 @@ namespace Listenarr.Domain.Models
         public string DownloadClientType { get; set; } = string.Empty; // qbittorrent, transmission, etc
         public DateTime AddedAt { get; set; } = DateTime.UtcNow;
         public string? ErrorMessage { get; set; }
+        public bool IsStaleSnapshot { get; set; }
+        public string? SnapshotState { get; set; } // live, cached
+        public string? SnapshotFailureReason { get; set; } // timeout, error, canceled
+        public int? SnapshotAgeSeconds { get; set; }
+        public DateTime? SnapshotRefreshedAt { get; set; }
         public bool CanPause { get; set; } = true;
         public bool CanRemove { get; set; } = true;
         public int? Seeders { get; set; }

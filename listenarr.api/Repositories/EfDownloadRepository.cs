@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -64,6 +66,61 @@ namespace Listenarr.Api.Repositories
             return await ctx.Downloads.AsNoTracking().ToListAsync();
         }
 
+        public async Task<List<QueueTrackedDownload>> GetQueueDisplayCandidatesAsync()
+        {
+            var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d =>
+                    (d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved) ||
+                    (d.DownloadClientId != "DDL" &&
+                     d.Status != DownloadStatus.Moved &&
+                     d.Status != DownloadStatus.Failed &&
+                     (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))))
+                .Select(ToQueueTrackedDownloadProjection())
+                .ToListAsync();
+        }
+
+        public async Task<List<QueueTrackedDownload>> GetQueueMatchingCandidatesAsync()
+        {
+            var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.DownloadClientId != "DDL" && d.Status != DownloadStatus.Failed)
+                .Select(ToQueueTrackedDownloadProjection())
+                .ToListAsync();
+        }
+
+        public async Task<List<string>> GetKnownClientItemIdsAsync()
+        {
+            var ctx = await _dbFactory.CreateDbContextAsync();
+            var metadataEntries = await ctx.Downloads
+                .AsNoTracking()
+                .Select(d => d.Metadata)
+                .ToListAsync();
+
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var metadata in metadataEntries)
+            {
+                if (metadata == null)
+                {
+                    continue;
+                }
+
+                if (TryGetMetadataString(metadata, "ClientDownloadId", out var clientDownloadId))
+                {
+                    ids.Add(clientDownloadId);
+                }
+
+                if (TryGetMetadataString(metadata, "TorrentHash", out var torrentHash))
+                {
+                    ids.Add(torrentHash);
+                }
+            }
+
+            return ids.ToList();
+        }
+
         public async Task<List<Download>> GetByClientAsync(string clientId)
         {
             var ctx = await _dbFactory.CreateDbContextAsync();
@@ -82,6 +139,37 @@ namespace Listenarr.Api.Repositories
                 .AsNoTracking()
                 .Where(d => idSet.Contains(d.Id))
                 .ToListAsync();
+        }
+
+        private static bool TryGetMetadataString(Dictionary<string, object>? metadata, string key, out string value)
+        {
+            value = string.Empty;
+
+            if (metadata == null || !metadata.TryGetValue(key, out var raw) || raw == null)
+            {
+                return false;
+            }
+
+            value = raw.ToString() ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        private static System.Linq.Expressions.Expression<Func<Download, QueueTrackedDownload>> ToQueueTrackedDownloadProjection()
+        {
+            return d => new QueueTrackedDownload
+            {
+                Id = d.Id,
+                DownloadClientId = d.DownloadClientId,
+                Title = d.Title,
+                Artist = d.Artist,
+                Status = d.Status,
+                StartedAt = d.StartedAt,
+                TotalSize = d.TotalSize,
+                DownloadedSize = d.DownloadedSize,
+                DownloadPath = d.DownloadPath,
+                FinalPath = d.FinalPath,
+                Metadata = d.Metadata
+            };
         }
     }
 }

@@ -112,6 +112,16 @@ namespace Listenarr.Api.Tests
             return results;
         }
 
+        public async Task<QueueSnapshot> GetQueueSnapshotAsync()
+        {
+            var items = await GetQueueAsync();
+            return new QueueSnapshot
+            {
+                Items = items,
+                GeneratedAt = DateTime.UtcNow
+            };
+        }
+
         private string NormalizeTitle(string s)
         {
             if (string.IsNullOrWhiteSpace(s)) return string.Empty;

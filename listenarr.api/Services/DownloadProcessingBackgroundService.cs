@@ -229,9 +229,14 @@ namespace Listenarr.Api.Services
                     enabledClientIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 }
 
-                // Find recent completed downloads that have not yet been processed into jobs
+                // Find recent completed downloads that have not yet been processed into jobs.
+                // Include Processing status to recover downloads orphaned by a crash/restart
+                // that occurred after FinalizeDownloadAsync set the status but before the
+                // processing job was queued.
                 var candidates = await dbContext.Downloads
-                    .Where(d => d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending)
+                    .Where(d => d.Status == DownloadStatus.Completed
+                             || d.Status == DownloadStatus.ImportPending
+                             || d.Status == DownloadStatus.Processing)
                     .OrderByDescending(d => d.CompletedAt)
                     .Take(200)
                     .ToListAsync(cancellationToken);

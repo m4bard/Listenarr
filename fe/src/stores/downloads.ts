@@ -6,10 +6,12 @@ import { useLibraryStore } from '@/stores/library'
 import { signalRService } from '@/services/signalr'
 import { errorTracking } from '@/services/errorTracking'
 import { logger } from '@/utils/logger'
+import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 
 export const useDownloadsStore = defineStore('downloads', () => {
   const downloads = shallowRef<Download[]>([])
   const isLoading = ref(false)
+  const queueOnlyIds = new Set<string>()
   let unsubscribeUpdate: (() => void) | null = null
   let unsubscribeList: (() => void) | null = null
   let unsubscribeQueue: (() => void) | null = null
@@ -43,6 +45,8 @@ export const useDownloadsStore = defineStore('downloads', () => {
           // Add new download
           downloads.value.unshift(updated)
         }
+
+        queueOnlyIds.delete(updated.id)
       })
       triggerRef(downloads)
 
@@ -92,11 +96,31 @@ export const useDownloadsStore = defineStore('downloads', () => {
     // Subscribe to full downloads list
     unsubscribeList = signalRService.onDownloadsList((downloadsList) => {
       downloads.value = downloadsList
+      queueOnlyIds.clear()
       triggerRef(downloads)
     })
 
     // Subscribe to queue updates (replacement list from backend)
-    unsubscribeQueue = signalRService.onQueueUpdate((queueItems) => {
+    unsubscribeQueue = signalRService.onQueueUpdate((queuePayload) => {
+      const queueItems = normalizeQueueSnapshot(queuePayload).items
+      const queueIds = new Set(queueItems.map((item) => item.id))
+
+      if (queueOnlyIds.size > 0) {
+        downloads.value = downloads.value.filter((download) => {
+          if (!queueOnlyIds.has(download.id)) {
+            return true
+          }
+
+          return queueIds.has(download.id)
+        })
+
+        for (const queueOnlyId of Array.from(queueOnlyIds)) {
+          if (!queueIds.has(queueOnlyId)) {
+            queueOnlyIds.delete(queueOnlyId)
+          }
+        }
+      }
+
       // QueueUpdate provides the current queue state
       // Do not remove existing tracked downloads solely because they are missing
       // from a single queue snapshot. External clients can briefly report empty
@@ -127,9 +151,26 @@ export const useDownloadsStore = defineStore('downloads', () => {
         }
         
         if (existingIndex !== -1) {
-          downloads.value[existingIndex] = downloadItem
+          if (queueOnlyIds.has(queueItem.id)) {
+            downloads.value[existingIndex] = downloadItem
+          } else {
+            const existingDownload = downloads.value[existingIndex]!
+            downloads.value[existingIndex] = {
+              ...existingDownload,
+              progress: downloadItem.progress,
+              totalSize: downloadItem.totalSize,
+              downloadedSize: downloadItem.downloadedSize,
+              downloadPath: downloadItem.downloadPath || existingDownload.downloadPath,
+              finalPath: downloadItem.finalPath || existingDownload.finalPath,
+              startedAt: downloadItem.startedAt || existingDownload.startedAt,
+              errorMessage: downloadItem.errorMessage ?? existingDownload.errorMessage,
+              downloadClientId: downloadItem.downloadClientId || existingDownload.downloadClientId,
+              status: downloadItem.status,
+            }
+          }
         } else {
           downloads.value.push(downloadItem)
+          queueOnlyIds.add(downloadItem.id)
         }
       })
       
@@ -185,6 +226,7 @@ export const useDownloadsStore = defineStore('downloads', () => {
     try {
       const downloadList = await apiService.getDownloads()
       downloads.value = downloadList
+      queueOnlyIds.clear()
       triggerRef(downloads)
     } catch (error) {
       errorTracking.captureException(error as Error, {
@@ -230,6 +272,8 @@ export const useDownloadsStore = defineStore('downloads', () => {
     if (index !== -1) {
       downloads.value[index] = updatedDownload
     }
+
+    queueOnlyIds.delete(updatedDownload.id)
   }
 
   // Cleanup on store destruction

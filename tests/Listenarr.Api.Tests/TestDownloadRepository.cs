@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Listenarr.Api.Repositories;
+using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Infrastructure.Models;
 
@@ -103,6 +104,89 @@ namespace Listenarr.Api.Tests
             return Task.FromResult(_mem.Values.ToList());
         }
 
+        public Task<List<QueueTrackedDownload>> GetQueueDisplayCandidatesAsync()
+        {
+            if (_db != null)
+            {
+                var projected = _db.Downloads
+                    .Where(d =>
+                        (d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved) ||
+                        (d.DownloadClientId != "DDL" &&
+                         d.Status != DownloadStatus.Moved &&
+                         d.Status != DownloadStatus.Failed &&
+                         (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))))
+                    .Select(ToQueueTrackedDownloadProjection)
+                    .ToList();
+                return Task.FromResult(projected);
+            }
+
+            var list = _mem.Values
+                .Where(d =>
+                    (d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved) ||
+                    (d.DownloadClientId != "DDL" &&
+                     d.Status != DownloadStatus.Moved &&
+                     d.Status != DownloadStatus.Failed &&
+                     (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))))
+                .Select(ToQueueTrackedDownloadProjection)
+                .ToList();
+            return Task.FromResult(list);
+        }
+
+        public Task<List<QueueTrackedDownload>> GetQueueMatchingCandidatesAsync()
+        {
+            if (_db != null)
+            {
+                var projected = _db.Downloads
+                    .Where(d => d.DownloadClientId != "DDL" && d.Status != DownloadStatus.Failed)
+                    .Select(ToQueueTrackedDownloadProjection)
+                    .ToList();
+                return Task.FromResult(projected);
+            }
+
+            var list = _mem.Values
+                .Where(d => d.DownloadClientId != "DDL" && d.Status != DownloadStatus.Failed)
+                .Select(ToQueueTrackedDownloadProjection)
+                .ToList();
+            return Task.FromResult(list);
+        }
+
+        public Task<List<string>> GetKnownClientItemIdsAsync()
+        {
+            IEnumerable<Dictionary<string, object>?> metadataEntries;
+            if (_db != null)
+            {
+                metadataEntries = _db.Downloads
+                    .AsNoTracking()
+                    .Select(d => d.Metadata)
+                    .ToList();
+            }
+            else
+            {
+                metadataEntries = _mem.Values.Select(d => d.Metadata).ToList();
+            }
+
+            var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (var metadata in metadataEntries)
+            {
+                if (metadata == null)
+                {
+                    continue;
+                }
+
+                if (metadata.TryGetValue("ClientDownloadId", out var clientDownloadId) && !string.IsNullOrWhiteSpace(clientDownloadId?.ToString()))
+                {
+                    ids.Add(clientDownloadId.ToString()!);
+                }
+
+                if (metadata.TryGetValue("TorrentHash", out var torrentHash) && !string.IsNullOrWhiteSpace(torrentHash?.ToString()))
+                {
+                    ids.Add(torrentHash.ToString()!);
+                }
+            }
+
+            return Task.FromResult(ids.ToList());
+        }
+
         public Task<List<Download>> GetByClientAsync(string clientId)
         {
             if (_db != null)
@@ -120,6 +204,24 @@ namespace Listenarr.Api.Tests
 
             var list = _mem.Values.Where(d => idSet.Contains(d.Id)).ToList();
             return Task.FromResult(list);
+        }
+
+        private static QueueTrackedDownload ToQueueTrackedDownloadProjection(Download download)
+        {
+            return new QueueTrackedDownload
+            {
+                Id = download.Id,
+                DownloadClientId = download.DownloadClientId,
+                Title = download.Title,
+                Artist = download.Artist,
+                Status = download.Status,
+                StartedAt = download.StartedAt,
+                TotalSize = download.TotalSize,
+                DownloadedSize = download.DownloadedSize,
+                DownloadPath = download.DownloadPath,
+                FinalPath = download.FinalPath,
+                Metadata = download.Metadata
+            };
         }
     }
 }

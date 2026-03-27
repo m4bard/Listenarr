@@ -807,10 +807,23 @@ public class ManualImportController : ControllerBase
                 .Select(item => Path.GetFullPath(item.FullPath!)),
             StringComparer.OrdinalIgnoreCase);
 
-        var companionFiles = Directory.EnumerateFiles(sourceRootPath, "*", SearchOption.AllDirectories)
+        // Only scan for companion files in directories that actually contain
+        // the selected import files. Previously, the entire sourceRootPath was
+        // scanned recursively which could copy unrelated files when the source
+        // root is a broad directory like a general downloads folder.
+        var selectedDirectories = selectedSourceFiles
+            .Select(f => Path.GetDirectoryName(f))
+            .Where(d => !string.IsNullOrWhiteSpace(d))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var companionFiles = selectedDirectories
+            .Where(Directory.Exists)
+            .SelectMany(dir => Directory.EnumerateFiles(dir!, "*", SearchOption.TopDirectoryOnly))
             .Where(file => !FileUtils.ShouldSkipImportFile(file, importBlacklist))
             .Select(Path.GetFullPath)
             .Where(file => !selectedSourceFiles.Contains(file))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
 
         var importedCount = 0;

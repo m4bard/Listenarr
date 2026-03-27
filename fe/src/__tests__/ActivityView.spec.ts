@@ -932,4 +932,169 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
     await new Promise((r) => setTimeout(r, 10))
     expect(vm.filteredQueue.some((item) => item.id === 'd-importblocked')).toBe(true)
   }, 20000)
+
+  it('shows unavailable client health even when no queue items are returned', async () => {
+    vi.resetModules()
+
+    vi.doMock('@/services/signalr', () => ({
+      signalRService: {
+        connect: vi.fn(async () => undefined),
+        onQueueUpdate: vi.fn(() => () => undefined),
+        onFilesRemoved: vi.fn(() => () => undefined),
+        onToast: vi.fn(() => () => undefined),
+        onAudiobookUpdate: vi.fn(() => () => undefined),
+        onDownloadUpdate: vi.fn(() => () => undefined),
+        onDownloadsList: vi.fn(() => () => undefined),
+      },
+    }))
+
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => ({
+          items: [],
+          clients: [
+            {
+              clientId: 'qb-1',
+              clientName: 'qBittorrent',
+              clientType: 'qbittorrent',
+              snapshotState: 'unavailable',
+              isStaleSnapshot: false,
+              isUnavailable: true,
+              snapshotFailureReason: 'timeout',
+              itemCount: 0,
+            },
+          ],
+          generatedAt: new Date().toISOString(),
+          hasStaleData: false,
+          hasUnavailableClients: true,
+        }),
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: false }),
+        getLibrary: async () => [],
+      },
+    }))
+
+    vi.doMock('@/stores/configuration', () => ({
+      useConfigurationStore: () => ({
+        applicationSettings: { showCompletedExternalDownloads: false },
+        loadApplicationSettings: vi.fn(async () => undefined),
+      }),
+    }))
+
+    vi.doMock('@/stores/downloads', () => ({
+      useDownloadsStore: () => ({
+        activeDownloads: [],
+        failedDownloads: [],
+        completedDownloads: [],
+        loadDownloads: vi.fn(async () => undefined),
+      }),
+    }))
+
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
+    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
+
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(wrapper.text()).toContain('Some queue data is unavailable')
+    expect(wrapper.text()).toContain('qBittorrent unavailable after a timeout')
+  }, 20000)
+
+  it('prefers the queue snapshot over an external active download with the same tracked id', async () => {
+    vi.resetModules()
+
+    vi.doMock('@/services/signalr', () => ({
+      signalRService: {
+        connect: vi.fn(async () => undefined),
+        onQueueUpdate: vi.fn(() => () => undefined),
+        onFilesRemoved: vi.fn(() => () => undefined),
+        onToast: vi.fn(() => () => undefined),
+        onAudiobookUpdate: vi.fn(() => () => undefined),
+        onDownloadUpdate: vi.fn(() => () => undefined),
+        onDownloadsList: vi.fn(() => () => undefined),
+      },
+    }))
+
+    vi.doMock('@/services/api', () => ({
+      apiService: {
+        getQueue: async () => ({
+          items: [
+            {
+              id: 'tracked-artemis',
+              title: 'Artemis',
+              status: 'completed',
+              progress: 100,
+              size: 489100000,
+              downloaded: 489100000,
+              downloadSpeed: 77300,
+              quality: 'Unknown',
+              downloadClient: 'QBIT',
+              downloadClientId: 'qb-1',
+              downloadClientType: 'qbittorrent',
+              addedAt: new Date().toISOString(),
+              canPause: false,
+              canRemove: true,
+            },
+          ],
+          clients: [],
+          generatedAt: new Date().toISOString(),
+          hasStaleData: false,
+          hasUnavailableClients: false,
+        }),
+        getServiceHealth: async () => ({ version: '0.0.0' }),
+        getStartupConfig: async () => ({ authenticationRequired: false }),
+        getLibrary: async () => [],
+      },
+    }))
+
+    vi.doMock('@/stores/configuration', () => ({
+      useConfigurationStore: () => ({
+        applicationSettings: { showCompletedExternalDownloads: false },
+        loadApplicationSettings: vi.fn(async () => undefined),
+      }),
+    }))
+
+    vi.doMock('@/stores/downloads', () => ({
+      useDownloadsStore: () => ({
+        activeDownloads: [
+          {
+            id: 'tracked-artemis',
+            title: 'Artemis',
+            status: 'Downloading',
+            progress: 100,
+            totalSize: 489100000,
+            downloadedSize: 489100000,
+            downloadClientId: 'qb-1',
+            startedAt: new Date().toISOString(),
+          },
+        ],
+        failedDownloads: [],
+        completedDownloads: [],
+        loadDownloads: vi.fn(async () => undefined),
+      }),
+    }))
+
+    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
+    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
+
+    await new Promise((r) => setTimeout(r, 10))
+
+    const vm = wrapper.vm as unknown as {
+      filterTabs: FilterTab[]
+      selectedTab: string
+      filteredQueue: ActivityItem[]
+    }
+
+    const downloadingTab = vm.filterTabs.find((t) => t.value === 'downloading')
+    const completedTab = vm.filterTabs.find((t) => t.value === 'completed')
+
+    expect(downloadingTab?.count).toBe(0)
+    expect(completedTab?.count).toBe(1)
+
+    vm.selectedTab = 'completed'
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect(vm.filteredQueue).toHaveLength(1)
+    expect(vm.filteredQueue[0]?.id).toBe('tracked-artemis')
+    expect(vm.filteredQueue[0]?.title).toBe('Artemis')
+  }, 20000)
 })

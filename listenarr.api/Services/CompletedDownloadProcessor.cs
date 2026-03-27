@@ -81,7 +81,7 @@ namespace Listenarr.Api.Services
                     try
                     {
                         await Task.Delay(100); // Brief delay for DB commit
-                        var queueAfterComplete = await _downloadQueueService.GetQueueAsync();
+                        var queueAfterComplete = await _downloadQueueService.GetQueueSnapshotAsync();
                         if (_hubBroadcaster != null)
                         {
                             await _hubBroadcaster.BroadcastQueueUpdateAsync(queueAfterComplete);
@@ -978,7 +978,7 @@ namespace Listenarr.Api.Services
                                                 // Broadcast queue update after deletion so frontend sees the updated state
                                                 try
                                                 {
-                                                    var currentQueue = await _downloadQueueService.GetQueueAsync();
+                                                    var currentQueue = await _downloadQueueService.GetQueueSnapshotAsync();
                                                     if (_hubBroadcaster != null)
                                                     {
                                                         await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueue);
@@ -1011,7 +1011,7 @@ namespace Listenarr.Api.Services
 
                 try
                 {
-                    var currentQueue = await _downloadQueueService.GetQueueAsync();
+                    var currentQueue = await _downloadQueueService.GetQueueSnapshotAsync();
                     if (_hubBroadcaster != null)
                     {
                         await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueue);

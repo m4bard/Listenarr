@@ -514,6 +514,7 @@ import { getPlaceholderUrl } from '@/utils/placeholder'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
+import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 import type { QueueItem } from '@/types'
 import { ref as vueRef2, reactive } from 'vue'
 import GlobalToast from '@/components/ui/GlobalToast.vue'
@@ -1078,8 +1079,9 @@ onMounted(async () => {
 
     // Subscribe to queue updates via SignalR (real-time, no polling!)
     unsubscribeQueue = signalRService.onQueueUpdate((queue) => {
-      logger.debug('Received queue update via SignalR:', queue.length, 'items')
-      queueItems.value = queue
+      const queueSnapshot = normalizeQueueSnapshot(queue)
+      logger.debug('Received queue update via SignalR:', queueSnapshot.items.length, 'items')
+      queueItems.value = queueSnapshot.items
     })
 
     // Prepare toast helper for this mounted scope
@@ -1179,7 +1181,7 @@ onMounted(async () => {
     // Fetch initial queue state
     try {
       const initialQueue = await apiService.getQueue()
-      queueItems.value = initialQueue
+      queueItems.value = normalizeQueueSnapshot(initialQueue).items
     } catch (err) {
       logger.error('Failed to fetch initial queue:', err)
     }
@@ -1191,9 +1193,10 @@ onMounted(async () => {
   try {
     if (!queueItems.value || queueItems.value.length === 0) {
       const fallbackQueue = await apiService.getQueue()
-      if (Array.isArray(fallbackQueue) && fallbackQueue.length > 0) {
-        queueItems.value = fallbackQueue
-        logger.debug('Fallback fetched initial queue items', { count: fallbackQueue.length })
+      const fallbackSnapshot = normalizeQueueSnapshot(fallbackQueue)
+      if (fallbackSnapshot.items.length > 0) {
+        queueItems.value = fallbackSnapshot.items
+        logger.debug('Fallback fetched initial queue items', { count: fallbackSnapshot.items.length })
       }
     }
   } catch (err) {

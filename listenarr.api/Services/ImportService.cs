@@ -270,42 +270,61 @@ namespace Listenarr.Api.Services
                 try
                 {
                     var initialDest = Path.Combine(destDir, Path.GetFileName(sourcePath));
-                    var uniqueInitial = FileUtils.GetUniqueDestinationPath(initialDest);
 
-                    var action = settings.CompletedFileAction ?? "Move";
-                    if (string.Equals(action, "Copy", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var ok = await _fileMover.CopyFileAsync(sourcePath, uniqueInitial);
-                        if (ok) result.WasCopied = true;
-                    }
-                    else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
-                    {
-                        var ok = await _fileMover.HardlinkFileAsync(sourcePath, uniqueInitial);
-                        if (!ok)
-                        {
-                            _logger.LogWarning("ImportSingleFile: Hardlink failed for {Source}, attempting copy fallback", sourcePath);
-                            ok = await _fileMover.CopyFileAsync(sourcePath, uniqueInitial);
-                        }
+                    // If the source file is already at the destination (e.g., the background
+                    // processing job already moved/hardlinked it), skip the file operation
+                    // entirely to avoid creating a duplicate.
+                    var sourceAlreadyAtDest = string.Equals(
+                        Path.GetFullPath(sourcePath),
+                        Path.GetFullPath(initialDest),
+                        StringComparison.OrdinalIgnoreCase);
 
-                        if (ok)
-                        {
-                            result.WasCopied = true;
-                        }
-                        else
-                        {
-                            throw new IOException("Hardlink/Copy failed");
-                        }
+                    string uniqueInitial;
+                    if (sourceAlreadyAtDest)
+                    {
+                        _logger.LogInformation("ImportSingleFile: source is already at destination {Dest}, skipping file operation", initialDest);
+                        uniqueInitial = sourcePath;
                     }
                     else
                     {
-                        var ok = await _fileMover.MoveFileAsync(sourcePath, uniqueInitial);
-                        if (ok) result.WasMoved = true;
+                        uniqueInitial = FileUtils.GetUniqueDestinationPath(initialDest);
+
+                        var action = settings.CompletedFileAction ?? "Move";
+                        if (string.Equals(action, "Copy", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var ok = await _fileMover.CopyFileAsync(sourcePath, uniqueInitial);
+                            if (ok) result.WasCopied = true;
+                        }
+                        else if (string.Equals(action, "Hardlink/Copy", StringComparison.OrdinalIgnoreCase))
+                        {
+                            var ok = await _fileMover.HardlinkFileAsync(sourcePath, uniqueInitial);
+                            if (!ok)
+                            {
+                                _logger.LogWarning("ImportSingleFile: Hardlink failed for {Source}, attempting copy fallback", sourcePath);
+                                ok = await _fileMover.CopyFileAsync(sourcePath, uniqueInitial);
+                            }
+
+                            if (ok)
+                            {
+                                result.WasCopied = true;
+                            }
+                            else
+                            {
+                                throw new IOException("Hardlink/Copy failed");
+                            }
+                        }
+                        else
+                        {
+                            var ok = await _fileMover.MoveFileAsync(sourcePath, uniqueInitial);
+                            if (ok) result.WasMoved = true;
+                        }
                     }
 
                     // Now apply filename pattern
-                    var uniqueFinal = FileUtils.GetUniqueDestinationPath(destinationPath);
-                    if (!string.Equals(Path.GetFullPath(uniqueInitial), Path.GetFullPath(uniqueFinal), StringComparison.OrdinalIgnoreCase))
+                    var uniqueFinal = destinationPath;
+                    if (!string.Equals(Path.GetFullPath(uniqueInitial), Path.GetFullPath(destinationPath), StringComparison.OrdinalIgnoreCase))
                     {
+                        uniqueFinal = FileUtils.GetUniqueDestinationPath(destinationPath);
                         try
                         {
                             var ok = await _fileMover.MoveFileAsync(uniqueInitial, uniqueFinal);

@@ -6,6 +6,6 @@ namespace Listenarr.Application.Services
 {
     public interface IHubBroadcaster
     {
-        Task BroadcastQueueUpdateAsync(List<QueueItem> queue);
+        Task BroadcastQueueUpdateAsync(QueueSnapshot queueSnapshot);
     }
 }

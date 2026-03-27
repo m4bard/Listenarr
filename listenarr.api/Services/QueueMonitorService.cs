@@ -36,7 +36,7 @@ namespace Listenarr.Api.Services
         private readonly TimeSpan _normalPollingInterval = TimeSpan.FromSeconds(15); // Idle/seeding (increased from 10s)
         private readonly TimeSpan _slowPollingInterval = TimeSpan.FromSeconds(60);   // Only completed items (increased from 30s)
 
-        private List<QueueItem> _lastQueueState = new();
+        private QueueSnapshot _lastQueueSnapshot = new();
         private TimeSpan _currentInterval;
 
         public QueueMonitorService(
@@ -106,18 +106,19 @@ namespace Listenarr.Api.Services
         private async Task MonitorQueueAsync(CancellationToken cancellationToken)
         {
             using var scope = _serviceScopeFactory.CreateScope();
-            var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
+            var downloadQueueService = scope.ServiceProvider.GetRequiredService<IDownloadQueueService>();
 
             try
             {
-                // Get current queue from all download clients
-                var currentQueue = await downloadService.GetQueueAsync();
+                // Get current queue from the shared queue reconciliation service
+                var currentSnapshot = await downloadQueueService.GetQueueSnapshotAsync();
+                var currentQueue = currentSnapshot.Items;
 
                 // Determine optimal polling interval based on queue activity
                 _currentInterval = DeterminePollingInterval(currentQueue);
 
                 // Check if queue has changed
-                if (HasQueueChanged(_lastQueueState, currentQueue))
+                if (HasQueueChanged(_lastQueueSnapshot, currentSnapshot))
                 {
                     _logger.LogDebug("Queue changed, broadcasting update ({Count} items) [polling: {Interval}s]",
                         currentQueue.Count, _currentInterval.TotalSeconds);
@@ -125,11 +126,11 @@ namespace Listenarr.Api.Services
                     // Broadcast queue update via SignalR
                     await _hubContext.Clients.All.SendAsync(
                         "QueueUpdate",
-                        currentQueue,
+                        currentSnapshot,
                         cancellationToken);
 
                     // Update last known state
-                    _lastQueueState = currentQueue;
+                    _lastQueueSnapshot = currentSnapshot;
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -162,14 +163,24 @@ namespace Listenarr.Api.Services
             return _normalPollingInterval;
         }
 
-        private bool HasQueueChanged(List<QueueItem> oldQueue, List<QueueItem> newQueue)
+        private bool HasQueueChanged(QueueSnapshot oldSnapshot, QueueSnapshot newSnapshot)
         {
+            var oldQueue = oldSnapshot?.Items ?? new List<QueueItem>();
+            var newQueue = newSnapshot?.Items ?? new List<QueueItem>();
+
             // Quick checks first
             if (oldQueue.Count != newQueue.Count)
                 return true;
 
+            var oldClients = oldSnapshot?.Clients ?? new List<QueueClientStatus>();
+            var newClients = newSnapshot?.Clients ?? new List<QueueClientStatus>();
+            if (oldClients.Count != newClients.Count)
+                return true;
+
             // Create lookup for comparison
-            var oldLookup = oldQueue.ToDictionary(q => q.Id);
+            var oldLookup = oldQueue
+                .GroupBy(q => q.Id, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
 
             foreach (var newItem in newQueue)
             {
@@ -184,6 +195,24 @@ namespace Listenarr.Api.Services
                     oldItem.Progress != newItem.Progress ||
                     oldItem.Downloaded != newItem.Downloaded ||
                     oldItem.ErrorMessage != newItem.ErrorMessage)
+                {
+                    return true;
+                }
+            }
+
+            var oldClientLookup = oldClients.ToDictionary(c => c.ClientId, StringComparer.OrdinalIgnoreCase);
+            foreach (var newClient in newClients)
+            {
+                if (!oldClientLookup.TryGetValue(newClient.ClientId, out var oldClient))
+                {
+                    return true;
+                }
+
+                if (oldClient.SnapshotState != newClient.SnapshotState ||
+                    oldClient.SnapshotFailureReason != newClient.SnapshotFailureReason ||
+                    oldClient.IsStaleSnapshot != newClient.IsStaleSnapshot ||
+                    oldClient.IsUnavailable != newClient.IsUnavailable ||
+                    oldClient.ItemCount != newClient.ItemCount)
                 {
                     return true;
                 }

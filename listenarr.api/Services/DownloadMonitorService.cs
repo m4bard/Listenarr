@@ -209,18 +209,13 @@ namespace Listenarr.Api.Services
             if (string.Equals(norm1, norm2, StringComparison.OrdinalIgnoreCase))
                 return true;
 
-            // Bidirectional contains
-            if (norm1.Contains(norm2, StringComparison.OrdinalIgnoreCase) ||
-                norm2.Contains(norm1, StringComparison.OrdinalIgnoreCase))
+            // Bidirectional contains – require the contained string to be
+            // "substantial" (at least 15 chars after normalization) to prevent
+            // short common words from producing false positives.
+            if (norm1.Length >= 15 && norm2.Contains(norm1, StringComparison.OrdinalIgnoreCase))
                 return true;
-
-            // First 50 chars (for very long titles)
-            if (norm1.Length > 20 && norm2.Length > 20)
-            {
-                var len = Math.Min(50, Math.Min(norm1.Length, norm2.Length));
-                if (norm1.Substring(0, len).Equals(norm2.Substring(0, len), StringComparison.OrdinalIgnoreCase))
-                    return true;
-            }
+            if (norm2.Length >= 15 && norm1.Contains(norm2, StringComparison.OrdinalIgnoreCase))
+                return true;
 
             return false;
         }
@@ -1012,32 +1007,43 @@ namespace Listenarr.Api.Services
                                 }
                             }
 
-                            // Fallback to title/name matching if hash matching failed
+                            // Fallback to deterministic matching if hash matching failed.
+                            // Following Sonarr's pattern: only match on exact identifiers
+                            // (name or content path), never on fuzzy title similarity.
+                            // Fuzzy matching caused cross-contamination (e.g. importing
+                            // "Mr. Mercedes" files into "One Hundred Years of Solitude").
                             if (string.IsNullOrEmpty(matched.Hash))
                             {
-                                _logger.LogInformation("Hash matching failed for download {DownloadId}, trying title/name matching", dl.Id);
+                                _logger.LogInformation("Hash matching failed for download {DownloadId}, trying exact name/path matching", dl.Id);
+
+                                // 1. Exact torrent name == download title
                                 matched = torrentLookup.FirstOrDefault(t =>
+                                    string.Equals(t.Name, dl.Title, StringComparison.OrdinalIgnoreCase));
+
+                                // 2. Exact normalized title match (strip brackets/quality tags only)
+                                if (string.IsNullOrEmpty(matched.Hash))
                                 {
-                                    // Exact name match
-                                    if (string.Equals(t.Name, dl.Title, StringComparison.OrdinalIgnoreCase))
-                                        return true;
+                                    var dlNorm = NormalizeTitle(dl.Title);
+                                    matched = torrentLookup.FirstOrDefault(t =>
+                                        string.Equals(NormalizeTitle(t.Name), dlNorm, StringComparison.OrdinalIgnoreCase));
 
-                                    // Enhanced title matching with robust normalization
-                                    if (AreTitlesSimilar(dl.Title, t.Name))
+                                    if (!string.IsNullOrEmpty(matched.Hash))
                                     {
-                                        _logger.LogInformation("Title match found: '{DbTitle}' <-> '{TorrentTitle}' (normalized: '{NormDb}' <-> '{NormTorrent}')",
-                                            dl.Title, t.Name, NormalizeTitle(dl.Title), NormalizeTitle(t.Name));
-                                        return true;
+                                        _logger.LogInformation("Normalized title match: '{DbTitle}' <-> '{TorrentTitle}'", dl.Title, matched.Name);
                                     }
+                                }
 
-                                    // Path-based matching
-                                    if (!string.IsNullOrEmpty(dl.DownloadPath) && !string.IsNullOrEmpty(t.SavePath) &&
-                                        (t.SavePath.Contains(dl.DownloadPath, StringComparison.OrdinalIgnoreCase) ||
-                                         dl.DownloadPath.Contains(t.SavePath, StringComparison.OrdinalIgnoreCase)))
-                                        return true;
-
-                                    return false;
-                                });
+                                // 3. Exact content path match
+                                if (string.IsNullOrEmpty(matched.Hash) && !string.IsNullOrEmpty(dl.DownloadPath))
+                                {
+                                    var dlPathNorm = Path.GetFullPath(dl.DownloadPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                                    matched = torrentLookup.FirstOrDefault(t =>
+                                    {
+                                        if (string.IsNullOrEmpty(t.ContentPath)) return false;
+                                        var contentNorm = Path.GetFullPath(t.ContentPath).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+                                        return string.Equals(dlPathNorm, contentNorm, StringComparison.OrdinalIgnoreCase);
+                                    });
+                                }
                             }
 
                             if (string.IsNullOrEmpty(matched.Hash))
@@ -1105,11 +1111,15 @@ namespace Listenarr.Api.Services
                             // Update database with real-time progress information
                             await UpdateDownloadProgressAsync(dl.Id, matched.Progress * 100, matched.AmountLeft, matched.State, dbContext, cancellationToken);
 
-                            // Skip finalization/progress logic for already-imported (Moved) downloads.
-                            // We only polled them to update CanBeRemoved metadata above.
-                            if (dl.Status == DownloadStatus.Moved)
+                            // Skip finalization/progress logic for downloads that are already
+                            // being processed, awaiting import, or fully imported. Re-entering
+                            // finalization for these would cause duplicate notifications and
+                            // potentially import the wrong files a second time.
+                            if (dl.Status == DownloadStatus.Moved ||
+                                dl.Status == DownloadStatus.Processing ||
+                                dl.Status == DownloadStatus.ImportPending)
                             {
-                                _logger.LogDebug("Skipping finalization for Moved download {DownloadId} — only updating CanBeRemoved metadata", dl.Id);
+                                _logger.LogDebug("Skipping finalization for {Status} download {DownloadId}", dl.Status, dl.Id);
                                 continue;
                             }
 
@@ -1434,10 +1444,15 @@ namespace Listenarr.Api.Services
                                         }
                                     }
                                     
-                                    // Fallback to name matching
+                                    // Fallback to exact name or normalized title match only.
+                                    // No fuzzy/path-based matching to avoid cross-contamination.
                                     var name = t.TryGetProperty("name", out var n) ? n.GetString() ?? string.Empty : string.Empty;
-                                    var dir = t.TryGetProperty("downloadDir", out var d) ? d.GetString() ?? string.Empty : string.Empty;
-                                    return string.Equals(name, dl.Title, StringComparison.OrdinalIgnoreCase) || (!string.IsNullOrEmpty(dl.DownloadPath) && dir.Contains(dl.DownloadPath));
+                                    if (string.Equals(name, dl.Title, StringComparison.OrdinalIgnoreCase))
+                                        return true;
+                                    if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(dl.Title) &&
+                                        string.Equals(NormalizeTitle(name), NormalizeTitle(dl.Title), StringComparison.OrdinalIgnoreCase))
+                                        return true;
+                                    return false;
                                 });
 
                                 if (matching.ValueKind == System.Text.Json.JsonValueKind.Undefined)
@@ -1506,11 +1521,13 @@ namespace Listenarr.Api.Services
                                     _logger.LogDebug(ex, "Failed to persist CanMoveFiles/CanBeRemoved for Transmission download {DownloadId}", dl.Id);
                                 }
 
-                                // Skip finalization/progress logic for already-imported (Moved) downloads.
-                                // We only polled them to update CanBeRemoved metadata above.
-                                if (dl.Status == DownloadStatus.Moved)
+                                // Skip finalization/progress logic for downloads that are already
+                                // being processed, awaiting import, or fully imported.
+                                if (dl.Status == DownloadStatus.Moved ||
+                                    dl.Status == DownloadStatus.Processing ||
+                                    dl.Status == DownloadStatus.ImportPending)
                                 {
-                                    _logger.LogDebug("Skipping finalization for Moved download {DownloadId} — only updating CanBeRemoved metadata", dl.Id);
+                                    _logger.LogDebug("Skipping finalization for {Status} download {DownloadId}", dl.Status, dl.Id);
                                     continue;
                                 }
 
@@ -2230,10 +2247,11 @@ namespace Listenarr.Api.Services
                     {
                         try
                         {
-                            // Skip Moved downloads — they're only included for CanBeRemoved
-                            // polling. SABnzbd history items don't need removal tracking, so
-                            // just skip them entirely to avoid overwriting Moved → Completed.
-                            if (dl.Status == DownloadStatus.Moved)
+                            // Skip downloads that are already being processed, awaiting import,
+                            // or fully imported to avoid duplicate finalization/notifications.
+                            if (dl.Status == DownloadStatus.Moved ||
+                                dl.Status == DownloadStatus.Processing ||
+                                dl.Status == DownloadStatus.ImportPending)
                                 continue;
 
                             var failedMatch = failedItems.FirstOrDefault(item =>
@@ -2597,10 +2615,11 @@ namespace Listenarr.Api.Services
                     {
                         try
                         {
-                            // Skip Moved downloads — they're only included for CanBeRemoved
-                            // polling. NZBGet history items don't need removal tracking, so
-                            // just skip them entirely to avoid overwriting Moved → Completed.
-                            if (dl.Status == DownloadStatus.Moved)
+                            // Skip downloads that are already being processed, awaiting import,
+                            // or fully imported to avoid duplicate finalization/notifications.
+                            if (dl.Status == DownloadStatus.Moved ||
+                                dl.Status == DownloadStatus.Processing ||
+                                dl.Status == DownloadStatus.ImportPending)
                                 continue;
 
                             var failedMatch = failedItems.FirstOrDefault(item =>
