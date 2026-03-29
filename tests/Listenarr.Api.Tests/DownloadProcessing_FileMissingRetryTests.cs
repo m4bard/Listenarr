@@ -24,11 +24,11 @@ namespace Listenarr.Api.Tests
             var db = new ListenArrDbContext(dbOptions);
 
             // Create temp source file then delete it to simulate race
-            var sourceFile = Path.Combine(Path.GetTempPath(), $"dl-missing-{Guid.NewGuid()}.mp3");
+            var sourceFile = Path.Join(Path.GetTempPath(), $"dl-missing-{Guid.NewGuid()}.mp3");
             await File.WriteAllTextAsync(sourceFile, "test");
 
             // Destination directory must exist for background service to attempt operations
-            var destRoot = Path.Combine(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
+            var destRoot = Path.Join(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
             Directory.CreateDirectory(destRoot);
 
             // Add a download record and a processing job
@@ -131,14 +131,14 @@ namespace Listenarr.Api.Tests
 
             var db = new ListenArrDbContext(dbOptions);
 
-            var sourceDir = Path.Combine(Path.GetTempPath(), $"dl-dir-{Guid.NewGuid()}");
-            var destRoot = Path.Combine(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"dl-dir-{Guid.NewGuid()}");
+            var destRoot = Path.Join(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
             Directory.CreateDirectory(sourceDir);
             Directory.CreateDirectory(destRoot);
 
-            var audioPath = Path.Combine(sourceDir, "book.m4b");
-            var coverPath = Path.Combine(sourceDir, "cover.jpg");
-            var txtPath = Path.Combine(sourceDir, "book.txt");
+            var audioPath = Path.Join(sourceDir, "book.m4b");
+            var coverPath = Path.Join(sourceDir, "cover.jpg");
+            var txtPath = Path.Join(sourceDir, "book.txt");
             await File.WriteAllTextAsync(audioPath, "audio");
             await File.WriteAllTextAsync(coverPath, "cover");
             await File.WriteAllTextAsync(txtPath, "notes");
@@ -212,9 +212,9 @@ namespace Listenarr.Api.Tests
             var task = (Task)method!.Invoke(svc, new object[] { job, scope, CancellationToken.None })!;
             await task;
 
-            var expectedAudioDest = Path.Combine(destRoot, "book.m4b");
-            var expectedCoverDest = Path.Combine(destRoot, "cover.jpg");
-            var expectedTxtDest = Path.Combine(destRoot, "book.txt");
+            var expectedAudioDest = Path.Join(destRoot, "book.m4b");
+            var expectedCoverDest = Path.Join(destRoot, "cover.jpg");
+            var expectedTxtDest = Path.Join(destRoot, "book.txt");
 
             Assert.True(File.Exists(expectedAudioDest));
             Assert.True(File.Exists(expectedCoverDest));
@@ -239,15 +239,15 @@ namespace Listenarr.Api.Tests
 
             var db = new ListenArrDbContext(dbOptions);
 
-            var sourceDir = Path.Combine(Path.GetTempPath(), $"dl-dir-{Guid.NewGuid()}");
-            var destRoot = Path.Combine(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"dl-dir-{Guid.NewGuid()}");
+            var destRoot = Path.Join(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
             Directory.CreateDirectory(sourceDir);
             Directory.CreateDirectory(destRoot);
 
-            var audioPath = Path.Combine(sourceDir, "book.m4b");
-            var coverPath = Path.Combine(sourceDir, "cover.jpg");
-            var txtPath = Path.Combine(sourceDir, "book.txt");
-            var unrelatedPath = Path.Combine(sourceDir, "unrelated.txt");
+            var audioPath = Path.Join(sourceDir, "book.m4b");
+            var coverPath = Path.Join(sourceDir, "cover.jpg");
+            var txtPath = Path.Join(sourceDir, "book.txt");
+            var unrelatedPath = Path.Join(sourceDir, "unrelated.txt");
             await File.WriteAllTextAsync(audioPath, "audio");
             await File.WriteAllTextAsync(coverPath, "cover");
             await File.WriteAllTextAsync(txtPath, "notes");
@@ -340,11 +340,11 @@ namespace Listenarr.Api.Tests
             var task = (Task)method!.Invoke(svc, new object[] { job, scope, CancellationToken.None })!;
             await task;
 
-            Assert.True(File.Exists(Path.Combine(destRoot, "book.m4b")));
-            Assert.True(File.Exists(Path.Combine(destRoot, "cover.jpg")));
-            Assert.True(File.Exists(Path.Combine(destRoot, "book.txt")));
-            Assert.False(File.Exists(Path.Combine(destRoot, "unrelated.txt")));
-            Assert.Equal(Path.Combine(destRoot, "book.m4b"), finalizedPath);
+            Assert.True(File.Exists(Path.Join(destRoot, "book.m4b")));
+            Assert.True(File.Exists(Path.Join(destRoot, "cover.jpg")));
+            Assert.True(File.Exists(Path.Join(destRoot, "book.txt")));
+            Assert.False(File.Exists(Path.Join(destRoot, "unrelated.txt")));
+            Assert.Equal(Path.Join(destRoot, "book.m4b"), finalizedPath);
 
             try { Directory.Delete(sourceDir, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
             try { Directory.Delete(destRoot, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
