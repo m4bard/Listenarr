@@ -194,7 +194,9 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                         Format = audioFile.Format,
                         Quality = DetectQualityFromFormat(audioFile.Format),
                         Source = $"{indexer.Name} (Internet Archive)",
-                        PublishedDate = string.Empty
+                        PublishedDate = string.Empty,
+                        IndexerId = indexer.Id,
+                        IndexerImplementation = indexer.Implementation
                     };
 
                     // Ensure ResultUrl is present (fallback to item page or archive details)
