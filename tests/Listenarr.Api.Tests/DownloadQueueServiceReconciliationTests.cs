@@ -395,8 +395,8 @@ namespace Listenarr.Api.Tests
             Assert.Equal("timeout", second[0].SnapshotFailureReason);
             Assert.NotNull(second[0].SnapshotAgeSeconds);
             Assert.True(elapsed < TimeSpan.FromSeconds(1), $"Expected cached fallback to return quickly, but took {elapsed.TotalMilliseconds:F0}ms");
-            metricsMock.Verify(m => m.Increment("download.queue.client.poll.timeout", It.Is<double>(v => v == 1)), Times.Once);
-            metricsMock.Verify(m => m.Increment("download.queue.client.snapshot.fallback", It.Is<double>(v => v == 1)), Times.Once);
+            metricsMock.Verify(m => m.Increment("download.queue.client.poll.timeout", It.Is<double>(v => Math.Abs(v - 1.0d) < 1e-9)), Times.Once);
+            metricsMock.Verify(m => m.Increment("download.queue.client.snapshot.fallback", It.Is<double>(v => Math.Abs(v - 1.0d) < 1e-9)), Times.Once);
         }
 
         [Fact]

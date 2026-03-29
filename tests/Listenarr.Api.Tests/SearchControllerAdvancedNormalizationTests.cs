@@ -37,7 +37,8 @@ namespace Listenarr.Api.Tests
                 });
 
             var logger = Mock.Of<ILogger<SearchController>>();
-            var mockAudibleService = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            using var httpClient = new System.Net.Http.HttpClient();
+            var mockAudibleService = new Mock<AudibleService>(httpClient, Mock.Of<ILogger<AudibleService>>());
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
             var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };

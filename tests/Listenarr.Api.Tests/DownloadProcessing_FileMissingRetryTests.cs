@@ -119,7 +119,7 @@ namespace Listenarr.Api.Tests
             metricsMock.Verify(m => m.Increment("processing.source_missing", It.IsAny<double>()), Times.AtLeastOnce);
 
             // Cleanup created temp destination dir
-            try { Directory.Delete(destRoot, true); } catch { }
+            try { Directory.Delete(destRoot, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
         }
 
         [Fact]
@@ -226,8 +226,8 @@ namespace Listenarr.Api.Tests
             downloadServiceMock.Verify(d => d.ProcessCompletedDownloadAsync(dl.Id, expectedCoverDest), Times.Never);
             downloadServiceMock.Verify(d => d.ProcessCompletedDownloadAsync(dl.Id, expectedTxtDest), Times.Never);
 
-            try { Directory.Delete(sourceDir, true); } catch { }
-            try { Directory.Delete(destRoot, true); } catch { }
+            try { Directory.Delete(sourceDir, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
+            try { Directory.Delete(destRoot, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
         }
 
         [Fact]
@@ -346,8 +346,8 @@ namespace Listenarr.Api.Tests
             Assert.False(File.Exists(Path.Combine(destRoot, "unrelated.txt")));
             Assert.Equal(Path.Combine(destRoot, "book.m4b"), finalizedPath);
 
-            try { Directory.Delete(sourceDir, true); } catch { }
-            try { Directory.Delete(destRoot, true); } catch { }
+            try { Directory.Delete(sourceDir, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
+            try { Directory.Delete(destRoot, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
         }
     }
 }

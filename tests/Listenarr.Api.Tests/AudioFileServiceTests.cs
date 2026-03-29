@@ -199,7 +199,7 @@ namespace Listenarr.Api.Tests
             db.Audiobooks.Add(book);
             await db.SaveChangesAsync();
 
-            var testFile = Path.Combine(Path.GetTempPath(), $"afs-test-{Guid.NewGuid()}.jpg");
+            var testFile = Path.Join(Path.GetTempPath(), $"afs-test-{Guid.NewGuid()}.jpg");
             await File.WriteAllTextAsync(testFile, "dummy");
 
             var metadataMock = new Mock<IMetadataService>();

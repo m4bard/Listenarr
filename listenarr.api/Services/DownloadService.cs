@@ -280,14 +280,11 @@ namespace Listenarr.Api.Services
                     else
                     {
                         // Fallback to direct hub context for older registrations
-                        await _hubContext.Clients.All.SendAsync("QueueUpdate", currentQueueSnapshot);
+                        var clientProxy = _hubContext.Clients.All;
+                        await clientProxy.SendAsync("QueueUpdate", currentQueueSnapshot);
                         try
                         {
-                            var clientProxy = _hubContext?.Clients?.All;
-                            if (clientProxy != null)
-                            {
-                                await clientProxy.SendCoreAsync("QueueUpdate", new object[] { currentQueueSnapshot }, System.Threading.CancellationToken.None);
-                            }
+                            await clientProxy.SendCoreAsync("QueueUpdate", new object[] { currentQueueSnapshot }, System.Threading.CancellationToken.None);
                         }
                         catch (Exception exInner) when (exInner is not OperationCanceledException && exInner is not OutOfMemoryException && exInner is not StackOverflowException) {
                             _logger.LogDebug(exInner, "Direct SendCoreAsync for QueueUpdate failed (non-fatal)");
