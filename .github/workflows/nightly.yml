@@ -98,7 +98,7 @@ jobs:
 
       - name: Create Pull Request for version bump
         id: create_pr
-        uses: peter-evans/create-pull-request@v4
+        uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GH_PAT }}
           commit-message: "[skip ci] Bump version to ${{ steps.resolve-version.outputs.VERSION }}"
@@ -108,14 +108,50 @@ jobs:
           body: |
             This PR bumps the application version to ${{ steps.resolve-version.outputs.VERSION }}.
             The change was produced automatically by the CI nightly workflow.
-          labels: automated,version-bump
+
+      - name: Label version bump PR
+        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
+        continue-on-error: true
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GH_PAT }}
+          script: |
+            const pr = Number('${{ steps.create_pr.outputs.pull-request-number }}');
+            if (!pr) {
+              core.info('No PR number returned; skipping labels.');
+              return;
+            }
+
+            for (let attempt = 1; attempt <= 5; attempt++) {
+              try {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr,
+                  labels: ['automated', 'version-bump']
+                });
+                core.info(`Applied labels to PR #${pr} on attempt ${attempt}.`);
+                return;
+              } catch (error) {
+                if (attempt === 5) {
+                  core.warning(`Failed to label PR #${pr}: ${error.message}`);
+                  return;
+                }
+
+                const delayMs = attempt * 2000;
+                core.warning(`Label attempt ${attempt} failed for PR #${pr}: ${error.message}. Retrying in ${delayMs}ms.`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+              }
+            }
 
       - name: Merge version bump PR (skip CI)
+        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
         uses: actions/github-script@v6
         env:
           PR_NUMBER: ${{ steps.create_pr.outputs['pull-request-number'] }}
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         with:
+          github-token: ${{ secrets.GH_PAT }}
           script: |
             const pr = parseInt(process.env.PR_NUMBER, 10);
             if (!pr) throw new Error('PR number missing');
