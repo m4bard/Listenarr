@@ -94,6 +94,7 @@
               <li><code>{Series}</code> - Series name</li>
               <li><code>{Title}</code> - Book title</li>
               <li><code>{Subtitle}</code> - Book subtitle</li>
+              <li><code>{Edition}</code> - User-defined edition label</li>
               <li><code>{Publisher}</code> - Publisher name</li>
               <li><code>{Language}</code> - Metadata language</li>
               <li><code>{Asin}</code> - Audible ASIN</li>
@@ -111,6 +112,7 @@
               <li><code>{Series}</code> - Series name</li>
               <li><code>{Title}</code> - Book title</li>
               <li><code>{Subtitle}</code> - Book subtitle</li>
+              <li><code>{Edition}</code> - User-defined edition label</li>
               <li><code>{Publisher}</code> - Publisher name</li>
               <li><code>{Language}</code> - Metadata language</li>
               <li><code>{Asin}</code> - Audible ASIN</li>
@@ -120,8 +122,8 @@
               <li><code>{Year}</code> - Publication year</li>
               <li><code>{Quality}</code> - Audio quality (bitrate or format)</li>
             </ul>
-            <p class="example"><strong>Example:</strong> <code>{Title} - {Subtitle} ({Language}) [{Asin}]</code></p>
-            <p class="result"><strong>Result:</strong> <code>The Gunslinger - The Dark Tower Begins (English) [B000FC1R84].m4b</code></p>
+            <p class="example"><strong>Example:</strong> <code>{Title} - {Edition} ({Language}) [{Asin}]</code></p>
+            <p class="result"><strong>Result:</strong> <code>The Gunslinger - Revised Edition (English) [B000FC1R84].m4b</code></p>
           </div>
         </div>
       </div>
@@ -153,6 +155,7 @@ const sampleVariables = {
   Series: 'The Dark Tower',
   Title: 'The Gunslinger',
   Subtitle: 'The Dark Tower Begins',
+  Edition: 'Revised Edition',
   Publisher: 'Penguin Audio',
   Language: 'English',
   Asin: 'B000FC1R84',

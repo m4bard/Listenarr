@@ -556,6 +556,9 @@ public class ManualImportController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(audiobook.Subtitle))
             variables["Subtitle"] = audiobook.Subtitle;
+
+        if (!string.IsNullOrWhiteSpace(audiobook.Edition))
+            variables["Edition"] = audiobook.Edition;
         
         // Preserve the older title+subtitle uniqueness behavior unless the user explicitly uses {Subtitle}.
         // (e.g. "The Land" + "Founding" → "The Land: Founding")

@@ -55,6 +55,7 @@ namespace Listenarr.Api.Services
                 ImageUrl = audiobook.ImageUrl,
                 Quality = audiobook.Quality,
                 QualityProfileId = audiobook.QualityProfileId,
+                Edition = audiobook.Edition,
                 Version = audiobook.Version,
                 Abridged = audiobook.Abridged,
                 Explicit = audiobook.Explicit

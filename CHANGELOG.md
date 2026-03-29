@@ -5,6 +5,17 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.65] - 2026-03-29
+
+### Added
+- **User-defined `{Edition}` naming token:** Audiobooks now support a separate user-managed `Edition` field that can be used in folder and file naming patterns to distinguish alternate recordings, custom release labels, or local library variants without reusing source-provided `Version` metadata.
+
+### Changed
+- **Audiobook edit flow now supports custom edition metadata:** The existing audiobook edit modal now exposes an `Edition` field, library payloads carry it through the frontend, and the audiobook detail view surfaces the saved edition label alongside other publication metadata.
+- **Add to Library modal metadata is now editable before import:** The Add New flow now lets you adjust title, subtitle, edition, version, authors, narrators, publisher, language, identifiers, series data, and other surfaced metadata before saving the audiobook, and the preview path updates from those edited values.
+- **Add to Library metadata editor is now a dedicated edit mode:** The modal now starts in a cleaner details view and switches into metadata editing when you click `Edit Metadata`, hiding the read-only detail sections until you switch back.
+- **Audiobook detail editing now covers full metadata:** The audiobook detail page’s edit flow now opens a fuller metadata editor, so title, subtitle, authors, narrators, description, publisher, release date, series data, genres, cover URL, edition, and related fields can be corrected directly from the detail view.
+
 ## [0.2.64] - 2026-03-29
 
 ### Changed

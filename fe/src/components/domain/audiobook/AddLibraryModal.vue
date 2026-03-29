@@ -6,18 +6,19 @@
 
     <template #default>
       <ModalBody>
-        <div class="book-layout">
+        <div ref="modalRef" class="add-library-modal-content" tabindex="-1">
+          <div class="book-layout">
           <!-- Book Image -->
           <div class="book-image">
             <div class="image-viewport">
               <img
-                v-if="resolvedImageUrl || enriched?.imageUrl || book.imageUrl"
+                v-if="imageSrc"
                 :src="imageSrc"
-                :alt="book.title"
+                :alt="currentMetadata.title || 'Audiobook cover'"
                 loading="lazy"
                 @error="onImageError"
                 @load="onImageLoad"
-                :aria-hidden="!book.title"
+                :aria-hidden="!currentMetadata.title"
               />
               <div v-else class="placeholder-cover">
                 <PhImage />
@@ -28,25 +29,37 @@
 
           <!-- Book Details -->
           <div class="book-details">
-            <div class="detail-section">
-              <h3>{{ book.title }}</h3>
-              <p v-if="book.authors?.length" class="authors">by {{ book.authors.join(', ') }}</p>
-              <p v-if="book.narrators?.length" class="narrators">
-                Narrated by {{ book.narrators.join(', ') }}
+            <div v-if="!showMetadataEditor" class="detail-section detail-header">
+              <div>
+              <h3>{{ currentMetadata.title }}</h3>
+              <p v-if="currentMetadata.authors?.length" class="authors">by {{ currentMetadata.authors.join(', ') }}</p>
+              <p v-if="currentMetadata.narrators?.length" class="narrators">
+                Narrated by {{ currentMetadata.narrators.join(', ') }}
               </p>
+              </div>
+              <button
+                v-if="editableMetadata"
+                type="button"
+                class="btn btn-secondary metadata-toggle-btn"
+                @click="toggleMetadataEditor"
+              >
+                <PhPencilSimple />
+                Edit Metadata
+              </button>
             </div>
 
-            <div v-if="book.description" class="detail-section">
+            <template v-if="!showMetadataEditor">
+            <div v-if="currentMetadata.description" class="detail-section">
               <h4>Description</h4>
-              <div class="description">{{ stripHtmlAndNormalize(book.description) }}</div>
+              <div class="description">{{ stripHtmlAndNormalize(currentMetadata.description) }}</div>
             </div>
 
             <div class="detail-section" id="add-library-desc">
               <h4>Publication Information</h4>
               <div class="detail-grid">
-                <div v-if="book.publisher" class="detail-item">
+                <div v-if="currentMetadata.publisher" class="detail-item">
                   <span class="label">Publisher:</span>
-                  <span class="value">{{ book.publisher }}</span>
+                  <span class="value">{{ currentMetadata.publisher }}</span>
                 </div>
                 <div v-if="publishDate" class="detail-item">
                   <span class="label">Release Date:</span>
@@ -56,13 +69,21 @@
                   <span class="label">Release Date:</span>
                   <span class="value">{{ publishYear }}</span>
                 </div>
-                <div v-if="book.language" class="detail-item">
+                <div v-if="currentMetadata.language" class="detail-item">
                   <span class="label">Language:</span>
-                  <span class="value">{{ capitalizeFirst(book.language) }}</span>
+                  <span class="value">{{ capitalizeFirst(currentMetadata.language) }}</span>
                 </div>
-                <div v-if="book.runtime" class="detail-item">
+                <div v-if="currentMetadata.runtime" class="detail-item">
                   <span class="label">Listening Length:</span>
-                  <span class="value">{{ formatRuntime(book.runtime) }}</span>
+                  <span class="value">{{ formatRuntime(currentMetadata.runtime) }}</span>
+                </div>
+                <div v-if="currentMetadata.edition" class="detail-item">
+                  <span class="label">Edition:</span>
+                  <span class="value">{{ currentMetadata.edition }}</span>
+                </div>
+                <div v-if="currentMetadata.version" class="detail-item">
+                  <span class="label">Version:</span>
+                  <span class="value">{{ currentMetadata.version }}</span>
                 </div>
               </div>
             </div>
@@ -84,7 +105,7 @@
                     <span v-else>{{ normalizedSourceName }}</span>
                   </span>
                 </div>
-                <div v-if="book.asin" class="detail-item">
+                <div v-if="currentMetadata.asin" class="detail-item">
                   <span class="label">ASIN:</span>
                   <span class="value">
                     <a
@@ -92,15 +113,15 @@
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      {{ book.asin }}
+                      {{ currentMetadata.asin }}
                     </a>
                   </span>
                 </div>
-                <div v-if="book.isbn" class="detail-item">
+                <div v-if="currentMetadata.isbn" class="detail-item">
                   <span class="label">ISBN:</span>
-                  <span class="value">{{ book.isbn }}</span>
+                  <span class="value">{{ currentMetadata.isbn }}</span>
                 </div>
-                <div v-if="book.openLibraryId && openLibraryUrl" class="detail-item">
+                <div v-if="currentMetadata.openLibraryId && openLibraryUrl" class="detail-item">
                   <span class="label">OpenLibrary ID:</span>
                   <span class="value">
                     <a
@@ -108,20 +129,20 @@
                       target="_blank"
                       rel="noopener noreferrer"
                     >
-                      {{ book.openLibraryId }}
+                      {{ currentMetadata.openLibraryId }}
                     </a>
                   </span>
                 </div>
               </div>
             </div>
 
-            <div v-if="book.series || displayGenres.length" class="detail-section">
+            <div v-if="currentMetadata.series || displayGenres.length" class="detail-section">
               <h4>Series & Genre Information</h4>
               <div class="detail-grid">
-                <div v-if="book.series" class="detail-item">
+                <div v-if="currentMetadata.series" class="detail-item">
                   <span class="label">Series:</span>
                   <span class="value">
-                    {{ book.series }}<span v-if="book.seriesNumber"> #{{ book.seriesNumber }}</span>
+                    {{ currentMetadata.series }}<span v-if="currentMetadata.seriesNumber"> #{{ currentMetadata.seriesNumber }}</span>
                   </span>
                 </div>
                 <div v-if="displayGenres.length" class="detail-item">
@@ -134,15 +155,118 @@
             <div v-if="hasFlags" class="detail-section">
               <h4>Content Flags</h4>
               <div class="flags">
-                <span v-if="book.explicit" class="flag explicit">Explicit</span>
-                <span v-if="book.abridged" class="flag abridged">Abridged</span>
+                <span v-if="currentMetadata.explicit" class="flag explicit">Explicit</span>
+                <span v-if="currentMetadata.abridged" class="flag abridged">Abridged</span>
+              </div>
+            </div>
+            </template>
+
+            <div v-if="editableMetadata && showMetadataEditor" class="detail-section metadata-editor">
+              <div class="metadata-editor-header">
+                <h4>Edit Metadata</h4>
+                <button
+                  type="button"
+                  class="btn btn-secondary metadata-toggle-btn"
+                  @click="toggleMetadataEditor"
+                >
+                  <PhEye />
+                  View Details
+                </button>
+              </div>
+              <div class="metadata-edit-grid">
+                <div class="detail-item detail-item--wide">
+                  <span class="label">Title</span>
+                  <input v-model="editableMetadata.title" type="text" class="form-input" />
+                </div>
+                <div class="detail-item detail-item--wide">
+                  <span class="label">Subtitle</span>
+                  <input v-model="editableMetadata.subtitle" type="text" class="form-input" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Edition</span>
+                  <input v-model="editableMetadata.edition" type="text" class="form-input" placeholder="e.g. Revised Edition" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Version</span>
+                  <input v-model="editableMetadata.version" type="text" class="form-input" placeholder="Source/version label" />
+                </div>
+                <div class="detail-item detail-item--wide">
+                  <span class="label">Authors</span>
+                  <input v-model="authorsInput" type="text" class="form-input" placeholder="Comma-separated authors" />
+                </div>
+                <div class="detail-item detail-item--wide">
+                  <span class="label">Narrators</span>
+                  <input v-model="narratorsInput" type="text" class="form-input" placeholder="Comma-separated narrators" />
+                </div>
+                <div class="detail-item detail-item--full">
+                  <span class="label">Description</span>
+                  <textarea v-model="editableMetadata.description" rows="5" class="form-input metadata-textarea" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Publisher</span>
+                  <input v-model="editableMetadata.publisher" type="text" class="form-input" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Language</span>
+                  <input v-model="editableMetadata.language" type="text" class="form-input" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Release Date</span>
+                  <input v-model="editableMetadata.publishedDate" type="text" class="form-input" placeholder="YYYY-MM-DD" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Publish Year</span>
+                  <input v-model="editableMetadata.publishYear" type="text" class="form-input" placeholder="YYYY" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Listening Length (minutes)</span>
+                  <input v-model.number="editableMetadata.runtime" type="number" min="0" class="form-input" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Series</span>
+                  <input v-model="editableMetadata.series" type="text" class="form-input" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">Series Number</span>
+                  <input v-model="editableMetadata.seriesNumber" type="text" class="form-input" />
+                </div>
+                <div class="detail-item detail-item--wide">
+                  <span class="label">Genres</span>
+                  <input v-model="genresInput" type="text" class="form-input" placeholder="Comma-separated genres" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">ASIN</span>
+                  <input v-model="editableMetadata.asin" type="text" class="form-input" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">ISBN</span>
+                  <input v-model="editableMetadata.isbn" type="text" class="form-input" />
+                </div>
+                <div class="detail-item">
+                  <span class="label">OpenLibrary ID</span>
+                  <input v-model="editableMetadata.openLibraryId" type="text" class="form-input" />
+                </div>
+                <div class="detail-item detail-item--wide">
+                  <span class="label">Cover Image URL</span>
+                  <input v-model="editableMetadata.imageUrl" type="text" class="form-input" />
+                </div>
+              </div>
+              <div class="checkbox-group metadata-flags">
+                <Checkbox v-model="editableMetadata.explicit">
+                  <strong>Explicit</strong>
+                  <small>Mark this release as explicit content</small>
+                </Checkbox>
+                <Checkbox v-model="editableMetadata.abridged">
+                  <strong>Abridged</strong>
+                  <small>Mark this release as abridged</small>
+                </Checkbox>
               </div>
             </div>
           </div>
-        </div>
+          </div>
 
-        <!-- Customization Options -->
-        <div class="detail-section library-options">
+          <!-- Customization Options -->
+          <div class="detail-section library-options">
           <h4>Library Options</h4>
 
           <FormRow>
@@ -188,6 +312,7 @@
                     v-model="options.relativePath"
                     class="form-input relative-input"
                     placeholder="e.g. Author/Title"
+                    @input="onRelativePathInput"
                   />
                 </div>
                 <small class="form-help" v-if="selectedRootId === 0">
@@ -218,6 +343,7 @@
               Choose which quality profile to use for automatic downloads. Leave as "Use Default
               Profile" to automatically use the default profile.
             </small>
+          </div>
           </div>
         </div>
       </ModalBody>
@@ -250,7 +376,7 @@ import RootFolderSelect from '@/components/form/RootFolderSelect.vue'
 import Checkbox from '@/components/form/Checkbox.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
-import { PhX, PhSpinner, PhPlus, PhImage, PhWarning } from '@phosphor-icons/vue' 
+import { PhX, PhSpinner, PhPlus, PhImage, PhWarning, PhPencilSimple, PhEye } from '@phosphor-icons/vue' 
 import { toForward, normalizeForCompare } from '@/utils/path' 
 import { formatDate } from '@/utils/searchResultFormatting'
 import { stripHtmlAndNormalize } from '@/utils/textUtils'
@@ -284,18 +410,139 @@ const options = ref({
   relativePath: '' as string | null,
 })
 
-const publishDate = computed(() => props.book?.publishedDate || undefined)
+const editableMetadata = ref<AudibleBookMetadata | null>(null)
+const relativePathManuallyEdited = ref(false)
+const showMetadataEditor = ref(false)
+
+function trimToUndefined(value: string | null | undefined): string | undefined {
+  const trimmed = (value || '').trim()
+  return trimmed.length ? trimmed : undefined
+}
+
+function normalizeList(values: string[] | null | undefined): string[] {
+  return (values || []).map((value) => value.trim()).filter((value) => value.length > 0)
+}
+
+function splitList(value: string | null | undefined): string[] {
+  return (value || '')
+    .split(/[\r\n,]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+}
+
+function joinList(values: string[] | null | undefined): string {
+  return normalizeList(values).join(', ')
+}
+
+function firstIsbn(value: unknown): string | undefined {
+  if (Array.isArray(value)) {
+    const first = value.find((entry) => typeof entry === 'string' && entry.trim().length > 0)
+    return typeof first === 'string' ? first.trim() : undefined
+  }
+  return typeof value === 'string' ? trimToUndefined(value) : undefined
+}
+
+function cloneMetadata(source: AudibleBookMetadata): AudibleBookMetadata {
+  return {
+    ...source,
+    title: trimToUndefined(source.title) || 'Unknown Title',
+    subtitle: trimToUndefined(source.subtitle),
+    authors: normalizeList(source.authors),
+    narrators: normalizeList(source.narrators),
+    publishedDate: trimToUndefined(source.publishedDate),
+    publishYear: trimToUndefined(source.publishYear),
+    series: trimToUndefined(source.series),
+    seriesNumber: trimToUndefined(source.seriesNumber),
+    description: trimToUndefined(source.description),
+    genres: normalizeList(source.genres),
+    tags: normalizeList(source.tags),
+    isbn: firstIsbn(source.isbn),
+    asin: trimToUndefined(source.asin) || '',
+    publisher: trimToUndefined(source.publisher),
+    language: trimToUndefined(source.language),
+    runtime: typeof source.runtime === 'number' ? source.runtime : undefined,
+    edition: trimToUndefined(source.edition),
+    version: trimToUndefined(source.version),
+    imageUrl: trimToUndefined(source.imageUrl),
+    explicit: Boolean(source.explicit),
+    abridged: Boolean(source.abridged),
+    source: trimToUndefined(source.source),
+    sourceLink: trimToUndefined(source.sourceLink),
+    openLibraryId: trimToUndefined(source.openLibraryId),
+    metadataSource: trimToUndefined(source.metadataSource),
+  }
+}
+
+function buildMetadataPayload(): AudibleBookMetadata {
+  const source = editableMetadata.value || props.book
+  const publishedDate = trimToUndefined(source?.publishedDate)
+  const derivedYear = publishedDate?.match(/\d{4}/)?.[0]
+  const explicitPublishYear = trimToUndefined(source?.publishYear)
+
+  return {
+    ...cloneMetadata(source),
+    title: trimToUndefined(source?.title) || 'Unknown Title',
+    subtitle: trimToUndefined(source?.subtitle),
+    authors: normalizeList(source?.authors),
+    narrators: normalizeList(source?.narrators),
+    publishedDate,
+    publishYear: explicitPublishYear || derivedYear,
+    description: trimToUndefined(source?.description),
+    genres: normalizeList(source?.genres),
+    tags: normalizeList(source?.tags),
+    isbn: firstIsbn(source?.isbn),
+    asin: trimToUndefined(source?.asin) || '',
+    publisher: trimToUndefined(source?.publisher),
+    language: trimToUndefined(source?.language),
+    runtime:
+      typeof source?.runtime === 'number' && !Number.isNaN(source.runtime) ? source.runtime : undefined,
+    edition: trimToUndefined(source?.edition),
+    version: trimToUndefined(source?.version),
+    imageUrl: trimToUndefined(source?.imageUrl),
+    explicit: Boolean(source?.explicit),
+    abridged: Boolean(source?.abridged),
+    openLibraryId: trimToUndefined(source?.openLibraryId),
+  }
+}
+
+const currentMetadata = computed(() => editableMetadata.value || enriched.value || props.book)
+
+const authorsInput = computed({
+  get: () => joinList(editableMetadata.value?.authors),
+  set: (value: string) => {
+    if (!editableMetadata.value) return
+    editableMetadata.value.authors = splitList(value)
+  },
+})
+
+const narratorsInput = computed({
+  get: () => joinList(editableMetadata.value?.narrators),
+  set: (value: string) => {
+    if (!editableMetadata.value) return
+    editableMetadata.value.narrators = splitList(value)
+  },
+})
+
+const genresInput = computed({
+  get: () => joinList(editableMetadata.value?.genres),
+  set: (value: string) => {
+    if (!editableMetadata.value) return
+    editableMetadata.value.genres = splitList(value)
+  },
+})
+
+const publishDate = computed(() => currentMetadata.value?.publishedDate || undefined)
 const publishYear = computed(() => {
-  if (props.book?.publishedDate) {
-    const match = props.book.publishedDate.match(/\d{4}/)
+  if (currentMetadata.value?.publishedDate) {
+    const match = currentMetadata.value.publishedDate.match(/\d{4}/)
     return match ? match[0] : undefined
   }
-  const legacy = (props.book as unknown as { publishYear?: string }).publishYear
+  const legacy = currentMetadata.value?.publishYear
   return legacy || undefined
 })
 
 const normalizedSourceName = computed(() => {
-  const source = (metadataSource.value || props.book?.source || '').trim()
+  const source = (metadataSource.value || currentMetadata.value?.source || '').trim()
   if (!source) return ''
   if (source.toLowerCase().includes('audible'))
     return 'Audible'
@@ -303,19 +550,19 @@ const normalizedSourceName = computed(() => {
 })
 
 const audibleSourceUrl = computed(() => {
-  const source = (metadataSource.value || props.book?.source || '').toLowerCase()
-  const asin = props.book?.asin
+  const source = (metadataSource.value || currentMetadata.value?.source || '').toLowerCase()
+  const asin = currentMetadata.value?.asin
   if (!source.includes('audible') || !asin) return null
   return `https://www.audible.com/pd/${encodeURIComponent(asin)}`
 })
 
 const audibleProductUrl = computed(() => {
-  const asin = props.book?.asin
+  const asin = currentMetadata.value?.asin
   return asin ? `https://www.audible.com/pd/${asin}` : '#'
 })
 
 const openLibraryUrl = computed(() => {
-  const olid = props.book?.openLibraryId
+  const olid = currentMetadata.value?.openLibraryId
   if (!olid) return null
 
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(olid)) {
@@ -334,11 +581,11 @@ const openLibraryUrl = computed(() => {
   return `https://openlibrary.org/books/${olid}`
 })
 
-const hasFlags = computed(() => Boolean(props.book?.explicit || props.book?.abridged))
+const hasFlags = computed(() => Boolean(currentMetadata.value?.explicit || currentMetadata.value?.abridged))
 
 const displayGenres = computed(() => {
-  if (enriched.value?.genres && enriched.value.genres.length) return enriched.value.genres
-  return props.book?.genres || []
+  if (currentMetadata.value?.genres && currentMetadata.value.genres.length) return currentMetadata.value.genres
+  return []
 })
 
 const rootStore = useRootFoldersStore()
@@ -381,7 +628,7 @@ const metadataSource = ref<string | null>(null)
 
 const imageSrc = computed(() => {
   // prefer resolvedImageUrl passed from parent
-  const base = props.resolvedImageUrl || enriched.value?.imageUrl || props.book?.imageUrl || ''
+  const base = props.resolvedImageUrl || currentMetadata.value?.imageUrl || ''
   if (!base) return ''
   // If we retried, append cache-buster to force reload
   if (imageRetryCount.value > 0) {
@@ -418,6 +665,7 @@ interface Audible {
   genres?: AudibleGenre[]
   series?: AudibleSeries[]
   bookFormat?: string
+  version?: string
   isbn?: string
 }
 
@@ -463,6 +711,8 @@ const mapAudibleToAudible = (
         ? audible.lengthMinutes
         : props.book?.runtime,
     language: audible?.language || props.book?.language,
+    edition: props.book?.edition,
+    version: audible?.version || props.book?.version,
     genres: genres.length ? genres : props.book?.genres || [],
     series: firstSeries?.name || props.book?.series,
     seriesNumber:
@@ -474,6 +724,32 @@ const mapAudibleToAudible = (
     isbn: audible?.isbn || props.book?.isbn,
     source: source || props.book?.source,
   }
+}
+
+function resolvePreviewRoot(): string | undefined {
+  if (selectedRootId.value === 0) return undefined
+  if (selectedRootId.value && selectedRootId.value > 0) {
+    const found = rootStore.folders.find((folder) => folder.id === selectedRootId.value)
+    return found?.path || undefined
+  }
+  const defaultRoot = rootStore.folders.find((folder) => folder.isDefault)
+  return defaultRoot?.path || configStore.applicationSettings?.outputPath || undefined
+}
+
+async function refreshPreviewFromMetadata(force = false) {
+  if (!props.visible || selectedRootId.value === 0) return
+  if (!force && relativePathManuallyEdited.value) return
+
+  const metadataForPreview = buildMetadataPayload()
+  const destinationRoot = resolvePreviewRoot()
+  const response = await apiService.previewLibraryPath(metadataForPreview, destinationRoot)
+  previewFull.value = response?.fullPath || ''
+  previewRelative.value = response?.relativePath || ''
+  options.value.relativePath = deriveRelative(
+    previewRelative.value,
+    previewFull.value,
+    destinationRoot || '',
+  )
 }
 
 // helper to load profiles/settings and seed preview
@@ -494,6 +770,10 @@ const seedPreview = async () => {
     // Fallback to legacy outputPath if no root folders
     rootPath.value = configStore.applicationSettings?.outputPath || ''
   }
+
+  enriched.value = null
+  metadataSource.value = null
+  showMetadataEditor.value = false
 
   // Attempt to fetch enriched metadata for the ASIN (if present) so preview/add use metadata sources
   try {
@@ -529,20 +809,9 @@ const seedPreview = async () => {
       }
     }
 
-    const metadataForPreview = (enriched.value || props.book) as AudibleBookMetadata
-    // Compute a preview path using server logic
-    const resp2 = await apiService.previewLibraryPath(
-      metadataForPreview,
-      rootPath.value || undefined,
-    )
-    previewFull.value = resp2?.fullPath || ''
-    previewRelative.value = resp2?.relativePath || ''
-    // Seed editable relative path — prefer server-relative, otherwise derive from full preview and configured root
-    options.value.relativePath = deriveRelative(
-      previewRelative.value,
-      previewFull.value,
-      rootPath.value,
-    )
+    editableMetadata.value = cloneMetadata((enriched.value || props.book) as AudibleBookMetadata)
+    relativePathManuallyEdited.value = false
+    await refreshPreviewFromMetadata(true)
   } catch (e) {
     console.error('Failed to preview path:', e)
   }
@@ -550,7 +819,9 @@ const seedPreview = async () => {
 
 // Load when mounted
 onMounted(() => {
-  seedPreview()
+  if (props.visible) {
+    void seedPreview()
+  }
 })
 
 // Watch for resolvedImageUrl changes to reset image error state
@@ -610,9 +881,56 @@ watch(
   () => props.book,
   (newVal) => {
     if (!newVal) return
-    seedPreview()
+    if (props.visible) {
+      void seedPreview()
+    }
   },
 )
+
+watch(
+  () => props.visible,
+  (value) => {
+    if (value) {
+      void seedPreview()
+    }
+  },
+)
+
+watch(
+  () =>
+    JSON.stringify({
+      title: editableMetadata.value?.title,
+      subtitle: editableMetadata.value?.subtitle,
+      edition: editableMetadata.value?.edition,
+      authors: editableMetadata.value?.authors,
+      narrators: editableMetadata.value?.narrators,
+      publisher: editableMetadata.value?.publisher,
+      language: editableMetadata.value?.language,
+      asin: editableMetadata.value?.asin,
+      series: editableMetadata.value?.series,
+      seriesNumber: editableMetadata.value?.seriesNumber,
+      publishYear: editableMetadata.value?.publishYear,
+      publishedDate: editableMetadata.value?.publishedDate,
+    }),
+  () => {
+    void refreshPreviewFromMetadata()
+  },
+)
+
+watch(
+  () => selectedRootId.value,
+  () => {
+    void refreshPreviewFromMetadata(true)
+  },
+)
+
+function onRelativePathInput() {
+  relativePathManuallyEdited.value = true
+}
+
+function toggleMetadataEditor() {
+  showMetadataEditor.value = !showMetadataEditor.value
+}
 
 const modalRef = ref<HTMLElement | null>(null)
 
@@ -678,6 +996,7 @@ watch(
       }
       document.addEventListener('keydown', onKeyDown, { capture: true })
     } else {
+      showMetadataEditor.value = false
       document.removeEventListener('keydown', onKeyDown, { capture: true })
       if (previousActiveElement && typeof previousActiveElement.focus === 'function') {
         previousActiveElement.focus()
@@ -722,7 +1041,7 @@ const addToLibrary = async () => {
       destination = root
     }
 
-    const metadataToSend = (enriched.value || props.book) as AudibleBookMetadata
+    const metadataToSend = buildMetadataPayload()
     const result = await apiService.addToLibrary(metadataToSend, {
       monitored: options.value.monitored,
       qualityProfileId: options.value.qualityProfileId || undefined,
@@ -759,6 +1078,13 @@ const capitalizeFirst = (str: string): string => {
 
 <style scoped>
 /* Keep only layout and content-related styles; modal wrapper styles come from shared modal stylesheet */
+.add-library-modal-content {
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+  outline: none;
+}
+
 .image-viewport {
   width: 100%;
   aspect-ratio: 1/1;
@@ -831,6 +1157,13 @@ const capitalizeFirst = (str: string): string => {
   gap: 1.5rem;
 }
 
+.detail-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
 .detail-section h3 {
   margin: 0 0 0.5rem 0;
   color: white;
@@ -852,6 +1185,11 @@ const capitalizeFirst = (str: string): string => {
   font-size: 1.1rem;
   font-weight: 500;
   margin: 0 0 0.25rem 0;
+}
+
+.metadata-toggle-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .narrators {
@@ -877,6 +1215,14 @@ const capitalizeFirst = (str: string): string => {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
+}
+
+.detail-item--wide {
+  grid-column: span 2;
+}
+
+.detail-item--full {
+  grid-column: 1 / -1;
 }
 
 .detail-item .label {
@@ -916,7 +1262,41 @@ const capitalizeFirst = (str: string): string => {
 }
 
 .library-options {
-  margin-top: 2rem;
+  margin-top: 0;
+}
+
+.metadata-editor {
+  padding: 1rem;
+  border: 1px solid #333;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.metadata-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.metadata-editor-header h4 {
+  margin-bottom: 0;
+}
+
+.metadata-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.metadata-textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.metadata-flags {
+  margin-top: 1rem;
 }
 
 .form-label {
@@ -1022,6 +1402,30 @@ const capitalizeFirst = (str: string): string => {
 
   .detail-grid {
     grid-template-columns: 1fr;
+  }
+
+  .detail-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .metadata-editor-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .metadata-toggle-btn {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .metadata-edit-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .detail-item--wide,
+  .detail-item--full {
+    grid-column: auto;
   }
 
   .modal-footer {

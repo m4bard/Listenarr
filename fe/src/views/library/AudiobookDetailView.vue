@@ -119,6 +119,10 @@
               <PhMusicNotes />
               {{ audiobook.version }}
             </Pill>
+            <Pill variant="default" v-if="audiobook.edition">
+              <PhTag />
+              {{ audiobook.edition }}
+            </Pill>
           </div>
 
           <div class="description" v-if="audiobook.description">
@@ -201,6 +205,10 @@
             <div class="detail-row" v-if="audiobook.language">
               <span class="label">Language:</span>
               <span class="value">{{ capitalizeFirst(audiobook.language) }}</span>
+            </div>
+            <div class="detail-row" v-if="audiobook.edition">
+              <span class="label">Edition:</span>
+              <span class="value">{{ safeText(audiobook.edition) }}</span>
             </div>
           </div>
 
@@ -645,9 +653,9 @@ const topActions = computed<DetailTopAction[]>(() => [
   },
   {
     key: 'edit',
-    label: 'Edit',
-    title: 'Edit',
-    ariaLabel: 'Edit',
+    label: 'Edit Metadata',
+    title: 'Edit Metadata',
+    ariaLabel: 'Edit Metadata',
     icon: PhPencil,
     desktopGroup: 'secondary',
     desktopClass: 'primary',

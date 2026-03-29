@@ -93,6 +93,7 @@ namespace Listenarr.Domain.Models
         // {SeriesNumber} - Position in series (e.g., "1", "2")
         // {Title} - Book/audiobook title
         // {Subtitle} - Book subtitle
+        // {Edition} - User-defined edition label
         // {Publisher} - Publisher name
         // {Language} - Metadata language
         // {Asin} - Audible ASIN
@@ -107,6 +108,7 @@ namespace Listenarr.Domain.Models
         // {SeriesNumber} - Position in series (e.g., "1", "2")
         // {Title} - Book/audiobook title
         // {Subtitle} - Book subtitle
+        // {Edition} - User-defined edition label
         // {Publisher} - Publisher name
         // {Language} - Metadata language
         // {Asin} - Audible ASIN
@@ -123,6 +125,7 @@ namespace Listenarr.Domain.Models
         // {SeriesNumber} - Position in series (e.g., "1", "2")
         // {Title} - Book/audiobook title
         // {Subtitle} - Book subtitle
+        // {Edition} - User-defined edition label
         // {Publisher} - Publisher name
         // {Language} - Metadata language
         // {Asin} - Audible ASIN

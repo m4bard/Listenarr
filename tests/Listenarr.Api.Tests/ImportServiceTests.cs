@@ -726,7 +726,7 @@ namespace Listenarr.Api.Tests
                 CompletedFileAction = "Copy",
                 EnableMetadataProcessing = false,
                 FolderNamingPattern = "{Publisher}/{Language}/{Asin}",
-                FileNamingPattern = "{Title} - {Subtitle}",
+                FileNamingPattern = "{Title} - {Edition} - {Subtitle}",
                 MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
             };
 
@@ -744,7 +744,8 @@ namespace Listenarr.Api.Tests
                     Authors = new System.Collections.Generic.List<string> { "Stephen King" },
                     Publisher = "Penguin Audio",
                     Language = "English",
-                    Asin = "B000FC1R84"
+                    Asin = "B000FC1R84",
+                    Edition = "Revised Edition"
                 });
                 await seed.SaveChangesAsync();
             }
@@ -778,7 +779,7 @@ namespace Listenarr.Api.Tests
             Assert.True(result.Success);
             Assert.NotNull(result.FinalPath);
             Assert.Contains($"Penguin Audio{Path.DirectorySeparatorChar}English{Path.DirectorySeparatorChar}B000FC1R84", result.FinalPath!, StringComparison.Ordinal);
-            Assert.Contains("The Gunslinger - The Dark Tower Begins.m4b", result.FinalPath!, StringComparison.Ordinal);
+            Assert.Contains("The Gunslinger - Revised Edition - The Dark Tower Begins.m4b", result.FinalPath!, StringComparison.Ordinal);
 
             TryDeleteDirectory(sourceDir, recursive: true);
             TryDeleteDirectory(outputRoot, recursive: true);

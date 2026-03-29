@@ -413,6 +413,7 @@ namespace Listenarr.Api.Controllers
                 // Removed duplicate Publisher assignment
                 Language = metadata.Language,
                 Runtime = metadata.Runtime,
+                Edition = metadata.Edition,
                 Version = metadata.Version,
                 Explicit = metadata.Explicit,
                 Abridged = metadata.Abridged,
@@ -590,10 +591,18 @@ namespace Listenarr.Api.Controllers
                 var temp = new Audiobook
                 {
                     Title = request.Metadata.Title,
+                    Subtitle = request.Metadata.Subtitle,
                     Authors = request.Metadata.Authors,
+                    Narrators = (request.Metadata.Narrators != null && request.Metadata.Narrators.Any())
+                        ? request.Metadata.Narrators
+                        : (!string.IsNullOrWhiteSpace(request.Metadata.Narrator) ? new List<string> { request.Metadata.Narrator! } : null),
                     Series = request.Metadata.Series,
                     SeriesNumber = request.Metadata.SeriesNumber,
-                    PublishYear = request.Metadata.PublishYear
+                    PublishYear = request.Metadata.PublishYear,
+                    Publisher = request.Metadata.Publisher,
+                    Language = request.Metadata.Language,
+                    Asin = request.Metadata.Asin,
+                    Edition = request.Metadata.Edition
                 };
 
                 var namingPattern = !string.IsNullOrWhiteSpace(settings.FolderNamingPattern)
@@ -640,6 +649,7 @@ namespace Listenarr.Api.Controllers
                     a.Publisher,
                     a.Language,
                     a.Runtime,
+                    a.Edition,
                     a.ImageUrl,
                     a.Monitored,
                     a.FilePath,
@@ -727,6 +737,7 @@ namespace Listenarr.Api.Controllers
                     Publisher = a.Publisher,
                     Language = a.Language,
                     Runtime = a.Runtime,
+                    Edition = a.Edition,
                     ImageUrl = a.ImageUrl,
                     Monitored = a.Monitored,
                     FilePath = a.FilePath,
@@ -810,6 +821,7 @@ namespace Listenarr.Api.Controllers
                 fileSize = updated.FileSize,
                 basePath = updated.BasePath,
                 runtime = updated.Runtime,
+                edition = updated.Edition,
                 version = updated.Version,
                 @explicit = updated.Explicit,
                 abridged = updated.Abridged,
@@ -1558,6 +1570,7 @@ namespace Listenarr.Api.Controllers
             if (updatedAudiobook.Authors != null) existingAudiobook.Authors = updatedAudiobook.Authors;
             if (updatedAudiobook.ImageUrl != null) existingAudiobook.ImageUrl = updatedAudiobook.ImageUrl;
             if (updatedAudiobook.PublishYear != null) existingAudiobook.PublishYear = updatedAudiobook.PublishYear;
+            if (updatedAudiobook.PublishedDate != null) existingAudiobook.PublishedDate = updatedAudiobook.PublishedDate;
             if (updatedAudiobook.Series != null) existingAudiobook.Series = updatedAudiobook.Series;
             if (updatedAudiobook.SeriesNumber != null) existingAudiobook.SeriesNumber = updatedAudiobook.SeriesNumber;
             if (updatedAudiobook.Description != null) existingAudiobook.Description = updatedAudiobook.Description;
@@ -1582,6 +1595,7 @@ namespace Listenarr.Api.Controllers
             if (updatedAudiobook.Publisher != null) existingAudiobook.Publisher = updatedAudiobook.Publisher;
             if (updatedAudiobook.Language != null) existingAudiobook.Language = updatedAudiobook.Language;
             if (updatedAudiobook.Runtime != null) existingAudiobook.Runtime = updatedAudiobook.Runtime;
+            if (updatedAudiobook.Edition != null) existingAudiobook.Edition = updatedAudiobook.Edition;
             if (updatedAudiobook.Version != null) existingAudiobook.Version = updatedAudiobook.Version;
 
             // Always update these fields as they have default values
@@ -3905,6 +3919,7 @@ namespace Listenarr.Api.Controllers
                 { "Series", SanitizeDirectoryName(!string.IsNullOrWhiteSpace(audiobook.Series) ? audiobook.Series! : string.Empty) },
                 { "Title", SanitizeDirectoryName(audiobook.Title ?? "Unknown Title") },
                 { "Subtitle", SanitizeDirectoryName(audiobook.Subtitle ?? string.Empty) },
+                { "Edition", SanitizeDirectoryName(audiobook.Edition ?? string.Empty) },
                 { "Narrator", SanitizeDirectoryName((audiobook.Narrators != null && audiobook.Narrators.Any()) ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n))) : string.Empty) },
                 { "Publisher", SanitizeDirectoryName(audiobook.Publisher ?? string.Empty) },
                 { "Language", SanitizeDirectoryName(audiobook.Language ?? string.Empty) },

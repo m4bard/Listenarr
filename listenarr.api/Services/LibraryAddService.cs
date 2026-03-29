@@ -129,6 +129,7 @@ namespace Listenarr.Api.Services
                 ExternalIdentifiers = new List<AudiobookExternalIdentifier>(),
                 Language = metadata.Language,
                 Runtime = metadata.Runtime,
+                Edition = metadata.Edition,
                 Version = metadata.Version,
                 Explicit = metadata.Explicit,
                 Abridged = metadata.Abridged,

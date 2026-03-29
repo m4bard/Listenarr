@@ -97,4 +97,42 @@ describe('AudiobookDetailView image recache behavior', () => {
 
     expect(routerPushMock).toHaveBeenCalledWith('/collection/genre/Fantasy')
   })
+
+  it('opens the edit metadata modal from the detail view action', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Detail Book',
+        authors: ['Author One'],
+        files: [],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const wrapper = mount(AudiobookDetailViewCmp, {
+      global: {
+        plugins: [pinia],
+        stubs: {
+          EditAudiobookModal: {
+            name: 'EditAudiobookModal',
+            props: ['isOpen'],
+            template: '<div class="edit-audiobook-modal-stub" :data-open="String(isOpen)" />',
+          },
+        },
+      },
+    })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const editButton = wrapper.find('button[aria-label="Edit Metadata"]')
+    expect(editButton.exists()).toBe(true)
+
+    await editButton.trigger('click')
+    await new Promise((r) => setTimeout(r, 0))
+
+    expect(wrapper.find('.edit-audiobook-modal-stub').attributes('data-open')).toBe('true')
+  })
 })

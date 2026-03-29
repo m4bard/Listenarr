@@ -1,7 +1,7 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
-      <ModalHeader :title="`Editing ${audiobook?.title || 'Audiobook'}`" @close="close" :icon="PhPencil" />
+      <ModalHeader :title="`Edit Metadata: ${audiobook?.title || 'Audiobook'}`" @close="close" :icon="PhPencil" />
     </template>
 
     <template #default>
@@ -24,6 +24,186 @@
                 </p>
               </div>
             </div>
+
+          <!-- Metadata -->
+          <div class="form-group">
+            <label class="form-label" for="metadata-title">
+              <PhInfo></PhInfo>
+              Metadata
+            </label>
+            <div class="form-control-card">
+              <div class="metadata-grid">
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-title">Title</label>
+                  <input
+                    id="metadata-title"
+                    v-model="formData.title"
+                    type="text"
+                    class="form-input"
+                    placeholder="Audiobook title"
+                  />
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-subtitle">Subtitle</label>
+                  <input
+                    id="metadata-subtitle"
+                    v-model="formData.subtitle"
+                    type="text"
+                    class="form-input"
+                    placeholder="Optional subtitle"
+                  />
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-authors">Authors</label>
+                  <input
+                    id="metadata-authors"
+                    v-model="authorsInput"
+                    type="text"
+                    class="form-input"
+                    placeholder="Comma-separated authors"
+                  />
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-narrators">Narrators</label>
+                  <input
+                    id="metadata-narrators"
+                    v-model="narratorsInput"
+                    type="text"
+                    class="form-input"
+                    placeholder="Comma-separated narrators"
+                  />
+                </div>
+                <div class="metadata-field metadata-field--full">
+                  <label class="field-label" for="metadata-description">Description</label>
+                  <textarea
+                    id="metadata-description"
+                    v-model="formData.description"
+                    rows="5"
+                    class="form-input metadata-textarea"
+                    placeholder="Book description"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-publisher">Publisher</label>
+                  <input
+                    id="metadata-publisher"
+                    v-model="formData.publisher"
+                    type="text"
+                    class="form-input"
+                    placeholder="Publisher"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-language">Language</label>
+                  <input
+                    id="metadata-language"
+                    v-model="formData.language"
+                    type="text"
+                    class="form-input"
+                    placeholder="Language"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-published-date">Release Date</label>
+                  <input
+                    id="metadata-published-date"
+                    v-model="formData.publishedDate"
+                    type="text"
+                    class="form-input"
+                    placeholder="YYYY-MM-DD"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-publish-year">Publish Year</label>
+                  <input
+                    id="metadata-publish-year"
+                    v-model="formData.publishYear"
+                    type="text"
+                    class="form-input"
+                    placeholder="YYYY"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-runtime">Listening Length (minutes)</label>
+                  <input
+                    id="metadata-runtime"
+                    v-model="formData.runtime"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    placeholder="e.g. 600"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="edition">Edition</label>
+                  <input
+                    id="edition"
+                    v-model="formData.edition"
+                    type="text"
+                    class="form-input"
+                    placeholder="e.g. Revised Edition"
+                  />
+                  <p class="help-text">
+                    Optional user-defined label exposed as <code>{Edition}</code> in file and
+                    folder naming patterns.
+                  </p>
+                  <p v-if="audiobook?.version" class="help-text">
+                    Source version: <strong>{{ audiobook.version }}</strong>
+                  </p>
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-version">Version</label>
+                  <input
+                    id="metadata-version"
+                    v-model="formData.version"
+                    type="text"
+                    class="form-input"
+                    placeholder="Source version label"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-series">Series</label>
+                  <input
+                    id="metadata-series"
+                    v-model="formData.series"
+                    type="text"
+                    class="form-input"
+                    placeholder="Series name"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-series-number">Series Number</label>
+                  <input
+                    id="metadata-series-number"
+                    v-model="formData.seriesNumber"
+                    type="text"
+                    class="form-input"
+                    placeholder="e.g. 1"
+                  />
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-genres">Genres</label>
+                  <input
+                    id="metadata-genres"
+                    v-model="genresInput"
+                    type="text"
+                    class="form-input"
+                    placeholder="Comma-separated genres"
+                  />
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-image-url">Cover Image URL</label>
+                  <input
+                    id="metadata-image-url"
+                    v-model="formData.imageUrl"
+                    type="text"
+                    class="form-input"
+                    placeholder="https://..."
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- Quality Profile -->
           <div class="form-group">
@@ -370,6 +550,22 @@ interface Props {
 interface FormData {
   monitored: boolean
   qualityProfileId: number | null
+  title: string
+  subtitle: string
+  authors: string[]
+  narrators: string[]
+  description: string
+  publisher: string
+  language: string
+  publishedDate: string
+  publishYear: string
+  runtime: string
+  edition: string
+  version: string
+  series: string
+  seriesNumber: string
+  genres: string[]
+  imageUrl: string
   tags: string[]
   identifiers: EditableIdentifierRow[]
   abridged: boolean
@@ -415,12 +611,79 @@ const originalIdentifierRows = ref<EditableIdentifierRow[]>([])
 const formData = ref<FormData>({
   monitored: true,
   qualityProfileId: null,
+  title: '',
+  subtitle: '',
+  authors: [],
+  narrators: [],
+  description: '',
+  publisher: '',
+  language: '',
+  publishedDate: '',
+  publishYear: '',
+  runtime: '',
+  edition: '',
+  version: '',
+  series: '',
+  seriesNumber: '',
+  genres: [],
+  imageUrl: '',
   tags: [],
   identifiers: [],
   abridged: false,
   explicit: false,
   basePath: null,
   relativePath: ''
+})
+
+function normalizeStringList(values: string[] | null | undefined): string[] {
+  return (values || []).map((value) => value.trim()).filter((value) => value.length > 0)
+}
+
+function splitStringList(value: string | null | undefined): string[] {
+  return (value || '')
+    .split(/[\r\n,]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+}
+
+function joinStringList(values: string[] | null | undefined): string {
+  return normalizeStringList(values).join(', ')
+}
+
+function normalizeNumericInput(value: string | null | undefined): string {
+  return (value || '').trim()
+}
+
+function parseRuntimeInput(value: string | null | undefined): number | undefined {
+  const normalized = normalizeNumericInput(value)
+  if (!normalized) return undefined
+  const parsed = Number.parseInt(normalized, 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
+}
+
+function serializeStringList(values: string[] | null | undefined): string {
+  return JSON.stringify(normalizeStringList(values))
+}
+
+const authorsInput = computed({
+  get: () => joinStringList(formData.value.authors),
+  set: (value: string) => {
+    formData.value.authors = splitStringList(value)
+  },
+})
+
+const narratorsInput = computed({
+  get: () => joinStringList(formData.value.narrators),
+  set: (value: string) => {
+    formData.value.narrators = splitStringList(value)
+  },
+})
+
+const genresInput = computed({
+  get: () => joinStringList(formData.value.genres),
+  set: (value: string) => {
+    formData.value.genres = splitStringList(value)
+  },
 })
 
 // Move job tracking (shows queued/processing/completed/failed state)
@@ -550,6 +813,10 @@ function handleMoveConfirm(payload: { moveFiles?: boolean } | null | undefined) 
   else confirmChangeWithoutMoving()
 }
 
+function normalizeOptionalText(value: string | null | undefined): string {
+  return (value || '').trim()
+}
+
 const hasChanges = computed(() => {
   if (!props.audiobook) return false
 
@@ -562,9 +829,31 @@ const hasChanges = computed(() => {
   const identifiersChanged = serializeIdentifierRows(formData.value.identifiers) !==
     serializeIdentifierRows(originalIdentifierRows.value)
 
+  const runtimeChanged = (() => {
+    const runtimeInput = normalizeNumericInput(formData.value.runtime)
+    if (!runtimeInput) return false
+    return runtimeInput !== normalizeNumericInput(props.audiobook.runtime?.toString())
+  })()
+
   return (
     formData.value.monitored !== Boolean(props.audiobook.monitored) ||
     formData.value.qualityProfileId !== (props.audiobook.qualityProfileId ?? null) ||
+    normalizeOptionalText(formData.value.title) !== normalizeOptionalText(props.audiobook.title) ||
+    normalizeOptionalText(formData.value.subtitle) !== normalizeOptionalText(props.audiobook.subtitle) ||
+    serializeStringList(formData.value.authors) !== serializeStringList(props.audiobook.authors) ||
+    serializeStringList(formData.value.narrators) !== serializeStringList(props.audiobook.narrators) ||
+    normalizeOptionalText(formData.value.description) !== normalizeOptionalText(props.audiobook.description) ||
+    normalizeOptionalText(formData.value.publisher) !== normalizeOptionalText(props.audiobook.publisher) ||
+    normalizeOptionalText(formData.value.language) !== normalizeOptionalText(props.audiobook.language) ||
+    normalizeOptionalText(formData.value.publishedDate) !== normalizeOptionalText(props.audiobook.publishedDate) ||
+    normalizeOptionalText(formData.value.publishYear) !== normalizeOptionalText(props.audiobook.publishYear) ||
+    runtimeChanged ||
+    normalizeOptionalText(formData.value.edition) !== normalizeOptionalText(props.audiobook.edition) ||
+    normalizeOptionalText(formData.value.version) !== normalizeOptionalText(props.audiobook.version) ||
+    normalizeOptionalText(formData.value.series) !== normalizeOptionalText(props.audiobook.series) ||
+    normalizeOptionalText(formData.value.seriesNumber) !== normalizeOptionalText(props.audiobook.seriesNumber) ||
+    serializeStringList(formData.value.genres) !== serializeStringList(props.audiobook.genres) ||
+    normalizeOptionalText(formData.value.imageUrl) !== normalizeOptionalText(props.audiobook.imageUrl) ||
     tagsChanged ||
     identifiersChanged ||
     formData.value.abridged !== Boolean(props.audiobook.abridged) ||
@@ -620,6 +909,22 @@ async function initializeForm() {
   formData.value = {
     monitored: Boolean(props.audiobook.monitored),
     qualityProfileId: props.audiobook.qualityProfileId ?? null,
+    title: props.audiobook.title || '',
+    subtitle: props.audiobook.subtitle || '',
+    authors: [...(props.audiobook.authors || [])],
+    narrators: [...(props.audiobook.narrators || [])],
+    description: props.audiobook.description || '',
+    publisher: props.audiobook.publisher || '',
+    language: props.audiobook.language || '',
+    publishedDate: props.audiobook.publishedDate || '',
+    publishYear: props.audiobook.publishYear || '',
+    runtime: props.audiobook.runtime != null ? String(props.audiobook.runtime) : '',
+    edition: props.audiobook.edition || '',
+    version: props.audiobook.version || '',
+    series: props.audiobook.series || '',
+    seriesNumber: props.audiobook.seriesNumber || '',
+    genres: [...(props.audiobook.genres || [])],
+    imageUrl: props.audiobook.imageUrl || '',
     tags: [...(props.audiobook.tags || [])],
     identifiers: [],
     abridged: Boolean(props.audiobook.abridged),
@@ -870,12 +1175,33 @@ async function handleSave() {
     const identifiersChanged = serializeIdentifierRows(formData.value.identifiers) !==
       serializeIdentifierRows(originalIdentifierRows.value)
 
+    const parsedRuntime = parseRuntimeInput(formData.value.runtime)
+
     // Build update payload with current form values
     const updates: Partial<Audiobook> = {
       monitored: formData.value.monitored,
+      title: normalizeOptionalText(formData.value.title),
+      subtitle: normalizeOptionalText(formData.value.subtitle),
+      authors: normalizeStringList(formData.value.authors),
+      narrators: normalizeStringList(formData.value.narrators),
+      description: normalizeOptionalText(formData.value.description),
+      publisher: normalizeOptionalText(formData.value.publisher),
+      language: normalizeOptionalText(formData.value.language),
+      publishedDate: normalizeOptionalText(formData.value.publishedDate),
+      publishYear: normalizeOptionalText(formData.value.publishYear),
+      edition: normalizeOptionalText(formData.value.edition),
+      version: normalizeOptionalText(formData.value.version),
+      series: normalizeOptionalText(formData.value.series),
+      seriesNumber: normalizeOptionalText(formData.value.seriesNumber),
+      genres: normalizeStringList(formData.value.genres),
+      imageUrl: normalizeOptionalText(formData.value.imageUrl),
       tags: formData.value.tags,
       abridged: formData.value.abridged,
       explicit: formData.value.explicit,
+    }
+
+    if (parsedRuntime !== undefined) {
+      updates.runtime = parsedRuntime
     }
 
     // If user changed destination/base path, include the combined root+relative value in updates
@@ -894,6 +1220,24 @@ async function handleSave() {
     const hasNonIdentifierChanges =
       formData.value.monitored !== Boolean(props.audiobook.monitored) ||
       formData.value.qualityProfileId !== (props.audiobook.qualityProfileId ?? null) ||
+      normalizeOptionalText(formData.value.title) !== normalizeOptionalText(props.audiobook.title) ||
+      normalizeOptionalText(formData.value.subtitle) !== normalizeOptionalText(props.audiobook.subtitle) ||
+      serializeStringList(formData.value.authors) !== serializeStringList(props.audiobook.authors) ||
+      serializeStringList(formData.value.narrators) !== serializeStringList(props.audiobook.narrators) ||
+      normalizeOptionalText(formData.value.description) !== normalizeOptionalText(props.audiobook.description) ||
+      normalizeOptionalText(formData.value.publisher) !== normalizeOptionalText(props.audiobook.publisher) ||
+      normalizeOptionalText(formData.value.language) !== normalizeOptionalText(props.audiobook.language) ||
+      normalizeOptionalText(formData.value.publishedDate) !== normalizeOptionalText(props.audiobook.publishedDate) ||
+      normalizeOptionalText(formData.value.publishYear) !== normalizeOptionalText(props.audiobook.publishYear) ||
+      (normalizeNumericInput(formData.value.runtime) !== '' &&
+        normalizeNumericInput(formData.value.runtime) !==
+          normalizeNumericInput(props.audiobook.runtime?.toString())) ||
+      normalizeOptionalText(formData.value.edition) !== normalizeOptionalText(props.audiobook.edition) ||
+      normalizeOptionalText(formData.value.version) !== normalizeOptionalText(props.audiobook.version) ||
+      normalizeOptionalText(formData.value.series) !== normalizeOptionalText(props.audiobook.series) ||
+      normalizeOptionalText(formData.value.seriesNumber) !== normalizeOptionalText(props.audiobook.seriesNumber) ||
+      serializeStringList(formData.value.genres) !== serializeStringList(props.audiobook.genres) ||
+      normalizeOptionalText(formData.value.imageUrl) !== normalizeOptionalText(props.audiobook.imageUrl) ||
       JSON.stringify([...formData.value.tags].sort()) !==
         JSON.stringify([...(props.audiobook.tags || [])].sort()) ||
       formData.value.abridged !== Boolean(props.audiobook.abridged) ||
@@ -1144,6 +1488,37 @@ function close() {
   flex-direction: column;
 }
 
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.metadata-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.metadata-field--wide {
+  grid-column: span 2;
+}
+
+.metadata-field--full {
+  grid-column: 1 / -1;
+}
+
+.metadata-textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #d4d4d4;
+}
+
 .form-group {
   display: flex;
   flex-direction: column;
@@ -1225,6 +1600,15 @@ function close() {
 }
 
 @media (max-width: 900px) {
+  .metadata-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metadata-field--wide,
+  .metadata-field--full {
+    grid-column: auto;
+  }
+
   .identifier-row {
     grid-template-columns: 1fr;
     gap: 0.4rem;

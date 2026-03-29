@@ -48,6 +48,7 @@ namespace Listenarr.Domain.Models
         public string? Publisher { get; set; }
         public string? Language { get; set; }
         public int? Runtime { get; set; }
+        public string? Edition { get; set; }
         public string? Version { get; set; }
         public bool Explicit { get; set; }
         public bool Abridged { get; set; }

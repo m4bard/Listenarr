@@ -43,6 +43,7 @@ namespace Listenarr.Domain.Models
         public string? Asin { get; set; }
         public string? Description { get; set; }
         public string? Subtitle { get; set; }
+        public string? Edition { get; set; }
         public string? Narrator { get; set; }
         public string? Publisher { get; set; }
         public DateTime? PublishDate { get; set; }

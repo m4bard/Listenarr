@@ -192,6 +192,7 @@ namespace Listenarr.Api.Services
                     { "Series", string.IsNullOrWhiteSpace(metadataForNaming.Series) ? string.Empty : metadataForNaming.Series },
                     { "Title", metadataForNaming.Title ?? "Unknown Title" },
                     { "Subtitle", string.IsNullOrWhiteSpace(metadataForNaming.Subtitle) ? string.Empty : metadataForNaming.Subtitle },
+                    { "Edition", string.IsNullOrWhiteSpace(metadataForNaming.Edition) ? string.Empty : metadataForNaming.Edition },
                     { "Narrator", string.IsNullOrWhiteSpace(metadataForNaming.Narrator) ? string.Empty : metadataForNaming.Narrator },
                     { "Publisher", string.IsNullOrWhiteSpace(metadataForNaming.Publisher) ? string.Empty : metadataForNaming.Publisher },
                     { "Language", string.IsNullOrWhiteSpace(metadataForNaming.Language) ? string.Empty : metadataForNaming.Language },
@@ -867,6 +868,7 @@ namespace Listenarr.Api.Services
                 {
                     Title = FirstNonEmpty(audiobook.Title, extractedMetadata?.Title, fallbackTitle, "Unknown Title"),
                     Subtitle = FirstNonEmpty(audiobook.Subtitle, extractedMetadata?.Subtitle),
+                    Edition = FirstNonEmpty(audiobook.Edition, extractedMetadata?.Edition),
                     Artist = author,
                     AlbumArtist = author,
                     Album = FirstNonEmpty(extractedMetadata?.Album, audiobook.Title, fallbackTitle),

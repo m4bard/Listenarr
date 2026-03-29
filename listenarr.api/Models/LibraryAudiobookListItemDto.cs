@@ -18,6 +18,7 @@ namespace Listenarr.Api.Models
         public string? Publisher { get; set; }
         public string? Language { get; set; }
         public int? Runtime { get; set; }
+        public string? Edition { get; set; }
         public string? ImageUrl { get; set; }
         public bool Monitored { get; set; }
         // Transitional legacy primary file summary retained for filters and upgrade compatibility.

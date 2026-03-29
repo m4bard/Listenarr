@@ -542,6 +542,7 @@ namespace Listenarr.Api.Services
                                     {
                                         Title = audiobook.Title ?? metadata.Title,
                                         Subtitle = !string.IsNullOrWhiteSpace(audiobook.Subtitle) ? audiobook.Subtitle : metadata.Subtitle,
+                                        Edition = !string.IsNullOrWhiteSpace(audiobook.Edition) ? audiobook.Edition : metadata.Edition,
                                         Artist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : fallbackAuthor,
                                         AlbumArtist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : fallbackAuthor,
                                         Narrator = (audiobook.Narrators != null && audiobook.Narrators.Any())

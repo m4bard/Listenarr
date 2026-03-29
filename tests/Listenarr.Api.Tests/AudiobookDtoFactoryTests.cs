@@ -23,6 +23,7 @@ namespace Listenarr.Api.Tests
             {
                 Title = "Factory Book",
                 Authors = new System.Collections.Generic.List<string> { "Author One" },
+                Edition = "Collector's Edition",
                 BasePath = "C:\\test\\book",
                 Monitored = true
             };
@@ -41,6 +42,7 @@ namespace Listenarr.Api.Tests
             Assert.Equal(book.Id, dto.Id);
             Assert.Equal(book.Title, dto.Title);
             Assert.Contains("Author One", dto.Authors ?? new string[] { });
+            Assert.Equal(book.Edition, dto.Edition);
             Assert.Equal(book.BasePath, dto.BasePath);
             Assert.NotNull(dto.Files);
             Assert.Single(dto.Files);

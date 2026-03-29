@@ -104,6 +104,109 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task AddToLibrary_PersistsEditableMetadataFields()
+        {
+            // Arrange
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var dbContext = new ListenArrDbContext(options);
+
+            var mockRepo = new Mock<IAudiobookRepository>();
+            mockRepo.Setup(r => r.AddAsync(It.IsAny<Audiobook>()))
+                .Returns<Audiobook>(async (ab) =>
+                {
+                    await dbContext.Audiobooks.AddAsync(ab);
+                    await dbContext.SaveChangesAsync();
+                });
+
+            var mockImageCache = new Mock<IImageCacheService>();
+            var mockLogger = new Mock<ILogger<LibraryController>>();
+
+            var mockFileNaming = new Mock<IFileNamingService>();
+            mockFileNaming
+                .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) =>
+                {
+                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
+                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
+                    return Path.Combine(author, title).Replace("\\", "/");
+                });
+
+            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempRoot);
+
+            var mockConfigService = new Mock<IConfigurationService>();
+            mockConfigService.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { OutputPath = tempRoot, FileNamingPattern = "{Author}/{Title}" });
+
+            var mockQualityProfile = new Mock<IQualityProfileService>();
+            mockQualityProfile.Setup(q => q.GetDefaultAsync()).ReturnsAsync((QualityProfile?)null);
+
+            var services = new ServiceCollection();
+            services.AddSingleton<IConfigurationService>(mockConfigService.Object);
+            services.AddSingleton<IQualityProfileService>(mockQualityProfile.Object);
+            var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+            var controller = new LibraryController(
+                mockRepo.Object,
+                mockImageCache.Object,
+                mockLogger.Object,
+                dbContext,
+                scopeFactory,
+                mockFileNaming.Object);
+
+            var request = new LibraryController.AddToLibraryRequest
+            {
+                Metadata = new AudibleBookMetadata
+                {
+                    Title = "Editable Title",
+                    Subtitle = "Editable Subtitle",
+                    Authors = new List<string> { "Edited Author" },
+                    Narrators = new List<string> { "Edited Narrator" },
+                    Publisher = "Edited Publisher",
+                    Language = "english",
+                    Runtime = 615,
+                    Edition = "Collector's Edition",
+                    Version = "Audible Version",
+                    Asin = "B00EDIT123",
+                    Isbn = new List<string> { "9781234567890" },
+                    OpenLibraryId = "OL12345M"
+                },
+                Monitored = true
+            };
+
+            // Act
+            var actionResult = await controller.AddToLibrary(request);
+
+            // Assert
+            Assert.IsType<OkObjectResult>(actionResult);
+
+            var stored = await dbContext.Audiobooks.FirstOrDefaultAsync();
+            Assert.NotNull(stored);
+            Assert.Equal("Editable Title", stored.Title);
+            Assert.Equal("Editable Subtitle", stored.Subtitle);
+            Assert.Equal("Edited Publisher", stored.Publisher);
+            Assert.Equal("english", stored.Language);
+            Assert.Equal(615, stored.Runtime);
+            Assert.Equal("Collector's Edition", stored.Edition);
+            Assert.Equal("Audible Version", stored.Version);
+            Assert.Equal("B00EDIT123", stored.Asin);
+            Assert.Equal("OL12345M", stored.OpenLibraryId);
+            Assert.NotNull(stored.Authors);
+            Assert.Contains("Edited Author", stored.Authors);
+            Assert.NotNull(stored.Narrators);
+            Assert.Contains("Edited Narrator", stored.Narrators);
+            Assert.NotNull(stored.Isbn);
+            Assert.Contains("9781234567890", stored.Isbn);
+
+            // Cleanup
+            try { Directory.Delete(tempRoot, true); } catch { }
+        }
+
+        [Fact]
         public async Task AddToLibrary_WithAsin_MovesImageToLibraryStorage()
         {
             // Arrange

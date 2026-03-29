@@ -44,6 +44,7 @@ namespace Listenarr.Api.Models
         public string? ImageUrl { get; set; }
         public string? Quality { get; set; }
         public int? QualityProfileId { get; set; }
+        public string? Edition { get; set; }
         public string? Version { get; set; }
         public bool? Abridged { get; set; }
         public bool? Explicit { get; set; }

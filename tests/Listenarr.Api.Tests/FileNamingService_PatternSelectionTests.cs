@@ -374,7 +374,7 @@ namespace Listenarr.Api.Tests
             {
                 OutputPath = "/audiobooks",
                 FolderNamingPattern = "{Publisher}/{Language}/{Asin}",
-                FileNamingPattern = "{Title} - {Subtitle}",
+                FileNamingPattern = "{Title} - {Edition} - {Subtitle}",
                 MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
             };
             _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
@@ -383,6 +383,7 @@ namespace Listenarr.Api.Tests
             {
                 Title = "The Gunslinger",
                 Subtitle = "The Dark Tower Begins",
+                Edition = "Revised Edition",
                 Publisher = "Penguin Audio",
                 Language = "English",
                 Asin = "B000FC1R84"
@@ -391,7 +392,7 @@ namespace Listenarr.Api.Tests
             var result = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
 
             Assert.Contains($"Penguin Audio{Path.DirectorySeparatorChar}English{Path.DirectorySeparatorChar}B000FC1R84", result);
-            Assert.Contains("The Gunslinger - The Dark Tower Begins.m4b", result);
+            Assert.Contains("The Gunslinger - Revised Edition - The Dark Tower Begins.m4b", result);
         }
     }
 }

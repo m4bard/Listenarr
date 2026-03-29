@@ -403,6 +403,7 @@ export interface AudibleBookMetadata {
   publisher?: string
   language?: string
   runtime?: number
+  edition?: string
   version?: string
   imageUrl?: string
   explicit?: boolean
