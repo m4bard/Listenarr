@@ -16,6 +16,9 @@ RUN apt-get update \
 	&& apt-get install -y nodejs --no-install-recommends \
 	&& rm -rf /var/lib/apt/lists/*
 
+RUN groupadd --system listenarr \
+	&& useradd --system --gid listenarr --home-dir /nonexistent --shell /usr/sbin/nologin --no-create-home listenarr
+
 # Copy publish output produced by the CI pipeline or local `dotnet publish`.
 # The workflows publish into listenarr.api/publish, so copy that directory into the image root.
 COPY listenarr.api/publish/ /app/

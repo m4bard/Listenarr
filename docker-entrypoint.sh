@@ -2,22 +2,33 @@
 set -e
 
 PUID=${PUID:-0}
-PGID=${PGID:-${PUID}}
-UMASK=${UMASK:-022}
+PGID=${PGID:-${GID:-${PUID}}}
+UMASK=${UMASK:-${UMASK_SET:-022}}
 
 umask "$UMASK"
 
-# If running as root and PUID/PGID are set to non-root, create user and switch
+if [ -n "${GID:-}" ] && [ -n "${PGID:-}" ] && [ "${GID}" != "${PGID}" ]; then
+    echo "PGID=${PGID} takes precedence over GID=${GID}"
+fi
+
+if [ -n "${UMASK_SET:-}" ] && [ -n "${UMASK:-}" ] && [ "${UMASK_SET}" != "${UMASK}" ]; then
+    echo "UMASK=${UMASK} takes precedence over UMASK_SET=${UMASK_SET}"
+fi
+
+# If running as root and PUID/PGID are set to non-root, remap the service account
+# similarly to linuxserver.io's abc user handling.
 if [ "$(id -u)" = "0" ] && { [ "$PUID" != "0" ] || [ "$PGID" != "0" ]; }; then
     echo "Starting Listenarr with UID=$PUID GID=$PGID UMASK=$UMASK"
 
-    if [ "$PGID" != "0" ]; then
-        groupmod -o -g "$PGID" listenarr 2>/dev/null || addgroup --gid "$PGID" listenarr
+    if [ "$PUID" != "0" ] && [ "$PGID" != "0" ]; then
+        groupmod -o -g "$PGID" listenarr
+        usermod -o -u "$PUID" listenarr
+        chown -R "$PUID:$PGID" /app/config
+
+        exec gosu listenarr dotnet Listenarr.Api.dll "$@"
     fi
-    usermod -o -u "$PUID" -g "$PGID" listenarr 2>/dev/null || adduser --uid "$PUID" --gid "$PGID" --disabled-password --gecos "" --no-create-home listenarr
 
     chown -R "$PUID:$PGID" /app/config
-
     exec gosu "$PUID:$PGID" dotnet Listenarr.Api.dll "$@"
 fi
 
