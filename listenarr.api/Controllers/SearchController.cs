@@ -60,6 +60,23 @@ namespace Listenarr.Api.Controllers
         private string BuildApiImagePath(string identifier, string? sourceUrl = null)
             => ApiVersionPathBuilder.BuildImagePath(identifier, HttpContext, sourceUrl: sourceUrl);
 
+        private static string? NormalizeStructuredAdvancedField(string? value, string prefix)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            var trimmed = value.Trim();
+            if (!trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed;
+            }
+
+            var stripped = trimmed.Substring(prefix.Length).Trim();
+            return string.IsNullOrWhiteSpace(stripped) ? null : stripped;
+        }
+
         private async Task NormalizeSearchResultImagesAsync(List<SearchResult> results)
         {
             if (_imageCacheService == null || results == null) return;
@@ -218,7 +235,10 @@ namespace Listenarr.Api.Controllers
                 else // Advanced
                 {
                     // Route all advanced search logic through SearchService for normalization, filtering, and orchestration
-                    
+                    req.Author = NormalizeStructuredAdvancedField(req.Author, "AUTHOR:");
+                    req.Title = NormalizeStructuredAdvancedField(req.Title, "TITLE:");
+                    req.Isbn = NormalizeStructuredAdvancedField(req.Isbn, "ISBN:");
+                    req.Asin = NormalizeStructuredAdvancedField(req.Asin, "ASIN:");
 
                     // Validate and normalize ISBN/ASIN inputs for advanced searches.
                     // If an ISBN-10 is supplied, convert it to ISBN-13 using the 978 prefix.

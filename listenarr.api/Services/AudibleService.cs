@@ -378,9 +378,41 @@ namespace Listenarr.Api.Services
 
         public virtual async Task<AudibleSearchResponse?> SearchByTitleAsync(string title, int page = 1, int limit = 50, string region = "us", string? language = null)
         {
+            var normalizedTitle = title?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedTitle))
+            {
+                return new AudibleSearchResponse
+                {
+                    Results = new List<AudibleSearchResult>(),
+                    TotalResults = 0
+                };
+            }
+
             var response = await SearchProductsDirectAsync(
+                query: normalizedTitle,
+                title: null,
+                author: null,
+                narrator: null,
+                publisher: null,
+                page: page,
+                limit: limit,
+                region: region,
+                language: language,
+                sortBy: "Relevance");
+
+            if (response.Results.Count > 0)
+            {
+                return ToSearchResponse(response);
+            }
+
+            _logger.LogInformation(
+                "Audible keyword title search returned no results for '{Title}' in region {Region}; retrying title-field search",
+                normalizedTitle,
+                NormalizeRegion(region));
+
+            var titleFieldResponse = await SearchProductsDirectAsync(
                 query: null,
-                title: title,
+                title: normalizedTitle,
                 author: null,
                 narrator: null,
                 publisher: null,
@@ -389,7 +421,7 @@ namespace Listenarr.Api.Services
                 region: region,
                 language: language,
                 sortBy: "Title");
-            return ToSearchResponse(response);
+            return ToSearchResponse(titleFieldResponse);
         }
 
         public virtual async Task<AudibleSearchResponse?> SearchByTitleAndAuthorAsync(string title, string author, int page = 1, int limit = 50, string region = "us", string? language = null)
@@ -403,18 +435,7 @@ namespace Listenarr.Api.Services
             // Prefer author-specific endpoint when an author is provided: lookup author ASIN then request their books
             if (string.IsNullOrWhiteSpace(author))
             {
-                var response = await SearchProductsDirectAsync(
-                    query: null,
-                    title: title,
-                    author: null,
-                    narrator: null,
-                    publisher: null,
-                    page: page,
-                    limit: limit,
-                    region: region,
-                    language: language,
-                    sortBy: "Title");
-                return ToSearchResponse(response);
+                return await SearchByTitleAsync(title, page, limit, region, language);
             }
 
             try
@@ -2210,4 +2231,3 @@ namespace Listenarr.Api.Services
     public class AudibleAuthorTileMetadata { public List<AudibleAuthorTileAuthor>? Authors { get; set; } }
     public class AudibleAuthorTileAuthor { public string? Name { get; set; } }
 }
-
