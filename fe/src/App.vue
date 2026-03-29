@@ -24,6 +24,14 @@
 
     <!-- Top Navigation Bar -->
     <header v-if="!hideLayout" class="top-nav" :class="{ 'auth-warning-visible': showSecurityWarningBanner }">
+      <!-- Mobile menu button -->
+      <button
+        class="nav-btn mobile-menu-btn"
+        @click="toggleMobileMenu"
+        aria-label="Toggle navigation menu"
+      >
+        <PhList class="mobile-menu-icon" />
+      </button>
       <div class="nav-brand">
         <RouterLink to="/" class="brand-link" @click="closeMobileMenu">
           <div class="brand-logo-wrap" aria-hidden="true"><BrandLogo /></div>
@@ -31,14 +39,6 @@
         </RouterLink>
       </div>
       <div class="nav-actions">
-        <!-- Mobile menu button -->
-        <button
-          class="nav-btn mobile-menu-btn"
-          @click="toggleMobileMenu"
-          aria-label="Toggle navigation menu"
-        >
-          <PhList class="mobile-menu-icon" />
-        </button>
         <!-- Backend connection indicator moved to System view -->
         <!-- Mobile backdrop (real DOM element so clicks reliably close the search) -->
         <div v-if="searchOpen" class="mobile-search-backdrop" @click="closeSearch" />
@@ -1983,6 +1983,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   .top-nav {
     padding: 0 0.75rem;
     gap: 0.75rem;
+    justify-content: flex-start;
   }
 
   .nav-brand {
@@ -2005,6 +2006,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   .nav-actions {
     flex: 0 0 auto;
     gap: 0.5rem;
+    margin-left: auto;
   }
 
   .top-nav .nav-btn {
