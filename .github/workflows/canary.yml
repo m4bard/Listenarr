@@ -183,6 +183,30 @@ jobs:
               console.log(`Branch delete skipped or failed: ${err.message}`);
             }
 
+      - name: Refresh workspace to merged canary version
+        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: canary
+          clean: true
+
+      - name: Verify synced workspace version
+        if: steps.resolve-version.outputs.VERSION != ''
+        env:
+          NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
+        run: |
+          set -euo pipefail
+          CS_VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "${{ env.API_PROJECT }}" | head -n1)
+          FE_VERSION=$(node -p "require('./fe/package.json').version")
+          ROOT_VERSION=$(node -p "require('./package.json').version")
+          echo "Workspace csproj version: ${CS_VERSION}"
+          echo "Workspace FE version: ${FE_VERSION}"
+          echo "Workspace root package version: ${ROOT_VERSION}"
+          [ "${CS_VERSION}" = "${NEW_VERSION}" ]
+          [ "${FE_VERSION}" = "${NEW_VERSION}" ]
+          [ "${ROOT_VERSION}" = "${NEW_VERSION}" ]
+
       - name: Build solution
         run: dotnet build listenarr.slnx -c Release --no-restore
 
