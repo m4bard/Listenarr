@@ -38,7 +38,6 @@ describe('useAdvancedSearch', () => {
         isbn: '',
         series: '',
         asin: '',
-        language: '',
       })
     })
 
@@ -51,7 +50,6 @@ describe('useAdvancedSearch', () => {
           isbn: '',
           series: '',
           asin: 'B123',
-          language: 'english',
         },
       }
       localStorageMock['listenarr.addnew.advanced'] = JSON.stringify(savedState)
@@ -79,7 +77,6 @@ describe('useAdvancedSearch', () => {
           isbn: '',
           series: '',
           asin: '',
-          language: '',
         },
       }
       localStorageMock['listenarr.addnew.advanced'] = JSON.stringify(savedState)
@@ -244,7 +241,6 @@ describe('useAdvancedSearch', () => {
         isbn: '',
         series: '',
         asin: '',
-        language: '',
       })
     })
 
@@ -277,7 +273,6 @@ describe('useAdvancedSearch', () => {
         isbn: '',
         series: '',
         asin: '',
-        language: '',
       })
     })
 

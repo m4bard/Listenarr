@@ -145,8 +145,8 @@ describe('WantedView image recache behavior', () => {
     const wrapper = mount(WantedView, { global: { plugins: [pinia] } })
     await new Promise((resolve) => setTimeout(resolve, 10))
 
-    expect(wrapper.find('.wanted-list-container').classes()).toContain('is-static')
-    expect(wrapper.find('.wanted-list.is-static').exists()).toBe(true)
-    expect(wrapper.findAll('.wanted-item')).toHaveLength(30)
+    expect(wrapper.find('.wanted-grid-container').classes()).toContain('is-static')
+    expect(wrapper.find('.wanted-body.is-static').exists()).toBe(true)
+    expect(wrapper.findAll('.wanted-row')).toHaveLength(30)
   })
 })
