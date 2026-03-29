@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.64] - 2026-03-29
+
+### Changed
+- **File naming patterns support richer metadata tokens:** Folder and file naming patterns can now use `{Narrator}`, `{Subtitle}`, `{Publisher}`, `{Language}`, and `{Asin}` so libraries can separate alternate narrations and include more audiobook metadata in generated paths when desired.
+
+### Fixed
+- **`{Author}` token could drift into narrator metadata:** Author resolution for generated paths now ignores explicit narrator values instead of reusing them as the author fallback when author metadata is missing or noisy.
+
 ## [0.2.63] - 2026-03-29
 
 ### Changed

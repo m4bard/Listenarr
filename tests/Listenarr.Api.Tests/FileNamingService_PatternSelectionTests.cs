@@ -291,5 +291,107 @@ namespace Listenarr.Api.Tests
             Assert.Equal($"John Scalzi{Path.DirectorySeparatorChar}The Dispatcher{Path.DirectorySeparatorChar}Book 1 - 2", result);
             Assert.DoesNotContain($"{Path.DirectorySeparatorChar}Book 1{Path.DirectorySeparatorChar}2", result);
         }
+
+        [Fact]
+        public async Task GenerateFilePathAsync_WithNarratorVariable_IncludesNarratorInGeneratedPath()
+        {
+            var settings = new ApplicationSettings
+            {
+                OutputPath = "/audiobooks",
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title} {{Narrator}}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+            _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+
+            var metadata = new AudioMetadata
+            {
+                Title = "The Gunslinger",
+                Artist = "Stephen King",
+                Narrator = "George Guidall"
+            };
+
+            var result = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
+
+            Assert.Contains("The Gunslinger {George Guidall}.m4b", result);
+        }
+
+        [Fact]
+        public async Task GenerateFilePathAsync_WithWrappedNarratorVariable_RemovesWrapperWhenNarratorMissing()
+        {
+            var settings = new ApplicationSettings
+            {
+                OutputPath = "/audiobooks",
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title} {{Narrator}}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+            _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+
+            var metadata = new AudioMetadata
+            {
+                Title = "The Gunslinger",
+                Artist = "Stephen King"
+            };
+
+            var result = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
+
+            Assert.Contains("The Gunslinger.m4b", result);
+            Assert.DoesNotContain('{', result);
+            Assert.DoesNotContain('}', result);
+            Assert.DoesNotContain("  ", result);
+        }
+
+        [Fact]
+        public async Task GenerateFilePathAsync_AuthorDoesNotFallbackToExplicitNarrator()
+        {
+            var settings = new ApplicationSettings
+            {
+                OutputPath = "/audiobooks",
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+            _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+
+            var metadata = new AudioMetadata
+            {
+                Title = "The Gunslinger",
+                AlbumArtist = "George Guidall",
+                Narrator = "George Guidall"
+            };
+
+            var result = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
+
+            Assert.Contains($"Unknown Author{Path.DirectorySeparatorChar}The Gunslinger", result);
+            Assert.DoesNotContain($"George Guidall{Path.DirectorySeparatorChar}The Gunslinger", result);
+        }
+
+        [Fact]
+        public async Task GenerateFilePathAsync_WithExtendedMetadataVariables_IncludesThemInGeneratedPath()
+        {
+            var settings = new ApplicationSettings
+            {
+                OutputPath = "/audiobooks",
+                FolderNamingPattern = "{Publisher}/{Language}/{Asin}",
+                FileNamingPattern = "{Title} - {Subtitle}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+            _mockConfigService.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
+
+            var metadata = new AudioMetadata
+            {
+                Title = "The Gunslinger",
+                Subtitle = "The Dark Tower Begins",
+                Publisher = "Penguin Audio",
+                Language = "English",
+                Asin = "B000FC1R84"
+            };
+
+            var result = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
+
+            Assert.Contains($"Penguin Audio{Path.DirectorySeparatorChar}English{Path.DirectorySeparatorChar}B000FC1R84", result);
+            Assert.Contains("The Gunslinger - The Dark Tower Begins.m4b", result);
+        }
     }
 }

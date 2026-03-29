@@ -538,10 +538,32 @@ public class ManualImportController : ControllerBase
         var author = audiobook.Authors?.FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(author))
             variables["Author"] = author;
+
+        var narrator = audiobook.Narrators != null
+            ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n)))
+            : string.Empty;
+        if (!string.IsNullOrWhiteSpace(narrator))
+            variables["Narrator"] = narrator;
+
+        if (!string.IsNullOrWhiteSpace(audiobook.Publisher))
+            variables["Publisher"] = audiobook.Publisher;
+
+        if (!string.IsNullOrWhiteSpace(audiobook.Language))
+            variables["Language"] = audiobook.Language;
+
+        if (!string.IsNullOrWhiteSpace(audiobook.Asin))
+            variables["Asin"] = audiobook.Asin;
+
+        if (!string.IsNullOrWhiteSpace(audiobook.Subtitle))
+            variables["Subtitle"] = audiobook.Subtitle;
         
-        // Combine title + subtitle so series books get unique paths
+        // Preserve the older title+subtitle uniqueness behavior unless the user explicitly uses {Subtitle}.
         // (e.g. "The Land" + "Founding" → "The Land: Founding")
-        var titleFull = !string.IsNullOrWhiteSpace(audiobook.Subtitle)
+        var usesSubtitleToken = (!string.IsNullOrWhiteSpace(folderPattern) && folderPattern.IndexOf("Subtitle", StringComparison.OrdinalIgnoreCase) >= 0)
+            || (!string.IsNullOrWhiteSpace(filePattern) && filePattern.IndexOf("Subtitle", StringComparison.OrdinalIgnoreCase) >= 0);
+
+        var titleFull = !usesSubtitleToken
+            && !string.IsNullOrWhiteSpace(audiobook.Subtitle)
             && !string.IsNullOrWhiteSpace(audiobook.Title)
             && !audiobook.Title.Contains(audiobook.Subtitle, StringComparison.OrdinalIgnoreCase)
             ? $"{audiobook.Title}: {audiobook.Subtitle}"

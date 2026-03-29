@@ -530,11 +530,26 @@ namespace Listenarr.Api.Services
                                 {
                                     // Create a naming-only metadata object from the Audiobook. This will be
                                     // used as the authoritative source for file naming fields.
+                                    var fallbackAuthor = !string.IsNullOrWhiteSpace(metadata.Artist) &&
+                                        !string.Equals(metadata.Artist.Trim(), metadata.Narrator?.Trim(), StringComparison.OrdinalIgnoreCase)
+                                            ? metadata.Artist
+                                            : (!string.IsNullOrWhiteSpace(metadata.AlbumArtist) &&
+                                               !string.Equals(metadata.AlbumArtist.Trim(), metadata.Narrator?.Trim(), StringComparison.OrdinalIgnoreCase)
+                                                ? metadata.AlbumArtist
+                                                : "Unknown Author");
+
                                     namingMetadata = new AudioMetadata
                                     {
                                         Title = audiobook.Title ?? metadata.Title,
-                                        Artist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : metadata.Artist,
-                                        AlbumArtist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : metadata.Artist,
+                                        Subtitle = !string.IsNullOrWhiteSpace(audiobook.Subtitle) ? audiobook.Subtitle : metadata.Subtitle,
+                                        Artist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : fallbackAuthor,
+                                        AlbumArtist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : fallbackAuthor,
+                                        Narrator = (audiobook.Narrators != null && audiobook.Narrators.Any())
+                                            ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n)))
+                                            : metadata.Narrator,
+                                        Publisher = !string.IsNullOrWhiteSpace(audiobook.Publisher) ? audiobook.Publisher : metadata.Publisher,
+                                        Language = !string.IsNullOrWhiteSpace(audiobook.Language) ? audiobook.Language : metadata.Language,
+                                        Asin = !string.IsNullOrWhiteSpace(audiobook.Asin) ? audiobook.Asin : metadata.Asin,
                                         Series = audiobook.Series,
                                         // Prefer audiobook's publish year when available
                                         Year = int.TryParse(audiobook.PublishYear, out var py) ? py : (int?)null,

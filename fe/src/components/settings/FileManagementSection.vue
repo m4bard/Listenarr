@@ -89,9 +89,14 @@
           <div v-if="activePatternType === 'folder'" class="pattern-help">
             <p><strong>Available Variables:</strong></p>
             <ul>
-              <li><code>{Author}</code> - Author/narrator name</li>
+              <li><code>{Author}</code> - Author name</li>
+              <li><code>{Narrator}</code> - Narrator name(s)</li>
               <li><code>{Series}</code> - Series name</li>
               <li><code>{Title}</code> - Book title</li>
+              <li><code>{Subtitle}</code> - Book subtitle</li>
+              <li><code>{Publisher}</code> - Publisher name</li>
+              <li><code>{Language}</code> - Metadata language</li>
+              <li><code>{Asin}</code> - Audible ASIN</li>
               <li><code>{SeriesNumber}</code> - Position in series</li>
               <li><code>{Year}</code> - Publication year</li>
             </ul>
@@ -101,17 +106,22 @@
           <div v-else-if="activePatternType === 'file'" class="pattern-help">
             <p><strong>Available Variables:</strong></p>
             <ul>
-              <li><code>{Author}</code> - Author/narrator name</li>
+              <li><code>{Author}</code> - Author name</li>
+              <li><code>{Narrator}</code> - Narrator name(s)</li>
               <li><code>{Series}</code> - Series name</li>
               <li><code>{Title}</code> - Book title</li>
+              <li><code>{Subtitle}</code> - Book subtitle</li>
+              <li><code>{Publisher}</code> - Publisher name</li>
+              <li><code>{Language}</code> - Metadata language</li>
+              <li><code>{Asin}</code> - Audible ASIN</li>
               <li><code>{SeriesNumber}</code> - Position in series</li>
               <li><code>{DiskNumber}</code> or <code>{DiskNumber:00}</code> - Disk/part number (00 = zero-padded)</li>
               <li><code>{ChapterNumber}</code> or <code>{ChapterNumber:00}</code> - Chapter number (00 = zero-padded)</li>
               <li><code>{Year}</code> - Publication year</li>
               <li><code>{Quality}</code> - Audio quality (bitrate or format)</li>
             </ul>
-            <p class="example"><strong>Example:</strong> <code>{Title}-{DiskNumber:00}</code></p>
-            <p class="result"><strong>Result:</strong> <code>The Gunslinger-01.m4b</code></p>
+            <p class="example"><strong>Example:</strong> <code>{Title} - {Subtitle} ({Language}) [{Asin}]</code></p>
+            <p class="result"><strong>Result:</strong> <code>The Gunslinger - The Dark Tower Begins (English) [B000FC1R84].m4b</code></p>
           </div>
         </div>
       </div>
@@ -139,8 +149,13 @@ const filePatternMultiFile = ref(props.settings.multiFileNamingPattern || '{Titl
 // Sample values for testing patterns
 const sampleVariables = {
   Author: 'Stephen King',
+  Narrator: 'George Guidall',
   Series: 'The Dark Tower',
   Title: 'The Gunslinger',
+  Subtitle: 'The Dark Tower Begins',
+  Publisher: 'Penguin Audio',
+  Language: 'English',
+  Asin: 'B000FC1R84',
   SeriesNumber: '1',
   Year: '1982',
   DiskNumber: '3',

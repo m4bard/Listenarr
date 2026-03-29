@@ -191,6 +191,11 @@ namespace Listenarr.Api.Services
                     { "Author", metadataForNaming.Artist ?? "Unknown Author" },
                     { "Series", string.IsNullOrWhiteSpace(metadataForNaming.Series) ? string.Empty : metadataForNaming.Series },
                     { "Title", metadataForNaming.Title ?? "Unknown Title" },
+                    { "Subtitle", string.IsNullOrWhiteSpace(metadataForNaming.Subtitle) ? string.Empty : metadataForNaming.Subtitle },
+                    { "Narrator", string.IsNullOrWhiteSpace(metadataForNaming.Narrator) ? string.Empty : metadataForNaming.Narrator },
+                    { "Publisher", string.IsNullOrWhiteSpace(metadataForNaming.Publisher) ? string.Empty : metadataForNaming.Publisher },
+                    { "Language", string.IsNullOrWhiteSpace(metadataForNaming.Language) ? string.Empty : metadataForNaming.Language },
+                    { "Asin", string.IsNullOrWhiteSpace(metadataForNaming.Asin) ? string.Empty : metadataForNaming.Asin },
                     { "SeriesNumber", metadataForNaming.SeriesPosition?.ToString() ?? metadataForNaming.TrackNumber?.ToString() ?? string.Empty },
                     { "Year", metadataForNaming.Year?.ToString() ?? string.Empty },
                     { "Quality", (metadataForNaming.Bitrate.HasValue ? metadataForNaming.Bitrate.ToString() + "kbps" : null) ?? metadataForNaming.Format ?? string.Empty },
@@ -624,6 +629,11 @@ namespace Listenarr.Api.Services
                             { "Author", namingMetadata.Artist ?? "Unknown Author" },
                             { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
                             { "Title", namingMetadata.Title ?? Path.GetFileNameWithoutExtension(file) },
+                            { "Subtitle", string.IsNullOrWhiteSpace(namingMetadata.Subtitle) ? string.Empty : namingMetadata.Subtitle },
+                            { "Narrator", string.IsNullOrWhiteSpace(namingMetadata.Narrator) ? string.Empty : namingMetadata.Narrator },
+                            { "Publisher", string.IsNullOrWhiteSpace(namingMetadata.Publisher) ? string.Empty : namingMetadata.Publisher },
+                            { "Language", string.IsNullOrWhiteSpace(namingMetadata.Language) ? string.Empty : namingMetadata.Language },
+                            { "Asin", string.IsNullOrWhiteSpace(namingMetadata.Asin) ? string.Empty : namingMetadata.Asin },
                             { "SeriesNumber", namingMetadata.SeriesPosition?.ToString() ?? effectiveChapterNumber?.ToString() ?? string.Empty },
                             { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
                             { "Quality", (namingMetadata.Bitrate.HasValue ? namingMetadata.Bitrate.ToString() + "kbps" : null) ?? namingMetadata.Format ?? string.Empty },
@@ -851,14 +861,21 @@ namespace Listenarr.Api.Services
             {
                 var author = (audiobook.Authors != null && audiobook.Authors.Any())
                     ? string.Join(", ", audiobook.Authors)
-                    : (FirstNonEmpty(extractedMetadata?.Artist, extractedMetadata?.AlbumArtist, "Unknown Author"));
+                    : FirstNonEmpty(ChooseAuthorFromMetadata(extractedMetadata), "Unknown Author");
 
                 return new AudioMetadata
                 {
                     Title = FirstNonEmpty(audiobook.Title, extractedMetadata?.Title, fallbackTitle, "Unknown Title"),
+                    Subtitle = FirstNonEmpty(audiobook.Subtitle, extractedMetadata?.Subtitle),
                     Artist = author,
                     AlbumArtist = author,
                     Album = FirstNonEmpty(extractedMetadata?.Album, audiobook.Title, fallbackTitle),
+                    Narrator = (audiobook.Narrators != null && audiobook.Narrators.Any())
+                        ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n)))
+                        : extractedMetadata?.Narrator,
+                    Publisher = FirstNonEmpty(audiobook.Publisher, extractedMetadata?.Publisher),
+                    Language = FirstNonEmpty(audiobook.Language, extractedMetadata?.Language),
+                    Asin = FirstNonEmpty(audiobook.Asin, extractedMetadata?.Asin),
                     Series = FirstNonEmpty(audiobook.Series, extractedMetadata?.Series),
                     SeriesPosition = !string.IsNullOrWhiteSpace(audiobook.SeriesNumber) && decimal.TryParse(audiobook.SeriesNumber, out var sp)
                         ? sp
@@ -882,7 +899,7 @@ namespace Listenarr.Api.Services
 
                 if (string.IsNullOrWhiteSpace(extractedMetadata.Artist))
                 {
-                    extractedMetadata.Artist = FirstNonEmpty(extractedMetadata.AlbumArtist, "Unknown Author");
+                    extractedMetadata.Artist = FirstNonEmpty(ChooseAuthorFromMetadata(extractedMetadata), "Unknown Author");
                 }
 
                 if (string.IsNullOrWhiteSpace(extractedMetadata.AlbumArtist))
@@ -899,6 +916,49 @@ namespace Listenarr.Api.Services
                 Artist = "Unknown Author",
                 AlbumArtist = "Unknown Author"
             };
+        }
+
+        private static string ChooseAuthorFromMetadata(AudioMetadata? metadata)
+        {
+            if (metadata == null)
+            {
+                return string.Empty;
+            }
+
+            var primary = NonNarratorAuthorCandidate(metadata.Artist, metadata.Narrator);
+            var alternate = NonNarratorAuthorCandidate(metadata.AlbumArtist, metadata.Narrator);
+
+            if (string.IsNullOrWhiteSpace(primary))
+            {
+                return alternate;
+            }
+
+            if (!string.IsNullOrWhiteSpace(metadata.Title) &&
+                (primary.IndexOf(metadata.Title, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 (!string.IsNullOrWhiteSpace(metadata.Series) && string.Equals(primary, metadata.Series, StringComparison.OrdinalIgnoreCase)) ||
+                 string.Equals(primary, metadata.Title, StringComparison.OrdinalIgnoreCase)))
+            {
+                return string.IsNullOrWhiteSpace(alternate) ? primary : alternate;
+            }
+
+            return primary;
+        }
+
+        private static string NonNarratorAuthorCandidate(string? candidate, string? narrator)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return string.Empty;
+            }
+
+            var trimmedCandidate = candidate.Trim();
+            if (!string.IsNullOrWhiteSpace(narrator) &&
+                string.Equals(trimmedCandidate, narrator.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return trimmedCandidate;
         }
 
         private async Task EnsureAudiobookBasePathAsync(int audiobookId, string? candidateBasePath, CancellationToken ct)
