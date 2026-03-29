@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.63] - 2026-03-29
+
+### Changed
+- **Frontend/package version sync:** Added automated package-version synchronization from `listenarr.api/Listenarr.Api.csproj` into the root and `fe` npm metadata during local npm workflows and CI version-bump workflows. CI now passes the already-bumped `NEW_VERSION` directly into the sync step so frontend/package metadata cannot lag behind the computed release version, and the resolver still falls back to `<AssemblyVersion>` when needed.
+
 ## [0.2.62]
 
 ### Added
