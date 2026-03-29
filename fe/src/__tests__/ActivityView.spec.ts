@@ -1,8 +1,6 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { mount } from '@vue/test-utils'
-import { ref } from 'vue'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import { mount, flushPromises } from '@vue/test-utils'
 
-type FilterTab = { value: string; count: number }
 type ActivityItem = {
   id: string
   title?: string
@@ -11,245 +9,150 @@ type ActivityItem = {
   downloadClient?: string
   downloadClientType?: string
   progress?: number
-  totalSize?: number
-  downloadedSize?: number
   canRemove?: boolean
 }
 
-describe('ActivityView Completed tab shows completed downloads from downloads store', () => {
-  beforeEach(() => {
-    vi.resetModules()
+type ActivityViewVm = {
+  allActivityItems: ActivityItem[]
+  filteredQueue: ActivityItem[]
+  filterText: string
+  showRemoveModal: boolean
+  clientHasQueueEntry: boolean | null
+  queueHealthClients: Array<{ name: string; isUnavailable?: boolean }>
+  removeFromQueue: (item: ActivityItem) => Promise<void> | void
+  confirmRemove: () => Promise<void>
+}
+
+const mockSignalR = () => {
+  vi.doMock('@/services/signalr', () => ({
+    signalRService: {
+      onQueueUpdate: vi.fn(() => () => undefined),
+    },
+  }))
+}
+
+const mockApi = (overrides: Record<string, unknown> = {}) => {
+  const apiService = {
+    getQueue: vi.fn(async () => []),
+    removeFromQueue: vi.fn(async () => undefined),
+    cancelDownload: vi.fn(async () => undefined),
+    ...overrides,
+  }
+
+  vi.doMock('@/services/api', () => ({
+    apiService,
+  }))
+
+  return apiService
+}
+
+const mockConfigurationStore = (showCompletedExternalDownloads = false) => {
+  vi.doMock('@/stores/configuration', () => ({
+    useConfigurationStore: () => ({
+      applicationSettings: { showCompletedExternalDownloads },
+      loadApplicationSettings: vi.fn(async () => undefined),
+    }),
+  }))
+}
+
+const mockLibraryStore = (audiobooks: Array<{ id: number; title: string }> = []) => {
+  vi.doMock('@/stores/library', () => ({
+    useLibraryStore: () => ({
+      audiobooks,
+    }),
+  }))
+}
+
+const mockDownloadsStore = (overrides: Record<string, unknown> = {}) => {
+  const store = {
+    activeDownloads: [],
+    completedDownloads: [],
+    failedDownloads: [],
+    loadDownloads: vi.fn(async () => undefined),
+    ...overrides,
+  }
+
+  vi.doMock('@/stores/downloads', () => ({
+    useDownloadsStore: () => store,
+  }))
+
+  return store
+}
+
+const mountActivityView = async () => {
+  const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
+  const wrapper = mount(ActivityViewComponent, {
+    global: {
+      stubs: {
+        CustomSelect: true,
+        RouterLink: { template: '<a><slot /></a>' },
+      },
+    },
   })
 
-  it('includes completed external downloads from downloads store in Completed tab', async () => {
-    // Reset module registry and stub all runtime dependencies so the component
-    // doesn't attempt to connect to real services. Use doMock after reset.
+  await flushPromises()
+  await new Promise((resolve) => setTimeout(resolve, 0))
+  return wrapper
+}
+
+describe('ActivityView', () => {
+  beforeEach(() => {
     vi.resetModules()
+    vi.clearAllMocks()
+    vi.spyOn(globalThis, 'setInterval').mockReturnValue(1 as unknown as ReturnType<typeof setInterval>)
+    vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => undefined)
+  })
 
-    // Stub out SignalR and API
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
 
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: async () => [],
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
+  it('includes completed external downloads from the downloads store in the unified list', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      completedDownloads: [
+        { id: 'd1', status: 'Completed', progress: 100, downloadClientId: 'SABnzbd', startedAt: new Date().toISOString(), title: 'One', downloadedSize: 1000, totalSize: 1000 },
+        { id: 'd2', status: 'Completed', progress: 100, downloadClientId: 'qbittorrent', startedAt: new Date().toISOString(), title: 'Two', downloadedSize: 2000, totalSize: 2000 },
+        { id: 'd3', status: 'Completed', progress: 100, downloadClientId: 'transmission', startedAt: new Date().toISOString(), title: 'Three', downloadedSize: 3000, totalSize: 3000 },
+        { id: 'd4', status: 'Completed', progress: 100, downloadClientId: 'nzbget', startedAt: new Date().toISOString(), title: 'Four', downloadedSize: 4000, totalSize: 4000 },
+      ],
+    })
 
-    // Provide minimal configuration store stub - default to hide completed external downloads
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
 
-    // Provide a downloads store with 4 completed external downloads
-    const completed = ref([
-      {
-        id: 'd1',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'SABnzbd',
-        startedAt: new Date().toISOString(),
-        title: 'One',
-        downloadedSize: 1000,
-        totalSize: 1000,
-      },
-      {
-        id: 'd2',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'qbittorrent',
-        startedAt: new Date().toISOString(),
-        title: 'Two',
-        downloadedSize: 2000,
-        totalSize: 2000,
-      },
-      {
-        id: 'd3',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'transmission',
-        startedAt: new Date().toISOString(),
-        title: 'Three',
-        downloadedSize: 3000,
-        totalSize: 3000,
-      },
-      {
-        id: 'd4',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'nzbget',
-        startedAt: new Date().toISOString(),
-        title: 'Four',
-        downloadedSize: 4000,
-        totalSize: 4000,
-      },
-    ])
+    expect(vm.allActivityItems.map((item) => item.id)).toEqual(
+      expect.arrayContaining(['d1', 'd2', 'd3', 'd4']),
+    )
+    expect(vm.filteredQueue).toHaveLength(4)
+  })
 
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        // Mirror runtime unwrapped values: provide arrays directly so
-        // ActivityView's `.filter`/`.map` calls work during tests
-        activeDownloads: [],
-        completedDownloads: completed.value,
-        loadDownloads: vi.fn(async () => undefined),
-      }),
-    }))
+  it('filters the unified activity list by text', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(true)
+    mockLibraryStore()
+    mockDownloadsStore({
+      completedDownloads: [
+        { id: 'd1', status: 'Completed', progress: 100, downloadClientId: 'SABnzbd', startedAt: new Date().toISOString(), title: 'One', downloadedSize: 1000, totalSize: 1000 },
+        { id: 'd2', status: 'Completed', progress: 100, downloadClientId: 'qbittorrent', startedAt: new Date().toISOString(), title: 'Two', downloadedSize: 2000, totalSize: 2000 },
+      ],
+    })
 
-    console.log('[TEST] importing ActivityView')
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    console.log('[TEST] imported ActivityView, now mounting')
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
 
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-    console.log('[TEST] mounted ActivityView')
+    vm.filterText = 'two'
+    await flushPromises()
 
-    // Ensure initial state computed values are ready
-    await new Promise((r) => setTimeout(r, 10))
-    console.log('[TEST] after initial tick')
+    expect(vm.filteredQueue).toHaveLength(1)
+    expect(vm.filteredQueue[0]?.id).toBe('d2')
+  })
 
-    // Completed tab should show 4 items from completedDownloads even though queue is empty
-    // Select the Completed tab via component instance so composition API refs update
-    const vm = wrapper.vm as unknown as {
-      selectedTab: string
-      filteredQueue: ActivityItem[]
-      filterTabs: FilterTab[]
-    }
-    vm.selectedTab = 'completed'
-    // Wait a tick for reactivity
-    await new Promise((r) => setTimeout(r, 10))
-    console.log('[TEST] after selecting tab and waiting')
-
-    // filteredQueue computed should reflect the 4 items
-    expect(vm.filteredQueue.length).toBe(4)
-
-    // The completed count in filterTabs should reflect 4
-    const completedTab = vm.filterTabs.find((t) => t.value === 'completed')
-    expect(completedTab!.count).toBe(4)
-
-    // All tab should not include these completed external items by default (unless user pref set)
-    const allCount = vm.filterTabs.find((t) => t.value === 'all')!.count
-    expect(allCount).toBeGreaterThanOrEqual(0)
-  }, 20000)
-
-  it('All tab includes completed external downloads when preference enabled', async () => {
-    vi.resetModules()
-
-    // Mock signalr and API (same stubs as other tests)
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
-
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: async () => [],
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    // Provide configuration store stub enabling showCompletedExternalDownloads
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: true },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-
-    // Provide a downloads store with 4 completed external downloads
-    const completed = ref([
-      {
-        id: 'd1',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'SABnzbd',
-        startedAt: new Date().toISOString(),
-        title: 'One',
-        downloadedSize: 1000,
-        totalSize: 1000,
-      },
-      {
-        id: 'd2',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'qbittorrent',
-        startedAt: new Date().toISOString(),
-        title: 'Two',
-        downloadedSize: 2000,
-        totalSize: 2000,
-      },
-      {
-        id: 'd3',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'transmission',
-        startedAt: new Date().toISOString(),
-        title: 'Three',
-        downloadedSize: 3000,
-        totalSize: 3000,
-      },
-      {
-        id: 'd4',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'nzbget',
-        startedAt: new Date().toISOString(),
-        title: 'Four',
-        downloadedSize: 4000,
-        totalSize: 4000,
-      },
-    ])
-
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        completedDownloads: completed.value,
-        loadDownloads: vi.fn(async () => undefined),
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    // Wait for mounted hooks and reactivity
-    await new Promise((r) => setTimeout(r, 10))
-
-    const vm = wrapper.vm as unknown as {
-      allActivityItems: ActivityItem[]
-      filterTabs: FilterTab[]
-    }
-    const allItems = vm.allActivityItems
-    expect(allItems.some((i) => i.id === 'd1')).toBe(true)
-
-    const allTab = vm.filterTabs.find((t) => t.value === 'all')
-    expect(allTab!.count).toBeGreaterThanOrEqual(4)
-  }, 20000)
-
-  it('removes an item from client when it exists in queue', async () => {
-    vi.resetModules()
-
+  it('removes a queue-backed item from the client', async () => {
     const queueItem = {
       id: 'q1',
       title: 'Queue Item',
@@ -262,839 +165,252 @@ describe('ActivityView Completed tab shows completed downloads from downloads st
       canRemove: true,
     }
 
-    // Mock signalr and API
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
+    mockSignalR()
+    const apiService = mockApi({
+      getQueue: vi.fn(async () => [queueItem]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
 
-    const removeFromQueueMock = vi.fn(async () => undefined)
-    const getQueueMock = vi.fn(async () => [queueItem])
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const item = vm.allActivityItems.find((entry) => entry.id === 'q1')
 
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: getQueueMock,
-        removeFromQueue: removeFromQueueMock,
-        cancelDownload: vi.fn(async () => undefined),
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
+    expect(item).toBeDefined()
 
-    // Use default config and empty downloads store
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        completedDownloads: [],
-        loadDownloads: vi.fn(async () => undefined),
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    // Wait for mounted hooks (getQueue) to finish
-    await new Promise((r) => setTimeout(r, 10))
-
-    const vm = wrapper.vm as unknown as {
-      allActivityItems: ActivityItem[]
-      removeFromQueue: (i?: ActivityItem | undefined) => void
-      showRemoveModal: boolean
-      clientHasQueueEntry: boolean
-      confirmRemove: () => Promise<void>
-    }
-
-    // There should be a queue item
-    const items = vm.allActivityItems
-    expect(items.some((i) => i.id === 'q1')).toBe(true)
-
-    // Trigger remove flow
-    const item = items.find((i) => i.id === 'q1')
-    vm.removeFromQueue(item)
-
+    await vm.removeFromQueue(item!)
     expect(vm.showRemoveModal).toBe(true)
     expect(vm.clientHasQueueEntry).toBe(true)
 
-    // Confirm remove should call removeFromQueue API for client
     await vm.confirmRemove()
+    expect(apiService.removeFromQueue).toHaveBeenCalledWith('q1', 'qbittorrent')
+  })
 
-    expect(removeFromQueueMock).toHaveBeenCalledWith('q1', 'qbittorrent')
-  }, 20000)
+  it('offers Listenarr-only removal when an external item is no longer in the client queue', async () => {
+    mockSignalR()
+    const apiService = mockApi({
+      getQueue: vi.fn(async () => []),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    const downloadsStore = mockDownloadsStore({
+      completedDownloads: [
+        {
+          id: 'ext-1',
+          status: 'Completed',
+          progress: 100,
+          downloadClientId: 'SABnzbd',
+          startedAt: new Date().toISOString(),
+          title: 'Completed External',
+          downloadedSize: 100,
+          totalSize: 100,
+        },
+      ],
+    })
 
-  it('offers Listenarr-only removal when item is not in client queue', async () => {
-    vi.resetModules()
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const item = vm.allActivityItems.find((entry) => entry.id === 'ext-1')
 
-    // No queue entries
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
+    expect(item).toBeDefined()
 
-    const getQueueMock = vi.fn(async () => [])
-    const cancelDownloadMock = vi.fn(async () => undefined)
-
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: getQueueMock,
-        removeFromQueue: vi.fn(async () => undefined),
-        cancelDownload: cancelDownloadMock,
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    // Configuration
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-
-    // Provide a completed external download (e.g., saved candidate) that isn't in the queue
-    const completed = [
-      {
-        id: 'ext-1',
-        status: 'Completed',
-        progress: 100,
-        downloadClientId: 'SABnzbd',
-        startedAt: new Date().toISOString(),
-        title: 'Completed External',
-        downloadedSize: 100,
-        totalSize: 100,
-      },
-    ]
-
-    const loadDownloadsMock = vi.fn(async () => undefined)
-
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        completedDownloads: completed,
-        loadDownloads: loadDownloadsMock,
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    // Wait for mounted hooks
-    await new Promise((r) => setTimeout(r, 10))
-
-    const vm = wrapper.vm as unknown as {
-      selectedTab: string
-      filteredQueue: ActivityItem[]
-      removeFromQueue: (i?: ActivityItem) => void
-      showRemoveModal: boolean
-      clientHasQueueEntry: boolean
-      confirmRemove: () => Promise<void>
-    }
-
-    // Switch to Completed tab and find the completed item
-    vm.selectedTab = 'completed'
-    await new Promise((r) => setTimeout(r, 10))
-
-    const completedItems = vm.filteredQueue
-    expect(completedItems.some((i) => i.id === 'ext-1')).toBe(true)
-
-    // Trigger remove on the completed external item
-    const item = completedItems.find((i) => i.id === 'ext-1')
-    vm.removeFromQueue(item)
-
+    await vm.removeFromQueue(item!)
     expect(vm.showRemoveModal).toBe(true)
-    // Since getQueue returned empty, clientHasQueueEntry should be false
     expect(vm.clientHasQueueEntry).toBe(false)
 
-    // Confirm remove should call cancelDownload (Listenarr-only removal) and reload downloads
     await vm.confirmRemove()
-    expect(cancelDownloadMock).toHaveBeenCalledWith('ext-1')
-    expect(loadDownloadsMock).toHaveBeenCalled()
-  }, 20000)
-
-  it('removes an external item from client when it exists in the remote queue', async () => {
-    vi.resetModules()
-
-    const queueItem = {
-      id: 'q1',
-      title: 'Queue Item',
-      status: 'downloading',
-      progress: 50,
-      totalSize: 1000,
-      downloadedSize: 500,
-      downloadClientId: 'SABnzbd',
-      downloadClient: 'SABnzbd',
-      downloadClientType: 'external',
-    }
-
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
-
-    const removeFromQueueMock = vi.fn(async () => undefined)
-    const cancelDownloadMock = vi.fn(async () => undefined)
-    const getQueueMock = vi.fn(async () => [queueItem])
-
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: getQueueMock,
-        removeFromQueue: removeFromQueueMock,
-        cancelDownload: cancelDownloadMock,
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-
-    const loadDownloadsMock = vi.fn(async () => undefined)
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        completedDownloads: [],
-        loadDownloads: loadDownloadsMock,
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    const vm = wrapper.vm as unknown as {
-      queue: ActivityItem[]
-      removeFromQueue: (i?: ActivityItem) => void
-      clientHasQueueEntry: boolean
-      confirmRemove: () => Promise<void>
-    }
-
-    // Simulate current queue containing the item
-    vm.queue = [queueItem]
-
-    // Trigger remove flow
-    vm.removeFromQueue(queueItem)
-
-    // Pre-check should have found it in the queue
-    expect(vm.clientHasQueueEntry).toBe(true)
-
-    // Confirm removal - should call the client remove endpoint
-    await vm.confirmRemove()
-
-    expect(removeFromQueueMock).toHaveBeenCalledWith('q1', 'SABnzbd')
+    expect(apiService.cancelDownload).toHaveBeenCalledWith('ext-1')
+    expect(downloadsStore.loadDownloads).toHaveBeenCalled()
   })
 
-  it('removes an external item from Listenarr (DB) when it is not in the remote queue', async () => {
-    vi.resetModules()
-
-    const externalItem = {
-      id: 'q2',
-      title: 'Missing Item',
-      status: 'completed',
-      progress: 100,
-      totalSize: 2000,
-      downloadedSize: 2000,
-      downloadClientId: 'SABnzbd',
-      downloadClient: 'SABnzbd',
-      downloadClientType: 'external',
-    }
-
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
-
-    const removeFromQueueMock = vi.fn(async () => undefined)
-    const cancelDownloadMock = vi.fn(async () => undefined)
-    const getQueueMock = vi.fn(async () => [])
-
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: getQueueMock,
-        removeFromQueue: removeFromQueueMock,
-        cancelDownload: cancelDownloadMock,
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-
-    const loadDownloadsMock = vi.fn(async () => undefined)
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        completedDownloads: [],
-        loadDownloads: loadDownloadsMock,
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    const vm = wrapper.vm as unknown as {
-      queue: ActivityItem[]
-      removeFromQueue: (i?: ActivityItem) => void
-      clientHasQueueEntry: boolean
-      confirmRemove: () => Promise<void>
-    }
-
-    // No queue items present - simulate missing in remote client
-    vm.queue = []
-
-    // Trigger remove flow for the external item
-    vm.removeFromQueue(externalItem)
-
-    // Pre-check should indicate not present in client
-    expect(vm.clientHasQueueEntry).toBe(false)
-
-    // Confirm removal - should call the Listenarr-only cancel path
-    await vm.confirmRemove()
-
-    expect(cancelDownloadMock).toHaveBeenCalledWith('q2')
-    expect(loadDownloadsMock).toHaveBeenCalled()
-  })
-
-  it('Failed tab shows DB failures and queue failures (deduplicated)', async () => {
-    vi.resetModules()
-
+  it('deduplicates failed queue items against failed download records', async () => {
     const queueFailed = {
       id: 'q1',
       title: 'Queue Failed',
       status: 'failed',
       progress: 0,
-      totalSize: 0,
+      size: 0,
       downloaded: 0,
       downloadClientId: 'qbittorrent',
       downloadClient: 'qbittorrent',
     }
 
-    // signalr + api
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => [queueFailed]),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      failedDownloads: [
+        { id: 'q1', status: 'Failed', progress: 0, downloadClientId: 'qbittorrent', title: 'Queue Failed (DB copy)' },
+        { id: 'd1', status: 'Failed', progress: 0, downloadClientId: 'DDL', title: 'DDL Failed' },
+      ],
+    })
 
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: async () => [queueFailed],
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
 
-    // failed downloads from DB includes a duplicate id 'q1' and an extra 'd1'
-    const failed = [
-      {
-        id: 'q1',
-        status: 'Failed',
-        progress: 0,
-        downloadClientId: 'qbittorrent',
-        title: 'Queue Failed (DB copy)',
-      },
-      { id: 'd1', status: 'Failed', progress: 0, downloadClientId: 'DDL', title: 'DDL Failed' },
-    ]
+    expect(vm.allActivityItems).toHaveLength(2)
+    expect(vm.allActivityItems.filter((item) => item.id === 'q1')).toHaveLength(1)
+    expect(vm.allActivityItems.some((item) => item.id === 'd1')).toBe(true)
+  })
 
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
+  it('removes a failed DDL download through Listenarr cancellation', async () => {
+    mockSignalR()
+    const apiService = mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    const downloadsStore = mockDownloadsStore({
+      failedDownloads: [
+        { id: 'd1', status: 'Failed', progress: 0, downloadClientId: 'DDL', title: 'DDL Failed' },
+      ],
+    })
 
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        failedDownloads: failed,
-        loadDownloads: vi.fn(async () => undefined),
-      }),
-    }))
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
+    const item = vm.allActivityItems.find((entry) => entry.id === 'd1')
 
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
+    expect(item).toBeDefined()
 
-    // Wait for mounted hooks
-    await new Promise((r) => setTimeout(r, 10))
-
-    const vm = wrapper.vm as unknown as {
-      selectedTab: string
-      filteredQueue: ActivityItem[]
-      filterTabs: FilterTab[]
-    }
-
-    // Select failed tab
-    vm.selectedTab = 'failed'
-    await new Promise((r) => setTimeout(r, 10))
-
-    const failedItems = vm.filteredQueue
-    // We expect 2 unique failed items (q1 deduped, and d1)
-    expect(failedItems.length).toBe(2)
-
-    const failedTab = vm.filterTabs.find((t) => t.value === 'failed')
-    expect(failedTab!.count).toBe(2)
-  }, 20000)
-
-  it('Removing a DDL failed download uses cancelDownload and reloads downloads', async () => {
-    vi.resetModules()
-
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
-
-    const cancelDownloadMock = vi.fn(async () => undefined)
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: async () => [],
-        removeFromQueue: vi.fn(async () => undefined),
-        cancelDownload: cancelDownloadMock,
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    const loadDownloadsMock = vi.fn(async () => undefined)
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        failedDownloads: [
-          { id: 'd1', status: 'Failed', progress: 0, downloadClientId: 'DDL', title: 'DDL Failed' },
-        ],
-        loadDownloads: loadDownloadsMock,
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    // Wait for mounted hooks
-    await new Promise((r) => setTimeout(r, 10))
-
-    const vm = wrapper.vm as unknown as {
-      selectedTab: string
-      filteredQueue: ActivityItem[]
-      removeFromQueue: (i?: ActivityItem) => void
-      showRemoveModal: boolean
-      clientHasQueueEntry: boolean
-      confirmRemove: () => Promise<void>
-    }
-
-    // Select failed tab and remove
-    vm.selectedTab = 'failed'
-    await new Promise((r) => setTimeout(r, 10))
-
-    const failedItems = vm.filteredQueue
-    const item = failedItems.find((i) => i.id === 'd1')
-
-    vm.removeFromQueue(item)
-    expect(vm.showRemoveModal).toBe(true)
-
-    // For DDL, clientHasQueueEntry should be treated as present
+    await vm.removeFromQueue(item!)
     expect(vm.clientHasQueueEntry).toBe(true)
 
     await vm.confirmRemove()
-    expect(cancelDownloadMock).toHaveBeenCalledWith('d1')
-    expect(loadDownloadsMock).toHaveBeenCalled()
-  }, 20000)
+    expect(apiService.cancelDownload).toHaveBeenCalledWith('d1')
+    expect(downloadsStore.loadDownloads).toHaveBeenCalled()
+  })
 
-  it('Removing a failed external queue item calls removeFromQueue on client', async () => {
-    vi.resetModules()
+  it('maps ImportPending and ImportBlocked downloads to activity rows', async () => {
+    mockSignalR()
+    mockApi()
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore({
+      activeDownloads: [
+        {
+          id: 'd-importpending',
+          title: 'Import Pending',
+          status: 'ImportPending',
+          progress: 99,
+          totalSize: 1000,
+          downloadedSize: 990,
+          downloadClientId: 'qbittorrent',
+          startedAt: new Date().toISOString(),
+        },
+      ],
+      failedDownloads: [
+        {
+          id: 'd-importblocked',
+          title: 'Import Blocked',
+          status: 'ImportBlocked',
+          progress: 100,
+          totalSize: 1000,
+          downloadedSize: 1000,
+          downloadClientId: 'qbittorrent',
+          startedAt: new Date().toISOString(),
+        },
+      ],
+    })
 
-    const queueFailed = {
-      id: 'q2',
-      title: 'Queue Failed Q2',
-      status: 'failed',
-      progress: 0,
-      totalSize: 0,
-      downloaded: 0,
-      downloadClientId: 'qbittorrent',
-      downloadClient: 'qbittorrent',
-    }
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
 
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
-
-    const removeFromQueueMock = vi.fn(async () => undefined)
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: async () => [queueFailed],
-        removeFromQueue: removeFromQueueMock,
-        cancelDownload: vi.fn(async () => undefined),
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        failedDownloads: [],
-        loadDownloads: vi.fn(async () => undefined),
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    // Wait for mounted hooks and queue load
-    await new Promise((r) => setTimeout(r, 10))
-
-    const vm = wrapper.vm as unknown as {
-      selectedTab: string
-      filteredQueue: ActivityItem[]
-      removeFromQueue: (i?: ActivityItem) => void
-      clientHasQueueEntry: boolean
-      confirmRemove: () => Promise<void>
-    }
-
-    // Ensure failed tab contains queue item
-    vm.selectedTab = 'failed'
-    await new Promise((r) => setTimeout(r, 10))
-
-    const failedItems = vm.filteredQueue
-    const item = failedItems.find((i) => i.id === 'q2')
-
-    vm.removeFromQueue(item)
-    expect(vm.clientHasQueueEntry).toBe(true)
-
-    await vm.confirmRemove()
-    expect(removeFromQueueMock).toHaveBeenCalledWith('q2', 'qbittorrent')
-  }, 20000)
-
-  it('maps ImportPending to downloading and ImportBlocked to failed buckets', async () => {
-    vi.resetModules()
-
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
-
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: async () => [],
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [
-          {
-            id: 'd-importpending',
-            title: 'Import Pending',
-            status: 'ImportPending',
-            progress: 99,
-            totalSize: 1000,
-            downloadedSize: 990,
-            downloadClientId: 'qbittorrent',
-            startedAt: new Date().toISOString(),
-          },
-        ],
-        failedDownloads: [
-          {
-            id: 'd-importblocked',
-            title: 'Import Blocked',
-            status: 'ImportBlocked',
-            progress: 100,
-            totalSize: 1000,
-            downloadedSize: 1000,
-            downloadClientId: 'qbittorrent',
-            startedAt: new Date().toISOString(),
-          },
-        ],
-        completedDownloads: [],
-        loadDownloads: vi.fn(async () => undefined),
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    await new Promise((r) => setTimeout(r, 10))
-
-    const vm = wrapper.vm as unknown as {
-      filterTabs: FilterTab[]
-      selectedTab: string
-      filteredQueue: ActivityItem[]
-    }
-
-    const downloadingTab = vm.filterTabs.find((t) => t.value === 'downloading')
-    const failedTab = vm.filterTabs.find((t) => t.value === 'failed')
-
-    expect(downloadingTab?.count).toBe(1)
-    expect(failedTab?.count).toBe(1)
-
-    vm.selectedTab = 'downloading'
-    await new Promise((r) => setTimeout(r, 10))
-    expect(vm.filteredQueue.some((item) => item.id === 'd-importpending')).toBe(true)
-
-    vm.selectedTab = 'failed'
-    await new Promise((r) => setTimeout(r, 10))
-    expect(vm.filteredQueue.some((item) => item.id === 'd-importblocked')).toBe(true)
-  }, 20000)
+    expect(vm.allActivityItems.find((item) => item.id === 'd-importpending')?.status).toBe(
+      'importpending',
+    )
+    expect(vm.allActivityItems.find((item) => item.id === 'd-importblocked')?.status).toBe(
+      'importblocked',
+    )
+  })
 
   it('shows unavailable client health even when no queue items are returned', async () => {
-    vi.resetModules()
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => ({
+        items: [],
+        clients: [
+          {
+            clientId: 'qb-1',
+            clientName: 'qBittorrent',
+            clientType: 'qbittorrent',
+            snapshotState: 'unavailable',
+            isStaleSnapshot: false,
+            isUnavailable: true,
+            snapshotFailureReason: 'timeout',
+            itemCount: 0,
+          },
+        ],
+        generatedAt: new Date().toISOString(),
+        hasStaleData: false,
+        hasUnavailableClients: true,
+      })),
+    })
+    mockConfigurationStore(false)
+    mockLibraryStore()
+    mockDownloadsStore()
 
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
 
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: async () => ({
-          items: [],
-          clients: [
-            {
-              clientId: 'qb-1',
-              clientName: 'qBittorrent',
-              clientType: 'qbittorrent',
-              snapshotState: 'unavailable',
-              isStaleSnapshot: false,
-              isUnavailable: true,
-              snapshotFailureReason: 'timeout',
-              itemCount: 0,
-            },
-          ],
-          generatedAt: new Date().toISOString(),
-          hasStaleData: false,
-          hasUnavailableClients: true,
-        }),
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [],
-        failedDownloads: [],
-        completedDownloads: [],
-        loadDownloads: vi.fn(async () => undefined),
-      }),
-    }))
-
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
-
-    await new Promise((r) => setTimeout(r, 10))
-
+    expect(vm.queueHealthClients).toHaveLength(1)
+    expect(vm.queueHealthClients[0]?.name).toBe('qBittorrent')
     expect(wrapper.text()).toContain('Some queue data is unavailable')
     expect(wrapper.text()).toContain('qBittorrent unavailable after a timeout')
-  }, 20000)
+  })
 
   it('prefers the queue snapshot over an external active download with the same tracked id', async () => {
-    vi.resetModules()
-
-    vi.doMock('@/services/signalr', () => ({
-      signalRService: {
-        connect: vi.fn(async () => undefined),
-        onQueueUpdate: vi.fn(() => () => undefined),
-        onFilesRemoved: vi.fn(() => () => undefined),
-        onToast: vi.fn(() => () => undefined),
-        onAudiobookUpdate: vi.fn(() => () => undefined),
-        onDownloadUpdate: vi.fn(() => () => undefined),
-        onDownloadsList: vi.fn(() => () => undefined),
-      },
-    }))
-
-    vi.doMock('@/services/api', () => ({
-      apiService: {
-        getQueue: async () => ({
-          items: [
-            {
-              id: 'tracked-artemis',
-              title: 'Artemis',
-              status: 'completed',
-              progress: 100,
-              size: 489100000,
-              downloaded: 489100000,
-              downloadSpeed: 77300,
-              quality: 'Unknown',
-              downloadClient: 'QBIT',
-              downloadClientId: 'qb-1',
-              downloadClientType: 'qbittorrent',
-              addedAt: new Date().toISOString(),
-              canPause: false,
-              canRemove: true,
-            },
-          ],
-          clients: [],
-          generatedAt: new Date().toISOString(),
-          hasStaleData: false,
-          hasUnavailableClients: false,
-        }),
-        getServiceHealth: async () => ({ version: '0.0.0' }),
-        getStartupConfig: async () => ({ authenticationRequired: false }),
-        getLibrary: async () => [],
-      },
-    }))
-
-    vi.doMock('@/stores/configuration', () => ({
-      useConfigurationStore: () => ({
-        applicationSettings: { showCompletedExternalDownloads: false },
-        loadApplicationSettings: vi.fn(async () => undefined),
-      }),
-    }))
-
-    vi.doMock('@/stores/downloads', () => ({
-      useDownloadsStore: () => ({
-        activeDownloads: [
+    mockSignalR()
+    mockApi({
+      getQueue: vi.fn(async () => ({
+        items: [
           {
             id: 'tracked-artemis',
             title: 'Artemis',
-            status: 'Downloading',
+            status: 'completed',
             progress: 100,
-            totalSize: 489100000,
-            downloadedSize: 489100000,
+            size: 489100000,
+            downloaded: 489100000,
+            downloadSpeed: 77300,
+            quality: 'Unknown',
+            downloadClient: 'QBIT',
             downloadClientId: 'qb-1',
-            startedAt: new Date().toISOString(),
+            downloadClientType: 'qbittorrent',
+            addedAt: new Date().toISOString(),
+            canPause: false,
+            canRemove: true,
           },
         ],
-        failedDownloads: [],
-        completedDownloads: [],
-        loadDownloads: vi.fn(async () => undefined),
-      }),
-    }))
+        clients: [],
+        generatedAt: new Date().toISOString(),
+        hasStaleData: false,
+        hasUnavailableClients: false,
+      })),
+    })
+    mockConfigurationStore(true)
+    mockLibraryStore()
+    mockDownloadsStore({
+      activeDownloads: [
+        {
+          id: 'tracked-artemis',
+          title: 'Artemis',
+          status: 'Downloading',
+          progress: 100,
+          totalSize: 489100000,
+          downloadedSize: 489100000,
+          downloadClientId: 'qb-1',
+          startedAt: new Date().toISOString(),
+        },
+      ],
+    })
 
-    const { default: ActivityViewComponent } = await import('@/views/activity/ActivityView.vue')
-    const wrapper = mount(ActivityViewComponent, { global: { stubs: ['CustomSelect'] } })
+    const wrapper = await mountActivityView()
+    const vm = wrapper.vm as unknown as ActivityViewVm
 
-    await new Promise((r) => setTimeout(r, 10))
-
-    const vm = wrapper.vm as unknown as {
-      filterTabs: FilterTab[]
-      selectedTab: string
-      filteredQueue: ActivityItem[]
-    }
-
-    const downloadingTab = vm.filterTabs.find((t) => t.value === 'downloading')
-    const completedTab = vm.filterTabs.find((t) => t.value === 'completed')
-
-    expect(downloadingTab?.count).toBe(0)
-    expect(completedTab?.count).toBe(1)
-
-    vm.selectedTab = 'completed'
-    await new Promise((r) => setTimeout(r, 10))
-
-    expect(vm.filteredQueue).toHaveLength(1)
-    expect(vm.filteredQueue[0]?.id).toBe('tracked-artemis')
-    expect(vm.filteredQueue[0]?.title).toBe('Artemis')
-  }, 20000)
+    expect(vm.allActivityItems).toHaveLength(1)
+    expect(vm.allActivityItems[0]?.id).toBe('tracked-artemis')
+    expect(vm.allActivityItems[0]?.status).toBe('completed')
+    expect(vm.allActivityItems[0]?.title).toBe('Artemis')
+  })
 })

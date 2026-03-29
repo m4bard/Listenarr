@@ -55,6 +55,12 @@ describe('ActivityView mobile virtualization', () => {
       }),
     }))
 
+    vi.doMock('@/stores/library', () => ({
+      useLibraryStore: () => ({
+        audiobooks: [],
+      }),
+    }))
+
     vi.doMock('@/stores/downloads', () => ({
       useDownloadsStore: () => ({
         activeDownloads: [],
@@ -84,9 +90,9 @@ describe('ActivityView mobile virtualization', () => {
 
     await new Promise((resolve) => setTimeout(resolve, 10))
 
-    expect(wrapper.find('.queue-list-container').classes()).toContain('is-static')
-    expect(wrapper.find('.queue-list.is-static').exists()).toBe(true)
-    expect(wrapper.findAll('.queue-item')).toHaveLength(25)
+    expect(wrapper.find('.queue-grid-container').classes()).toContain('is-static')
+    expect(wrapper.find('.queue-body.is-static').exists()).toBe(true)
+    expect(wrapper.findAll('.queue-row')).toHaveLength(25)
 
     wrapper.unmount()
   })

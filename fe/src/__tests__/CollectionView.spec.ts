@@ -966,7 +966,7 @@ describe('CollectionView', () => {
 
     expect(mockGetAuthorCatalog).toHaveBeenCalledWith('Andy Weir', 'uk', false)
     expect(mockGetAuthorMonitoringStatus).toHaveBeenCalledWith('Andy Weir', 'uk', 'german')
-    expect(wrapper.find('.author-monitoring-label').text()).toContain('United Kingdom (UK)')
+    expect(wrapper.find('.author-hero-meta').text()).toContain('United Kingdom (UK) / German')
 
     const monitorButton = wrapper.find('.author-monitor-btn')
     expect(monitorButton.text()).toContain('Monitor Author')
@@ -1049,7 +1049,7 @@ describe('CollectionView', () => {
 
     expect(mockGetSeriesCatalog).toHaveBeenCalledWith('Mistborn', 'uk', false)
     expect(mockGetSeriesMonitoringStatus).toHaveBeenCalledWith('Mistborn', 'uk', 'german')
-    expect(wrapper.find('.author-monitoring-label').text()).toContain('United Kingdom (UK)')
+    expect(wrapper.find('.author-hero-meta').text()).toContain('United Kingdom (UK) / German')
 
     const monitorButton = wrapper.find('.author-monitor-btn')
     expect(monitorButton.text()).toContain('Monitor Series')
