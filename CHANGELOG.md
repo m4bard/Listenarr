@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.63] - 2026-03-29
+
+### Changed
+- **Frontend/package version sync:** Added automated package-version synchronization from `listenarr.api/Listenarr.Api.csproj` into the root and `fe` npm metadata during local npm workflows and CI version-bump workflows. CI now passes the already-bumped `NEW_VERSION` directly into the sync step so frontend/package metadata cannot lag behind the computed release version, and the resolver still falls back to `<AssemblyVersion>` when needed.
+- **CodeQL coverage expanded to GitHub Actions workflows:** The CodeQL workflow now scans `actions` in addition to `csharp` and `javascript`, so workflow-security findings can be re-analyzed and closed by current scans instead of lingering on older commits.
+- **App version moved to the sidenav footer:** The frontend shell now shows the app version as sticky plain text (`vX.X.X`) at the bottom of the sidebar instead of beside the Listenarr logo in the top header, keeping the header cleaner while leaving the version visible during navigation.
+- **Mobile header menu button moved beside the logo:** On small screens, the hamburger menu button now appears to the left of the Listenarr logo instead of in the right-side action cluster, matching the expected mobile navigation order more closely.
+
+### Fixed
+- **Docker `PGID` collisions with existing container groups:** Switched the runtime image to a pre-created `listenarr` service account that is remapped in place at startup, similar to linuxserver.io's `abc` pattern, so custom `PUID`/`PGID` values no longer fail when the target GID already exists in the base image. `GID` is now also accepted as a compatibility alias for `PGID`.
+- **Legacy `UMASK_SET` compatibility:** Docker startup now accepts `UMASK_SET` as a legacy alias for `UMASK`, with `UMASK` taking precedence when both are provided.
+- **Download routing trusted client-supplied `DownloadType`:** Manual send-to-client requests now derive the effective download type from trusted server-side signals instead of trusting the incoming `SearchResult.DownloadType`, preventing spoofed `DDL` values from bypassing the torrent or usenet routing path while still allowing validated Internet Archive direct downloads.
+- **Frontend audit vulnerabilities in `editorconfig`/`minimatch`:** Refreshed the frontend lockfile so the `@vue/test-utils` -> `js-beautify` -> `editorconfig` chain now resolves to patched packages (`editorconfig@1.0.7`, deduped `minimatch@9.0.9`), which also clears the related `brace-expansion` advisories in the same dependency tree.
+- **Discord bot `undici` security advisories:** Updated the Discord bot dependency override and lockfile to resolve `undici@6.24.1`, clearing the current request-smuggling and WebSocket client advisories inherited through `discord.js`.
+
 ## [0.2.62]
 
 ### Added

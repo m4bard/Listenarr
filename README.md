@@ -82,7 +82,7 @@ docker run -d \
   ghcr.io/listenarrs/listenarr:canary
 ```
 
-`PUID` and `PGID` control the user/group the container runs as. `UMASK` controls default file permissions for newly created files and folders. If `PGID` is omitted, it defaults to the same value as `PUID`. If `UMASK` is omitted, it defaults to `022`.
+`PUID` and `PGID` control the user/group the container runs as. `GID` is also accepted as an alias for `PGID` for compatibility with other container stacks. `UMASK` controls default file permissions for newly created files and folders, and legacy `UMASK_SET` is also accepted as a compatibility alias. If `PGID` is omitted, it defaults to the same value as `PUID`. If neither `UMASK` nor `UMASK_SET` is provided, it defaults to `022`.
 
 **Service will be available at:**
 - Web App: http://localhost:4545

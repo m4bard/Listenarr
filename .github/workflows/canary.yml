@@ -39,8 +39,11 @@ jobs:
         run: |
           set -euo pipefail
           CSProj=${{ env.API_PROJECT }}
-          # Read <Version> from csproj
+          # Read <Version> from csproj, then fall back to <AssemblyVersion>
           VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
+          if [ -z "${VERSION}" ]; then
+            VERSION=$(sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" "$CSProj" 2>/dev/null || true)
+          fi
           if [ -z "${VERSION}" ]; then
             VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
           fi
@@ -95,6 +98,12 @@ jobs:
           print('Wrote new version and assembly version to csproj')
           PY
           python3 update_version.py
+
+      - name: Sync frontend and package metadata to bumped version
+        if: steps.resolve-version.outputs.VERSION != ''
+        env:
+          NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
+        run: node scripts/sync-fe-version-from-csproj.mjs
 
       - name: Create Pull Request for version bump
         id: create_pr

@@ -34,6 +34,10 @@ RUN apt-get update \
 	&& node --version \
 	&& npm --version \
 	&& rm -rf /var/lib/apt/lists/*
+
+RUN groupadd --system listenarr \
+	&& useradd --system --gid listenarr --home-dir /nonexistent --shell /usr/sbin/nologin --no-create-home listenarr
+
 COPY --from=build /app/publish .
 
 # Ensure config directory exists

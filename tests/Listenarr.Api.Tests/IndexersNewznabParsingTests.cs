@@ -303,6 +303,77 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task InternetArchiveProvider_Populates_Indexer_Metadata_For_Ddl_Results()
+        {
+            var indexer = new Indexer
+            {
+                Id = 42,
+                Name = "Internet Archive",
+                Url = "https://archive.org/advancedsearch.php",
+                Type = "Torrent",
+                Implementation = "InternetArchive",
+                IsEnabled = true
+            };
+
+            var searchJson = """
+{
+  "response": {
+    "docs": [
+      {
+        "identifier": "artemis_book",
+        "title": "Artemis",
+        "creator": "Andy Weir",
+        "item_size": 123456789
+      }
+    ]
+  }
+}
+""";
+
+            var metadataJson = """
+{
+  "files": [
+    {
+      "name": "artemis.m4b",
+      "format": "M4B",
+      "size": "123456789"
+    }
+  ]
+}
+""";
+
+            var handler = new DelegatingHandlerStub(req =>
+            {
+                var uri = req.RequestUri?.ToString() ?? string.Empty;
+
+                if (uri.Contains("/advancedsearch.php?", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(searchJson) };
+                }
+
+                if (uri.Contains("/metadata/artemis_book", StringComparison.OrdinalIgnoreCase))
+                {
+                    return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(metadataJson) };
+                }
+
+                return new HttpResponseMessage(HttpStatusCode.NotFound);
+            });
+
+            using var httpClient = new HttpClient(handler);
+            var provider = new Listenarr.Api.Services.Search.Providers.InternetArchiveSearchProvider(
+                httpClient,
+                NullLogger<Listenarr.Api.Services.Search.Providers.InternetArchiveSearchProvider>.Instance);
+
+            var results = await provider.SearchAsync(indexer, "Artemis");
+
+            var result = Assert.Single(results);
+            Assert.Equal("DDL", result.DownloadType);
+            Assert.Equal(42, result.IndexerId);
+            Assert.Equal("InternetArchive", result.IndexerImplementation);
+            Assert.Equal("https://archive.org/download/artemis_book/artemis.m4b", result.TorrentUrl);
+        }
+
+        [Fact]
         public void ParseMyAnonamouse_Parses_Prowlarr_Shape()
         {
             var json = @"[

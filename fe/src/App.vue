@@ -24,22 +24,21 @@
 
     <!-- Top Navigation Bar -->
     <header v-if="!hideLayout" class="top-nav" :class="{ 'auth-warning-visible': showSecurityWarningBanner }">
+      <!-- Mobile menu button -->
+      <button
+        class="nav-btn mobile-menu-btn"
+        @click="toggleMobileMenu"
+        aria-label="Toggle navigation menu"
+      >
+        <PhList class="mobile-menu-icon" />
+      </button>
       <div class="nav-brand">
         <RouterLink to="/" class="brand-link" @click="closeMobileMenu">
           <div class="brand-logo-wrap" aria-hidden="true"><BrandLogo /></div>
           <h1>Listenarr</h1>
         </RouterLink>
-        <span v-if="version && version.length > 0" class="version">v{{ version }}</span>
       </div>
       <div class="nav-actions">
-        <!-- Mobile menu button -->
-        <button
-          class="nav-btn mobile-menu-btn"
-          @click="toggleMobileMenu"
-          aria-label="Toggle navigation menu"
-        >
-          <PhList class="mobile-menu-icon" />
-        </button>
         <!-- Backend connection indicator moved to System view -->
         <!-- Mobile backdrop (real DOM element so clicks reliably close the search) -->
         <div v-if="searchOpen" class="mobile-search-backdrop" @click="closeSearch" />
@@ -434,7 +433,11 @@
               <Pill variant="error" v-if="systemIssues > 0">{{ systemIssues }}</Pill>
             </RouterLink>
           </div>
+
         </nav>
+        <div v-if="version && version.length > 0" class="sidebar-footer">
+          <span class="sidebar-version-text">v{{ version }}</span>
+        </div>
       </aside>
       <div v-if="mobileMenuOpen" class="sidebar-backdrop" @click="closeMobileMenu" aria-hidden="true"></div>
 
@@ -1478,14 +1481,6 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
     sans-serif;
 }
 
-.version {
-  background-color: #555;
-  padding: 0.2rem 0.5rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  color: #ccc;
-}
-
 .nav-actions {
   display: flex;
   align-items: center;
@@ -1623,7 +1618,9 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   left: 0;
   top: var(--app-top-offset);
   bottom: 0;
-  overflow-y: auto;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
 }
 
 .sidebar.auth-warning-visible {
@@ -1631,11 +1628,21 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 }
 
 .sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
   padding: 1rem 0;
+  overflow-y: auto;
 }
 
 .nav-section {
   margin-bottom: 1.5rem;
+}
+
+.nav-section:last-of-type {
+  margin-bottom: 0;
 }
 
 .nav-item {
@@ -1668,6 +1675,27 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 .sidebar .nav-item.router-link-active svg,
 .sidebar .nav-item.router-link-active .ph {
   color: white;
+}
+
+.sidebar-footer {
+  position: sticky;
+  bottom: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.5rem 1rem 0.5rem;
+  border-top: 1px solid #3a3a3a;
+  background-color: #2a2a2a;
+}
+
+.sidebar-version-text {
+  display: inline-block;
+  font-size: 0.8rem;
+  font-weight: 500;
+  line-height: 1;
+  color: #9aa0a6;
+  letter-spacing: 0.02em;
 }
 
 .nav-item.router-link-active::before {
@@ -1955,6 +1983,7 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   .top-nav {
     padding: 0 0.75rem;
     gap: 0.75rem;
+    justify-content: flex-start;
   }
 
   .nav-brand {
@@ -1974,15 +2003,10 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
     text-overflow: ellipsis;
   }
 
-  .version {
-    flex: 0 0 auto;
-    padding: 0.15rem 0.4rem;
-    font-size: 0.7rem;
-  }
-
   .nav-actions {
     flex: 0 0 auto;
     gap: 0.5rem;
+    margin-left: auto;
   }
 
   .top-nav .nav-btn {
@@ -2002,10 +2026,6 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   .top-nav {
     padding: 0 0.5rem;
     gap: 0.5rem;
-  }
-
-  .version {
-    display: none;
   }
 
   .nav-actions {

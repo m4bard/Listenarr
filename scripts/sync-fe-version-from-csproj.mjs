@@ -20,6 +20,24 @@ function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf8')
 }
 
+function readEnvVersion() {
+  const value = process.env.NEW_VERSION?.trim()
+  return value ? value : null
+}
+
+function readCsprojVersion(csprojText) {
+  for (const tagName of ['Version', 'AssemblyVersion']) {
+    const match = csprojText.match(new RegExp(`<${tagName}>([^<]+)</${tagName}>`, 'i'))
+    const value = match?.[1]?.trim()
+
+    if (value) {
+      return value
+    }
+  }
+
+  return null
+}
+
 function syncPackageVersion(packagePath, lockPath, targetVersion, label) {
   const pkg = readJson(packagePath)
   const lock = readJson(lockPath)
@@ -51,15 +69,16 @@ function syncPackageVersion(packagePath, lockPath, targetVersion, label) {
   return changed
 }
 
-const csprojText = fs.readFileSync(csprojPath, 'utf8')
-const versionMatch = csprojText.match(/<Version>([^<]+)<\/Version>/i)
+const envVersion = readEnvVersion()
+const csprojText = envVersion ? null : fs.readFileSync(csprojPath, 'utf8')
+const csprojVersion = envVersion ?? readCsprojVersion(csprojText)
 
-if (!versionMatch || !versionMatch[1]?.trim()) {
-  console.error(`[version-sync] Could not find <Version> in ${csprojPath}`)
+if (!csprojVersion) {
+  console.error(
+    `[version-sync] Could not resolve version from NEW_VERSION or from <Version>/<AssemblyVersion> in ${csprojPath}`,
+  )
   process.exit(1)
 }
-
-const csprojVersion = versionMatch[1].trim()
 
 const rootChanged = syncPackageVersion(rootPackagePath, rootLockPath, csprojVersion, 'root')
 const feChanged = syncPackageVersion(fePackagePath, feLockPath, csprojVersion, 'FE')

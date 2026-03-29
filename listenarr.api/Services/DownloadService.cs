@@ -42,6 +42,14 @@ namespace Listenarr.Api.Services
         private const int ClientStatusCacheExpirationSeconds = 30;
         private const int DirectDownloadTimeoutHours = 2;
 
+        private enum EffectiveDownloadType
+        {
+            Unknown,
+            Torrent,
+            Usenet,
+            DirectDownload
+        }
+
         private readonly IHubContext<DownloadHub> _hubContext;
         private readonly Listenarr.Application.Services.IHubBroadcaster _hubBroadcaster;
         private readonly IAudiobookRepository _audiobookRepository;
@@ -433,9 +441,23 @@ namespace Listenarr.Api.Services
             // Assign score to SearchResult
             topResult.SearchResult.Score = topResult.TotalScore;
 
-            // Handle DDL results directly
-            if (!string.IsNullOrEmpty(topResult.SearchResult.DownloadType) &&
-                topResult.SearchResult.DownloadType.Equals("DDL", StringComparison.OrdinalIgnoreCase))
+            var effectiveDownloadType = await ResolveEffectiveDownloadTypeAsync(topResult.SearchResult);
+            topResult.SearchResult.DownloadType = GetDownloadTypeLabel(effectiveDownloadType);
+
+            if (effectiveDownloadType == EffectiveDownloadType.Unknown)
+            {
+                _logger.LogWarning(
+                    "Top search result for audiobook '{Title}' could not be mapped to a trusted download type",
+                    audiobook.Title);
+                return new SearchAndDownloadResult
+                {
+                    Success = false,
+                    Message = "Top search result could not be mapped to a valid download target"
+                };
+            }
+
+            // Handle trusted direct-download results directly
+            if (effectiveDownloadType == EffectiveDownloadType.DirectDownload)
             {
                 _logger.LogInformation("Top result is DDL, processing directly for: {Title}", topResult.SearchResult.Title);
                 var downloadId = await DownloadDirectlyAsync(topResult.SearchResult, audiobookId);
@@ -452,7 +474,7 @@ namespace Listenarr.Api.Services
             }
 
             // Use topResult.SearchResult for torrent/nzb download
-            var isTorrent = IsTorrentResult(topResult.SearchResult);
+            var isTorrent = effectiveDownloadType == EffectiveDownloadType.Torrent;
             var downloadClientId = await GetAppropriateDownloadClient(isTorrent);
 
             if (downloadClientId == null)
@@ -490,20 +512,30 @@ namespace Listenarr.Api.Services
                 searchResult.TorrentUrl ?? "(null)",
                 audiobookId);
 
-            // Check if this is a DDL (Direct Download Link) - handle it differently
-            // Use case-insensitive comparison in case of serialization casing issues
-            if (!string.IsNullOrEmpty(searchResult.DownloadType) &&
-                searchResult.DownloadType.Equals("DDL", StringComparison.OrdinalIgnoreCase))
+            var effectiveDownloadType = await ResolveEffectiveDownloadTypeAsync(searchResult);
+            searchResult.DownloadType = GetDownloadTypeLabel(effectiveDownloadType);
+
+            if (effectiveDownloadType == EffectiveDownloadType.Unknown)
+            {
+                throw new InvalidOperationException("Unable to determine a trusted download type from the selected search result.");
+            }
+
+            // Check if this is a trusted direct download and handle it differently
+            if (effectiveDownloadType == EffectiveDownloadType.DirectDownload)
             {
                 _logger.LogInformation("Processing DDL for: {Title}, AudiobookId: {AudiobookId}", searchResult.Title, audiobookId);
                 return await DownloadDirectlyAsync(searchResult, audiobookId);
             }
 
-            _logger.LogInformation("Not a DDL, processing as torrent/usenet. DownloadType was: '{DownloadType}'", searchResult.DownloadType);
+            var isTorrent = effectiveDownloadType == EffectiveDownloadType.Torrent;
+
+            _logger.LogInformation(
+                "Processing as {DownloadType} after server-side validation for '{Title}'",
+                searchResult.DownloadType,
+                searchResult.Title);
 
             if (downloadClientId == null)
             {
-                var isTorrent = IsTorrentResult(searchResult);
                 downloadClientId = await GetAppropriateDownloadClient(isTorrent);
 
                 if (downloadClientId == null)
@@ -593,7 +625,7 @@ namespace Listenarr.Api.Services
                     ["Seeders"] = searchResult.Seeders ?? 0,
                     ["Quality"] = searchResult.Quality ?? string.Empty,
                     ["Language"] = searchResult.Language ?? string.Empty,
-                    ["DownloadType"] = searchResult.DownloadType ?? (IsTorrentResult(searchResult) ? "Torrent" : "Usenet")
+                    ["DownloadType"] = searchResult.DownloadType
                 }
             };
 
@@ -607,7 +639,7 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    var protocol = IsTorrentResult(searchResult) ? Listenarr.Domain.Models.DownloadProtocol.Torrent : Listenarr.Domain.Models.DownloadProtocol.Usenet;
+                    var protocol = isTorrent ? Listenarr.Domain.Models.DownloadProtocol.Torrent : Listenarr.Domain.Models.DownloadProtocol.Usenet;
                     await _downloadHistoryService.RecordGrabbedAsync(
                         downloadId,
                         downloadClientIdForModel,
@@ -1233,38 +1265,151 @@ namespace Listenarr.Api.Services
             return indexerType.ToLower() == "torrent";
         }
 
-        private bool IsTorrentResult(SearchResult result)
+        private async Task<EffectiveDownloadType> ResolveEffectiveDownloadTypeAsync(SearchResult result)
         {
-            // Check DownloadType first if it's set
-            if (!string.IsNullOrEmpty(result.DownloadType))
+            ArgumentNullException.ThrowIfNull(result);
+
+            if (!string.IsNullOrWhiteSpace(result.NzbUrl))
             {
-                if (result.DownloadType == "DDL")
-                {
-                    _logger.LogDebug("Result identified as DDL (DownloadType set): {Title}", result.Title);
-                    return false; // DDL is not a torrent
-                }
-                else if (result.DownloadType == "Torrent")
-                {
-                    _logger.LogDebug("Result identified as Torrent (DownloadType set): {Title}", result.Title);
-                    return true;
-                }
-                else if (result.DownloadType == "Usenet")
-                {
-                    _logger.LogDebug("Result identified as Usenet (DownloadType set): {Title}", result.Title);
-                    return false;
-                }
+                _logger.LogDebug("Result identified as Usenet from NzbUrl: {Title}", result.Title);
+                return EffectiveDownloadType.Usenet;
             }
 
-            // Fallback to legacy detection logic
-            // Check for NZB first - if it has an NZB URL, it's a Usenet/NZB download
+            if (!string.IsNullOrWhiteSpace(result.MagnetLink))
+            {
+                _logger.LogDebug("Result identified as Torrent from MagnetLink: {Title}", result.Title);
+                return EffectiveDownloadType.Torrent;
+            }
+
+            if (result.TorrentFileContent != null && result.TorrentFileContent.Length > 0)
+            {
+                _logger.LogDebug("Result identified as Torrent from cached torrent bytes: {Title}", result.Title);
+                return EffectiveDownloadType.Torrent;
+            }
+
+            if (await IsTrustedDirectDownloadAsync(result))
+            {
+                _logger.LogDebug("Result identified as trusted DDL from configured Internet Archive indexer: {Title}", result.Title);
+                return EffectiveDownloadType.DirectDownload;
+            }
+
+            if (DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(result.TorrentUrl, out _))
+            {
+                _logger.LogDebug("Result identified as Torrent from TorrentUrl: {Title}", result.Title);
+                return EffectiveDownloadType.Torrent;
+            }
+
+            _logger.LogWarning(
+                "Unable to derive effective download type for '{Title}'. Incoming DownloadType '{DownloadType}' was ignored because no trusted download target was present.",
+                result.Title,
+                result.DownloadType ?? "(null)");
+
+            return EffectiveDownloadType.Unknown;
+        }
+
+        private async Task<bool> IsTrustedDirectDownloadAsync(SearchResult result)
+        {
+            if (result?.IndexerId is not int indexerId || indexerId <= 0)
+            {
+                return false;
+            }
+
+            if (!DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(result.TorrentUrl, out var downloadUri) ||
+                downloadUri == null)
+            {
+                return false;
+            }
+
+            if (!IsTrustedArchiveOrgHost(downloadUri) ||
+                !downloadUri.AbsolutePath.StartsWith("/download/", StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            try
+            {
+                var dbContext = await _dbContextFactory.CreateDbContextAsync();
+                var indexer = await dbContext.Indexers
+                    .AsNoTracking()
+                    .FirstOrDefaultAsync(i => i.Id == indexerId);
+
+                if (indexer == null || !indexer.IsEnabled)
+                {
+                    _logger.LogDebug(
+                        "Direct-download validation rejected '{Title}': indexer {IndexerId} was missing or disabled",
+                        result.Title,
+                        indexerId);
+                    return false;
+                }
+
+                if (!string.Equals(indexer.Implementation, "InternetArchive", StringComparison.OrdinalIgnoreCase))
+                {
+                    _logger.LogDebug(
+                        "Direct-download validation rejected '{Title}': indexer {IndexerId} implementation was {Implementation}",
+                        result.Title,
+                        indexerId,
+                        indexer.Implementation);
+                    return false;
+                }
+
+                if (!Uri.TryCreate(indexer.Url, UriKind.Absolute, out var indexerUri) ||
+                    !IsTrustedArchiveOrgHost(indexerUri))
+                {
+                    _logger.LogDebug(
+                        "Direct-download validation rejected '{Title}': configured indexer URL '{IndexerUrl}' is not a trusted archive.org host",
+                        result.Title,
+                        indexer.Url);
+                    return false;
+                }
+
+                return true;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(
+                    ex,
+                    "Failed to validate direct-download route for '{Title}' against configured indexer {IndexerId}",
+                    result.Title,
+                    indexerId);
+                return false;
+            }
+        }
+
+        private static bool IsTrustedArchiveOrgHost(Uri uri)
+        {
+            var host = uri.Host.Trim();
+            return host.Equals("archive.org", StringComparison.OrdinalIgnoreCase) ||
+                   host.EndsWith(".archive.org", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string GetDownloadTypeLabel(EffectiveDownloadType effectiveDownloadType)
+        {
+            return effectiveDownloadType switch
+            {
+                EffectiveDownloadType.Torrent => "Torrent",
+                EffectiveDownloadType.Usenet => "Usenet",
+                EffectiveDownloadType.DirectDownload => "DDL",
+                _ => string.Empty
+            };
+        }
+
+        private bool IsTorrentResult(SearchResult result)
+        {
+            // Use transport indicators only. Do not trust caller-provided DownloadType.
             if (!string.IsNullOrEmpty(result.NzbUrl))
             {
                 _logger.LogDebug("Result identified as NZB (has NzbUrl): {Title}", result.Title);
                 return false;
             }
 
-            // Check for torrent indicators - magnet link or torrent file
-            if (!string.IsNullOrEmpty(result.MagnetLink) || !string.IsNullOrEmpty(result.TorrentUrl))
+            if (result.TorrentFileContent != null && result.TorrentFileContent.Length > 0)
+            {
+                _logger.LogDebug("Result identified as Torrent (has cached torrent bytes): {Title}", result.Title);
+                return true;
+            }
+
+            if (!string.IsNullOrEmpty(result.MagnetLink) ||
+                DownloadClientUriBuilder.TryParseHttpOrHttpsAbsoluteUri(result.TorrentUrl, out _))
             {
                 _logger.LogDebug("Result identified as Torrent (has MagnetLink or TorrentUrl): {Title}", result.Title);
                 return true;
@@ -1774,7 +1919,13 @@ namespace Listenarr.Api.Services
                     FinalPath = string.Empty,
                     StartedAt = DateTime.UtcNow,
                     DownloadClientId = "DDL",
-                    Metadata = new Dictionary<string, object>()
+                    Metadata = new Dictionary<string, object>
+                    {
+                        ["Source"] = searchResult.Source ?? string.Empty,
+                        ["Quality"] = searchResult.Quality ?? string.Empty,
+                        ["Language"] = searchResult.Language ?? string.Empty,
+                        ["DownloadType"] = "DDL"
+                    }
                 };
 
                 var ctx = await _dbContextFactory.CreateDbContextAsync();
