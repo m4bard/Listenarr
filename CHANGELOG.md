@@ -17,6 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Docker `PGID` collisions with existing container groups:** Switched the runtime image to a pre-created `listenarr` service account that is remapped in place at startup, similar to linuxserver.io's `abc` pattern, so custom `PUID`/`PGID` values no longer fail when the target GID already exists in the base image. `GID` is now also accepted as a compatibility alias for `PGID`.
 - **Legacy `UMASK_SET` compatibility:** Docker startup now accepts `UMASK_SET` as a legacy alias for `UMASK`, with `UMASK` taking precedence when both are provided.
 - **Download routing trusted client-supplied `DownloadType`:** Manual send-to-client requests now derive the effective download type from trusted server-side signals instead of trusting the incoming `SearchResult.DownloadType`, preventing spoofed `DDL` values from bypassing the torrent or usenet routing path while still allowing validated Internet Archive direct downloads.
+- **Frontend audit vulnerabilities in `editorconfig`/`minimatch`:** Refreshed the frontend lockfile so the `@vue/test-utils` -> `js-beautify` -> `editorconfig` chain now resolves to patched packages (`editorconfig@1.0.7`, deduped `minimatch@9.0.9`), which also clears the related `brace-expansion` advisories in the same dependency tree.
+- **Discord bot `undici` security advisories:** Updated the Discord bot dependency override and lockfile to resolve `undici@6.24.1`, clearing the current request-smuggling and WebSocket client advisories inherited through `discord.js`.
 
 ## [0.2.62]
 
