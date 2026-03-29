@@ -187,6 +187,49 @@ namespace Listenarr.Api.Tests
             Assert.DoesNotContain(db.History, h => h.AudiobookId == book.Id && h.EventType == "File Association Refused");
         }
 
+        [Fact]
+        public async Task EnsureAudiobookFileAsync_RejectsNonAudioFile()
+        {
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var db = new ListenArrDbContext(options);
+            var book = new Audiobook { Title = "Test" };
+            db.Audiobooks.Add(book);
+            await db.SaveChangesAsync();
+
+            var testFile = Path.Combine(Path.GetTempPath(), $"afs-test-{Guid.NewGuid()}.jpg");
+            await File.WriteAllTextAsync(testFile, "dummy");
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.IsAny<string>()))
+                .ReturnsAsync(new AudioMetadata { Format = "jpg" });
+
+            var services = new ServiceCollection();
+            services.AddSingleton<IMetadataService>(metadataMock.Object);
+            services.AddSingleton(db);
+            services.AddSingleton<MetadataExtractionLimiter>();
+            services.AddMemoryCache();
+
+            var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+            var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<AudioFileService>>();
+            var svc = new AudioFileService(
+                scopeFactory,
+                loggerMock.Object,
+                provider.GetRequiredService<Microsoft.Extensions.Caching.Memory.IMemoryCache>(),
+                provider.GetRequiredService<MetadataExtractionLimiter>());
+
+            var created = await svc.EnsureAudiobookFileAsync(book.Id, testFile, "test");
+
+            Assert.False(created);
+            Assert.Null(await db.AudiobookFiles.FirstOrDefaultAsync(f => f.AudiobookId == book.Id && f.Path == testFile));
+
+            File.Delete(testFile);
+        }
+
         // Test helper DbContext that throws on SaveChangesAsync
         private class ThrowingSaveChangesDbContext : ListenArrDbContext
         {

@@ -289,7 +289,7 @@ namespace Listenarr.Api.Services
                             : null;
                         var preliminaryItem = new QueueItem
                         {
-                            Id = dl.Id,
+                            Id = GetClientDownloadItemId(dl) ?? dl.Id,
                             Title = dl.Title ?? "Unknown",
                             Status = "completed",
                             ContentPath = dl.FinalPath ?? clientContentPath ?? dl.DownloadPath,
@@ -408,6 +408,75 @@ namespace Listenarr.Api.Services
             var settings = await configService.GetApplicationSettingsAsync();
             job.AddLogEntry($"Retrieved settings - OutputPath: {settings.OutputPath}, EnableMetadataProcessing: {settings.EnableMetadataProcessing}");
 
+            // If the source is a directory (multi-file download), enumerate all importable files and process each one
+            if (Directory.Exists(job.SourcePath) && !File.Exists(job.SourcePath))
+            {
+                job.AddLogEntry($"Source is a directory, scanning for importable files: {job.SourcePath}");
+                var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
+                var importableFiles = Directory.EnumerateFiles(job.SourcePath, "*.*", SearchOption.AllDirectories)
+                    .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
+                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                importableFiles = await FilterToClientReportedFilesAsync(job, scope, importableFiles, cancellationToken);
+
+                if (importableFiles.Count == 0)
+                {
+                    job.AddLogEntry("No importable files found in directory (all files blacklisted or skipped)");
+                    job.ErrorMessage = "No importable files found in source directory";
+                    job.Status = ProcessingJobStatus.Failed;
+                    job.CompletedAt = DateTime.UtcNow;
+                    return;
+                }
+
+                job.AddLogEntry($"Found {importableFiles.Count} importable file(s) to process");
+                var originalSourcePath = job.SourcePath;
+                string? primaryCompletionPath = null;
+                string? fallbackCompletionPath = null;
+                foreach (var file in importableFiles)
+                {
+                    job.SourcePath = file;
+                    job.AddLogEntry($"Processing file: {file}");
+                    await ProcessFileWithEnhancedLogicAsync(
+                        job,
+                        downloadService,
+                        settings,
+                        fileNamingService,
+                        metadataService,
+                        cancellationToken,
+                        finalizeDownload: false);
+
+                    if (!string.IsNullOrWhiteSpace(job.DestinationPath))
+                    {
+                        fallbackCompletionPath ??= job.DestinationPath;
+                        if (FileUtils.IsAudioFile(file))
+                        {
+                            primaryCompletionPath ??= job.DestinationPath;
+                        }
+                    }
+
+                    if (job.Status == ProcessingJobStatus.Failed || job.Status == ProcessingJobStatus.Retry)
+                    {
+                        job.AddLogEntry($"Failed processing file: {file}, stopping directory processing");
+                        break;
+                    }
+                }
+                job.SourcePath = originalSourcePath;
+
+                if (job.Status != ProcessingJobStatus.Failed && job.Status != ProcessingJobStatus.Retry)
+                {
+                    var completionPath = primaryCompletionPath ?? fallbackCompletionPath;
+                    if (!string.IsNullOrWhiteSpace(completionPath))
+                    {
+                        job.DestinationPath = completionPath;
+                        job.AddLogEntry($"Finalizing directory batch using completion path: {completionPath}");
+                        await FinalizeProcessedDownloadAsync(job, downloadService, completionPath);
+                    }
+                }
+
+                return;
+            }
+
             // Process the file using the enhanced logic from ProcessCompletedDownloadAsync
             await ProcessFileWithEnhancedLogicAsync(job, downloadService, settings, fileNamingService, metadataService, cancellationToken);
         }
@@ -418,7 +487,8 @@ namespace Listenarr.Api.Services
             ApplicationSettings settings,
             IFileNamingService? fileNamingService,
             IMetadataService? metadataService,
-            CancellationToken cancellationToken)
+            CancellationToken cancellationToken,
+            bool finalizeDownload = true)
         {
             var sourcePath = job.SourcePath!;
             var destinationPath = sourcePath;
@@ -1023,13 +1093,17 @@ namespace Listenarr.Api.Services
                 job.DestinationPath = sourcePath;
             }
 
-            // Update the download record with the final path
-            await downloadService.ProcessCompletedDownloadAsync(job.DownloadId, job.DestinationPath);
-            job.AddLogEntry($"Updated download record with final path: {job.DestinationPath}");
-
-            // If the download was linked to an Audiobook, enqueue a scan for that audiobook
-            try
+            if (finalizeDownload && !string.IsNullOrWhiteSpace(job.DestinationPath))
             {
+                await downloadService.ProcessCompletedDownloadAsync(job.DownloadId, job.DestinationPath);
+                job.AddLogEntry($"Updated download record with final path: {job.DestinationPath}");
+            }
+
+            if (finalizeDownload && !string.IsNullOrWhiteSpace(job.DestinationPath))
+            {
+                // If the download was linked to an Audiobook, enqueue a scan for that audiobook
+                try
+                {
                 using var scope = _serviceScopeFactory.CreateScope();
                 var dbContext = scope.ServiceProvider.GetService<ListenArrDbContext>();
                 var scanQueue = scope.ServiceProvider.GetService<IScanQueueService>();
@@ -1058,6 +1132,150 @@ namespace Listenarr.Api.Services
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                job.AddLogEntry($"Failed to attempt enqueueing scan job: {ex.Message}");
+            }
+            }
+        }
+
+        private async Task<List<string>> FilterToClientReportedFilesAsync(
+            DownloadProcessingJob job,
+            IServiceScope scope,
+            List<string> importableFiles,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                var dbContext = scope.ServiceProvider.GetService<ListenArrDbContext>();
+                var importResolver = scope.ServiceProvider.GetService<IImportItemResolutionService>();
+
+                if (dbContext == null || importResolver == null)
+                {
+                    return importableFiles;
+                }
+
+                var download = await dbContext.Downloads.FindAsync(new object[] { job.DownloadId }, cancellationToken);
+                if (download == null)
+                {
+                    return importableFiles;
+                }
+
+                var clientContentPath = download.Metadata?.TryGetValue("ClientContentPath", out var ccp) is true
+                    ? ccp?.ToString()
+                    : null;
+                var preliminaryItem = new QueueItem
+                {
+                    Id = GetClientDownloadItemId(download) ?? download.Id,
+                    Title = download.Title ?? "Unknown",
+                    Status = "completed",
+                    ContentPath = clientContentPath ?? download.FinalPath ?? download.DownloadPath,
+                    DownloadClientId = download.DownloadClientId
+                };
+
+                var resolvedItem = await importResolver.ResolveImportItemAsync(
+                    download,
+                    preliminaryItem,
+                    previousAttempt: null,
+                    cancellationToken);
+
+                if (resolvedItem.SourceFiles == null || resolvedItem.SourceFiles.Count == 0)
+                {
+                    return importableFiles;
+                }
+
+                var allowedFiles = new HashSet<string>(
+                    resolvedItem.SourceFiles
+                        .Where(path => !string.IsNullOrWhiteSpace(path))
+                        .Select(path => FileUtils.NormalizeStoredPath(path)),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var filteredFiles = importableFiles
+                    .Where(path => allowedFiles.Contains(FileUtils.NormalizeStoredPath(path)))
+                    .ToList();
+
+                if (filteredFiles.Count == 0)
+                {
+                    _logger.LogWarning(
+                        "Download client reported {ClientFileCount} related file(s) for download {DownloadId}, but none matched the local import candidates under {SourcePath}",
+                        allowedFiles.Count,
+                        job.DownloadId,
+                        job.SourcePath);
+                    return importableFiles;
+                }
+
+                _logger.LogInformation(
+                    "Scoped directory import for download {DownloadId} from {OriginalCount} to {FilteredCount} file(s) using the download client's reported file list",
+                    job.DownloadId,
+                    importableFiles.Count,
+                    filteredFiles.Count);
+
+                return filteredFiles;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to scope directory import to download-client reported files for download {DownloadId}", job.DownloadId);
+                return importableFiles;
+            }
+        }
+
+        private static string? GetClientDownloadItemId(Download download)
+        {
+            if (download.Metadata == null)
+            {
+                return null;
+            }
+
+            if (download.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
+            {
+                var clientId = clientIdObj?.ToString();
+                if (!string.IsNullOrWhiteSpace(clientId))
+                {
+                    return clientId;
+                }
+            }
+
+            if (download.Metadata.TryGetValue("TorrentHash", out var torrentHashObj))
+            {
+                var torrentHash = torrentHashObj?.ToString();
+                if (!string.IsNullOrWhiteSpace(torrentHash))
+                {
+                    return torrentHash;
+                }
+            }
+
+            return null;
+        }
+
+        private async Task FinalizeProcessedDownloadAsync(DownloadProcessingJob job, IDownloadService downloadService, string destinationPath)
+        {
+            await downloadService.ProcessCompletedDownloadAsync(job.DownloadId, destinationPath);
+            job.AddLogEntry($"Updated download record with final path: {destinationPath}");
+
+            try
+            {
+                using var scope = _serviceScopeFactory.CreateScope();
+                var dbContext = scope.ServiceProvider.GetService<ListenArrDbContext>();
+                var scanQueue = scope.ServiceProvider.GetService<IScanQueueService>();
+
+                if (scanQueue != null && dbContext != null)
+                {
+                    var dl = await dbContext.Downloads.FindAsync(job.DownloadId);
+                    if (dl != null && dl.AudiobookId != null)
+                    {
+                        try
+                        {
+                            var jobId = await scanQueue.EnqueueScanAsync(dl.AudiobookId.Value, null);
+                            job.AddLogEntry($"Enqueued scan job {jobId} for audiobook {dl.AudiobookId}");
+                            _logger.LogInformation("Enqueued scan job {JobId} for audiobook {AudiobookId} after processing download {DownloadId}", jobId, dl.AudiobookId, job.DownloadId);
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            job.AddLogEntry($"Failed to enqueue scan job: {ex.Message}");
+                        }
+                    }
+                }
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 job.AddLogEntry($"Failed to attempt enqueueing scan job: {ex.Message}");
             }
         }

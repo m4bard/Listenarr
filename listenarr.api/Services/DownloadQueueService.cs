@@ -218,6 +218,11 @@ namespace Listenarr.Api.Services
                                     queueItem.AudiobookId = matchedDownload.AudiobookId;
                                 }
 
+                                if (string.IsNullOrWhiteSpace(queueItem.Language) && !string.IsNullOrWhiteSpace(matchedDownload.Language))
+                                {
+                                    queueItem.Language = matchedDownload.Language;
+                                }
+
                                 _logger.LogDebug(
                                     "Enriched queue item (original: {OriginalId}) with DB metadata from download {DownloadId}",
                                     originalClientId,

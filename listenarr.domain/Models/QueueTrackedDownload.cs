@@ -36,5 +36,6 @@ namespace Listenarr.Domain.Models
         public string FinalPath { get; set; } = string.Empty;
         public Dictionary<string, object> Metadata { get; set; } = new();
         public int? AudiobookId { get; set; }
+        public string? Language { get; set; }
     }
 }

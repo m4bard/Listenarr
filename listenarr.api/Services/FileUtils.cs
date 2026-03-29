@@ -264,6 +264,46 @@ namespace Listenarr.Api.Services
             return false;
         }
 
+        public static bool IsLikelyRelatedCompanionFile(
+            string filePath,
+            IReadOnlyCollection<AudioMatchProfile> references,
+            IReadOnlyCollection<string> referenceDirectories)
+        {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return false;
+            }
+
+            if (references == null || references.Count == 0)
+            {
+                return true;
+            }
+
+            var candidate = CreateAudioMatchProfile(filePath, null);
+            if (LikelyMatchesAnyReference(candidate, references))
+            {
+                return true;
+            }
+
+            var candidateDirectory = Path.GetDirectoryName(filePath) ?? string.Empty;
+            var sharesReferenceDirectory = referenceDirectories.Any(directory =>
+                !string.IsNullOrWhiteSpace(directory)
+                && (string.Equals(
+                        NormalizeStoredPath(candidateDirectory),
+                        NormalizeStoredPath(directory),
+                        StringComparison.OrdinalIgnoreCase)
+                    || IsPathWithinRoot(candidateDirectory, directory)
+                    || IsPathWithinRoot(directory, candidateDirectory)));
+
+            if (!sharesReferenceDirectory)
+            {
+                return false;
+            }
+
+            var genericStem = NormalizeComparisonValue(Path.GetFileNameWithoutExtension(filePath));
+            return GenericCompanionStemKeys.Contains(genericStem);
+        }
+
         public static int ScoreAgainstTarget(AudioMatchProfile candidate, string? targetTitle, string? targetAlbum, string? targetArtist)
         {
             var score = 0;
@@ -511,6 +551,26 @@ namespace Listenarr.Api.Services
                 @"^(track|chapter|disc|cd|part|pt|foreword|afterword|preface|prologue|epilogue|introduction|intro)\b(?:\s+\d+)?$",
                 RegexOptions.IgnoreCase);
         }
+
+        private static readonly HashSet<string> GenericCompanionStemKeys = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "art",
+            "artwork",
+            "back",
+            "book",
+            "booklet",
+            "cover",
+            "description",
+            "folder",
+            "front",
+            "info",
+            "metadata",
+            "notes",
+            "poster",
+            "summary",
+            "thumb",
+            "thumbnail"
+        };
 
         private static string FirstNonEmpty(params string?[] values)
         {

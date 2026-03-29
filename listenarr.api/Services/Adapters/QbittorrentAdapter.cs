@@ -1160,6 +1160,7 @@ namespace Listenarr.Api.Services.Adapters
         {
             // ✅ Clone to avoid modifying original
             var result = queueItem.Clone();
+            string? resolvedExistingContentPath = null;
 
             // On API >= 2.6.1, ContentPath/OutputPath is already set correctly from content_path field
             if (!string.IsNullOrEmpty(result.ContentPath))
@@ -1168,13 +1169,17 @@ namespace Listenarr.Api.Services.Adapters
                 if (!string.IsNullOrWhiteSpace(localPath))
                 {
                     result.ContentPath = localPath;
+                    resolvedExistingContentPath = localPath;
                 }
 
                 _logger.LogDebug("Using existing ContentPath for import: {Path}", result.ContentPath);
-                return result;
             }
 
             var hash = download.Metadata?.GetValueOrDefault("TorrentHash")?.ToString();
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                hash = queueItem.Id;
+            }
             if (string.IsNullOrEmpty(hash))
             {
                 _logger.LogWarning("No torrent hash found in download metadata for download {DownloadId}", download.Id);
@@ -1249,12 +1254,19 @@ namespace Listenarr.Api.Services.Adapters
                 var outputPath = ResolveTorrentContentPath(savePath, files);
                 if (string.IsNullOrEmpty(outputPath))
                 {
-                    _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
-                    return result;
+                    if (string.IsNullOrWhiteSpace(resolvedExistingContentPath))
+                    {
+                        _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
+                        return result;
+                    }
                 }
 
                 // ✅ Apply remote path mapping
-                result.ContentPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
+                result.SourceFiles = await TranslateSourceFilesAsync(client.Id, BuildTorrentSourceFiles(savePath, files));
+                if (!string.IsNullOrWhiteSpace(outputPath))
+                {
+                    result.ContentPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
+                }
                 
                 _logger.LogInformation("Resolved import path for {Hash}: {Path}", hash, result.ContentPath);
             }
@@ -1289,6 +1301,38 @@ namespace Listenarr.Api.Services.Adapters
             return string.IsNullOrEmpty(normalizedBasePath)
                 ? relativePath
                 : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
+
+        private static List<string> BuildTorrentSourceFiles(
+            string savePath,
+            List<Dictionary<string, JsonElement>> files)
+        {
+            if (string.IsNullOrWhiteSpace(savePath) || files == null || files.Count == 0)
+            {
+                return new List<string>();
+            }
+
+            return files
+                .Select(file => file.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => CombineWithOptionalBase(savePath, name.Replace('/', Path.DirectorySeparatorChar)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private async Task<List<string>> TranslateSourceFilesAsync(string clientId, IEnumerable<string> sourceFiles)
+        {
+            var translated = new List<string>();
+            foreach (var sourceFile in sourceFiles.Where(path => !string.IsNullOrWhiteSpace(path)))
+            {
+                var localPath = await _pathMappingService.TranslatePathAsync(clientId, sourceFile);
+                translated.Add(localPath);
+            }
+
+            return translated
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         internal static string ResolveTorrentContentPath(

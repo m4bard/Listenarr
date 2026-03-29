@@ -580,6 +580,7 @@ namespace Listenarr.Api.Services
                 Title = searchResult.Title ?? string.Empty,
                 Artist = searchResult.Artist ?? string.Empty,
                 Album = searchResult.Album ?? string.Empty,
+                Language = searchResult.Language,
                 OriginalUrl = !string.IsNullOrEmpty(searchResult.MagnetLink) ? searchResult.MagnetLink : (searchResult.TorrentUrl ?? searchResult.NzbUrl ?? string.Empty),
                 Status = DownloadStatus.Queued,
                 Progress = 0,
@@ -594,6 +595,7 @@ namespace Listenarr.Api.Services
                     ["Source"] = searchResult.Source ?? string.Empty,
                     ["Seeders"] = searchResult.Seeders ?? 0,
                     ["Quality"] = searchResult.Quality ?? string.Empty,
+                    ["Language"] = searchResult.Language ?? string.Empty,
                     ["DownloadType"] = searchResult.DownloadType ?? (IsTorrentResult(searchResult) ? "Torrent" : "Usenet")
                 }
             };
@@ -1765,6 +1767,7 @@ namespace Listenarr.Api.Services
                     Id = id,
                     AudiobookId = audiobookId,
                     Title = searchResult.Title,
+                    Language = searchResult.Language,
                     OriginalUrl = searchResult.TorrentUrl ?? searchResult.NzbUrl ?? searchResult.MagnetLink ?? string.Empty,
                     Status = DownloadStatus.Queued,
                     Progress = 0,

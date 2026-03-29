@@ -169,7 +169,8 @@ namespace Listenarr.Api.Repositories
                 DownloadPath = d.DownloadPath,
                 FinalPath = d.FinalPath,
                 Metadata = d.Metadata,
-                AudiobookId = d.AudiobookId
+                AudiobookId = d.AudiobookId,
+                Language = d.Language
             };
         }
     }

@@ -59,6 +59,15 @@ namespace Listenarr.Api.Services
 
             try
             {
+                if (!FileUtils.IsAudioFile(sourcePath))
+                {
+                    result.Success = false;
+                    result.SkippedReason = "source file is not a supported audio file";
+                    result.Message = result.SkippedReason;
+                    _logger.LogWarning("ImportSingleFile: refusing non-audio file {File}", sourcePath);
+                    return result;
+                }
+
                 // Build initial metadata context
                 var metadata = new AudioMetadata
                 {

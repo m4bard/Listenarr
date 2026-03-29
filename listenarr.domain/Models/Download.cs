@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Text.Json.Serialization;
+
 namespace Listenarr.Domain.Models
 {
     public enum DownloadStatus
@@ -149,6 +151,14 @@ namespace Listenarr.Domain.Models
         /// This is often the most accurate path for locating the actual downloaded file/folder.
         /// </summary>
         public string? ContentPath { get; set; }
+
+        /// <summary>
+        /// Exact source files reported by the download client for this download.
+        /// Used internally to scope automatic imports to files that actually belong
+        /// to the download, even when the surrounding directory contains unrelated files.
+        /// </summary>
+        [JsonIgnore]
+        public List<string>? SourceFiles { get; set; }
 
         /// <summary>
         /// The time when the download was detected as complete.
