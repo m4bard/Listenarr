@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - **Frontend/package version sync:** Added automated package-version synchronization from `listenarr.api/Listenarr.Api.csproj` into the root and `fe` npm metadata during local npm workflows and CI version-bump workflows. CI now passes the already-bumped `NEW_VERSION` directly into the sync step so frontend/package metadata cannot lag behind the computed release version, and the resolver still falls back to `<AssemblyVersion>` when needed.
 - **CodeQL coverage expanded to GitHub Actions workflows:** The CodeQL workflow now scans `actions` in addition to `csharp` and `javascript`, so workflow-security findings can be re-analyzed and closed by current scans instead of lingering on older commits.
+- **App version moved to the sidenav footer:** The frontend shell now shows the app version as sticky plain text (`vX.X.X`) at the bottom of the sidebar instead of beside the Listenarr logo in the top header, keeping the header cleaner while leaving the version visible during navigation.
 
 ### Fixed
 - **Docker `PGID` collisions with existing container groups:** Switched the runtime image to a pre-created `listenarr` service account that is remapped in place at startup, similar to linuxserver.io's `abc` pattern, so custom `PUID`/`PGID` values no longer fail when the target GID already exists in the base image. `GID` is now also accepted as a compatibility alias for `PGID`.
