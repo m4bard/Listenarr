@@ -467,7 +467,7 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public async Task GetQueue_MapsCompletedPendingImport_ExternalItemToTrackedDownloadId()
+        public async Task GetQueueAsync_DelegatesToDownloadQueueService()
         {
             await using var db = CreateInMemoryDb();
 
@@ -546,7 +546,19 @@ namespace Listenarr.Api.Tests
             var metricsMock = new Mock<IAppMetricsService>();
             var importServiceMock = new Mock<IImportService>();
             var queueServiceMock = new Mock<IDownloadQueueService>();
-            queueServiceMock.Setup(q => q.GetQueueAsync()).ReturnsAsync(new List<QueueItem>());
+            queueServiceMock.Setup(q => q.GetQueueAsync()).ReturnsAsync(new List<QueueItem>
+            {
+                new QueueItem
+                {
+                    Id = "tracked-1",
+                    Title = "Dune - Frank Herbert [M4B]",
+                    Status = "completed",
+                    DownloadClient = "local qbit",
+                    DownloadClientId = "qb-1",
+                    DownloadClientType = "qbittorrent",
+                    AddedAt = DateTime.UtcNow.AddHours(-2)
+                }
+            });
             var completedProcessorMock = new Mock<ICompletedDownloadProcessor>();
 
             var notificationService = new NotificationService(
@@ -584,6 +596,112 @@ namespace Listenarr.Api.Tests
             Assert.Single(queue);
             Assert.Equal("tracked-1", queue[0].Id);
             Assert.Equal("completed", queue[0].Status, ignoreCase: true, ignoreLineEndingDifferences: false, ignoreWhiteSpaceDifferences: false, ignoreAllWhiteSpace: false);
+            queueServiceMock.Verify(q => q.GetQueueAsync(), Times.Once);
+            gatewayMock.Verify(g => g.GetQueueAsync(clientConfig, It.IsAny<System.Threading.CancellationToken>()), Times.Never);
+        }
+
+        [Fact]
+        public async Task SendToDownloadClientAsync_StoresMagnetHashFallback_WhenClientReturnsNoId()
+        {
+            await using var db = CreateInMemoryDb();
+
+            var clientConfig = new DownloadClientConfiguration
+            {
+                Id = "qb-1",
+                Name = "local qbit",
+                Type = "qbittorrent",
+                Host = "localhost",
+                Port = 8080,
+                IsEnabled = true
+            };
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetDownloadClientConfigurationAsync("qb-1")).ReturnsAsync(clientConfig);
+            configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings());
+
+            var gatewayMock = new Mock<IDownloadClientGateway>();
+            gatewayMock
+                .Setup(g => g.AddAsync(clientConfig, It.IsAny<SearchResult>(), It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync((string?)null);
+
+            using var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
+
+            var repoMock = new Mock<IAudiobookRepository>();
+            using var httpClient = new HttpClient();
+            var httpFactoryMock = new Mock<IHttpClientFactory>();
+            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            var pathMappingMock = new Mock<IRemotePathMappingService>();
+            var searchMock = new Mock<ISearchService>();
+            var hubContextMock = new Mock<IHubContext<DownloadHub>>();
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(db);
+            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(db);
+
+            var metricsMock = new Mock<IAppMetricsService>();
+            var importServiceMock = new Mock<IImportService>();
+            var queueServiceMock = new Mock<IDownloadQueueService>();
+            queueServiceMock.Setup(q => q.GetQueueAsync()).ReturnsAsync(new List<QueueItem>
+            {
+                new QueueItem
+                {
+                    Id = "tracked-1",
+                    Title = "Dune - Frank Herbert [M4B]",
+                    Status = "completed",
+                    DownloadClient = "local qbit",
+                    DownloadClientId = "qb-1",
+                    DownloadClientType = "qbittorrent",
+                    AddedAt = DateTime.UtcNow.AddHours(-2)
+                }
+            });
+            var completedProcessorMock = new Mock<ICompletedDownloadProcessor>();
+
+            var notificationService = new NotificationService(
+                httpClient,
+                new Microsoft.Extensions.Logging.Abstractions.NullLogger<NotificationService>(),
+                configMock.Object,
+                new TestNotificationPayloadBuilder(),
+                new Microsoft.AspNetCore.Http.HttpContextAccessor());
+
+            using var provider2 = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddSingleton<IAudiobookRepository>(repoMock.Object);
+                services.AddSingleton<IConfigurationService>(configMock.Object);
+                services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(dbFactoryMock.Object);
+                services.AddSingleton<Microsoft.Extensions.Logging.ILogger<DownloadService>>(new Microsoft.Extensions.Logging.Abstractions.NullLogger<DownloadService>());
+                services.AddSingleton<HttpClient>(httpClient);
+                services.AddSingleton<IHttpClientFactory>(httpFactoryMock.Object);
+                services.AddSingleton<IImportService>(importServiceMock.Object);
+                services.AddSingleton<IRemotePathMappingService>(pathMappingMock.Object);
+                services.AddSingleton<ISearchService>(searchMock.Object);
+                services.AddSingleton<IHubContext<DownloadHub>>(hubContextMock.Object);
+                services.AddSingleton<IMemoryCache>(memoryCache);
+                services.AddSingleton<IDownloadClientGateway>(gatewayMock.Object);
+                services.AddSingleton<IDownloadQueueService>(queueServiceMock.Object);
+                services.AddSingleton<ICompletedDownloadProcessor>(completedProcessorMock.Object);
+                services.AddSingleton<IAppMetricsService>(metricsMock.Object);
+                services.AddSingleton(notificationService);
+                services.AddTransient<DownloadService>();
+            });
+
+            var downloadService = provider2.GetRequiredService<DownloadService>();
+
+            var searchResult = new SearchResult
+            {
+                Title = "Artemis",
+                Artist = "Andy Weir",
+                DownloadType = "Torrent",
+                MagnetLink = "magnet:?xt=urn:btih:ABCDEF1234567890ABCDEF1234567890ABCDEF12&dn=Artemis",
+                Size = 123456789
+            };
+
+            var downloadId = await downloadService.SendToDownloadClientAsync(searchResult, "qb-1");
+            var persisted = await db.Downloads.FindAsync(downloadId);
+
+            Assert.NotNull(persisted);
+            Assert.Equal("ABCDEF1234567890ABCDEF1234567890ABCDEF12", persisted!.Metadata["ClientDownloadId"]?.ToString());
+            Assert.Equal("ABCDEF1234567890ABCDEF1234567890ABCDEF12", persisted.Metadata["TorrentHash"]?.ToString());
         }
 
         private static void TryDeleteFile(string path)

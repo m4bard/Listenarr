@@ -5,7 +5,7 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
-		<DefaultItemExcludes>$(DefaultItemExcludes);**\artifacts\**</DefaultItemExcludes>
+		<DefaultItemExcludes>$(DefaultItemExcludes);**\artifacts\**;**\.tmp\**;**\obj2\**</DefaultItemExcludes>
 	</PropertyGroup>
 
 </Project>

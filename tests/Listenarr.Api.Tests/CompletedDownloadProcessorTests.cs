@@ -708,6 +708,209 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        [Trait("Scenario", "DirectoryImportUsesClientReportedFilesAsSourceOfTruth")]
+        public async Task ProcessCompletedDownloadAsync_Directory_UsesClientReportedFilesToIncludeOnlyTrackedFiles()
+        {
+            var downloadId = Guid.NewGuid().ToString();
+            var tempDir = System.IO.Path.Join(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(tempDir);
+            var firstAudioPath = System.IO.Path.Join(tempDir, "Alpha Book.m4b");
+            var secondAudioPath = System.IO.Path.Join(tempDir, "Omega Companion.m4b");
+            var txtPath = System.IO.Path.Join(tempDir, "book.txt");
+            var unrelatedPath = System.IO.Path.Join(tempDir, "unrelated.jpg");
+            System.IO.File.WriteAllText(firstAudioPath, "alpha");
+            System.IO.File.WriteAllText(secondAudioPath, "omega");
+            System.IO.File.WriteAllText(txtPath, "txt");
+            System.IO.File.WriteAllText(unrelatedPath, "ignore");
+
+            var repo = new TestDownloadRepository();
+            await repo.AddAsync(new Download
+            {
+                Id = downloadId,
+                Status = DownloadStatus.Downloading,
+                DownloadClientId = "client-source-truth",
+                Title = "Alpha Book",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["TorrentHash"] = "ABC123"
+                }
+            });
+
+            string[]? capturedFiles = null;
+            var fileFinalizerMock = new Mock<IFileFinalizer>();
+            fileFinalizerMock
+                .Setup(f => f.ImportFilesFromDirectoryAsync(downloadId, null, It.IsAny<IEnumerable<string>>(), It.IsAny<ApplicationSettings>()))
+                .Callback<string, int?, IEnumerable<string>, ApplicationSettings>((_, _, files, _) => capturedFiles = files.ToArray())
+                .ReturnsAsync((string _, int? _, IEnumerable<string> files, ApplicationSettings _) =>
+                    files.Select(f => new ImportResult
+                    {
+                        Success = true,
+                        SourcePath = f,
+                        FinalPath = f
+                    }).ToList());
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings
+            {
+                ExtractArchives = false,
+                ImportBlacklistExtensions = new List<string>()
+            });
+
+            var importResolverMock = new Mock<IImportItemResolutionService>();
+            importResolverMock
+                .Setup(r => r.ResolveImportItemAsync(
+                    It.Is<Download>(d => d.Id == downloadId),
+                    It.IsAny<QueueItem>(),
+                    It.IsAny<QueueItem?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((Download _, QueueItem queueItem, QueueItem? _, CancellationToken _) =>
+                {
+                    queueItem.SourceFiles = new List<string> { firstAudioPath, secondAudioPath, txtPath };
+                    return queueItem;
+                });
+
+            var queueMock = new Mock<IDownloadQueueService>();
+            queueMock.Setup(q => q.GetQueueSnapshotAsync()).ReturnsAsync(new QueueSnapshot());
+            queueMock.Setup(q => q.GetQueueAsync()).ReturnsAsync(new List<QueueItem>());
+
+            var hubClientsMock = new Mock<IHubClients>();
+            var clientProxyMock = new Mock<IClientProxy>();
+            hubClientsMock.Setup(c => c.All).Returns(clientProxyMock.Object);
+            var hubContextMock = new Mock<IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+            hubContextMock.Setup(h => h.Clients).Returns(hubClientsMock.Object);
+
+            var scopeFactoryMock = new Mock<IServiceScopeFactory>();
+            var scopeMock = new Mock<IServiceScope>();
+            var spMock = new Mock<IServiceProvider>();
+            spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
+            spMock.Setup(sp => sp.GetService(typeof(IImportItemResolutionService))).Returns(importResolverMock.Object);
+            scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
+            scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
+
+            var importMock = new Mock<IImportService>();
+            var loggerMock = new Mock<ILogger<CompletedDownloadProcessor>>();
+            var archiveExtractor = new ArchiveExtractor(new Mock<ILogger<ArchiveExtractor>>().Object);
+
+            var processor = new CompletedDownloadProcessor(
+                repo,
+                fileFinalizerMock.Object,
+                configMock.Object,
+                scopeFactoryMock.Object,
+                importMock.Object,
+                archiveExtractor,
+                queueMock.Object,
+                hubContextMock.Object,
+                loggerMock.Object);
+
+            await processor.ProcessCompletedDownloadAsync(downloadId, tempDir);
+
+            Assert.NotNull(capturedFiles);
+            Assert.Contains(firstAudioPath, capturedFiles!);
+            Assert.Contains(secondAudioPath, capturedFiles!);
+            Assert.Contains(txtPath, capturedFiles!);
+            Assert.DoesNotContain(unrelatedPath, capturedFiles!);
+
+            TryDeleteFile(firstAudioPath);
+            TryDeleteFile(secondAudioPath);
+            TryDeleteFile(txtPath);
+            TryDeleteFile(unrelatedPath);
+            TryDeleteDirectory(tempDir, recursive: true);
+        }
+
+        [Fact]
+        [Trait("Scenario", "NonAudioSingleFileFallsBackToDirectoryImport")]
+        public async Task ProcessCompletedDownloadAsync_NonAudioSingleFile_UsesParentDirectoryWhenAudioExists()
+        {
+            var downloadId = Guid.NewGuid().ToString();
+            var tempDir = System.IO.Path.Join(System.IO.Path.GetTempPath(), Guid.NewGuid().ToString());
+            System.IO.Directory.CreateDirectory(tempDir);
+            var audioPath = System.IO.Path.Join(tempDir, "book.m4b");
+            var coverPath = System.IO.Path.Join(tempDir, "book.jpg");
+            System.IO.File.WriteAllText(audioPath, "audio");
+            System.IO.File.WriteAllText(coverPath, "cover");
+
+            var repo = new TestDownloadRepository();
+            await repo.AddAsync(new Download
+            {
+                Id = downloadId,
+                Status = DownloadStatus.Downloading,
+                DownloadClientId = "client-cover-path",
+                Title = "Book"
+            });
+
+            string[]? capturedFiles = null;
+            var fileFinalizerMock = new Mock<IFileFinalizer>();
+            fileFinalizerMock
+                .Setup(f => f.ImportFilesFromDirectoryAsync(downloadId, null, It.IsAny<IEnumerable<string>>(), It.IsAny<ApplicationSettings>()))
+                .Callback<string, int?, IEnumerable<string>, ApplicationSettings>((_, _, files, _) => capturedFiles = files.ToArray())
+                .ReturnsAsync((string _, int? _, IEnumerable<string> files, ApplicationSettings _) =>
+                    files.Select(f => new ImportResult
+                    {
+                        Success = true,
+                        SourcePath = f,
+                        FinalPath = f
+                    }).ToList());
+
+            fileFinalizerMock
+                .Setup(f => f.ImportSingleFileAsync(It.IsAny<string>(), It.IsAny<int?>(), It.IsAny<string>(), It.IsAny<ApplicationSettings>()))
+                .Throws(new Xunit.Sdk.XunitException("single-file import should not run when a non-audio completion path has sibling audio"));
+
+            var configMock = new Mock<IConfigurationService>();
+            configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings
+            {
+                ExtractArchives = false,
+                ImportBlacklistExtensions = new List<string>()
+            });
+
+            var queueMock = new Mock<IDownloadQueueService>();
+            queueMock.Setup(q => q.GetQueueSnapshotAsync()).ReturnsAsync(new Listenarr.Domain.Models.QueueSnapshot());
+            queueMock.Setup(q => q.GetQueueAsync()).ReturnsAsync(new List<Listenarr.Domain.Models.QueueItem>());
+
+            var hubClientsMock = new Mock<IHubClients>();
+            var clientProxyMock = new Mock<IClientProxy>();
+            hubClientsMock.Setup(c => c.All).Returns(clientProxyMock.Object);
+            var hubContextMock = new Mock<IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+            hubContextMock.Setup(h => h.Clients).Returns(hubClientsMock.Object);
+
+            var scopeFactoryMock = new Mock<IServiceScopeFactory>();
+            var scopeMock = new Mock<IServiceScope>();
+            var spMock = new Mock<IServiceProvider>();
+            spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
+            scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
+            scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
+
+            var importMock = new Mock<IImportService>();
+            var loggerMock = new Mock<ILogger<CompletedDownloadProcessor>>();
+            var archiveExtractor = new ArchiveExtractor(new Mock<ILogger<ArchiveExtractor>>().Object);
+
+            var processor = new CompletedDownloadProcessor(
+                repo,
+                fileFinalizerMock.Object,
+                configMock.Object,
+                scopeFactoryMock.Object,
+                importMock.Object,
+                archiveExtractor,
+                queueMock.Object,
+                hubContextMock.Object,
+                loggerMock.Object);
+
+            await processor.ProcessCompletedDownloadAsync(downloadId, coverPath);
+
+            Assert.NotNull(capturedFiles);
+            Assert.Contains(audioPath, capturedFiles!);
+            Assert.Contains(coverPath, capturedFiles!);
+
+            var tracked = await repo.FindAsync(downloadId);
+            Assert.NotNull(tracked);
+            Assert.Equal(DownloadStatus.Moved, tracked!.Status);
+            Assert.Equal(audioPath, tracked.FinalPath);
+
+            TryDeleteFile(audioPath);
+            TryDeleteFile(coverPath);
+            TryDeleteDirectory(tempDir, recursive: true);
+        }
+
+        [Fact]
         [Trait("Scenario", "RecursiveDirectoryImportsNestedFile")]
         public async Task ProcessCompletedDownloadAsync_RecursiveDirectory_ImportsNestedFile()
         {

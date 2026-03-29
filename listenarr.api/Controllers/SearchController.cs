@@ -60,6 +60,23 @@ namespace Listenarr.Api.Controllers
         private string BuildApiImagePath(string identifier, string? sourceUrl = null)
             => ApiVersionPathBuilder.BuildImagePath(identifier, HttpContext, sourceUrl: sourceUrl);
 
+        private static string? NormalizeStructuredAdvancedField(string? value, string prefix)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return value;
+            }
+
+            var trimmed = value.Trim();
+            if (!trimmed.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+            {
+                return trimmed;
+            }
+
+            var stripped = trimmed.Substring(prefix.Length).Trim();
+            return string.IsNullOrWhiteSpace(stripped) ? null : stripped;
+        }
+
         private async Task NormalizeSearchResultImagesAsync(List<SearchResult> results)
         {
             if (_imageCacheService == null || results == null) return;
@@ -218,7 +235,10 @@ namespace Listenarr.Api.Controllers
                 else // Advanced
                 {
                     // Route all advanced search logic through SearchService for normalization, filtering, and orchestration
-                    
+                    req.Author = NormalizeStructuredAdvancedField(req.Author, "AUTHOR:");
+                    req.Title = NormalizeStructuredAdvancedField(req.Title, "TITLE:");
+                    req.Isbn = NormalizeStructuredAdvancedField(req.Isbn, "ISBN:");
+                    req.Asin = NormalizeStructuredAdvancedField(req.Asin, "ASIN:");
 
                     // Validate and normalize ISBN/ASIN inputs for advanced searches.
                     // If an ISBN-10 is supplied, convert it to ISBN-13 using the 978 prefix.
@@ -333,202 +353,91 @@ namespace Listenarr.Api.Controllers
 
 
 
-                    // If a series name or series ASIN was provided, prefer Audible series endpoints
-                    // If series is provided and no author is supplied, take the series-specialized path. If an author is present, prefer the author flow and later filter by series.
+                    // If a series name or series ASIN was provided, prefer Audible series endpoints.
+                    // If series is provided and no author is supplied, take the series-specialized path.
+                    // If an author is present, prefer the author flow and later filter by series.
                     if (!string.IsNullOrWhiteSpace(req.Series) && string.IsNullOrWhiteSpace(req.Author))
                     {
                         try
                         {
-                            string seriesAsin = req.Series.Trim();
-                            // If the provided value does not look like an ASIN, try to search by name
-                            if (!(seriesAsin.StartsWith("B0", StringComparison.OrdinalIgnoreCase) && seriesAsin.Length >= 10))
+                            string? seriesAsin = null;
+                            var seriesInput = req.Series.Trim();
+
+                            // Check if the provided value already looks like an ASIN
+                            if (seriesInput.StartsWith("B0", StringComparison.OrdinalIgnoreCase) && seriesInput.Length >= 10)
                             {
-                                var seriesSearch = await _audibleService.SearchSeriesByNameAsync(req.Series.Trim(), region);
-                                if (seriesSearch == null)
+                                seriesAsin = seriesInput;
+                            }
+                            else
+                            {
+                                // Search by name to resolve the series ASIN
+                                var seriesSearch = await _audibleService.SearchSeriesByNameAsync(seriesInput, region);
+                                _logger.LogInformation("SearchSeriesByNameAsync returned type={Type}, isNull={IsNull}",
+                                    seriesSearch?.GetType().Name ?? "null", seriesSearch == null);
+                                if (seriesSearch is IEnumerable<Listenarr.Api.Services.SeriesLookupItem> seriesList)
                                 {
-                                    _logger.LogInformation("No series matches found for '{SeriesName}'", req.Series);
-                                    // Fall through to unified search instead of returning empty
-                                }
-                                else
-                                {
-                                    // Attempt to extract an ASIN from the returned object. Commonly the result
-                                    // is an array of objects containing an 'asin' property.
-                                    try
+                                    var seriesListMaterialized = seriesList.ToList();
+                                    _logger.LogInformation("Series lookup for '{SeriesName}' returned {Count} items", seriesInput, seriesListMaterialized.Count);
+                                    var chosenItem = seriesListMaterialized.FirstOrDefault(s =>
+                                                        !string.IsNullOrWhiteSpace(s.Asin) &&
+                                                        string.Equals(s.Region, region, StringComparison.OrdinalIgnoreCase))
+                                                    ?? seriesListMaterialized.FirstOrDefault(s => !string.IsNullOrWhiteSpace(s.Asin));
+                                    if (chosenItem != null)
                                     {
-                                        var seriesJson = JsonSerializer.Serialize(seriesSearch);
-                                        var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                                        var root = JsonSerializer.Deserialize<JsonElement>(seriesJson, opts);
-                                        if (root.ValueKind == JsonValueKind.Array)
-                                        {
-                                            string? chosenAsin = null;
-                                            foreach (var el in root.EnumerateArray())
-                                            {
-                                                try
-                                                {
-                                                    if (el.ValueKind != JsonValueKind.Object) continue;
-                                                    string? elRegion = null;
-                                                    string? elAsin = null;
-                                                    if (el.TryGetProperty("region", out var pRegion) && pRegion.ValueKind == JsonValueKind.String) elRegion = pRegion.GetString();
-                                                    if (el.TryGetProperty("asin", out var pAsin) && pAsin.ValueKind == JsonValueKind.String) elAsin = pAsin.GetString();
-
-                                                    // Fallbacks: try 'id', 'slug', 'url'/'link' fields to extract an ASIN-like token if asin is missing
-                                                    if (string.IsNullOrWhiteSpace(elAsin))
-                                                    {
-                                                        if (el.TryGetProperty("id", out var pId) && pId.ValueKind == JsonValueKind.String)
-                                                        {
-                                                            var idStr = pId.GetString();
-                                                            if (!string.IsNullOrWhiteSpace(idStr) && System.Text.RegularExpressions.Regex.IsMatch(idStr, @"B0[A-Z0-9]{8,}", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                                                                elAsin = idStr;
-                                                        }
-
-                                                        if (string.IsNullOrWhiteSpace(elAsin) && el.TryGetProperty("slug", out var pSlug) && pSlug.ValueKind == JsonValueKind.String)
-                                                        {
-                                                            var slug = pSlug.GetString();
-                                                            // slug may contain ASIN-like token; search for it
-                                                            if (!string.IsNullOrWhiteSpace(slug))
-                                                            {
-                                                                var m = System.Text.RegularExpressions.Regex.Match(slug, @"B0[A-Z0-9]{8,}", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                                                                if (m.Success) elAsin = m.Value;
-                                                            }
-                                                        }
-
-                                                        if (string.IsNullOrWhiteSpace(elAsin) && (el.TryGetProperty("url", out var pUrl) || el.TryGetProperty("link", out pUrl) || el.TryGetProperty("href", out pUrl)) && pUrl.ValueKind == JsonValueKind.String)
-                                                        {
-                                                            var urlStr = pUrl.GetString();
-                                                            if (!string.IsNullOrWhiteSpace(urlStr))
-                                                            {
-                                                                var m = System.Text.RegularExpressions.Regex.Match(urlStr, @"B0[A-Z0-9]{8,}", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                                                                if (m.Success) elAsin = m.Value;
-                                                            }
-                                                        }
-                                                    }
-
-                                                    if (!string.IsNullOrWhiteSpace(elRegion) && string.Equals(elRegion, region, StringComparison.OrdinalIgnoreCase) && !string.IsNullOrWhiteSpace(elAsin))
-                                                    {
-                                                        chosenAsin = elAsin;
-                                                        break;
-                                                    }
-                                                    if (string.IsNullOrWhiteSpace(chosenAsin) && !string.IsNullOrWhiteSpace(elAsin)) chosenAsin = elAsin;
-                                                }
-                                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                                    _logger.LogDebug(ex, "Failed to parse Audible series candidate element for series '{Series}'", req.Series);
-                                                }
-                                            }
-                                            if (!string.IsNullOrWhiteSpace(chosenAsin)) seriesAsin = chosenAsin;
-                                        }
-                                        else if (root.ValueKind == JsonValueKind.Object)
-                                        {
-                                            if (root.TryGetProperty("asin", out var pAsin) && pAsin.ValueKind == JsonValueKind.String)
-                                            {
-                                                seriesAsin = pAsin.GetString() ?? seriesAsin;
-                                            }
-                                        }
+                                        seriesAsin = chosenItem.Asin;
+                                        _logger.LogInformation("Resolved series '{SeriesName}' to ASIN {SeriesAsin}", req.Series, seriesAsin);
                                     }
-                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                        _logger.LogDebug(ex, "Failed to extract series ASIN from Audible series search result for '{SeriesName}'", req.Series);
-                                    }
+                                }
+
+                                if (string.IsNullOrWhiteSpace(seriesAsin))
+                                {
+                                    _logger.LogInformation("No series ASIN found for '{SeriesName}'; falling back to unified search", req.Series);
                                 }
                             }
 
-                            // If we now have a candidate series ASIN, fetch books for the series
+                            // Fetch all books for the resolved series ASIN
                             if (!string.IsNullOrWhiteSpace(seriesAsin))
                             {
                                 var booksObj = await _audibleService.GetBooksBySeriesAsinAsync(seriesAsin, region);
-                                if (booksObj != null)
+
+                                // Direct cast — GetBooksBySeriesAsinAsync returns List<AudibleSearchResult>
+                                var books = booksObj as List<Listenarr.Api.Services.AudibleSearchResult>;
+
+                                if (books != null && books.Any())
                                 {
-                                    var json = JsonSerializer.Serialize(booksObj);
-                                    var opts = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-                                    List<Listenarr.Api.Services.AudibleSearchResult>? books = null;
-                                    try
+                                    // Apply language filter when a preferred language was specified
+                                    if (!string.IsNullOrWhiteSpace(language) && !string.Equals(language, "all", StringComparison.OrdinalIgnoreCase))
                                     {
-                                        var resp = JsonSerializer.Deserialize<List<Listenarr.Api.Services.AudibleSearchResult>>(json, opts);
-                                        books = resp;
+                                        var langFilter = language.Trim();
+                                        books = books.Where(b =>
+                                            string.IsNullOrWhiteSpace(b.Language) ||
+                                            string.Equals(b.Language.Trim(), langFilter, StringComparison.OrdinalIgnoreCase))
+                                            .ToList();
                                     }
-                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                        _logger.LogDebug(ex, "Failed to deserialize Audible series books list for series ASIN {SeriesAsin}", seriesAsin);
-                                    }
-                                    if (books == null)
+
+                                    _logger.LogInformation("Series ASIN {SeriesAsin} returned {Count} books (after language filter)", seriesAsin, books.Count);
+
+                                    // Return books in the same Audible-shaped format as the unified search path
+                                    var seriesResults = new List<object>();
+                                    foreach (var book in books)
                                     {
                                         try
                                         {
-                                            var respEnv = JsonSerializer.Deserialize<Listenarr.Api.Services.AudibleSearchResponse>(json, opts);
-                                            books = respEnv?.Results;
+                                            seriesResults.Add(await MapAudibleSearchResultToOutputAsync(book, region));
                                         }
                                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                            _logger.LogDebug(ex, "Failed to deserialize Audible series books envelope for series ASIN {SeriesAsin}", seriesAsin);
+                                            _logger.LogWarning(ex, "Failed converting series book to output for ASIN {Asin}", book.Asin);
                                         }
                                     }
 
-                                    if (books != null && books.Any())
+                                    if (seriesResults.Any())
                                     {
-                                        var converted = new List<SearchResult>();
-                                        foreach (var book in books)
-                                        {
-                                            if (string.IsNullOrWhiteSpace(book.Asin)) continue;
-                                            var bookResp = new Listenarr.Api.Services.AudibleBookResponse
-                                            {
-                                                Asin = book.Asin,
-                                                Title = book.Title,
-                                                Subtitle = book.Subtitle,
-                                                Authors = book.Authors,
-                                                ImageUrl = book.ImageUrl,
-                                                LengthMinutes = book.RuntimeLengthMin ?? book.LengthMinutes ?? book.RuntimeMinutes,
-                                                Language = book.Language,
-                                                BookFormat = book.BookFormat,
-                                                Genres = book.Genres,
-                                                Series = book.Series,
-                                                Publisher = book.Publisher,
-                                                Narrators = book.Narrators,
-                                                ReleaseDate = book.ReleaseDate,
-                                                Isbn = book.Isbn
-                                            };
-                                            try
-                                            {
-                                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
-                                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin, req.Title, req.Author, fallbackImageUrl: null, fallbackLanguage: language);
-                                                sr.IsEnriched = true;
-                                                sr.MetadataSource = "Audible";
-                                                SanitizeResultForPublicApi(sr, region);
-                                                converted.Add(sr);
-                                            }
-                                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                                _logger.LogWarning(ex, "Failed converting Audible series book to SearchResult for ASIN {Asin}", book.Asin);
-                                            }
-                                        }
-
-                                        if (converted.Any()) {
-                                            // Convert to metadata results and ensure images are normalized for API consumers
-                                            var mdList = converted.Select(r => SearchResultConverters.ToMetadata(r)).ToList();
-
-                                            if (_imageCacheService != null)
-                                            {
-                                                foreach (var md in mdList)
-                                                {
-                                                    try
-                                                    {
-                                                        if (string.IsNullOrWhiteSpace(md.Asin)) continue;
-                                                        var cached = await _imageCacheService.GetCachedImagePathAsync(md.Asin);
-                                                        if (!string.IsNullOrWhiteSpace(cached))
-                                                        {
-                                                            md.ImageUrl = BuildApiImagePath(md.Asin);
-                                                            continue;
-                                                        }
-                                                        if (!string.IsNullOrWhiteSpace(md.ImageUrl) && (md.ImageUrl.StartsWith("http://") || md.ImageUrl.StartsWith("https://")))
-                                                        {
-                                                            var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(md.ImageUrl, md.Asin);
-                                                            if (!string.IsNullOrWhiteSpace(downloaded)) md.ImageUrl = BuildApiImagePath(md.Asin);
-                                                        }
-                                                    }
-                                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                                        _logger.LogWarning(ex, "Failed to normalize image for series metadata ASIN {Asin}", md?.Asin);
-                                                    }
-                                                }
-                                            }
-
-                                            var flatSeries = mdList.Select(SearchResultConverters.ToSearchResult).ToList();
-                                            return Ok(flatSeries);
-                                        }
+                                        return Ok(seriesResults);
                                     }
+                                }
+                                else
+                                {
+                                    _logger.LogInformation("Series ASIN {SeriesAsin} returned no books", seriesAsin);
                                 }
                             }
                         }
@@ -552,6 +461,12 @@ namespace Listenarr.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(req.Title)) queryParts.Add($"TITLE:{req.Title}");
                     if (!string.IsNullOrWhiteSpace(req.Isbn)) queryParts.Add($"ISBN:{req.Isbn}");
                     if (!string.IsNullOrWhiteSpace(req.Asin)) queryParts.Add($"ASIN:{req.Asin}");
+                    // When only a series name was provided and the series-specific lookup above
+                    // didn't resolve, use it as a plain keyword query so the general
+                    // SearchBooksAsync branch handles it (more resilient than TITLE-specific).
+                    // The destructive series filter below ensures only matching results return.
+                    if (queryParts.Count == 0 && !string.IsNullOrWhiteSpace(req.Series))
+                        queryParts.Add(req.Series);
                     var query = queryParts.Count > 0 ? string.Join(" ", queryParts) : (req.Query ?? string.Empty);
                     try { _logger.LogInformation("Advanced search request composed parts={Parts} -> query='{Query}'", string.Join("|", queryParts), LogRedaction.SanitizeText(query)); }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -598,26 +513,32 @@ namespace Listenarr.Api.Controllers
                         }
                     }
 
-                    // If both Author and Series were provided in the advanced request, prefer the author flow
-                    // and apply a series filter on the resulting candidates using the `Series` key so
-                    // advanced author searches can be constrained to a specific series.
-                    if (!string.IsNullOrWhiteSpace(req.Author) && !string.IsNullOrWhiteSpace(req.Series) && results != null)
+                    // When a Series filter was provided, apply it to unified search results so only
+                    // books actually belonging to the series are returned. This covers both the
+                    // author+series path and the series-only fallback (when the series ASIN lookup
+                    // above didn't resolve and the series name was injected as TITLE:).
+                    if (!string.IsNullOrWhiteSpace(req.Series) && results != null)
                     {
                         try
                         {
                             var seriesFilter = req.Series.Trim();
+                            var ci = System.Globalization.CultureInfo.InvariantCulture.CompareInfo;
+                            const System.Globalization.CompareOptions diOpts = System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace;
+                            List<MetadataSearchResult> filtered;
                             if (System.Text.RegularExpressions.Regex.IsMatch(seriesFilter, @"^B0[A-Z0-9]{8,}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                             {
-                                results = results.Where(r => (!string.IsNullOrWhiteSpace(r.Series) && r.Series.IndexOf(seriesFilter, StringComparison.OrdinalIgnoreCase) >= 0)
+                                filtered = results.Where(r => (!string.IsNullOrWhiteSpace(r.Series) && ci.IndexOf(r.Series, seriesFilter, diOpts) >= 0)
                                                             || (!string.IsNullOrWhiteSpace(r.Asin) && string.Equals(r.Asin, seriesFilter, StringComparison.OrdinalIgnoreCase))).ToList();
                             }
                             else
                             {
-                                results = results.Where(r => !string.IsNullOrWhiteSpace(r.Series) && r.Series.IndexOf(seriesFilter, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+                                filtered = results.Where(r => !string.IsNullOrWhiteSpace(r.Series) && ci.IndexOf(r.Series, seriesFilter, diOpts) >= 0).ToList();
                             }
+
+                            results = filtered;
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogDebug(ex, "Failed to apply series filter '{Series}' to advanced author search results", req.Series);
+                            _logger.LogDebug(ex, "Failed to apply series filter '{Series}' to advanced search results", req.Series);
                         }
                     }
 
@@ -646,6 +567,72 @@ namespace Listenarr.Api.Controllers
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to sanitize public search result for ASIN {Asin}", r.Asin);
             }
+        }
+
+        // Map an AudibleSearchResult (from series/direct endpoints) to the Audible-shaped output object
+        private async Task<object> MapAudibleSearchResultToOutputAsync(Listenarr.Api.Services.AudibleSearchResult book, string region)
+        {
+            string? imageUrl = book.ImageUrl;
+            if (!string.IsNullOrWhiteSpace(book.Asin) && _imageCacheService != null)
+            {
+                try
+                {
+                    var cached = await _imageCacheService.GetCachedImagePathAsync(book.Asin);
+                    if (!string.IsNullOrWhiteSpace(cached))
+                    {
+                        imageUrl = BuildApiImagePath(book.Asin);
+                    }
+                    else if (!string.IsNullOrWhiteSpace(imageUrl) && (imageUrl.StartsWith("http://") || imageUrl.StartsWith("https://")))
+                    {
+                        var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(imageUrl, book.Asin);
+                        if (!string.IsNullOrWhiteSpace(downloaded)) imageUrl = BuildApiImagePath(book.Asin);
+                    }
+                    else
+                    {
+                        imageUrl = BuildApiImagePath(book.Asin);
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    _logger.LogDebug(ex, "Failed to normalize image for series result ASIN {Asin}", book.Asin);
+                }
+            }
+
+            var authors = (book.Authors ?? new List<Listenarr.Api.Services.AudibleAuthor>()).Where(a => a != null).Select(a => new
+            {
+                asin = a!.Asin, name = a!.Name, region = a!.Region ?? region,
+                regions = new[] { a!.Region ?? region }, updatedAt = DateTime.UtcNow.ToString("o")
+            }).ToList();
+            var narrators = (book.Narrators ?? new List<Listenarr.Api.Services.AudibleNarrator>()).Where(n => n != null).Select(n => new { name = n!.Name, updatedAt = DateTime.UtcNow.ToString("o") }).ToList();
+            var genres = (book.Genres ?? new List<Listenarr.Api.Services.AudibleGenre>()).Where(g => g != null).Select(g => new
+            {
+                asin = g!.Asin, name = g!.Name, type = g!.Type, updatedAt = DateTime.UtcNow.ToString("o")
+            }).ToList();
+            var series = (book.Series ?? new List<Listenarr.Api.Services.AudibleSeries>()).Where(s => s != null).Select(s => new
+            {
+                asin = s!.Asin, name = s!.Name, region = region, position = s!.Position, updatedAt = DateTime.UtcNow.ToString("o")
+            }).ToList();
+
+            return new
+            {
+                asin = book.Asin, title = book.Title, subtitle = book.Subtitle,
+                region = region, regions = new[] { region },
+                description = (string?)null, summary = (string?)null,
+                bookFormat = book.BookFormat, imageUrl = imageUrl,
+                lengthMinutes = book.RuntimeLengthMin ?? book.LengthMinutes ?? book.RuntimeMinutes,
+                whisperSync = false, publisher = book.Publisher,
+                isbn = book.Isbn, language = book.Language,
+                releaseDate = book.ReleaseDate,
+                @explicit = false, hasPdf = false,
+                link = !string.IsNullOrWhiteSpace(book.Asin) ? $"https://www.audible.com/pd/{book.Asin}" : (string?)null,
+                sku = book.Sku,
+                isListenable = !string.IsNullOrWhiteSpace(book.Asin),
+                isAvailable = true, isBuyable = true,
+                contentType = book.ContentType ?? "Product",
+                contentDeliveryType = book.ContentDeliveryType,
+                authors, narrators, genres, series,
+                seriesList = series.Select(s => $"{s.name}{(s.position != null ? $" #{s.position}" : "")}").ToList(),
+                updatedAt = DateTime.UtcNow.ToString("o")
+            };
         }
 
         // Map our internal MetadataSearchResult to a lightweight Audible-shaped object (async)
@@ -757,8 +744,6 @@ namespace Listenarr.Api.Controllers
                     narrators = narrators,
                     genres = genres,
                     series = series,
-                    // Expose a stable audible-backed metadata source label for the client.
-                    metadataSource = "audible",
                     seriesList = series?.Select(s => $"{s.name}{(s.position != null ? $" #{s.position}" : "")}").ToList(),
                     updatedAt = DateTime.UtcNow.ToString("o")
                 };

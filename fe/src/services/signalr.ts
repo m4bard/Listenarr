@@ -1,9 +1,10 @@
-import type { Download, QueueItem, Audiobook } from '@/types'
+import type { Download, QueueSnapshot, QueueUpdatePayload, Audiobook } from '@/types'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { setConnected, setLastError, setReconnectAttempts } from './signalrEvents'
 import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { logger } from '@/utils/logger'
 import { API_BASE_URL } from '@/services/apiBase'
+import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 
 // SignalR client for real-time download updates
 // Using native WebSocket with fallback to long polling
@@ -122,7 +123,7 @@ const sanitizeWebSocketUrlForLog = (rawUrl: string): string => {
 
 type DownloadUpdateCallback = (downloads: Download[]) => void
 type DownloadListCallback = (downloads: Download[]) => void
-type QueueUpdateCallback = (queue: QueueItem[]) => void
+type QueueUpdateCallback = (queueSnapshot: QueueSnapshot) => void
 type ScanJobCallback = (job: {
   jobId: string
   audiobookId: number
@@ -417,7 +418,8 @@ class SignalRService {
       case 'QueueUpdate':
         // Queue update from external download clients
         if (args && args[0]) {
-          this.queueUpdateCallbacks.forEach((cb) => cb(args[0] as QueueItem[]))
+          const queueSnapshot = normalizeQueueSnapshot(args[0] as QueueUpdatePayload)
+          this.queueUpdateCallbacks.forEach((cb) => cb(queueSnapshot))
         }
         break
 

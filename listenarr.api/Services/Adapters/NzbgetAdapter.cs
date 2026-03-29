@@ -872,7 +872,7 @@ namespace Listenarr.Api.Services.Adapters
 
         private async Task<XElement> CallXmlRpcAsync(DownloadClientConfiguration client, string methodName, params object[] parameters)
         {
-            var baseUrl = BuildBaseUrl(client);
+            var baseUrl = DownloadClientUriBuilder.BuildUri(client, "/xmlrpc").ToString();
             var httpClient = _httpClientFactory.CreateClient();
 
             // Build XML-RPC request
@@ -886,7 +886,12 @@ namespace Listenarr.Api.Services.Adapters
             var xmlContent = $"<?xml version=\"1.0\"?>\n{methodCall}";
             var content = new StringContent(xmlContent, Encoding.UTF8, "text/xml");
 
-            var response = await httpClient.PostAsync(baseUrl, content);
+            using var request = new HttpRequestMessage(HttpMethod.Post, baseUrl) { Content = content };
+            var authHeader = BuildAuthHeader(client);
+            if (authHeader != null)
+                request.Headers.Authorization = authHeader;
+
+            var response = await httpClient.SendAsync(request);
             var responseBody = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
@@ -938,15 +943,6 @@ namespace Listenarr.Api.Services.Adapters
             };
         }
 
-        private static string BuildBaseUrl(DownloadClientConfiguration client)
-        {
-            return DownloadClientUriBuilder
-                .BuildUri(
-                    client,
-                    "/xmlrpc",
-                    includeCredentials: !string.IsNullOrWhiteSpace(client.Username) && !string.IsNullOrWhiteSpace(client.Password))
-                .ToString();
-        }
 
         private async Task<byte[]> DownloadNzbAsync(string nzbUrl, string? indexerApiKey, CancellationToken ct)
         {

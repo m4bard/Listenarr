@@ -28,7 +28,7 @@ FROM base AS final
 WORKDIR /app
 # Install Node.js in the runtime image for Discord bot support
 RUN apt-get update \
-	&& apt-get install -y --no-install-recommends curl ca-certificates gnupg \
+	&& apt-get install -y --no-install-recommends curl ca-certificates gnupg gosu \
 	&& curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
 	&& apt-get install -y --no-install-recommends nodejs \
 	&& node --version \
@@ -36,4 +36,11 @@ RUN apt-get update \
 	&& rm -rf /var/lib/apt/lists/*
 COPY --from=build /app/publish .
 
-ENTRYPOINT ["dotnet", "Listenarr.Api.dll"]
+# Ensure config directory exists
+RUN mkdir -p /app/config/database
+
+# Copy entrypoint script for PUID/PGID/UMASK support
+COPY docker-entrypoint.sh /docker-entrypoint.sh
+RUN chmod +x /docker-entrypoint.sh
+
+ENTRYPOINT ["/docker-entrypoint.sh"]

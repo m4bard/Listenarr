@@ -28,15 +28,18 @@ namespace Listenarr.Api.Controllers
     public class DownloadController : ControllerBase
     {
         private readonly IDownloadService _downloadService;
+        private readonly IDownloadQueueService _downloadQueueService;
         private readonly IDownloadProcessingQueueService _processingQueueService;
         private readonly ILogger<DownloadController> _logger;
 
         public DownloadController(
             IDownloadService downloadService,
+            IDownloadQueueService downloadQueueService,
             IDownloadProcessingQueueService processingQueueService,
             ILogger<DownloadController> logger)
         {
             _downloadService = downloadService;
+            _downloadQueueService = downloadQueueService;
             _processingQueueService = processingQueueService;
             _logger = logger;
         }
@@ -87,6 +90,12 @@ namespace Listenarr.Api.Controllers
                     request.DownloadClientId,
                     request.AudiobookId
                 );
+
+                if (string.IsNullOrEmpty(downloadId))
+                {
+                    return Conflict(new { message = "A download for this audiobook is already active" });
+                }
+
                 return Ok(new { downloadId, message = "Sent to download client successfully" });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -99,12 +108,12 @@ namespace Listenarr.Api.Controllers
         /// Get the current download queue from all enabled download clients.
         /// </summary>
         [HttpGet("queue")]
-        public async Task<ActionResult<List<QueueItem>>> GetQueue()
+        public async Task<ActionResult<QueueSnapshot>> GetQueue()
         {
             try
             {
-                var queue = await _downloadService.GetQueueAsync();
-                return Ok(queue);
+                var snapshot = await _downloadQueueService.GetQueueSnapshotAsync();
+                return Ok(snapshot);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error getting download queue");

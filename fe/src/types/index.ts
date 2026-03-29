@@ -150,10 +150,12 @@ export interface Download {
 export interface QueueItem {
   id: string
   title: string
+  audiobookId?: number
   author?: string
   series?: string
   seriesNumber?: string
   quality: string
+  language?: string
   status: string // downloading, paused, queued, completed, failed
   progress: number // 0-100
   size: number // in bytes
@@ -166,6 +168,11 @@ export interface QueueItem {
   downloadClientType: string
   addedAt: string
   errorMessage?: string
+  isStaleSnapshot?: boolean
+  snapshotState?: string
+  snapshotFailureReason?: string
+  snapshotAgeSeconds?: number
+  snapshotRefreshedAt?: string
   canPause: boolean
   canRemove: boolean
   seeders?: number
@@ -174,6 +181,29 @@ export interface QueueItem {
   remotePath?: string // Path as seen by download client
   localPath?: string // Path translated for Listenarr
 }
+
+export interface QueueClientStatus {
+  clientId: string
+  clientName: string
+  clientType: string
+  snapshotState: string
+  isStaleSnapshot: boolean
+  isUnavailable: boolean
+  snapshotFailureReason?: string
+  snapshotAgeSeconds?: number
+  snapshotRefreshedAt?: string
+  itemCount: number
+}
+
+export interface QueueSnapshot {
+  items: QueueItem[]
+  clients: QueueClientStatus[]
+  generatedAt: string
+  hasStaleData: boolean
+  hasUnavailableClients: boolean
+}
+
+export type QueueUpdatePayload = QueueSnapshot | QueueItem[]
 
 export interface ApiConfiguration {
   id: string

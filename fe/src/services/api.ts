@@ -9,6 +9,7 @@ import type {
   History,
   Indexer,
   QueueItem,
+  QueueSnapshot,
   RemotePathMapping,
   // ...existing code...
   TranslatePathRequest,
@@ -45,6 +46,7 @@ import { sessionTokenManager } from '@/utils/sessionToken'
 import { logger } from '@/utils/logger'
 import { getRegionFromLanguage } from '@/utils/languageMapping'
 import { errorTracking } from '@/services/errorTracking'
+import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 import {
   applyApiVersionFromStartupConfig,
   API_BASE_PATH,
@@ -764,8 +766,9 @@ class ApiService {
   }
 
   // Download Queue API
-  async getQueue(): Promise<QueueItem[]> {
-    return this.request<QueueItem[]>('/download/queue')
+  async getQueue(): Promise<QueueSnapshot> {
+    const response = await this.request<QueueSnapshot | QueueItem[]>('/download/queue')
+    return normalizeQueueSnapshot(response)
   }
 
   async removeFromQueue(

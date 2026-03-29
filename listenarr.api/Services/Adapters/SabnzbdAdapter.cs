@@ -437,7 +437,100 @@ namespace Listenarr.Api.Services.Adapters
                     }
                 }
 
-                _logger.LogInformation("Retrieved {Count} items from SABnzbd queue", items.Count);
+                _logger.LogInformation("Retrieved {Count} items from SABnzbd active queue", items.Count);
+
+                // Also fetch completed items from SABnzbd history — SABnzbd moves finished
+                // downloads out of the queue into history, so without this the
+                // CompletedDownloadHandlingService can never find them for import/removal.
+                var existingNzoIds = new HashSet<string>(items.Select(i => i.Id), StringComparer.OrdinalIgnoreCase);
+                try
+                {
+                    var historyUrl = $"{baseUrl}?mode=history&output=json&limit=30&apikey={Uri.EscapeDataString(apiKey)}";
+                    var historyResp = await http.GetAsync(historyUrl, ct);
+                    if (historyResp.IsSuccessStatusCode)
+                    {
+                        var historyText = await historyResp.Content.ReadAsStringAsync(ct);
+                        if (!string.IsNullOrWhiteSpace(historyText))
+                        {
+                            var histDoc = JsonDocument.Parse(historyText);
+                            if (histDoc.RootElement.TryGetProperty("history", out var history) &&
+                                history.TryGetProperty("slots", out var histSlots) &&
+                                histSlots.ValueKind == JsonValueKind.Array)
+                            {
+                                foreach (var slot in histSlots.EnumerateArray())
+                                {
+                                    try
+                                    {
+                                        var nzoId = slot.TryGetProperty("nzo_id", out var hid) ? hid.GetString() ?? "" : "";
+                                        if (string.IsNullOrEmpty(nzoId) || existingNzoIds.Contains(nzoId))
+                                            continue;
+
+                                        var histStatus = slot.TryGetProperty("status", out var hst) ? hst.GetString() ?? "" : "";
+                                        var histName = slot.TryGetProperty("name", out var hn) ? hn.GetString() ?? "Unknown" : "Unknown";
+                                        var histCategory = slot.TryGetProperty("category", out var hcat) ? hcat.GetString() ?? "" : "";
+                                        var histBytes = slot.TryGetProperty("bytes", out var hb) && hb.TryGetInt64(out var hbl) ? hbl : 0L;
+                                        var storagePath = slot.TryGetProperty("storage", out var sp) ? sp.GetString() ?? "" : "";
+
+                                        if (!DownloadClientCategoryFilter.Matches(configuredCategory, histCategory))
+                                            continue;
+
+                                        var mappedStatus = histStatus.ToLower() switch
+                                        {
+                                            "completed" => "completed",
+                                            "failed" => "failed",
+                                            _ => "completed"
+                                        };
+
+                                        var remotePath = !string.IsNullOrEmpty(storagePath) ? storagePath : (client.DownloadPath ?? "");
+                                        var localPath = !string.IsNullOrEmpty(remotePath)
+                                            ? await _pathMappingService.TranslatePathAsync(client.Id, remotePath)
+                                            : remotePath;
+
+                                        // Parse completed timestamp
+                                        DateTime? completedAt = null;
+                                        if (slot.TryGetProperty("completed", out var compEpoch) && compEpoch.TryGetInt64(out var epoch))
+                                        {
+                                            completedAt = DateTimeOffset.FromUnixTimeSeconds(epoch).UtcDateTime;
+                                        }
+
+                                        items.Add(new QueueItem
+                                        {
+                                            Id = nzoId,
+                                            Title = histName,
+                                            Quality = histCategory,
+                                            Status = mappedStatus,
+                                            Progress = mappedStatus == "completed" ? 100 : 0,
+                                            Size = histBytes,
+                                            Downloaded = histBytes,
+                                            DownloadSpeed = 0,
+                                            Eta = null,
+                                            DownloadClient = client.Name,
+                                            DownloadClientId = client.Id,
+                                            DownloadClientType = "sabnzbd",
+                                            AddedAt = completedAt ?? DateTime.UtcNow,
+                                            CompletionTime = completedAt,
+                                            CanPause = false,
+                                            CanRemove = true,
+                                            RemotePath = remotePath,
+                                            LocalPath = localPath,
+                                            ContentPath = localPath
+                                        });
+                                    }
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                    {
+                                        _logger.LogDebug(ex, "Error parsing SABnzbd history item");
+                                    }
+                                }
+
+                                _logger.LogInformation("Retrieved {Count} total items from SABnzbd (queue + history)", items.Count);
+                            }
+                        }
+                    }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger.LogDebug(ex, "Failed to fetch SABnzbd history for queue enrichment (non-fatal)");
+                }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error getting SABnzbd queue");

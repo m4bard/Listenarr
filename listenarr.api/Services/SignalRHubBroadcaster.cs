@@ -20,21 +20,18 @@ namespace Listenarr.Api.Services
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
-        public async Task BroadcastQueueUpdateAsync(List<Domain.Models.QueueItem> queue)
+        public async Task BroadcastQueueUpdateAsync(Domain.Models.QueueSnapshot queueSnapshot)
         {
             try
             {
                 // Primary, public API
-                await _hubContext.Clients.All.SendAsync("QueueUpdate", queue);
+                var clientProxy = _hubContext.Clients.All;
+                await clientProxy.SendAsync("QueueUpdate", queueSnapshot);
 
                 // Some tests/mocks expect SendCoreAsync; call as a compatibility step
                 try
                 {
-                    var clientProxy = _hubContext?.Clients?.All;
-                    if (clientProxy != null)
-                    {
-                        await clientProxy.SendCoreAsync("QueueUpdate", new object[] { queue }, CancellationToken.None);
-                    }
+                    await clientProxy.SendCoreAsync("QueueUpdate", new object[] { queueSnapshot }, CancellationToken.None);
                 }
                 catch (Exception inner) when (inner is not OperationCanceledException && inner is not OutOfMemoryException && inner is not StackOverflowException) {
                     _logger.LogDebug(inner, "Direct SendCoreAsync for QueueUpdate failed (non-fatal)");

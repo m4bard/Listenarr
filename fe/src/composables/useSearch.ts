@@ -21,6 +21,13 @@ type AudibleMetadataRecord = Record<string, unknown> & {
   runtimeMinutes?: number
   runtimeLengthMin?: number
   runtime?: number
+  lengthMinutes?: number
+  language?: string
+  Language?: string
+  subtitle?: string
+  Subtitle?: string
+  description?: string
+  Description?: string
   narrators?: SearchResult['narrators']
   Narrators?: SearchResult['narrators']
   authors?: SearchResult['authors']
@@ -311,6 +318,24 @@ export function useSearch() {
                 ? meta.coverImage
                 : undefined,
         metadataSource: String(metaResp?.source ?? 'audible'),
+        language:
+          typeof meta.language === 'string'
+            ? meta.language
+            : typeof meta.Language === 'string'
+              ? meta.Language
+              : undefined,
+        subtitle:
+          typeof meta.subtitle === 'string'
+            ? meta.subtitle
+            : typeof meta.Subtitle === 'string'
+              ? meta.Subtitle
+              : undefined,
+        description:
+          typeof meta.description === 'string'
+            ? meta.description
+            : typeof meta.Description === 'string'
+              ? meta.Description
+              : undefined,
         publisher:
           typeof meta.publisher === 'string'
             ? meta.publisher
@@ -322,9 +347,11 @@ export function useSearch() {
             ? meta.runtimeMinutes
             : typeof meta.runtimeLengthMin === 'number'
               ? meta.runtimeLengthMin
-              : typeof meta.runtime === 'number'
-                ? meta.runtime
-                : undefined,
+              : typeof meta.lengthMinutes === 'number'
+                ? meta.lengthMinutes
+                : typeof meta.runtime === 'number'
+                  ? meta.runtime
+                  : undefined,
         narrators: Array.isArray(meta.narrators)
           ? (meta.narrators as SearchResult['narrators'])
           : Array.isArray(meta.Narrators)

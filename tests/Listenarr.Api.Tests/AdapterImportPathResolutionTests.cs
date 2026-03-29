@@ -112,6 +112,65 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task Transmission_LegacyGetImportItemAsync_PopulatesClientReportedSourceFiles()
+        {
+            using var response = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent("{\"arguments\":{\"torrents\":[{\"id\":2,\"name\":\"Book Folder\",\"downloadDir\":\"/downloads\",\"files\":[{\"name\":\"Book Folder/chapter1.m4b\"},{\"name\":\"Book Folder/book.txt\"}]}]}}")
+            };
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
+                return Task.FromResult(response);
+            });
+
+            var pathMapMock = new Mock<IRemotePathMappingService>();
+            pathMapMock
+                .Setup(m => m.TranslatePathAsync(
+                    "trans-client",
+                    It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book Folder", StringComparison.Ordinal))))
+                .ReturnsAsync("D:/import/Book Folder");
+            pathMapMock
+                .Setup(m => m.TranslatePathAsync(
+                    "trans-client",
+                    It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book Folder/chapter1.m4b", StringComparison.Ordinal))))
+                .ReturnsAsync("D:/import/Book Folder/chapter1.m4b");
+            pathMapMock
+                .Setup(m => m.TranslatePathAsync(
+                    "trans-client",
+                    It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book Folder/book.txt", StringComparison.Ordinal))))
+                .ReturnsAsync("D:/import/Book Folder/book.txt");
+
+            using var httpClient = new HttpClient(handler);
+            var adapter = new TransmissionAdapter(
+                new TestHttpClientFactory(httpClient),
+                pathMapMock.Object,
+                Mock.Of<ITorrentFileDownloader>(),
+                NullLogger<TransmissionAdapter>.Instance);
+
+            var client = new DownloadClientConfiguration
+            {
+                Id = "trans-client",
+                Type = "transmission",
+                Host = "localhost",
+                Port = 9091
+            };
+
+            var resolved = await adapter.GetImportItemAsync(
+                client,
+                new Download { Id = "download-1" },
+                new QueueItem { Id = "2", ContentPath = string.Empty });
+
+            Assert.Equal("D:/import/Book Folder", resolved.ContentPath);
+            Assert.Equal(
+                new[]
+                {
+                    "D:/import/Book Folder/chapter1.m4b",
+                    "D:/import/Book Folder/book.txt"
+                },
+                resolved.SourceFiles);
+        }
+
+        [Fact]
         public async Task Sabnzbd_GetImportItemAsync_SingleFile_ResolvesFilePath()
         {
             using var response = new HttpResponseMessage(HttpStatusCode.OK)

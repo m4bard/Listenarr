@@ -60,6 +60,21 @@ namespace Listenarr.Api.Services
                                     return;
                                 }
 
+                                if (!FileUtils.IsAudioFile(file.Path ?? string.Empty))
+                                {
+                                    var audiobook = await taskDb.Audiobooks.FirstOrDefaultAsync(a => a.Id == file.AudiobookId, stoppingToken);
+                                    if (audiobook != null && string.Equals(audiobook.FilePath, file.Path, StringComparison.OrdinalIgnoreCase))
+                                    {
+                                        audiobook.FilePath = null;
+                                        audiobook.FileSize = null;
+                                    }
+
+                                    taskDb.AudiobookFiles.Remove(file);
+                                    await taskDb.SaveChangesAsync(stoppingToken);
+                                    _logger.LogInformation("Removed non-audio AudiobookFile entry id={Id} path={Path}", file.Id, file.Path);
+                                    return;
+                                }
+
                                 _logger.LogInformation("Re-extracting metadata for file id={Id} path={Path}", file.Id, file.Path);
 
                                 // Bail early if cancellation requested

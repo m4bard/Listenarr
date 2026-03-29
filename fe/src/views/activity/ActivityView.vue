@@ -6,6 +6,18 @@
         Activity
       </h1>
       <div class="activity-actions">
+        <div class="filter-input-wrapper">
+          <PhMagnifyingGlass class="filter-icon" />
+          <input
+            v-model="filterText"
+            type="text"
+            class="filter-input"
+            placeholder="Filter downloads..."
+          />
+          <button v-if="filterText" class="filter-clear" @click="filterText = ''">
+            <PhX />
+          </button>
+        </div>
         <button class="btn btn-secondary" @click="refreshQueue" :disabled="loading">
           <component :is="loading ? PhSpinner : PhArrowClockwise" />
           Refresh
@@ -13,104 +25,92 @@
       </div>
     </div>
 
-    <div class="activity-filters">
-      <!-- Mobile dropdown -->
-      <div class="activity-filters-mobile">
-        <CustomSelect v-model="selectedTab" :options="mobileTabOptions" class="tab-dropdown" />
-      </div>
-
-      <!-- Desktop tabs -->
-      <div class="activity-filters-desktop">
-        <div class="filter-tabs">
-          <button
-            v-for="tab in filterTabs"
-            :key="tab.value"
-            :class="['tab', { active: selectedTab === tab.value }]"
-            @click="selectedTab = tab.value"
-          >
-            {{ tab.label }}
-            <span v-if="tab.count > 0" class="tab-badge">{{ tab.count }}</span>
-          </button>
-        </div>
+    <div v-if="queueHealthClients.length > 0" class="queue-health-banner">
+      <PhWarningCircle />
+      <div class="queue-health-copy">
+        <strong>{{ queueHealthTitle }}</strong>
+        <span>{{ queueHealthMessage }}</span>
       </div>
     </div>
 
-    <!-- Queue List -->
+    <!-- Queue Grid -->
     <div
       v-if="filteredQueue.length > 0"
       ref="scrollContainer"
-      :class="['queue-list-container', { 'is-static': !useVirtualActivityList }]"
+      :class="['queue-grid-container', { 'is-static': !useVirtualActivityList }]"
       @scroll="updateVisibleRange"
     >
+      <div class="queue-header">
+        <div class="col-title">Title</div>
+        <div class="col-quality">Quality</div>
+        <div class="col-language">Language</div>
+        <div class="col-progress">Progress</div>
+        <div class="col-eta">ETA</div>
+        <div class="col-status">Status</div>
+        <div class="col-actions"></div>
+      </div>
       <div
-        :class="['queue-list-spacer', { 'is-static': !useVirtualActivityList }]"
+        :class="['queue-body-spacer', { 'is-static': !useVirtualActivityList }]"
         :style="useVirtualActivityList ? { height: `${totalHeight}px` } : undefined"
       >
         <div
-          :class="['queue-list', { 'is-static': !useVirtualActivityList }]"
+          :class="['queue-body', { 'is-static': !useVirtualActivityList }]"
           :style="useVirtualActivityList ? { transform: `translateY(${topPadding}px)` } : undefined"
         >
           <div
             v-for="item in visibleQueueItems"
             :key="item.id"
-            v-memo="[item.id, item.status, item.progress, item.eta]"
-            class="queue-item"
+            v-memo="[item.id, item.status, item.progress, item.eta, item.downloadSpeed]"
+            class="queue-row"
           >
-            <div class="queue-icon">
-              <PhDownloadSimple />
+            <div class="col-title">
+              <div class="title-cell">
+                <RouterLink v-if="item.audiobookId" :to="`/audiobooks/${item.audiobookId}`" class="title-link">{{ getDisplayTitle(item) }}</RouterLink>
+                <span v-else class="title-text">{{ getDisplayTitle(item) }}</span>
+              </div>
             </div>
-
-            <div class="queue-info">
-              <div class="queue-title-row">
-                <h3 class="queue-title">{{ item.title }}</h3>
-              </div>
-
-              <div class="queue-meta">
-                <span v-if="item.downloadClient" class="queue-client">
-                  <PhDesktop />
-                  {{ item.downloadClient }}
-                </span>
-                <span v-if="item.quality && item.quality !== '*'" class="queue-quality">{{
-                  item.quality
-                }}</span>
-              </div>
-
-              <div class="queue-progress-container">
-                <div class="queue-stats-top">
-                  <span class="progress-text">{{ item.progress.toFixed(1) }}%</span>
-                  <span class="size-info"
-                    >{{ formatSize(item.downloaded) }} / {{ formatSize(item.size) }}</span
-                  >
-                  <span v-if="item.downloadSpeed > 0" class="download-speed">
-                    <PhArrowDown />
-                    {{ formatSpeed(item.downloadSpeed) }}
-                  </span>
-                  <span v-if="item.eta" class="eta">
-                    <PhClock />
-                    {{ formatEta(item.eta) }}
-                  </span>
-                </div>
+            <div class="col-quality">
+              <span v-if="item.quality && item.quality !== '*'" class="quality-tag">{{ item.quality }}</span>
+              <span v-else class="muted">-</span>
+            </div>
+            <div class="col-language">
+              <span v-if="item.language" class="language-text">{{ item.language }}</span>
+              <span v-else class="muted">-</span>
+            </div>
+            <div class="col-progress">
+              <div class="progress-cell">
                 <ProgressBar
                   :value="item.progress"
                   :downloaded="item.downloaded"
                   :total="item.size"
+                  :showPercentage="false"
                   variant="activity"
-                  height="medium"
-                  :animating="item.status === 'Downloading'"
+                  height="small"
+                  :animating="item.status === 'downloading'"
                 />
               </div>
             </div>
 
-            <div class="queue-status">
+            <div class="col-eta">
+              <span v-if="item.eta" class="eta-text">{{ formatEta(item.eta) }}</span>
+              <span v-else class="muted">-</span>
+            </div>
+            <div class="col-status">
               <span :class="['status-badge', item.status]">
                 {{ formatStatus(item.status) }}
               </span>
+              <span
+                v-if="item.isStaleSnapshot"
+                class="stale-badge"
+                :title="getSnapshotStatusTitle(item)"
+              >
+                Cached
+              </span>
             </div>
-
-            <div class="queue-actions">
+            <div class="col-actions">
               <button
                 v-if="item.canRemove"
-                class="btn-icon btn-danger"
+                class="btn-icon btn-danger-icon"
                 @click="removeFromQueue(item)"
                 title="Remove from Queue"
               >
@@ -125,8 +125,8 @@
     <!-- Empty State -->
     <EmptyState
       v-else-if="filteredQueue.length === 0 && !loading"
-      title="No Active Downloads"
-      message="Downloads will appear here when you send items to your download clients."
+      :title="filterText ? 'No Matching Downloads' : 'No Active Downloads'"
+      :message="filterText ? 'No downloads match your filter.' : 'Downloads will appear here when you send items to your download clients.'"
     >
       <template #icon>
         <PhQueue :size="48" />
@@ -158,7 +158,7 @@
             remove it from Listenarr only (this will delete the record from Listenarr's downloads)?
           </p>
           <div class="remove-item-info">
-            <strong>{{ itemToRemove?.title }}</strong>
+            <strong>{{ itemToRemove ? getDisplayTitle(itemToRemove) : '' }}</strong>
             <div class="item-details">
               <span v-if="itemToRemove?.downloadClient">
                 <PhDesktop />
@@ -205,83 +205,146 @@ import {
   PhActivity,
   PhSpinner,
   PhArrowClockwise,
-  PhDownloadSimple,
   PhDesktop,
-  PhArrowDown,
-  PhClock,
   PhX,
   PhQueue,
   PhWarningCircle,
   PhInfo,
   PhChartBar,
   PhTrash,
-  PhPause,
-  PhList,
-  PhCheckCircle,
+  PhMagnifyingGlass,
 } from '@phosphor-icons/vue'
 import { useToast } from '@/services/toastService'
 import { errorTracking } from '@/services/errorTracking'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { useDownloadsStore } from '@/stores/downloads'
+import { useLibraryStore } from '@/stores/library'
 import { EmptyState, LoadingState, ProgressBar } from '@/components/base'
 import { useConfigurationStore } from '@/stores/configuration'
-import type { QueueItem, Download } from '@/types'
-import CustomSelect from '@/components/form/CustomSelect.vue'
+import type { QueueClientStatus, QueueItem, QueueUpdatePayload, Download } from '@/types'
+import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 
 const downloadsStore = useDownloadsStore()
+const libraryStore = useLibraryStore()
 const configStore = useConfigurationStore()
-const selectedTab = ref('all')
 
+const filterText = ref('')
 const queue = ref<QueueItem[]>([])
+const queueClientStatuses = ref<QueueClientStatus[]>([])
 const loading = ref(false)
 const showRemoveModal = ref(false)
-// Tracks whether the item selected for removal exists in the remote client's queue.
-// null -> not evaluated yet, true -> found in client queue, false -> not present in client queue
 const clientHasQueueEntry = ref<boolean | null>(null)
 const itemToRemove = ref<QueueItem | null>(null)
 const removing = ref(false)
 let unsubscribeQueue: (() => void) | null = null
 let queueRefreshInterval: ReturnType<typeof setInterval> | null = null
 
-// Mobile tab options for CustomSelect
-const mobileTabOptions = computed(() => [
-  { value: 'all', label: `All (${allActivityItems.value.length})`, icon: PhList },
-  {
-    value: 'downloading',
-    label: `Downloading (${allActivityItems.value.filter((q) => q.status === 'downloading' || q.status === 'importpending').length})`,
-    icon: PhDownloadSimple,
-  },
-  {
-    value: 'paused',
-    label: `Paused (${allActivityItems.value.filter((q) => q.status === 'paused').length})`,
-    icon: PhPause,
-  },
-  {
-    value: 'queued',
-    label: `Queued (${allActivityItems.value.filter((q) => q.status === 'queued').length})`,
-    icon: PhClock,
-  },
-  { value: 'failed', label: `Failed (${failedActivityItems.value.length})`, icon: PhX },
-  // Completed: include completed external downloads from the downloads store
-  {
-    value: 'completed',
-    label: `Completed (${completedActivityItems.value.filter((q) => q.status === 'completed').length})`,
-    icon: PhCheckCircle,
-  },
-])
+const applyQueueSnapshot = (payload: QueueUpdatePayload | null | undefined) => {
+  const snapshot = normalizeQueueSnapshot(payload)
+  queue.value = snapshot.items
+  queueClientStatuses.value = snapshot.clients
+}
 
-// const onTabChange = () => {
-//   // Tab change handler for mobile dropdown
-// }
+const formatSnapshotAge = (seconds?: number): string => {
+  if (!seconds || seconds <= 0) return 'just now'
+  if (seconds < 60) return `${seconds}s old`
+  if (seconds < 3600) return `${Math.floor(seconds / 60)}m old`
+  return `${Math.floor(seconds / 3600)}h old`
+}
+
+const formatSnapshotReason = (reason?: string): string => {
+  if (!reason) return 'client issue'
+  if (reason === 'timeout') return 'a timeout'
+  if (reason === 'canceled') return 'a canceled request'
+  return 'a client error'
+}
+
+const getSnapshotStatusTitle = (item: QueueItem): string => {
+  if (!item.isStaleSnapshot) return ''
+
+  const parts = ['Showing cached queue data']
+  if (item.downloadClient) parts.push(`for ${item.downloadClient}`)
+  if (item.snapshotAgeSeconds != null) parts.push(`captured ${formatSnapshotAge(item.snapshotAgeSeconds)}`)
+  if (item.snapshotFailureReason) parts.push(`after ${formatSnapshotReason(item.snapshotFailureReason)}`)
+  return parts.join(' ')
+}
+
+const queueHealthClients = computed(() => {
+  if (queueClientStatuses.value.length > 0) {
+    return queueClientStatuses.value
+      .filter((client) => client.isStaleSnapshot || client.isUnavailable)
+      .map((client) => ({
+        id: client.clientId || client.clientName,
+        name: client.clientName || 'Download client',
+        ageSeconds: client.snapshotAgeSeconds,
+        failureReason: client.snapshotFailureReason,
+        snapshotState: client.snapshotState,
+        isUnavailable: client.isUnavailable,
+      }))
+  }
+
+  const map = new Map<
+    string,
+    {
+      id: string
+      name: string
+      ageSeconds?: number
+      failureReason?: string
+      snapshotState?: string
+      isUnavailable?: boolean
+    }
+  >()
+
+  queue.value.forEach((item) => {
+    if (!item.isStaleSnapshot) return
+
+    const key = item.downloadClientId || item.downloadClient || item.id
+    if (!map.has(key)) {
+      map.set(key, {
+        id: key,
+        name: item.downloadClient || 'Download client',
+        ageSeconds: item.snapshotAgeSeconds,
+        failureReason: item.snapshotFailureReason,
+        snapshotState: item.snapshotState,
+        isUnavailable: false,
+      })
+    }
+  })
+
+  return Array.from(map.values())
+})
+
+const queueHealthTitle = computed(() => {
+  return queueHealthClients.value.some((client) => client.isUnavailable)
+    ? 'Some queue data is unavailable'
+    : 'Using cached queue data'
+})
+
+const queueHealthMessage = computed(() => {
+  return queueHealthClients.value
+    .map((client) => {
+      const parts = [client.name]
+      if (client.isUnavailable) {
+        parts.push('unavailable')
+      } else if (client.snapshotState === 'cached') {
+        parts.push('using cached data')
+      }
+      if (client.ageSeconds != null) parts.push(formatSnapshotAge(client.ageSeconds))
+      if (client.failureReason) parts.push(`after ${formatSnapshotReason(client.failureReason)}`)
+      return parts.join(' ')
+    })
+    .join(', ')
+})
 
 // Virtual scrolling setup
 const scrollContainer = ref<HTMLElement | null>(null)
-const ROW_HEIGHT = 120 // Approximate height of each queue item
-const BUFFER_ROWS = 3 // Extra rows to render above and below viewport
+const ROW_HEIGHT = 37
+const BUFFER_ROWS = 5
 const MOBILE_ACTIVITY_BREAKPOINT = 768
 
-const visibleRange = ref({ start: 0, end: 20 }) // Initially show first 20 items
+const visibleRange = ref({ start: 0, end: 30 })
+
 const isMobileActivityLayout = ref(false)
 const useVirtualActivityList = computed(() => !isMobileActivityLayout.value)
 
@@ -306,7 +369,6 @@ const visibleQueueItems = computed(() => {
   return filteredQueue.value.slice(visibleRange.value.start, visibleRange.value.end)
 })
 
-// Update visible range based on scroll position
 const updateVisibleRange = () => {
   if (!useVirtualActivityList.value) {
     visibleRange.value = { start: 0, end: filteredQueue.value.length }
@@ -318,11 +380,9 @@ const updateVisibleRange = () => {
   const scrollTop = scrollContainer.value.scrollTop
   const viewportHeight = scrollContainer.value.clientHeight
 
-  // Calculate which items are visible
   const firstVisibleIndex = Math.floor(scrollTop / ROW_HEIGHT)
   const visibleItemCount = Math.ceil(viewportHeight / ROW_HEIGHT)
 
-  // Add buffer
   const startIndex = Math.max(0, firstVisibleIndex - BUFFER_ROWS)
   const endIndex = Math.min(
     firstVisibleIndex + visibleItemCount + BUFFER_ROWS,
@@ -332,12 +392,10 @@ const updateVisibleRange = () => {
   visibleRange.value = { start: startIndex, end: endIndex }
 }
 
-// Calculate total height for proper scrollbar
 const totalHeight = computed(() => {
   return filteredQueue.value.length * ROW_HEIGHT
 })
 
-// Padding for offset positioning
 const topPadding = computed(() => {
   return visibleRange.value.start * ROW_HEIGHT
 })
@@ -354,16 +412,19 @@ const handleViewportResize = () => {
 
 // Convert Download to QueueItem format for unified display
 const convertDownloadToQueueItem = (download: Download): QueueItem => {
-  // Map Download status to queue status
-  let status = 'downloading'
-  if (download.status === 'Queued') status = 'queued'
-  else if (download.status === 'Paused') status = 'paused'
-  else if (download.status === 'Completed' || download.status === 'Ready') status = 'completed'
-  else if (download.status === 'ImportPending') status = 'downloading'
-  else if (download.status === 'ImportBlocked') status = 'failed'
-  else if (download.status === 'Failed') status = 'failed'
-  else if (download.status === 'Downloading' || download.status === 'Processing')
-    status = 'downloading'
+  const statusMap: Record<string, string> = {
+    Queued: 'queued',
+    Downloading: 'downloading',
+    Paused: 'paused',
+    Processing: 'processing',
+    Completed: 'completed',
+    Ready: 'completed',
+    ImportPending: 'importpending',
+    ImportBlocked: 'importblocked',
+    Moved: 'imported',
+    Failed: 'failed',
+  }
+  const status = statusMap[download.status] ?? 'downloading'
 
   const clientName = (download as unknown as Record<string, unknown>)['downloadClientName'] as
     | string
@@ -371,12 +432,13 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
   return {
     id: download.id,
     title: download.title,
+    audiobookId: download.audiobookId,
     status: status,
     progress: download.progress,
     size: download.totalSize,
     downloaded: download.downloadedSize,
-    downloadSpeed: 0, // Not tracked for DDL
-    eta: undefined, // Not available for DDL
+    downloadSpeed: 0,
+    eta: undefined,
     quality: '',
     downloadClient: clientName ?? download.downloadClientId ?? 'Unknown Client',
     downloadClientId: download.downloadClientId,
@@ -387,20 +449,16 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
   }
 }
 
-// Read user preference from configuration store: show completed external downloads
+// Read user preference from configuration store
 const showCompletedExternalDownloads = computed(
   () => configStore.applicationSettings?.showCompletedExternalDownloads ?? false,
 )
 
-// Merge queue items and active downloads (DDL) into unified list
-// Also expose a version of activity that includes completed external downloads
-// from the downloads store so the "Completed" tab can show completion candidates
-// observed by the backend monitor (these are saved in the downloads table).
+// All activity items — unified list of queue + downloads
 const allActivityItems = computed(() => {
-  // Get queue items from external clients (these are already filtered by backend to only show Listenarr-managed downloads)
   const queueItems = [...queue.value]
+  const trackedQueueIds = new Set(queueItems.map((item) => item.id))
 
-  // Get DDL downloads from database (since they don't have corresponding queue items)
   const activeDownloadsList = unref(downloadsStore.activeDownloads || [])
   const failedDownloadsList = unref(downloadsStore.failedDownloads || [])
 
@@ -408,31 +466,20 @@ const allActivityItems = computed(() => {
     .filter((d) => ((d.downloadClientId || '').toString().toUpperCase() === 'DDL'))
     .map(convertDownloadToQueueItem)
 
-  // Include failed DDL downloads so internal failed items can be cleared by users
   const failedDDLItems = failedDownloadsList.map(convertDownloadToQueueItem)
 
-  // Include external active downloads (not DDL) from the downloads store so
-  // queue-less active items are visible in Activity (e.g., when queue snapshot
-  // doesn't contain corresponding entries). Convert to QueueItem shape.
   const externalActiveDownloads = activeDownloadsList
     .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
+    .filter((d) => !trackedQueueIds.has(d.id))
     .map(convertDownloadToQueueItem)
 
-  // Combine queue items (external clients managed by Listenarr), DDL downloads,
-  // failed DDL items, and external active downloads
   let combined = [...queueItems, ...ddlDownloadItems, ...failedDDLItems, ...externalActiveDownloads]
 
-  // Read user preference from configuration store: show completed external downloads
-  const userPref = showCompletedExternalDownloads.value
-
-  if (userPref) {
-    // Include completed external downloads from the downloads store
+  if (showCompletedExternalDownloads.value) {
     const completedExternal = (downloadsStore.completedDownloads || [])
       .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
       .map(convertDownloadToQueueItem)
 
-    // Merge and deduplicate by id (prefer entries that already exist in `combined` which
-    // usually come from the queue snapshot and are more up-to-date for progress fields)
     const map = new Map<string, QueueItem>()
     for (const it of combined) map.set(it.id, it)
     for (const it of completedExternal) {
@@ -441,11 +488,7 @@ const allActivityItems = computed(() => {
 
     combined = Array.from(map.values())
   } else {
-    // By default we hide completed external client items from the main
-    // combined list (to avoid clutter). Completed external downloads will
-    // still be surfaced in the Completed tab (see `completedActivityItems`).
     combined = combined.filter((it) => {
-      // if item is from external client and completed, omit it
       if (
         (it.downloadClientType || '').toString().toLowerCase() !== 'ddl' &&
         it.status === 'completed'
@@ -455,111 +498,64 @@ const allActivityItems = computed(() => {
     })
   }
 
-  // Deduplicate final combined list preferring queue items when available
-  const finalMap = new Map<string, QueueItem>()
-  for (const it of combined) {
-    if (!finalMap.has(it.id)) finalMap.set(it.id, it)
-  }
-
-  return Array.from(finalMap.values())
-})
-
-// Build a version of the activity list that includes completed external
-// downloads coming from the Downloads store (these represent complete
-// candidates or finished transfers persisted in the DB). We deduplicate
-// by id to avoid showing duplicates between queue items and downloads.
-const completedActivityItems = computed(() => {
-  // Start with the main combined set but allow completed external items
-  // from the downloads store to be shown in the Completed tab.
-  const base = (() => {
-    const queueItems = [...queue.value]
-    const ddlDownloadItems = downloadsStore.activeDownloads
-      .filter((d) => ((d.downloadClientId || '').toString().toUpperCase() === 'DDL'))
-      .map(convertDownloadToQueueItem)
-    return [...queueItems, ...ddlDownloadItems]
-  })()
-
-  // Completed external downloads from the downloads store
+  // Also include completed external downloads from the downloads store
+  // so completed items are visible in the unified table
   const completedExternal = (downloadsStore.completedDownloads || [])
     .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
     .map(convertDownloadToQueueItem)
 
-  // Merge and deduplicate by id (prefer queue/base entries where present)
-  const map = new Map<string, QueueItem>()
-  for (const it of base) map.set(it.id, it)
-  for (const it of completedExternal) {
-    if (!map.has(it.id)) map.set(it.id, it)
-  }
-
-  return Array.from(map.values())
-})
-
-// Failed activity items: merge queue snapshot failures and DB failures
-const failedActivityItems = computed(() => {
-  // Items from the queue which are failed (external client snapshot)
-  const queueFailed = queue.value.filter((q) => q.status === 'failed')
-  // Failed downloads stored in DB (DDL or external failures)
   const failedFromDownloads = (downloadsStore.failedDownloads || []).map(convertDownloadToQueueItem)
 
-  const map = new Map<string, QueueItem>()
-  for (const it of queueFailed) map.set(it.id, it)
-  for (const it of failedFromDownloads) if (!map.has(it.id)) map.set(it.id, it)
+  const finalMap = new Map<string, QueueItem>()
+  for (const it of combined) finalMap.set(it.id, it)
+  for (const it of completedExternal) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
+  for (const it of failedFromDownloads) if (!finalMap.has(it.id)) finalMap.set(it.id, it)
 
-  return Array.from(map.values())
+  return Array.from(finalMap.values())
 })
 
-const filterTabs = computed(() => [
-  { label: 'All', value: 'all', count: allActivityItems.value.length },
-  {
-    label: 'Downloading',
-    value: 'downloading',
-    count: allActivityItems.value.filter((q) => q.status === 'downloading' || q.status === 'importpending').length,
-  },
-  {
-    label: 'Paused',
-    value: 'paused',
-    count: allActivityItems.value.filter((q) => q.status === 'paused').length,
-  },
-  {
-    label: 'Queued',
-    value: 'queued',
-    count: allActivityItems.value.filter((q) => q.status === 'queued').length,
-  },
-  { label: 'Failed', value: 'failed', count: failedActivityItems.value.length },
-  // Completed tab should reflect combined view including completed external downloads
-  {
-    label: 'Completed',
-    value: 'completed',
-    count: completedActivityItems.value.filter((q) => q.status === 'completed').length,
-  },
-])
+// Build a lookup map from audiobook ID -> title for resolving friendly names
+const audiobookTitleMap = computed(() => {
+  const map = new Map<number, string>()
+  for (const ab of libraryStore.audiobooks) {
+    if (ab.id && ab.title) map.set(ab.id, ab.title)
+  }
+  return map
+})
 
+const getDisplayTitle = (item: QueueItem): string => {
+  if (item.audiobookId) {
+    const abTitle = audiobookTitleMap.value.get(item.audiobookId)
+    if (abTitle) return abTitle
+  }
+  return item.title
+}
+
+// Filter by text search across title, client, status
 const filteredQueue = computed(() => {
-  if (selectedTab.value === 'all') {
-    return allActivityItems.value
-  }
+  const text = filterText.value.trim().toLowerCase()
+  if (!text) return allActivityItems.value
 
-  if (selectedTab.value === 'completed') {
-    // Use the completed-augmented list for the Completed tab
-    return completedActivityItems.value.filter((item) => item.status === 'completed')
-  }
-
-  if (selectedTab.value === 'failed') {
-    // Use the failed-augmented list for the Failed tab so we show DB-failures too
-    return failedActivityItems.value
-  }
-
-  return allActivityItems.value.filter((item) => item.status === selectedTab.value)
+  return allActivityItems.value.filter((item) => {
+    const displayTitle = getDisplayTitle(item)
+    return (
+      (displayTitle && displayTitle.toLowerCase().includes(text)) ||
+      (item.title && item.title.toLowerCase().includes(text)) ||
+      (item.downloadClient && item.downloadClient.toLowerCase().includes(text)) ||
+      (item.status && item.status.toLowerCase().includes(text)) ||
+      (item.quality && item.quality.toLowerCase().includes(text))
+    )
+  })
 })
 
 const refreshQueue = async () => {
   loading.value = true
   try {
-    const [queueItems] = await Promise.all([
+    const [queueSnapshot] = await Promise.all([
       apiService.getQueue(),
       downloadsStore.loadDownloads(),
     ])
-    queue.value = queueItems
+    applyQueueSnapshot(queueSnapshot)
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'ActivityView',
@@ -573,7 +569,6 @@ const refreshQueue = async () => {
 const removeFromQueue = async (item: QueueItem) => {
   itemToRemove.value = item
 
-  // If the item is DDL (internal) we don't need to pre-check client queue
   if (
     ((item.downloadClientId || '').toString().toUpperCase() === 'DDL') ||
     ((item.downloadClientType || '').toString().toUpperCase() === 'DDL')
@@ -583,10 +578,6 @@ const removeFromQueue = async (item: QueueItem) => {
     return
   }
 
-  // For external client items, check the current queue snapshot to see if
-  // the remote client still contains the item. If not present, show an
-  // alternate modal that asks the user if they want to remove the item
-  // from Listenarr only (DB cleanup).
   const found = queue.value.some((q) => q.id === item.id)
   clientHasQueueEntry.value = found
   showRemoveModal.value = true
@@ -597,30 +588,18 @@ const confirmRemove = async () => {
 
   removing.value = true
   try {
-    // Check if this is a DDL download (from database) or external queue item
     if (
       ((itemToRemove.value.downloadClientId || '').toString().toUpperCase() === 'DDL') ||
       ((itemToRemove.value.downloadClientType || '').toString().toUpperCase() === 'DDL')
     ) {
-      // DDL downloads: Cancel/delete from database
       await apiService.cancelDownload(itemToRemove.value.id)
-
-      // Refresh downloads from store
       await downloadsStore.loadDownloads()
     } else {
-      // External client downloads:
-      // If the remote client's queue no longer contains the item then offer
-      // Listenarr-only removal (DB cleanup). Otherwise perform the normal
-      // remove-from-client flow.
       if (clientHasQueueEntry.value === false) {
-        // Removing the DB record for an external item uses cancelDownload
-        // since it's a Listenarr-level cleanup.
         await apiService.cancelDownload(itemToRemove.value.id)
         await downloadsStore.loadDownloads()
       } else {
         await apiService.removeFromQueue(itemToRemove.value.id, itemToRemove.value.downloadClientId)
-
-        // Refresh queue
         await refreshQueue()
       }
     }
@@ -641,7 +620,18 @@ const confirmRemove = async () => {
 }
 
 const formatStatus = (status: string): string => {
-  return status.charAt(0).toUpperCase() + status.slice(1)
+  const labels: Record<string, string> = {
+    downloading: 'Downloading',
+    queued: 'Queued',
+    paused: 'Paused',
+    completed: 'Completed',
+    failed: 'Failed',
+    processing: 'Processing',
+    importpending: 'Importing',
+    importblocked: 'Import Blocked',
+    imported: 'Imported',
+  }
+  return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
 }
 
 const formatSpeed = (bytesPerSecond: number): string => {
@@ -681,32 +671,23 @@ const formatSize = (bytes: number): string => {
   return `${size.toFixed(1)} ${units[unitIndex]}`
 }
 
-// Subscribe to SignalR for real-time updates (NO POLLING!)
+// Subscribe to SignalR for real-time updates
 onMounted(async () => {
   updateActivityLayoutMode()
   if (typeof window !== 'undefined') {
     window.addEventListener('resize', handleViewportResize, { passive: true })
   }
 
-  // Load initial downloads (includes DDL)
   await downloadsStore.loadDownloads()
-
-  // Load application settings to ensure filtering works
   await configStore.loadApplicationSettings()
 
-  // Subscribe to queue updates (external clients)
   unsubscribeQueue = signalRService.onQueueUpdate((updatedQueue) => {
-    queue.value = updatedQueue
+    applyQueueSnapshot(updatedQueue)
   })
 
-  // Load initial queue state
   await refreshQueue()
-
-  // Initialize virtual scrolling
   await syncActivityLayout()
 
-  // Fallback polling: slow refresh as backup to SignalR (30 seconds)
-  // Primary updates come from SignalR real-time events
   queueRefreshInterval = setInterval(async () => {
     try {
       await refreshQueue()
@@ -716,7 +697,7 @@ onMounted(async () => {
         operation: 'queueRefreshInterval',
       })
     }
-  }, 30000) // 30-second fallback polling (SignalR is primary update mechanism)
+  }, 30000)
 })
 
 onUnmounted(() => {
@@ -724,12 +705,10 @@ onUnmounted(() => {
     window.removeEventListener('resize', handleViewportResize)
   }
 
-  // Clean up subscription
   if (unsubscribeQueue) {
     unsubscribeQueue()
   }
 
-  // Stop frontend polling when view is unmounted
   if (queueRefreshInterval) {
     clearInterval(queueRefreshInterval)
     queueRefreshInterval = null
@@ -746,43 +725,9 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 2rem;
-}
-
-/* Virtual scrolling container */
-.queue-list-container {
-  height: calc(100vh - 280px); /* Adjust based on header/footer height */
-  overflow-y: auto;
-  position: relative;
-}
-
-.queue-list-container.is-static {
-  height: auto;
-  overflow-y: visible;
-  width: 100%;
-}
-
-.queue-list-spacer {
-  position: relative;
-  width: 100%;
-}
-
-.queue-list-spacer.is-static {
-  position: static;
-}
-
-.queue-list {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.queue-list.is-static {
-  position: static;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.75rem;
 }
 
 .page-header h1 {
@@ -803,344 +748,373 @@ onUnmounted(() => {
 .activity-actions {
   display: flex;
   gap: 0.75rem;
+  align-items: center;
 }
 
-/* Button visuals are centralized in `src/assets/buttons.css`.
-   Keep only activity-specific layout rules here. */
-.filter-tabs {
+.filter-input-wrapper {
+  position: relative;
   display: flex;
-  gap: 0.5rem;
-  border-bottom: 2px solid rgba(255, 255, 255, 0.1);
-  overflow-x: auto;
-  scrollbar-width: none;
+  align-items: center;
 }
 
-.filter-tabs::-webkit-scrollbar {
-  display: none;
+.filter-icon {
+  position: absolute;
+  left: 0.75rem;
+  color: #868e96;
+  width: 16px;
+  height: 16px;
+  pointer-events: none;
 }
 
-.tab {
+.filter-input {
+  background: #2a2a2a;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  color: #fff;
+  padding: 0.5rem 2rem 0.5rem 2.25rem;
+  font-size: 0.875rem;
+  width: 220px;
+  height: var(--control-height, 40px);
+  box-sizing: border-box;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.filter-input::placeholder {
+  color: #868e96;
+}
+
+.filter-input:focus {
+  outline: none;
+  border-color: #4dabf7;
+  box-shadow: 0 0 0 2px rgba(77, 171, 247, 0.15);
+}
+
+.filter-clear {
+  position: absolute;
+  right: 0.5rem;
   background: none;
   border: none;
-  color: #adb5bd;
+  color: #868e96;
   cursor: pointer;
-  padding: 0.875rem 1.5rem;
-  border-radius: 6px;
-  transition: all 0.2s;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 500;
-  white-space: nowrap;
-  position: relative;
-}
-
-.tab::after {
-  content: '';
-  position: absolute;
-  bottom: -2px;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: transparent;
-  transition: background 0.2s;
-}
-
-.tab:hover {
-  background-color: rgba(255, 255, 255, 0.05);
-  color: white;
-}
-
-.tab.active {
-  background-color: rgba(77, 171, 247, 0.15);
-  color: #4dabf7;
-  font-weight: 500;
-}
-
-.tab.active::after {
-  background: #4dabf7;
-}
-
-.tab-badge {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-radius: 6px;
-  padding: 0.15rem 0.5rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  min-width: 20px;
-  text-align: center;
-}
-
-.tab.active .tab-badge {
-  background-color: rgba(77, 171, 247, 0.25);
-  color: #74c0fc;
-}
-
-.queue-list {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-}
-
-.queue-item {
-  display: flex;
-  align-items: center;
-  gap: 1.25rem;
-  padding: 1.25rem;
-  background-color: #2a2a2a;
-  border-radius: 6px;
-  border-left: 4px solid #4dabf7;
-  transition: all 0.2s;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.queue-item:hover {
-  background-color: #2f2f2f;
-  border-color: rgba(77, 171, 247, 0.3);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  border-left-color: #74c0fc;
-}
-
-.queue-icon {
-  width: 48px;
-  height: 48px;
-  min-width: 48px;
+  padding: 0.25rem;
+  border-radius: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #1e88e5;
+  transition: color 0.2s;
+}
+
+.filter-clear:hover {
+  color: #fa5252;
+  background: rgba(250, 82, 82, 0.15);
+}
+
+.filter-clear svg {
+  width: 14px;
+  height: 14px;
+}
+
+/* Queue health banner */
+.queue-health-banner {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.9rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(217, 119, 6, 0.28);
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--color-text, #1f2937);
+  border-radius: 0.85rem;
+}
+
+.queue-health-copy {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.queue-health-copy strong {
+  font-size: 0.95rem;
+}
+
+.queue-health-copy span {
+  font-size: 0.88rem;
+  opacity: 0.86;
+}
+
+/* Grid container with virtual scrolling */
+.queue-grid-container {
+  height: calc(100vh - 200px);
+  overflow-y: auto;
+  position: relative;
+  border: 1px solid rgba(255, 255, 255, 0.06);
   border-radius: 6px;
+  background: #1e1e1e;
+}
+
+.queue-grid-container.is-static {
+  height: auto;
+  overflow-y: visible;
+}
+
+/* Desktop grid columns shared by header and rows */
+.queue-header,
+.queue-row {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) 40px;
+  align-items: center;
+}
+
+.queue-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #252525;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.queue-header > div {
+  padding: 0 0.75rem;
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: #868e96;
+  white-space: nowrap;
+}
+
+.queue-body-spacer {
+  position: relative;
+  width: 100%;
+}
+
+.queue-body-spacer.is-static {
+  position: static;
+}
+
+.queue-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  overflow: hidden;
+}
+
+.queue-body.is-static {
+  position: static;
+}
+
+/* Grid rows */
+.queue-row {
+  transition: background-color 0.15s;
+}
+
+.queue-row:hover {
+  background-color: rgba(255, 255, 255, 0.03);
+}
+
+.queue-row > div {
+  padding: 0.5rem 0.75rem;
+  font-size: 0.85rem;
+  color: #adb5bd;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: flex;
+  align-items: center;
+  align-self: stretch;
+}
+
+/* Progress column needs visible overflow for its flex layout */
+.queue-row > .col-progress {
+  overflow: visible;
+}
+
+/* Actions column: center the button */
+.queue-row > .col-actions {
+  justify-content: center;
+  overflow: visible;
+}
+
+/* Title cell */
+.title-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.title-text,
+.title-link {
   color: white;
-  font-size: 1.5rem;
-  box-shadow: 0 2px 8px rgba(30, 136, 229, 0.3);
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.queue-icon svg {
-  width: 24px;
-  height: 24px;
+.title-link {
+  text-decoration: none;
 }
 
-.queue-info {
+.title-link:hover {
+  color: #4dabf7;
+}
+
+.quality-tag {
+  flex-shrink: 0;
+  font-size: 0.7rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(81, 207, 102, 0.12);
+  color: #51cf66;
+  font-weight: 500;
+}
+
+/* Language cell */
+.language-text {
+  color: #adb5bd;
+  font-size: 0.8rem;
+}
+
+/* Progress cell */
+.progress-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.progress-cell :deep(.progress-wrapper) {
   flex: 1;
   min-width: 0;
 }
 
-.queue-title-row {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  margin-bottom: 0.5rem;
-}
-
-.queue-title {
-  color: white;
-  font-size: 1.1rem;
+.progress-label {
+  font-size: 0.8rem;
   font-weight: 500;
-  margin: 0;
+  color: white;
   white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  min-width: 40px;
+  text-align: right;
 }
 
-.queue-meta {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 0.75rem;
-  font-size: 0.875rem;
+/* Size */
+.size-text {
+  font-size: 0.8rem;
   color: #868e96;
 }
 
-.queue-meta span {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  background-color: rgba(255, 255, 255, 0.05);
-  padding: 0.25rem 0.6rem;
-  border-radius: 6px;
-}
-
-.queue-client {
-  color: #4dabf7;
-}
-
-.queue-quality {
+/* Speed */
+.speed-text {
   color: #51cf66;
-  font-weight: 500;
+  font-size: 0.8rem;
 }
 
-.queue-progress-container {
-  width: 100%;
-}
-
-.queue-stats-top {
-  display: flex;
-  align-items: center;
-  gap: 1.25rem;
-  margin-bottom: 0.5rem;
-  font-size: 0.875rem;
-  color: #adb5bd;
-  flex-wrap: wrap;
-}
-
-.progress-text {
-  font-weight: 500;
-  color: white;
-  font-size: 0.95rem;
-}
-
-.download-speed {
-  color: #51cf66;
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  background-color: rgba(81, 207, 102, 0.1);
-  padding: 0.25rem 0.6rem;
-  border-radius: 6px;
-}
-
-.download-speed svg {
-  width: 14px;
-  height: 14px;
-}
-
-.eta {
+/* ETA */
+.eta-text {
   color: #ffd43b;
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  background-color: rgba(255, 212, 59, 0.1);
-  padding: 0.25rem 0.6rem;
-  border-radius: 6px;
+  font-size: 0.8rem;
 }
 
-.eta svg {
-  width: 14px;
-  height: 14px;
+.muted {
+  color: #495057;
+  font-size: 0.8rem;
 }
 
-.size-info {
-  color: #868e96;
-}
-
-/* ProgressBar component styling is now in ProgressBar.vue */
-
-.queue-status {
-  margin: 0 0.5rem;
-}
-
+/* Status badges */
 .status-badge {
-  padding: 0.35rem 0.85rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 500;
+  padding: 0.2rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
+  display: inline-block;
 }
 
 .status-badge.completed {
   background-color: rgba(81, 207, 102, 0.15);
   color: #51cf66;
-  border: 1px solid rgba(81, 207, 102, 0.3);
 }
 
 .status-badge.downloading {
   background-color: rgba(77, 171, 247, 0.15);
   color: #4dabf7;
-  border: 1px solid rgba(77, 171, 247, 0.3);
 }
 
 .status-badge.failed {
   background-color: rgba(250, 82, 82, 0.15);
   color: #fa5252;
-  border: 1px solid rgba(250, 82, 82, 0.3);
 }
 
 .status-badge.paused {
   background-color: rgba(255, 212, 59, 0.15);
   color: #ffd43b;
-  border: 1px solid rgba(255, 212, 59, 0.3);
 }
 
 .status-badge.queued {
   background-color: rgba(134, 142, 150, 0.15);
   color: #868e96;
-  border: 1px solid rgba(134, 142, 150, 0.3);
 }
 
-.queue-actions {
+.status-badge.processing {
+  background-color: rgba(190, 75, 219, 0.15);
+  color: #be4bdb;
+}
+
+.status-badge.importpending {
+  background-color: rgba(255, 146, 43, 0.15);
+  color: #ff922b;
+}
+
+.status-badge.importblocked {
+  background-color: rgba(250, 82, 82, 0.15);
+  color: #fa5252;
+}
+
+.status-badge.imported {
+  background-color: rgba(32, 201, 151, 0.15);
+  color: #20c997;
+}
+
+.stale-badge {
+  display: inline-block;
+  margin-left: 0.35rem;
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+  background: rgba(245, 158, 11, 0.16);
+  color: #b45309;
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+
+/* Actions */
+.btn-danger-icon {
+  background: none;
+  border: none;
+  color: #868e96;
+  cursor: pointer;
+  padding: 0.35rem;
+  border-radius: 4px;
   display: flex;
-  gap: 0.5rem;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.2s;
 }
 
-.empty-state {
-  text-align: center;
-  padding: 4rem 2rem;
-  color: #adb5bd;
-  background-color: #2a2a2a;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
+.btn-danger-icon:hover {
+  background: rgba(250, 82, 82, 0.15);
+  color: #fa5252;
 }
 
-.empty-icon {
-  font-size: 4rem;
-  margin-bottom: 1.5rem;
-  color: #868e96;
+.btn-danger-icon svg {
+  width: 16px;
+  height: 16px;
 }
-
-.empty-icon svg {
-  width: 80px;
-  height: 80px;
-}
-
-.empty-state h2 {
-  color: white;
-  margin-bottom: 0.75rem;
-  font-weight: 500;
-  font-size: 1.5rem;
-}
-
-.empty-state p {
-  color: #868e96;
-  font-size: 1rem;
-  line-height: 1.5;
-  max-width: 400px;
-  margin: 0 auto;
-}
-
-.loading-state {
-  text-align: center;
-  padding: 4rem 2rem;
-  color: #adb5bd;
-  background-color: #2a2a2a;
-  border-radius: 6px;
-  border: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.loading-state svg {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  color: #4dabf7;
-  width: 48px;
-  height: 48px;
-}
-
-.loading-state i {
-  font-size: 3rem;
-  margin-bottom: 1rem;
-  color: #4dabf7;
-}
-
-.loading-state p {
-  font-size: 1.1rem;
-  font-weight: 500;
-}
-
-.ph-spin {
-  animation: spin 1s linear infinite;
-}
-
-/* @keyframes spin is centralized in src/assets/animations.css */
 
 /* Modal Styles */
 .modal-overlay {
@@ -1157,8 +1131,6 @@ onUnmounted(() => {
   animation: fadeIn 0.2s ease;
   backdrop-filter: blur(4px);
 }
-
-/* @keyframes fadeIn is centralized in src/assets/animations.css */
 
 .modal-content {
   background-color: #2a2a2a;
@@ -1203,11 +1175,6 @@ onUnmounted(() => {
   color: #ffd43b;
   width: 24px;
   height: 24px;
-}
-
-.modal-header h3 i {
-  color: #ffd43b;
-  font-size: 1.5rem;
 }
 
 .modal-close {
@@ -1299,12 +1266,6 @@ onUnmounted(() => {
   height: 18px;
 }
 
-.warning-text i {
-  flex-shrink: 0;
-  margin-top: 0.1rem;
-}
-
-/* modal-footer styles are centralized in src/assets/modals.css; keep this view's alignment and spacing */
 .modal-footer {
   justify-content: flex-end;
   gap: 0.75rem;
@@ -1347,53 +1308,108 @@ onUnmounted(() => {
   height: 16px;
 }
 
-/* Mobile activity filters */
+/* Mobile responsive */
 @media (max-width: 768px) {
-  .activity-filters {
+  .page-header {
     flex-direction: column;
-    gap: 1rem;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
   }
 
-  .activity-filters-mobile {
-    display: block;
-  }
-
-  .activity-filters-desktop {
-    display: none;
-  }
-
-  .tab-dropdown {
+  .activity-actions {
     width: 100%;
-    color: #fff;
-    font-size: 0.95rem;
-    cursor: pointer;
-    transition: all 0.2s ease;
+    flex-wrap: wrap;
   }
 
-  .tab-dropdown:focus {
-    outline: none;
-    border-color: #4dabf7;
-    box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
+  .filter-input-wrapper {
+    flex: 1;
+    min-width: 0;
   }
 
-  .tab-dropdown option {
-    background-color: #2a2a2a;
-    color: #fff;
-  }
-}
-
-/* Desktop activity filters */
-@media (min-width: 769px) {
-  .activity-filters {
-    flex-direction: row;
+  .filter-input {
+    width: 100%;
   }
 
-  .activity-filters-mobile {
+  .queue-grid-container {
+    height: auto;
+    overflow-y: visible;
+    border: none;
+    background: transparent;
+  }
+
+  .queue-header {
     display: none;
   }
 
-  .activity-filters-desktop {
+  .queue-body-spacer {
+    height: auto !important;
+    position: static !important;
+  }
+
+  .queue-body {
+    position: static !important;
+    transform: none !important;
+  }
+
+  /* Each row becomes a card */
+  .queue-row {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: auto auto auto;
+    gap: 0.3rem 0.5rem;
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    background: #2a2a2a;
+    border-radius: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.06);
+  }
+
+  .queue-row:hover {
+    background-color: #2f2f2f;
+  }
+
+  .queue-row > div {
+    padding: 0;
+    border: none;
+    overflow: visible;
+    white-space: normal;
+  }
+
+  /* Hide columns that don't fit mobile */
+  .queue-row .col-quality,
+  .queue-row .col-language,
+  .queue-row .col-eta {
+    display: none;
+  }
+
+  /* Row 1: Title (left) + Status badge (right) */
+  .queue-row .col-title {
+    grid-column: 1;
+    grid-row: 1;
+    min-width: 0;
+  }
+
+  .queue-row .col-status {
+    grid-column: 2;
+    grid-row: 1;
     display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    white-space: nowrap;
+  }
+
+  /* Row 2: Progress bar (left) + Actions (right) */
+  .queue-row .col-progress {
+    grid-column: 1;
+    grid-row: 2;
+  }
+
+  .queue-row .col-actions {
+    grid-column: 2;
+    grid-row: 2;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
   }
 }
 </style>

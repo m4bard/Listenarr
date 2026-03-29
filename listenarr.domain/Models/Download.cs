@@ -16,6 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using System.Text.Json.Serialization;
+
 namespace Listenarr.Domain.Models
 {
     public enum DownloadStatus
@@ -104,6 +106,7 @@ namespace Listenarr.Domain.Models
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
         public string Quality { get; set; } = string.Empty;
+        public string? Language { get; set; }
         public string Status { get; set; } = string.Empty; // downloading, paused, queued, completed, failed
         public double Progress { get; set; } // 0-100
         public long Size { get; set; } // in bytes
@@ -116,11 +119,21 @@ namespace Listenarr.Domain.Models
         public string DownloadClientType { get; set; } = string.Empty; // qbittorrent, transmission, etc
         public DateTime AddedAt { get; set; } = DateTime.UtcNow;
         public string? ErrorMessage { get; set; }
+        public bool IsStaleSnapshot { get; set; }
+        public string? SnapshotState { get; set; } // live, cached
+        public string? SnapshotFailureReason { get; set; } // timeout, error, canceled
+        public int? SnapshotAgeSeconds { get; set; }
+        public DateTime? SnapshotRefreshedAt { get; set; }
         public bool CanPause { get; set; } = true;
         public bool CanRemove { get; set; } = true;
         public int? Seeders { get; set; }
         public int? Leechers { get; set; }
         public double? Ratio { get; set; }
+
+        /// <summary>
+        /// Link to the audiobook record this download is associated with (if any).
+        /// </summary>
+        public int? AudiobookId { get; set; }
 
         /// <summary>
         /// The path as reported by the download client (may be in different mount point)
@@ -138,6 +151,14 @@ namespace Listenarr.Domain.Models
         /// This is often the most accurate path for locating the actual downloaded file/folder.
         /// </summary>
         public string? ContentPath { get; set; }
+
+        /// <summary>
+        /// Exact source files reported by the download client for this download.
+        /// Used internally to scope automatic imports to files that actually belong
+        /// to the download, even when the surrounding directory contains unrelated files.
+        /// </summary>
+        [JsonIgnore]
+        public List<string>? SourceFiles { get; set; }
 
         /// <summary>
         /// The time when the download was detected as complete.

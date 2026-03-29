@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using HtmlAgilityPack;
@@ -280,12 +282,16 @@ namespace Listenarr.Api.Services
                     !doc.RootElement.TryGetProperty("product", out var product) ||
                     product.ValueKind != JsonValueKind.Object)
                 {
+                    _logger.LogWarning("GetTypedBooksBySeriesAsinAsync: No product document for series ASIN {Asin} (doc={DocNull})", seriesAsin, doc == null);
                     return null;
                 }
 
                 if (!product.TryGetProperty("relationships", out var relationships) ||
                     relationships.ValueKind != JsonValueKind.Array)
                 {
+                    _logger.LogWarning("GetTypedBooksBySeriesAsinAsync: No relationships array for series ASIN {Asin}. Product has properties: {Props}",
+                        seriesAsin,
+                        string.Join(", ", product.EnumerateObject().Select(p => p.Name).Take(15)));
                     return new List<AudibleSearchResult>();
                 }
 
@@ -301,9 +307,15 @@ namespace Listenarr.Api.Services
                     .OrderBy(item => ParseSeriesPosition(item.Position))
                     .ToList();
 
+                _logger.LogInformation("GetTypedBooksBySeriesAsinAsync: Series ASIN {Asin} has {Count} relationship entries", seriesAsin, relationshipEntries.Count);
+
                 var books = await GetBooksMetadataByAsinsAsync(
                     relationshipEntries.Select(item => item.Asin!),
                     region);
+
+                _logger.LogInformation("GetTypedBooksBySeriesAsinAsync: Fetched metadata for {FetchedCount}/{TotalCount} books from series {Asin}",
+                    books.Count, relationshipEntries.Count, seriesAsin);
+
                 var booksByAsin = books
                     .Where(book => !string.IsNullOrWhiteSpace(book.Asin))
                     .ToDictionary(book => book.Asin!, StringComparer.OrdinalIgnoreCase);
@@ -366,9 +378,41 @@ namespace Listenarr.Api.Services
 
         public virtual async Task<AudibleSearchResponse?> SearchByTitleAsync(string title, int page = 1, int limit = 50, string region = "us", string? language = null)
         {
+            var normalizedTitle = title?.Trim();
+            if (string.IsNullOrWhiteSpace(normalizedTitle))
+            {
+                return new AudibleSearchResponse
+                {
+                    Results = new List<AudibleSearchResult>(),
+                    TotalResults = 0
+                };
+            }
+
             var response = await SearchProductsDirectAsync(
+                query: normalizedTitle,
+                title: null,
+                author: null,
+                narrator: null,
+                publisher: null,
+                page: page,
+                limit: limit,
+                region: region,
+                language: language,
+                sortBy: "Relevance");
+
+            if (response.Results.Count > 0)
+            {
+                return ToSearchResponse(response);
+            }
+
+            _logger.LogInformation(
+                "Audible keyword title search returned no results for '{Title}' in region {Region}; retrying title-field search",
+                normalizedTitle,
+                NormalizeRegion(region));
+
+            var titleFieldResponse = await SearchProductsDirectAsync(
                 query: null,
-                title: title,
+                title: normalizedTitle,
                 author: null,
                 narrator: null,
                 publisher: null,
@@ -377,7 +421,7 @@ namespace Listenarr.Api.Services
                 region: region,
                 language: language,
                 sortBy: "Title");
-            return ToSearchResponse(response);
+            return ToSearchResponse(titleFieldResponse);
         }
 
         public virtual async Task<AudibleSearchResponse?> SearchByTitleAndAuthorAsync(string title, string author, int page = 1, int limit = 50, string region = "us", string? language = null)
@@ -391,18 +435,7 @@ namespace Listenarr.Api.Services
             // Prefer author-specific endpoint when an author is provided: lookup author ASIN then request their books
             if (string.IsNullOrWhiteSpace(author))
             {
-                var response = await SearchProductsDirectAsync(
-                    query: null,
-                    title: title,
-                    author: null,
-                    narrator: null,
-                    publisher: null,
-                    page: page,
-                    limit: limit,
-                    region: region,
-                    language: language,
-                    sortBy: "Title");
-                return ToSearchResponse(response);
+                return await SearchByTitleAsync(title, page, limit, region, language);
             }
 
             try
@@ -442,7 +475,8 @@ namespace Listenarr.Api.Services
                 if (!string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(isbnFromTitle))
                 {
                     var t = title.Trim();
-                    filtered = filtered.Where(r => !string.IsNullOrWhiteSpace(r.Title) && r.Title.IndexOf(t, StringComparison.OrdinalIgnoreCase) >= 0);
+                    var ci = CultureInfo.InvariantCulture.CompareInfo;
+                    filtered = filtered.Where(r => !string.IsNullOrWhiteSpace(r.Title) && ci.IndexOf(r.Title, t, CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace) >= 0);
                 }
 
                 // If title looks like an ASIN, prefer exact ASIN match
@@ -636,6 +670,8 @@ namespace Listenarr.Api.Services
             }
 
             var normalizedAuthor = author.Trim();
+            var compareInfo = CultureInfo.InvariantCulture.CompareInfo;
+            const CompareOptions diacriticIgnore = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
             return response.RawProducts
                 .SelectMany(product =>
                     GetArray(product, "authors")
@@ -647,9 +683,9 @@ namespace Listenarr.Api.Services
                         }))
                 .Where(item => !string.IsNullOrWhiteSpace(item.Name))
                 .Where(item =>
-                    string.Equals(item.Name, normalizedAuthor, StringComparison.OrdinalIgnoreCase) ||
-                    item.Name!.Contains(normalizedAuthor, StringComparison.OrdinalIgnoreCase) ||
-                    normalizedAuthor.Contains(item.Name!, StringComparison.OrdinalIgnoreCase))
+                    compareInfo.Compare(item.Name, normalizedAuthor, diacriticIgnore) == 0 ||
+                    compareInfo.IndexOf(item.Name!, normalizedAuthor, diacriticIgnore) >= 0 ||
+                    compareInfo.IndexOf(normalizedAuthor, item.Name!, diacriticIgnore) >= 0)
                 .GroupBy(item => $"{item.Asin}|{item.Name}", StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
                 .ToList();
@@ -658,6 +694,8 @@ namespace Listenarr.Api.Services
         private async Task<List<SeriesLookupItem>> LookupSeriesItemsAsync(string seriesName, string region = "us")
         {
             var responses = new List<SearchProductsDirectResponse>();
+
+            // First try title search — finds products whose title matches the series name
             responses.Add(await SearchProductsDirectAsync(
                 query: null,
                 title: seriesName,
@@ -671,25 +709,32 @@ namespace Listenarr.Api.Services
                 sortBy: "Title",
                 returnRawProducts: true));
 
-            var firstRawProducts = responses[0].RawProducts;
-            if (firstRawProducts == null || firstRawProducts.Count == 0)
-            {
-                responses.Add(await SearchProductsDirectAsync(
-                    query: seriesName,
-                    title: null,
-                    author: null,
-                    narrator: null,
-                    publisher: null,
-                    page: 1,
-                    limit: 25,
-                    region: region,
-                    language: null,
-                    sortBy: "Relevance",
-                    returnRawProducts: true));
-            }
+            // Always also run a keyword query search — this finds products that *belong* to
+            // the series even when no product title contains the series name (e.g. searching
+            // "Fjällbacka Mysteries" finds "The Hidden Child" which has the series in its metadata)
+            responses.Add(await SearchProductsDirectAsync(
+                query: seriesName,
+                title: null,
+                author: null,
+                narrator: null,
+                publisher: null,
+                page: 1,
+                limit: 25,
+                region: region,
+                language: null,
+                sortBy: "Relevance",
+                returnRawProducts: true));
+
+            _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}' region={Region}: title search returned {TitleCount} raw products, query search returned {QueryCount} raw products",
+                seriesName, region,
+                responses.ElementAtOrDefault(0)?.RawProducts?.Count ?? 0,
+                responses.ElementAtOrDefault(1)?.RawProducts?.Count ?? 0);
 
             var normalizedSeries = seriesName.Trim();
-            return responses
+            var compareInfo = CultureInfo.InvariantCulture.CompareInfo;
+            const CompareOptions diacriticIgnore = CompareOptions.IgnoreCase | CompareOptions.IgnoreNonSpace;
+
+            var allSeriesItems = responses
                 .SelectMany(response => response.RawProducts ?? new List<JsonElement>())
                 .SelectMany(product =>
                 {
@@ -705,14 +750,26 @@ namespace Listenarr.Api.Services
                         });
                 })
                 .Where(item => !string.IsNullOrWhiteSpace(item.Name))
+                .ToList();
+
+            _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}': extracted {Count} series items from raw products. Unique names: {Names}",
+                seriesName, allSeriesItems.Count,
+                string.Join(", ", allSeriesItems.Select(i => i.Name).Distinct(StringComparer.OrdinalIgnoreCase).Take(10)));
+
+            var matched = allSeriesItems
                 .Where(item =>
-                    string.Equals(item.Name, normalizedSeries, StringComparison.OrdinalIgnoreCase) ||
-                    item.Name!.Contains(normalizedSeries, StringComparison.OrdinalIgnoreCase) ||
-                    normalizedSeries.Contains(item.Name!, StringComparison.OrdinalIgnoreCase))
+                    compareInfo.Compare(item.Name, normalizedSeries, diacriticIgnore) == 0 ||
+                    compareInfo.IndexOf(item.Name!, normalizedSeries, diacriticIgnore) >= 0 ||
+                    compareInfo.IndexOf(normalizedSeries, item.Name!, diacriticIgnore) >= 0)
                 .GroupBy(item => $"{item.Asin}|{item.Name}", StringComparer.OrdinalIgnoreCase)
                 .Select(group => group.First())
-                .OrderBy(item => string.Equals(item.Name, normalizedSeries, StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .OrderBy(item => compareInfo.Compare(item.Name, normalizedSeries, diacriticIgnore) == 0 ? 0 : 1)
                 .ToList();
+
+            _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}': {MatchCount} series items matched after name filter",
+                seriesName, matched.Count);
+
+            return matched;
         }
 
         private sealed class SearchProductsDirectResponse
@@ -736,6 +793,44 @@ namespace Listenarr.Api.Services
             bool returnRawProducts = false)
         {
             var safeRegion = NormalizeRegion(region);
+
+            // Try with original text first (preserves diacritics for APIs that
+            // handle them natively, e.g. audible.de for German/Swedish).
+            var result = await SearchProductsCoreAsync(
+                query, title, author, narrator, publisher,
+                page, limit, safeRegion, language, sortBy, returnRawProducts);
+
+            // If no results and any parameter contained diacritics, retry with
+            // diacritics stripped (helps US/UK APIs that don't match accented text).
+            if (result.Results.Count == 0)
+            {
+                bool hasDiacritics =
+                    HasDiacritics(query) || HasDiacritics(title) ||
+                    HasDiacritics(author) || HasDiacritics(narrator) ||
+                    HasDiacritics(publisher);
+
+                if (hasDiacritics)
+                {
+                    _logger.LogInformation("Retrying Audible search with diacritics stripped (region={Region})", safeRegion);
+                    result = await SearchProductsCoreAsync(
+                        RemoveDiacritics(query ?? string.Empty),
+                        RemoveDiacritics(title ?? string.Empty),
+                        RemoveDiacritics(author ?? string.Empty),
+                        RemoveDiacritics(narrator ?? string.Empty),
+                        RemoveDiacritics(publisher ?? string.Empty),
+                        page, limit, safeRegion, language, sortBy, returnRawProducts);
+                }
+            }
+
+            return result;
+        }
+
+        private async Task<SearchProductsDirectResponse> SearchProductsCoreAsync(
+            string? query, string? title, string? author,
+            string? narrator, string? publisher,
+            int page, int limit, string safeRegion,
+            string? language, string sortBy, bool returnRawProducts)
+        {
             var parameters = new Dictionary<string, string?>
             {
                 ["num_results"] = Math.Clamp(limit, 1, 50).ToString(),
@@ -744,7 +839,7 @@ namespace Listenarr.Api.Services
                 ["response_groups"] = "media,contributors,series,product_attrs,product_desc,product_extended_attrs,category_ladders"
             };
 
-            if (!string.IsNullOrWhiteSpace(query)) parameters["query"] = query;
+            if (!string.IsNullOrWhiteSpace(query)) parameters["keywords"] = query;
             if (!string.IsNullOrWhiteSpace(title)) parameters["title"] = title;
             if (!string.IsNullOrWhiteSpace(author)) parameters["author"] = author;
             if (!string.IsNullOrWhiteSpace(narrator)) parameters["narrator"] = narrator;
@@ -781,6 +876,16 @@ namespace Listenarr.Api.Services
                     : results.Count,
                 RawProducts = returnRawProducts ? rawProducts : null
             };
+        }
+
+        /// <summary>
+        /// Returns true if the string contains characters with diacritical marks
+        /// that would be altered by <see cref="RemoveDiacritics"/>.
+        /// </summary>
+        private static bool HasDiacritics(string? text)
+        {
+            if (string.IsNullOrEmpty(text)) return false;
+            return text != RemoveDiacritics(text);
         }
 
         private async Task<JsonDocument?> GetAudibleProductDocumentAsync(string asin, string region, string responseGroups)
@@ -964,7 +1069,8 @@ namespace Listenarr.Api.Services
             }
 
             return results
-                .Where(result => string.Equals(result.Language, language, StringComparison.OrdinalIgnoreCase))
+                .Where(result => string.IsNullOrWhiteSpace(result.Language) ||
+                                 string.Equals(result.Language, language, StringComparison.OrdinalIgnoreCase))
                 .ToList();
         }
 
@@ -1047,6 +1153,26 @@ namespace Listenarr.Api.Services
                 parameters
                     .Where(pair => !string.IsNullOrWhiteSpace(pair.Value))
                     .Select(pair => $"{Uri.EscapeDataString(pair.Key)}={Uri.EscapeDataString(pair.Value!)}"));
+        }
+
+        /// <summary>
+        /// Strips diacritical marks (accents) from a string so that characters
+        /// like Å → A, ä → a, ö → o, etc.  The Audible API returns poor or no
+        /// results when the query contains non-ASCII diacritics, so we normalize
+        /// before sending the request.  Result metadata still contains the
+        /// correct accented characters from the API response.
+        /// </summary>
+        internal static string RemoveDiacritics(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return text;
+            var normalized = text.Normalize(NormalizationForm.FormD);
+            var sb = new StringBuilder(normalized.Length);
+            foreach (var ch in normalized)
+            {
+                if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+                    sb.Append(ch);
+            }
+            return sb.ToString().Normalize(NormalizationForm.FormC);
         }
 
         private static IEnumerable<JsonElement> GetArray(JsonElement element, string propertyName)
@@ -1323,11 +1449,12 @@ namespace Listenarr.Api.Services
                 return string.Empty;
             }
 
-            return string.Join(
+            var joined = string.Join(
                 ' ',
                 value.Trim()
                     .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
                 .ToLowerInvariant();
+            return RemoveDiacritics(joined);
         }
 
         private async Task<AudibleSearchResponse?> ScrapeAudibleAuthorPageAsync(string author, string authorAsin, int page = 1, int limit = 50, string region = "us", string? language = null)
@@ -2104,4 +2231,3 @@ namespace Listenarr.Api.Services
     public class AudibleAuthorTileMetadata { public List<AudibleAuthorTileAuthor>? Authors { get; set; } }
     public class AudibleAuthorTileAuthor { public string? Name { get; set; } }
 }
-

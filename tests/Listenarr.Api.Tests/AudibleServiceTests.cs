@@ -39,5 +39,25 @@ namespace Listenarr.Api.Tests
             var isPodcast = InvokeSearchResultIndicatesPodcast(r);
             Assert.True(isPodcast);
         }
+
+        [Theory]
+        [InlineData("Åsa Larsson", "Asa Larsson")]
+        [InlineData("Ärzte Öberg", "Arzte Oberg")]
+        [InlineData("café naïve", "cafe naive")]
+        [InlineData("Björk Guðmundsdóttir", "Bjork Guðmundsdottir")]
+        [InlineData("Harry Potter", "Harry Potter")]  // ASCII unchanged
+        [InlineData("", "")]                           // empty unchanged
+        public void RemoveDiacritics_StripsAccents(string input, string expected)
+        {
+            var result = AudibleService.RemoveDiacritics(input);
+            Assert.Equal(expected, result);
+        }
+
+        [Fact]
+        public void RemoveDiacritics_Null_ReturnsNull()
+        {
+            var result = AudibleService.RemoveDiacritics(null!);
+            Assert.Null(result);
+        }
     }
 }

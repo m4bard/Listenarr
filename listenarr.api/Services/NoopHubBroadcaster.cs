@@ -9,7 +9,7 @@ namespace Listenarr.Api.Services
     // SignalR broadcaster hasn't been registered in a test service provider.
     public class NoopHubBroadcaster : IHubBroadcaster
     {
-        public Task BroadcastQueueUpdateAsync(List<QueueItem> queue)
+        public Task BroadcastQueueUpdateAsync(QueueSnapshot queueSnapshot)
         {
             // Intentionally do nothing in tests or lightweight hosts
             return Task.CompletedTask;

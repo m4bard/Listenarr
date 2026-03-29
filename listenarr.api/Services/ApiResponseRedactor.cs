@@ -97,10 +97,71 @@ public static class ApiResponseRedactor
 
         if (!string.IsNullOrWhiteSpace(clone.AdditionalSettings))
         {
-            clone.AdditionalSettings = RedactedValue;
+            clone.AdditionalSettings = RedactJsonSettings(clone.AdditionalSettings);
         }
 
         return clone;
+    }
+
+    /// <summary>
+    /// Merge incoming AdditionalSettings JSON with existing DB values, preserving
+    /// real secrets when the incoming payload contains "REDACTED" placeholders.
+    /// </summary>
+    public static string? MergeAdditionalSettings(string? existingJson, string? incomingJson)
+    {
+        // Fully redacted or empty → preserve existing
+        if (string.IsNullOrWhiteSpace(incomingJson) || incomingJson == RedactedValue)
+            return existingJson;
+
+        if (string.IsNullOrWhiteSpace(existingJson))
+            return incomingJson;
+
+        try
+        {
+            using var incomingDoc = JsonDocument.Parse(incomingJson);
+            if (incomingDoc.RootElement.ValueKind != JsonValueKind.Object)
+                return incomingJson;
+
+            // Quick scan: any values are "REDACTED"?
+            bool hasRedacted = incomingDoc.RootElement.EnumerateObject().Any(prop =>
+                prop.Value.ValueKind == JsonValueKind.String &&
+                prop.Value.GetString() == RedactedValue);
+
+            if (!hasRedacted)
+                return incomingJson;
+
+            // Merge: use incoming values except where they're "REDACTED" — keep existing for those
+            using var existingDoc = JsonDocument.Parse(existingJson);
+            if (existingDoc.RootElement.ValueKind != JsonValueKind.Object)
+                return incomingJson;
+
+            using var ms = new System.IO.MemoryStream();
+            using (var writer = new System.Text.Json.Utf8JsonWriter(ms))
+            {
+                writer.WriteStartObject();
+                foreach (var prop in incomingDoc.RootElement.EnumerateObject())
+                {
+                    if (prop.Value.ValueKind == JsonValueKind.String &&
+                        prop.Value.GetString() == RedactedValue &&
+                        existingDoc.RootElement.TryGetProperty(prop.Name, out var existingValue))
+                    {
+                        writer.WritePropertyName(prop.Name);
+                        existingValue.WriteTo(writer);
+                    }
+                    else
+                    {
+                        writer.WritePropertyName(prop.Name);
+                        prop.Value.WriteTo(writer);
+                    }
+                }
+                writer.WriteEndObject();
+            }
+            return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch (JsonException)
+        {
+            return incomingJson;
+        }
     }
 
     public static object ToDownloadClientSummaryResponse(DownloadClientConfiguration config)
@@ -137,6 +198,42 @@ public static class ApiResponseRedactor
             Settings = config.Settings,
             config.CreatedAt
         };
+    }
+
+    private static string RedactJsonSettings(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(json);
+            if (doc.RootElement.ValueKind != JsonValueKind.Object)
+                return RedactedValue;
+
+            using var ms = new System.IO.MemoryStream();
+            using (var writer = new System.Text.Json.Utf8JsonWriter(ms))
+            {
+                writer.WriteStartObject();
+                foreach (var prop in doc.RootElement.EnumerateObject())
+                {
+                    if (IsSensitiveKey(prop.Name) &&
+                        prop.Value.ValueKind == JsonValueKind.String &&
+                        !string.IsNullOrWhiteSpace(prop.Value.GetString()))
+                    {
+                        writer.WriteString(prop.Name, RedactedValue);
+                    }
+                    else
+                    {
+                        writer.WritePropertyName(prop.Name);
+                        prop.Value.WriteTo(writer);
+                    }
+                }
+                writer.WriteEndObject();
+            }
+            return System.Text.Encoding.UTF8.GetString(ms.ToArray());
+        }
+        catch (JsonException)
+        {
+            return RedactedValue;
+        }
     }
 
     private static Dictionary<string, string> RedactStringDictionary(Dictionary<string, string>? input)
@@ -178,7 +275,7 @@ public static class ApiResponseRedactor
                || k.Contains("token")
                || k.Contains("secret")
                || k.Contains("password")
-               || k == "mam_id"
+               || k.Contains("mam")
                || k.Contains("cookie")
                || k.Contains("authorization");
     }

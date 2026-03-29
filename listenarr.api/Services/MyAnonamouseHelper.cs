@@ -421,6 +421,52 @@ namespace Listenarr.Api.Services
                     return System.Text.Encoding.UTF8.GetString(buf, 0, r);
                 }
 
+                // Skip over a bencoded element without capturing any strings
+                void ScanElementSkip()
+                {
+                    int c2 = inStream.ReadByte();
+                    if (c2 == -1) return;
+                    char ch2 = (char)c2;
+                    if (ch2 == 'd')
+                    {
+                        while (true)
+                        {
+                            int p = inStream.ReadByte();
+                            if (p == -1 || (char)p == 'e') break;
+                            inStream.Position -= 1;
+                            // skip key (string)
+                            var kl = ReadNumberLocal();
+                            if (!int.TryParse(kl, out var kLen)) break;
+                            ReadStringLocal(kLen);
+                            ScanElementSkip(); // skip value
+                        }
+                    }
+                    else if (ch2 == 'l')
+                    {
+                        while (true)
+                        {
+                            int p = inStream.ReadByte();
+                            if (p == -1 || (char)p == 'e') break;
+                            inStream.Position -= 1;
+                            ScanElementSkip();
+                        }
+                    }
+                    else if (ch2 == 'i')
+                    {
+                        while (true)
+                        {
+                            int b = inStream.ReadByte();
+                            if (b == -1 || (char)b == 'e') break;
+                        }
+                    }
+                    else if (char.IsDigit(ch2))
+                    {
+                        inStream.Position -= 1;
+                        var ls = ReadNumberLocal();
+                        if (int.TryParse(ls, out var len)) ReadStringLocal(len);
+                    }
+                }
+
                 void ScanElement()
                 {
                     int c = inStream.ReadByte();
@@ -433,7 +479,7 @@ namespace Listenarr.Api.Services
                         {
                             int peek = inStream.ReadByte();
                             if (peek == -1) break;
-                            if ((char)peek == 'e') break;
+                            if ((char)peek == 'e') break; // 'e' is consumed here; no extra read needed
                             inStream.Position -= 1;
                             // keys are strings
                             var keyLenStr = ReadNumberLocal();
@@ -449,11 +495,16 @@ namespace Listenarr.Api.Services
                                 var val = ReadStringLocal(len);
                                 if (!string.IsNullOrWhiteSpace(val)) resultSet.Add(val);
                             }
-                            else if (string.Equals(key, "announce-list", StringComparison.OrdinalIgnoreCase) || string.Equals(key, "url-list", StringComparison.OrdinalIgnoreCase))
+                            else if (string.Equals(key, "announce-list", StringComparison.OrdinalIgnoreCase))
                             {
-                                // value is a list (possibly nested)
+                                // value is a list (possibly nested) of tracker announce URLs
                                 ScanElement(); // will process nested lists/strings and add strings when encountered
-                                // continue (ScanElement consumes the list)
+                            }
+                            else if (string.Equals(key, "url-list", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // url-list is for web seeds / file URLs — NOT tracker announces.
+                                // Skip by scanning without capturing.
+                                ScanElementSkip();
                             }
                             else
                             {
@@ -461,9 +512,6 @@ namespace Listenarr.Api.Services
                                 ScanElement();
                             }
                         }
-                        // consume trailing 'e'
-                        int trailing = inStream.ReadByte();
-                        // handle trailing if necessary
                     }
                     else if (ch == 'l')
                     {
@@ -472,7 +520,7 @@ namespace Listenarr.Api.Services
                         {
                             int peek = inStream.ReadByte();
                             if (peek == -1) break;
-                            if ((char)peek == 'e') break;
+                            if ((char)peek == 'e') break; // 'e' is consumed here; no extra read needed
                             inStream.Position -= 1;
                             // If element is a string, capture it; otherwise recurse
                             int next = inStream.ReadByte();
@@ -492,8 +540,6 @@ namespace Listenarr.Api.Services
                                 ScanElement();
                             }
                         }
-                        // consume trailing 'e'
-                        int trailing = inStream.ReadByte();
                     }
                     else if (ch == 'i')
                     {
@@ -511,7 +557,7 @@ namespace Listenarr.Api.Services
                         inStream.Position -= 1;
                         var lenStr = ReadNumberLocal();
                         if (!int.TryParse(lenStr, out var len)) return;
-                        inStream.ReadByte();
+                        // ReadNumberLocal already consumed the ':' separator, so read the string directly
                         var s = ReadStringLocal(len);
                         if (!string.IsNullOrWhiteSpace(s) && (s.StartsWith("http://", StringComparison.OrdinalIgnoreCase) || s.StartsWith("https://", StringComparison.OrdinalIgnoreCase) || s.StartsWith("udp://", StringComparison.OrdinalIgnoreCase)))
                         {
@@ -533,22 +579,26 @@ namespace Listenarr.Api.Services
                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
-            // Fallback: regex to find http/https/udp urls if we didn't find anything via bencode parsing
-if (resultSet.Count == 0)
+            // Fallback: regex to find tracker announce URLs if bencode parsing found nothing.
+            // Only match URLs containing /announce or /tracker to avoid picking up file/web-seed URLs.
+            if (resultSet.Count == 0)
+            {
+                try
+                {
+                    var asciiAll = System.Text.Encoding.ASCII.GetString(torrentBytes);
+                    var matches = System.Text.RegularExpressions.Regex.Matches(asciiAll, @"(https?|udp)://[^\s\""']+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                    foreach (System.Text.RegularExpressions.Match m in matches)
                     {
-                        try
+                        var v = m.Value;
+                        if (v.Contains("/announce", StringComparison.OrdinalIgnoreCase) || v.Contains("/tracker", StringComparison.OrdinalIgnoreCase))
                         {
-                            var asciiAll = System.Text.Encoding.ASCII.GetString(torrentBytes);
-                            var matches = System.Text.RegularExpressions.Regex.Matches(asciiAll, @"(https?|udp)://[^\s\""']+" , System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                            foreach (System.Text.RegularExpressions.Match m in matches)
-                            {
-                                var v = m.Value;
-                                resultSet.Add(v);
+                            resultSet.Add(v);
+                        }
                     }
                 }
                 catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {
                     // ignore
-                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
             }
 

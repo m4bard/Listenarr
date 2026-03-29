@@ -27,6 +27,12 @@ namespace Listenarr.Api.Services
         {
             try
             {
+                if (!FileUtils.IsAudioFile(filePath))
+                {
+                    _logger.LogInformation("Skipping non-audio audiobook file registration for audiobook {AudiobookId}: {Path}", audiobookId, filePath);
+                    return false;
+                }
+
                 using var scope = _scopeFactory.CreateScope();
                 var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
                 var metadataService = scope.ServiceProvider.GetRequiredService<IMetadataService>();

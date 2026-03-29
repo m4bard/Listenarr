@@ -34,6 +34,60 @@ describe('AddNewView pagination', () => {
     expect(apiResponse.totalResults).toBe(0)
   })
 
+  it('does not render empty results controls when title results have no pagination controls', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    const vm = wrapper.vm as unknown as {
+      searchType?: string
+      titleResults?: unknown[]
+    }
+
+    vm.searchType = 'title'
+    vm.titleResults = [
+      {
+        key: 'dune-messiah',
+        title: 'Dune Messiah',
+        author_name: ['Frank Herbert'],
+        searchResult: {
+          artist: 'Frank Herbert',
+        },
+      },
+    ]
+
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.title-results').exists()).toBe(true)
+    expect(wrapper.find('.results-controls').exists()).toBe(false)
+  })
+
+  it('renders results controls when title results need client-side pagination', async () => {
+    const router = createTestRouter()
+    const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
+    const vm = wrapper.vm as unknown as {
+      searchType?: string
+      titleResults?: unknown[]
+      totalTitleResultsCount?: number
+    }
+
+    vm.searchType = 'title'
+    vm.titleResults = [
+      {
+        key: 'dune',
+        title: 'Dune',
+        author_name: ['Frank Herbert'],
+        searchResult: {
+          artist: 'Frank Herbert',
+        },
+      },
+    ]
+    vm.totalTitleResultsCount = 60
+
+    await wrapper.vm.$nextTick()
+
+    expect(wrapper.find('.results-controls').exists()).toBe(true)
+    expect(wrapper.find('.client-pagination-controls').exists()).toBe(true)
+  })
+
   it('maps audible metadata to result fields', async () => {
     const apiModule = await import('@/services/api')
     const apiService = apiModule.apiService as unknown as { searchAudibleByTitleAndAuthor?: Mock }

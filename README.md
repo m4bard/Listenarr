@@ -68,10 +68,12 @@ The easiest way to get started is to use Docker (recommended for production), pr
 
 ```bash
 docker run -d \
-  ## Replace with your desired UID and GID
-  --user 1001:1001 \
   --name listenarr \
   -p 4545:4545 \
+  ## OPTIONAL: Set container runtime user/group and file creation mask
+  -e PUID=1000 \
+  -e PGID=1000 \
+  -e UMASK=022 \
   ## OPTIONAL: Used by Discord Bot
   -e LISTENARR_PUBLIC_URL=https://your-domain.com \
   -v listenarr_data:/app/config \
@@ -79,6 +81,8 @@ docker run -d \
   -v /path/to/downloadclient-downloads:/downloads #optional \
   ghcr.io/listenarrs/listenarr:canary
 ```
+
+`PUID` and `PGID` control the user/group the container runs as. `UMASK` controls default file permissions for newly created files and folders. If `PGID` is omitted, it defaults to the same value as `PUID`. If `UMASK` is omitted, it defaults to `022`.
 
 **Service will be available at:**
 - Web App: http://localhost:4545
@@ -96,10 +100,12 @@ version: '3.8'
 services:
   listenarr:
     image: ghcr.io/listenarrs/listenarr:canary
-    user: "1001:1001"  ## Replace with your desired UID and GID
     ports:
       - "4545:4545"
     environment:
+      - PUID=1000
+      - PGID=1000
+      - UMASK=022
       - LISTENARR_PUBLIC_URL=https://your-domain.com ## OPTIONAL: Used by Discord Bot
     volumes:
       - listenarr_data:/app/config

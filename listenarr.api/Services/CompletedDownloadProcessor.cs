@@ -81,7 +81,7 @@ namespace Listenarr.Api.Services
                     try
                     {
                         await Task.Delay(100); // Brief delay for DB commit
-                        var queueAfterComplete = await _downloadQueueService.GetQueueAsync();
+                        var queueAfterComplete = await _downloadQueueService.GetQueueSnapshotAsync();
                         if (_hubBroadcaster != null)
                         {
                             await _hubBroadcaster.BroadcastQueueUpdateAsync(queueAfterComplete);
@@ -123,13 +123,16 @@ namespace Listenarr.Api.Services
                     settings = new ApplicationSettings();
                 }
                 var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
+                var importPath = ResolveCompletedImportPath(finalPath, normalizedBlacklist);
 
-                if (string.IsNullOrWhiteSpace(finalPath))
+                if (string.IsNullOrWhiteSpace(importPath))
                 {
                     _logger.LogWarning("ProcessCompletedDownloadAsync: finalPath is empty for download {DownloadId}", downloadId);
                 }
                 else
                 {
+                    finalPath = importPath;
+
                     if (System.IO.Directory.Exists(finalPath))
                     {
                         try
@@ -137,12 +140,14 @@ namespace Listenarr.Api.Services
                             var files = System.IO.Directory.GetFiles(finalPath, "*", System.IO.SearchOption.AllDirectories)
                                 .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
                                 .ToArray();
+                            var clientScopedFiles = await FilterToClientReportedFilesAsync(download, finalPath, files);
+                            files = clientScopedFiles.Files;
                             var archiveFiles = files.Where(f => _archiveExtractor.IsArchive(f)).ToArray();
                             var directImportFiles = files
                                 .Where(f => !_archiveExtractor.IsArchive(f))
                                 .ToArray();
 
-                            if (directImportFiles.Length > 1)
+                            if (directImportFiles.Length > 1 && !clientScopedFiles.UsedClientScope)
                             {
                                 directImportFiles = await FilterDirectoryAudioFilesAsync(download, directImportFiles);
                             }
@@ -157,7 +162,7 @@ namespace Listenarr.Api.Services
                             // if any successful imports returned final paths, set Download.FinalPath to the first one
                             try
                             {
-                                var finalFromDirectory = importResults?.FirstOrDefault(r => r != null && r.Success && !string.IsNullOrWhiteSpace(r.FinalPath))?.FinalPath;
+                                var finalFromDirectory = SelectPrimaryImportedPath(importResults);
                                 if (!string.IsNullOrWhiteSpace(finalFromDirectory))
                                 {
                                     var tracked = await _downloadRepository.FindAsync(downloadId);
@@ -289,7 +294,7 @@ namespace Listenarr.Api.Services
                                                 var extractedResults = await _fileFinalizer.ImportFilesFromDirectoryAsync(downloadId, download?.AudiobookId, extractedFiles, settings);
                                                 _logger.LogInformation("Imported {Count} files extracted from archive {Archive} for download {DownloadId}", extractedResults?.Count ?? 0, archivePath, downloadId);
 
-                                                var finalFromExtracted = extractedResults?.FirstOrDefault(r => r != null && r.Success && !string.IsNullOrWhiteSpace(r.FinalPath))?.FinalPath;
+                                                var finalFromExtracted = SelectPrimaryImportedPath(extractedResults);
                                                 if (!string.IsNullOrWhiteSpace(finalFromExtracted))
                                                 {
                                                     var tracked = await _downloadRepository.FindAsync(downloadId);
@@ -385,7 +390,7 @@ namespace Listenarr.Api.Services
                                             var extractedResults = await _fileFinalizer.ImportFilesFromDirectoryAsync(downloadId, download?.AudiobookId, extractedFiles, settings);
                                             _logger.LogInformation("Imported {Count} files extracted from archive {Archive} for download {DownloadId}", extractedResults?.Count ?? 0, finalPath, downloadId);
 
-                                            var finalFromExtracted = extractedResults?.FirstOrDefault(r => r != null && r.Success && !string.IsNullOrWhiteSpace(r.FinalPath))?.FinalPath;
+                                            var finalFromExtracted = SelectPrimaryImportedPath(extractedResults);
                                             if (!string.IsNullOrWhiteSpace(finalFromExtracted))
                                             {
                                                 var tracked = await _downloadRepository.FindAsync(downloadId);
@@ -824,7 +829,7 @@ namespace Listenarr.Api.Services
                                         _logger.LogDebug("Using torrent hash {Hash} instead of download ID for {ClientType} removal", torrentHash, clientConfig.Type);
                                     }
                                 }
-                                else if (clientConfig.Type.Equals("nzbget", StringComparison.OrdinalIgnoreCase) && 
+                                else if (clientConfig.Type.Equals("nzbget", StringComparison.OrdinalIgnoreCase) &&
                                          downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("TorrentHash", out var droneIdObj))
                                 {
                                     // For NZBGet, TorrentHash actually contains the droneId (GUID)
@@ -833,6 +838,16 @@ namespace Listenarr.Api.Services
                                     {
                                         clientId = droneId;
                                         _logger.LogDebug("Using droneId {DroneId} instead of download ID for NZBGet removal", droneId);
+                                    }
+                                }
+                                else if (clientConfig.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase) &&
+                                         downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("ClientDownloadId", out var sabIdObj))
+                                {
+                                    var sabId = sabIdObj?.ToString();
+                                    if (!string.IsNullOrEmpty(sabId))
+                                    {
+                                        clientId = sabId;
+                                        _logger.LogDebug("Using ClientDownloadId {NzoId} instead of download ID for SABnzbd removal", sabId);
                                     }
                                 }
                                 
@@ -968,7 +983,7 @@ namespace Listenarr.Api.Services
                                                 // Broadcast queue update after deletion so frontend sees the updated state
                                                 try
                                                 {
-                                                    var currentQueue = await _downloadQueueService.GetQueueAsync();
+                                                    var currentQueue = await _downloadQueueService.GetQueueSnapshotAsync();
                                                     if (_hubBroadcaster != null)
                                                     {
                                                         await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueue);
@@ -1001,7 +1016,7 @@ namespace Listenarr.Api.Services
 
                 try
                 {
-                    var currentQueue = await _downloadQueueService.GetQueueAsync();
+                    var currentQueue = await _downloadQueueService.GetQueueSnapshotAsync();
                     if (_hubBroadcaster != null)
                     {
                         await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueue);
@@ -1136,6 +1151,110 @@ namespace Listenarr.Api.Services
             }
         }
 
+        private async Task<(string[] Files, bool UsedClientScope)> FilterToClientReportedFilesAsync(
+            Download? download,
+            string? finalPath,
+            string[] files)
+        {
+            if (download == null || files.Length == 0 || string.IsNullOrWhiteSpace(download.DownloadClientId))
+            {
+                return (files, false);
+            }
+
+            try
+            {
+                using var scope = _serviceScopeFactory.CreateScope();
+                var importResolver = scope.ServiceProvider.GetService<IImportItemResolutionService>();
+                if (importResolver == null)
+                {
+                    return (files, false);
+                }
+
+                var clientContentPath = download.Metadata?.TryGetValue("ClientContentPath", out var ccp) is true
+                    ? ccp?.ToString()
+                    : null;
+                var preliminaryItem = new QueueItem
+                {
+                    Id = GetClientDownloadItemId(download) ?? download.Id,
+                    Title = download.Title ?? "Unknown",
+                    Status = "completed",
+                    ContentPath = clientContentPath ?? finalPath ?? download.FinalPath ?? download.DownloadPath,
+                    DownloadClientId = download.DownloadClientId
+                };
+
+                var resolvedItem = await importResolver.ResolveImportItemAsync(
+                    download,
+                    preliminaryItem,
+                    previousAttempt: null);
+
+                if (resolvedItem.SourceFiles == null || resolvedItem.SourceFiles.Count == 0)
+                {
+                    return (files, false);
+                }
+
+                var allowedFiles = new HashSet<string>(
+                    resolvedItem.SourceFiles
+                        .Where(path => !string.IsNullOrWhiteSpace(path))
+                        .Select(path => FileUtils.NormalizeStoredPath(path)),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var filteredFiles = files
+                    .Where(path => allowedFiles.Contains(FileUtils.NormalizeStoredPath(path)))
+                    .ToArray();
+
+                if (filteredFiles.Length == 0)
+                {
+                    _logger.LogWarning(
+                        "Download client reported {ClientFileCount} related file(s) for completed download {DownloadId}, but none matched the discovered files under {FinalPath}",
+                        allowedFiles.Count,
+                        download.Id,
+                        finalPath);
+                    return (files, false);
+                }
+
+                _logger.LogInformation(
+                    "Scoped completed-download directory import for {DownloadId} from {OriginalCount} to {FilteredCount} file(s) using the download client's reported file list",
+                    download.Id,
+                    files.Length,
+                    filteredFiles.Length);
+
+                return (filteredFiles, true);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogDebug(ex, "Failed to scope completed-download directory import to download-client reported files for {DownloadId}", download.Id);
+                return (files, false);
+            }
+        }
+
+        private static string? GetClientDownloadItemId(Download download)
+        {
+            if (download.Metadata == null)
+            {
+                return null;
+            }
+
+            if (download.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
+            {
+                var clientId = clientIdObj?.ToString();
+                if (!string.IsNullOrWhiteSpace(clientId))
+                {
+                    return clientId;
+                }
+            }
+
+            if (download.Metadata.TryGetValue("TorrentHash", out var torrentHashObj))
+            {
+                var torrentHash = torrentHashObj?.ToString();
+                if (!string.IsNullOrWhiteSpace(torrentHash))
+                {
+                    return torrentHash;
+                }
+            }
+
+            return null;
+        }
+
         private async Task MarkImportFailureAsync(
             string downloadId,
             string reason,
@@ -1238,6 +1357,80 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogWarning(ex, "Failed to persist import failure details for download {DownloadId}", downloadId);
             }
+        }
+
+        private static string? SelectPrimaryImportedPath(IEnumerable<ImportResult>? results)
+        {
+            if (results == null)
+            {
+                return null;
+            }
+
+            return results
+                .Where(r => r != null && r.Success && !string.IsNullOrWhiteSpace(r.FinalPath))
+                .OrderByDescending(r => FileUtils.IsAudioFile(r.FinalPath!) ? 1 : 0)
+                .Select(r => r.FinalPath)
+                .FirstOrDefault();
+        }
+
+        private string? ResolveCompletedImportPath(string? finalPath, ISet<string> normalizedBlacklist)
+        {
+            if (string.IsNullOrWhiteSpace(finalPath))
+            {
+                return finalPath;
+            }
+
+            if (System.IO.Directory.Exists(finalPath)
+                || FileUtils.IsAudioFile(finalPath)
+                || _archiveExtractor.IsArchive(finalPath))
+            {
+                return finalPath;
+            }
+
+            if (!System.IO.File.Exists(finalPath))
+            {
+                return finalPath;
+            }
+
+            var parentDirectory = System.IO.Path.GetDirectoryName(finalPath);
+            if (string.IsNullOrWhiteSpace(parentDirectory) || !System.IO.Directory.Exists(parentDirectory))
+            {
+                _logger.LogWarning(
+                    "ProcessCompletedDownloadAsync: resolved non-audio file path {FinalPath} without an importable parent directory",
+                    finalPath);
+                return null;
+            }
+
+            string[] siblingFiles;
+            try
+            {
+                siblingFiles = System.IO.Directory.GetFiles(parentDirectory, "*", System.IO.SearchOption.AllDirectories)
+                    .Where(path => !FileUtils.ShouldSkipImportFile(path, normalizedBlacklist))
+                    .ToArray();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogWarning(ex, "ProcessCompletedDownloadAsync: failed to inspect parent directory for non-audio import path {FinalPath}", finalPath);
+                return null;
+            }
+
+            var siblingAudioCount = siblingFiles.Count(FileUtils.IsAudioFile);
+            if (siblingAudioCount == 0)
+            {
+                _logger.LogWarning(
+                    "ProcessCompletedDownloadAsync: resolved non-audio file path {FinalPath} and found no sibling audio files under {ParentDirectory}",
+                    finalPath,
+                    parentDirectory);
+                return null;
+            }
+
+            _logger.LogInformation(
+                "ProcessCompletedDownloadAsync: resolved non-audio file path {FinalPath}; importing parent directory {ParentDirectory} because it contains {AudioCount} audio file(s)",
+                finalPath,
+                parentDirectory,
+                siblingAudioCount);
+
+            return parentDirectory;
         }
 
         private bool TryTransitionStatus(Download download, DownloadStatus targetStatus, string transitionSource)

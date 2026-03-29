@@ -385,6 +385,8 @@ namespace Listenarr.Api.Services.Adapters
 
                 await Task.Delay(1000, ct);
 
+                string? detectedHash = null;
+
                 // Request only necessary fields (hash and name) to reduce response size
                 var afterResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash,name", ct);
                 if (afterResp.IsSuccessStatusCode)
@@ -404,9 +406,9 @@ namespace Listenarr.Api.Services.Adapters
                                         var hash = hEl.GetString() ?? string.Empty;
                                         if (!existingHashes.Contains(hash))
                                         {
-                                            var name = t.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? "" : "";
                                             _logger.LogInformation("Detected new qBittorrent torrent: hash={Hash}", hash);
-                                            return hash;
+                                            detectedHash = hash;
+                                            break;
                                         }
                                     }
                                 }
@@ -418,14 +420,48 @@ namespace Listenarr.Api.Services.Adapters
                     }
                 }
 
-                if (!string.IsNullOrEmpty(extractedHash))
+                if (string.IsNullOrEmpty(detectedHash) && !string.IsNullOrEmpty(extractedHash))
                 {
                     _logger.LogInformation("Using extracted magnet hash as fallback: {Hash}", extractedHash);
-                    return extractedHash;
+                    detectedHash = extractedHash;
                 }
 
-                _logger.LogWarning("Unable to determine torrent hash after adding to qBittorrent for client {ClientId}", LogRedaction.SanitizeText(client.Id));
-                return null;
+                // Inject tracker URLs via addTrackers API as a fallback to ensure the tracker
+                // is registered even if qBittorrent didn't parse it from the torrent file.
+                if (!string.IsNullOrEmpty(detectedHash) && torrentFileData != null && torrentFileData.Length > 0)
+                {
+                    try
+                    {
+                        var announces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentFileData);
+                        // Filter to only actual tracker announce URLs — exclude file/web-seed URLs
+                        var trackerAnnounces = announces?.Where(a =>
+                            a.Contains("/announce", StringComparison.OrdinalIgnoreCase) ||
+                            a.Contains("/tracker", StringComparison.OrdinalIgnoreCase)).ToList();
+                        if (trackerAnnounces != null && trackerAnnounces.Count > 0)
+                        {
+                            var trackerUrls = string.Join("\n", trackerAnnounces.Distinct());
+                            using var addTrackersData = new FormUrlEncodedContent(new[]
+                            {
+                                new KeyValuePair<string, string>("hash", detectedHash),
+                                new KeyValuePair<string, string>("urls", trackerUrls)
+                            });
+                            var trackersResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/addTrackers", addTrackersData, ct);
+                            if (trackersResp.IsSuccessStatusCode)
+                                _logger.LogInformation("Injected {Count} tracker(s) for torrent {Hash} via addTrackers API", trackerAnnounces.Count, detectedHash);
+                            else
+                                _logger.LogDebug("addTrackers API returned {Status} for torrent {Hash} (non-fatal)", trackersResp.StatusCode, detectedHash);
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        _logger.LogDebug(ex, "Non-fatal failure injecting trackers via addTrackers API");
+                    }
+                }
+
+                if (string.IsNullOrEmpty(detectedHash))
+                    _logger.LogWarning("Unable to determine torrent hash after adding to qBittorrent for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+
+                return detectedHash;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "qBittorrent AddAsync failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id));
@@ -1124,6 +1160,7 @@ namespace Listenarr.Api.Services.Adapters
         {
             // ✅ Clone to avoid modifying original
             var result = queueItem.Clone();
+            string? resolvedExistingContentPath = null;
 
             // On API >= 2.6.1, ContentPath/OutputPath is already set correctly from content_path field
             if (!string.IsNullOrEmpty(result.ContentPath))
@@ -1132,13 +1169,17 @@ namespace Listenarr.Api.Services.Adapters
                 if (!string.IsNullOrWhiteSpace(localPath))
                 {
                     result.ContentPath = localPath;
+                    resolvedExistingContentPath = localPath;
                 }
 
                 _logger.LogDebug("Using existing ContentPath for import: {Path}", result.ContentPath);
-                return result;
             }
 
             var hash = download.Metadata?.GetValueOrDefault("TorrentHash")?.ToString();
+            if (string.IsNullOrWhiteSpace(hash))
+            {
+                hash = queueItem.Id;
+            }
             if (string.IsNullOrEmpty(hash))
             {
                 _logger.LogWarning("No torrent hash found in download metadata for download {DownloadId}", download.Id);
@@ -1213,12 +1254,19 @@ namespace Listenarr.Api.Services.Adapters
                 var outputPath = ResolveTorrentContentPath(savePath, files);
                 if (string.IsNullOrEmpty(outputPath))
                 {
-                    _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
-                    return result;
+                    if (string.IsNullOrWhiteSpace(resolvedExistingContentPath))
+                    {
+                        _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
+                        return result;
+                    }
                 }
 
                 // ✅ Apply remote path mapping
-                result.ContentPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
+                result.SourceFiles = await TranslateSourceFilesAsync(client.Id, BuildTorrentSourceFiles(savePath, files));
+                if (!string.IsNullOrWhiteSpace(outputPath))
+                {
+                    result.ContentPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
+                }
                 
                 _logger.LogInformation("Resolved import path for {Hash}: {Path}", hash, result.ContentPath);
             }
@@ -1253,6 +1301,38 @@ namespace Listenarr.Api.Services.Adapters
             return string.IsNullOrEmpty(normalizedBasePath)
                 ? relativePath
                 : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+        }
+
+        private static List<string> BuildTorrentSourceFiles(
+            string savePath,
+            List<Dictionary<string, JsonElement>> files)
+        {
+            if (string.IsNullOrWhiteSpace(savePath) || files == null || files.Count == 0)
+            {
+                return new List<string>();
+            }
+
+            return files
+                .Select(file => file.TryGetValue("name", out var nameEl) ? nameEl.GetString() ?? string.Empty : string.Empty)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Select(name => CombineWithOptionalBase(savePath, name.Replace('/', Path.DirectorySeparatorChar)))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private async Task<List<string>> TranslateSourceFilesAsync(string clientId, IEnumerable<string> sourceFiles)
+        {
+            var translated = new List<string>();
+            foreach (var sourceFile in sourceFiles.Where(path => !string.IsNullOrWhiteSpace(path)))
+            {
+                var localPath = await _pathMappingService.TranslatePathAsync(clientId, sourceFile);
+                translated.Add(localPath);
+            }
+
+            return translated
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         internal static string ResolveTorrentContentPath(

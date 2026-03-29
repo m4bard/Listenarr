@@ -550,6 +550,7 @@ namespace Listenarr.Api.Services.Adapters
         {
             // Clone to avoid mutating the original
             var result = queueItem.Clone();
+            string? resolvedExistingContentPath = null;
 
             // If ContentPath is already set and exists, use it
             if (!string.IsNullOrEmpty(result.ContentPath))
@@ -558,7 +559,7 @@ namespace Listenarr.Api.Services.Adapters
                 if (!string.IsNullOrEmpty(localPath) && (File.Exists(localPath) || Directory.Exists(localPath)))
                 {
                     result.ContentPath = localPath;
-                    return result;
+                    resolvedExistingContentPath = localPath;
                 }
             }
 
@@ -569,7 +570,7 @@ namespace Listenarr.Api.Services.Adapters
                 arguments = new
                 {
                     ids = ParseTransmissionIds(queueItem.Id),
-                    fields = new[] { "id", "name", "downloadDir" }
+                    fields = new[] { "id", "name", "downloadDir", "files" }
                 },
                 tag = 5
             };
@@ -597,16 +598,31 @@ namespace Listenarr.Api.Services.Adapters
 
                 if (string.IsNullOrEmpty(downloadDir) || string.IsNullOrEmpty(name))
                 {
-                    _logger.LogWarning("Missing downloadDir or name for torrent {TorrentId}", queueItem.Id);
-                    return result;
+                    if (string.IsNullOrWhiteSpace(resolvedExistingContentPath))
+                    {
+                        _logger.LogWarning("Missing downloadDir or name for torrent {TorrentId}", queueItem.Id);
+                        return result;
+                    }
                 }
 
                 // Transmission stores files as: downloadDir/name
-                var contentPath = CombineWithOptionalBase(downloadDir, name);
-                
-                // Apply path mapping
-                var localContentPath = await _pathMappingService.TranslatePathAsync(client.Id, contentPath);
-                result.ContentPath = localContentPath;
+                var contentPath = !string.IsNullOrWhiteSpace(downloadDir) && !string.IsNullOrWhiteSpace(name)
+                    ? CombineWithOptionalBase(downloadDir, name)
+                    : resolvedExistingContentPath;
+                string? localContentPath = resolvedExistingContentPath;
+                if (!string.IsNullOrWhiteSpace(contentPath))
+                {
+                    // Apply path mapping
+                    localContentPath = await _pathMappingService.TranslatePathAsync(client.Id, contentPath);
+                    result.ContentPath = localContentPath;
+                }
+
+                if (torrent.TryGetProperty("files", out var filesElement))
+                {
+                    result.SourceFiles = await TranslateSourceFilesAsync(
+                        client.Id,
+                        BuildTransmissionSourceFiles(downloadDir, filesElement));
+                }
 
                 _logger.LogDebug(
                     "Resolved Transmission content path for {TorrentId}: {ContentPath}",
@@ -619,6 +635,50 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning(ex, "Error resolving import item for Transmission torrent {TorrentId}", queueItem.Id);
                 return result;
             }
+        }
+
+        private static List<string> BuildTransmissionSourceFiles(string? downloadDir, JsonElement filesElement)
+        {
+            if (string.IsNullOrWhiteSpace(downloadDir) || filesElement.ValueKind != JsonValueKind.Array)
+            {
+                return new List<string>();
+            }
+
+            var sourceFiles = new List<string>();
+            foreach (var file in filesElement.EnumerateArray())
+            {
+                if (!file.TryGetProperty("name", out var nameProp))
+                {
+                    continue;
+                }
+
+                var relativePath = nameProp.GetString();
+                if (string.IsNullOrWhiteSpace(relativePath))
+                {
+                    continue;
+                }
+
+                sourceFiles.Add(CombineWithOptionalBase(downloadDir, relativePath));
+            }
+
+            return sourceFiles;
+        }
+
+        private async Task<List<string>> TranslateSourceFilesAsync(string clientId, IEnumerable<string> sourceFiles)
+        {
+            var translatedPaths = new List<string>();
+            foreach (var sourceFile in sourceFiles.Where(path => !string.IsNullOrWhiteSpace(path)))
+            {
+                var translated = await _pathMappingService.TranslatePathAsync(clientId, sourceFile);
+                if (!string.IsNullOrWhiteSpace(translated))
+                {
+                    translatedPaths.Add(translated);
+                }
+            }
+
+            return translatedPaths
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
         }
 
         private async Task<QueueItem> MapTorrentAsync(DownloadClientConfiguration client, JsonElement torrent, CancellationToken ct)

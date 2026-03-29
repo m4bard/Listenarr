@@ -811,7 +811,7 @@ namespace Listenarr.Api.Services
                         {
                             var converted = new List<SearchResult>();
                             var titleFiltered = titleRes.Results.AsEnumerable();
-                            if (!string.IsNullOrWhiteSpace(language)) titleFiltered = titleFiltered.Where(b => !string.IsNullOrWhiteSpace(b.Language) && string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
+                            if (!string.IsNullOrWhiteSpace(language)) titleFiltered = titleFiltered.Where(b => string.IsNullOrWhiteSpace(b.Language) || string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
                             foreach (var book in titleFiltered)
                             {
                                 if (string.IsNullOrWhiteSpace(book.Asin)) continue;
@@ -838,6 +838,7 @@ namespace Listenarr.Api.Services
                             }
                             if (converted.Any()) return SearchResultConverters.ToMetadataList(converted);
                         }
+
                     }
 
                     // General/simple query - try audible search endpoint first
@@ -848,7 +849,7 @@ namespace Listenarr.Api.Services
                         {
                             var converted = new List<SearchResult>();
                             var simpleFiltered = simpleRes.Results.AsEnumerable();
-                            if (!string.IsNullOrWhiteSpace(language)) simpleFiltered = simpleFiltered.Where(b => !string.IsNullOrWhiteSpace(b.Language) && string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
+                            if (!string.IsNullOrWhiteSpace(language)) simpleFiltered = simpleFiltered.Where(b => string.IsNullOrWhiteSpace(b.Language) || string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
                             foreach (var book in simpleFiltered)
                             {
                                 if (string.IsNullOrWhiteSpace(book.Asin)) continue;

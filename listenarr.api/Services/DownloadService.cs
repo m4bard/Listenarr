@@ -271,23 +271,20 @@ namespace Listenarr.Api.Services
 
                 try
                 {
-                    var currentQueue = await GetQueueAsync();
+                    var currentQueueSnapshot = await _downloadQueueService.GetQueueSnapshotAsync();
                     if (_hubBroadcaster != null)
                     {
-                        await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueue);
+                        await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueueSnapshot);
                         _logger.LogInformation("Broadcasted QueueUpdate via IHubBroadcaster after processing download {DownloadId}", downloadId);
                     }
                     else
                     {
                         // Fallback to direct hub context for older registrations
-                        await _hubContext.Clients.All.SendAsync("QueueUpdate", currentQueue);
+                        var clientProxy = _hubContext.Clients.All;
+                        await clientProxy.SendAsync("QueueUpdate", currentQueueSnapshot);
                         try
                         {
-                            var clientProxy = _hubContext?.Clients?.All;
-                            if (clientProxy != null)
-                            {
-                                await clientProxy.SendCoreAsync("QueueUpdate", new object[] { currentQueue }, System.Threading.CancellationToken.None);
-                            }
+                            await clientProxy.SendCoreAsync("QueueUpdate", new object[] { currentQueueSnapshot }, System.Threading.CancellationToken.None);
                         }
                         catch (Exception exInner) when (exInner is not OperationCanceledException && exInner is not OutOfMemoryException && exInner is not StackOverflowException) {
                             _logger.LogDebug(exInner, "Direct SendCoreAsync for QueueUpdate failed (non-fatal)");
@@ -533,20 +530,29 @@ namespace Listenarr.Api.Services
             var downloadClientIdForModel = downloadClientId ?? string.Empty;
 
             // Guard against duplicate downloads for the same audiobook.
-            // If another download for this audiobook is already active (Queued/Downloading/
-            // Completed/ImportPending), skip creating a new record to prevent duplicate
-            // entries in the activity view.
+            // Only block when a truly active download exists (Queued/Downloading/ImportPending)
+            // for an enabled download client. Completed downloads don't block — ImportPending
+            // covers the "waiting for import" window, and stale records from deleted/reconfigured
+            // clients are excluded so they can't silently phantom-block re-downloads.
             if (audiobookId is int audiobookIdValue && audiobookIdValue > 0)
             {
                 try
                 {
                     var checkContext = await _dbContextFactory.CreateDbContextAsync();
+
+                    var downloadClients = await _configurationService.GetDownloadClientConfigurationsAsync();
+                    var enabledClientIds = downloadClients
+                        .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
+                        .Select(c => c.Id)
+                        .ToHashSet();
+
                     var existingActive = await checkContext.Downloads
                         .Where(d => d.AudiobookId == audiobookIdValue &&
                                     (d.Status == DownloadStatus.Queued ||
                                      d.Status == DownloadStatus.Downloading ||
-                                     d.Status == DownloadStatus.Completed ||
-                                     d.Status == DownloadStatus.ImportPending))
+                                     d.Status == DownloadStatus.ImportPending) &&
+                                    (d.DownloadClientId == "DDL" ||
+                                     (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId))))
                         .AnyAsync();
 
                     if (existingActive)
@@ -571,6 +577,7 @@ namespace Listenarr.Api.Services
                 Title = searchResult.Title ?? string.Empty,
                 Artist = searchResult.Artist ?? string.Empty,
                 Album = searchResult.Album ?? string.Empty,
+                Language = searchResult.Language,
                 OriginalUrl = !string.IsNullOrEmpty(searchResult.MagnetLink) ? searchResult.MagnetLink : (searchResult.TorrentUrl ?? searchResult.NzbUrl ?? string.Empty),
                 Status = DownloadStatus.Queued,
                 Progress = 0,
@@ -585,6 +592,7 @@ namespace Listenarr.Api.Services
                     ["Source"] = searchResult.Source ?? string.Empty,
                     ["Seeders"] = searchResult.Seeders ?? 0,
                     ["Quality"] = searchResult.Quality ?? string.Empty,
+                    ["Language"] = searchResult.Language ?? string.Empty,
                     ["DownloadType"] = searchResult.DownloadType ?? (IsTorrentResult(searchResult) ? "Torrent" : "Usenet")
                 }
             };
@@ -622,6 +630,7 @@ namespace Listenarr.Api.Services
 
             // Route to appropriate client handler via adapter and capture client-specific IDs when provided
             string? clientSpecificId = await _clientGateway.AddAsync(downloadClient, searchResult);
+            clientSpecificId ??= TryResolveClientSpecificIdFallback(downloadClient, searchResult);
 
             // Update download record with client-specific ID if available
             if (!string.IsNullOrEmpty(clientSpecificId))
@@ -728,11 +737,11 @@ namespace Listenarr.Api.Services
                 await Task.Delay(1500); // Give qBittorrent/other clients time to index the torrent
 
                 _logger.LogInformation("Triggering immediate queue update after sending download to client");
-                var currentQueue = await GetQueueAsync();
+                var currentQueueSnapshot = await _downloadQueueService.GetQueueSnapshotAsync();
                 if (_hubBroadcaster != null)
                 {
-                    await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueue);
-                    _logger.LogInformation("Immediate queue update sent with {Count} items via IHubBroadcaster", currentQueue?.Count ?? 0);
+                    await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueueSnapshot);
+                    _logger.LogInformation("Immediate queue update sent with {Count} items via IHubBroadcaster", currentQueueSnapshot?.Items?.Count ?? 0);
                 }
                 else
                 {
@@ -742,8 +751,8 @@ namespace Listenarr.Api.Services
                         var hubContext = scope.ServiceProvider.GetService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
                         if (hubContext != null)
                         {
-                            await hubContext.Clients.All.SendAsync("QueueUpdate", currentQueue);
-                            _logger.LogInformation("Immediate queue update sent with {Count} items", currentQueue?.Count ?? 0);
+                            await hubContext.Clients.All.SendAsync("QueueUpdate", currentQueueSnapshot);
+                            _logger.LogInformation("Immediate queue update sent with {Count} items", currentQueueSnapshot?.Items?.Count ?? 0);
                         }
                     }
                 }
@@ -826,8 +835,9 @@ namespace Listenarr.Api.Services
                     return;
                 }
 
-                // Always use an authenticated client with a CookieContainer for MyAnonamouse downloads.
-                // Using a factory client can return global clients without a CookieContainer which may fail auth.
+                // Use factory client for the initial attempt (allows test injection).
+                // If auto-redirect drops the Cookie header, a fallback retry with
+                // CreateAuthenticatedHttpClient (AllowAutoRedirect=false) handles it below.
                 HttpClient httpClientToUse;
                 if (_httpClientFactory != null)
                 {
@@ -939,7 +949,63 @@ namespace Listenarr.Api.Services
 
                 if (!looksLikeTorrent)
                 {
-                    var snippet = System.Text.Encoding.UTF8.GetString(torrentBytes.Take(Math.Min(512, torrentBytes.Length)).ToArray());
+                    // The factory HttpClient may have auto-followed redirects, silently
+                    // dropping the Cookie header (AllowAutoRedirect=true is the default).
+                    // Retry with a dedicated client that disables auto-redirect so the
+                    // manual redirect loop can re-apply cookies on each hop.
+                    _logger.LogDebug("Factory client returned non-torrent payload for '{Title}', retrying with authenticated MAM client", searchResult.Title);
+                    response.Dispose();
+                    response = null;
+
+                    try
+                    {
+                        using var authClient = MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
+                        var retryUri = torrentUri;
+                        for (int retryHop = 0; retryHop < 6; retryHop++)
+                        {
+                            using var retryReq = new HttpRequestMessage(HttpMethod.Get, retryUri);
+                            retryReq.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
+                            retryReq.Headers.Referrer = new Uri("https://www.myanonamouse.net/");
+                            retryReq.Headers.Accept.ParseAdd("application/x-bittorrent, application/octet-stream, */*; q=0.01");
+                            if (!string.IsNullOrEmpty(mamId))
+                                retryReq.Headers.Add("Cookie", $"mam_id={mamId}");
+                            var retryHost = indexerUri.IsDefaultPort ? indexerUri.Host : $"{indexerUri.Host}:{indexerUri.Port}";
+                            retryReq.Headers.Host = retryHost;
+
+                            response = await authClient.SendAsync(retryReq);
+
+                            if ((int)response.StatusCode >= 300 && (int)response.StatusCode < 400 && response.Headers.Location != null)
+                            {
+                                retryUri = response.Headers.Location.IsAbsoluteUri
+                                    ? response.Headers.Location
+                                    : new Uri(retryUri, response.Headers.Location);
+                                response.Dispose();
+                                response = null;
+                                continue;
+                            }
+                            break;
+                        }
+
+                        if (response != null && response.IsSuccessStatusCode)
+                        {
+                            torrentBytes = await response.Content.ReadAsByteArrayAsync();
+                            looksLikeTorrent = torrentBytes != null && torrentBytes.Length > 0 &&
+                                ((torrentBytes[0] == (byte)'d') ||
+                                 System.Text.Encoding.ASCII.GetString(torrentBytes.Take(Math.Min(200, torrentBytes.Length)).ToArray())
+                                     .IndexOf("announce", StringComparison.OrdinalIgnoreCase) >= 0);
+                            if (looksLikeTorrent)
+                                _logger.LogInformation("Authenticated MAM client successfully downloaded torrent for '{Title}' ({Bytes} bytes)", searchResult.Title, torrentBytes!.Length);
+                        }
+                    }
+                    catch (Exception retryEx) when (retryEx is not OperationCanceledException && retryEx is not OutOfMemoryException && retryEx is not StackOverflowException)
+                    {
+                        _logger.LogDebug(retryEx, "Retry with authenticated MAM client also failed (non-fatal)");
+                    }
+                }
+
+                if (!looksLikeTorrent)
+                {
+                    var snippet = System.Text.Encoding.UTF8.GetString((torrentBytes ?? Array.Empty<byte>()).Take(Math.Min(512, torrentBytes?.Length ?? 0)).ToArray());
                     if (System.Text.RegularExpressions.Regex.IsMatch(snippet, "Unrecognized host|PassKey|Pass Key|Unrecognized", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
                     {
                         _logger.LogWarning("MyAnonamouse torrent download for '{Title}' returned an authorization error page from tracker: {Snippet}", searchResult.Title, LogRedaction.RedactText(snippet, LogRedaction.GetSensitiveValuesFromEnvironment()));
@@ -949,12 +1015,15 @@ namespace Listenarr.Api.Services
                         _logger.LogWarning("MyAnonamouse torrent download for '{Title}' returned unexpected non-torrent payload (first 200 chars): {Snippet}", searchResult.Title, LogRedaction.RedactText(snippet, LogRedaction.GetSensitiveValuesFromEnvironment()));
                     }
 
-                    response.Dispose();
+                    response?.Dispose();
                     return;
                 }
 
+                // torrentBytes is guaranteed non-null here: looksLikeTorrent check above returns early otherwise
+                if (torrentBytes == null) return;
+
                 // Additional debug info to help diagnose cases where content looks like a torrent but tracker still rejects it
-                var contentType = response.Content.Headers.ContentType?.ToString() ?? "(none)";
+                var contentType = response?.Content.Headers.ContentType?.ToString() ?? "(none)";
                 var firstBytesHex = BitConverter.ToString(torrentBytes.Take(Math.Min(16, torrentBytes.Length)).ToArray()).Replace("-", " ");
                 var containsAnnounce = System.Text.Encoding.ASCII.GetString(torrentBytes.Take(Math.Min(512, torrentBytes.Length)).ToArray()).IndexOf("announce", StringComparison.OrdinalIgnoreCase) >= 0;
                 _logger.LogDebug("MyAnonamouse torrent payload debug: ContentType={ContentType}, FirstBytes={FirstBytesHex}, ContainsAnnounce={ContainsAnnounce}", contentType, firstBytesHex, containsAnnounce);
@@ -1007,46 +1076,18 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug(rex2, "Failed to rewrite numeric IPs inside torrent (non-fatal)");
                         }
 
-                        // 3) Replace any announce host entries (e.g., t.myanonamouse.net) with the configured indexer host so tracker sees expected host/passkey pairing
+                        // 3) Log announce URLs for diagnostics — do NOT rewrite legitimate tracker subdomains
+                        //    (e.g., t.myanonamouse.net is the actual tracker and must not be changed to www.myanonamouse.net)
                         try
                         {
                             var announces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentBytes);
                             if (announces != null && announces.Count > 0)
                             {
-                                foreach (var ann in announces.Distinct().ToList())
-                                {
-                                    try
-                                    {
-                                        if (Uri.TryCreate(ann, UriKind.Absolute, out var annUri))
-                                        {
-                                            var annHost = annUri.Host;
-                                            // skip if same host or local/private IP
-                                            if (string.IsNullOrEmpty(annHost) || string.Equals(annHost, indexerUri.Host, StringComparison.OrdinalIgnoreCase))
-                                                continue;
-
-                                            // Skip local/private IPs
-                                            if (annHost.StartsWith("127.") || annHost.StartsWith("10.") || annHost.StartsWith("192.168.") || annHost.StartsWith("172."))
-                                                continue;
-
-                                            var replacedAnn = MyAnonamouseHelper.ReplaceHostInTorrent(torrentBytes, annHost, indexerUri.Host);
-                                            if (replacedAnn != null && replacedAnn.Length > 0)
-                                            {
-                                                torrentBytes = replacedAnn;
-                                                _logger.LogInformation("Rewrote torrent announce host from {OldHost} to {NewHost} for '{Title}'", annHost, indexerUri.Host, searchResult.Title);
-                                                // Refresh ascii and announces for any further replacements
-                                                ascii = System.Text.Encoding.ASCII.GetString(torrentBytes);
-                                                announces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentBytes);
-                                            }
-                                        }
-                                    }
-                                    catch (Exception subEx) when (subEx is not OperationCanceledException && subEx is not OutOfMemoryException && subEx is not StackOverflowException) {
-                                        _logger.LogDebug(subEx, "Non-fatal failure while attempting to rewrite announce URL {Ann} for '{Title}'", ann, searchResult.Title);
-                                    }
-                                }
+                                _logger.LogDebug("Torrent announce URLs for '{Title}': {Announces}", searchResult.Title, string.Join(", ", announces.Distinct()));
                             }
                         }
                         catch (Exception rex3) when (rex3 is not OperationCanceledException && rex3 is not OutOfMemoryException && rex3 is not StackOverflowException) {
-                            _logger.LogDebug(rex3, "Failed to rewrite announce hosts inside torrent (non-fatal)");
+                            _logger.LogDebug(rex3, "Failed to extract announce URLs from torrent (non-fatal)");
                         }
                     }
                 }
@@ -1069,6 +1110,12 @@ namespace Listenarr.Api.Services
                         foreach (var ann in (currentAnnounces ?? new System.Collections.Generic.List<string>()).Distinct())
                         {
                             if (string.IsNullOrWhiteSpace(ann)) continue;
+                            // Only append mam_id to actual tracker announce URLs, not file/web-seed URLs
+                            if (!ann.Contains("/announce", StringComparison.OrdinalIgnoreCase) && !ann.Contains("/tracker", StringComparison.OrdinalIgnoreCase))
+                            {
+                                _logger.LogDebug("Skipping non-tracker URL for mam_id append: {Url}", ann);
+                                continue;
+                            }
                             // don't double-append if already present
                             if (ann.IndexOf("mam_id=", StringComparison.OrdinalIgnoreCase) >= 0)
                             {
@@ -1105,7 +1152,7 @@ namespace Listenarr.Api.Services
                 }
 
                 searchResult.TorrentFileContent = torrentBytes;
-                searchResult.TorrentFileName = MyAnonamouseHelper.ResolveTorrentFileName(response, searchResult.TorrentUrl);
+                searchResult.TorrentFileName = response != null ? MyAnonamouseHelper.ResolveTorrentFileName(response, searchResult.TorrentUrl) : "myanonamouse.torrent";
                 _logger.LogInformation("Cached MyAnonamouse torrent for '{Title}' ({Bytes} bytes)", searchResult.Title, torrentBytes.Length);
 
                 // If a downloadId was provided, store the cached torrent (bytes + filename) to the in-memory cache so it can be retrieved for diagnostics.
@@ -1146,7 +1193,7 @@ namespace Listenarr.Api.Services
                 catch (Exception exAnn) when (exAnn is not OperationCanceledException && exAnn is not OutOfMemoryException && exAnn is not StackOverflowException) {
                     _logger.LogDebug(exAnn, "Failed to extract announce URLs from cached torrent (non-fatal)");
                 }
-                response.Dispose();
+                response?.Dispose();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to cache MyAnonamouse torrent for '{Title}'", searchResult.Title);
@@ -1285,470 +1332,9 @@ namespace Listenarr.Api.Services
 
         public async Task<List<QueueItem>> GetQueueAsync()
         {
-            var queueItems = new List<QueueItem>();
-
-            // Cache download clients for 10 seconds to reduce DB queries
-            var downloadClients = await _cache.GetOrCreateAsync("DownloadClients", async entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(QueueCacheExpirationSeconds);
-                return await _configurationService.GetDownloadClientConfigurationsAsync();
-            }) ?? new List<DownloadClientConfiguration>();
-
-            var enabledClients = downloadClients.Where(c => c.IsEnabled).ToList();
-
-            // Get all downloads from database to filter queue items
-            // For external clients, we'll only include downloads that are actually present in the client's queue
-            // For DDL downloads, include active ones plus completed ones with pending processing jobs
-            List<Download> listenarrDownloads;
-            {
-                var dbContext = await _dbContextFactory.CreateDbContextAsync();
-
-                // Get all downloads (include failed so activity can show failed items)
-                var allDownloads = await dbContext.Downloads
-                    .ToListAsync();
-
-                _logger.LogInformation("Found {TotalDownloads} downloads (including failed)", allDownloads.Count);
-
-                // For DDL downloads, include active ones plus completed ones with pending processing jobs
-                var ddlDownloads = allDownloads.Where(d => d.DownloadClientId == "DDL").ToList();
-                var ddlToShow = new List<Download>();
-
-                if (ddlDownloads.Any())
-                {
-                    var ddlCompleted = ddlDownloads.Where(d => d.Status == DownloadStatus.Completed).ToList();
-                    if (ddlCompleted.Any())
-                    {
-                        var completedIds = ddlCompleted.Select(d => d.Id).ToList();
-
-                        // Get DDL downloads with pending/active processing jobs
-                        var pendingJobs = await dbContext.DownloadProcessingJobs
-                            .Where(j => completedIds.Contains(j.DownloadId) &&
-                               (j.Status == ProcessingJobStatus.Pending ||
-                                j.Status == ProcessingJobStatus.Processing ||
-                                j.Status == ProcessingJobStatus.Retry))
-                            .Select(j => j.DownloadId)
-                            .Distinct()
-                            .ToListAsync();
-
-                        // Get DDL downloads with any processing jobs (to identify those without jobs)
-                        var allJobDownloads = await dbContext.DownloadProcessingJobs
-                            .Where(j => completedIds.Contains(j.DownloadId))
-                            .Select(j => j.DownloadId)
-                            .Distinct()
-                            .ToListAsync();
-
-                        // Include DDL completed downloads that either:
-                        // 1. Have pending/active processing jobs, OR
-                        // 2. Have no processing jobs at all (legacy downloads needing processing)
-                        var ddlCompletedToShow = ddlCompleted
-                            .Where(d => pendingJobs.Contains(d.Id) || !allJobDownloads.Contains(d.Id))
-                            .ToList();
-
-                        ddlToShow.AddRange(ddlCompletedToShow);
-                        _logger.LogInformation("DDL pending jobs count: {PendingJobs}, All job downloads count: {AllJobs}, DDL completed to show: {CompletedToShow}",
-                            pendingJobs.Count, allJobDownloads.Count, ddlCompletedToShow.Count);
-                    }
-
-                    // Add active DDL downloads (exclude Completed and Moved)
-                    ddlToShow.AddRange(ddlDownloads.Where(d =>
-                        d.Status != DownloadStatus.Completed &&
-                        d.Status != DownloadStatus.Moved));
-                }
-
-                // For external clients, we'll filter based on what's actually in their queues.
-                // Keep completed-but-not-imported downloads (FinalPath is empty) so queue reconciliation
-                // can continue matching by DB ID/hash until import finishes. This avoids split identity
-                // where one item appears as completed (DB) and another appears as queued (client hash).
-                var externalDownloads = allDownloads
-                    .Where(d => d.DownloadClientId != "DDL" &&
-                                d.Status != DownloadStatus.Moved &&
-                                d.Status != DownloadStatus.Failed &&
-                                (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath)))
-                    .ToList();
-
-                listenarrDownloads = ddlToShow.Concat(externalDownloads).ToList();
-
-                _logger.LogDebug("Final filtering result: {FinalCount} downloads to include in queue filtering ({DdlCount} DDL, {ExternalCount} external)",
-                    listenarrDownloads.Count, ddlToShow.Count, externalDownloads.Count);
-                foreach (var dl in listenarrDownloads)
-                {
-                    _logger.LogDebug("Including download: {Id}, Status: {Status}, Client: {Client}, Title: '{Title}'",
-                        dl.Id, dl.Status, dl.DownloadClientId, dl.Title);
-                }
-            }
-
-            // Load application settings once to determine whether to include completed
-            // external downloads even when they are not tracked in the Listenarr DB.
-            // Cache for 30 seconds to reduce DB queries
-            ApplicationSettings? appSettings = await _cache.GetOrCreateAsync("ApplicationSettings", async entry =>
-            {
-                entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromSeconds(ClientStatusCacheExpirationSeconds);
-                try
-                {
-                    return await _configurationService.GetApplicationSettingsAsync();
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogDebug(ex, "Failed to load application settings while building queue (non-fatal)");
-                    return null;
-                }
-            });
-
-            var includeCompletedExternal = appSettings != null && appSettings.ShowCompletedExternalDownloads;
-
-            foreach (var client in enabledClients)
-            {
-                try
-                {
-                    List<QueueItem> clientQueue;
-                    if (_clientGateway != null)
-                    {
-                        try
-                        {
-                            clientQueue = await _clientGateway.GetQueueAsync(client);
-                        }
-                        catch (Exception gwEx) when (gwEx is not OperationCanceledException && gwEx is not OutOfMemoryException && gwEx is not StackOverflowException) {
-                            _logger.LogWarning(gwEx, "Client gateway failed to retrieve queue for {ClientName}, falling back to legacy implementation", client.Name ?? client.Id);
-                            clientQueue = await GetQueueFallbackAsync(client);
-                        }
-                    }
-                    else
-                    {
-                        clientQueue = await GetQueueFallbackAsync(client);
-                    }
-
-                    // Show ALL client queue items, enrich with DB metadata if available
-                    // The download client is the source of truth for what's actually downloading
-                    _logger.LogInformation("Client {ClientName} has {TotalItems} queue items", client.Name ?? client.Id, clientQueue.Count);
-                    _logger.LogInformation("Database has {DatabaseItems} Listenarr downloads for metadata enrichment", listenarrDownloads.Count);
-
-                    // Process all queue items - client is the source of truth
-                    var mappedFiltered = new List<QueueItem>();
-                    foreach (var queueItem in clientQueue)
-                    {
-                        try
-                        {
-                            // Set CompletionTime for completed downloads (used by CompletedDownloadHandlingService)
-                            // This tracks when a download was detected as complete for stability window validation
-                            if (queueItem.Status == "completed" && queueItem.CompletionTime == null)
-                            {
-                                queueItem.CompletionTime = DateTime.UtcNow;
-                            }
-
-                            // Try to find matching database record for metadata enrichment
-                            var matchedDownload = listenarrDownloads.FirstOrDefault(download =>
-                            {
-                                // Must be same client
-                                if (download.DownloadClientId != client.Id)
-                                    return false;
-
-                                // Try direct ID match
-                                if (download.Id == queueItem.Id)
-                                    return true;
-
-                                // Match by ClientDownloadId metadata (torrent hash / NZB id) — works for all clients
-                                if (download.Metadata != null)
-                                {
-                                    if (download.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
-                                    {
-                                        var storedId = clientIdObj?.ToString();
-                                        if (!string.IsNullOrEmpty(storedId) &&
-                                            storedId.Equals(queueItem.Id, StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            _logger.LogDebug("Matched download {DownloadId} to queue item {QueueId} via ClientDownloadId (hash)",
-                                                download.Id, queueItem.Id);
-                                            return true;
-                                        }
-                                    }
-
-                                    // Legacy fallback: TorrentHash metadata (older qBittorrent records)
-                                    if (download.Metadata.TryGetValue("TorrentHash", out var hashObj))
-                                    {
-                                        var storedHash = hashObj?.ToString();
-                                        if (!string.IsNullOrEmpty(storedHash) &&
-                                            storedHash.Equals(queueItem.Id, StringComparison.OrdinalIgnoreCase))
-                                            return true;
-                                    }
-                                }
-
-                                // Try title matching as fallback
-                                if (!string.IsNullOrEmpty(download.Title) && !string.IsNullOrEmpty(queueItem.Title))
-                                {
-                                    if (IsMatchingTitle(download.Title, queueItem.Title))
-                                    {
-                                        _logger.LogDebug("Matched download {DownloadId} to queue item {QueueId} via title: '{DownloadTitle}' <-> '{QueueTitle}'",
-                                            download.Id, queueItem.Id, download.Title, queueItem.Title);
-                                        return true;
-                                    }
-                                }
-
-                                return false;
-                            });
-
-                            if (matchedDownload != null)
-                            {
-                                // Store original torrent hash in metadata BEFORE changing ID
-                                var originalClientId = queueItem.Id;
-                                bool hashUpdated = false;
-                                
-                                if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase) ||
-                                    string.Equals(client.Type, "transmission", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    if (matchedDownload.Metadata == null)
-                                        matchedDownload.Metadata = new Dictionary<string, object>();
-                                    
-                                    if (!matchedDownload.Metadata.ContainsKey("TorrentHash"))
-                                    {
-                                        matchedDownload.Metadata["TorrentHash"] = originalClientId;
-                                        hashUpdated = true;
-                                        _logger.LogInformation("Stored torrent hash {Hash} for download {DownloadId}", originalClientId, matchedDownload.Id);
-                                    }
-                                }
-                                
-                                // Persist hash to database if we just discovered it
-                                if (hashUpdated)
-                                {
-                                    try
-                                    {
-                                        var dbContext = await _dbContextFactory.CreateDbContextAsync();
-                                        var dbDownload = await dbContext.Downloads.FindAsync(matchedDownload.Id);
-                                        if (dbDownload != null)
-                                        {
-                                            if (dbDownload.Metadata == null)
-                                                dbDownload.Metadata = new Dictionary<string, object>();
-                                            dbDownload.Metadata["TorrentHash"] = originalClientId;
-                                            await dbContext.SaveChangesAsync();
-                                            _logger.LogInformation("Persisted torrent hash {Hash} to database for download {DownloadId}", originalClientId, matchedDownload.Id);
-                                        }
-                                    }
-                                    catch (Exception dbEx) when (dbEx is not OperationCanceledException && dbEx is not OutOfMemoryException && dbEx is not StackOverflowException) {
-                                        _logger.LogWarning(dbEx, "Failed to persist torrent hash for download {DownloadId}", matchedDownload.Id);
-                                    }
-                                }
-                                
-                                // Enrich queue item with database metadata
-                                // Use DB ID so UI doesn't show duplicates
-                                queueItem.Id = matchedDownload.Id;
-                                
-                                _logger.LogDebug("Enriched queue item (original: {OriginalId}) with DB metadata from download {DownloadId}", 
-                                    originalClientId, matchedDownload.Id);
-                            }
-                            else
-                            {
-                                // No DB record found - this is an untracked download
-                                // Still show it (client is source of truth)
-                                _logger.LogDebug("Queue item {QueueId} '{Title}' not tracked in database - showing as untracked", 
-                                    queueItem.Id, queueItem.Title);
-                            }
-
-                            mappedFiltered.Add(queueItem);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogWarning(ex, "Error processing queue item {QueueId}, including anyway", queueItem.Id);
-                            mappedFiltered.Add(queueItem);
-                        }
-                    }
-
-                    queueItems.AddRange(mappedFiltered);
-
-                    // If configured, also include completed items that appear in the
-                    // client queue but are not tracked in Listenarr's DB (user wants
-                    // to see completed torrents/NZBs even when the client has removed
-                    // or Listenarr didn't create a DB record for them).
-                    if (includeCompletedExternal)
-                    {
-                        var existingIds = queueItems.Select(q => q.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                        var unmatchedCompleted = clientQueue
-                            .Where(q => (q.Status ?? string.Empty).Equals("completed", StringComparison.OrdinalIgnoreCase))
-                            .Where(q => !existingIds.Contains(q.Id))
-                            .ToList();
-
-                        foreach (var uc in unmatchedCompleted)
-                        {
-                            // Normalize client type/name if available
-                            var clientName = client.Name ?? uc.DownloadClient ?? client.Id;
-                            var clientType = client.Type?.ToLowerInvariant() ?? uc.DownloadClientType ?? "external";
-
-                            // Avoid adding duplicates again
-                            if (existingIds.Contains(uc.Id)) continue;
-
-                            queueItems.Add(new QueueItem
-                            {
-                                Id = uc.Id,
-                                Title = uc.Title ?? "Unknown",
-                                Quality = uc.Quality ?? "Unknown",
-                                Status = "completed",
-                                Progress = 100,
-                                Size = uc.Size,
-                                Downloaded = uc.Downloaded,
-                                DownloadSpeed = 0,
-                                Eta = null,
-                                DownloadClient = clientName,
-                                DownloadClientId = client.Id,
-                                DownloadClientType = clientType,
-                                AddedAt = uc.AddedAt,
-                                CanPause = false,
-                                CanRemove = true,
-                                RemotePath = uc.RemotePath,
-                                LocalPath = uc.LocalPath,
-                                ContentPath = uc.ContentPath,
-                                Seeders = uc.Seeders,
-                                Leechers = uc.Leechers,
-                                Ratio = uc.Ratio
-                            });
-
-                            existingIds.Add(uc.Id);
-                        }
-                    }
-
-                    _logger.LogDebug("Client {ClientName}: showing {TotalItems} queue items", 
-                        client.Name, mappedFiltered.Count);
-
-                    // Do not purge tracked downloads just because they are
-                    // temporarily missing from a client queue snapshot. Sonarr keeps tracked
-                    // downloads and transitions them through explicit completed/failed/import
-                    // workflows instead of deleting on queue-miss heuristics.
-                    try
-                    {
-                        var clientDownloads = listenarrDownloads.Where(d => d.DownloadClientId == client.Id).ToList();
-
-                        // SAFETY: Skip purging when the client returned 0 queue items but we have
-                        // active downloads tracked. This prevents accidental deletion when the client
-                        // is temporarily unreachable (GetQueueAsync returns empty list on network errors).
-                        if (clientQueue.Count == 0 && clientDownloads.Any())
-                        {
-                            _logger.LogWarning("Skipping orphan purge for client {ClientName}: client returned 0 queue items but {Count} downloads are tracked. Client may be temporarily unreachable.",
-                                client.Name, clientDownloads.Count);
-                            continue;
-                        }
-
-                        // Build set of all client item IDs (both original client IDs and normalized DB IDs)
-                        var allClientItemIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-
-                        // Add all normalized (mapped) IDs from the processed queue
-                        foreach (var mapped in mappedFiltered)
-                        {
-                            allClientItemIds.Add(mapped.Id);
-                        }
-
-                        // Also add original client queue IDs (torrent hashes, etc)
-                        foreach (var item in clientQueue)
-                        {
-                            allClientItemIds.Add(item.Id);
-                        }
-
-                        // Determine records that are currently absent from queue snapshots.
-                        // These are kept (not purged) to avoid deleting tracked downloads on
-                        // transient client/API issues and to match Sonarr behavior.
-                        var orphanedDownloads = clientDownloads.Where(d =>
-                        {
-                            // Check if in client queue by ID
-                            if (allClientItemIds.Contains(d.Id))
-                                return false;
-
-                            // Check if in client queue by torrent hash
-                            if (string.Equals(client.Type, "qbittorrent", StringComparison.OrdinalIgnoreCase) &&
-                                d.Metadata != null && d.Metadata.TryGetValue("TorrentHash", out var hashObj))
-                            {
-                                var torrentHash = hashObj?.ToString();
-                                if (!string.IsNullOrEmpty(torrentHash) && allClientItemIds.Contains(torrentHash))
-                                    return false;
-                            }
-
-                            // Don't purge terminal states - they need proper cleanup
-                            if (d.Status == DownloadStatus.Completed || 
-                                d.Status == DownloadStatus.Moved ||
-                                d.Status == DownloadStatus.Failed)
-                                return false;
-
-                            // Don't purge active states
-                            if (d.Status == DownloadStatus.Downloading || 
-                                d.Status == DownloadStatus.Processing)
-                                return false;
-
-                            // Give NEW downloads 5 minutes to appear in client queue
-                            // This handles race conditions during download addition
-                            if ((DateTime.UtcNow - d.StartedAt).TotalMinutes < 5)
-                            {
-                                _logger.LogDebug("Skipping purge for recent download {DownloadId} '{Title}' (age: {Age:F1} min)",
-                                    d.Id, d.Title, (DateTime.UtcNow - d.StartedAt).TotalMinutes);
-                                return false;
-                            }
-
-                            _logger.LogDebug("Download {DownloadId} '{Title}' is missing from current queue snapshot (age: {Age:F1} min, status: {Status})",
-                                d.Id, d.Title, (DateTime.UtcNow - d.StartedAt).TotalMinutes, d.Status);
-                            return true;
-                        }).ToList();
-
-                        if (orphanedDownloads.Any())
-                        {
-                            _logger.LogInformation("Detected {Count} tracked downloads missing from current {ClientName} queue snapshot; keeping records for resilient monitoring/import handling",
-                                orphanedDownloads.Count, client.Name);
-                            try { _metrics.Increment("download.purge.skipped.tracked_orphan_retained", orphanedDownloads.Count); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
-                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                            }
-                        }
-                    }
-                    catch (Exception purgeEx) when (purgeEx is not OperationCanceledException && purgeEx is not OutOfMemoryException && purgeEx is not StackOverflowException) {
-                        _logger.LogError(purgeEx, "Error purging orphaned downloads for client {ClientName}", client.Name);
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogError(ex, "Error getting queue from download client {ClientName}", client.Name);
-                }
-            }
-            // If configured, include completed external downloads from the DB
-            // that are not represented in the queueItems list (Listenarr-created
-            // external downloads that are no longer present in the client queue).
-            if (includeCompletedExternal)
-            {
-                try
-                {
-                    var existingIds = queueItems.Select(q => q.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-                    var completedExternal = listenarrDownloads
-                        .Where(d => d.DownloadClientId != "DDL" && d.Status == DownloadStatus.Completed)
-                        .ToList();
-
-                    foreach (var d in completedExternal)
-                    {
-                        if (existingIds.Contains(d.Id)) continue;
-
-                        var clientCfg = enabledClients.FirstOrDefault(c => c.Id == d.DownloadClientId);
-                        var clientName = clientCfg?.Name ?? d.DownloadClientId ?? "External Client";
-                        var clientType = clientCfg?.Type?.ToLowerInvariant() ?? "external";
-
-                        queueItems.Add(new QueueItem
-                        {
-                            Id = d.Id,
-                            Title = d.Title ?? "Unknown",
-                            Quality = d.Metadata != null && d.Metadata.TryGetValue("Quality", out var q) ? (q?.ToString() ?? "Unknown") : "Unknown",
-                            Status = "completed",
-                            Progress = 100,
-                            Size = d.TotalSize,
-                            Downloaded = d.DownloadedSize,
-                            DownloadSpeed = 0,
-                            Eta = null,
-                            DownloadClient = clientName,
-                            DownloadClientId = d.DownloadClientId ?? string.Empty,
-                            DownloadClientType = clientType,
-                            AddedAt = d.StartedAt,
-                            CanPause = false,
-                            CanRemove = true,
-                            RemotePath = d.DownloadPath,
-                            LocalPath = d.FinalPath,
-                            ContentPath = d.FinalPath ?? d.DownloadPath
-                        });
-
-                        existingIds.Add(d.Id);
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogWarning(ex, "Error while appending completed external downloads to queue (non-fatal)");
-                }
-            }
-
-            return queueItems.OrderByDescending(q => q.AddedAt).ToList();
+            // Queue assembly now lives in DownloadQueueService so the API and background
+            // monitor both read from the same reconciliation path.
+            return await _downloadQueueService.GetQueueAsync();
         }
 
         public async Task<bool> RemoveFromQueueAsync(string downloadId, string? downloadClientId = null, bool force = false)
@@ -2178,6 +1764,7 @@ namespace Listenarr.Api.Services
                     Id = id,
                     AudiobookId = audiobookId,
                     Title = searchResult.Title,
+                    Language = searchResult.Language,
                     OriginalUrl = searchResult.TorrentUrl ?? searchResult.NzbUrl ?? searchResult.MagnetLink ?? string.Empty,
                     Status = DownloadStatus.Queued,
                     Progress = 0,
@@ -2214,6 +1801,199 @@ namespace Listenarr.Api.Services
             await Task.CompletedTask;
         }
 
+        private string? TryResolveClientSpecificIdFallback(DownloadClientConfiguration client, SearchResult searchResult)
+        {
+            if (client == null || searchResult == null || !IsTorrentResult(searchResult))
+            {
+                return null;
+            }
+
+            var magnetHash = TryExtractMagnetHash(searchResult.MagnetLink);
+            if (!string.IsNullOrWhiteSpace(magnetHash))
+            {
+                _logger.LogInformation(
+                    "Using magnet hash fallback for download '{Title}' on client {ClientName}",
+                    LogRedaction.SanitizeText(searchResult.Title),
+                    LogRedaction.SanitizeText(client.Name ?? client.Id));
+                return magnetHash;
+            }
+
+            return null;
+        }
+
+        private static string? TryExtractMagnetHash(string? magnetLink)
+        {
+            if (string.IsNullOrWhiteSpace(magnetLink))
+            {
+                return null;
+            }
+
+            var match = Regex.Match(magnetLink, @"xt=urn:btih:([^&]+)", RegexOptions.IgnoreCase);
+            if (!match.Success)
+            {
+                return null;
+            }
+
+            var rawHash = Uri.UnescapeDataString(match.Groups[1].Value).Trim();
+            return string.IsNullOrWhiteSpace(rawHash) ? null : rawHash;
+        }
+
+        private Download? FindBestMatchingDownload(
+            QueueItem queueItem,
+            DownloadClientConfiguration client,
+            IEnumerable<Download> candidateDownloads)
+        {
+            if (queueItem == null || client == null || candidateDownloads == null)
+            {
+                return null;
+            }
+
+            var matches = candidateDownloads
+                .Where(download => download.DownloadClientId == client.Id)
+                .Select(download => new
+                {
+                    Download = download,
+                    Score = GetQueueMatchScore(download, queueItem)
+                })
+                .Where(x => x.Score > 0)
+                .OrderByDescending(x => x.Score)
+                .ThenByDescending(x => x.Download.StartedAt)
+                .ToList();
+
+            if (matches.Count == 0)
+            {
+                return null;
+            }
+
+            var bestMatch = matches[0];
+            if (bestMatch.Score == 1 && matches.Skip(1).Any(x => x.Score == bestMatch.Score))
+            {
+                _logger.LogDebug(
+                    "Queue item {QueueId} '{QueueTitle}' had ambiguous title-only matches on client {ClientId}; leaving unmatched",
+                    queueItem.Id,
+                    queueItem.Title,
+                    client.Id);
+                return null;
+            }
+
+            if (bestMatch.Score >= 3)
+            {
+                _logger.LogDebug(
+                    "Matched download {DownloadId} to queue item {QueueId} via client identifier",
+                    bestMatch.Download.Id,
+                    queueItem.Id);
+            }
+            else if (bestMatch.Score > 0)
+            {
+                _logger.LogDebug(
+                    "Matched download {DownloadId} to queue item {QueueId} via title reconciliation: '{DownloadTitle}' <-> '{QueueTitle}'",
+                    bestMatch.Download.Id,
+                    queueItem.Id,
+                    bestMatch.Download.Title,
+                    queueItem.Title);
+            }
+
+            return bestMatch.Download;
+        }
+
+        private int GetQueueMatchScore(Download download, QueueItem queueItem)
+        {
+            if (download == null || queueItem == null)
+            {
+                return 0;
+            }
+
+            if (!string.IsNullOrWhiteSpace(download.Id) &&
+                !string.IsNullOrWhiteSpace(queueItem.Id) &&
+                string.Equals(download.Id, queueItem.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return 4;
+            }
+
+            var clientDownloadId = GetMetadataString(download.Metadata, "ClientDownloadId");
+            if (!string.IsNullOrWhiteSpace(clientDownloadId) &&
+                string.Equals(clientDownloadId, queueItem.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return 3;
+            }
+
+            var torrentHash = GetMetadataString(download.Metadata, "TorrentHash");
+            if (!string.IsNullOrWhiteSpace(torrentHash) &&
+                string.Equals(torrentHash, queueItem.Id, StringComparison.OrdinalIgnoreCase))
+            {
+                return 3;
+            }
+
+            if (TitlesExactlyMatch(download.Title, queueItem.Title))
+            {
+                return 2;
+            }
+
+            if (IsMatchingTitle(download.Title, queueItem.Title))
+            {
+                if (QueueTitleContainsArtist(download, queueItem))
+                {
+                    return 2;
+                }
+
+                if (IsStrongStandaloneTitleMatch(download.Title, queueItem.Title))
+                {
+                    return 1;
+                }
+            }
+
+            return 0;
+        }
+
+        private bool TitlesExactlyMatch(string titleA, string titleB)
+        {
+            var normalizedA = NormalizeTitle(titleA);
+            var normalizedB = NormalizeTitle(titleB);
+
+            return !string.IsNullOrWhiteSpace(normalizedA) &&
+                   string.Equals(normalizedA, normalizedB, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool QueueTitleContainsArtist(Download download, QueueItem queueItem)
+        {
+            var normalizedArtist = NormalizeTitle(download?.Artist ?? string.Empty);
+            if (string.IsNullOrWhiteSpace(normalizedArtist) || normalizedArtist.Length < 4)
+            {
+                return false;
+            }
+
+            var normalizedQueueTitle = NormalizeTitle(queueItem?.Title ?? string.Empty);
+            return normalizedQueueTitle.Contains(normalizedArtist, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private bool IsStrongStandaloneTitleMatch(string titleA, string titleB)
+        {
+            var normalizedA = NormalizeTitle(titleA);
+            var normalizedB = NormalizeTitle(titleB);
+            if (string.IsNullOrWhiteSpace(normalizedA) || string.IsNullOrWhiteSpace(normalizedB))
+            {
+                return false;
+            }
+
+            var shorter = normalizedA.Length <= normalizedB.Length ? normalizedA : normalizedB;
+            var longer = normalizedA.Length <= normalizedB.Length ? normalizedB : normalizedA;
+            var shorterTokenCount = shorter.Split(' ', StringSplitOptions.RemoveEmptyEntries).Length;
+
+            if (shorter.Length >= 15 || shorterTokenCount >= 3)
+            {
+                return true;
+            }
+
+            if (shorter.Length >= 10 &&
+                (longer.StartsWith(shorter + " ", StringComparison.OrdinalIgnoreCase) ||
+                 longer.EndsWith(" " + shorter, StringComparison.OrdinalIgnoreCase)))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
         private bool IsMatchingTitle(string titleA, string titleB)
         {
             try
@@ -2231,54 +2011,37 @@ namespace Listenarr.Api.Services
             {
                 var An = NormalizeTitle(a);
                 var Bn = NormalizeTitle(b);
-                
-                // Exact match
-                if (An == Bn) return true;
-                
-                // One contains the other (substring match)
-                if (An.Contains(Bn) || Bn.Contains(An)) return true;
-                
-                // Check if the shorter title contains all major words from the shorter title
-                // This handles cases where the torrent filename has extra metadata
-                var shorterTokens = (An.Length <= Bn.Length ? An : Bn).Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                var longerTitle = An.Length <= Bn.Length ? Bn : An;
-                
-                // If shorter is at least 3 words and all words appear in longer (in order or scattered)
-                if (shorterTokens.Length >= 3)
+
+                if (string.IsNullOrWhiteSpace(An) || string.IsNullOrWhiteSpace(Bn))
                 {
-                    // Check if all tokens from shorter appear in longer (as substrings or words)
-                    var allTokensFound = shorterTokens.All(token => longerTitle.Contains(token));
-                    if (allTokensFound)
-                    {
-                        // Additional validation: check that tokens appear in roughly the same order
-                        var lastPos = 0;
-                        var inOrder = true;
-                        foreach (var token in shorterTokens)
-                        {
-                            var pos = longerTitle.IndexOf(token, lastPos);
-                            if (pos < 0)
-                            {
-                                inOrder = false;
-                                break;
-                            }
-                            lastPos = pos + token.Length;
-                        }
-                        if (inOrder) return true;
-                    }
+                    return false;
                 }
-                
-                // Levenshtein distance with more generous threshold for longer titles
-                var dist = LevenshteinDistance(An, Bn);
-                var minLen = Math.Min(An.Length, Bn.Length);
-                var maxLen = Math.Max(An.Length, Bn.Length);
-                
-                // For longer titles, use a percentage-based threshold; for shorter, use absolute
-                // This handles cases like the torrent having extra metadata appended
-                var threshold = minLen < 20 
-                    ? Math.Max(3, (int)(minLen * 0.20))  // 20% for short titles
-                    : Math.Max(5, (int)(minLen * 0.25)); // 25% for longer titles
-                
-                return dist <= threshold;
+
+                if (An == Bn) return true;
+
+                var shorter = An.Length <= Bn.Length ? An : Bn;
+                var longer = An.Length <= Bn.Length ? Bn : An;
+                var shorterTokens = shorter.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                var longerTokens = longer.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+
+                if (shorterTokens.Length == 0 || longerTokens.Length == 0)
+                {
+                    return false;
+                }
+
+                if (shorterTokens.Length == 1)
+                {
+                    var token = shorterTokens[0];
+                    return token.Length >= 6 &&
+                           longerTokens.Contains(token, StringComparer.OrdinalIgnoreCase);
+                }
+
+                if (longer.Contains(shorter, StringComparison.OrdinalIgnoreCase))
+                {
+                    return true;
+                }
+
+                return TokensAppearInOrder(shorterTokens, longerTokens);
             }
             catch (Exception caughtEx_15) when (caughtEx_15 is not OperationCanceledException && caughtEx_15 is not OutOfMemoryException && caughtEx_15 is not StackOverflowException) { return false; }
         }
@@ -2287,8 +2050,64 @@ namespace Listenarr.Api.Services
         {
             if (string.IsNullOrWhiteSpace(s)) return string.Empty;
             var lower = s.ToLowerInvariant();
+            lower = Regex.Replace(lower, @"[\[\]\(\)\{\}_\.-]+", " ");
+            lower = Regex.Replace(lower, @"\b\d{2,4}\s*kbps\b", " ");
+            lower = Regex.Replace(lower, @"\b(mp3|m4a|m4b|flac|aac|ogg|opus|audiobook|unabridged|abridged)\b", " ");
+            lower = Regex.Replace(lower, @"\b(19|20)\d{2}\b", " ");
             var cleaned = new string(lower.Where(ch => char.IsLetterOrDigit(ch) || char.IsWhiteSpace(ch)).ToArray());
             return string.Join(' ', cleaned.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries));
+        }
+
+        private static bool TokensAppearInOrder(string[] shorterTokens, string[] longerTokens)
+        {
+            if (shorterTokens == null || longerTokens == null || shorterTokens.Length == 0 || longerTokens.Length == 0)
+            {
+                return false;
+            }
+
+            var longerIndex = 0;
+            foreach (var token in shorterTokens)
+            {
+                var found = false;
+                while (longerIndex < longerTokens.Length)
+                {
+                    if (string.Equals(token, longerTokens[longerIndex], StringComparison.OrdinalIgnoreCase))
+                    {
+                        found = true;
+                        longerIndex++;
+                        break;
+                    }
+
+                    longerIndex++;
+                }
+
+                if (!found)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        private static string? GetMetadataString(Dictionary<string, object>? metadata, string key)
+        {
+            if (metadata == null || !metadata.TryGetValue(key, out var value) || value == null)
+            {
+                return null;
+            }
+
+            if (value is JsonElement element)
+            {
+                return element.ValueKind switch
+                {
+                    JsonValueKind.Null => null,
+                    JsonValueKind.Undefined => null,
+                    _ => element.ToString()
+                };
+            }
+
+            return value.ToString();
         }
 
         // Standard Levenshtein distance implementation (copied from SearchService for local use)
