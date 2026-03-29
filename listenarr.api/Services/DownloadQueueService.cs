@@ -346,12 +346,9 @@ namespace Listenarr.Api.Services
                             allClientItemIds.Add(mapped.Id);
                         }
 
-                        foreach (var item in clientQueue)
+                        foreach (var itemId in clientQueue.Select(item => item.Id).Where(itemId => !string.IsNullOrWhiteSpace(itemId)))
                         {
-                            if (!string.IsNullOrWhiteSpace(item.Id))
-                            {
-                                allClientItemIds.Add(item.Id);
-                            }
+                            allClientItemIds.Add(itemId!);
                         }
 
                         var orphanedDownloads = clientDownloads.Where(d =>
@@ -361,12 +358,9 @@ namespace Listenarr.Api.Services
                                 return false;
                             }
 
-                            foreach (var knownClientItemId in GetKnownClientItemIds(d.Metadata))
+                            if (GetKnownClientItemIds(d.Metadata).Any(allClientItemIds.Contains))
                             {
-                                if (allClientItemIds.Contains(knownClientItemId))
-                                {
-                                    return false;
-                                }
+                                return false;
                             }
 
                             if (d.Status == DownloadStatus.Completed ||

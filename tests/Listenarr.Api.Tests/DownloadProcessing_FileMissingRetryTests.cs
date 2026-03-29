@@ -119,7 +119,9 @@ namespace Listenarr.Api.Tests
             metricsMock.Verify(m => m.Increment("processing.source_missing", It.IsAny<double>()), Times.AtLeastOnce);
 
             // Cleanup created temp destination dir
-            try { Directory.Delete(destRoot, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
+            try { Directory.Delete(destRoot, true); }
+            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
+            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
         }
 
         [Fact]
@@ -226,8 +228,13 @@ namespace Listenarr.Api.Tests
             downloadServiceMock.Verify(d => d.ProcessCompletedDownloadAsync(dl.Id, expectedCoverDest), Times.Never);
             downloadServiceMock.Verify(d => d.ProcessCompletedDownloadAsync(dl.Id, expectedTxtDest), Times.Never);
 
-            try { Directory.Delete(sourceDir, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
-            try { Directory.Delete(destRoot, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
+            try { Directory.Delete(sourceDir, true); }
+            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
+            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
+
+            try { Directory.Delete(destRoot, true); }
+            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
+            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
         }
 
         [Fact]
@@ -346,8 +353,13 @@ namespace Listenarr.Api.Tests
             Assert.False(File.Exists(Path.Join(destRoot, "unrelated.txt")));
             Assert.Equal(Path.Join(destRoot, "book.m4b"), finalizedPath);
 
-            try { Directory.Delete(sourceDir, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
-            try { Directory.Delete(destRoot, true); } catch (Exception) { /* Best-effort cleanup for temp test directories. */ }
+            try { Directory.Delete(sourceDir, true); }
+            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
+            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
+
+            try { Directory.Delete(destRoot, true); }
+            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
+            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
         }
     }
 }

@@ -152,18 +152,12 @@ namespace Listenarr.Api.Tests
 
         public Task<List<string>> GetKnownClientItemIdsAsync()
         {
-            IEnumerable<Dictionary<string, object>?> metadataEntries;
-            if (_db != null)
-            {
-                metadataEntries = _db.Downloads
+            var metadataEntries = _db != null
+                ? _db.Downloads
                     .AsNoTracking()
                     .Select(d => d.Metadata)
-                    .ToList();
-            }
-            else
-            {
-                metadataEntries = _mem.Values.Select(d => d.Metadata).ToList();
-            }
+                    .ToList()
+                : _mem.Values.Select(d => d.Metadata).ToList();
 
             var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var metadata in metadataEntries)
