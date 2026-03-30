@@ -5,7 +5,7 @@
     </template>
 
     <template #default>
-      <ModalBody>
+      <ModalBody compact maxHeight="72vh" class="organize-modal-body">
         <div v-if="loading" class="organize-state">
           <PhSpinner class="ph-spin organize-icon" />
           <p>Computing expected paths…</p>
@@ -27,56 +27,92 @@
         </div>
 
         <div v-else-if="loaded" class="organize-preview">
-          <div class="organize-toolbar">
-            <p>{{ selectedCount }} of {{ changedPreviews.length }} audiobook(s) selected</p>
-            <div class="toolbar-actions">
-              <button type="button" class="btn-link" @click="selectAll">Select All</button>
-              <button type="button" class="btn-link" @click="clearSelection">Clear</button>
+          <div class="info-section organize-info-section">
+            <PhInfo />
+            <p>
+              Review the proposed folder and filename changes before organizing files on disk.
+              Selected items will be updated to match your current naming settings.
+            </p>
+          </div>
+
+          <div class="form-group organize-group">
+            <label class="form-label">
+              <PhCheckSquare />
+              Selection
+            </label>
+            <div class="form-control-card">
+              <div class="organize-toolbar">
+                <p class="organize-toolbar-title">
+                  <strong>{{ selectedCount }}</strong> of {{ changedPreviews.length }} audiobook(s) selected
+                </p>
+                <div class="toolbar-actions">
+                  <button type="button" class="btn btn-secondary organize-action-btn" @click="selectAll">Select All</button>
+                  <button type="button" class="btn btn-secondary organize-action-btn" @click="clearSelection">Clear</button>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div
-            v-for="preview in changedPreviews"
-            :key="preview.audiobookId"
-            class="preview-card"
-          >
-            <label class="preview-header">
-              <input
-                type="checkbox"
-                :checked="selected.has(preview.audiobookId)"
-                @change="toggleSelected(preview.audiobookId)"
-              />
-              <span class="preview-title">{{ preview.audiobookTitle || `Audiobook #${preview.audiobookId}` }}</span>
+          <div class="form-group organize-group">
+            <label class="form-label">
+              <PhFolderOpen />
+              Preview
             </label>
+            <div class="organize-preview-list">
+              <div
+                v-for="preview in changedPreviews"
+                :key="preview.audiobookId"
+                class="form-control-card preview-card"
+              >
+                <label class="preview-header">
+                  <span class="preview-heading">
+                    <input
+                      type="checkbox"
+                      class="preview-checkbox"
+                      :checked="selected.has(preview.audiobookId)"
+                      @change="toggleSelected(preview.audiobookId)"
+                    />
+                    <span class="preview-title">{{ preview.audiobookTitle || `Audiobook #${preview.audiobookId}` }}</span>
+                  </span>
+                  <span class="preview-meta">{{ previewChangeSummary(preview) }}</span>
+                </label>
 
-            <div v-if="preview.folderChanged" class="preview-section">
-              <span class="preview-label">Folder</span>
-              <RenamePathDiff :old-path="preview.currentFolderPath" :new-path="preview.newFolderPath" />
-            </div>
+                <div v-if="preview.folderChanged" class="preview-section">
+                  <span class="preview-label">Folder</span>
+                  <RenamePathDiff :old-path="preview.currentFolderPath" :new-path="preview.newFolderPath" />
+                </div>
 
-            <div
-              v-for="file in preview.fileRenames.filter((entry) => entry.changed)"
-              :key="file.fileId"
-              class="preview-section"
-            >
-              <span class="preview-label">File</span>
-              <RenamePathDiff :old-path="file.currentFilename" :new-path="file.newFilename" />
+                <div
+                  v-for="file in preview.fileRenames.filter((entry) => entry.changed)"
+                  :key="file.fileId"
+                  class="preview-section"
+                >
+                  <span class="preview-label">File</span>
+                  <RenamePathDiff :old-path="file.currentFilename" :new-path="file.newFilename" />
+                </div>
+              </div>
             </div>
           </div>
         </div>
 
-        <div v-if="finished && results.length > 0" class="results-list">
-          <div
-            v-for="result in results"
-            :key="result.audiobookId"
-            class="result-row"
-            :class="{ success: result.success, error: !result.success }"
-          >
-            <component :is="result.success ? PhCheckCircle : PhWarningCircle" class="result-icon" />
-            <span class="result-title">{{ titleFor(result.audiobookId) }}</span>
-            <span class="result-detail">
-              {{ result.success ? 'Organized successfully' : result.error || 'Organize failed' }}
-            </span>
+        <div v-if="finished && results.length > 0" class="form-group organize-results-group">
+          <label class="form-label">
+            <PhCheckCircle />
+            Results
+          </label>
+          <div class="form-control-card results-list">
+            <div
+              v-for="result in results"
+              :key="result.audiobookId"
+              class="result-row"
+              :class="{ success: result.success, error: !result.success }"
+            >
+              <component :is="result.success ? PhCheckCircle : PhWarningCircle" class="result-icon" />
+              <span class="result-title">{{ titleFor(result.audiobookId) }}</span>
+              <span class="result-detail">
+                {{ result.success ? 'Organized successfully' : result.error || 'Organize failed' }}
+              </span>
+            </div>
           </div>
         </div>
       </ModalBody>
@@ -114,7 +150,7 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { PhCheckCircle, PhFolderOpen, PhSpinner, PhWarningCircle, PhX } from '@phosphor-icons/vue'
+import { PhCheckCircle, PhCheckSquare, PhFolderOpen, PhInfo, PhSpinner, PhWarningCircle, PhX } from '@phosphor-icons/vue'
 import { Modal, ModalBody, ModalFooter, ModalHeader } from '@/components/feedback'
 import RenamePathDiff from './RenamePathDiff.vue'
 import { apiService } from '@/services/api'
@@ -154,6 +190,7 @@ watch(
       reset()
     }
   },
+  { immediate: true },
 )
 
 async function load() {
@@ -228,6 +265,21 @@ function titleFor(audiobookId: number) {
   return previews.value.find((preview) => preview.audiobookId === audiobookId)?.audiobookTitle || `Audiobook #${audiobookId}`
 }
 
+function previewChangeSummary(preview: RenamePreview) {
+  const parts: string[] = []
+  const changedFiles = preview.fileRenames.filter((entry) => entry.changed).length
+
+  if (preview.folderChanged) {
+    parts.push('Folder')
+  }
+
+  if (changedFiles > 0) {
+    parts.push(`${changedFiles} file${changedFiles === 1 ? '' : 's'}`)
+  }
+
+  return parts.join(' + ') || 'No changes'
+}
+
 function handleDone() {
   emit('done')
 }
@@ -253,6 +305,43 @@ function reset() {
 </script>
 
 <style scoped>
+.info-section {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  background-color: rgba(52, 152, 219, 0.09);
+  border: 1px solid rgba(52, 152, 219, 0.28);
+  border-radius: 6px;
+  color: #3498db;
+}
+
+.info-section p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.4;
+  color: #ccc;
+}
+
+.info-section strong {
+  color: #5dade2;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.form-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fff;
+  font-weight: 500;
+  margin: 0;
+}
+
 .organize-state {
   display: flex;
   flex-direction: column;
@@ -279,9 +368,15 @@ function reset() {
 .organize-preview {
   display: flex;
   flex-direction: column;
-  gap: 0.75rem;
-  max-height: 60vh;
-  overflow-y: auto;
+  gap: 1.25rem;
+}
+
+.organize-info-section {
+  margin-bottom: 0;
+}
+
+.organize-group {
+  margin-bottom: 0;
 }
 
 .organize-toolbar {
@@ -292,49 +387,77 @@ function reset() {
   flex-wrap: wrap;
 }
 
-.organize-toolbar p {
+.organize-toolbar-title {
   margin: 0;
   color: var(--text-secondary, #c7ced8);
+  line-height: 1.4;
 }
 
 .toolbar-actions {
   display: flex;
   gap: 0.75rem;
+  align-items: center;
 }
 
-.btn-link {
-  background: none;
-  border: none;
-  color: var(--brand-focus, #4dabf7);
-  cursor: pointer;
-  padding: 0;
+.organize-action-btn {
+  min-height: 36px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.88rem;
+}
+
+.organize-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
 }
 
 .preview-card {
-  padding: 0.85rem 1rem;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.03);
+  padding: 1rem;
+}
+
+.preview-card > * + * {
+  margin-top: 0.75rem;
 }
 
 .preview-header {
   display: flex;
-  align-items: center;
-  gap: 0.65rem;
-  margin-bottom: 0.65rem;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.85rem;
+  margin-bottom: 0.9rem;
   cursor: pointer;
+}
+
+.preview-heading {
+  display: inline-flex;
+  align-items: flex-start;
+  gap: 0.65rem;
+  min-width: 0;
+}
+
+.preview-checkbox {
+  margin-top: 0.15rem;
 }
 
 .preview-title {
   font-weight: 600;
   color: var(--text-primary, #f3f6fb);
+  line-height: 1.4;
+}
+
+.preview-meta {
+  flex-shrink: 0;
+  color: var(--text-muted, #97a2af);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.4;
 }
 
 .preview-section {
   display: flex;
   flex-direction: column;
-  gap: 0.35rem;
-  margin-top: 0.5rem;
+  gap: 0.45rem;
+  margin-top: 0;
 }
 
 .preview-label {
@@ -345,7 +468,6 @@ function reset() {
 }
 
 .results-list {
-  margin-top: 1rem;
   display: flex;
   flex-direction: column;
   gap: 0.5rem;
@@ -387,5 +509,21 @@ function reset() {
   display: inline-flex;
   align-items: center;
   gap: 0.35rem;
+}
+
+@media (max-width: 768px) {
+  .toolbar-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  .preview-header {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .preview-meta {
+    align-self: flex-start;
+  }
 }
 </style>
