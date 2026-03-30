@@ -878,25 +878,19 @@ if (builder.Environment.IsProduction())
 }
 
 // During local development we often run the frontend on a different port via Vite
-// and use plain HTTP. Ensure antiforgery cookie can be set in that scenario by
-// relaxing the SecurePolicy and SameSite settings when running in Development.
-// NOTE: CodeQL flags SecurePolicy.None as a security issue, but this is acceptable
-// in Development environment where HTTPS is not available. Production uses SameAsRequest
-// (configured above) which properly enforces Secure flag when behind HTTPS reverse proxy.
+// and use a proxy/front-end on a different port. Keep the cookie policy aligned
+// with the request so local HTTP continues to work without forcing an insecure
+// "always send over HTTP" policy.
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddAntiforgery(options =>
     {
         options.HeaderName = "X-XSRF-TOKEN";
-        // Allow the antiforgery cookie to be sent over plain HTTP during local dev
-        // This is safe because Development environment is not exposed to external traffic
-        options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.None; // lgtm[cs/cookie-secure-policy-none]
+        options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
         // During local development the frontend often runs on a different origin
         // (Vite dev server). Use SameSite=Lax so the browser will accept the
-        // cookie for same-site requests to the Vite dev server while avoiding
-        // the requirement to set Secure (which would require HTTPS). In our
-        // setup the dev server proxies /api requests, so Lax is sufficient and
-        // more compatible with local HTTP development.
+        // cookie for proxied same-site requests to the Vite dev server. In our
+        // setup the dev server proxies /api requests, so Lax remains sufficient.
         options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
     });
 }

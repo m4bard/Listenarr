@@ -218,8 +218,8 @@ namespace Listenarr.Api.Services.Adapters
 
         public async Task<string?> AddAsync(DownloadClientConfiguration client, SearchResult result, CancellationToken ct = default)
         {
-            if (client == null) throw new ArgumentNullException(nameof(client));
-            if (result == null) throw new ArgumentNullException(nameof(result));
+            ArgumentNullException.ThrowIfNull(client);
+            ArgumentNullException.ThrowIfNull(result);
 
             var magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(result.MagnetLink);
             var httpTorrentUrl = NormalizeTorrentUrl(result.TorrentUrl);
