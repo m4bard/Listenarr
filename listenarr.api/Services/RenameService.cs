@@ -515,9 +515,10 @@ namespace Listenarr.Api.Services
 
         private static string CombineWithOptionalBase(string basePath, string relativePath)
         {
-            if (string.IsNullOrWhiteSpace(basePath)) return relativePath;
-            if (Path.IsPathRooted(relativePath)) return relativePath;
-            return Path.Combine(basePath, relativePath);
+            var safeRelative = relativePath ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(basePath)) return safeRelative;
+            if (Path.IsPathRooted(safeRelative)) return safeRelative;
+            return Path.Join(basePath, safeRelative);
         }
 
         private static string CombineRelativePath(string basePath, string relativePath)
@@ -533,7 +534,17 @@ namespace Listenarr.Api.Services
             }
 
             safeRelative = safeRelative.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return NormalizePath(Path.Combine(basePath, safeRelative));
+            if (Path.IsPathRooted(safeRelative))
+            {
+                var root = Path.GetPathRoot(safeRelative);
+                if (!string.IsNullOrWhiteSpace(root) && safeRelative.Length >= root.Length)
+                {
+                    safeRelative = safeRelative[root.Length..];
+                }
+
+                safeRelative = safeRelative.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
+            return NormalizePath(Path.Join(basePath, safeRelative));
         }
 
         private static string NormalizePath(string? path) => string.IsNullOrWhiteSpace(path) ? string.Empty : FileUtils.NormalizeStoredPath(path);

@@ -47,11 +47,11 @@ namespace Listenarr.Api.Tests
                     // Simulate FileNamingService producing an Author/Title relative path
                     var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
                     var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Combine(author, title).Replace("\\", "/");
+                    return Path.Join(author, title).Replace("\\", "/");
                 });
 
             // Configuration service providing an OutputPath root
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var mockConfigService = new Mock<IConfigurationService>();
@@ -134,7 +134,7 @@ namespace Listenarr.Api.Tests
                     return $"{author}/{title}".Replace("\\", "/");
                 });
 
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var mockConfigService = new Mock<IConfigurationService>();
@@ -245,11 +245,11 @@ namespace Listenarr.Api.Tests
                 {
                     var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
                     var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Combine(author, title).Replace("\\", "/");
+                    return Path.Join(author, title).Replace("\\", "/");
                 });
 
             // Configuration service providing an OutputPath root
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var mockConfigService = new Mock<IConfigurationService>();
@@ -331,11 +331,11 @@ namespace Listenarr.Api.Tests
                 {
                     var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
                     var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Combine(author, title).Replace("\\", "/");
+                    return Path.Join(author, title).Replace("\\", "/");
                 });
 
             // Configuration service providing an OutputPath root
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var mockConfigService = new Mock<IConfigurationService>();

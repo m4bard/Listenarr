@@ -11,7 +11,7 @@ namespace Listenarr.Api.Tests
 {
     public class RenameServiceTests : IDisposable
     {
-        private readonly string _tempRoot = Path.Combine(Path.GetTempPath(), "ListenarrRenameTests", Guid.NewGuid().ToString("N"));
+        private readonly string _tempRoot = Path.Join(Path.GetTempPath(), "ListenarrRenameTests", Guid.NewGuid().ToString("N"));
         private readonly List<ListenArrDbContext> _contexts = new();
 
         public void Dispose()
@@ -55,10 +55,10 @@ namespace Listenarr.Api.Tests
                 Language = "English",
                 Asin = "B000TEST",
                 Edition = "Anniversary",
-                BasePath = Path.Combine(_tempRoot, "Wrong", "Folder"),
+                BasePath = Path.Join(_tempRoot, "Wrong", "Folder"),
                 Files = new List<AudiobookFile>
                 {
-                    new() { Id = 11, AudiobookId = 1, Path = Path.Combine(_tempRoot, "Wrong", "Folder", "old-name.m4b"), Format = "m4b" }
+                    new() { Id = 11, AudiobookId = 1, Path = Path.Join(_tempRoot, "Wrong", "Folder", "old-name.m4b"), Format = "m4b" }
                 }
             });
             await db.SaveChangesAsync();
@@ -77,8 +77,8 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task PreviewRename_PreservesCustomBasePath()
         {
-            var outputPath = Path.Combine(_tempRoot, "library");
-            var customBase = Path.Combine(_tempRoot, "custom-shelf", "Dune");
+            var outputPath = Path.Join(_tempRoot, "library");
+            var customBase = Path.Join(_tempRoot, "custom-shelf", "Dune");
             Directory.CreateDirectory(customBase);
 
             var settings = new ApplicationSettings
@@ -97,7 +97,7 @@ namespace Listenarr.Api.Tests
                 BasePath = customBase,
                 Files = new List<AudiobookFile>
                 {
-                    new() { Id = 21, AudiobookId = 2, Path = Path.Combine(customBase, "wrong-name.m4b"), Format = "m4b" }
+                    new() { Id = 21, AudiobookId = 2, Path = Path.Join(customBase, "wrong-name.m4b"), Format = "m4b" }
                 }
             });
             await db.SaveChangesAsync();
@@ -113,10 +113,10 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ExecuteRename_RejectsPathsOutsideAllowedRoots()
         {
-            var libraryRoot = Path.Combine(_tempRoot, "library");
-            var bookFolder = Path.Combine(libraryRoot, "Book");
+            var libraryRoot = Path.Join(_tempRoot, "library");
+            var bookFolder = Path.Join(libraryRoot, "Book");
             Directory.CreateDirectory(bookFolder);
-            var sourcePath = Path.Combine(bookFolder, "Book.m4b");
+            var sourcePath = Path.Join(bookFolder, "Book.m4b");
             await File.WriteAllTextAsync(sourcePath, "test");
 
             var settings = new ApplicationSettings
@@ -151,7 +151,7 @@ namespace Listenarr.Api.Tests
                         {
                             FileId = 31,
                             CurrentPath = sourcePath,
-                            NewPath = Path.Combine(_tempRoot, "outside", "Book.m4b")
+                            NewPath = Path.Join(_tempRoot, "outside", "Book.m4b")
                         }
                     }
                 }
@@ -167,11 +167,11 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ExecuteRename_RejectsFileIdsThatDoNotBelongToAudiobook()
         {
-            var libraryRoot = Path.Combine(_tempRoot, "library");
-            var bookFolder = Path.Combine(libraryRoot, "Book");
+            var libraryRoot = Path.Join(_tempRoot, "library");
+            var bookFolder = Path.Join(libraryRoot, "Book");
             Directory.CreateDirectory(bookFolder);
-            var rogueSourcePath = Path.Combine(bookFolder, "rogue-file.m4b");
-            var rogueTargetPath = Path.Combine(bookFolder, "moved-rogue-file.m4b");
+            var rogueSourcePath = Path.Join(bookFolder, "rogue-file.m4b");
+            var rogueTargetPath = Path.Join(bookFolder, "moved-rogue-file.m4b");
             await File.WriteAllTextAsync(rogueSourcePath, "rogue");
 
             var settings = new ApplicationSettings
@@ -190,7 +190,7 @@ namespace Listenarr.Api.Tests
                 BasePath = bookFolder,
                 Files = new List<AudiobookFile>
                 {
-                    new() { Id = 51, AudiobookId = 5, Path = Path.Combine(bookFolder, "tracked-file.m4b"), Format = "m4b" }
+                    new() { Id = 51, AudiobookId = 5, Path = Path.Join(bookFolder, "tracked-file.m4b"), Format = "m4b" }
                 }
             });
             await db.SaveChangesAsync();
@@ -224,12 +224,12 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ExecuteRename_RejectsSourcePathsThatDoNotMatchTrackedFile()
         {
-            var libraryRoot = Path.Combine(_tempRoot, "library");
-            var bookFolder = Path.Combine(libraryRoot, "Book");
+            var libraryRoot = Path.Join(_tempRoot, "library");
+            var bookFolder = Path.Join(libraryRoot, "Book");
             Directory.CreateDirectory(bookFolder);
-            var trackedSourcePath = Path.Combine(bookFolder, "tracked-file.m4b");
-            var rogueSourcePath = Path.Combine(bookFolder, "rogue-file.m4b");
-            var rogueTargetPath = Path.Combine(bookFolder, "moved-rogue-file.m4b");
+            var trackedSourcePath = Path.Join(bookFolder, "tracked-file.m4b");
+            var rogueSourcePath = Path.Join(bookFolder, "rogue-file.m4b");
+            var rogueTargetPath = Path.Join(bookFolder, "moved-rogue-file.m4b");
             await File.WriteAllTextAsync(trackedSourcePath, "tracked");
             await File.WriteAllTextAsync(rogueSourcePath, "rogue");
 
@@ -285,15 +285,15 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ExecuteRename_RecomputesBasePathAfterPartialFileFailures()
         {
-            var libraryRoot = Path.Combine(_tempRoot, "library");
-            var sourceFolder = Path.Combine(libraryRoot, "Old");
-            var targetFolder = Path.Combine(libraryRoot, "Author", "Book");
+            var libraryRoot = Path.Join(_tempRoot, "library");
+            var sourceFolder = Path.Join(libraryRoot, "Old");
+            var targetFolder = Path.Join(libraryRoot, "Author", "Book");
             Directory.CreateDirectory(sourceFolder);
 
-            var firstSourcePath = Path.Combine(sourceFolder, "Part 1.m4b");
-            var secondSourcePath = Path.Combine(sourceFolder, "Part 2.m4b");
-            var firstTargetPath = Path.Combine(targetFolder, "Part 1.m4b");
-            var secondTargetPath = Path.Combine(targetFolder, "Part 2.m4b");
+            var firstSourcePath = Path.Join(sourceFolder, "Part 1.m4b");
+            var secondSourcePath = Path.Join(sourceFolder, "Part 2.m4b");
+            var firstTargetPath = Path.Join(targetFolder, "Part 1.m4b");
+            var secondTargetPath = Path.Join(targetFolder, "Part 2.m4b");
             await File.WriteAllTextAsync(firstSourcePath, "one");
             await File.WriteAllTextAsync(secondSourcePath, "two");
 
@@ -370,12 +370,12 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ExecuteRename_MovesFileAndUpdatesDatabasePaths()
         {
-            var libraryRoot = Path.Combine(_tempRoot, "library");
-            var sourceFolder = Path.Combine(libraryRoot, "Old");
-            var targetFolder = Path.Combine(libraryRoot, "Author", "Book");
+            var libraryRoot = Path.Join(_tempRoot, "library");
+            var sourceFolder = Path.Join(libraryRoot, "Old");
+            var targetFolder = Path.Join(libraryRoot, "Author", "Book");
             Directory.CreateDirectory(sourceFolder);
-            var sourcePath = Path.Combine(sourceFolder, "old-name.m4b");
-            var targetPath = Path.Combine(targetFolder, "Book.m4b");
+            var sourcePath = Path.Join(sourceFolder, "old-name.m4b");
+            var targetPath = Path.Join(targetFolder, "Book.m4b");
             await File.WriteAllTextAsync(sourcePath, "test");
 
             var settings = new ApplicationSettings
