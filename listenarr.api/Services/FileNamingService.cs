@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -415,12 +416,7 @@ namespace Listenarr.Api.Services
 
         private static string FirstNonEmpty(params string?[] candidates)
         {
-            foreach (var c in candidates)
-            {
-                if (!string.IsNullOrWhiteSpace(c)) return c!;
-            }
-
-            return string.Empty;
+            return candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)) ?? string.Empty;
         }
 
         // Heuristic: sometimes metadata.Artist can contain the title/series (noisy tags).
@@ -435,7 +431,7 @@ namespace Listenarr.Api.Services
                 return alternate;
             }
 
-            if (!string.IsNullOrWhiteSpace(primary) && !string.IsNullOrWhiteSpace(metadata.Title))
+            if (!string.IsNullOrWhiteSpace(metadata.Title))
             {
                 if (primary.IndexOf(metadata.Title, StringComparison.OrdinalIgnoreCase) >= 0 ||
                     (!string.IsNullOrWhiteSpace(metadata.Series) && string.Equals(primary, metadata.Series, StringComparison.OrdinalIgnoreCase)) ||

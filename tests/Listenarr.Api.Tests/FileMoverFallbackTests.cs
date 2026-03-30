@@ -27,7 +27,11 @@ namespace Listenarr.Api.Tests
             {
                 Directory.Delete(_root, true);
             }
-            catch (Exception ex)
+            catch (IOException ex)
+            {
+                Debug.WriteLine($"Ignoring cleanup failure for '{_root}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
             {
                 Debug.WriteLine($"Ignoring cleanup failure for '{_root}': {ex.Message}");
             }

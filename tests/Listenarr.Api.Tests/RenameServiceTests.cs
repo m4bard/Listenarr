@@ -23,7 +23,11 @@ namespace Listenarr.Api.Tests
                     Directory.Delete(_tempRoot, true);
                 }
             }
-            catch (Exception ex)
+            catch (IOException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{_tempRoot}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
             {
                 Console.Error.WriteLine($"Ignoring cleanup failure for '{_tempRoot}': {ex.Message}");
             }

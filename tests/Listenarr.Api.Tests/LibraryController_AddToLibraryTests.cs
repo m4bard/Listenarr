@@ -18,6 +18,17 @@ namespace Listenarr.Api.Tests
 {
     public class LibraryController_AddToLibraryTests
     {
+        private static string BuildLibraryPath(Dictionary<string, object> vars)
+        {
+            vars.TryGetValue("Author", out var authorObj);
+            vars.TryGetValue("Title", out var titleObj);
+
+            var author = authorObj?.ToString() ?? "Unknown";
+            var title = titleObj?.ToString() ?? "Unknown";
+
+            return Path.Join(author, title).Replace("\\", "/");
+        }
+
         [Fact]
         public async Task AddToLibrary_UsesLegacyAuthorField_PopulatesAuthorsAndBasePath()
         {
@@ -42,13 +53,7 @@ namespace Listenarr.Api.Tests
             var mockFileNaming = new Mock<IFileNamingService>();
             mockFileNaming
                 .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool t) =>
-                {
-                    // Simulate FileNamingService producing an Author/Title relative path
-                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
-                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Join(author, title).Replace("\\", "/");
-                });
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) => BuildLibraryPath(vars));
 
             // Configuration service providing an OutputPath root
             var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
@@ -127,12 +132,7 @@ namespace Listenarr.Api.Tests
             var mockFileNaming = new Mock<IFileNamingService>();
             mockFileNaming
                 .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool t) =>
-                {
-                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
-                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return $"{author}/{title}".Replace("\\", "/");
-                });
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) => BuildLibraryPath(vars));
 
             var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
@@ -207,7 +207,11 @@ namespace Listenarr.Api.Tests
             {
                 Directory.Delete(tempRoot, true);
             }
-            catch (Exception ex)
+            catch (IOException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{tempRoot}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
             {
                 Console.Error.WriteLine($"Ignoring cleanup failure for '{tempRoot}': {ex.Message}");
             }
@@ -241,12 +245,7 @@ namespace Listenarr.Api.Tests
             var mockFileNaming = new Mock<IFileNamingService>();
             mockFileNaming
                 .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool t) =>
-                {
-                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
-                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Join(author, title).Replace("\\", "/");
-                });
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) => BuildLibraryPath(vars));
 
             // Configuration service providing an OutputPath root
             var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
@@ -327,12 +326,7 @@ namespace Listenarr.Api.Tests
             var mockFileNaming = new Mock<IFileNamingService>();
             mockFileNaming
                 .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool t) =>
-                {
-                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
-                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Join(author, title).Replace("\\", "/");
-                });
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) => BuildLibraryPath(vars));
 
             // Configuration service providing an OutputPath root
             var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
