@@ -62,7 +62,7 @@ describe('AudiobookDetailView image recache behavior', () => {
     expect(ensureImageCachedMock.mock.calls[0]?.[0]).toBe(imagePath)
   })
 
-  it('navigates to the author, series, and genre collections when their tags are clicked', async () => {
+  it('navigates to the author, narrator, publisher, series, and genre collections when their tags are clicked', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     const store = useLibraryStore()
@@ -71,6 +71,8 @@ describe('AudiobookDetailView image recache behavior', () => {
         id: 5,
         title: 'Detail Book',
         authors: ['Brandon Sanderson'],
+        narrators: ['Michael Kramer'],
+        publisher: 'Tor Audio',
         series: 'Mistborn',
         genres: ['Fantasy'],
         files: [],
@@ -82,18 +84,45 @@ describe('AudiobookDetailView image recache behavior', () => {
     const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
     await new Promise((r) => setTimeout(r, 10))
 
-    const linkTags = wrapper.findAll('.detail-link-tag')
-    expect(linkTags).toHaveLength(3)
+    const authorTag = wrapper
+      .findAll('.detail-link-tag')
+      .find((tag) => tag.text().includes('Brandon Sanderson'))
+    const narratorTag = wrapper
+      .findAll('.detail-link-tag')
+      .find((tag) => tag.text().includes('Michael Kramer'))
+    const publisherTag = wrapper
+      .findAll('.detail-link-tag')
+      .find((tag) => tag.text().includes('Tor Audio'))
+    const seriesTag = wrapper
+      .findAll('.detail-link-tag')
+      .find((tag) => tag.text().includes('Mistborn'))
+    const genreTag = wrapper
+      .findAll('.detail-link-tag')
+      .find((tag) => tag.text().includes('Fantasy'))
 
-    await linkTags[0].trigger('click')
+    expect(authorTag).toBeTruthy()
+    expect(narratorTag).toBeTruthy()
+    expect(publisherTag).toBeTruthy()
+    expect(seriesTag).toBeTruthy()
+    expect(genreTag).toBeTruthy()
+
+    await authorTag!.trigger('click')
 
     expect(routerPushMock).toHaveBeenCalledWith('/collection/author/Brandon%20Sanderson')
 
-    await linkTags[1].trigger('click')
+    await narratorTag!.trigger('click')
+
+    expect(routerPushMock).toHaveBeenCalledWith('/collection/narrator/Michael%20Kramer')
+
+    await publisherTag!.trigger('click')
+
+    expect(routerPushMock).toHaveBeenCalledWith('/collection/publisher/Tor%20Audio')
+
+    await seriesTag!.trigger('click')
 
     expect(routerPushMock).toHaveBeenCalledWith('/collection/series/Mistborn')
 
-    await linkTags[2].trigger('click')
+    await genreTag!.trigger('click')
 
     expect(routerPushMock).toHaveBeenCalledWith('/collection/genre/Fantasy')
   })

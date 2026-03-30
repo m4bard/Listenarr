@@ -31,6 +31,7 @@ namespace Listenarr.Domain.Models
         public string? PublishedDate { get; set; } // Full date (YYYY-MM-DD) for calendar/timeline features
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
+        public List<AudiobookSeriesMembership>? SeriesMemberships { get; set; }
         public string? Description { get; set; }
         public List<string>? Genres { get; set; }
         public List<string>? Tags { get; set; }

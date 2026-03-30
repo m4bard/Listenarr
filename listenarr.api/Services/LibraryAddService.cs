@@ -137,6 +137,12 @@ namespace Listenarr.Api.Services
                 BasePath = string.IsNullOrWhiteSpace(request.DestinationPath) ? null : FileUtils.NormalizeStoredPath(request.DestinationPath)
             };
 
+            AudiobookSeriesMembershipHelper.ApplyToAudiobook(
+                audiobook,
+                metadata.SeriesMemberships,
+                metadata.Series,
+                ToStringOrFirst(metadata.SeriesNumber));
+
             SyncImportedIdentifiersFromLegacyFields(audiobook);
 
             if (request.QualityProfileId.HasValue)

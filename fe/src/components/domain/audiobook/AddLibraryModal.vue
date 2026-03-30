@@ -136,14 +136,21 @@
               </div>
             </div>
 
-            <div v-if="currentMetadata.series || displayGenres.length" class="detail-section">
+            <div v-if="displaySeriesMemberships.length || displayGenres.length" class="detail-section">
               <h4>Series & Genre Information</h4>
               <div class="detail-grid">
-                <div v-if="currentMetadata.series" class="detail-item">
+                <div v-if="displaySeriesMemberships.length" class="detail-item detail-item--wide">
                   <span class="label">Series:</span>
-                  <span class="value">
-                    {{ currentMetadata.series }}<span v-if="currentMetadata.seriesNumber"> #{{ currentMetadata.seriesNumber }}</span>
-                  </span>
+                  <div class="value series-membership-list">
+                    <span
+                      v-for="(membership, index) in displaySeriesMemberships"
+                      :key="`${membership.seriesName}-${membership.seriesNumber || index}`"
+                      class="series-membership-pill"
+                    >
+                      {{ membership.seriesName }}<span v-if="membership.seriesNumber"> #{{ membership.seriesNumber }}</span>
+                      <span v-if="membership.isPrimary" class="series-membership-primary">Primary</span>
+                    </span>
+                  </div>
                 </div>
                 <div v-if="displayGenres.length" class="detail-item">
                   <span class="label">Genres:</span>
@@ -366,7 +373,12 @@
 
 <script setup lang="ts">
 import { ref, onMounted, watch, computed, onBeforeUnmount, nextTick } from 'vue'
-import type { AudibleBookMetadata, QualityProfile, Audiobook } from '@/types'
+import type {
+  AudibleBookMetadata,
+  QualityProfile,
+  Audiobook,
+  AudiobookSeriesMembership,
+} from '@/types'
 import { apiService } from '@/services/api'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useToast } from '@/services/toastService'
@@ -442,7 +454,64 @@ function firstIsbn(value: unknown): string | undefined {
   return typeof value === 'string' ? trimToUndefined(value) : undefined
 }
 
+function normalizeSeriesMemberships(
+  memberships: AudiobookSeriesMembership[] | null | undefined,
+  legacySeries?: string | null,
+  legacySeriesNumber?: string | null,
+): AudiobookSeriesMembership[] {
+  const normalized = (memberships || [])
+    .map((membership, index) => ({
+      id: membership.id,
+      seriesName: trimToUndefined(membership.seriesName) || '',
+      seriesNumber: trimToUndefined(membership.seriesNumber),
+      seriesAsin: trimToUndefined(membership.seriesAsin),
+      isPrimary: Boolean(membership.isPrimary),
+      sortOrder: typeof membership.sortOrder === 'number' ? membership.sortOrder : index,
+    }))
+    .filter((membership) => membership.seriesName.length > 0)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+
+  if (normalized.length === 0) {
+    const fallbackSeries = trimToUndefined(legacySeries)
+    if (fallbackSeries) {
+      return [
+        {
+          seriesName: fallbackSeries,
+          seriesNumber: trimToUndefined(legacySeriesNumber),
+          isPrimary: true,
+          sortOrder: 0,
+        },
+      ]
+    }
+  }
+
+  if (!normalized.some((membership) => membership.isPrimary) && normalized[0]) {
+    normalized[0].isPrimary = true
+  }
+
+  return normalized.map((membership, index) => ({
+    ...membership,
+    sortOrder: index,
+  }))
+}
+
+function primarySeriesMembership(
+  memberships: AudiobookSeriesMembership[] | null | undefined,
+  legacySeries?: string | null,
+  legacySeriesNumber?: string | null,
+): AudiobookSeriesMembership | undefined {
+  const normalized = normalizeSeriesMemberships(memberships, legacySeries, legacySeriesNumber)
+  return normalized.find((membership) => membership.isPrimary) || normalized[0]
+}
+
 function cloneMetadata(source: AudibleBookMetadata): AudibleBookMetadata {
+  const normalizedMemberships = normalizeSeriesMemberships(
+    source.seriesMemberships,
+    source.series,
+    source.seriesNumber,
+  )
+  const primaryMembership = primarySeriesMembership(normalizedMemberships)
+
   return {
     ...source,
     title: trimToUndefined(source.title) || 'Unknown Title',
@@ -451,8 +520,10 @@ function cloneMetadata(source: AudibleBookMetadata): AudibleBookMetadata {
     narrators: normalizeList(source.narrators),
     publishedDate: trimToUndefined(source.publishedDate),
     publishYear: trimToUndefined(source.publishYear),
-    series: trimToUndefined(source.series),
-    seriesNumber: trimToUndefined(source.seriesNumber),
+    series: trimToUndefined(source.series) || trimToUndefined(primaryMembership?.seriesName),
+    seriesNumber:
+      trimToUndefined(source.seriesNumber) || trimToUndefined(primaryMembership?.seriesNumber),
+    seriesMemberships: normalizedMemberships,
     description: trimToUndefined(source.description),
     genres: normalizeList(source.genres),
     tags: normalizeList(source.tags),
@@ -478,6 +549,16 @@ function buildMetadataPayload(): AudibleBookMetadata {
   const publishedDate = trimToUndefined(source?.publishedDate)
   const derivedYear = publishedDate?.match(/\d{4}/)?.[0]
   const explicitPublishYear = trimToUndefined(source?.publishYear)
+  const normalizedMemberships = normalizeSeriesMemberships(
+    source?.seriesMemberships,
+    source?.series,
+    source?.seriesNumber,
+  )
+  const primaryMembership = primarySeriesMembership(
+    normalizedMemberships,
+    source?.series,
+    source?.seriesNumber,
+  )
 
   return {
     ...cloneMetadata(source),
@@ -487,6 +568,10 @@ function buildMetadataPayload(): AudibleBookMetadata {
     narrators: normalizeList(source?.narrators),
     publishedDate,
     publishYear: explicitPublishYear || derivedYear,
+    series: trimToUndefined(source?.series) || trimToUndefined(primaryMembership?.seriesName),
+    seriesNumber:
+      trimToUndefined(source?.seriesNumber) || trimToUndefined(primaryMembership?.seriesNumber),
+    seriesMemberships: normalizedMemberships,
     description: trimToUndefined(source?.description),
     genres: normalizeList(source?.genres),
     tags: normalizeList(source?.tags),
@@ -588,6 +673,14 @@ const displayGenres = computed(() => {
   return []
 })
 
+const displaySeriesMemberships = computed(() =>
+  normalizeSeriesMemberships(
+    currentMetadata.value?.seriesMemberships,
+    currentMetadata.value?.series,
+    currentMetadata.value?.seriesNumber,
+  ),
+)
+
 const rootStore = useRootFoldersStore()
 const selectedRootId = ref<number | null>(null)
 const customRootPath = ref<string | null>(null)
@@ -643,6 +736,7 @@ interface AudiblePerson {
   name?: string
 }
 interface AudibleSeries {
+  asin?: string
   name?: string
   position?: string | number
 }
@@ -691,9 +785,22 @@ const mapAudibleToAudible = (
   const authors = (audible?.authors || []).map((a) => a?.name).filter(Boolean) as string[]
   const narrators = (audible?.narrators || []).map((n) => n?.name).filter(Boolean) as string[]
   const genres = (audible?.genres || []).map((g) => g?.name).filter(Boolean) as string[]
-
-  const firstSeries =
-    audible?.series && audible.series.length > 0 ? audible.series[0] : undefined
+  const seriesMemberships = normalizeSeriesMemberships(
+    audible?.series?.map((series, index) => ({
+      seriesName: series?.name || '',
+      seriesNumber: series?.position !== undefined ? String(series.position) : undefined,
+      seriesAsin: series?.asin,
+      isPrimary: index === 0,
+      sortOrder: index,
+    })),
+    props.book?.series,
+    props.book?.seriesNumber,
+  )
+  const primaryMembership = primarySeriesMembership(
+    seriesMemberships,
+    props.book?.series,
+    props.book?.seriesNumber,
+  )
 
   return {
     asin: audible?.asin || props.book?.asin || '',
@@ -714,9 +821,13 @@ const mapAudibleToAudible = (
     edition: props.book?.edition,
     version: audible?.version || props.book?.version,
     genres: genres.length ? genres : props.book?.genres || [],
-    series: firstSeries?.name || props.book?.series,
+    series: primaryMembership?.seriesName || props.book?.series,
     seriesNumber:
-      firstSeries?.position !== undefined ? String(firstSeries.position) : (props.book?.seriesNumber && props.book.seriesNumber !== 'null' ? props.book.seriesNumber : undefined),
+      primaryMembership?.seriesNumber ||
+      (props.book?.seriesNumber && props.book.seriesNumber !== 'null'
+        ? props.book.seriesNumber
+        : undefined),
+    seriesMemberships,
     abridged:
       typeof audible?.bookFormat === 'string'
         ? audible.bookFormat.toLowerCase().includes('abridged')
@@ -1234,6 +1345,27 @@ const capitalizeFirst = (str: string): string => {
 .detail-item .value {
   color: white;
   font-weight: 400;
+}
+
+.series-membership-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.series-membership-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.series-membership-primary {
+  font-size: 0.72rem;
+  color: #9ec4ff;
 }
 
 .flags {

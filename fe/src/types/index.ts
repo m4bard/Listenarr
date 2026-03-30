@@ -392,6 +392,7 @@ export interface AudibleBookMetadata {
   series?: string
   seriesNumber?: string
   seriesAsin?: string
+  seriesMemberships?: AudiobookSeriesMembership[]
   seriesList?: string[]
   description?: string
   genres?: string[]
@@ -555,6 +556,15 @@ export interface MonitorSeriesResponse {
 export type AudiobookExternalIdentifierType = 'Asin' | 'Isbn' | 'OpenLibraryId'
 export type AudiobookExternalIdentifierSource = 'Provider' | 'Imported' | 'Manual'
 
+export interface AudiobookSeriesMembership {
+  id?: number
+  seriesName: string
+  seriesNumber?: string
+  seriesAsin?: string
+  isPrimary?: boolean
+  sortOrder?: number
+}
+
 export interface AudiobookExternalIdentifier {
   id: number
   type: AudiobookExternalIdentifierType
@@ -586,6 +596,7 @@ export interface Audiobook {
   publishYear?: string
   series?: string
   seriesNumber?: string
+  seriesMemberships?: AudiobookSeriesMembership[]
   description?: string
   genres?: string[]
   tags?: string[]
@@ -1002,4 +1013,58 @@ export interface UnmatchedFilesResponse {
 export interface SavedUnmatchedResponse {
   lastScannedAt?: string
   items: UnmatchedFileItem[]
+}
+
+export interface BulkRenameRequest {
+  audiobookIds: number[]
+}
+
+export interface FileRenamePreview {
+  fileId: number
+  currentPath?: string
+  newPath?: string
+  currentFilename?: string
+  newFilename?: string
+  changed: boolean
+}
+
+export interface RenamePreview {
+  audiobookId: number
+  audiobookTitle?: string
+  currentFolderPath?: string
+  newFolderPath?: string
+  folderChanged: boolean
+  fileRenames: FileRenamePreview[]
+  hasChanges: boolean
+}
+
+export interface FileRenameOperation {
+  fileId: number
+  currentPath: string
+  newPath: string
+}
+
+export interface RenameOperation {
+  audiobookId: number
+  newFolderPath?: string
+  fileRenames: FileRenameOperation[]
+}
+
+export interface ExecuteRenameRequest {
+  operations: RenameOperation[]
+}
+
+export interface FileRenameResultItem {
+  fileId: number
+  previousPath?: string
+  newPath?: string
+  success: boolean
+  error?: string
+}
+
+export interface RenameResult {
+  audiobookId: number
+  success: boolean
+  error?: string
+  renamedFiles: FileRenameResultItem[]
 }

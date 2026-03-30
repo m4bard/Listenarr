@@ -91,6 +91,7 @@ namespace Listenarr.Api.Tests
             Assert.Contains(genres.EnumerateArray().Select(g => g.GetString()), value => value == "Fantasy");
             Assert.True(item.TryGetProperty("openLibraryId", out var openLibraryId));
             Assert.Equal("OL123", openLibraryId.GetString());
+            Assert.Equal(book.BasePath, item.GetProperty("basePath").GetString());
             Assert.Equal(book.FilePath, item.GetProperty("filePath").GetString());
             Assert.Equal(book.FileSize, item.GetProperty("fileSize").GetInt64());
             Assert.Equal(1, item.GetProperty("fileCount").GetInt32());
@@ -98,7 +99,6 @@ namespace Listenarr.Api.Tests
             Assert.False(item.TryGetProperty("files", out _));
             Assert.False(item.TryGetProperty("description", out _));
             Assert.False(item.TryGetProperty("subtitle", out _));
-            Assert.False(item.TryGetProperty("basePath", out _));
         }
     }
 }

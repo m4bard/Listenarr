@@ -43,6 +43,16 @@ namespace Listenarr.Api.Tests
                 Version = "Original Version",
                 Series = "Original Series",
                 SeriesNumber = "1",
+                SeriesMemberships = new List<AudiobookSeriesMembership>
+                {
+                    new()
+                    {
+                        SeriesName = "Original Series",
+                        SeriesNumber = "1",
+                        IsPrimary = true,
+                        SortOrder = 0
+                    }
+                },
                 Genres = new List<string> { "Fantasy" },
                 ImageUrl = "https://example.com/original.jpg",
                 Tags = new List<string> { "tag-one" },
@@ -85,8 +95,25 @@ namespace Listenarr.Api.Tests
                 Runtime = 720,
                 Edition = "Collector Edition",
                 Version = "Edited Version",
-                Series = "Edited Series",
-                SeriesNumber = "2",
+                Series = "Edited Universe",
+                SeriesNumber = "4",
+                SeriesMemberships = new List<AudiobookSeriesMembership>
+                {
+                    new()
+                    {
+                        SeriesName = "Edited Universe",
+                        SeriesNumber = "4",
+                        IsPrimary = true,
+                        SortOrder = 0
+                    },
+                    new()
+                    {
+                        SeriesName = "Anthology Line",
+                        SeriesNumber = "12",
+                        IsPrimary = false,
+                        SortOrder = 1
+                    }
+                },
                 Genres = new List<string> { "Sci-Fi", "Adventure" },
                 ImageUrl = "https://example.com/edited.jpg",
                 Tags = new List<string> { "tag-two" },
@@ -112,8 +139,23 @@ namespace Listenarr.Api.Tests
             Assert.Equal(720, existingAudiobook.Runtime);
             Assert.Equal("Collector Edition", existingAudiobook.Edition);
             Assert.Equal("Edited Version", existingAudiobook.Version);
-            Assert.Equal("Edited Series", existingAudiobook.Series);
-            Assert.Equal("2", existingAudiobook.SeriesNumber);
+            Assert.Equal("Edited Universe", existingAudiobook.Series);
+            Assert.Equal("4", existingAudiobook.SeriesNumber);
+            Assert.NotNull(existingAudiobook.SeriesMemberships);
+            Assert.Collection(
+                existingAudiobook.SeriesMemberships!,
+                membership =>
+                {
+                    Assert.Equal("Edited Universe", membership.SeriesName);
+                    Assert.Equal("4", membership.SeriesNumber);
+                    Assert.True(membership.IsPrimary);
+                },
+                membership =>
+                {
+                    Assert.Equal("Anthology Line", membership.SeriesName);
+                    Assert.Equal("12", membership.SeriesNumber);
+                    Assert.False(membership.IsPrimary);
+                });
             Assert.Equal(new List<string> { "Sci-Fi", "Adventure" }, existingAudiobook.Genres);
             Assert.Equal("https://example.com/edited.jpg", existingAudiobook.ImageUrl);
             Assert.Equal(new List<string> { "tag-two" }, existingAudiobook.Tags);

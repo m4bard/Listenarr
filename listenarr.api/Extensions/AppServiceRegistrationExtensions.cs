@@ -66,6 +66,7 @@ namespace Listenarr.Api.Extensions
                 sp.GetRequiredService<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>().ContentRootPath
             ));
             services.AddScoped<IFileNamingService, FileNamingService>();
+            services.AddScoped<IRenameService, RenameService>();
             // Centralized import service: handles moving/copying, naming and audiobook registration
             services.AddScoped<IImportService, ImportService>();
             // Centralized file mover for robust move/copy with retries and diagnostics

@@ -188,7 +188,17 @@
             </div>
             <div class="detail-row" v-if="audiobook.narrators?.length">
               <span class="label">Narrator(s):</span>
-              <span class="value">{{ audiobook.narrators.map(safeText).join(', ') }}</span>
+              <div class="value detail-link-tags">
+                <button
+                  v-for="narrator in audiobook.narrators"
+                  :key="narrator"
+                  type="button"
+                  class="tag-badge detail-link-tag"
+                  @click="goToNarratorCollection(narrator)"
+                >
+                  {{ safeText(narrator) }}
+                </button>
+              </div>
             </div>
           </div>
 
@@ -196,7 +206,15 @@
             <h3>Publication Details</h3>
             <div class="detail-row" v-if="audiobook.publisher">
               <span class="label">Publisher:</span>
-              <span class="value">{{ safeText(audiobook.publisher) }}</span>
+              <div class="value detail-link-tags">
+                <button
+                  type="button"
+                  class="tag-badge detail-link-tag"
+                  @click="goToPublisherCollection(audiobook.publisher)"
+                >
+                  {{ safeText(audiobook.publisher) }}
+                </button>
+              </div>
             </div>
             <div class="detail-row" v-if="audiobook.publishedDate || audiobook.publishYear">
               <span class="label">Release Date:</span>
@@ -212,23 +230,31 @@
             </div>
           </div>
 
-          <div class="detail-card" v-if="audiobook.series">
+          <div class="detail-card" v-if="displaySeriesMemberships.length">
             <h3>Series Information</h3>
             <div class="detail-row">
               <span class="label">Series:</span>
-              <div class="value detail-link-tags">
-                <button
-                  type="button"
-                  class="tag-badge detail-link-tag"
-                  @click="goToSeriesCollection(audiobook.series)"
+              <div class="value detail-link-tags detail-series-memberships">
+                <div
+                  v-for="(membership, index) in displaySeriesMemberships"
+                  :key="`${membership.seriesName}-${membership.seriesNumber || index}`"
+                  class="detail-series-membership"
                 >
-                  {{ safeText(audiobook.series) }}
-                </button>
+                  <button
+                    type="button"
+                    class="tag-badge detail-link-tag"
+                    @click="goToSeriesCollection(membership.seriesName)"
+                  >
+                    {{ safeText(membership.seriesName) }}
+                  </button>
+                  <span v-if="membership.seriesNumber" class="detail-series-number">
+                    #{{ membership.seriesNumber }}
+                  </span>
+                  <span v-if="membership.isPrimary" class="identifier-badge primary">
+                    Primary
+                  </span>
+                </div>
               </div>
-            </div>
-            <div class="detail-row" v-if="audiobook.seriesNumber && audiobook.seriesNumber.trim()">
-              <span class="label">Book #:</span>
-              <span class="value">{{ audiobook.seriesNumber }}</span>
             </div>
           </div>
 
@@ -507,6 +533,13 @@
     @downloaded="handleDownloaded"
   />
 
+  <RenamePreviewModal
+    :visible="showOrganizeModal"
+    :audiobook-ids="audiobook ? [audiobook.id] : []"
+    @close="showOrganizeModal = false"
+    @done="handleOrganizeDone"
+  />
+
 </template>
 
 <script setup lang="ts">
@@ -524,13 +557,20 @@ import { getPlaceholderUrl } from '@/utils/placeholder'
 import { joinPaths, isAbsolutePath } from '@/utils/path'
 import { observeLazyImages, ensureVisibleImagesLoad } from '@/utils/lazyLoad'
 import { signalRService } from '@/services/signalr'
-import type { Audiobook, AudiobookExternalIdentifier, History, SearchResult } from '@/types'
+import type {
+  Audiobook,
+  AudiobookExternalIdentifier,
+  AudiobookSeriesMembership,
+  History,
+  SearchResult,
+} from '@/types'
 import { safeText, stripHtmlAndNormalize } from '@/utils/textUtils'
 import { logger } from '@/utils/logger'
 import { errorTracking } from '@/services/errorTracking'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
+import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import CustomSelect from '@/components/form/CustomSelect.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import { Pill } from '@/components/base'
@@ -594,6 +634,7 @@ const rescanningMetadata = ref(false)
 const scanQueued = ref(false)
 const scanJobId = ref<string | null>(null)
 const showEditModal = ref(false)
+const showOrganizeModal = ref(false)
 const showMoreActions = ref(false)
 
 // History state
@@ -673,6 +714,16 @@ const topActions = computed<DetailTopAction[]>(() => [
     onClick: () => { void rescanMetadata() },
   },
   {
+    key: 'organize',
+    label: 'Organize Files',
+    title: 'Organize Files',
+    ariaLabel: 'Organize Files',
+    icon: PhFolderOpen,
+    disabled: !audiobook.value?.files?.length && !audiobook.value?.filePath,
+    desktopGroup: 'secondary',
+    onClick: () => { showOrganizeModal.value = true },
+  },
+  {
     key: 'delete',
     label: 'Delete',
     title: 'Delete',
@@ -705,7 +756,7 @@ type DetailIdentifierItem = {
 }
 
 type DetailTopAction = {
-  key: 'refresh' | 'manual-search' | 'scan' | 'monitor' | 'edit' | 'rescan-metadata' | 'delete'
+  key: 'refresh' | 'manual-search' | 'scan' | 'monitor' | 'edit' | 'rescan-metadata' | 'organize' | 'delete'
   label: string
   title: string
   ariaLabel: string
@@ -801,6 +852,42 @@ const displayIdentifiers = computed<DetailIdentifierItem[]>(() => {
     if (a.isPrimary !== b.isPrimary) return a.isPrimary ? -1 : 1
     return a.value.localeCompare(b.value)
   })
+})
+
+const displaySeriesMemberships = computed<AudiobookSeriesMembership[]>(() => {
+  const book = audiobook.value
+  if (!book) return []
+
+  const normalized = (book.seriesMemberships || [])
+    .map((membership, index) => ({
+      ...membership,
+      seriesName: (membership.seriesName || '').trim(),
+      seriesNumber: membership.seriesNumber?.trim(),
+      isPrimary: Boolean(membership.isPrimary),
+      sortOrder: typeof membership.sortOrder === 'number' ? membership.sortOrder : index,
+    }))
+    .filter((membership) => membership.seriesName.length > 0)
+    .sort((a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0))
+
+  if (normalized.length === 0) {
+    const legacySeries = (book.series || '').trim()
+    if (!legacySeries) return []
+
+    return [
+      {
+        seriesName: legacySeries,
+        seriesNumber: book.seriesNumber?.trim(),
+        isPrimary: true,
+        sortOrder: 0,
+      },
+    ]
+  }
+
+  if (!normalized.some((membership) => membership.isPrimary) && normalized[0]) {
+    normalized[0].isPrimary = true
+  }
+
+  return normalized
 })
 
 // Utility function to capitalize first letter
@@ -1145,6 +1232,20 @@ function goToAuthorCollection(author: string | undefined | null) {
   router.push(`/collection/author/${encodeURIComponent(normalizedAuthor)}`)
 }
 
+function goToNarratorCollection(narrator: string | undefined | null) {
+  const normalizedNarrator = narrator?.trim()
+  if (!normalizedNarrator) return
+
+  router.push(`/collection/narrator/${encodeURIComponent(normalizedNarrator)}`)
+}
+
+function goToPublisherCollection(publisher: string | undefined | null) {
+  const normalizedPublisher = publisher?.trim()
+  if (!normalizedPublisher) return
+
+  router.push(`/collection/publisher/${encodeURIComponent(normalizedPublisher)}`)
+}
+
 function goToSeriesCollection(series: string | undefined | null) {
   const normalizedSeries = series?.trim()
   if (!normalizedSeries) return
@@ -1387,6 +1488,11 @@ function closeEditModal() {
 
 async function handleEditSaved() {
   // Refresh the audiobook data after edit
+  await loadAudiobook()
+}
+
+async function handleOrganizeDone() {
+  showOrganizeModal.value = false
   await loadAudiobook()
 }
 
@@ -2317,6 +2423,22 @@ function formatDate(dateString?: string): string {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
+}
+
+.detail-series-memberships {
+  gap: 10px;
+}
+
+.detail-series-membership {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.detail-series-number {
+  font-size: 12px;
+  color: var(--text-secondary);
 }
 
 .detail-link-tag {

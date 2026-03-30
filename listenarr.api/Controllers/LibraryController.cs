@@ -75,6 +75,7 @@ namespace Listenarr.Api.Controllers
         private readonly NotificationService? _notificationService;
         private readonly IRootFolderService? _rootFolderService;
         private readonly ILibraryAddService? _libraryAddService;
+        private readonly IRenameService? _renameService;
         /// <param name="repo">Repository for audiobook persistence and queries.</param>
         /// <param name="imageCacheService">Service for caching and moving cover images.</param>
         /// <param name="logger">Logger instance for diagnostic messages.</param>
@@ -86,6 +87,7 @@ namespace Listenarr.Api.Controllers
         /// <param name="notificationService">Service for sending webhook notifications.</param>
         /// <param name="rootFolderService">Optional root folder service for managing and enumerating configured root folders used for validating explicit scan paths.</param>
         /// <param name="libraryAddService">Optional shared add-to-library service used by runtime requests and background syncs.</param>
+        /// <param name="renameService">Optional organize/rename service used for previewing and executing library file organization.</param>
         public LibraryController(
             IAudiobookRepository repo,
             IImageCacheService imageCacheService,
@@ -97,7 +99,8 @@ namespace Listenarr.Api.Controllers
             IMoveQueueService? moveQueueService = null,
             NotificationService? notificationService = null,
             IRootFolderService? rootFolderService = null,
-            ILibraryAddService? libraryAddService = null)
+            ILibraryAddService? libraryAddService = null,
+            IRenameService? renameService = null)
         {
             _repo = repo;
             _imageCacheService = imageCacheService;
@@ -110,6 +113,7 @@ namespace Listenarr.Api.Controllers
             _notificationService = notificationService;
             _rootFolderService = rootFolderService;
             _libraryAddService = libraryAddService;
+            _renameService = renameService;
         }
 
         private static bool ComputeWantedFlag(Audiobook audiobook)
@@ -421,6 +425,12 @@ namespace Listenarr.Api.Controllers
                 BasePath = null  // Will be computed or set from custom destination below
             };
 
+            AudiobookSeriesMembershipHelper.ApplyToAudiobook(
+                audiobook,
+                metadata.SeriesMemberships,
+                metadata.Series,
+                ToStringOrFirst(metadata.SeriesNumber));
+
             SyncImportedIdentifiersFromLegacyFields(audiobook);
 
             _logger.LogInformation("Created Audiobook entity: Title={Title}, Asin={Asin}, PublishYear={PublishYear}",
@@ -605,6 +615,12 @@ namespace Listenarr.Api.Controllers
                     Edition = request.Metadata.Edition
                 };
 
+                AudiobookSeriesMembershipHelper.ApplyToAudiobook(
+                    temp,
+                    request.Metadata.SeriesMemberships,
+                    request.Metadata.Series,
+                    request.Metadata.SeriesNumber);
+
                 var namingPattern = !string.IsNullOrWhiteSpace(settings.FolderNamingPattern)
                     ? settings.FolderNamingPattern
                     : settings.FileNamingPattern;
@@ -652,6 +668,7 @@ namespace Listenarr.Api.Controllers
                     a.Edition,
                     a.ImageUrl,
                     a.Monitored,
+                    a.BasePath,
                     a.FilePath,
                     a.FileSize,
                     a.Quality,
@@ -740,6 +757,7 @@ namespace Listenarr.Api.Controllers
                     Edition = a.Edition,
                     ImageUrl = a.ImageUrl,
                     Monitored = a.Monitored,
+                    BasePath = a.BasePath,
                     FilePath = a.FilePath,
                     FileSize = a.FileSize,
                     FileCount = files?.Count ?? 0,
@@ -794,6 +812,7 @@ namespace Listenarr.Api.Controllers
                 .AsNoTracking()
                 .Include(a => a.Files)
                 .Include(a => a.ExternalIdentifiers)
+                .Include(a => a.SeriesMemberships)
                 .FirstOrDefaultAsync(a => a.Id == id);
 
             if (updated == null)
@@ -832,6 +851,19 @@ namespace Listenarr.Api.Controllers
                 series = updated.Series,
                 seriesNumber = updated.SeriesNumber,
                 publishedDate = updated.PublishedDate,
+                seriesMemberships = updated.SeriesMemberships?
+                    .OrderByDescending(m => m.IsPrimary)
+                    .ThenBy(m => m.SortOrder)
+                    .Select(m => new
+                    {
+                        id = m.Id,
+                        seriesName = m.SeriesName,
+                        seriesNumber = m.SeriesNumber,
+                        seriesAsin = m.SeriesAsin,
+                        isPrimary = m.IsPrimary,
+                        sortOrder = m.SortOrder
+                    })
+                    .ToList(),
                 tags = updated.Tags,
                 files = updated.Files?.Select(f => new
                 {
@@ -1571,8 +1603,6 @@ namespace Listenarr.Api.Controllers
             if (updatedAudiobook.ImageUrl != null) existingAudiobook.ImageUrl = updatedAudiobook.ImageUrl;
             if (updatedAudiobook.PublishYear != null) existingAudiobook.PublishYear = updatedAudiobook.PublishYear;
             if (updatedAudiobook.PublishedDate != null) existingAudiobook.PublishedDate = updatedAudiobook.PublishedDate;
-            if (updatedAudiobook.Series != null) existingAudiobook.Series = updatedAudiobook.Series;
-            if (updatedAudiobook.SeriesNumber != null) existingAudiobook.SeriesNumber = updatedAudiobook.SeriesNumber;
             if (updatedAudiobook.Description != null) existingAudiobook.Description = updatedAudiobook.Description;
             if (updatedAudiobook.Genres != null) existingAudiobook.Genres = updatedAudiobook.Genres;
             if (updatedAudiobook.Tags != null) existingAudiobook.Tags = updatedAudiobook.Tags;
@@ -1597,6 +1627,40 @@ namespace Listenarr.Api.Controllers
             if (updatedAudiobook.Runtime != null) existingAudiobook.Runtime = updatedAudiobook.Runtime;
             if (updatedAudiobook.Edition != null) existingAudiobook.Edition = updatedAudiobook.Edition;
             if (updatedAudiobook.Version != null) existingAudiobook.Version = updatedAudiobook.Version;
+
+            var seriesMembershipsTouched =
+                updatedAudiobook.SeriesMemberships != null ||
+                updatedAudiobook.Series != null ||
+                updatedAudiobook.SeriesNumber != null;
+
+            if (seriesMembershipsTouched)
+            {
+                var mergedSeries = updatedAudiobook.Series ?? existingAudiobook.Series;
+                var mergedSeriesNumber = updatedAudiobook.SeriesNumber ?? existingAudiobook.SeriesNumber;
+                var existingPrimaryMembership = AudiobookSeriesMembershipHelper.GetPrimaryMembership(existingAudiobook.SeriesMemberships);
+
+                var normalizedMemberships = AudiobookSeriesMembershipHelper.Normalize(
+                    updatedAudiobook.SeriesMemberships,
+                    mergedSeries,
+                    mergedSeriesNumber,
+                    existingPrimaryMembership?.SeriesAsin);
+
+                if (existingAudiobook.SeriesMemberships == null)
+                {
+                    existingAudiobook.SeriesMemberships = new List<AudiobookSeriesMembership>();
+                }
+                else
+                {
+                    existingAudiobook.SeriesMemberships.Clear();
+                }
+
+                foreach (var membership in normalizedMemberships)
+                {
+                    existingAudiobook.SeriesMemberships.Add(membership);
+                }
+
+                AudiobookSeriesMembershipHelper.ApplyPrimarySeriesFields(existingAudiobook);
+            }
 
             // Always update these fields as they have default values
             existingAudiobook.Explicit = updatedAudiobook.Explicit;
@@ -4390,13 +4454,22 @@ namespace Listenarr.Api.Controllers
             if (!string.IsNullOrWhiteSpace(metadata.Subtitle)) audiobook.Subtitle = metadata.Subtitle;
             if (!string.IsNullOrWhiteSpace(metadata.PublishYear)) audiobook.PublishYear = metadata.PublishYear;
             if (!string.IsNullOrWhiteSpace(metadata.PublishedDate)) audiobook.PublishedDate = metadata.PublishedDate;
-            if (!string.IsNullOrWhiteSpace(metadata.Series)) audiobook.Series = metadata.Series;
-            if (!string.IsNullOrWhiteSpace(metadata.SeriesNumber)) audiobook.SeriesNumber = metadata.SeriesNumber;
             if (!string.IsNullOrWhiteSpace(metadata.Description)) audiobook.Description = metadata.Description;
             if (!string.IsNullOrWhiteSpace(metadata.Publisher)) audiobook.Publisher = metadata.Publisher;
             if (!string.IsNullOrWhiteSpace(metadata.Language)) audiobook.Language = metadata.Language;
             if (metadata.Runtime.HasValue && metadata.Runtime.Value > 0) audiobook.Runtime = metadata.Runtime;
             if (!string.IsNullOrWhiteSpace(metadata.Version)) audiobook.Version = metadata.Version;
+
+            if ((metadata.SeriesMemberships != null && metadata.SeriesMemberships.Any()) ||
+                !string.IsNullOrWhiteSpace(metadata.Series) ||
+                !string.IsNullOrWhiteSpace(metadata.SeriesNumber))
+            {
+                AudiobookSeriesMembershipHelper.ApplyToAudiobook(
+                    audiobook,
+                    metadata.SeriesMemberships,
+                    metadata.Series,
+                    metadata.SeriesNumber);
+            }
 
             var authors = NormalizeMetadataStringList(
                 (metadata.Authors != null && metadata.Authors.Any())
@@ -4601,6 +4674,92 @@ namespace Listenarr.Api.Controllers
         {
             public List<int> Ids { get; set; } = new List<int>();
             public Dictionary<string, object> Updates { get; set; } = new Dictionary<string, object>();
+        }
+
+        [HttpPost("rename/preview")]
+        public async Task<IActionResult> PreviewRename([FromBody] BulkRenameRequest request, CancellationToken ct)
+        {
+            if (_renameService == null)
+            {
+                return StatusCode(503, new { message = "Rename service not available" });
+            }
+
+            if (request?.AudiobookIds == null || request.AudiobookIds.Length == 0)
+            {
+                return BadRequest(new { message = "At least one audiobook ID is required" });
+            }
+
+            if (request.AudiobookIds.Length > 500)
+            {
+                return BadRequest(new { message = "Cannot preview more than 500 audiobooks at once" });
+            }
+
+            var previews = await _renameService.PreviewRenameAsync(request.AudiobookIds, ct);
+            return Ok(previews);
+        }
+
+        [HttpPost("rename")]
+        public async Task<IActionResult> ExecuteRename([FromBody] ExecuteRenameRequest request, CancellationToken ct)
+        {
+            if (_renameService == null)
+            {
+                return StatusCode(503, new { message = "Rename service not available" });
+            }
+
+            if (request?.Operations == null || request.Operations.Count == 0)
+            {
+                return BadRequest(new { message = "At least one rename operation is required" });
+            }
+
+            if (request.Operations.Count > 500)
+            {
+                return BadRequest(new { message = "Cannot execute more than 500 rename operations at once" });
+            }
+
+            var results = await _renameService.ExecuteRenameAsync(request.Operations, ct);
+            return Ok(results);
+        }
+
+        [HttpPost("{id}/rename/preview")]
+        public async Task<IActionResult> PreviewRenameSingle(int id, CancellationToken ct)
+        {
+            if (_renameService == null)
+            {
+                return StatusCode(503, new { message = "Rename service not available" });
+            }
+
+            var previews = await _renameService.PreviewRenameAsync(new[] { id }, ct);
+            var preview = previews.FirstOrDefault();
+            if (preview == null)
+            {
+                return NotFound(new { message = "Audiobook not found" });
+            }
+
+            return Ok(preview);
+        }
+
+        [HttpPost("{id}/rename")]
+        public async Task<IActionResult> ExecuteRenameSingle(int id, [FromBody] RenameOperation operation, CancellationToken ct)
+        {
+            if (_renameService == null)
+            {
+                return StatusCode(503, new { message = "Rename service not available" });
+            }
+
+            if (operation == null)
+            {
+                return BadRequest(new { message = "Rename operation is required" });
+            }
+
+            operation.AudiobookId = id;
+            var results = await _renameService.ExecuteRenameAsync(new List<RenameOperation> { operation }, ct);
+            var result = results.FirstOrDefault();
+            if (result == null)
+            {
+                return NotFound(new { message = "Audiobook not found" });
+            }
+
+            return Ok(result);
         }
 
         public class AddToLibraryRequest
