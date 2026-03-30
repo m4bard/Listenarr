@@ -23,8 +23,9 @@ namespace Listenarr.Api.Tests
                     Directory.Delete(_tempRoot, true);
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{_tempRoot}': {ex.Message}");
             }
 
             foreach (var context in _contexts)
@@ -164,6 +165,209 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task ExecuteRename_RejectsFileIdsThatDoNotBelongToAudiobook()
+        {
+            var libraryRoot = Path.Combine(_tempRoot, "library");
+            var bookFolder = Path.Combine(libraryRoot, "Book");
+            Directory.CreateDirectory(bookFolder);
+            var rogueSourcePath = Path.Combine(bookFolder, "rogue-file.m4b");
+            var rogueTargetPath = Path.Combine(bookFolder, "moved-rogue-file.m4b");
+            await File.WriteAllTextAsync(rogueSourcePath, "rogue");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = libraryRoot,
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 5,
+                Title = "Book",
+                Authors = new List<string> { "Author" },
+                BasePath = bookFolder,
+                Files = new List<AudiobookFile>
+                {
+                    new() { Id = 51, AudiobookId = 5, Path = Path.Combine(bookFolder, "tracked-file.m4b"), Format = "m4b" }
+                }
+            });
+            await db.SaveChangesAsync();
+
+            var results = await service.ExecuteRenameAsync(new List<RenameOperation>
+            {
+                new()
+                {
+                    AudiobookId = 5,
+                    FileRenames = new List<FileRenameOperation>
+                    {
+                        new()
+                        {
+                            FileId = 999,
+                            CurrentPath = rogueSourcePath,
+                            NewPath = rogueTargetPath
+                        }
+                    }
+                }
+            });
+
+            var result = Assert.Single(results);
+            Assert.False(result.Success);
+            var fileResult = Assert.Single(result.RenamedFiles);
+            Assert.False(fileResult.Success);
+            Assert.Equal("File does not belong to this audiobook.", fileResult.Error);
+            Assert.True(File.Exists(rogueSourcePath));
+            Assert.False(File.Exists(rogueTargetPath));
+        }
+
+        [Fact]
+        public async Task ExecuteRename_RejectsSourcePathsThatDoNotMatchTrackedFile()
+        {
+            var libraryRoot = Path.Combine(_tempRoot, "library");
+            var bookFolder = Path.Combine(libraryRoot, "Book");
+            Directory.CreateDirectory(bookFolder);
+            var trackedSourcePath = Path.Combine(bookFolder, "tracked-file.m4b");
+            var rogueSourcePath = Path.Combine(bookFolder, "rogue-file.m4b");
+            var rogueTargetPath = Path.Combine(bookFolder, "moved-rogue-file.m4b");
+            await File.WriteAllTextAsync(trackedSourcePath, "tracked");
+            await File.WriteAllTextAsync(rogueSourcePath, "rogue");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = libraryRoot,
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title}"
+            };
+
+            var (service, db, _) = BuildService(settings);
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 6,
+                Title = "Book",
+                Authors = new List<string> { "Author" },
+                BasePath = bookFolder,
+                FilePath = trackedSourcePath,
+                Files = new List<AudiobookFile>
+                {
+                    new() { Id = 61, AudiobookId = 6, Path = trackedSourcePath, Format = "m4b" }
+                }
+            });
+            await db.SaveChangesAsync();
+
+            var results = await service.ExecuteRenameAsync(new List<RenameOperation>
+            {
+                new()
+                {
+                    AudiobookId = 6,
+                    FileRenames = new List<FileRenameOperation>
+                    {
+                        new()
+                        {
+                            FileId = 61,
+                            CurrentPath = rogueSourcePath,
+                            NewPath = rogueTargetPath
+                        }
+                    }
+                }
+            });
+
+            var result = Assert.Single(results);
+            Assert.False(result.Success);
+            var fileResult = Assert.Single(result.RenamedFiles);
+            Assert.False(fileResult.Success);
+            Assert.Equal("Source path does not match the tracked audiobook file.", fileResult.Error);
+            Assert.True(File.Exists(trackedSourcePath));
+            Assert.True(File.Exists(rogueSourcePath));
+            Assert.False(File.Exists(rogueTargetPath));
+        }
+
+        [Fact]
+        public async Task ExecuteRename_RecomputesBasePathAfterPartialFileFailures()
+        {
+            var libraryRoot = Path.Combine(_tempRoot, "library");
+            var sourceFolder = Path.Combine(libraryRoot, "Old");
+            var targetFolder = Path.Combine(libraryRoot, "Author", "Book");
+            Directory.CreateDirectory(sourceFolder);
+
+            var firstSourcePath = Path.Combine(sourceFolder, "Part 1.m4b");
+            var secondSourcePath = Path.Combine(sourceFolder, "Part 2.m4b");
+            var firstTargetPath = Path.Combine(targetFolder, "Part 1.m4b");
+            var secondTargetPath = Path.Combine(targetFolder, "Part 2.m4b");
+            await File.WriteAllTextAsync(firstSourcePath, "one");
+            await File.WriteAllTextAsync(secondSourcePath, "two");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = libraryRoot,
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title}"
+            };
+
+            var (service, db, dbName) = BuildService(settings, fileMover =>
+            {
+                fileMover.Setup(mover => mover.MoveFileAsync(It.IsAny<string>(), It.Is<string>(dest => dest.EndsWith("Part 2.m4b", StringComparison.OrdinalIgnoreCase))))
+                    .ReturnsAsync(false);
+            });
+
+            db.Audiobooks.Add(new Audiobook
+            {
+                Id = 7,
+                Title = "Book",
+                Authors = new List<string> { "Author" },
+                BasePath = sourceFolder,
+                FilePath = firstSourcePath,
+                Files = new List<AudiobookFile>
+                {
+                    new() { Id = 71, AudiobookId = 7, Path = firstSourcePath, Format = "m4b" },
+                    new() { Id = 72, AudiobookId = 7, Path = secondSourcePath, Format = "m4b" }
+                }
+            });
+            await db.SaveChangesAsync();
+
+            var results = await service.ExecuteRenameAsync(new List<RenameOperation>
+            {
+                new()
+                {
+                    AudiobookId = 7,
+                    NewFolderPath = targetFolder,
+                    FileRenames = new List<FileRenameOperation>
+                    {
+                        new()
+                        {
+                            FileId = 71,
+                            CurrentPath = firstSourcePath,
+                            NewPath = firstTargetPath
+                        },
+                        new()
+                        {
+                            FileId = 72,
+                            CurrentPath = secondSourcePath,
+                            NewPath = secondTargetPath
+                        }
+                    }
+                }
+            });
+
+            var result = Assert.Single(results);
+            Assert.False(result.Success);
+            Assert.Equal(2, result.RenamedFiles.Count);
+            Assert.Contains(result.RenamedFiles, item => item.FileId == 71 && item.Success);
+            Assert.Contains(result.RenamedFiles, item => item.FileId == 72 && !item.Success);
+
+            await using var verifyDb = CreateContext(dbName);
+            var saved = await verifyDb.Audiobooks.Include(a => a.Files).SingleAsync(a => a.Id == 7);
+
+            Assert.Equal(NormalizePath(libraryRoot), NormalizePath(saved.BasePath));
+            Assert.NotEqual(NormalizePath(targetFolder), NormalizePath(saved.BasePath));
+            Assert.Contains(saved.Files!, file => file.Id == 71 && NormalizePath(file.Path) == NormalizePath(firstTargetPath));
+            Assert.Contains(saved.Files!, file => file.Id == 72 && NormalizePath(file.Path) == NormalizePath(secondSourcePath));
+            Assert.True(File.Exists(firstTargetPath));
+            Assert.True(File.Exists(secondSourcePath));
+            Assert.False(File.Exists(secondTargetPath));
+        }
+
+        [Fact]
         public async Task ExecuteRename_MovesFileAndUpdatesDatabasePaths()
         {
             var libraryRoot = Path.Combine(_tempRoot, "library");
@@ -226,7 +430,9 @@ namespace Listenarr.Api.Tests
             Assert.Equal(NormalizePath(targetPath), NormalizePath(saved.Files!.Single().Path));
         }
 
-        private (RenameService Service, ListenArrDbContext Db, string DbName) BuildService(ApplicationSettings settings)
+        private (RenameService Service, ListenArrDbContext Db, string DbName) BuildService(
+            ApplicationSettings settings,
+            Action<Mock<IFileMover>>? configureFileMover = null)
         {
             var dbName = Guid.NewGuid().ToString();
             var db = CreateContext(dbName);
@@ -264,6 +470,7 @@ namespace Listenarr.Api.Tests
                     Directory.Move(source, dest);
                     return Task.FromResult(true);
                 });
+            configureFileMover?.Invoke(fileMover);
 
             var service = new RenameService(
                 config.Object,

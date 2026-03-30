@@ -131,7 +131,7 @@ namespace Listenarr.Api.Tests
                 {
                     var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
                     var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Combine(author, title).Replace("\\", "/");
+                    return $"{author}/{title}".Replace("\\", "/");
                 });
 
             var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
@@ -203,7 +203,14 @@ namespace Listenarr.Api.Tests
             Assert.Contains("9781234567890", stored.Isbn);
 
             // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch { }
+            try
+            {
+                Directory.Delete(tempRoot, true);
+            }
+            catch (Exception ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{tempRoot}': {ex.Message}");
+            }
         }
 
         [Fact]

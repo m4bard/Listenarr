@@ -121,6 +121,7 @@ namespace Listenarr.Api.Services
                 var currentBasePath = ComputeCurrentBasePath(audiobook);
                 var allowedRoots = BuildAllowedRoots(settings, rootFolders, currentBasePath);
                 var anySucceeded = false;
+                var hasFileOperations = operation.FileRenames != null && operation.FileRenames.Count > 0;
 
                 foreach (var fileOp in operation.FileRenames ?? new())
                 {
@@ -139,21 +140,26 @@ namespace Listenarr.Api.Services
                     anySucceeded |= dirMove.Success;
                 }
 
-                if (anySucceeded)
-                {
-                    UpdateAudiobookPathSummary(audiobook, operation.NewFolderPath);
-                    await db.SaveChangesAsync(ct);
-                    await AddHistoryAsync(audiobook, result);
-                }
-
                 if (result.RenamedFiles.Count > 0)
                 {
                     result.Success = result.RenamedFiles.All(f => f.Success);
-                    if (!result.Success && string.IsNullOrWhiteSpace(result.Error)) result.Error = "One or more file organize operations failed.";
+                    if (!result.Success && string.IsNullOrWhiteSpace(result.Error))
+                    {
+                        result.Error = "One or more file organize operations failed.";
+                    }
                 }
                 else if (!result.Success)
                 {
                     result.Success = anySucceeded;
+                }
+
+                if (anySucceeded)
+                {
+                    var shouldTrustRequestedBasePath = !string.IsNullOrWhiteSpace(operation.NewFolderPath)
+                        && (!hasFileOperations || result.Success);
+                    UpdateAudiobookPathSummary(audiobook, shouldTrustRequestedBasePath ? operation.NewFolderPath : null);
+                    await db.SaveChangesAsync(ct);
+                    await AddHistoryAsync(audiobook, result);
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -171,11 +177,49 @@ namespace Listenarr.Api.Services
             var source = NormalizePath(fileOperation.CurrentPath);
             var dest = NormalizePath(fileOperation.NewPath);
             var item = new FileRenameResultItem { FileId = fileOperation.FileId, PreviousPath = source, NewPath = dest };
+            var trackedSourcePath = string.Empty;
+            AudiobookFile? dbFile = null;
 
             if (string.IsNullOrWhiteSpace(source) || string.IsNullOrWhiteSpace(dest))
             {
                 item.Success = false;
                 item.Error = "File organize operation is missing a source or destination path.";
+                return item;
+            }
+
+            if (fileOperation.FileId == 0)
+            {
+                trackedSourcePath = NormalizePath(audiobook.FilePath);
+                if (string.IsNullOrWhiteSpace(trackedSourcePath))
+                {
+                    item.Success = false;
+                    item.Error = "Legacy file organize operation does not match a tracked audiobook file.";
+                    return item;
+                }
+            }
+            else
+            {
+                dbFile = audiobook.Files?.FirstOrDefault(f => f.Id == fileOperation.FileId);
+                if (dbFile == null)
+                {
+                    item.Success = false;
+                    item.Error = "File does not belong to this audiobook.";
+                    return item;
+                }
+
+                trackedSourcePath = NormalizePath(dbFile.Path);
+                if (string.IsNullOrWhiteSpace(trackedSourcePath))
+                {
+                    item.Success = false;
+                    item.Error = "Tracked audiobook file path is missing.";
+                    return item;
+                }
+            }
+
+            if (!PathsEqual(source, trackedSourcePath))
+            {
+                item.Success = false;
+                item.Error = "Source path does not match the tracked audiobook file.";
                 return item;
             }
 
@@ -216,7 +260,6 @@ namespace Listenarr.Api.Services
                     }
                 }
 
-                var dbFile = audiobook.Files?.FirstOrDefault(f => f.Id == fileOperation.FileId);
                 if (dbFile != null) dbFile.Path = dest;
                 else if (fileOperation.FileId == 0 && !string.IsNullOrWhiteSpace(audiobook.FilePath)) audiobook.FilePath = dest;
 
@@ -265,13 +308,17 @@ namespace Listenarr.Api.Services
                 foreach (var file in audiobook.Files.Where(f => !string.IsNullOrWhiteSpace(f.Path)))
                 {
                     if (PathsEqual(file.Path, normalizedCurrent) || FileUtils.IsPathWithinRoot(file.Path!, normalizedCurrent))
-                        file.Path = NormalizePath(Path.Combine(normalizedNew, Path.GetRelativePath(normalizedCurrent, file.Path!)));
+                    {
+                        var relative = Path.GetRelativePath(normalizedCurrent, file.Path!);
+                        file.Path = CombineRelativePath(normalizedNew, relative);
+                    }
                 }
             }
             if (!string.IsNullOrWhiteSpace(audiobook.FilePath)
                 && (PathsEqual(audiobook.FilePath, normalizedCurrent) || FileUtils.IsPathWithinRoot(audiobook.FilePath, normalizedCurrent)))
             {
-                audiobook.FilePath = NormalizePath(Path.Combine(normalizedNew, Path.GetRelativePath(normalizedCurrent, audiobook.FilePath)));
+                var relative = Path.GetRelativePath(normalizedCurrent, audiobook.FilePath);
+                audiobook.FilePath = CombineRelativePath(normalizedNew, relative);
             }
 
             return (true, null);
@@ -471,6 +518,22 @@ namespace Listenarr.Api.Services
             if (string.IsNullOrWhiteSpace(basePath)) return relativePath;
             if (Path.IsPathRooted(relativePath)) return relativePath;
             return Path.Combine(basePath, relativePath);
+        }
+
+        private static string CombineRelativePath(string basePath, string relativePath)
+        {
+            var safeRelative = relativePath ?? string.Empty;
+            if (Path.IsPathRooted(safeRelative))
+            {
+                var root = Path.GetPathRoot(safeRelative);
+                if (!string.IsNullOrWhiteSpace(root) && safeRelative.Length >= root.Length)
+                {
+                    safeRelative = safeRelative[root.Length..];
+                }
+            }
+
+            safeRelative = safeRelative.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return NormalizePath(Path.Combine(basePath, safeRelative));
         }
 
         private static string NormalizePath(string? path) => string.IsNullOrWhiteSpace(path) ? string.Empty : FileUtils.NormalizeStoredPath(path);

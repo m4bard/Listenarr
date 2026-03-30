@@ -17,24 +17,31 @@ namespace Listenarr.Api.Tests
 
         public FileMoverFallbackTests()
         {
-            _root = Path.Combine(Path.GetTempPath(), "listenarr_test_" + Guid.NewGuid().ToString("N"));
+            _root = Path.Join(Path.GetTempPath(), "listenarr_test_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_root);
         }
 
         public void Dispose()
         {
-            try { Directory.Delete(_root, true); } catch { }
+            try
+            {
+                Directory.Delete(_root, true);
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Ignoring cleanup failure for '{_root}': {ex.Message}");
+            }
         }
 
         [Fact]
         public async Task MoveDirectoryAsync_WhenDestinationExists_UsesCopyAndDeleteFallback()
         {
-            var source = Path.Combine(_root, "sourceDir");
-            var dest = Path.Combine(_root, "destDir");
+            var source = Path.Join(_root, "sourceDir");
+            var dest = Path.Join(_root, "destDir");
             Directory.CreateDirectory(source);
             Directory.CreateDirectory(dest); // cause Directory.Move to throw (destination exists)
 
-            var fileInSource = Path.Combine(source, "track1.mp3");
+            var fileInSource = Path.Join(source, "track1.mp3");
             await File.WriteAllTextAsync(fileInSource, "dummy");
 
             var mover = new FileMover(new NullLogger<FileMover>());
@@ -45,15 +52,15 @@ namespace Listenarr.Api.Tests
             // Source should be removed
             Assert.False(Directory.Exists(source));
             // Destination should contain the file
-            var copied = Path.Combine(dest, "track1.mp3");
+            var copied = Path.Join(dest, "track1.mp3");
             Assert.True(File.Exists(copied));
         }
 
         [Fact]
         public async Task MoveFileAsync_MovesFileSuccessfully()
         {
-            var sourceFile = Path.Combine(_root, "a.mp3");
-            var destFile = Path.Combine(_root, "b.mp3");
+            var sourceFile = Path.Join(_root, "a.mp3");
+            var destFile = Path.Join(_root, "b.mp3");
             await File.WriteAllTextAsync(sourceFile, "content");
 
             var mover = new FileMover(new NullLogger<FileMover>());
@@ -83,8 +90,8 @@ namespace Listenarr.Api.Tests
                     RobocopyTimeoutMs = 1000,
                 }));
 
-            var source = Path.Combine(_root, "missing-dir");
-            var dest = Path.Combine(_root, "dest-dir");
+            var source = Path.Join(_root, "missing-dir");
+            var dest = Path.Join(_root, "dest-dir");
 
             var ok = await mover.MoveDirectoryAsync(source, dest);
 
@@ -121,8 +128,8 @@ namespace Listenarr.Api.Tests
                     RobocopyTimeoutMs = 1000,
                 }));
 
-            var sourceFile = Path.Combine(_root, "missing-file.mp3");
-            var destFile = Path.Combine(_root, "dest", "missing-file.mp3");
+            var sourceFile = Path.Join(_root, "missing-file.mp3");
+            var destFile = Path.Join(_root, "dest", "missing-file.mp3");
 
             var ok = await mover.MoveFileAsync(sourceFile, destFile);
 
