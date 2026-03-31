@@ -1,5 +1,9 @@
 name: Release — build executables, Docker images, and create GitHub Release
 
+concurrency:
+  group: release-build-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
@@ -16,57 +20,117 @@ jobs:
     runs-on: ubuntu-latest
     env:
       API_PROJECT: listenarr.api/Listenarr.Api.csproj
+      FRONTEND_DIR: fe
       API_OUTPUT: listenarr.api/publish
 
     steps:
-      - name: Checkout
+      - name: Checkout tagged release
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+          ref: ${{ github.sha }}
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v3
         with:
           dotnet-version: 8.0.x
 
-      - name: Resolve and bump version (major)
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Resolve release and next versions
         id: resolve-version
         run: |
           set -euo pipefail
           CSProj=${{ env.API_PROJECT }}
-          VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
-          if [ -z "${VERSION}" ]; then
-            VERSION=$(sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" "$CSProj" 2>/dev/null || true)
+
+          SOURCE_VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
+          if [ -z "${SOURCE_VERSION}" ]; then
+            SOURCE_VERSION=$(sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" "$CSProj" 2>/dev/null || true)
           fi
-          if [ -z "${VERSION}" ]; then
-            VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
+          if [ -z "${SOURCE_VERSION}" ]; then
+            SOURCE_VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
           fi
-          echo "Found base version: ${VERSION}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION}"
+
+          TAG_NAME="${GITHUB_REF_NAME}"
+          RELEASE_VERSION="${TAG_NAME#v}"
+
+          echo "Found source version from tagged commit: ${SOURCE_VERSION}"
+          echo "Release tag version: ${RELEASE_VERSION}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${RELEASE_VERSION}"
           MAJOR=${MAJOR:-0}
-          NEWMAJOR=$((MAJOR + 1))
-          NEWVERSION="${NEWMAJOR}.0.0"
-          echo "Bumped release version: ${NEWVERSION}"
-          echo "VERSION=${NEWVERSION}" >> $GITHUB_OUTPUT
+          NEXT_VERSION="$((MAJOR + 1)).0.0"
+
+          echo "Next release version target for main: ${NEXT_VERSION}"
+
+          echo "SOURCE_VERSION=${SOURCE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "NEXT_VERSION=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect current main version for post-release bump
+        id: inspect_target
+        run: |
+          set -euo pipefail
+          git fetch origin main --depth=1
+
+          MAIN_XML="$(git show origin/main:${{ env.API_PROJECT }} 2>/dev/null || true)"
+          MAIN_VERSION=$(printf '%s\n' "$MAIN_XML" | sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" | head -n1)
+          if [ -z "${MAIN_VERSION}" ]; then
+            MAIN_VERSION=$(printf '%s\n' "$MAIN_XML" | sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" | head -n1)
+          fi
+
+          echo "Current main version: ${MAIN_VERSION:-<unknown>}"
+          echo "MAIN_VERSION=${MAIN_VERSION}" >> "$GITHUB_OUTPUT"
+
+          STATE=$(python3 - "${MAIN_VERSION}" "${{ steps.resolve-version.outputs.NEXT_VERSION }}" <<'PY'
+          import sys
+
+          current = sys.argv[1].strip()
+          target = sys.argv[2].strip()
+
+          def parse(v: str):
+              return tuple(int(x) for x in v.split("."))
+
+          if not current:
+              print("pending")
+          else:
+              c = parse(current)
+              t = parse(target)
+              if c == t:
+                  print("applied")
+              elif c > t:
+                  print("superseded")
+              else:
+                  print("pending")
+          PY
+          )
+
+          echo "bump_state=${STATE}" >> "$GITHUB_OUTPUT"
+          echo "Computed post-release bump state: ${STATE}"
 
       - name: Restore .NET
         run: dotnet restore listenarr.slnx
 
-      - name: Persist bumped version to csproj (for build)
-        if: steps.resolve-version.outputs.VERSION != ''
+      - name: Persist next version to csproj for post-release bump
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.NEXT_VERSION != ''
         env:
-          NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
+          NEW_VERSION: ${{ steps.resolve-version.outputs.NEXT_VERSION }}
         run: |
           set -euo pipefail
-          echo "Updating csproj to version $NEW_VERSION"
+          echo "Updating csproj to next version $NEW_VERSION"
           cat > update_version.py <<'PY'
           import os
           import xml.etree.ElementTree as ET
+
           path = 'listenarr.api/Listenarr.Api.csproj'
           new = os.environ['NEW_VERSION']
           tree = ET.parse(path)
           root = tree.getroot()
-          # Update Version
+
           found_version = False
           for elem in root.findall('.//Version'):
               elem.text = new
@@ -77,7 +141,7 @@ jobs:
               if pg is None:
                   pg = ET.SubElement(root, 'PropertyGroup')
               ET.SubElement(pg, 'Version').text = new
-          # Update AssemblyVersion
+
           found_assembly = False
           for elem in root.findall('.//AssemblyVersion'):
               elem.text = new
@@ -88,32 +152,59 @@ jobs:
               if pg is None:
                   pg = ET.SubElement(root, 'PropertyGroup')
               ET.SubElement(pg, 'AssemblyVersion').text = new
+
           tree.write(path, encoding='utf-8', xml_declaration=True)
           print('Wrote new version and assembly version to csproj')
           PY
           python3 update_version.py
 
-      - name: Sync frontend and package metadata to bumped version
-        if: steps.resolve-version.outputs.VERSION != ''
+      - name: Sync frontend and package metadata to next version
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.NEXT_VERSION != ''
         env:
-          NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
+          NEW_VERSION: ${{ steps.resolve-version.outputs.NEXT_VERSION }}
         run: node scripts/sync-fe-version-from-csproj.mjs
+
+      - name: Check for tracked post-release version changes
+        id: version_changes
+        if: steps.inspect_target.outputs.bump_state == 'pending'
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- \
+            listenarr.api/Listenarr.Api.csproj \
+            package.json \
+            package-lock.json \
+            fe/package.json \
+            fe/package-lock.json; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No tracked version changes detected."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Tracked version changes detected."
+          fi
 
       - name: Create Pull Request for version bump (release)
         id: create_pr
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.version_changes.outputs.has_changes == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GH_PAT }}
-          commit-message: "[skip ci] Bump version to ${{ steps.resolve-version.outputs.VERSION }}"
-          branch: "ci/release-version-bump-${{ steps.resolve-version.outputs.VERSION }}"
+          commit-message: "[skip ci] Bump version to ${{ steps.resolve-version.outputs.NEXT_VERSION }}"
+          branch: "ci/release-version-bump-${{ steps.resolve-version.outputs.NEXT_VERSION }}"
           base: main
-          title: "Bump version to ${{ steps.resolve-version.outputs.VERSION }}"
+          delete-branch: true
+          title: "Bump version to ${{ steps.resolve-version.outputs.NEXT_VERSION }}"
           body: |
-            This PR bumps the application version to ${{ steps.resolve-version.outputs.VERSION }}.
+            This PR bumps the application version to ${{ steps.resolve-version.outputs.NEXT_VERSION }}.
             The change was produced automatically by the CI release workflow.
 
+      - name: Ensure post-release bump PR exists when required
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number == ''
+        run: |
+          echo "::error::A post-release version bump was required, but no pull request was created or found."
+          exit 1
+
       - name: Label version bump PR
-        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number != ''
         continue-on-error: true
         uses: actions/github-script@v6
         with:
@@ -148,11 +239,11 @@ jobs:
             }
 
       - name: Merge release version bump PR (skip CI)
-        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number != ''
         uses: actions/github-script@v6
         env:
           PR_NUMBER: ${{ steps.create_pr.outputs['pull-request-number'] }}
-          NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
+          NEW_VERSION: ${{ steps.resolve-version.outputs.NEXT_VERSION }}
         with:
           github-token: ${{ secrets.GH_PAT }}
           script: |
@@ -166,51 +257,36 @@ jobs:
               commit_title: `[skip ci] Merge pull request ${pr} - Bump version to ${process.env.NEW_VERSION}`,
               commit_message: `[skip ci] Merge: Bump version to ${process.env.NEW_VERSION}`
             });
-            try {
-              const prInfo = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: pr });
-              const branch = prInfo.data.head.ref;
-              if (branch && branch.startsWith('ci/')) {
-                await github.rest.git.deleteRef({ owner: context.repo.owner, repo: context.repo.repo, ref: `heads/${branch}` });
-              }
-            } catch (err) {
-              console.log(`Branch delete skipped or failed: ${err.message}`);
-            }
 
-      - name: Refresh workspace to merged main version
-        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
+      - name: Restore tagged workspace for release build
+        if: steps.inspect_target.outputs.bump_state == 'pending'
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: main
+          ref: ${{ github.sha }}
           clean: true
 
-      - name: Verify synced workspace version
-        if: steps.resolve-version.outputs.VERSION != ''
+      - name: Verify tagged workspace version
         env:
-          NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
+          RELEASE_VERSION: ${{ steps.resolve-version.outputs.RELEASE_VERSION }}
         run: |
           set -euo pipefail
           CS_VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "${{ env.API_PROJECT }}" | head -n1)
           FE_VERSION=$(node -p "require('./fe/package.json').version")
           ROOT_VERSION=$(node -p "require('./package.json').version")
-          echo "Workspace csproj version: ${CS_VERSION}"
-          echo "Workspace FE version: ${FE_VERSION}"
-          echo "Workspace root package version: ${ROOT_VERSION}"
-          [ "${CS_VERSION}" = "${NEW_VERSION}" ]
-          [ "${FE_VERSION}" = "${NEW_VERSION}" ]
-          [ "${ROOT_VERSION}" = "${NEW_VERSION}" ]
+          echo "Tagged workspace csproj version: ${CS_VERSION}"
+          echo "Tagged workspace FE version: ${FE_VERSION}"
+          echo "Tagged workspace root package version: ${ROOT_VERSION}"
+          [ "${CS_VERSION}" = "${RELEASE_VERSION}" ]
+          [ "${FE_VERSION}" = "${RELEASE_VERSION}" ]
+          [ "${ROOT_VERSION}" = "${RELEASE_VERSION}" ]
 
       - name: Find triggering Pull Request
         id: find_triggering_pr
         run: |
-          # For release workflow, we need to find the PR that was merged to main
-          # which resulted in this tag being created, excluding version bump PRs
-
-          # First, get the tag information and find the commit it points to
           TAG_COMMIT=$(git rev-list -n 1 ${{ github.ref }})
           echo "Tag ${{ github.ref }} points to commit: $TAG_COMMIT"
 
-          # Find recent merged PRs to main, including labels for filtering
           PR_DATA=$(gh api graphql -f query='
             query($owner: String!, $repo: String!) {
               repository(owner: $owner, name: $repo) {
@@ -236,7 +312,6 @@ jobs:
               }
             }' -f owner='${{ github.repository_owner }}' -f repo='${{ github.event.repository.name }}')
 
-          # Filter out version bump PRs and find the first non-version-bump PR
           FILTERED_PR=$(echo "$PR_DATA" | jq -r '
             [.data.repository.pullRequests.edges[] |
             select(
@@ -247,11 +322,9 @@ jobs:
             {number, title, body, baseRefName}][0] // null
           ')
 
-          # Debug: Show what PRs we found
           echo "Recent PRs found:"
           echo "$PR_DATA" | jq -r '.data.repository.pullRequests.edges[:5][] | "PR #\(.node.number): \(.node.title)"'
 
-          # Extract PR details from the filtered result
           if [ "$FILTERED_PR" != "" ] && [ "$FILTERED_PR" != "null" ]; then
             PR_NUMBER=$(echo "$FILTERED_PR" | jq -r '.number // ""')
             PR_TITLE=$(echo "$FILTERED_PR" | jq -r '.title // ""')
@@ -271,7 +344,6 @@ jobs:
           echo "PR_TITLE=$PR_TITLE" >> $GITHUB_OUTPUT
           echo "PR_BASE_REF=$PR_BASE_REF" >> $GITHUB_OUTPUT
 
-          # Store raw PR body for sanitization
           echo "PR_BODY_RAW<<EOF_PR_BODY" >> $GITHUB_OUTPUT
           echo "$PR_BODY_RAW" >> $GITHUB_OUTPUT
           echo "EOF_PR_BODY" >> $GITHUB_OUTPUT
@@ -281,40 +353,28 @@ jobs:
       - name: Sanitize PR body and create release notes
         id: sanitize_pr_body
         run: |
-          # Sanitize PR body - remove potential malicious content, limit length
           python3 << 'PYTHON_SCRIPT'
           import os
           import re
           import html
 
-          # Get the raw PR body
           pr_body_raw = os.environ.get('PR_BODY_RAW', '')
 
-          # Basic sanitization
-          # 1. HTML escape to prevent injection
           sanitized = html.escape(pr_body_raw)
-
-          # 2. Remove script tags and other potentially dangerous content
           sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
           sanitized = re.sub(r'<iframe[^>]*>.*?</iframe>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
           sanitized = re.sub(r'javascript:', '', sanitized, flags=re.IGNORECASE)
 
-          # 3. Limit length to prevent overly long descriptions (max 2000 chars)
           if len(sanitized) > 2000:
               sanitized = sanitized[:1997] + '...'
 
-          # 4. Clean up excessive whitespace
           sanitized = re.sub(r'\n\s*\n\s*\n', '\n\n', sanitized)
           sanitized = sanitized.strip()
 
-          # If empty after sanitization, provide a default
           if not sanitized:
               sanitized = "No description provided."
 
-          print(f"Sanitized PR body (length: {len(sanitized)} chars)")
-
-          # Create the full body for the release
-          version = os.environ.get('VERSION', 'unknown')
+          release_version = os.environ.get('RELEASE_VERSION', 'unknown')
           tag = os.environ.get('GITHUB_REF', '').replace('refs/tags/', '')
           full_body = f"""{sanitized}
 
@@ -322,30 +382,23 @@ jobs:
 
           **Release {tag}**
 
-          - Version: {version}
+          - Version: {release_version}
           - Commit: {os.environ.get('GITHUB_SHA', 'unknown')}
           - Original PR: #{os.environ.get('PR_NUMBER', 'unknown')}"""
 
-          # Output the sanitized content
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"SANITIZED_PR_BODY<<EOF_SANITIZED\n{sanitized}\nEOF_SANITIZED\n")
               f.write(f"FULL_RELEASE_BODY<<EOF_FULL\n{full_body}\nEOF_FULL\n")
-
           PYTHON_SCRIPT
         env:
           PR_BODY_RAW: ${{ steps.find_triggering_pr.outputs.PR_BODY_RAW }}
-          VERSION: ${{ steps.resolve-version.outputs.VERSION }}
+          RELEASE_VERSION: ${{ steps.resolve-version.outputs.RELEASE_VERSION }}
           GITHUB_SHA: ${{ github.sha }}
           GITHUB_REF: ${{ github.ref }}
           PR_NUMBER: ${{ steps.find_triggering_pr.outputs.PR_NUMBER }}
 
       - name: Build solution
         run: dotnet build listenarr.slnx -c Release --no-restore
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
 
       - name: Publish linux-x64
         run: dotnet publish ${{ env.API_PROJECT }} -c Release -r linux-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/linux-x64
@@ -393,8 +446,7 @@ jobs:
           echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
           echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
           echo "ATCR_IMAGE=atcr.io/therobbiedavis.com/listenarr" >> $GITHUB_OUTPUT
-          TAG=${GITHUB_REF/refs/tags/}
-          echo "TAG=$TAG" >> $GITHUB_OUTPUT
+          echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
 
       - name: Upload release artifacts
         uses: softprops/action-gh-release@v1
@@ -404,10 +456,15 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
       - name: Publish API for runtime image
         run: |
           dotnet publish listenarr.api/Listenarr.Api.csproj -c Release -o listenarr.api/publish
-        # Ensures Listenarr.Api.dll is at listenarr.api/publish/ for Dockerfile.runtime
 
       - name: Show publish contents (sanity check)
         run: |
@@ -458,32 +515,32 @@ jobs:
           tags: |
             ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:stable
             ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:latest
-            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:${{ steps.resolve-version.outputs.RELEASE_VERSION }}
             ${{ steps.set-tags.outputs.GHCR_IMAGE }}:stable
             ${{ steps.set-tags.outputs.GHCR_IMAGE }}:latest
-            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:${{ steps.resolve-version.outputs.RELEASE_VERSION }}
             ${{ steps.set-tags.outputs.ATCR_IMAGE }}:stable
             ${{ steps.set-tags.outputs.ATCR_IMAGE }}:latest
-            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:${{ steps.resolve-version.outputs.RELEASE_VERSION }}
 
       - name: Notify Discord
         uses: rjstone/discord-webhook-notify@v2.2.1
-        if: ${{ github.repository_owner == 'listenarrs' }}
+        if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
         with:
-            severity: info
-            description: v${{steps.resolve-version.outputs.VERSION}} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
-            details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
-            text: A new stable build has been released for docker.
-            webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
+          severity: info
+          description: v${{ steps.resolve-version.outputs.RELEASE_VERSION }} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
+          details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
+          text: A new stable build has been released for docker.
+          webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
 
       - name: Trigger docs rebuild
-        if: ${{ github.repository_owner == 'listenarrs' }}
+        if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
         uses: peter-evans/repository-dispatch@v3
         with:
           token: ${{ secrets.GH_PAT }}
           repository: Listenarrs/listenarrs.github.io
           event-type: listenarr_release
           client-payload: >-
-            {"ref":"${{ github.ref_name }}","version":"${{ steps.resolve-version.outputs.VERSION }}"}
+            {"ref":"${{ github.ref_name }}","version":"${{ steps.resolve-version.outputs.RELEASE_VERSION }}"}
 
       # Skipped: separate Web image. The API image contains the frontend in wwwroot.
