@@ -1,5 +1,9 @@
 name: Nightly — build executables & Docker (develop)
 
+concurrency:
+  group: nightly-build-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: write
   pull-requests: write
@@ -24,6 +28,14 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Refresh to current develop head on rerun
+        if: github.run_attempt != 1
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: develop
+          clean: true
+
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v3
         with:
@@ -34,11 +46,12 @@ jobs:
         with:
           node-version: 20
 
-      - name: Resolve and bump version (minor)
+      - name: Resolve version
         id: resolve-version
         run: |
           set -euo pipefail
           CSProj=${{ env.API_PROJECT }}
+
           # Read <Version> from csproj, then fall back to <AssemblyVersion>
           VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
           if [ -z "${VERSION}" ]; then
@@ -47,19 +60,27 @@ jobs:
           if [ -z "${VERSION}" ]; then
             VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
           fi
+
           echo "Found base version: ${VERSION}"
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION}"
-          MINOR=${MINOR:-0}
-          NEWMINOR=$((MINOR + 1))
-          NEWVERSION="${MAJOR}.${NEWMINOR}.0"
-          echo "Bumped nightly version: ${NEWVERSION}"
-          echo "VERSION=${NEWVERSION}" >> $GITHUB_OUTPUT
+
+          if [ "${{ github.run_attempt }}" != "1" ]; then
+            RESOLVED_VERSION="${VERSION}"
+            echo "Rerun detected. Using current develop version without bump: ${RESOLVED_VERSION}"
+          else
+            IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION}"
+            MINOR=${MINOR:-0}
+            NEWMINOR=$((MINOR + 1))
+            RESOLVED_VERSION="${MAJOR}.${NEWMINOR}.0"
+            echo "Bumped nightly version: ${RESOLVED_VERSION}"
+          fi
+
+          echo "VERSION=${RESOLVED_VERSION}" >> "$GITHUB_OUTPUT"
 
       - name: Restore .NET
         run: dotnet restore listenarr.slnx
 
-      - name: Persist bumped version to csproj (for build)
-        if: steps.resolve-version.outputs.VERSION != ''
+      - name: Persist bumped version to csproj (first attempt only)
+        if: github.run_attempt == 1 && steps.resolve-version.outputs.VERSION != ''
         env:
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         run: |
@@ -68,10 +89,12 @@ jobs:
           cat > update_version.py <<'PY'
           import os
           import xml.etree.ElementTree as ET
+
           path = 'listenarr.api/Listenarr.Api.csproj'
           new = os.environ['NEW_VERSION']
           tree = ET.parse(path)
           root = tree.getroot()
+
           # Update Version
           found_version = False
           for elem in root.findall('.//Version'):
@@ -83,6 +106,7 @@ jobs:
               if pg is None:
                   pg = ET.SubElement(root, 'PropertyGroup')
               ET.SubElement(pg, 'Version').text = new
+
           # Update AssemblyVersion
           found_assembly = False
           for elem in root.findall('.//AssemblyVersion'):
@@ -94,32 +118,53 @@ jobs:
               if pg is None:
                   pg = ET.SubElement(root, 'PropertyGroup')
               ET.SubElement(pg, 'AssemblyVersion').text = new
+
           tree.write(path, encoding='utf-8', xml_declaration=True)
           print('Wrote new version and assembly version to csproj')
           PY
           python3 update_version.py
 
       - name: Sync frontend and package metadata to bumped version
-        if: steps.resolve-version.outputs.VERSION != ''
+        if: github.run_attempt == 1 && steps.resolve-version.outputs.VERSION != ''
         env:
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         run: node scripts/sync-fe-version-from-csproj.mjs
 
+      - name: Check for tracked version changes
+        id: version_changes
+        if: github.run_attempt == 1
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- \
+            listenarr.api/Listenarr.Api.csproj \
+            package.json \
+            package-lock.json \
+            fe/package.json \
+            fe/package-lock.json; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+            echo "No tracked version changes detected."
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            echo "Tracked version changes detected."
+          fi
+
       - name: Create Pull Request for version bump
         id: create_pr
+        if: github.run_attempt == 1 && steps.version_changes.outputs.has_changes == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GH_PAT }}
           commit-message: "[skip ci] Bump version to ${{ steps.resolve-version.outputs.VERSION }}"
           branch: "ci/version-bump-${{ steps.resolve-version.outputs.VERSION }}"
           base: develop
+          delete-branch: true
           title: "Bump version to ${{ steps.resolve-version.outputs.VERSION }}"
           body: |
             This PR bumps the application version to ${{ steps.resolve-version.outputs.VERSION }}.
             The change was produced automatically by the CI nightly workflow.
 
       - name: Label version bump PR
-        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
+        if: github.run_attempt == 1 && steps.create_pr.outputs.pull-request-number != ''
         continue-on-error: true
         uses: actions/github-script@v6
         with:
@@ -154,7 +199,7 @@ jobs:
             }
 
       - name: Merge version bump PR (skip CI)
-        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
+        if: github.run_attempt == 1 && steps.create_pr.outputs.pull-request-number != ''
         uses: actions/github-script@v6
         env:
           PR_NUMBER: ${{ steps.create_pr.outputs['pull-request-number'] }}
@@ -172,19 +217,9 @@ jobs:
               commit_title: `[skip ci] Merge pull request ${pr} - Bump version to ${process.env.NEW_VERSION}`,
               commit_message: `[skip ci] Merge: Bump version to ${process.env.NEW_VERSION}`
             });
-            // Optionally delete the branch
-            try {
-              const prInfo = await github.rest.pulls.get({ owner: context.repo.owner, repo: context.repo.repo, pull_number: pr });
-              const branch = prInfo.data.head.ref;
-              if (branch && branch.startsWith('ci/')) {
-                await github.rest.git.deleteRef({ owner: context.repo.owner, repo: context.repo.repo, ref: `heads/${branch}` });
-              }
-            } catch (err) {
-              console.log(`Branch delete skipped or failed: ${err.message}`);
-            }
 
-      - name: Refresh workspace to merged develop version
-        if: ${{ steps.create_pr.outputs.pull-request-number != '' }}
+      - name: Refresh workspace to current develop version
+        if: github.run_attempt != 1 || steps.create_pr.outputs.pull-request-number != ''
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -233,6 +268,7 @@ jobs:
         with:
           name: nightly-artifacts
           path: artifacts/*.zip
+
       - name: Show resolved version
         run: |
           echo "Resolved version: ${{ steps.resolve-version.outputs.VERSION }}"
@@ -261,17 +297,13 @@ jobs:
       - name: Set image name
         id: set-tags
         run: |
-          # Use repository owner as namespace (avoids embedding secrets into names)
           echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
-          # Publish GHCR images under same owner namespace
           echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
           echo "ATCR_IMAGE=atcr.io/therobbiedavis.com/listenarr" >> $GITHUB_OUTPUT
 
       - name: Find triggering Pull Request
         id: find_triggering_pr
         run: |
-          # Find merged PRs associated with this commit, excluding version bump PRs
-          # Use a simpler approach: get recent merged PRs to develop and find the right one
           PR_DATA=$(gh api graphql -f query='
             query($owner: String!, $repo: String!) {
               repository(owner: $owner, name: $repo) {
@@ -296,7 +328,6 @@ jobs:
               }
             }' -f owner='${{ github.repository_owner }}' -f repo='${{ github.event.repository.name }}')
 
-          # Filter out version bump PRs and find the first non-version-bump PR
           FILTERED_PR=$(echo "$PR_DATA" | jq -r '
             [.data.repository.pullRequests.edges[] |
             select(
@@ -307,11 +338,9 @@ jobs:
             {number, title, body, baseRefName}][0] // null
           ')
 
-          # Debug: Show what PRs we found
           echo "Recent PRs found:"
           echo "$PR_DATA" | jq -r '.data.repository.pullRequests.edges[:5][] | "PR #\(.node.number): \(.node.title)"'
 
-          # Extract PR details from the filtered result
           if [ "$FILTERED_PR" != "" ] && [ "$FILTERED_PR" != "null" ]; then
             PR_NUMBER=$(echo "$FILTERED_PR" | jq -r '.number // ""')
             PR_TITLE=$(echo "$FILTERED_PR" | jq -r '.title // ""')
@@ -331,7 +360,6 @@ jobs:
           echo "PR_TITLE=$PR_TITLE" >> $GITHUB_OUTPUT
           echo "PR_BASE_REF=$PR_BASE_REF" >> $GITHUB_OUTPUT
 
-          # Store raw PR body for sanitization
           echo "PR_BODY_RAW<<EOF_PR_BODY" >> $GITHUB_OUTPUT
           echo "$PR_BODY_RAW" >> $GITHUB_OUTPUT
           echo "EOF_PR_BODY" >> $GITHUB_OUTPUT
@@ -341,39 +369,27 @@ jobs:
       - name: Sanitize PR body and create release notes
         id: sanitize_pr_body
         run: |
-          # Sanitize PR body - remove potential malicious content, limit length
           python3 << 'PYTHON_SCRIPT'
           import os
           import re
           import html
 
-          # Get the raw PR body
           pr_body_raw = os.environ.get('PR_BODY_RAW', '')
 
-          # Basic sanitization
-          # 1. HTML escape to prevent injection
           sanitized = html.escape(pr_body_raw)
-
-          # 2. Remove script tags and other potentially dangerous content
           sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
           sanitized = re.sub(r'<iframe[^>]*>.*?</iframe>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
           sanitized = re.sub(r'javascript:', '', sanitized, flags=re.IGNORECASE)
 
-          # 3. Limit length to prevent overly long descriptions (max 2000 chars)
           if len(sanitized) > 2000:
               sanitized = sanitized[:1997] + '...'
 
-          # 4. Clean up excessive whitespace
           sanitized = re.sub(r'\n\s*\n\s*\n', '\n\n', sanitized)
           sanitized = sanitized.strip()
 
-          # If empty after sanitization, provide a default
           if not sanitized:
               sanitized = "No description provided."
 
-          print(f"Sanitized PR body (length: {len(sanitized)} chars)")
-
-          # Create the full body for the release
           full_body = f"""{sanitized}
 
           ---
@@ -384,11 +400,9 @@ jobs:
           - Commit: {os.environ.get('GITHUB_SHA', 'unknown')}
           - Original PR: #{os.environ.get('PR_NUMBER', 'unknown')}"""
 
-          # Output the sanitized content
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"SANITIZED_PR_BODY<<EOF_SANITIZED\n{sanitized}\nEOF_SANITIZED\n")
               f.write(f"FULL_RELEASE_BODY<<EOF_FULL\n{full_body}\nEOF_FULL\n")
-
           PYTHON_SCRIPT
         env:
           PR_BODY_RAW: ${{ steps.find_triggering_pr.outputs.PR_BODY_RAW }}
@@ -416,7 +430,6 @@ jobs:
       - name: Publish API for runtime image
         run: |
           dotnet publish listenarr.api/Listenarr.Api.csproj -c Release -o listenarr.api/publish
-        # Ensures Listenarr.Api.dll is at listenarr.api/publish/ for Dockerfile.runtime
 
       - name: Show publish contents (sanity check)
         run: |
@@ -474,13 +487,13 @@ jobs:
 
       - name: Notify Discord
         uses: rjstone/discord-webhook-notify@v2.2.1
-        if: ${{ github.repository_owner == 'listenarrs' }}
+        if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
         with:
-            severity: info
-            description: v${{steps.resolve-version.outputs.VERSION}} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
-            details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
-            text: A new nightly build has been released for docker.
-            webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
+          severity: info
+          description: v${{steps.resolve-version.outputs.VERSION}} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
+          details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
+          text: A new nightly build has been released for docker.
+          webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
 
       # version bump was pushed via PR+auto-merge above
 
