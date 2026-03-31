@@ -238,7 +238,7 @@ namespace Listenarr.Api.Services.Scoring
                     var qualityLower = (normalizedQuality ?? string.Empty).ToLower();
                     var urlLower = (searchResult.TorrentUrl ?? searchResult.Source ?? string.Empty).ToLower();
 
-                    if (profile.PreferredFormats
+                    if ((profile.PreferredFormats ?? new List<string>())
                         .Where(format => !string.IsNullOrWhiteSpace(format))
                         .Select(format => format.ToLower().Trim())
                         .Any(token => fmtLower.Contains(token) || qualityLower.Contains(token) || urlLower.Contains("." + token) || urlLower.Contains(token) || titleLower.Contains(token)))
