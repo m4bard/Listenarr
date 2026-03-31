@@ -109,9 +109,6 @@ jobs:
           echo "::error::Current canary version (${{ steps.inspect_target.outputs.BRANCH_VERSION }}) is newer than target version (${{ steps.resolve-version.outputs.VERSION }}). This run is obsolete and will not publish stale artifacts."
           exit 1
 
-      - name: Restore .NET
-        run: dotnet restore listenarr.slnx
-
       - name: Persist bumped version to csproj
         if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.VERSION != ''
         env:
@@ -278,6 +275,9 @@ jobs:
           [ "${CS_VERSION}" = "${NEW_VERSION}" ]
           [ "${FE_VERSION}" = "${NEW_VERSION}" ]
           [ "${ROOT_VERSION}" = "${NEW_VERSION}" ]
+
+      - name: Restore .NET
+        run: dotnet restore listenarr.slnx
 
       - name: Build solution
         run: dotnet build listenarr.slnx -c Release --no-restore
