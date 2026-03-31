@@ -112,9 +112,6 @@ jobs:
           echo "bump_state=${STATE}" >> "$GITHUB_OUTPUT"
           echo "Computed post-release bump state: ${STATE}"
 
-      - name: Restore .NET
-        run: dotnet restore listenarr.slnx
-
       - name: Persist next version to csproj for post-release bump
         if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.NEXT_VERSION != ''
         env:
@@ -280,6 +277,9 @@ jobs:
           [ "${CS_VERSION}" = "${RELEASE_VERSION}" ]
           [ "${FE_VERSION}" = "${RELEASE_VERSION}" ]
           [ "${ROOT_VERSION}" = "${RELEASE_VERSION}" ]
+
+      - name: Restore .NET
+        run: dotnet restore listenarr.slnx
 
       - name: Find triggering Pull Request
         id: find_triggering_pr
