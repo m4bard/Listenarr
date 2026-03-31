@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
@@ -27,15 +27,15 @@ namespace Listenarr.Infrastructure
                 string? repoRoot = FindRepoRoot();
                 if (repoRoot != null)
                 {
-                    var relativeDbPath = Path.Combine("listenarr.api", "config", "database", "listenarr.db");
-                    var candidate = Path.Combine(repoRoot, relativeDbPath);
+                    var relativeDbPath = Path.Join("listenarr.api", "config", "database", "listenarr.db");
+                    var candidate = Path.Join(repoRoot, relativeDbPath);
                     dbPath = Path.GetFullPath(candidate);
                 }
                 else
                 {
                     // Last-resort: fall back to current directory behavior to remain compatible
-                    var relativePart = Path.Combine("..", "listenarr.api", "config", "database", "listenarr.db");
-                    var cwdCandidate = Path.Combine(Directory.GetCurrentDirectory(), relativePart);
+                    var relativePart = Path.Join("..", "listenarr.api", "config", "database", "listenarr.db");
+                    var cwdCandidate = Path.Join(Directory.GetCurrentDirectory(), relativePart);
                     dbPath = Path.GetFullPath(cwdCandidate);
                 }
             }
@@ -62,9 +62,9 @@ namespace Listenarr.Infrastructure
                     const string slnName = "listenarr.sln";
                     const string apiFolderName = "listenarr.api";
 
-                    var slnx = Path.Combine(dir.FullName, slnxName);
-                    var sln = Path.Combine(dir.FullName, slnName);
-                    var apiFolder = Path.Combine(dir.FullName, apiFolderName);
+                    var slnx = Path.Join(dir.FullName, slnxName);
+                    var sln = Path.Join(dir.FullName, slnName);
+                    var apiFolder = Path.Join(dir.FullName, apiFolderName);
 
                     if (File.Exists(slnx) || File.Exists(sln) || Directory.Exists(apiFolder))
                     {

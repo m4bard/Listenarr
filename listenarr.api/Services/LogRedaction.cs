@@ -63,17 +63,9 @@ namespace Listenarr.Api.Services
             sensitiveKeys ??= DefaultKeys;
             var set = new HashSet<string>(sensitiveKeys, StringComparer.OrdinalIgnoreCase);
             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var kv in env)
+            foreach (var kv in env.Where(kv => kv.Key != null))
             {
-                if (kv.Key == null) continue;
-                if (set.Contains(kv.Key))
-                {
-                    result[kv.Key] = "<redacted>";
-                }
-                else
-                {
-                    result[kv.Key] = kv.Value ?? string.Empty;
-                }
+                result[kv.Key] = set.Contains(kv.Key) ? "<redacted>" : kv.Value ?? string.Empty;
             }
 
             return result;

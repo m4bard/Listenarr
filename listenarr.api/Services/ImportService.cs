@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -154,9 +154,9 @@ namespace Listenarr.Api.Services
                                     if (string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(f.Path)) q = DetermineQualityFromMetadata(null, f.Path);
 
                                     if (string.IsNullOrEmpty(bestExisting)) bestExisting = q;
-                                    else if (!string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(bestExisting) && abProfile != null)
+                                    else if (!string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(bestExisting) && abProfile != null && IsQualityBetter(q, bestExisting, abProfile))
                                     {
-                                        if (IsQualityBetter(q, bestExisting, abProfile)) bestExisting = q;
+                                        bestExisting = q;
                                     }
                                 }
                                 catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
@@ -191,9 +191,15 @@ namespace Listenarr.Api.Services
                     { "Author", metadataForNaming.Artist ?? "Unknown Author" },
                     { "Series", string.IsNullOrWhiteSpace(metadataForNaming.Series) ? string.Empty : metadataForNaming.Series },
                     { "Title", metadataForNaming.Title ?? "Unknown Title" },
+                    { "Subtitle", string.IsNullOrWhiteSpace(metadataForNaming.Subtitle) ? string.Empty : metadataForNaming.Subtitle },
+                    { "Edition", string.IsNullOrWhiteSpace(metadataForNaming.Edition) ? string.Empty : metadataForNaming.Edition },
+                    { "Narrator", string.IsNullOrWhiteSpace(metadataForNaming.Narrator) ? string.Empty : metadataForNaming.Narrator },
+                    { "Publisher", string.IsNullOrWhiteSpace(metadataForNaming.Publisher) ? string.Empty : metadataForNaming.Publisher },
+                    { "Language", string.IsNullOrWhiteSpace(metadataForNaming.Language) ? string.Empty : metadataForNaming.Language },
+                    { "Asin", string.IsNullOrWhiteSpace(metadataForNaming.Asin) ? string.Empty : metadataForNaming.Asin },
                     { "SeriesNumber", metadataForNaming.SeriesPosition?.ToString() ?? metadataForNaming.TrackNumber?.ToString() ?? string.Empty },
                     { "Year", metadataForNaming.Year?.ToString() ?? string.Empty },
-                    { "Quality", (metadataForNaming.Bitrate.HasValue ? metadataForNaming.Bitrate.ToString() + "kbps" : null) ?? metadataForNaming.Format ?? string.Empty },
+                    { "Quality", (metadataForNaming.Bitrate.HasValue ? $"{metadataForNaming.Bitrate}kbps" : null) ?? metadataForNaming.Format ?? string.Empty },
                     { "DiskNumber", metadataForNaming.DiscNumber?.ToString() ?? string.Empty },
                     { "ChapterNumber", metadataForNaming.TrackNumber?.ToString() ?? string.Empty }
                 };
@@ -278,7 +284,7 @@ namespace Listenarr.Api.Services
                 // Perform file operation
                 try
                 {
-                    var initialDest = Path.Combine(destDir, Path.GetFileName(sourcePath));
+                    var initialDest = Path.Join(destDir, Path.GetFileName(sourcePath));
 
                     // If the source file is already at the destination (e.g., the background
                     // processing job already moved/hardlinked it), skip the file operation
@@ -380,8 +386,8 @@ namespace Listenarr.Api.Services
 
             static string FirstNonEmpty(params string?[] candidates)
             {
-                foreach (var c in candidates)
-                    if (!string.IsNullOrWhiteSpace(c)) return c!;
+                foreach (var c in candidates.Where(c => !string.IsNullOrWhiteSpace(c)))
+                    return c!;
                 return string.Empty;
             }
         }
@@ -390,7 +396,6 @@ namespace Listenarr.Api.Services
         {
             var results = new List<ImportResult>();
             var folderPattern = settings.FolderNamingPattern;
-            var filePattern = settings.FileNamingPattern;
             var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
             var sourceFiles = files
                 .Where(file => !FileUtils.ShouldSkipImportFile(file, normalizedBlacklist))
@@ -450,9 +455,9 @@ namespace Listenarr.Api.Services
                                     if (string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(f.Path)) q = DetermineQualityFromMetadata(null, f.Path);
 
                                     if (string.IsNullOrEmpty(bestExisting)) bestExisting = q;
-                                    else if (!string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(bestExisting) && abProfile != null)
+                                    else if (!string.IsNullOrEmpty(q) && !string.IsNullOrEmpty(bestExisting) && abProfile != null && IsQualityBetter(q, bestExisting, abProfile))
                                     {
-                                        if (IsQualityBetter(q, bestExisting, abProfile)) bestExisting = q;
+                                        bestExisting = q;
                                     }
                                 }
                                 catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
@@ -575,16 +580,13 @@ namespace Listenarr.Api.Services
                         {
                             try
                             {
-                                if (batchAudiobook != null && batchAudiobook.Files != null && batchAudiobook.Files.Any())
+                                if (batchAudiobook.Files != null && batchAudiobook.Files.Any() && !IsQualityBetter(candidateQuality, bestExisting, abProfile))
                                 {
-                                    if (!IsQualityBetter(candidateQuality, bestExisting, abProfile))
-                                    {
-                                        res.Success = false;
-                                        res.SkippedReason = $"candidate quality '{candidateQuality}' is not better than existing '{bestExisting}'";
-                                        results.Add(res);
-                                        _logger.LogInformation("ImportFilesFromDirectory: Skipping import of file {File} for audiobook {AudiobookId} because candidate quality '{Candidate}' is not better than existing '{Existing}'", file, batchAudiobook.Id, candidateQuality, bestExisting);
-                                        continue; // skip importing this file
-                                    }
+                                    res.Success = false;
+                                    res.SkippedReason = $"candidate quality '{candidateQuality}' is not better than existing '{bestExisting}'";
+                                    results.Add(res);
+                                    _logger.LogInformation("ImportFilesFromDirectory: Skipping import of file {File} for audiobook {AudiobookId} because candidate quality '{Candidate}' is not better than existing '{Existing}'", file, batchAudiobook.Id, candidateQuality, bestExisting);
+                                    continue; // skip importing this file
                                 }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -624,9 +626,15 @@ namespace Listenarr.Api.Services
                             { "Author", namingMetadata.Artist ?? "Unknown Author" },
                             { "Series", string.IsNullOrWhiteSpace(namingMetadata.Series) ? string.Empty : namingMetadata.Series },
                             { "Title", namingMetadata.Title ?? Path.GetFileNameWithoutExtension(file) },
+                            { "Subtitle", string.IsNullOrWhiteSpace(namingMetadata.Subtitle) ? string.Empty : namingMetadata.Subtitle },
+                            { "Edition", string.IsNullOrWhiteSpace(namingMetadata.Edition) ? string.Empty : namingMetadata.Edition },
+                            { "Narrator", string.IsNullOrWhiteSpace(namingMetadata.Narrator) ? string.Empty : namingMetadata.Narrator },
+                            { "Publisher", string.IsNullOrWhiteSpace(namingMetadata.Publisher) ? string.Empty : namingMetadata.Publisher },
+                            { "Language", string.IsNullOrWhiteSpace(namingMetadata.Language) ? string.Empty : namingMetadata.Language },
+                            { "Asin", string.IsNullOrWhiteSpace(namingMetadata.Asin) ? string.Empty : namingMetadata.Asin },
                             { "SeriesNumber", namingMetadata.SeriesPosition?.ToString() ?? effectiveChapterNumber?.ToString() ?? string.Empty },
                             { "Year", namingMetadata.Year?.ToString() ?? string.Empty },
-                            { "Quality", (namingMetadata.Bitrate.HasValue ? namingMetadata.Bitrate.ToString() + "kbps" : null) ?? namingMetadata.Format ?? string.Empty },
+                            { "Quality", (namingMetadata.Bitrate.HasValue ? $"{namingMetadata.Bitrate}kbps" : null) ?? namingMetadata.Format ?? string.Empty },
                             { "DiskNumber", effectiveDiskNumber?.ToString() ?? string.Empty },
                             { "ChapterNumber", effectiveChapterNumber?.ToString() ?? string.Empty }
                         };
@@ -688,7 +696,7 @@ namespace Listenarr.Api.Services
                             || filenamePattern.IndexOf("ChapterNumber", StringComparison.OrdinalIgnoreCase) >= 0
                             || filenamePattern.IndexOf('/') >= 0
                             || filenamePattern.IndexOf('\\') >= 0;
-                        var treatAsFilename = abForNaming != null ? true : !patternAllowsSubfolders;
+                        var treatAsFilename = abForNaming != null || !patternAllowsSubfolders;
 
                         var filename = _fileNamingService.ApplyNamingPattern(filenamePattern, variablesForFile, treatAsFilename);
                         if (isMultiFile && !patternHasNumberTokens && stableSuffixNumber.HasValue)
@@ -721,7 +729,7 @@ namespace Listenarr.Api.Services
                         // the destination directory first (original filename) then apply
                         // the naming pattern on that destination file so that the file
                         // exists in the destination before any renaming occurs.
-                        var initialDest = Path.Combine(destDirForFile, Path.GetFileName(file));
+                        var initialDest = Path.Join(destDirForFile, Path.GetFileName(file));
                         var uniqueInitial = FileUtils.GetUniqueDestinationPath(initialDest);
 
                         if (string.Equals(completedFileAction, "Copy", StringComparison.OrdinalIgnoreCase))
@@ -851,14 +859,22 @@ namespace Listenarr.Api.Services
             {
                 var author = (audiobook.Authors != null && audiobook.Authors.Any())
                     ? string.Join(", ", audiobook.Authors)
-                    : (FirstNonEmpty(extractedMetadata?.Artist, extractedMetadata?.AlbumArtist, "Unknown Author"));
+                    : FirstNonEmpty(ChooseAuthorFromMetadata(extractedMetadata), "Unknown Author");
 
                 return new AudioMetadata
                 {
                     Title = FirstNonEmpty(audiobook.Title, extractedMetadata?.Title, fallbackTitle, "Unknown Title"),
+                    Subtitle = FirstNonEmpty(audiobook.Subtitle, extractedMetadata?.Subtitle),
+                    Edition = FirstNonEmpty(audiobook.Edition, extractedMetadata?.Edition),
                     Artist = author,
                     AlbumArtist = author,
                     Album = FirstNonEmpty(extractedMetadata?.Album, audiobook.Title, fallbackTitle),
+                    Narrator = (audiobook.Narrators != null && audiobook.Narrators.Any())
+                        ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n)))
+                        : extractedMetadata?.Narrator,
+                    Publisher = FirstNonEmpty(audiobook.Publisher, extractedMetadata?.Publisher),
+                    Language = FirstNonEmpty(audiobook.Language, extractedMetadata?.Language),
+                    Asin = FirstNonEmpty(audiobook.Asin, extractedMetadata?.Asin),
                     Series = FirstNonEmpty(audiobook.Series, extractedMetadata?.Series),
                     SeriesPosition = !string.IsNullOrWhiteSpace(audiobook.SeriesNumber) && decimal.TryParse(audiobook.SeriesNumber, out var sp)
                         ? sp
@@ -882,7 +898,7 @@ namespace Listenarr.Api.Services
 
                 if (string.IsNullOrWhiteSpace(extractedMetadata.Artist))
                 {
-                    extractedMetadata.Artist = FirstNonEmpty(extractedMetadata.AlbumArtist, "Unknown Author");
+                    extractedMetadata.Artist = FirstNonEmpty(ChooseAuthorFromMetadata(extractedMetadata), "Unknown Author");
                 }
 
                 if (string.IsNullOrWhiteSpace(extractedMetadata.AlbumArtist))
@@ -899,6 +915,49 @@ namespace Listenarr.Api.Services
                 Artist = "Unknown Author",
                 AlbumArtist = "Unknown Author"
             };
+        }
+
+        private static string ChooseAuthorFromMetadata(AudioMetadata? metadata)
+        {
+            if (metadata == null)
+            {
+                return string.Empty;
+            }
+
+            var primary = NonNarratorAuthorCandidate(metadata.Artist, metadata.Narrator);
+            var alternate = NonNarratorAuthorCandidate(metadata.AlbumArtist, metadata.Narrator);
+
+            if (string.IsNullOrWhiteSpace(primary))
+            {
+                return alternate;
+            }
+
+            if (!string.IsNullOrWhiteSpace(metadata.Title) &&
+                (primary.IndexOf(metadata.Title, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 (!string.IsNullOrWhiteSpace(metadata.Series) && string.Equals(primary, metadata.Series, StringComparison.OrdinalIgnoreCase)) ||
+                 string.Equals(primary, metadata.Title, StringComparison.OrdinalIgnoreCase)))
+            {
+                return string.IsNullOrWhiteSpace(alternate) ? primary : alternate;
+            }
+
+            return primary;
+        }
+
+        private static string NonNarratorAuthorCandidate(string? candidate, string? narrator)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return string.Empty;
+            }
+
+            var trimmedCandidate = candidate.Trim();
+            if (!string.IsNullOrWhiteSpace(narrator) &&
+                string.Equals(trimmedCandidate, narrator.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return trimmedCandidate;
         }
 
         private async Task EnsureAudiobookBasePathAsync(int audiobookId, string? candidateBasePath, CancellationToken ct)
@@ -1049,12 +1108,9 @@ namespace Listenarr.Api.Services
 
         private static string FirstNonEmpty(params string?[] candidates)
         {
-            foreach (var candidate in candidates)
+            foreach (var candidate in candidates.Where(candidate => !string.IsNullOrWhiteSpace(candidate)))
             {
-                if (!string.IsNullOrWhiteSpace(candidate))
-                {
-                    return candidate!;
-                }
+                return candidate!;
             }
 
             return string.Empty;
@@ -1192,4 +1248,3 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
         }
     }
 }
-

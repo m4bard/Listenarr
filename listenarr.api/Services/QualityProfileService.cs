@@ -65,12 +65,9 @@ namespace Listenarr.Api.Services
             var profiles = await _repository.GetAllAsync();
 
             // Ensure default profiles have required qualities when listing
-            foreach (var profile in profiles)
+            foreach (var profile in profiles.Where(profile => profile.IsDefault))
             {
-                if (profile.IsDefault)
-                {
-                    await EnsureProfileHasRequiredQualitiesAsync(profile);
-                }
+                await EnsureProfileHasRequiredQualitiesAsync(profile);
             }
 
             return profiles;
@@ -318,13 +315,7 @@ namespace Listenarr.Api.Services
 
         public async Task<List<QualityScore>> ScoreSearchResults(List<SearchResult> searchResults, QualityProfile profile)
         {
-            var scores = new List<QualityScore>();
-
-            foreach (var result in searchResults)
-            {
-                var score = await ScoreSearchResult(result, profile);
-                scores.Add(score);
-            }
+            var scores = await Task.WhenAll(searchResults.Select(result => ScoreSearchResult(result, profile)));
 
             // Ensure rejected results are ordered last regardless of numeric TotalScore
             return scores
@@ -376,19 +367,11 @@ namespace Listenarr.Api.Services
             if (preferredFormats == null || preferredFormats.Count == 0 || string.IsNullOrEmpty(titleLower))
                 return null;
 
-            foreach (var f in preferredFormats)
-            {
-                if (string.IsNullOrWhiteSpace(f)) continue;
-                var token = f.ToLower().Trim();
-
+            return preferredFormats
+                .Where(f => !string.IsNullOrWhiteSpace(f))
+                .Select(f => f.ToLower().Trim())
                 // allow matching patterns like ".m4b", "[m4b]", "m4b" in the title
-                if (titleLower.Contains(token) || titleLower.Contains("[" + token + "]") || titleLower.Contains("(" + token + ")") || titleLower.Contains("." + token))
-                {
-                    return token;
-                }
-            }
-
-            return null;
+                .FirstOrDefault(token => titleLower.Contains(token) || titleLower.Contains("[" + token + "]") || titleLower.Contains("(" + token + ")") || titleLower.Contains("." + token));
         }
 
         /// <summary>
@@ -400,9 +383,8 @@ namespace Listenarr.Api.Services
             if (preferredLanguages == null || preferredLanguages.Count == 0 || string.IsNullOrEmpty(titleLower))
                 return null;
 
-            foreach (var lang in preferredLanguages)
+            foreach (var lang in preferredLanguages.Where(lang => !string.IsNullOrWhiteSpace(lang)))
             {
-                if (string.IsNullOrWhiteSpace(lang)) continue;
                 var token = lang.ToLower().Trim();
 
                 // Basic match for language name or common short forms

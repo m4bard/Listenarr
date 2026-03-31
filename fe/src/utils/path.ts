@@ -59,8 +59,8 @@ export function stripRootPrefix(root: string, value: string): string | null {
 
 export function joinPaths(root: string | null | undefined, relative: string | null | undefined): string {
   if (!root) return relative || ''
-  const useBackslash = (root || '').includes('\\')
-  const r = trimTrailingSlash(toForward(root || ''))
+  const useBackslash = root.includes('\\')
+  const r = trimTrailingSlash(toForward(root))
   const rel = (relative || '').toString().replace(/^\/+/, '')
   const combined = rel ? `${r}/${rel}` : r
   return useBackslash ? combined.replace(/\//g, '\\') : combined

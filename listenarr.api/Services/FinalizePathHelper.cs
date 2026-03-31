@@ -34,13 +34,10 @@ namespace Listenarr.Api.Services
             if (string.IsNullOrWhiteSpace(author) && download?.Metadata != null)
             {
                 // Try several possible keys that may contain author information
-                foreach (var key in new[] { "Author", "artist", "Artist", "Authors", "AlbumArtist" })
+                foreach (var key in new[] { "Author", "artist", "Artist", "Authors", "AlbumArtist" }.Where(k => download.Metadata.TryGetValue(k, out _) && download.Metadata[k] != null))
                 {
-                    if (download.Metadata.TryGetValue(key, out var aobj) && aobj != null)
-                    {
-                        author = aobj.ToString();
-                        break;
-                    }
+                    author = download.Metadata[key].ToString();
+                    break;
                 }
             }
 
@@ -49,13 +46,10 @@ namespace Listenarr.Api.Services
             if (string.IsNullOrWhiteSpace(series) && download?.Metadata != null)
             {
                 // Try several keys that repositories may use for series/collection
-                foreach (var key in new[] { "Series", "series", "SeriesTitle", "Album", "Collection", "Subtitle" })
+                foreach (var key in new[] { "Series", "series", "SeriesTitle", "Album", "Collection", "Subtitle" }.Where(k => download.Metadata.TryGetValue(k, out _) && download.Metadata[k] != null))
                 {
-                    if (download.Metadata.TryGetValue(key, out var sObj) && sObj != null)
-                    {
-                        series = sObj.ToString();
-                        break;
-                    }
+                    series = download.Metadata[key].ToString();
+                    break;
                 }
             }
 
@@ -102,8 +96,9 @@ namespace Listenarr.Api.Services
             // Title folder
             parts.Add(SafeFileName(title));
 
-            return Path.Combine(parts.ToArray());
+            return Path.Join(parts.ToArray());
         }
     }
 }
+
 

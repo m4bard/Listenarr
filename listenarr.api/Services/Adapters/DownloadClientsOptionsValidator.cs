@@ -33,7 +33,7 @@ namespace Listenarr.Api.Services.Adapters
                     errors.Add($"Download client '{key}' host is not configured (Host).");
 
                 if (c.Port <= 0 || c.Port > 65535)
-                    errors.Add($"Download client '{key}' has invalid Port value: {c?.Port}.");
+                    errors.Add($"Download client '{key}' has invalid Port value: {c.Port}.");
 
                 // Additional checks: but keep light to avoid blocking dynamic setups.
             }

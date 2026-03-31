@@ -67,7 +67,7 @@ namespace Listenarr.Api.Services.Adapters
                             http.Timeout = TimeSpan.FromSeconds(30);
                         }
 
-                        var resp = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                        using var resp = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                     if (resp.IsSuccessStatusCode)
                         return (true, "Successfully connected to qBittorrent.");
 
@@ -85,7 +85,7 @@ namespace Listenarr.Api.Services.Adapters
                                     new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                                 });
 
-                                var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/v2/auth/login") { Content = content };
+                                using var req = new HttpRequestMessage(HttpMethod.Post, $"{baseUrl}/api/v2/auth/login") { Content = content };
                                 if (!string.IsNullOrEmpty(userAgent)) req.Headers.UserAgent.ParseAdd(userAgent);
                                 req.Headers.Referrer = new Uri(baseUrl + "/");
                                 return await http.SendAsync(req, ct);
@@ -96,9 +96,11 @@ namespace Listenarr.Api.Services.Adapters
                             if (!loginResp.IsSuccessStatusCode && loginResp.StatusCode == HttpStatusCode.Forbidden)
                             {
                                 _logger.LogDebug("qBittorrent TestConnection: initial login returned Forbidden, retrying with browser UA for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                                loginResp.Dispose();
                                 loginResp = await PostLoginWithAgent("Mozilla/5.0 (compatible; Listenarr)");
                             }
-
+                            using (loginResp)
+                            {
                             if (loginResp.IsSuccessStatusCode)
                             {
                                 // Try to detect cookies via Set-Cookie header when using factory clients
@@ -121,7 +123,7 @@ namespace Listenarr.Api.Services.Adapters
                                 // simulate stateful behavior on the mocked handler). If the retry
                                 // fails and we created a factory client that doesn't handle cookies,
                                 // fall back to a local cookie-enabled client attempt.
-                                var retry = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                                using var retry = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                                 if (retry.IsSuccessStatusCode)
                                     return (true, "Successfully connected to qBittorrent.");
 
@@ -143,14 +145,14 @@ namespace Listenarr.Api.Services.Adapters
                                         using var local = new HttpClient(handler2) { Timeout = TimeSpan.FromSeconds(30) };
                                         using var localLoginContent = new FormUrlEncodedContent(new[]
                                         {
-                                            new KeyValuePair<string, string>("username", client.Username ?? string.Empty),
-                                            new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
+                                            new KeyValuePair<string, string>("username", client.Username),
+                                            new KeyValuePair<string, string>("password", client.Password)
                                         });
 
-                                        var localLogin = await local.PostAsync($"{baseUrl}/api/v2/auth/login", localLoginContent, ct);
+                                        using var localLogin = await local.PostAsync($"{baseUrl}/api/v2/auth/login", localLoginContent, ct);
                                         if (localLogin.IsSuccessStatusCode)
                                         {
-                                            var final = await local.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                                            using var final = await local.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                                             if (final.IsSuccessStatusCode)
                                                 return (true, "Successfully connected to qBittorrent.");
                                         }
@@ -165,12 +167,13 @@ namespace Listenarr.Api.Services.Adapters
                             else
                             {
                                 var body = string.Empty;
-                                try { body = await loginResp.Content.ReadAsStringAsync(ct); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                try { body = await loginResp.Content.ReadAsStringAsync(ct); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                 }
                                 var redacted = LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
                                 _logger.LogWarning("qBittorrent TestConnection: login failed with status {Status} for client {ClientId} - {Body}", loginResp.StatusCode, LogRedaction.SanitizeText(client.Id), redacted);
                                 return (false, "qBittorrent: Connection to download client successful but could not authenticate. Please check username/password.");
+                            }
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -218,8 +221,8 @@ namespace Listenarr.Api.Services.Adapters
 
         public async Task<string?> AddAsync(DownloadClientConfiguration client, SearchResult result, CancellationToken ct = default)
         {
-            if (client == null) throw new ArgumentNullException(nameof(client));
-            if (result == null) throw new ArgumentNullException(nameof(result));
+            ArgumentNullException.ThrowIfNull(client);
+            ArgumentNullException.ThrowIfNull(result);
 
             var magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(result.MagnetLink);
             var httpTorrentUrl = NormalizeTorrentUrl(result.TorrentUrl);
@@ -252,7 +255,7 @@ namespace Listenarr.Api.Services.Adapters
 
                     if (loginResponse.StatusCode == HttpStatusCode.Forbidden)
                     {
-                        var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                        using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                         if (!testResp.IsSuccessStatusCode)
                         {
                             _logger.LogWarning("qBittorrent auth appears enabled and credentials are invalid for client {ClientId}", client.Id);
@@ -274,7 +277,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Request only the hash field before adding to minimize memory usage
-                var beforeResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash", ct);
+                using var beforeResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash", ct);
                 var existingHashes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                 if (beforeResp.IsSuccessStatusCode)
                 {
@@ -286,9 +289,9 @@ namespace Listenarr.Api.Services.Adapters
                             var beforeList = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(beforeJson);
                             if (beforeList != null)
                             {
-                                foreach (var t in beforeList)
+                                foreach (var t in beforeList.Where(t => t.TryGetValue("hash", out _)))
                                 {
-                                    if (t.TryGetValue("hash", out var h)) existingHashes.Add(h.GetString() ?? string.Empty);
+                                    existingHashes.Add(t["hash"].GetString() ?? string.Empty);
                                 }
                             }
                         }
@@ -373,14 +376,16 @@ namespace Listenarr.Api.Services.Adapters
                     addResponse = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/add", addData, ct);
                 }
 
-                if (!addResponse.IsSuccessStatusCode)
+                using (addResponse)
                 {
-                    var responseContent = await addResponse.Content.ReadAsStringAsync(ct);
-                    var redacted = LogRedaction.RedactText(responseContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
-                    _logger.LogError("Failed to add torrent to qBittorrent. Status: {Status}, Response: {Response}", addResponse.StatusCode, redacted);
-                    throw new Exception($"Failed to add torrent to qBittorrent: {addResponse.StatusCode} - {redacted}");
+                    if (!addResponse.IsSuccessStatusCode)
+                    {
+                        var responseContent = await addResponse.Content.ReadAsStringAsync(ct);
+                        var redacted = LogRedaction.RedactText(responseContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
+                        _logger.LogError("Failed to add torrent to qBittorrent. Status: {Status}, Response: {Response}", addResponse.StatusCode, redacted);
+                        throw new Exception($"Failed to add torrent to qBittorrent: {addResponse.StatusCode} - {redacted}");
+                    }
                 }
-
                 _logger.LogInformation("Successfully sent torrent to qBittorrent");
 
                 await Task.Delay(1000, ct);
@@ -388,7 +393,7 @@ namespace Listenarr.Api.Services.Adapters
                 string? detectedHash = null;
 
                 // Request only necessary fields (hash and name) to reduce response size
-                var afterResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash,name", ct);
+                using var afterResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields=hash,name", ct);
                 if (afterResp.IsSuccessStatusCode)
                 {
                     var afterJson = await afterResp.Content.ReadAsStringAsync(ct);
@@ -399,17 +404,13 @@ namespace Listenarr.Api.Services.Adapters
                             var afterList = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(afterJson);
                             if (afterList != null)
                             {
-                                foreach (var t in afterList)
+                                foreach (var hash in afterList.Where(t => t.TryGetValue("hash", out _)).Select(t => t["hash"].GetString() ?? string.Empty))
                                 {
-                                    if (t.TryGetValue("hash", out var hEl))
+                                    if (!existingHashes.Contains(hash))
                                     {
-                                        var hash = hEl.GetString() ?? string.Empty;
-                                        if (!existingHashes.Contains(hash))
-                                        {
-                                            _logger.LogInformation("Detected new qBittorrent torrent: hash={Hash}", hash);
-                                            detectedHash = hash;
-                                            break;
-                                        }
+                                        _logger.LogInformation("Detected new qBittorrent torrent: hash={Hash}", hash);
+                                        detectedHash = hash;
+                                        break;
                                     }
                                 }
                             }
@@ -445,7 +446,7 @@ namespace Listenarr.Api.Services.Adapters
                                 new KeyValuePair<string, string>("hash", detectedHash),
                                 new KeyValuePair<string, string>("urls", trackerUrls)
                             });
-                            var trackersResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/addTrackers", addTrackersData, ct);
+                            using var trackersResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/addTrackers", addTrackersData, ct);
                             if (trackersResp.IsSuccessStatusCode)
                                 _logger.LogInformation("Injected {Count} tracker(s) for torrent {Hash} via addTrackers API", trackerAnnounces.Count, detectedHash);
                             else
@@ -547,7 +548,7 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("username", client.Username ?? string.Empty),
                     new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                 });
-                var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+                using (await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct)) { }
 
                 // Set category
                 using var setCategoryData = new FormUrlEncodedContent(new[]
@@ -593,12 +594,12 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                 });
 
-                var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+                using var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
                 if (!loginResp.IsSuccessStatusCode)
                 {
                     if (loginResp.StatusCode == HttpStatusCode.Forbidden)
                     {
-                        var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                        using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                         if (!testResp.IsSuccessStatusCode)
                         {
                             _logger.LogWarning("qBittorrent auth appears enabled and credentials are invalid for client {ClientId}", client.Id);
@@ -613,7 +614,7 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("deleteFiles", deleteFiles ? "true" : "false")
                 });
 
-                var deleteResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/delete", deleteData, ct);
+                using var deleteResp = await httpClient.PostAsync($"{baseUrl}/api/v2/torrents/delete", deleteData, ct);
                 if (!deleteResp.IsSuccessStatusCode)
                 {
                     var body = await deleteResp.Content.ReadAsStringAsync(ct);
@@ -655,10 +656,10 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                 });
 
-                var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+                using var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
                 if (loginResp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                    using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                     if (!testResp.IsSuccessStatusCode)
                     {
                         _logger.LogWarning("qBittorrent authentication appears to be enabled and credentials are invalid for client {ClientId}", LogRedaction.SanitizeText(client.Id));
@@ -673,17 +674,17 @@ namespace Listenarr.Api.Services.Adapters
 
                 // Limit fields returned to reduce memory usage
                 var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path";
-                
+
                 // Build category filter parameter if configured
                 var categoryFilter = QBittorrentHelpers.BuildCategoryParameter(client.Settings, "&");
-                
+
                 // Extract category for logging
                 var category = client.Settings?.TryGetValue("category", out var categoryObj) is true
-                    ? categoryObj?.ToString() 
+                    ? categoryObj?.ToString()
                     : null;
                 QBittorrentHelpers.LogCategoryFiltering(_logger, category);
-                
-                var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}{categoryFilter}", ct);
+
+                using var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}{categoryFilter}", ct);
                 if (!torrentsResp.IsSuccessStatusCode) return items;
 
                 var json = await torrentsResp.Content.ReadAsStringAsync(ct);
@@ -806,10 +807,10 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                 });
 
-                var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+                using var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
                 if (loginResp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                    using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                     if (!testResp.IsSuccessStatusCode)
                     {
                         _logger.LogWarning("qBittorrent authentication appears to be enabled and credentials are invalid for client {ClientId}", LogRedaction.SanitizeText(client.Id));
@@ -829,7 +830,7 @@ namespace Listenarr.Api.Services.Adapters
                 long globalMaxSeedingTime = -1;
                 try
                 {
-                    var prefsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/preferences", ct);
+                    using var prefsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/preferences", ct);
                     if (prefsResp.IsSuccessStatusCode)
                     {
                         var prefsJson = await prefsResp.Content.ReadAsStringAsync(ct);
@@ -857,7 +858,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 // Limit fields returned to reduce memory usage
                 var fields = "name,progress,size,downloaded,dlspeed,eta,state,hash,added_on,num_seeds,num_leechs,ratio,save_path,category,content_path,ratio_limit,seeding_time_limit,seeding_time";
-                var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}{categoryFilter}", ct);
+                using var torrentsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/info?fields={Uri.EscapeDataString(fields)}{categoryFilter}", ct);
                 if (!torrentsResp.IsSuccessStatusCode) return items;
 
                 var json = await torrentsResp.Content.ReadAsStringAsync(ct);
@@ -876,7 +877,6 @@ namespace Listenarr.Api.Services.Adapters
                     var eta = torrent.TryGetValue("eta", out var etaEl) ? (int?)etaEl.GetInt32() : null;
                     var state = torrent.TryGetValue("state", out var stateEl) ? stateEl.GetString() ?? "unknown" : "unknown";
                     var hash = torrent.TryGetValue("hash", out var hashEl) ? hashEl.GetString() ?? string.Empty : string.Empty;
-                    var addedOn = torrent.TryGetValue("added_on", out var addedOnEl) ? addedOnEl.GetInt64() : 0;
                     var numSeeds = torrent.TryGetValue("num_seeds", out var numSeedsEl) ? (int?)numSeedsEl.GetInt32() : null;
                     var numLeechs = torrent.TryGetValue("num_leechs", out var numLeechsEl) ? (int?)numLeechsEl.GetInt32() : null;
                     var ratio = torrent.TryGetValue("ratio", out var ratioEl) ? (double?)ratioEl.GetDouble() : null;
@@ -1084,7 +1084,7 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                 });
 
-                var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+                using var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
                 if (!loginResp.IsSuccessStatusCode && loginResp.StatusCode != HttpStatusCode.Forbidden)
                 {
                     _logger.LogWarning("qBittorrent login failed for import resolution");
@@ -1092,7 +1092,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Query files API to determine base folder
-                var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={hash}", ct);
+                using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={hash}", ct);
                 if (!filesResp.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Failed to query torrent files for hash {Hash}", hash);
@@ -1101,7 +1101,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 var filesJson = await filesResp.Content.ReadAsStringAsync(ct);
                 var files = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filesJson);
-                
+
                 if (files == null || !files.Any())
                 {
                     _logger.LogDebug("No files found for torrent {Hash}", hash);
@@ -1109,7 +1109,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Get torrent properties to find save_path
-                var propsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/properties?hash={hash}", ct);
+                using var propsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/properties?hash={hash}", ct);
                 if (!propsResp.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Failed to query torrent properties for hash {Hash}", hash);
@@ -1119,7 +1119,7 @@ namespace Listenarr.Api.Services.Adapters
                 var propsJson = await propsResp.Content.ReadAsStringAsync(ct);
                 var props = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(propsJson);
                 var savePath = props?.TryGetValue("save_path", out var savePathEl) is true
-                    ? savePathEl.GetString() ?? string.Empty 
+                    ? savePathEl.GetString() ?? string.Empty
                     : string.Empty;
 
                 if (string.IsNullOrEmpty(savePath))
@@ -1207,7 +1207,7 @@ namespace Listenarr.Api.Services.Adapters
                     new KeyValuePair<string, string>("password", client.Password ?? string.Empty)
                 });
 
-                var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
+                using var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
                 if (!loginResp.IsSuccessStatusCode && loginResp.StatusCode != HttpStatusCode.Forbidden)
                 {
                     _logger.LogWarning("qBittorrent login failed for import resolution");
@@ -1215,7 +1215,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // ✅ Query files API to determine base folder
-                var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={hash}", ct);
+                using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={hash}", ct);
                 if (!filesResp.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Failed to query torrent files for hash {Hash}", hash);
@@ -1224,7 +1224,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 var filesJson = await filesResp.Content.ReadAsStringAsync(ct);
                 var files = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filesJson);
-                
+
                 if (files == null || !files.Any())
                 {
                     _logger.LogDebug("No files found for torrent {Hash}", hash);
@@ -1232,7 +1232,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Get torrent properties to find save_path
-                var propsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/properties?hash={hash}", ct);
+                using var propsResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/properties?hash={hash}", ct);
                 if (!propsResp.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Failed to query torrent properties for hash {Hash}", hash);
@@ -1242,7 +1242,7 @@ namespace Listenarr.Api.Services.Adapters
                 var propsJson = await propsResp.Content.ReadAsStringAsync(ct);
                 var props = JsonSerializer.Deserialize<Dictionary<string, JsonElement>>(propsJson);
                 var savePath = props?.TryGetValue("save_path", out var savePathEl) is true
-                    ? savePathEl.GetString() ?? string.Empty 
+                    ? savePathEl.GetString() ?? string.Empty
                     : string.Empty;
 
                 if (string.IsNullOrEmpty(savePath))

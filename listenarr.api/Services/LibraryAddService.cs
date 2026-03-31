@@ -129,12 +129,19 @@ namespace Listenarr.Api.Services
                 ExternalIdentifiers = new List<AudiobookExternalIdentifier>(),
                 Language = metadata.Language,
                 Runtime = metadata.Runtime,
+                Edition = metadata.Edition,
                 Version = metadata.Version,
                 Explicit = metadata.Explicit,
                 Abridged = metadata.Abridged,
                 Monitored = request.Monitored,
                 BasePath = string.IsNullOrWhiteSpace(request.DestinationPath) ? null : FileUtils.NormalizeStoredPath(request.DestinationPath)
             };
+
+            AudiobookSeriesMembershipHelper.ApplyToAudiobook(
+                audiobook,
+                metadata.SeriesMemberships,
+                metadata.Series,
+                ToStringOrFirst(metadata.SeriesNumber));
 
             SyncImportedIdentifiersFromLegacyFields(audiobook);
 

@@ -28,9 +28,8 @@ namespace Listenarr.Api.Services
         {
             var results = await _importService.ImportFilesFromDirectoryAsync(downloadId, audiobookId, files, settings);
 
-            foreach (var r in results.Where(x => x != null && x.Success && !string.IsNullOrWhiteSpace(x.FinalPath)).Select(x => x!))
+            foreach (var finalPath in results.Where(x => x != null && x.Success && !string.IsNullOrWhiteSpace(x.FinalPath)).Select(x => x!.FinalPath!))
             {
-                var finalPath = r.FinalPath!;
                 try
                 {
                     var tracked = await _downloadRepository.FindAsync(downloadId);

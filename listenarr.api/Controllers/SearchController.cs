@@ -101,15 +101,9 @@ namespace Listenarr.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(r.ImageUrl) && (r.ImageUrl.StartsWith("http://") || r.ImageUrl.StartsWith("https://")))
                     {
                         var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
-                        if (!string.IsNullOrWhiteSpace(downloaded))
-                        {
-                            r.ImageUrl = BuildApiImagePath(r.Asin);
-                        }
-                        else
-                        {
-                            // Let the client trigger an on-demand download by including the original URL as a query param
-                            r.ImageUrl = BuildApiImagePath(r.Asin, r.ImageUrl);
-                        }
+                        r.ImageUrl = !string.IsNullOrWhiteSpace(downloaded)
+                            ? BuildApiImagePath(r.Asin)
+                            : BuildApiImagePath(r.Asin, r.ImageUrl);
                     }
                     // If no external URL was present, map to API endpoint if ASIN present
                     else if (!string.IsNullOrWhiteSpace(r.Asin))
@@ -118,7 +112,7 @@ namespace Listenarr.Api.Controllers
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogWarning(ex, "Failed to normalize image for search result ASIN {Asin}", r?.Asin);
+                    _logger.LogWarning(ex, "Failed to normalize image for search result ASIN {Asin}", r.Asin);
                 }
             }
         }
@@ -207,14 +201,9 @@ namespace Listenarr.Api.Controllers
                                 if (!string.IsNullOrWhiteSpace(r.ImageUrl) && (r.ImageUrl.StartsWith("http://") || r.ImageUrl.StartsWith("https://")))
                                 {
                                     var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(r.ImageUrl, r.Asin);
-                                    if (!string.IsNullOrWhiteSpace(downloaded))
-                                    {
-                                        r.ImageUrl = BuildApiImagePath(r.Asin);
-                                    }
-                                    else
-                                    {
-                                        r.ImageUrl = BuildApiImagePath(r.Asin, r.ImageUrl);
-                                    }
+                                    r.ImageUrl = !string.IsNullOrWhiteSpace(downloaded)
+                                        ? BuildApiImagePath(r.Asin)
+                                        : BuildApiImagePath(r.Asin, r.ImageUrl);
                                 }
                                 else if (!string.IsNullOrWhiteSpace(r.Asin))
                                 {
@@ -222,7 +211,7 @@ namespace Listenarr.Api.Controllers
                                 }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r?.Asin);
+                                _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r.Asin);
                             }
                         }
                     }
@@ -246,7 +235,7 @@ namespace Listenarr.Api.Controllers
                     {
                         if (!string.IsNullOrWhiteSpace(req.Isbn))
                         {
-                            var rawIsbn = Regex.Replace(req.Isbn ?? string.Empty, "[^0-9Xx]", string.Empty);
+                            var rawIsbn = Regex.Replace(req.Isbn, "[^0-9Xx]", string.Empty);
                             if (rawIsbn.Length == 10)
                             {
                                 var converted = ConvertIsbn10ToIsbn13(rawIsbn);
@@ -524,16 +513,10 @@ namespace Listenarr.Api.Controllers
                             var seriesFilter = req.Series.Trim();
                             var ci = System.Globalization.CultureInfo.InvariantCulture.CompareInfo;
                             const System.Globalization.CompareOptions diOpts = System.Globalization.CompareOptions.IgnoreCase | System.Globalization.CompareOptions.IgnoreNonSpace;
-                            List<MetadataSearchResult> filtered;
-                            if (System.Text.RegularExpressions.Regex.IsMatch(seriesFilter, @"^B0[A-Z0-9]{8,}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
-                            {
-                                filtered = results.Where(r => (!string.IsNullOrWhiteSpace(r.Series) && ci.IndexOf(r.Series, seriesFilter, diOpts) >= 0)
-                                                            || (!string.IsNullOrWhiteSpace(r.Asin) && string.Equals(r.Asin, seriesFilter, StringComparison.OrdinalIgnoreCase))).ToList();
-                            }
-                            else
-                            {
-                                filtered = results.Where(r => !string.IsNullOrWhiteSpace(r.Series) && ci.IndexOf(r.Series, seriesFilter, diOpts) >= 0).ToList();
-                            }
+                            var filtered = System.Text.RegularExpressions.Regex.IsMatch(seriesFilter, @"^B0[A-Z0-9]{8,}$", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+                                ? results.Where(r => (!string.IsNullOrWhiteSpace(r.Series) && ci.IndexOf(r.Series, seriesFilter, diOpts) >= 0)
+                                    || (!string.IsNullOrWhiteSpace(r.Asin) && string.Equals(r.Asin, seriesFilter, StringComparison.OrdinalIgnoreCase))).ToList()
+                                : results.Where(r => !string.IsNullOrWhiteSpace(r.Series) && ci.IndexOf(r.Series, seriesFilter, diOpts) >= 0).ToList();
 
                             results = filtered;
                         }
@@ -732,7 +715,9 @@ namespace Listenarr.Api.Controllers
                     releaseDate = aud.ReleaseDate ?? aud.PublishDate ?? md?.PublishedDate,
                     @explicit = aud.Explicit ?? false,
                     hasPdf = false,
-                    link = (string.IsNullOrWhiteSpace(md?.ProductUrl) ? null : md?.ProductUrl) ?? (!string.IsNullOrWhiteSpace(aud.Asin) ? $"https://www.audible.com/pd/{aud.Asin}" : null),
+                    link = !string.IsNullOrWhiteSpace(md?.ProductUrl)
+                        ? md.ProductUrl
+                        : !string.IsNullOrWhiteSpace(aud.Asin) ? $"https://www.audible.com/pd/{aud.Asin}" : null,
                     sku = aud.Sku,
                     skuGroup = (string?)null,
                     isListenable = !string.IsNullOrWhiteSpace(aud.Asin ?? md?.Asin),
@@ -811,7 +796,7 @@ namespace Listenarr.Api.Controllers
             }
             int mod = sum % 10;
             int check = (10 - mod) % 10;
-            return twelve + check.ToString();
+            return string.Concat(twelve, check);
         }
 
         private async Task EnsureCachedImagesForAudibleResultsAsync(List<AudibleSearchResult>? results)
@@ -859,7 +844,7 @@ namespace Listenarr.Api.Controllers
         /// <returns>Separated indexer and metadata results.</returns>
         [HttpGet]
         public async Task<ActionResult<List<SearchResult>>> Search(
-            [FromQuery] string query,
+            [FromQuery] string? query,
             [FromQuery] string? category = null,
             [FromQuery] List<string>? apiIds = null,
             [FromQuery] bool enrichedOnly = false,
@@ -876,16 +861,9 @@ namespace Listenarr.Api.Controllers
                     try
                     {
                         var qFromReq = HttpContext?.Request?.Query["query"].ToString();
-                        if (!string.IsNullOrWhiteSpace(qFromReq))
-                        {
-                            query = qFromReq;
-                        }
-                        else
-                        {
-                            query = query ?? string.Empty;
-                        }
+                        query = !string.IsNullOrWhiteSpace(qFromReq) ? qFromReq : string.Empty;
                     }
-                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { query = query ?? string.Empty; }
+                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { query = string.Empty; }
                 }
 
                 var searchResults = await _searchService.SearchAsync(query, category, apiIds, sortBy, sortDirection);
@@ -922,11 +900,7 @@ namespace Listenarr.Api.Controllers
 
                             var asin = r.Asin!;
 
-                            // Use a local copy of the service to make control-flow nullability obvious to the analyzer
-                            var svc = cacheService;
-                            if (svc == null) break; // defensive: shouldn't happen because of outer check
-
-                            var cached = await svc.GetCachedImagePathAsync(asin);
+                            var cached = await cacheService.GetCachedImagePathAsync(asin);
                             if (!string.IsNullOrWhiteSpace(cached))
                             {
                                 r.ImageUrl = BuildApiImagePath(asin);
@@ -939,7 +913,7 @@ namespace Listenarr.Api.Controllers
                                 var url = imageUrl!;
                                 if (url.StartsWith("http://") || url.StartsWith("https://"))
                                 {
-                                    var downloaded = await svc.DownloadAndCacheImageAsync(url, asin);
+                                    var downloaded = await cacheService.DownloadAndCacheImageAsync(url, asin);
                                     if (!string.IsNullOrWhiteSpace(downloaded))
                                     {
                                         r.ImageUrl = BuildApiImagePath(asin);
@@ -948,7 +922,7 @@ namespace Listenarr.Api.Controllers
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogWarning(ex, "Failed to ensure cached image for search result ASIN {Asin}", r?.Asin);
+                            _logger.LogWarning(ex, "Failed to ensure cached image for search result ASIN {Asin}", r.Asin);
                         }
                     }
                 }
@@ -1035,7 +1009,7 @@ namespace Listenarr.Api.Controllers
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r?.Asin);
+                            _logger.LogWarning(ex, "Failed to normalize image for metadata result ASIN {Asin}", r.Asin);
                         }
                     }
                 }

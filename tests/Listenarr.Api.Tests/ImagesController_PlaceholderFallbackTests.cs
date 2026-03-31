@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
@@ -31,7 +31,8 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.GetMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>()))
                 .ReturnsAsync((object?)null);
 
-            var audible = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            using var httpClientForAudible = new System.Net.Http.HttpClient();
+            var audible = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>());
             audible
                 .Setup(m => m.LookupAuthorAsync(identifier, It.IsAny<string>()))
                 .ReturnsAsync((AuthorLookupItem?)null);
@@ -51,7 +52,7 @@ namespace Listenarr.Api.Tests
             repo.Setup(r => r.GetByAsinAsync(identifier)).ReturnsAsync((Listenarr.Domain.Models.Audiobook?)null);
             repo.Setup(r => r.GetAuthorAsinByNameAsync(identifier)).ReturnsAsync((string?)null);
 
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr_test_contentroot_missing_placeholder");
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr_test_contentroot_missing_placeholder");
             Directory.CreateDirectory(tempRoot);
 
             var environment = new Mock<IWebHostEnvironment>();

@@ -81,7 +81,7 @@ namespace Listenarr.Api.Tests
                     return items;
                 }
             }
-            catch
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // swallow and return conservative default
             }
@@ -116,7 +116,7 @@ namespace Listenarr.Api.Tests
                     }
                 }
             }
-            catch
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // ignore and return empty
             }

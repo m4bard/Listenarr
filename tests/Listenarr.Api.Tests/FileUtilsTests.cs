@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Collections.Generic;
 using Xunit;
@@ -14,7 +14,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public void GetUniqueDestinationPath_ReturnsSameIfNotExists()
         {
-            var tmp = Path.Combine(Path.GetTempPath(), "fu-test-" + Guid.NewGuid().ToString() + ".txt");
+            var tmp = Path.Join(Path.GetTempPath(), $"fu-test-{Guid.NewGuid()}.txt");
             // Ensure it does not exist
             if (File.Exists(tmp)) File.Delete(tmp);
 
@@ -25,38 +25,38 @@ namespace Listenarr.Api.Tests
         [Fact]
         public void GetUniqueDestinationPath_AppendsSuffixWhenExists()
         {
-            var dir = Path.Combine(Path.GetTempPath(), "fu-dir-" + Guid.NewGuid());
+            var dir = Path.Join(Path.GetTempPath(), "fu-dir-" + Guid.NewGuid());
             Directory.CreateDirectory(dir);
-            var file = Path.Combine(dir, "file.txt");
+            var file = Path.Join(dir, "file.txt");
             File.WriteAllText(file, "x");
 
             var result = FileUtils.GetUniqueDestinationPath(file);
             Assert.NotEqual(file, result);
-            Assert.StartsWith(Path.Combine(dir, "file ("), result);
+            Assert.StartsWith(Path.Join(dir, "file ("), result);
 
             // cleanup
-            try { Directory.Delete(dir, true); } catch { }
+            try { Directory.Delete(dir, true); } catch (IOException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (UnauthorizedAccessException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
         }
 
         [Fact]
         public void GetUniqueDestinationPath_RespectsInMemoryUsedSet()
         {
-            var dir = Path.Combine(Path.GetTempPath(), "fu-dir-" + Guid.NewGuid());
+            var dir = Path.Join(Path.GetTempPath(), "fu-dir-" + Guid.NewGuid());
             Directory.CreateDirectory(dir);
-            var desired = Path.Combine(dir, "dup.mp3");
+            var desired = Path.Join(dir, "dup.mp3");
             var used = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { desired };
 
             var result = FileUtils.GetUniqueDestinationPath(desired, File.Exists, used);
             Assert.NotEqual(desired, result);
             Assert.Contains("dup (", result);
 
-            try { Directory.Delete(dir, true); } catch { }
+            try { Directory.Delete(dir, true); } catch (IOException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (UnauthorizedAccessException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
         }
 
         [Fact]
         public void GetUniqueDestinationPath_UsesCustomExistsPredicate()
         {
-            var tmp = Path.Combine(Path.GetTempPath(), "fu-test-" + Guid.NewGuid() + ".bin");
+            var tmp = Path.Join(Path.GetTempPath(), "fu-test-" + Guid.NewGuid() + ".bin");
             // pretend only the original path exists by using a predicate that returns true
             // only for the original desired path. This ensures the generator can find a
             // candidate that does not exist according to the predicate.
@@ -70,25 +70,25 @@ namespace Listenarr.Api.Tests
         [Fact]
         public void GetUniqueDestinationPath_LongName_AppendsSuffix()
         {
-            var dir = Path.Combine(Path.GetTempPath(), "fu-long-" + Guid.NewGuid());
+            var dir = Path.Join(Path.GetTempPath(), "fu-long-" + Guid.NewGuid());
             Directory.CreateDirectory(dir);
 
             // Create a long filename (but within typical filesystem limits)
             var longName = new string('a', 180) + ".mp3";
-            var path = Path.Combine(dir, longName);
+            var path = Path.Join(dir, longName);
             File.WriteAllText(path, "x");
 
             var result = FileUtils.GetUniqueDestinationPath(path);
             Assert.NotEqual(path, result);
             Assert.Contains(" (1)", result);
 
-            try { Directory.Delete(dir, true); } catch { }
+            try { Directory.Delete(dir, true); } catch (IOException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (UnauthorizedAccessException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
         }
 
         [Fact]
         public void GetUniqueDestinationPath_InvalidPredicate_ThrowsHandled_ReturnsOriginal()
         {
-            var tmp = Path.Combine(Path.GetTempPath(), "fu-test-ex" + Guid.NewGuid() + ".dat");
+            var tmp = Path.Join(Path.GetTempPath(), "fu-test-ex" + Guid.NewGuid() + ".dat");
             bool BadPredicate(string p) => throw new InvalidOperationException("boom");
 
             var result = FileUtils.GetUniqueDestinationPath(tmp, BadPredicate, null);
@@ -99,9 +99,9 @@ namespace Listenarr.Api.Tests
         [Fact]
         public void GetUniqueDestinationPath_ReadOnlyDirectory_AppendsSuffix()
         {
-            var dir = Path.Combine(Path.GetTempPath(), "fu-ro-" + Guid.NewGuid());
+            var dir = Path.Join(Path.GetTempPath(), "fu-ro-" + Guid.NewGuid());
             Directory.CreateDirectory(dir);
-            var file = Path.Combine(dir, "exists.mp3");
+            var file = Path.Join(dir, "exists.mp3");
             File.WriteAllText(file, "x");
 
             // Make directory read-only to simulate permission edge-case
@@ -117,8 +117,8 @@ namespace Listenarr.Api.Tests
             }
             finally
             {
-                try { dirInfo.Attributes = origAttr; } catch { }
-                try { Directory.Delete(dir, true); } catch { }
+                try { dirInfo.Attributes = origAttr; } catch (IOException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (UnauthorizedAccessException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
+                try { Directory.Delete(dir, true); } catch (IOException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (UnauthorizedAccessException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
             }
         }
 
@@ -132,11 +132,11 @@ namespace Listenarr.Api.Tests
                 return;
             }
 
-            var dir = Path.Combine(Path.GetTempPath(), "fu-acl-" + Guid.NewGuid());
+            var dir = Path.Join(Path.GetTempPath(), "fu-acl-" + Guid.NewGuid());
             Directory.CreateDirectory(dir);
-            var desired = Path.Combine(dir, "blocked.mp3");
+            var desired = Path.Join(dir, "blocked.mp3");
             // Create an existing file to force suffixing
-            var existing = Path.Combine(dir, "blocked.mp3");
+            var existing = Path.Join(dir, "blocked.mp3");
             File.WriteAllText(existing, "x");
 
             var dirInfo = new DirectoryInfo(dir);
@@ -174,8 +174,8 @@ namespace Listenarr.Api.Tests
             }
             finally
             {
-                try { dirInfo.SetAccessControl(originalSecurity); } catch { }
-                try { Directory.Delete(dir, true); } catch { }
+                try { dirInfo.SetAccessControl(originalSecurity); } catch (UnauthorizedAccessException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (PlatformNotSupportedException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (System.Security.SecurityException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
+                try { Directory.Delete(dir, true); } catch (IOException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (UnauthorizedAccessException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
             }
         }
 
@@ -183,31 +183,31 @@ namespace Listenarr.Api.Tests
         public void GetUniqueDestinationPath_BatchImport_HandleMultipleCollisions_WithUsedSet()
         {
             // Simulate batch import scenario: importing multiple files where multiple target the same destination
-            var dir = Path.Combine(Path.GetTempPath(), "fu-batch-" + Guid.NewGuid());
+            var dir = Path.Join(Path.GetTempPath(), "fu-batch-" + Guid.NewGuid());
             Directory.CreateDirectory(dir);
             var usedDestinations = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
             // First file imports to chapter.mp3
-            var file1 = Path.Combine(dir, "chapter.mp3");
+            var file1 = Path.Join(dir, "chapter.mp3");
             var result1 = FileUtils.GetUniqueDestinationPath(file1, File.Exists, usedDestinations);
             Assert.Equal(file1, result1); // Does not exist, no used, returns original
             usedDestinations.Add(result1);
 
             // Second file also wants chapter.mp3 - should get chapter (1).mp3 because first one is in usedDestinations
-            var file2 = Path.Combine(dir, "chapter.mp3");
+            var file2 = Path.Join(dir, "chapter.mp3");
             var result2 = FileUtils.GetUniqueDestinationPath(file2, File.Exists, usedDestinations);
             Assert.NotEqual(result1, result2);
             Assert.Contains(" (1)", result2);
             usedDestinations.Add(result2);
 
             // Third file also wants chapter.mp3 - should get chapter (2).mp3
-            var file3 = Path.Combine(dir, "chapter.mp3");
+            var file3 = Path.Join(dir, "chapter.mp3");
             var result3 = FileUtils.GetUniqueDestinationPath(file3, File.Exists, usedDestinations);
             Assert.NotEqual(result1, result3);
             Assert.NotEqual(result2, result3);
             Assert.Contains(" (2)", result3);
 
-            try { Directory.Delete(dir, true); } catch { }
+            try { Directory.Delete(dir, true); } catch (IOException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); } catch (UnauthorizedAccessException ex) { System.Diagnostics.Debug.WriteLine(ex.Message); }
         }
 
         [Fact]

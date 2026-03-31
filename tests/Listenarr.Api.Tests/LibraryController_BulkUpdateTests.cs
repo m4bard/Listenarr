@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -63,13 +63,15 @@ namespace Listenarr.Api.Tests
                 .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
                 .Returns((string pattern, Dictionary<string, object> vars, bool sanitize) =>
                 {
-                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
-                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Combine(author, title).Replace("\\", "/");
+                    vars.TryGetValue("Author", out var authorObj);
+                    vars.TryGetValue("Title", out var titleObj);
+                    var author = authorObj?.ToString() ?? "Unknown";
+                    var title = titleObj?.ToString() ?? "Unknown";
+                    return Path.Join(author, title).Replace("\\", "/");
                 });
 
             // Configuration service providing a FileNamingPattern (not strictly used by our mock but kept consistent)
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-bulk-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-bulk-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var mockConfigService = new Mock<IConfigurationService>();
@@ -142,7 +144,7 @@ namespace Listenarr.Api.Tests
             Assert.True(histories.Count >= 1);
 
             // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch { }
+            try { Directory.Delete(tempRoot, true); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
         }
     }
 }

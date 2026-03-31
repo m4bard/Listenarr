@@ -36,6 +36,7 @@ namespace Listenarr.Api.Models
         public string? PublishedDate { get; set; }
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
+        public AudiobookSeriesMembershipDto[]? SeriesMemberships { get; set; }
         public bool? Monitored { get; set; }
         public string? FilePath { get; set; }
         public long? FileSize { get; set; }
@@ -44,10 +45,21 @@ namespace Listenarr.Api.Models
         public string? ImageUrl { get; set; }
         public string? Quality { get; set; }
         public int? QualityProfileId { get; set; }
+        public string? Edition { get; set; }
         public string? Version { get; set; }
         public bool? Abridged { get; set; }
         public bool? Explicit { get; set; }
         public string? FilePathHash { get; set; }
         public bool? Wanted { get; set; }
+    }
+
+    public class AudiobookSeriesMembershipDto
+    {
+        public int Id { get; set; }
+        public string? SeriesName { get; set; }
+        public string? SeriesNumber { get; set; }
+        public string? SeriesAsin { get; set; }
+        public bool IsPrimary { get; set; }
+        public int SortOrder { get; set; }
     }
 }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
@@ -19,22 +19,22 @@ namespace Listenarr.Api.Tests
         public async Task GetImage_UsesRepoRoot_WhenEnvironmentContentRootPointsToBinOutput()
         {
             var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-images-controller-tests", Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-images-controller-tests", Guid.NewGuid().ToString("N"));
             const string identifier = "ZZTEST1234";
 
             try
             {
                 Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
 
-                var repoApiRoot = Path.Combine(tempRoot, "listenarr.api");
-                var binRoot = Path.Combine(repoApiRoot, "bin", "Debug", "net8.0");
-                Directory.CreateDirectory(Path.Combine(repoApiRoot, "config", "cache", "images", "authors"));
-                Directory.CreateDirectory(Path.Combine(repoApiRoot, "wwwroot"));
+                var repoApiRoot = Path.Join(tempRoot, "listenarr.api");
+                var binRoot = Path.Join(repoApiRoot, "bin", "Debug", "net8.0");
+                Directory.CreateDirectory(Path.Join(repoApiRoot, "config", "cache", "images", "authors"));
+                Directory.CreateDirectory(Path.Join(repoApiRoot, "wwwroot"));
                 Directory.CreateDirectory(binRoot);
-                File.WriteAllText(Path.Combine(repoApiRoot, "listenarr.api.csproj"), "<Project />");
+                File.WriteAllText(Path.Join(repoApiRoot, "listenarr.api.csproj"), "<Project />");
 
                 var relativePath = $"config/cache/images/authors/{identifier}.jpg";
-                var expectedPath = Path.Combine(repoApiRoot, "config", "cache", "images", "authors", $"{identifier}.jpg");
+                var expectedPath = Path.Join(repoApiRoot, "config", "cache", "images", "authors", $"{identifier}.jpg");
                 await File.WriteAllBytesAsync(expectedPath, new byte[] { 1, 2, 3, 4 });
 
                 var imageCache = new Mock<IImageCacheService>();
@@ -45,10 +45,11 @@ namespace Listenarr.Api.Tests
                 var env = new Mock<IWebHostEnvironment>();
                 env.SetupGet(environment => environment.ContentRootPath).Returns(binRoot);
 
+                using var httpClientForAudible = new System.Net.Http.HttpClient();
                 var controller = new ImagesController(
                     imageCache.Object,
                     Mock.Of<IAudiobookMetadataService>(),
-                    new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false }.Object,
+                    new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>()) { CallBase = false }.Object,
                     Mock.Of<IAudnexusService>(),
                     Mock.Of<IAudiobookRepository>(),
                     Mock.Of<ILogger<ImagesController>>(),

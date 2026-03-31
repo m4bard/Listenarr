@@ -38,7 +38,7 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create a temporary source file
-            var testFile = Path.Combine(Path.GetTempPath(), $"dl-naming-{Guid.NewGuid()}.mp3");
+            var testFile = Path.Join(Path.GetTempPath(), $"dl-naming-{Guid.NewGuid()}.mp3");
             await File.WriteAllTextAsync(testFile, "dummy content");
 
             var download = new Download
@@ -57,12 +57,12 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create the output directory that the code will use as fallback
-            var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "completed");
+            var outputDir = Path.Join(Directory.GetCurrentDirectory(), "completed");
             Directory.CreateDirectory(outputDir);
 
             // Create the expected subdirectory structure
-            var authorDir = Path.Combine(outputDir, "Jane Austen");
-            var seriesDir = Path.Combine(authorDir, "Pride and Prejudice");
+            var authorDir = Path.Join(outputDir, "Jane Austen");
+            var seriesDir = Path.Join(authorDir, "Pride and Prejudice");
             Directory.CreateDirectory(seriesDir);
 
             // Mock metadata service to return minimal metadata (so audiobook metadata must be used)
@@ -88,14 +88,13 @@ namespace Listenarr.Api.Tests
             services.AddSingleton(hubContextMock.Object);
 
             using var scope = _fixture.Provider.CreateScope();
-            var scopeFactory = scope.ServiceProvider.GetRequiredService<IServiceScopeFactory>();
 
             // Create DownloadService
             var repoMock = new Mock<IAudiobookRepository>();
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = outputDir, EnableMetadataProcessing = true, CompletedFileAction = "Move" });
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            var httpClient = new System.Net.Http.HttpClient();
+            using var httpClient = new System.Net.Http.HttpClient();
             var httpClientFactoryMock = new Mock<IHttpClientFactory>();
             httpClientFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
             var cacheMock = new Mock<IMemoryCache>();
@@ -163,7 +162,7 @@ namespace Listenarr.Api.Tests
                 if (File.Exists(testFile)) File.Delete(testFile);
                 if (Directory.Exists(outputDir)) Directory.Delete(outputDir, true);
             }
-            catch { /* Ignore cleanup errors */ }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException) { /* Ignore cleanup errors */ }
         }
     }
 }

@@ -292,6 +292,122 @@ describe('CollectionView', () => {
     expect(wrapper.text()).not.toContain('Project Hail Mary')
   })
 
+  it('shows other audiobooks in a narrator collection', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+    await router.push('/collection/narrator/Scott%20Brick')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 1,
+        title: 'Dune',
+        authors: ['Frank Herbert'],
+        narrators: ['Scott Brick'],
+        imageUrl: 'dune.jpg',
+        files: [],
+      },
+      {
+        id: 2,
+        title: 'Hyperion',
+        authors: ['Dan Simmons'],
+        narrators: ['George Guidall'],
+        imageUrl: 'hyperion.jpg',
+        files: [],
+      },
+      {
+        id: 3,
+        title: 'Children of Dune',
+        authors: ['Frank Herbert'],
+        narrators: ['Scott Brick', 'Cast'],
+        imageUrl: 'children.jpg',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const collectionCards = wrapper.findAll('.collection-card')
+    expect(collectionCards).toHaveLength(2)
+    expect(wrapper.text()).toContain('Dune')
+    expect(wrapper.text()).toContain('Children of Dune')
+    expect(wrapper.text()).not.toContain('Hyperion')
+  })
+
+  it('shows other audiobooks in a publisher collection', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [
+        { path: '/', name: 'home', component: { template: '<div />' } },
+        { path: '/collection/:type/:name', name: 'collection', component: CollectionView },
+      ],
+    })
+    await router.push('/collection/publisher/Penguin')
+    await router.isReady().catch(() => {})
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 1,
+        title: 'Book One',
+        authors: ['Author A'],
+        publisher: 'Penguin',
+        imageUrl: 'book-1.jpg',
+        files: [],
+      },
+      {
+        id: 2,
+        title: 'Book Two',
+        authors: ['Author B'],
+        publisher: 'HarperAudio',
+        imageUrl: 'book-2.jpg',
+        files: [],
+      },
+      {
+        id: 3,
+        title: 'Book Three',
+        authors: ['Author C'],
+        publisher: 'Penguin',
+        imageUrl: 'book-3.jpg',
+        files: [],
+      },
+    ] as unknown as import('@/types').Audiobook[]
+
+    store.fetchLibrary = vi.fn(async () => undefined)
+    const wrapper = mount(CollectionView, {
+      global: {
+        plugins: [pinia, router],
+        stubs: ['EditAudiobookModal', 'CustomSelect', 'AddLibraryModal'],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 0))
+
+    const collectionCards = wrapper.findAll('.collection-card')
+    expect(collectionCards).toHaveLength(2)
+    expect(wrapper.text()).toContain('Book One')
+    expect(wrapper.text()).toContain('Book Three')
+    expect(wrapper.text()).not.toContain('Book Two')
+  })
+
   it('shows toolbar on author collection detail page', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)

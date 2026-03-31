@@ -15,7 +15,8 @@ namespace Listenarr.Api.Tests
         {
             // Arrange
             var mockSearch = new Mock<ISearchService>();
-            var audibleMock = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            using var httpClientForAudible = new System.Net.Http.HttpClient();
+            var audibleMock = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>());
             var audnexusMock = new Mock<IAudnexusService>();
             var logger = Mock.Of<ILogger<AudiobookMetadataService>>();
 

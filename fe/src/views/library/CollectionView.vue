@@ -251,6 +251,10 @@
           <PhPencil />
           Edit Selected
         </button>
+        <button v-if="selectedCount > 0" class="toolbar-btn" @click="showOrganize">
+          <PhFolderOpen />
+          Organize Selected
+        </button>
         <button v-if="selectedCount > 0" class="toolbar-btn delete-btn" @click="confirmBulkDelete">
           <PhTrash />
           Delete Selected ({{ selectedCount }})
@@ -652,6 +656,13 @@
       @saved="handleBulkEditSaved"
     />
 
+    <RenamePreviewModal
+      :visible="showOrganizeModal"
+      :audiobook-ids="organizeAudiobookIds"
+      @close="closeOrganize"
+      @done="handleOrganizeDone"
+    />
+
     <EditAudiobookModal
       v-if="editingAudiobook"
       :isOpen="true"
@@ -744,6 +755,7 @@ import {
   PhEyeSlash,
   PhPlus,
   PhGlobe,
+  PhFolderOpen,
 } from '@phosphor-icons/vue'
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
@@ -754,6 +766,7 @@ import { useToast } from '@/services/toastService'
 import EditAudiobookModal from '@/components/domain/audiobook/EditAudiobookModal.vue'
 import AddLibraryModal from '@/components/domain/audiobook/AddLibraryModal.vue'
 import BulkEditModal from '@/components/domain/collection/BulkEditModal.vue'
+import RenamePreviewModal from '@/components/domain/organize/RenamePreviewModal.vue'
 import DeleteConfirmationModal from '@/components/feedback/DeleteConfirmationModal.vue'
 import { showConfirm } from '@/composables/useConfirm'
 import { getPlaceholderUrl } from '@/utils/placeholder'
@@ -815,6 +828,8 @@ const name = computed(() => decodeURIComponent(route.params.name as string))
 const isAuthorCollection = computed(() => type.value === 'author')
 const isSeriesCollection = computed(() => type.value === 'series')
 const isGenreCollection = computed(() => type.value === 'genre')
+const isNarratorCollection = computed(() => type.value === 'narrator')
+const isPublisherCollection = computed(() => type.value === 'publisher')
 const isMetadataCollection = computed(() => isAuthorCollection.value || isSeriesCollection.value)
 
 const viewMode = ref<'grid' | 'list'>('grid')
@@ -940,6 +955,16 @@ function matchesCurrentCollection(book: Audiobook): boolean {
     return (book.genres || []).some(
       (genre) => normalizeCollectionText(genre) === normalizeCollectionText(name.value),
     )
+  }
+
+  if (isNarratorCollection.value) {
+    return (book.narrators || []).some(
+      (narrator) => normalizeCollectionText(narrator) === normalizeCollectionText(name.value),
+    )
+  }
+
+  if (isPublisherCollection.value) {
+    return normalizeCollectionText(book.publisher) === normalizeCollectionText(name.value)
   }
 
   return false
@@ -1376,6 +1401,8 @@ const toggleItemDetails = () => {
 }
 
 const showBulkEditModal = ref(false)
+const showOrganizeModal = ref(false)
+const organizeAudiobookIds = ref<number[]>([])
 const deleting = ref(false)
 const showDeleteDialog = ref(false)
 const deleteTarget = ref<Audiobook | null>(null)
@@ -1389,6 +1416,21 @@ function showBulkEdit() {
 
 function closeBulkEdit() {
   showBulkEditModal.value = false
+}
+
+function showOrganize() {
+  organizeAudiobookIds.value = Array.from(selectedIdsForView.value)
+  showOrganizeModal.value = true
+}
+
+function closeOrganize() {
+  showOrganizeModal.value = false
+}
+
+async function handleOrganizeDone() {
+  showOrganizeModal.value = false
+  await libraryStore.fetchLibrary()
+  libraryStore.clearSelection()
 }
 
 async function loadAuthorCatalog(refresh = false): Promise<AuthorCatalogResponse | null> {

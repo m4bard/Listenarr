@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.AccessControl;
@@ -98,15 +99,16 @@ namespace Listenarr.Api.Services
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) && _options.EnableRobocopy && _processRunner != null)
                     {
                         _logger.LogWarning("Attempting robocopy fallback for directory move: {Source} -> {Dest}", sourceDir, destDir);
-                        var startInfo = new ProcessStartInfo
-                        {
-                            FileName = "robocopy",
-                            Arguments = $"\"{sourceDir}\" \"{destDir}\" /MOVE /E /NFL /NDL /NJH /NJS /NP",
-                            CreateNoWindow = true,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            UseShellExecute = false
-                        };
+                        var startInfo = CreateRobocopyStartInfo(
+                            sourceDir,
+                            destDir,
+                            "/MOVE",
+                            "/E",
+                            "/NFL",
+                            "/NDL",
+                            "/NJH",
+                            "/NJS",
+                            "/NP");
 
                         var pr = await _processRunner.RunAsync(startInfo, _options.RobocopyTimeoutMs);
                         if (!pr.TimedOut && pr.ExitCode <= 7 && pr.ExitCode >= 0)
@@ -196,15 +198,17 @@ namespace Listenarr.Api.Services
                         var srcDir = Path.GetDirectoryName(sourceFile) ?? string.Empty;
                         var dstDir = Path.GetDirectoryName(destFile) ?? string.Empty;
                         var fileName = Path.GetFileName(sourceFile);
-                        var startInfo = new ProcessStartInfo
-                        {
-                            FileName = "robocopy",
-                            Arguments = $"\"{srcDir}\" \"{dstDir}\" {fileName} /MOV /E /NFL /NDL /NJH /NJS /NP",
-                            CreateNoWindow = true,
-                            RedirectStandardOutput = true,
-                            RedirectStandardError = true,
-                            UseShellExecute = false
-                        };
+                        var startInfo = CreateRobocopyStartInfo(
+                            srcDir,
+                            dstDir,
+                            fileName,
+                            "/MOV",
+                            "/E",
+                            "/NFL",
+                            "/NDL",
+                            "/NJH",
+                            "/NJS",
+                            "/NP");
 
                         var pr = await _processRunner.RunAsync(startInfo, _options.RobocopyTimeoutMs);
                         if (!pr.TimedOut && pr.ExitCode <= 7 && pr.ExitCode >= 0)
@@ -269,13 +273,11 @@ namespace Listenarr.Api.Services
                 }
 
                 // Try creating hardlink using P/Invoke
-                bool success = false;
                 try
                 {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        success = CreateHardLink(destFile, sourceFile, IntPtr.Zero);
-                        if (!success)
+                        if (!CreateHardLink(destFile, sourceFile, IntPtr.Zero))
                         {
                             var error = Marshal.GetLastWin32Error();
                             throw new IOException($"CreateHardLink failed with error code {error}");
@@ -290,7 +292,6 @@ namespace Listenarr.Api.Services
                             var error = Marshal.GetLastWin32Error();
                             throw new IOException($"link() failed with error code {error}");
                         }
-                        success = true;
                     }
 
                     _logger.LogInformation("Hardlinked file: {Source} -> {Dest}", sourceFile, destFile);
@@ -324,13 +325,13 @@ namespace Listenarr.Api.Services
             Directory.CreateDirectory(dst);
             foreach (var dir in Directory.GetDirectories(src, "*", SearchOption.TopDirectoryOnly))
             {
-                var sub = Path.Combine(dst, Path.GetFileName(dir));
+                var sub = Path.Join(dst, Path.GetFileName(dir));
                 CopyDirRecursive(dir, sub);
             }
 
             foreach (var file in Directory.GetFiles(src, "*.*", SearchOption.TopDirectoryOnly))
             {
-                var destFile = Path.Combine(dst, Path.GetFileName(file));
+                var destFile = Path.Join(dst, Path.GetFileName(file));
                 File.Copy(file, destFile, true);
             }
         }
@@ -341,36 +342,24 @@ namespace Listenarr.Api.Services
 
             if (!_options.EnableRobocopy) return null;
 
-            // Ensure paths are quoted
-            var args = new System.Text.StringBuilder();
-            args.Append('"').Append(sourceDir).Append('"');
-            args.Append(' ');
-            args.Append('"').Append(destDir).Append('"');
+            var args = new List<string> { sourceDir, destDir };
 
             if (!string.IsNullOrWhiteSpace(filePattern))
             {
-                args.Append(' ').Append(filePattern);
+                args.Add(filePattern);
             }
 
             // Use /MOV for files or /MOVE for directories to move and delete source
             if (move)
             {
                 // For directories, /MOVE is appropriate; for file pattern present, /MOV
-                args.Append(' ').Append(string.IsNullOrWhiteSpace(filePattern) ? "/MOVE" : "/MOV");
+                args.Add(string.IsNullOrWhiteSpace(filePattern) ? "/MOVE" : "/MOV");
             }
 
             // Mirror recursion for directories
-            args.Append(" /E /NFL /NDL /NJH /NJS /NP");
+            args.AddRange(new[] { "/E", "/NFL", "/NDL", "/NJH", "/NJS", "/NP" });
 
-            var startInfo = new ProcessStartInfo
-            {
-                FileName = "robocopy",
-                Arguments = args.ToString(),
-                CreateNoWindow = true,
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true
-            };
+            var startInfo = CreateRobocopyStartInfo(args.ToArray());
 
             try
             {
@@ -405,6 +394,26 @@ namespace Listenarr.Api.Services
             if (s.Length <= max) return s;
             return s.Substring(0, max) + "...";
         }
+
+        private static ProcessStartInfo CreateRobocopyStartInfo(params string[] arguments)
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = "robocopy",
+                CreateNoWindow = true,
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true
+            };
+
+            foreach (var argument in arguments.Where(argument => !string.IsNullOrWhiteSpace(argument)))
+            {
+                startInfo.ArgumentList.Add(argument);
+            }
+
+            return startInfo;
+        }
     }
 }
+
 

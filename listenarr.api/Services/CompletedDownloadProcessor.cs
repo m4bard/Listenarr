@@ -113,7 +113,7 @@ namespace Listenarr.Api.Services
                 }
 
                 var importToastSent = false;
-                ApplicationSettings settings = new ApplicationSettings();
+                ApplicationSettings settings;
                 try
                 {
                     settings = await _configurationService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
@@ -951,11 +951,10 @@ namespace Listenarr.Api.Services
                                             if (!importToastSent)
                                             {
                                                 await toastService.PublishToastAsync(
-                                                    "success", 
-                                                    "Import Complete", 
+                                                    "success",
+                                                    "Import Complete",
                                                     message,
                                                     timeoutMs: 5000); // Auto-dismiss after 5 seconds
-                                                importToastSent = true;
                                                 _logger.LogDebug("Sent toast notification for imported download {DownloadId}", downloadId);
                                             }
                                         }

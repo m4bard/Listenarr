@@ -388,7 +388,7 @@ namespace Listenarr.Domain.Models
             if (!string.IsNullOrWhiteSpace(result.Category))
             {
                 // Keep a simple category object with name
-                dto.Categories.Add(new { id = 0, name = result.Category ?? string.Empty, subCategories = new object[0] });
+                dto.Categories.Add(new { id = 0, name = result.Category, subCategories = new object[0] });
             }
 
             return dto;

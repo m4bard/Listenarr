@@ -79,31 +79,35 @@ namespace Listenarr.Api.Tests
                                                 if (root.TryGetProperty("history", out var history) && history.TryGetProperty("slots", out var slots) && slots.ValueKind == JsonValueKind.Array)
                                                 {
                                                     var names = new List<string>();
-                                                    foreach (var slot in slots.EnumerateArray())
-                                                    {
-                                                        var name = slot.TryGetProperty("name", out var nm) ? nm.GetString() ?? string.Empty : string.Empty;
-                                                        if (!string.IsNullOrEmpty(name)) names.Add(name);
-                                                    }
+                                                    names.AddRange(slots.EnumerateArray()
+                                                        .Select(slot => slot.TryGetProperty("name", out var nm) ? nm.GetString() ?? string.Empty : string.Empty)
+                                                        .Where(name => !string.IsNullOrEmpty(name)));
 
-                                                    foreach (var d in orphaned)
-                                                    {
-                                                        if (!string.IsNullOrEmpty(d.Title) && names.Any(n => NormalizeTitle(n).Contains(NormalizeTitle(d.Title))))
-                                                        {
-                                                            try { _metrics.Increment("download.purge.skipped.history.title_match"); } catch { }
-                                                        }
-                                                    }
+                                                    var matchCount = orphaned.Count(d => !string.IsNullOrEmpty(d.Title) && names.Any(n => NormalizeTitle(n).Contains(NormalizeTitle(d.Title!))));
+                                                    for (var i = 0; i < matchCount; i++)
+                                                        _metrics.Increment("download.purge.skipped.history.title_match");
                                                 }
                                             }
-                                            catch { }
+                                            catch (JsonException ex)
+                                            {
+                                                _logger?.LogDebug(ex, "TestDownloadQueueService: failed to parse SAB history payload");
+                                            }
                                         }
                                     }
                                 }
                             }
-                            catch { }
+                            catch (HttpRequestException ex)
+                            {
+                                _logger?.LogDebug(ex, "TestDownloadQueueService: failed to fetch SAB history");
+                            }
+                            catch (TaskCanceledException ex)
+                            {
+                                _logger?.LogDebug(ex, "TestDownloadQueueService: SAB history fetch timed out");
+                            }
                         }
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     _logger?.LogDebug(ex, "TestDownloadQueueService: client fetch failed");
                 }

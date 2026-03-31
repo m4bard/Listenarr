@@ -54,25 +54,25 @@ namespace Listenarr.Api.Services.Scoring
             string? normalizedQuality = NormalizeToken(searchResult.Quality);
 
             // Instant rejects: forbidden words
-            foreach (var forbidden in profile.MustNotContain)
+            var forbidden = profile.MustNotContain.FirstOrDefault(word =>
+                !string.IsNullOrEmpty(word) &&
+                searchResult.Title.Contains(word, StringComparison.OrdinalIgnoreCase));
+            if (forbidden != null)
             {
-                if (!string.IsNullOrEmpty(forbidden) && searchResult.Title.Contains(forbidden, StringComparison.OrdinalIgnoreCase))
-                {
-                    score.RejectionReasons.Add($"Contains forbidden word: '{forbidden}'");
-                    score.TotalScore = -1;
-                    return score;
-                }
+                score.RejectionReasons.Add($"Contains forbidden word: '{forbidden}'");
+                score.TotalScore = -1;
+                return score;
             }
 
             // Required words
-            foreach (var required in profile.MustContain)
+            var missingRequired = profile.MustContain.FirstOrDefault(required =>
+                !string.IsNullOrEmpty(required) &&
+                !searchResult.Title.Contains(required, StringComparison.OrdinalIgnoreCase));
+            if (missingRequired != null)
             {
-                if (!string.IsNullOrEmpty(required) && !searchResult.Title.Contains(required, StringComparison.OrdinalIgnoreCase))
-                {
-                    score.RejectionReasons.Add($"Missing required word: '{required}'");
-                    score.TotalScore = -1;
-                    return score;
-                }
+                score.RejectionReasons.Add($"Missing required word: '{missingRequired}'");
+                score.TotalScore = -1;
+                return score;
             }
 
             // Detect NZB/Usenet more broadly
@@ -238,20 +238,15 @@ namespace Listenarr.Api.Services.Scoring
                     var qualityLower = (normalizedQuality ?? string.Empty).ToLower();
                     var urlLower = (searchResult.TorrentUrl ?? searchResult.Source ?? string.Empty).ToLower();
 
-                    var matched = false;
-                    foreach (var f in profile.PreferredFormats)
+                    if ((profile.PreferredFormats ?? new List<string>())
+                        .Where(format => !string.IsNullOrWhiteSpace(format))
+                        .Select(format => format.ToLower().Trim())
+                        .Any(token => fmtLower.Contains(token) || qualityLower.Contains(token) || urlLower.Contains("." + token) || urlLower.Contains(token) || titleLower.Contains(token)))
                     {
-                        if (string.IsNullOrWhiteSpace(f)) continue;
-                        var token = f.ToLower().Trim();
-                        if (fmtLower.Contains(token) || qualityLower.Contains(token) || urlLower.Contains("." + token) || urlLower.Contains(token) || titleLower.Contains(token))
-                        {
-                            matched = true;
-                            score.ScoreBreakdown["FormatMatchedInFormat"] = 1;
-                            score.TotalScore += 1;
-                            break;
-                        }
+                        score.ScoreBreakdown["FormatMatchedInFormat"] = 1;
+                        score.TotalScore += 1;
                     }
-                    if (!matched)
+                    else
                     {
                         score.TotalScore += -12;
                         score.ScoreBreakdown["FormatMismatch"] = -12;
@@ -286,10 +281,12 @@ namespace Listenarr.Api.Services.Scoring
                         var allowed = profile.Qualities.Where(q => q.Allowed).Select(q => (q.Quality ?? string.Empty).ToLower()).ToList();
                         if (profile.PreferredFormats != null && profile.PreferredFormats.Count > 0)
                         {
-                            foreach (var fmt in profile.PreferredFormats)
+                            foreach (var f in profile.PreferredFormats
+                                .Where(format => !string.IsNullOrWhiteSpace(format))
+                                .Select(format => format.Trim().ToLower())
+                                .Where(format => !allowed.Contains(format)))
                             {
-                                var f = (fmt ?? string.Empty).Trim().ToLower();
-                                if (!string.IsNullOrEmpty(f) && !allowed.Contains(f)) allowed.Add(f);
+                                allowed.Add(f);
                             }
                         }
 
@@ -307,11 +304,9 @@ namespace Listenarr.Api.Services.Scoring
             // Preferred words bonus
             if (profile.PreferredWords != null && profile.PreferredWords.Count > 0)
             {
-                var bonus = 0;
-                foreach (var w in profile.PreferredWords)
-                {
-                    if (!string.IsNullOrWhiteSpace(w) && (searchResult.Title ?? string.Empty).Contains(w, StringComparison.OrdinalIgnoreCase)) bonus += 5;
-                }
+                var bonus = profile.PreferredWords
+                    .Where(word => !string.IsNullOrWhiteSpace(word))
+                    .Count(word => (searchResult.Title ?? string.Empty).Contains(word, StringComparison.OrdinalIgnoreCase)) * 5;
                 if (bonus != 0)
                 {
                     score.TotalScore += bonus;
@@ -384,21 +379,17 @@ namespace Listenarr.Api.Services.Scoring
         private static string? DetectFormatFromTitle(string titleLower, List<string>? preferredFormats)
         {
             if (preferredFormats == null || preferredFormats.Count == 0 || string.IsNullOrEmpty(titleLower)) return null;
-            foreach (var f in preferredFormats)
-            {
-                if (string.IsNullOrWhiteSpace(f)) continue;
-                var token = f.ToLower().Trim();
-                if (titleLower.Contains(token) || titleLower.Contains("[" + token + "]") || titleLower.Contains("(" + token + ")") || titleLower.Contains("." + token)) return token;
-            }
-            return null;
+            return preferredFormats
+                .Where(format => !string.IsNullOrWhiteSpace(format))
+                .Select(format => format.ToLower().Trim())
+                .FirstOrDefault(token => titleLower.Contains(token) || titleLower.Contains("[" + token + "]") || titleLower.Contains("(" + token + ")") || titleLower.Contains("." + token));
         }
 
         private static string? DetectLanguageFromTitle(string titleLower, List<string>? preferredLanguages)
         {
             if (preferredLanguages == null || preferredLanguages.Count == 0 || string.IsNullOrEmpty(titleLower)) return null;
-            foreach (var lang in preferredLanguages)
+            foreach (var lang in preferredLanguages.Where(language => !string.IsNullOrWhiteSpace(language)))
             {
-                if (string.IsNullOrWhiteSpace(lang)) continue;
                 var token = lang.ToLower().Trim();
                 if (titleLower.Contains(token) || titleLower.Contains("[" + token + "]") || titleLower.Contains("(" + token + ")") || titleLower.Contains(" " + token + " "))
                 {

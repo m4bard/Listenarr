@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -101,7 +101,7 @@ namespace Listenarr.Api.Controllers
             }
 
             // Validate identifier to prevent path traversal or overly long values.
-            // Identifiers should be simple ASINs, numeric IDs or author names—disallow path separators.
+            // Identifiers should be simple ASINs, numeric IDs or author namesâ€”disallow path separators.
             if (identifier.IndexOfAny(new char[] { '\\', '/', '\0' }) >= 0 || identifier.Length > 256)
             {
                 _logger.LogWarning("Rejected invalid identifier: {Identifier}", identifier);
@@ -142,8 +142,8 @@ namespace Listenarr.Api.Controllers
                     try
                     {
                         var preNormalized = relativePath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-                        if (preNormalized.IndexOf(Path.Combine("cache", "images", "temp"), StringComparison.OrdinalIgnoreCase) >= 0 ||
-                            preNormalized.IndexOf(Path.Combine("config", "cache", "images", "temp"), StringComparison.OrdinalIgnoreCase) >= 0)
+                        if (preNormalized.IndexOf(Path.Join("cache", "images", "temp"), StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            preNormalized.IndexOf(Path.Join("config", "cache", "images", "temp"), StringComparison.OrdinalIgnoreCase) >= 0)
                         {
                             var book = await _audiobookRepository.GetByAsinAsync(identifier);
                             if (book != null)
@@ -164,7 +164,6 @@ namespace Listenarr.Api.Controllers
 
                 // Track whether we currently have a valid image path. Recompute after
                 // validation/moves because `relativePath` may be nullified or replaced.
-                bool hasValidImagePath = !string.IsNullOrWhiteSpace(relativePath);
 
                 // Sanitize/validate the returned relative path to ensure it points inside
                 // known image directories. Treat any unexpected location as not-found.
@@ -231,7 +230,7 @@ namespace Listenarr.Api.Controllers
                 {
                     var normalizedRelative = relativePath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
                     _logger.LogDebug("ImagesController: normalizedRelative for {Identifier}: {Normalized}", identifier, normalizedRelative);
-                    if (!movedAttempted && normalizedRelative.Contains(Path.Combine("cache", "images", "temp")))
+                    if (!movedAttempted && normalizedRelative.Contains(Path.Join("cache", "images", "temp")))
                     {
                     try
                     {
@@ -295,7 +294,7 @@ namespace Listenarr.Api.Controllers
 
                 }
 
-                hasValidImagePath = !string.IsNullOrWhiteSpace(relativePath);
+                var hasValidImagePath = !string.IsNullOrWhiteSpace(relativePath);
                 var hasRequestedImageUrl = !string.IsNullOrWhiteSpace(url);
                 if (!hasValidImagePath && !hasRequestedImageUrl)
                 {
@@ -1317,5 +1316,6 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
+
 
 

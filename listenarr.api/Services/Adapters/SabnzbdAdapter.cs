@@ -52,7 +52,6 @@ namespace Listenarr.Api.Services.Adapters
                 var url = $"{baseUrl}?mode=version&output=json&apikey={Uri.EscapeDataString(apiKey)}";
                 var http = _httpFactory.CreateClient("DownloadClient");
                 var resp = await http.GetAsync(url, ct);
-                var txt = await resp.Content.ReadAsStringAsync(ct);
                 if (!resp.IsSuccessStatusCode)
                 {
                     // Map common statuses to simple, actionable messages
@@ -361,7 +360,6 @@ namespace Listenarr.Api.Services.Adapters
 
                         var timeLeft = slot.TryGetProperty("timeleft", out var time) ? time.GetString() ?? "0:00:00" : "0:00:00";
                         var category = slot.TryGetProperty("cat", out var cat) ? cat.GetString() ?? "" : "";
-                        var priority = slot.TryGetProperty("priority", out var pri) ? pri.GetString() ?? "" : "";
 
                         if (!DownloadClientCategoryFilter.Matches(configuredCategory, category))
                         {
@@ -654,7 +652,6 @@ namespace Listenarr.Api.Services.Adapters
 
                         var sizeMB = slot.TryGetProperty("mb", out var mb) ? ParseNumericValue(mb) : 0;
                         var mbLeft = slot.TryGetProperty("mbleft", out var left) ? ParseNumericValue(left) : 0;
-                        var downloadedMB = sizeMB - mbLeft;
                         var percentage = slot.TryGetProperty("percentage", out var pct) ? ParseNumericValue(pct) : 0;
 
                         var timeLeft = slot.TryGetProperty("timeleft", out var time) ? time.GetString() ?? "0:00:00" : "0:00:00";

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
@@ -29,9 +29,9 @@ namespace Listenarr.Api.Tests
             var resolvedPath = Path.GetFullPath(
                 Path.IsPathRooted(configuredPath!)
                     ? configuredPath!
-                    : Path.Combine(env.ContentRootPath, configuredPath!));
+                    : Path.Join(env.ContentRootPath, configuredPath!));
 
-            var repoDbPath = Path.GetFullPath(Path.Combine(env.ContentRootPath, "config", "database", "listenarr.db"));
+            var repoDbPath = Path.GetFullPath(Path.Join(env.ContentRootPath, "config", "database", "listenarr.db"));
             Assert.False(
                 string.Equals(resolvedPath, repoDbPath, StringComparison.OrdinalIgnoreCase),
                 $"Test host resolved sqlite path to repo DB: {resolvedPath}");

@@ -325,9 +325,9 @@ namespace Listenarr.Api.Tests
                 .Where(r => r.Success && !string.IsNullOrWhiteSpace(r.FinalPath) && !string.IsNullOrWhiteSpace(r.SourcePath))
                 .ToDictionary(r => r.SourcePath!, r => r.FinalPath!, StringComparer.OrdinalIgnoreCase);
 
-            Assert.Equal(Path.Combine(outputDir, "Ordered Download-01.mp3"), mapped[part1]);
-            Assert.Equal(Path.Combine(outputDir, "Ordered Download-02.mp3"), mapped[part2]);
-            Assert.Equal(Path.Combine(outputDir, "Ordered Download-10.mp3"), mapped[part10]);
+            Assert.Equal(Path.Join(outputDir, "Ordered Download-01.mp3"), mapped[part1]);
+            Assert.Equal(Path.Join(outputDir, "Ordered Download-02.mp3"), mapped[part2]);
+            Assert.Equal(Path.Join(outputDir, "Ordered Download-10.mp3"), mapped[part10]);
             Assert.Equal("one", await File.ReadAllTextAsync(mapped[part1]));
             Assert.Equal("two", await File.ReadAllTextAsync(mapped[part2]));
             Assert.Equal("ten", await File.ReadAllTextAsync(mapped[part10]));
@@ -413,7 +413,6 @@ namespace Listenarr.Api.Tests
             services.AddMemoryCache();
             services.AddSingleton(memoryCache);
             using var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             // Mocks for other constructor dependencies
             var repoMock = new Mock<IAudiobookRepository>();
@@ -454,7 +453,7 @@ namespace Listenarr.Api.Tests
             var downloadService = provider2.GetRequiredService<DownloadService>();
 
             // Act - call GetQueueAsync which runs the purge path
-            var result = await downloadService.GetQueueAsync();
+            await downloadService.GetQueueAsync();
 
             // Assert: the DB download should still exist (not purged) because SABnzbd history contained the matching entry
             using (var scope = provider.CreateScope())

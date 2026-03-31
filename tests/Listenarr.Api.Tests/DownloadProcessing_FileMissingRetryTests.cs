@@ -86,7 +86,7 @@ namespace Listenarr.Api.Tests
             var job = await queueService.GetJobAsync(jobId);
 
             // Delete the source to simulate disappearance before processing
-            try { File.Delete(sourceFile); } catch { }
+            try { File.Delete(sourceFile); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
 
             // Create the background service instance (no longer needs importItemResolution in constructor)
             var svc = new DownloadProcessingBackgroundService(scopeFactory, loggerMock.Object, metricsMock.Object);

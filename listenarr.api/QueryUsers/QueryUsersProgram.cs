@@ -1,4 +1,4 @@
-// See https://aka.ms/new-console-template for more information
+﻿// See https://aka.ms/new-console-template for more information
 using System;
 using Microsoft.Data.Sqlite;
 using Serilog;
@@ -31,7 +31,7 @@ static class QueryUsersProgram
         {
             // Path to the application's SQLite database (same as used by the API)
             // The API config uses: Data Source=config/database/listenarr.db
-            string dbPath = Path.Combine(Directory.GetCurrentDirectory(), "config", "database", "listenarr.db");
+            string dbPath = Path.Join(Directory.GetCurrentDirectory(), "config", "database", "listenarr.db");
             Log.Information("Database path: {DbPath}", dbPath);
 
             using var connection = new SqliteConnection($"Data Source={dbPath}");
@@ -66,4 +66,5 @@ static class QueryUsersProgram
         }
     }
 }
+
 

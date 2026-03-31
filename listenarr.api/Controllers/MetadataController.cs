@@ -379,7 +379,14 @@ namespace Listenarr.Api.Controllers
                     resolvedImage = audnexusImage;
                 }
 
-                if (resolvedName == null)
+                var hasResolvedAuthorIdentity =
+                    !string.IsNullOrWhiteSpace(resolvedAsin) ||
+                    !string.IsNullOrWhiteSpace(authorDetails?.Name) ||
+                    !string.IsNullOrWhiteSpace(info?.Name) ||
+                    !string.IsNullOrWhiteSpace(audnexusAuthor?.Name) ||
+                    !string.IsNullOrWhiteSpace(audnexusSearchAuthor?.Name);
+
+                if (!hasResolvedAuthorIdentity)
                 {
                     _cache.Set(cacheKey, new AuthorLookupCacheEntry
                     {
@@ -389,6 +396,13 @@ namespace Listenarr.Api.Controllers
 
                     return NotFound("Author not found");
                 }
+
+                resolvedName ??=
+                    authorDetails?.Name ??
+                    info?.Name ??
+                    audnexusAuthor?.Name ??
+                    audnexusSearchAuthor?.Name ??
+                    normalizedName;
 
                 try
                 {

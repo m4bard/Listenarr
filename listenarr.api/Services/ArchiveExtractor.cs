@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -32,7 +32,7 @@ namespace Listenarr.Api.Services
                 if (!File.Exists(archivePath)) return null;
                 if (!IsArchive(archivePath)) return null;
 
-                var tmp = Path.Combine(Path.GetTempPath(), "listenarr-extract", Guid.NewGuid().ToString());
+                var tmp = Path.Join(Path.GetTempPath(), "listenarr-extract", Guid.NewGuid().ToString());
                 Directory.CreateDirectory(tmp);
 
                 // Use SharpCompress to extract safely
@@ -93,6 +93,7 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 
 
 

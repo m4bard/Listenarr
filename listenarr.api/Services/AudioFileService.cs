@@ -161,7 +161,7 @@ namespace Listenarr.Api.Services
                 // wasn't available at startup. We keep the retry short to avoid blocking scans for too long.
                 try
                 {
-                    var needRetry = meta == null || (meta.Duration == TimeSpan.Zero && string.IsNullOrEmpty(meta?.Format));
+                    var needRetry = meta == null || (meta.Duration == TimeSpan.Zero && string.IsNullOrEmpty(meta.Format));
                     if (needRetry)
                     {
                         using var scope2 = _scopeFactory.CreateScope();
@@ -335,7 +335,7 @@ namespace Listenarr.Api.Services
                 return FileUtils.NormalizeStoredPath(path)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
-            catch
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 return null;
             }

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -77,25 +77,22 @@ namespace Listenarr.Api.Tests
             var db = rootScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
 
             // Create source with files
-            var src = Path.Combine(Path.GetTempPath(), "listenarr_test_src_" + Guid.NewGuid().ToString("N"));
+            var src = Path.Join(Path.GetTempPath(), "listenarr_test_src_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(src);
-            File.WriteAllText(Path.Combine(src, "file1.txt"), "one");
+            File.WriteAllText(Path.Join(src, "file1.txt"), "one");
 
             var ab = new Audiobook { Title = "MoveBroadcastTest", BasePath = src };
             db.Audiobooks.Add(ab);
             await db.SaveChangesAsync();
 
             // Ensure data is visible from a newly created scope (mirrors background service behavior)
-            using (var verifyScope = provider.CreateScope())
-            {
-                var dbVerify = verifyScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-            }
+            using (provider.CreateScope()) { }
 
             var moveQueue = provider.GetRequiredService<IMoveQueueService>();
             var bg = provider.GetRequiredService<MoveBackgroundService>();
 
             // Destination
-            var dst = Path.Combine(Path.GetTempPath(), "listenarr_test_dst_" + Guid.NewGuid().ToString("N"));
+            var dst = Path.Join(Path.GetTempPath(), "listenarr_test_dst_" + Guid.NewGuid().ToString("N"));
 
             // Start the background service
             await bg.StartAsync(CancellationToken.None);
@@ -180,7 +177,7 @@ namespace Listenarr.Api.Tests
             }
 
             // Cleanup
-            try { Directory.Delete(dst, true); } catch { }
+            try { Directory.Delete(dst, true); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
         }
     }
 }

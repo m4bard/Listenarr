@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using Serilog;
 using Microsoft.Data.Sqlite;
 using System.IO;
@@ -12,7 +12,7 @@ static class DeleteDownloadsProgram
     {
         try
         {
-            string dbPath = Path.Combine(Directory.GetCurrentDirectory(), "config", "database", "listenarr.db");
+            string dbPath = Path.Join(Directory.GetCurrentDirectory(), "config", "database", "listenarr.db");
             if (!File.Exists(dbPath))
             {
                 Log.Logger.Warning("Database file not found at: {DbPath}", dbPath);
@@ -58,4 +58,5 @@ static class DeleteDownloadsProgram
         }
     }
 }
+
 

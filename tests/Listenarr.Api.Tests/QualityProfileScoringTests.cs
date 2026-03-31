@@ -78,8 +78,8 @@ namespace Listenarr.Api.Tests
             };
 
             var score = await service.ScoreSearchResult(result, profile);
-            Assert.True(score.ScoreBreakdown.ContainsKey("QualityMissing"), "Missing quality (and no format) should be penalized");
-            Assert.Equal(-10, score.ScoreBreakdown["QualityMissing"]);
+            Assert.True(score.ScoreBreakdown.TryGetValue("QualityMissing", out var qualityMissingScore), "Missing quality (and no format) should be penalized");
+            Assert.Equal(-10, qualityMissingScore);
         }
 
         [Fact]
@@ -110,7 +110,7 @@ namespace Listenarr.Api.Tests
             };
 
             var score = await service.ScoreSearchResult(result, profile);
-            Assert.False(score.ScoreBreakdown.ContainsKey("QualityMissing"), "Missing quality should not be penalized when format is present");
+            Assert.False(score.ScoreBreakdown.TryGetValue("QualityMissing", out _), "Missing quality should not be penalized when format is present");
         }
 
         [Fact]
@@ -141,7 +141,7 @@ namespace Listenarr.Api.Tests
             };
 
             var score = await service.ScoreSearchResult(result, profile);
-            Assert.False(score.ScoreBreakdown.ContainsKey("QualityMissing"), "Missing quality should not be penalized when format can be inferred from the title");
+            Assert.False(score.ScoreBreakdown.TryGetValue("QualityMissing", out _), "Missing quality should not be penalized when format can be inferred from the title");
         }
 
         [Fact]
@@ -175,7 +175,7 @@ namespace Listenarr.Api.Tests
             var score = await service.ScoreSearchResult(result, profile);
 
             // For NZB indexers, missing quality should not be penalized
-            Assert.False(score.ScoreBreakdown.ContainsKey("QualityMissing"), "NZB results should not be penalized for missing quality");
+            Assert.False(score.ScoreBreakdown.TryGetValue("QualityMissing", out _), "NZB results should not be penalized for missing quality");
         }
 
         [Fact]
@@ -209,10 +209,10 @@ namespace Listenarr.Api.Tests
             var score = await service.ScoreSearchResult(result, profile);
 
             // For NZB indexers, missing language and format should not be penalized
-            Assert.False(score.ScoreBreakdown.ContainsKey("Language"), "NZB results should not be penalized for missing language");
-            Assert.False(score.ScoreBreakdown.ContainsKey("Format"), "NZB results should not be penalized for missing format");
+            Assert.False(score.ScoreBreakdown.TryGetValue("Language", out _), "NZB results should not be penalized for missing language");
+            Assert.False(score.ScoreBreakdown.TryGetValue("Format", out _), "NZB results should not be penalized for missing format");
             // Also ensure Quality isn't penalized
-            Assert.False(score.ScoreBreakdown.ContainsKey("QualityMissing"), "NZB results should not be penalized for missing quality");
+            Assert.False(score.ScoreBreakdown.TryGetValue("QualityMissing", out _), "NZB results should not be penalized for missing quality");
         }
 
         [Fact]
@@ -246,10 +246,10 @@ namespace Listenarr.Api.Tests
             var score = await service.ScoreSearchResult(result, profile);
 
             // For Usenet indexers, missing language and format should not be penalized
-            Assert.False(score.ScoreBreakdown.ContainsKey("Language"), "Usenet results should not be penalized for missing language");
-            Assert.False(score.ScoreBreakdown.ContainsKey("Format"), "Usenet results should not be penalized for missing format");
+            Assert.False(score.ScoreBreakdown.TryGetValue("Language", out _), "Usenet results should not be penalized for missing language");
+            Assert.False(score.ScoreBreakdown.TryGetValue("Format", out _), "Usenet results should not be penalized for missing format");
             // Also ensure Quality isn't penalized
-            Assert.False(score.ScoreBreakdown.ContainsKey("QualityMissing"), "Usenet results should not be penalized for missing quality");
+            Assert.False(score.ScoreBreakdown.TryGetValue("QualityMissing", out _), "Usenet results should not be penalized for missing quality");
         }
 
         [Fact]
@@ -320,17 +320,17 @@ namespace Listenarr.Api.Tests
 
             // Size should be ignored for NZB results: no size rejection and no Size penalty
             Assert.DoesNotContain(score.RejectionReasons, r => r.Contains("File too small"));
-            Assert.False(score.ScoreBreakdown.ContainsKey("Size"), "NZB scoring should not add size penalties");
+            Assert.False(score.ScoreBreakdown.TryGetValue("Size", out _), "NZB scoring should not add size penalties");
 
             // Format should be detected from title and awarded a positive match
-            Assert.True(score.ScoreBreakdown.ContainsKey("FormatMatchedInTitle"), "Expected format token to be detected in title for NZB");
+            Assert.True(score.ScoreBreakdown.TryGetValue("FormatMatchedInTitle", out _), "Expected format token to be detected in title for NZB");
 
             // Language should be detected from title and avoid language penalties
-            Assert.False(score.ScoreBreakdown.ContainsKey("Language"));
-            Assert.False(score.ScoreBreakdown.ContainsKey("LanguageMismatch"));
+            Assert.False(score.ScoreBreakdown.TryGetValue("Language", out _));
+            Assert.False(score.ScoreBreakdown.TryGetValue("LanguageMismatch", out _));
 
             // Quality is intentionally ignored for NZB so there should be no QualityMissing penalty
-            Assert.False(score.ScoreBreakdown.ContainsKey("QualityMissing"));
+            Assert.False(score.ScoreBreakdown.TryGetValue("QualityMissing", out _));
             Assert.True(score.TotalScore > 0, "NZB result with detected format/language should have positive score");
         }
 

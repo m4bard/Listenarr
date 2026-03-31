@@ -1,7 +1,7 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
-      <ModalHeader :title="`Editing ${audiobook?.title || 'Audiobook'}`" @close="close" :icon="PhPencil" />
+      <ModalHeader :title="`Edit Audiobook: ${audiobook?.title || 'Audiobook'}`" @close="close" :icon="PhPencil" />
     </template>
 
     <template #default>
@@ -24,6 +24,304 @@
                 </p>
               </div>
             </div>
+
+          <!-- Metadata -->
+          <div class="form-group">
+            <label class="form-label" for="metadata-title">
+              <PhInfo></PhInfo>
+              Metadata
+            </label>
+            <div class="form-control-card">
+              <div class="metadata-grid">
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-title">Title</label>
+                  <input
+                    id="metadata-title"
+                    v-model="formData.title"
+                    type="text"
+                    class="form-input"
+                    placeholder="Audiobook title"
+                  />
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-subtitle">Subtitle</label>
+                  <input
+                    id="metadata-subtitle"
+                    v-model="formData.subtitle"
+                    type="text"
+                    class="form-input"
+                    placeholder="Optional subtitle"
+                  />
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-authors">Authors</label>
+                  <div class="tags-container author-tags-editor">
+                    <div class="tags-list">
+                      <span v-for="(author, index) in formData.authors" :key="`${author}-${index}`" class="tag-item">
+                        {{ author }}
+                        <button type="button" class="tag-remove" @click="removeAuthor(index)" title="Remove author">
+                          <PhX :size="16" weight="bold"></PhX>
+                        </button>
+                      </span>
+                      <span v-if="formData.authors.length === 0" class="tags-empty">
+                        No authors added yet
+                      </span>
+                    </div>
+                    <div class="tag-input-group">
+                      <input
+                        id="metadata-authors"
+                        v-model="newAuthor"
+                        type="text"
+                        class="tag-input"
+                        placeholder="Add an author..."
+                        @keypress.enter.prevent="addAuthor"
+                      />
+                      <button
+                        type="button"
+                        @click="addAuthor"
+                        class="icon-btn btn-primary btn-add-tag"
+                        :disabled="!newAuthor.trim()"
+                        title="Add author"
+                        aria-label="Add author"
+                      >
+                        <PhPlus :size="16"></PhPlus>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-narrators">Narrators</label>
+                  <div class="tags-container narrator-tags-editor">
+                    <div class="tags-list">
+                      <span v-for="(narrator, index) in formData.narrators" :key="`${narrator}-${index}`" class="tag-item">
+                        {{ narrator }}
+                        <button type="button" class="tag-remove" @click="removeNarrator(index)" title="Remove narrator">
+                          <PhX :size="16" weight="bold"></PhX>
+                        </button>
+                      </span>
+                      <span v-if="formData.narrators.length === 0" class="tags-empty">
+                        No narrators added yet
+                      </span>
+                    </div>
+                    <div class="tag-input-group">
+                      <input
+                        id="metadata-narrators"
+                        v-model="newNarrator"
+                        type="text"
+                        class="tag-input"
+                        placeholder="Add a narrator..."
+                        @keypress.enter.prevent="addNarrator"
+                      />
+                      <button
+                        type="button"
+                        @click="addNarrator"
+                        class="icon-btn btn-primary btn-add-tag"
+                        :disabled="!newNarrator.trim()"
+                        title="Add narrator"
+                        aria-label="Add narrator"
+                      >
+                        <PhPlus :size="16"></PhPlus>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="metadata-field metadata-field--full">
+                  <label class="field-label" for="metadata-description">Description</label>
+                  <textarea
+                    id="metadata-description"
+                    v-model="formData.description"
+                    rows="5"
+                    class="form-input metadata-textarea"
+                    placeholder="Book description"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-publisher">Publisher</label>
+                  <input
+                    id="metadata-publisher"
+                    v-model="formData.publisher"
+                    type="text"
+                    class="form-input"
+                    placeholder="Publisher"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-language">Language</label>
+                  <input
+                    id="metadata-language"
+                    v-model="formData.language"
+                    type="text"
+                    class="form-input"
+                    placeholder="Language"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-published-date">Release Date</label>
+                  <input
+                    id="metadata-published-date"
+                    v-model="formData.publishedDate"
+                    type="text"
+                    class="form-input"
+                    placeholder="YYYY-MM-DD"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-publish-year">Publish Year</label>
+                  <input
+                    id="metadata-publish-year"
+                    v-model="formData.publishYear"
+                    type="text"
+                    class="form-input"
+                    placeholder="YYYY"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="metadata-runtime">Listening Length (minutes)</label>
+                  <input
+                    id="metadata-runtime"
+                    v-model="formData.runtime"
+                    type="number"
+                    min="0"
+                    class="form-input"
+                    placeholder="e.g. 600"
+                  />
+                </div>
+                <div class="metadata-field">
+                  <label class="field-label" for="edition">Edition</label>
+                  <input
+                    id="edition"
+                    v-model="formData.edition"
+                    type="text"
+                    class="form-input"
+                    placeholder="e.g. Revised Edition"
+                  />
+                  <p class="help-text">
+                    Optional user-defined label exposed as <code>{Edition}</code> in file and
+                    folder naming patterns.
+                  </p>
+                </div>
+                <div class="metadata-field metadata-field--full">
+                  <label class="field-label">Series Memberships</label>
+                  <div class="series-memberships-editor">
+                    <div
+                      v-for="(membership, index) in formData.seriesMemberships"
+                      :key="membership.localKey"
+                      class="series-membership-row"
+                    >
+                      <div class="series-membership-fields">
+                        <div class="series-membership-field series-membership-field--name">
+                          <label class="field-label sr-only" :for="`metadata-series-name-${index}`">
+                            Series name
+                          </label>
+                          <input
+                            :id="`metadata-series-name-${index}`"
+                            v-model="membership.seriesName"
+                            type="text"
+                            class="form-input"
+                            placeholder="Series name"
+                          />
+                        </div>
+                        <div class="series-membership-field series-membership-field--number">
+                          <label class="field-label sr-only" :for="`metadata-series-number-${index}`">
+                            Number in series
+                          </label>
+                          <input
+                            :id="`metadata-series-number-${index}`"
+                            v-model="membership.seriesNumber"
+                            type="text"
+                            class="form-input"
+                            placeholder="e.g. 1"
+                          />
+                        </div>
+                      </div>
+                      <div class="series-membership-actions">
+                        <label class="series-primary-toggle">
+                          <input
+                            type="radio"
+                            name="primary-series-membership"
+                            :checked="membership.isPrimary"
+                            @change="setPrimarySeriesMembership(index)"
+                          />
+                          <span>Primary</span>
+                        </label>
+                        <button
+                          type="button"
+                          class="icon-btn btn-secondary"
+                          @click="removeSeriesMembership(index)"
+                          :disabled="formData.seriesMemberships.length === 1 && !membership.seriesName.trim() && !membership.seriesNumber.trim()"
+                          title="Remove series membership"
+                          aria-label="Remove series membership"
+                        >
+                          <PhX :size="16" weight="bold" />
+                        </button>
+                      </div>
+                    </div>
+                    <div v-if="formData.seriesMemberships.length === 0" class="series-memberships-empty">
+                      No series memberships added yet
+                    </div>
+                    <button
+                      type="button"
+                      class="btn btn-secondary btn-add-series-membership"
+                      @click="addSeriesMembership"
+                    >
+                      <PhPlus :size="16" />
+                      Add Series
+                    </button>
+                  </div>
+                  <p class="help-text">
+                    A book can belong to multiple series. Mark one entry as primary for naming and
+                    legacy compatibility.
+                  </p>
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-genres">Genres</label>
+                  <div class="tags-container genre-tags-editor">
+                    <div class="tags-list">
+                      <span v-for="(genre, index) in formData.genres" :key="`${genre}-${index}`" class="tag-item">
+                        {{ genre }}
+                        <button type="button" class="tag-remove" @click="removeGenre(index)" title="Remove genre">
+                          <PhX :size="16" weight="bold"></PhX>
+                        </button>
+                      </span>
+                      <span v-if="formData.genres.length === 0" class="tags-empty">
+                        No genres added yet
+                      </span>
+                    </div>
+                    <div class="tag-input-group">
+                      <input
+                        id="metadata-genres"
+                        v-model="newGenre"
+                        type="text"
+                        class="tag-input"
+                        placeholder="Add a genre..."
+                        @keypress.enter.prevent="addGenre"
+                      />
+                      <button
+                        type="button"
+                        @click="addGenre"
+                        class="icon-btn btn-primary btn-add-tag"
+                        :disabled="!newGenre.trim()"
+                        title="Add genre"
+                        aria-label="Add genre"
+                      >
+                        <PhPlus :size="16"></PhPlus>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <div class="metadata-field metadata-field--wide">
+                  <label class="field-label" for="metadata-image-url">Cover Image URL</label>
+                  <input
+                    id="metadata-image-url"
+                    v-model="formData.imageUrl"
+                    type="text"
+                    class="form-input"
+                    placeholder="https://..."
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
 
           <!-- Quality Profile -->
           <div class="form-group">
@@ -309,13 +607,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch, onMounted, nextTick } from 'vue'
 import { useToast } from '@/services/toastService'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
 import { logger } from '@/utils/logger'
 import type {
   Audiobook,
+  AudiobookSeriesMembership,
   QualityProfile,
   AudiobookExternalIdentifier,
   AudiobookExternalIdentifierInput,
@@ -370,6 +669,20 @@ interface Props {
 interface FormData {
   monitored: boolean
   qualityProfileId: number | null
+  title: string
+  subtitle: string
+  authors: string[]
+  narrators: string[]
+  description: string
+  publisher: string
+  language: string
+  publishedDate: string
+  publishYear: string
+  runtime: string
+  edition: string
+  seriesMemberships: EditableSeriesMembership[]
+  genres: string[]
+  imageUrl: string
   tags: string[]
   identifiers: EditableIdentifierRow[]
   abridged: boolean
@@ -385,6 +698,16 @@ interface EditableIdentifierRow {
   region?: string | null
   isPrimary: boolean
   source: AudiobookExternalIdentifierSource
+}
+
+interface EditableSeriesMembership {
+  localKey: string
+  id?: number
+  seriesName: string
+  seriesNumber: string
+  seriesAsin?: string | null
+  isPrimary: boolean
+  sortOrder: number
 }
 
 const props = defineProps<Props>()
@@ -405,16 +728,37 @@ const isUsingCustomPath = computed(() => {
 })
 const rootPath = ref<string | null>(null)
 const saving = ref(false)
+const newAuthor = ref('')
+const newNarrator = ref('')
 const newTag = ref('')
+const newGenre = ref('')
 const editingDestination = ref(false)
 const toast = useToast()
 const originalIdentifierRows = ref<EditableIdentifierRow[]>([])
+const isHydratingForm = ref(false)
+const hasLocalEdits = ref(false)
+const resolvedAudiobook = ref<Audiobook | null>(null)
+const baselineAudiobook = computed(() => resolvedAudiobook.value ?? props.audiobook)
 
 // Minimal custom path behaviour: extra helpers removed to keep UI streamlined
 
 const formData = ref<FormData>({
   monitored: true,
   qualityProfileId: null,
+  title: '',
+  subtitle: '',
+  authors: [],
+  narrators: [],
+  description: '',
+  publisher: '',
+  language: '',
+  publishedDate: '',
+  publishYear: '',
+  runtime: '',
+  edition: '',
+  seriesMemberships: [],
+  genres: [],
+  imageUrl: '',
   tags: [],
   identifiers: [],
   abridged: false,
@@ -422,6 +766,224 @@ const formData = ref<FormData>({
   basePath: null,
   relativePath: ''
 })
+
+function normalizeStringList(values: string[] | null | undefined): string[] {
+  return (values || []).map((value) => value.trim()).filter((value) => value.length > 0)
+}
+
+function normalizeSeriesMembershipRows(
+  memberships: AudiobookSeriesMembership[] | EditableSeriesMembership[] | null | undefined,
+  legacySeries?: string | null,
+  legacySeriesNumber?: string | null,
+): EditableSeriesMembership[] {
+  const normalized: EditableSeriesMembership[] = []
+  const seen = new Set<string>()
+
+  for (const [index, membership] of (memberships || []).entries()) {
+    const seriesName = normalizeOptionalText(membership.seriesName)
+    if (!seriesName) continue
+
+    const seriesNumber = normalizeOptionalText(membership.seriesNumber)
+    const seriesAsin = normalizeOptionalText(membership.seriesAsin)
+    const dedupeKey = `${seriesName.toLowerCase()}|${seriesNumber.toLowerCase()}|${seriesAsin.toLowerCase()}`
+    if (seen.has(dedupeKey)) continue
+    seen.add(dedupeKey)
+
+    normalized.push({
+      localKey: `series-${membership.id ?? index}-${Math.random().toString(16).slice(2)}`,
+      id: membership.id,
+      seriesName,
+      seriesNumber,
+      seriesAsin: seriesAsin || null,
+      isPrimary: Boolean(membership.isPrimary),
+      sortOrder: typeof membership.sortOrder === 'number' ? membership.sortOrder : normalized.length,
+    })
+  }
+
+  if (normalized.length === 0) {
+    const fallbackSeries = normalizeOptionalText(legacySeries)
+    if (fallbackSeries) {
+      normalized.push({
+        localKey: `series-legacy-${Math.random().toString(16).slice(2)}`,
+        seriesName: fallbackSeries,
+        seriesNumber: normalizeOptionalText(legacySeriesNumber),
+        seriesAsin: null,
+        isPrimary: true,
+        sortOrder: 0,
+      })
+    }
+  }
+
+  if (normalized.length > 0 && !normalized.some((membership) => membership.isPrimary)) {
+    normalized[0].isPrimary = true
+  }
+
+  return normalized
+    .sort((a, b) => a.sortOrder - b.sortOrder)
+    .map((membership, index) => ({
+      ...membership,
+      sortOrder: index,
+      isPrimary: membership.isPrimary || index === 0 && !normalized.some((entry) => entry.isPrimary),
+    }))
+}
+
+function serializeSeriesMembershipRows(
+  memberships: AudiobookSeriesMembership[] | EditableSeriesMembership[] | null | undefined,
+  legacySeries?: string | null,
+  legacySeriesNumber?: string | null,
+): string {
+  const normalized = normalizeSeriesMembershipRows(memberships, legacySeries, legacySeriesNumber)
+    .map((membership, index) => ({
+      seriesName: membership.seriesName,
+      seriesNumber: membership.seriesNumber,
+      seriesAsin: normalizeOptionalText(membership.seriesAsin),
+      isPrimary: Boolean(membership.isPrimary || index === 0),
+      sortOrder: index,
+    }))
+
+  return JSON.stringify(normalized)
+}
+
+function createEditableSeriesMembership(): EditableSeriesMembership {
+  return {
+    localKey: `series-new-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    seriesName: '',
+    seriesNumber: '',
+    seriesAsin: null,
+    isPrimary: false,
+    sortOrder: formData.value.seriesMemberships.length,
+  }
+}
+
+function derivePrimarySeriesMembership(
+  memberships: EditableSeriesMembership[],
+): { series: string; seriesNumber: string } {
+  const normalized = normalizeSeriesMembershipRows(memberships)
+  const primary =
+    normalized.find((membership) => membership.isPrimary) ??
+    normalized[0]
+
+  return {
+    series: primary?.seriesName || '',
+    seriesNumber: primary?.seriesNumber || '',
+  }
+}
+
+function splitStringList(value: string | null | undefined): string[] {
+  return (value || '')
+    .split(/[\r\n,]+/)
+    .map((entry) => entry.trim())
+    .filter((entry) => entry.length > 0)
+}
+
+function normalizeLanguageText(value: string | null | undefined): string {
+  const normalized = normalizeOptionalText(value)
+  if (!normalized) return ''
+  if (!/^[a-z\s]+$/i.test(normalized)) return normalized
+
+  return normalized
+    .split(/\s+/)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(' ')
+}
+
+async function resolveAudiobookForEditing(audiobook: Audiobook): Promise<Audiobook> {
+  if (typeof apiService.getAudiobook !== 'function') {
+    return audiobook
+  }
+
+  try {
+    const detailed = await apiService.getAudiobook(audiobook.id)
+    return {
+      ...audiobook,
+      ...detailed,
+    }
+  } catch (error) {
+    logger.debug('Failed to load full audiobook details for edit modal', error)
+    return audiobook
+  }
+}
+
+function hydrateFormFromAudiobook(audiobook: Audiobook) {
+  formData.value = {
+    monitored: Boolean(audiobook.monitored),
+    qualityProfileId: audiobook.qualityProfileId ?? null,
+    title: audiobook.title || '',
+    subtitle: audiobook.subtitle || '',
+    authors: [...(audiobook.authors || [])],
+    narrators: [...(audiobook.narrators || [])],
+    description: audiobook.description || '',
+    publisher: audiobook.publisher || '',
+    language: normalizeLanguageText(audiobook.language),
+    publishedDate: audiobook.publishedDate || '',
+    publishYear: audiobook.publishYear || '',
+    runtime: audiobook.runtime != null ? String(audiobook.runtime) : '',
+    edition: audiobook.edition || '',
+    seriesMemberships: normalizeSeriesMembershipRows(
+      audiobook.seriesMemberships,
+      audiobook.series,
+      audiobook.seriesNumber,
+    ),
+    genres: [...(audiobook.genres || [])],
+    imageUrl: audiobook.imageUrl || '',
+    tags: [...(audiobook.tags || [])],
+    identifiers: [],
+    abridged: Boolean(audiobook.abridged),
+    explicit: Boolean(audiobook.explicit),
+    basePath: audiobook.basePath ?? null,
+    relativePath: null,
+  }
+
+  newAuthor.value = ''
+  newNarrator.value = ''
+  newGenre.value = ''
+  newTag.value = ''
+}
+
+watch(
+  formData,
+  () => {
+    if (props.isOpen && !isHydratingForm.value) {
+      hasLocalEdits.value = true
+    }
+  },
+  { deep: true },
+)
+
+async function syncFormFromAudiobook(audiobook: Audiobook, loadSupportingData: boolean) {
+  isHydratingForm.value = true
+
+  try {
+    const resolved = await resolveAudiobookForEditing(audiobook)
+    resolvedAudiobook.value = resolved
+    hydrateFormFromAudiobook(resolved)
+
+    if (loadSupportingData) {
+      await loadData()
+    }
+
+    await initializeForm(resolved)
+    hasLocalEdits.value = false
+  } finally {
+    await nextTick()
+    isHydratingForm.value = false
+  }
+}
+
+function normalizeNumericInput(value: string | null | undefined): string {
+  return (value || '').trim()
+}
+
+function parseRuntimeInput(value: string | null | undefined): number | undefined {
+  const normalized = normalizeNumericInput(value)
+  if (!normalized) return undefined
+  const parsed = Number.parseInt(normalized, 10)
+  return Number.isFinite(parsed) && parsed >= 0 ? parsed : undefined
+}
+
+function serializeStringList(values: string[] | null | undefined): string {
+  return JSON.stringify(normalizeStringList(values))
+}
 
 // Move job tracking (shows queued/processing/completed/failed state)
 const moveJob = ref<{ jobId: string; status: string; target?: string; error?: string } | null>(null)
@@ -481,7 +1043,7 @@ watch(() => selectedRootId.value, (v, old) => {
 
     if (prevRoot) {
       // Prefill the custom input with the precise destination (basePath if available)
-      const base = (formData.value.basePath && formData.value.basePath.trim()) || props.audiobook?.basePath || prevRoot
+      const base = (formData.value.basePath && formData.value.basePath.trim()) || baselineAudiobook.value?.basePath || prevRoot
       customRootPath.value = base
 
       // Focus external custom input if it's visible
@@ -550,35 +1112,79 @@ function handleMoveConfirm(payload: { moveFiles?: boolean } | null | undefined) 
   else confirmChangeWithoutMoving()
 }
 
+function normalizeOptionalText(value: string | null | undefined): string {
+  return (value || '').trim()
+}
+
 const hasChanges = computed(() => {
-  if (!props.audiobook) return false
+  const audiobook = baselineAudiobook.value
+  if (!audiobook) return false
 
   const tagsChanged =
     JSON.stringify([...formData.value.tags].sort()) !==
-    JSON.stringify([...(props.audiobook.tags || [])].sort())
+    JSON.stringify([...(audiobook.tags || [])].sort())
 
-  const basePathChanged = (props.audiobook?.basePath || '') !== (combinedBasePath() || '')
+  const basePathChanged = (audiobook.basePath || '') !== (combinedBasePath() || '')
 
   const identifiersChanged = serializeIdentifierRows(formData.value.identifiers) !==
     serializeIdentifierRows(originalIdentifierRows.value)
 
+  const runtimeChanged = (() => {
+    const runtimeInput = normalizeNumericInput(formData.value.runtime)
+    if (!runtimeInput) return false
+    return runtimeInput !== normalizeNumericInput(audiobook.runtime?.toString())
+  })()
+
+  const seriesMembershipsChanged =
+    serializeSeriesMembershipRows(
+      formData.value.seriesMemberships,
+    ) !==
+    serializeSeriesMembershipRows(
+      audiobook.seriesMemberships,
+      audiobook.series,
+      audiobook.seriesNumber,
+    )
+
   return (
-    formData.value.monitored !== Boolean(props.audiobook.monitored) ||
-    formData.value.qualityProfileId !== (props.audiobook.qualityProfileId ?? null) ||
+    formData.value.monitored !== Boolean(audiobook.monitored) ||
+    formData.value.qualityProfileId !== (audiobook.qualityProfileId ?? null) ||
+    normalizeOptionalText(formData.value.title) !== normalizeOptionalText(audiobook.title) ||
+    normalizeOptionalText(formData.value.subtitle) !== normalizeOptionalText(audiobook.subtitle) ||
+    serializeStringList(formData.value.authors) !== serializeStringList(audiobook.authors) ||
+    serializeStringList(formData.value.narrators) !== serializeStringList(audiobook.narrators) ||
+    normalizeOptionalText(formData.value.description) !== normalizeOptionalText(audiobook.description) ||
+    normalizeOptionalText(formData.value.publisher) !== normalizeOptionalText(audiobook.publisher) ||
+    normalizeLanguageText(formData.value.language) !== normalizeLanguageText(audiobook.language) ||
+    normalizeOptionalText(formData.value.publishedDate) !== normalizeOptionalText(audiobook.publishedDate) ||
+    normalizeOptionalText(formData.value.publishYear) !== normalizeOptionalText(audiobook.publishYear) ||
+    runtimeChanged ||
+    normalizeOptionalText(formData.value.edition) !== normalizeOptionalText(audiobook.edition) ||
+    seriesMembershipsChanged ||
+    serializeStringList(formData.value.genres) !== serializeStringList(audiobook.genres) ||
+    normalizeOptionalText(formData.value.imageUrl) !== normalizeOptionalText(audiobook.imageUrl) ||
     tagsChanged ||
     identifiersChanged ||
-    formData.value.abridged !== Boolean(props.audiobook.abridged) ||
-    formData.value.explicit !== Boolean(props.audiobook.explicit) ||
+    formData.value.abridged !== Boolean(audiobook.abridged) ||
+    formData.value.explicit !== Boolean(audiobook.explicit) ||
     basePathChanged
   )
 })
 
 watch(
-  () => props.isOpen,
-  async (isOpen) => {
-    if (isOpen && props.audiobook) {
-      await loadData()
-      await initializeForm()
+  () => [props.isOpen, props.audiobook] as const,
+  async ([isOpen, audiobook], previous) => {
+    if (isOpen && audiobook) {
+      const [wasOpen, previousAudiobook] = previous ?? []
+      const isFreshOpen = !wasOpen || previousAudiobook?.id !== audiobook.id
+
+      if (isFreshOpen) {
+        await syncFormFromAudiobook(audiobook, true)
+      } else if (!hasLocalEdits.value) {
+        await syncFormFromAudiobook(audiobook, false)
+      }
+    } else if (!isOpen) {
+      hasLocalEdits.value = false
+      resolvedAudiobook.value = null
     }
   },
   { immediate: true },
@@ -614,28 +1220,17 @@ async function loadData() {
   }
 }
 
-async function initializeForm() {
-  if (!props.audiobook) return
-
-  formData.value = {
-    monitored: Boolean(props.audiobook.monitored),
-    qualityProfileId: props.audiobook.qualityProfileId ?? null,
-    tags: [...(props.audiobook.tags || [])],
-    identifiers: [],
-    abridged: Boolean(props.audiobook.abridged),
-    explicit: Boolean(props.audiobook.explicit),
-    basePath: props.audiobook.basePath ?? null,
-    relativePath: null,
-  }
+async function initializeForm(audiobook: Audiobook) {
 
   // Determine which root folder matches the existing basePath
-  if (props.audiobook?.basePath && rootStore.folders.length > 0) {
+  if (audiobook.basePath && rootStore.folders.length > 0) {
     // Check if basePath starts with any configured root folder
     const matchingRoot = rootStore.folders.find((folder) => {
-      const normBase = toForward(props.audiobook!.basePath!)
+      const normBase = toForward(audiobook.basePath!)
       const normRoot = toForward(folder.path)
       const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
-      return normBase.toLowerCase().startsWith(rootWithSlash.toLowerCase())
+      return normBase.toLowerCase() === normRoot.toLowerCase()
+        || normBase.toLowerCase().startsWith(rootWithSlash.toLowerCase())
     })
 
     if (matchingRoot) {
@@ -645,14 +1240,14 @@ async function initializeForm() {
     } else {
       // No matching configured root folder - use custom path
       selectedRootId.value = 0
-      customRootPath.value = props.audiobook.basePath
+      customRootPath.value = audiobook.basePath
     }
-  } else if (props.audiobook.basePath) {
+  } else if (audiobook.basePath) {
     // No configured named root folders. If the app has an outputPath and the audiobook's basePath
     // sits under that outputPath, treat it as relative to the outputPath and show the relative
     // input. Otherwise treat it as an explicit custom path.
     const out = rootPath.value ? toForward(rootPath.value) : undefined
-    const base = toForward(props.audiobook.basePath)
+    const base = toForward(audiobook.basePath)
     if (out && base.toLowerCase().startsWith(out.toLowerCase())) {
       // Use configured output path as the chosen root and derive relative path later
       selectedRootId.value = null
@@ -660,7 +1255,7 @@ async function initializeForm() {
     } else {
       // No match: explicit custom path
       selectedRootId.value = 0
-      customRootPath.value = props.audiobook.basePath
+      customRootPath.value = audiobook.basePath
     }
   } else {
     // No basePath - use default selection
@@ -852,10 +1447,11 @@ function finishEditingDestination() {
 }
 
 async function handleSave() {
-  if (!props.audiobook || !hasChanges.value) return
+  const audiobook = baselineAudiobook.value
+  if (!audiobook || !hasChanges.value) return
   // If the base path (destination) changed, prompt the user with rich options
   const combined = combinedBasePath()
-  const originalBase = props.audiobook.basePath || ''
+  const originalBase = audiobook.basePath || ''
   let userWantsMove = true
   let userWantsDeleteEmpty = true
   if ((combined || '') !== originalBase) {
@@ -870,16 +1466,46 @@ async function handleSave() {
     const identifiersChanged = serializeIdentifierRows(formData.value.identifiers) !==
       serializeIdentifierRows(originalIdentifierRows.value)
 
+    const parsedRuntime = parseRuntimeInput(formData.value.runtime)
+    const normalizedSeriesMemberships = normalizeSeriesMembershipRows(formData.value.seriesMemberships)
+    const primarySeries = derivePrimarySeriesMembership(normalizedSeriesMemberships)
+
     // Build update payload with current form values
     const updates: Partial<Audiobook> = {
       monitored: formData.value.monitored,
+      title: normalizeOptionalText(formData.value.title),
+      subtitle: normalizeOptionalText(formData.value.subtitle),
+      authors: normalizeStringList(formData.value.authors),
+      narrators: normalizeStringList(formData.value.narrators),
+      description: normalizeOptionalText(formData.value.description),
+      publisher: normalizeOptionalText(formData.value.publisher),
+      language: normalizeLanguageText(formData.value.language),
+      publishedDate: normalizeOptionalText(formData.value.publishedDate),
+      publishYear: normalizeOptionalText(formData.value.publishYear),
+      edition: normalizeOptionalText(formData.value.edition),
+      series: primarySeries.series,
+      seriesNumber: primarySeries.seriesNumber,
+      seriesMemberships: normalizedSeriesMemberships.map((membership, index) => ({
+        id: membership.id,
+        seriesName: membership.seriesName,
+        seriesNumber: membership.seriesNumber || undefined,
+        seriesAsin: membership.seriesAsin || undefined,
+        isPrimary: Boolean(membership.isPrimary || index === 0),
+        sortOrder: index,
+      })),
+      genres: normalizeStringList(formData.value.genres),
+      imageUrl: normalizeOptionalText(formData.value.imageUrl),
       tags: formData.value.tags,
       abridged: formData.value.abridged,
       explicit: formData.value.explicit,
     }
 
+    if (parsedRuntime !== undefined) {
+      updates.runtime = parsedRuntime
+    }
+
     // If user changed destination/base path, include the combined root+relative value in updates
-    if ((combined || '') !== (props.audiobook.basePath || '')) {
+    if ((combined || '') !== (audiobook.basePath || '')) {
       ; (updates as Partial<Audiobook>).basePath = combined ?? undefined
     }
 
@@ -892,34 +1518,57 @@ async function handleSave() {
     }
 
     const hasNonIdentifierChanges =
-      formData.value.monitored !== Boolean(props.audiobook.monitored) ||
-      formData.value.qualityProfileId !== (props.audiobook.qualityProfileId ?? null) ||
+      formData.value.monitored !== Boolean(audiobook.monitored) ||
+      formData.value.qualityProfileId !== (audiobook.qualityProfileId ?? null) ||
+      normalizeOptionalText(formData.value.title) !== normalizeOptionalText(audiobook.title) ||
+      normalizeOptionalText(formData.value.subtitle) !== normalizeOptionalText(audiobook.subtitle) ||
+      serializeStringList(formData.value.authors) !== serializeStringList(audiobook.authors) ||
+      serializeStringList(formData.value.narrators) !== serializeStringList(audiobook.narrators) ||
+      normalizeOptionalText(formData.value.description) !== normalizeOptionalText(audiobook.description) ||
+      normalizeOptionalText(formData.value.publisher) !== normalizeOptionalText(audiobook.publisher) ||
+      normalizeLanguageText(formData.value.language) !== normalizeLanguageText(audiobook.language) ||
+      normalizeOptionalText(formData.value.publishedDate) !== normalizeOptionalText(audiobook.publishedDate) ||
+      normalizeOptionalText(formData.value.publishYear) !== normalizeOptionalText(audiobook.publishYear) ||
+      (normalizeNumericInput(formData.value.runtime) !== '' &&
+        normalizeNumericInput(formData.value.runtime) !==
+          normalizeNumericInput(audiobook.runtime?.toString())) ||
+      normalizeOptionalText(formData.value.edition) !== normalizeOptionalText(audiobook.edition) ||
+      serializeSeriesMembershipRows(
+        formData.value.seriesMemberships,
+      ) !==
+        serializeSeriesMembershipRows(
+          audiobook.seriesMemberships,
+          audiobook.series,
+          audiobook.seriesNumber,
+        ) ||
+      serializeStringList(formData.value.genres) !== serializeStringList(audiobook.genres) ||
+      normalizeOptionalText(formData.value.imageUrl) !== normalizeOptionalText(audiobook.imageUrl) ||
       JSON.stringify([...formData.value.tags].sort()) !==
-        JSON.stringify([...(props.audiobook.tags || [])].sort()) ||
-      formData.value.abridged !== Boolean(props.audiobook.abridged) ||
-      formData.value.explicit !== Boolean(props.audiobook.explicit) ||
-      ((combined || '') !== (props.audiobook.basePath || ''))
+        JSON.stringify([...(audiobook.tags || [])].sort()) ||
+      formData.value.abridged !== Boolean(audiobook.abridged) ||
+      formData.value.explicit !== Boolean(audiobook.explicit) ||
+      ((combined || '') !== (audiobook.basePath || ''))
 
     if (hasNonIdentifierChanges) {
-      await apiService.updateAudiobook(props.audiobook.id, updates)
+      await apiService.updateAudiobook(audiobook.id, updates)
     }
 
     if (identifiersChanged) {
       await apiService.updateAudiobookIdentifiers(
-        props.audiobook.id,
+        audiobook.id,
         formData.value.identifiers.map(toIdentifierWritePayload),
       )
       originalIdentifierRows.value = cloneIdentifierRows(formData.value.identifiers)
     }
 
     // If base path changed, either update DB without moving or enqueue server-side move and show progress via SignalR
-    if ((combined || '') !== (props.audiobook.basePath || '')) {
+    if ((combined || '') !== (audiobook.basePath || '')) {
       if (!userWantsMove) {
         // User requested a DB-only change
         toast.info('Destination updated', 'Destination changed without moving files.')
       } else {
         try {
-          const res = await apiService.moveAudiobook(props.audiobook.id, combined ?? '', {
+          const res = await apiService.moveAudiobook(audiobook.id, combined ?? '', {
             sourcePath: originalBase || undefined,
             moveFiles: true,
             deleteEmptySource: userWantsDeleteEmpty,
@@ -978,10 +1627,11 @@ async function handleSave() {
 }
 
 async function loadIdentifiers() {
-  if (!props.audiobook) return
+  const audiobook = baselineAudiobook.value
+  if (!audiobook) return
 
   try {
-    const response = await apiService.getAudiobookIdentifiers(props.audiobook.id)
+    const response = await apiService.getAudiobookIdentifiers(audiobook.id)
     const rows = (response.identifiers || []).map(mapIdentifierToEditableRow)
     formData.value.identifiers = rows
     originalIdentifierRows.value = cloneIdentifierRows(rows)
@@ -1089,6 +1739,70 @@ function removeTag(index: number) {
   formData.value.tags.splice(index, 1)
 }
 
+function pushUniqueValues(target: string[], rawValue: string) {
+  for (const value of splitStringList(rawValue)) {
+    if (!target.some((existing) => existing.toLowerCase() === value.toLowerCase())) {
+      target.push(value)
+    }
+  }
+}
+
+function addAuthor() {
+  pushUniqueValues(formData.value.authors, newAuthor.value)
+  newAuthor.value = ''
+}
+
+function removeAuthor(index: number) {
+  formData.value.authors.splice(index, 1)
+}
+
+function addNarrator() {
+  pushUniqueValues(formData.value.narrators, newNarrator.value)
+  newNarrator.value = ''
+}
+
+function removeNarrator(index: number) {
+  formData.value.narrators.splice(index, 1)
+}
+
+function addGenre() {
+  pushUniqueValues(formData.value.genres, newGenre.value)
+  newGenre.value = ''
+}
+
+function removeGenre(index: number) {
+  formData.value.genres.splice(index, 1)
+}
+
+function addSeriesMembership() {
+  const nextMembership = createEditableSeriesMembership()
+  if (formData.value.seriesMemberships.length === 0) {
+    nextMembership.isPrimary = true
+  }
+  formData.value.seriesMemberships.push(nextMembership)
+}
+
+function removeSeriesMembership(index: number) {
+  const [removed] = formData.value.seriesMemberships.splice(index, 1)
+  if (removed?.isPrimary && formData.value.seriesMemberships.length > 0) {
+    formData.value.seriesMemberships[0].isPrimary = true
+  }
+
+  formData.value.seriesMemberships = formData.value.seriesMemberships.map((membership, membershipIndex) => ({
+    ...membership,
+    sortOrder: membershipIndex,
+    isPrimary: membership.isPrimary || membershipIndex === 0 && !formData.value.seriesMemberships.some((entry) => entry.isPrimary),
+  }))
+}
+
+function setPrimarySeriesMembership(index: number) {
+  formData.value.seriesMemberships = formData.value.seriesMemberships.map((membership, membershipIndex) => ({
+    ...membership,
+    isPrimary: membershipIndex === index,
+    sortOrder: membershipIndex,
+  }))
+}
+
 function close() {
   // If there's an active move subscription, unsubscribe to avoid leaks
   try {
@@ -1142,6 +1856,49 @@ function close() {
 .edit-form {
   display: flex;
   flex-direction: column;
+}
+
+.metadata-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.metadata-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.metadata-field--wide {
+  grid-column: span 2;
+}
+
+.metadata-field--full {
+  grid-column: 1 / -1;
+}
+
+.metadata-textarea {
+  min-height: 7rem;
+  resize: vertical;
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.field-label {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #d4d4d4;
 }
 
 .form-group {
@@ -1224,7 +1981,76 @@ function close() {
   justify-self: end;
 }
 
+.series-memberships-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.series-membership-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-start;
+  padding: 0.85rem;
+  background: #1e1e1e;
+  border: 1px solid #3a3a3a;
+  border-radius: 8px;
+}
+
+.series-membership-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(7rem, 0.8fr);
+  gap: 0.75rem;
+  flex: 1;
+  min-width: min(100%, 22rem);
+}
+
+.series-membership-field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.series-membership-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.series-primary-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: #d4d4d4;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.series-memberships-empty {
+  color: #9b9b9b;
+  font-size: 0.9rem;
+  padding: 0.25rem 0;
+}
+
+.btn-add-series-membership {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  align-self: flex-start;
+}
+
 @media (max-width: 900px) {
+  .metadata-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .metadata-field--wide,
+  .metadata-field--full {
+    grid-column: auto;
+  }
+
   .identifier-row {
     grid-template-columns: 1fr;
     gap: 0.4rem;
@@ -1240,6 +2066,16 @@ function close() {
 
   .btn-remove-identifier {
     justify-self: start;
+  }
+
+  .series-membership-fields {
+    grid-template-columns: 1fr;
+  }
+
+  .series-membership-actions {
+    width: 100%;
+    justify-content: space-between;
+    margin-left: 0;
   }
 }
 

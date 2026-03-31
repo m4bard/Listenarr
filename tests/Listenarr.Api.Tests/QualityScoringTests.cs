@@ -77,16 +77,16 @@ namespace Listenarr.Api.Tests
             // Quality score for MP3 VBR is 65; language penalty -10 (profile prefers English); format penalty -8
             // Total expected = 65 - 10 - 8 = 47
             Assert.Equal(47, score.TotalScore);
-            Assert.True(score.ScoreBreakdown.ContainsKey("Quality"));
-            Assert.Equal(65, score.ScoreBreakdown["Quality"]);
+            Assert.True(score.ScoreBreakdown.TryGetValue("Quality", out var qualityScore));
+            Assert.Equal(65, qualityScore);
             Assert.Equal(-10, score.ScoreBreakdown["Language"]);
             Assert.Equal(-8, score.ScoreBreakdown["Format"]);
 
             // Smart composite should be present and contain expected breakdown keys
             Assert.True(score.SmartScore > 0);
-            Assert.True(score.SmartScoreBreakdown.ContainsKey("Quality"));
-            Assert.True(score.SmartScoreBreakdown.ContainsKey("Format"));
-            Assert.True(score.SmartScoreBreakdown.ContainsKey("Seed"));
+            Assert.True(score.SmartScoreBreakdown.TryGetValue("Quality", out _));
+            Assert.True(score.SmartScoreBreakdown.TryGetValue("Format", out _));
+            Assert.True(score.SmartScoreBreakdown.TryGetValue("Seed", out _));
         }
     }
 }

@@ -142,6 +142,8 @@ vi.mock('@/services/api', () => {
     getApplicationSettings: vi.fn(async () => ({})),
     getLibrary: vi.fn(async () => []),
     previewLibraryPath: vi.fn(async () => ({ path: '' })),
+    previewRename: vi.fn(async () => []),
+    executeRename: vi.fn(async () => []),
     getQualityProfiles: vi.fn(async () => []),
     getApiConfigurations: vi.fn(async () => []),
     // add getRootFolders to apiService so tests that spy on apiService.getRootFolders work

@@ -87,19 +87,31 @@ namespace Listenarr.Domain.Models
         public string OutputPath { get; set; } = string.Empty;
         // Folder naming pattern (base directory structure)
         // Available variables:
-        // {Author} - Audiobook author/narrator
+        // {Author} - Audiobook author
+        // {Narrator} - Narrator name(s)
         // {Series} - Series name (if applicable)
         // {SeriesNumber} - Position in series (e.g., "1", "2")
         // {Title} - Book/audiobook title
+        // {Subtitle} - Book subtitle
+        // {Edition} - User-defined edition label
+        // {Publisher} - Publisher name
+        // {Language} - Metadata language
+        // {Asin} - Audible ASIN
         // {Year} - Publication year
         public string FolderNamingPattern { get; set; } = "{Author}/{Series}/{Title}";
 
         // File naming pattern for SINGLE-FILE imports (one audio file per audiobook)
         // Available variables:
-        // {Author} - Audiobook author/narrator
+        // {Author} - Audiobook author
+        // {Narrator} - Narrator name(s)
         // {Series} - Series name (if applicable)
         // {SeriesNumber} - Position in series (e.g., "1", "2")
         // {Title} - Book/audiobook title
+        // {Subtitle} - Book subtitle
+        // {Edition} - User-defined edition label
+        // {Publisher} - Publisher name
+        // {Language} - Metadata language
+        // {Asin} - Audible ASIN
         // {Year} - Publication year
         // {Quality} - Audio quality (e.g., "64kbps mp3")
         public string FileNamingPattern { get; set; } = "{Title}";
@@ -107,10 +119,16 @@ namespace Listenarr.Domain.Models
         // File naming pattern for MULTI-FILE imports (multiple audio files per audiobook)
         // Use {DiskNumber} or {DiskNumber:00}, {ChapterNumber} or {ChapterNumber:00} to differentiate files
         // Available variables:
-        // {Author} - Audiobook author/narrator
+        // {Author} - Audiobook author
+        // {Narrator} - Narrator name(s)
         // {Series} - Series name (if applicable)
         // {SeriesNumber} - Position in series (e.g., "1", "2")
         // {Title} - Book/audiobook title
+        // {Subtitle} - Book subtitle
+        // {Edition} - User-defined edition label
+        // {Publisher} - Publisher name
+        // {Language} - Metadata language
+        // {Asin} - Audible ASIN
         // {DiskNumber} or {DiskNumber:00} - Disk/part number (00 = zero-padded)
         // {ChapterNumber} or {ChapterNumber:00} - Chapter number (00 = zero-padded)
         // {Year} - Publication year

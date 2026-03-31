@@ -37,7 +37,6 @@ namespace Listenarr.Api.Services
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var pathMappingService = scope.ServiceProvider.GetService<IRemotePathMappingService>();
             var fileNamingService = scope.ServiceProvider.GetService<IFileNamingService>();
-            var metadataService = scope.ServiceProvider.GetService<IMetadataService>();
 
             job.AddLogEntry($"Starting file processing: {job.SourcePath}");
 

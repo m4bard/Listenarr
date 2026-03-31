@@ -3,9 +3,13 @@ import { vi, describe, it, expect, beforeEach } from 'vitest'
 
 vi.mock('@/services/api', () => ({
   apiService: {
+    getAudiobook: vi.fn().mockImplementation(async (id: number) => ({ id })),
     getQualityProfiles: vi.fn().mockResolvedValue([]),
     getApplicationSettings: vi.fn().mockResolvedValue({ outputPath: 'C:\\root' }),
+    getAudiobookIdentifiers: vi.fn().mockResolvedValue({ identifiers: [] }),
+    checkVolume: vi.fn().mockResolvedValue({ sameVolume: true }),
     updateAudiobook: vi.fn().mockResolvedValue({ message: 'ok', audiobook: {} }),
+    updateAudiobookIdentifiers: vi.fn().mockResolvedValue({ identifiers: [] }),
     moveAudiobook: vi.fn().mockResolvedValue({ message: 'queued', jobId: 'job-1' }),
   },
 }))
@@ -102,5 +106,251 @@ describe('EditAudiobookModal move options', () => {
       expect.anything(),
       expect.objectContaining({ moveFiles: true, deleteEmptySource: true }),
     )
+  })
+
+  it('Edition-only changes should persist through updateAudiobook', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: { isOpen: true, audiobook },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+
+    ;(wrapper.vm as unknown as { formData: { edition: string } }).formData.edition = 'Revised Edition'
+    await wrapper.vm.$nextTick()
+
+    await (wrapper.vm as unknown as { handleSave: () => Promise<void> }).handleSave()
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({ edition: 'Revised Edition' }),
+    )
+  })
+
+  it('metadata changes should persist through updateAudiobook', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: {
+        isOpen: true,
+        audiobook: {
+          ...audiobook,
+          subtitle: 'Original Subtitle',
+          narrators: ['Original Narrator'],
+          description: 'Original description',
+          publisher: 'Original Publisher',
+          language: 'english',
+          publishedDate: '2024-01-15',
+          publishYear: '2024',
+          runtime: 600,
+          series: 'Original Series',
+          seriesNumber: '1',
+          genres: ['Fantasy'],
+          imageUrl: 'https://example.com/original.jpg',
+        },
+      },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 200))
+
+    const vm = wrapper.vm as unknown as {
+      formData: {
+        title: string
+        subtitle: string
+        authors: string[]
+        narrators: string[]
+        description: string
+        publisher: string
+        language: string
+        publishedDate: string
+        publishYear: string
+        runtime: string
+        edition: string
+        seriesMemberships: Array<{
+          seriesName: string
+          seriesNumber: string
+          isPrimary: boolean
+        }>
+        genres: string[]
+        imageUrl: string
+      }
+      handleSave: () => Promise<void>
+    }
+
+    vm.formData.title = 'Edited Title'
+    vm.formData.subtitle = 'Edited Subtitle'
+    vm.formData.authors = ['Edited Author']
+    vm.formData.narrators = ['Edited Narrator']
+    vm.formData.description = 'Edited description'
+    vm.formData.publisher = 'Edited Publisher'
+    vm.formData.language = 'swedish'
+    vm.formData.publishedDate = '2025-02-01'
+    vm.formData.publishYear = '2025'
+    vm.formData.runtime = '720'
+    vm.formData.edition = 'Collector Edition'
+    vm.formData.seriesMemberships = [
+      { seriesName: 'Edited Universe', seriesNumber: '4', isPrimary: true },
+      { seriesName: 'Anthology Line', seriesNumber: '12', isPrimary: false },
+    ]
+    vm.formData.genres = ['Sci-Fi', 'Adventure']
+    vm.formData.imageUrl = 'https://example.com/edited.jpg'
+    await wrapper.vm.$nextTick()
+
+    await vm.handleSave()
+    await new Promise((r) => setTimeout(r, 50))
+
+    const { apiService } = await import('@/services/api')
+    expect(apiService.updateAudiobook).toHaveBeenCalledWith(
+      1,
+      expect.objectContaining({
+        title: 'Edited Title',
+        subtitle: 'Edited Subtitle',
+        authors: ['Edited Author'],
+        narrators: ['Edited Narrator'],
+        description: 'Edited description',
+        publisher: 'Edited Publisher',
+        language: 'Swedish',
+        publishedDate: '2025-02-01',
+        publishYear: '2025',
+        runtime: 720,
+        edition: 'Collector Edition',
+        series: 'Edited Universe',
+        seriesNumber: '4',
+        seriesMemberships: [
+          expect.objectContaining({
+            seriesName: 'Edited Universe',
+            seriesNumber: '4',
+            isPrimary: true,
+            sortOrder: 0,
+          }),
+          expect.objectContaining({
+            seriesName: 'Anthology Line',
+            seriesNumber: '12',
+            isPrimary: false,
+            sortOrder: 1,
+          }),
+        ],
+        genres: ['Sci-Fi', 'Adventure'],
+        imageUrl: 'https://example.com/edited.jpg',
+      }),
+    )
+  })
+
+  it('hydrates current metadata immediately and renders person fields as tags', async () => {
+    const { apiService } = await import('@/services/api')
+    ;(apiService.getQualityProfiles as any).mockImplementation(() => new Promise(() => {}))
+    ;(apiService.getAudiobook as any).mockResolvedValue({
+      ...audiobook,
+      subtitle: 'Existing Subtitle',
+      narrators: ['Narrator One', 'Narrator Two'],
+      description: 'Existing description',
+      publisher: 'Existing Publisher',
+      language: 'english',
+      publishedDate: '2024-01-15',
+      publishYear: '2024',
+      runtime: 600,
+      edition: 'First Edition',
+      series: 'Existing Series',
+      seriesNumber: '3',
+      seriesMemberships: [
+        { seriesName: 'Existing Series', seriesNumber: '3', isPrimary: true, sortOrder: 0 },
+        { seriesName: 'Universe Collection', seriesNumber: '9', isPrimary: false, sortOrder: 1 },
+      ],
+      genres: ['Fantasy', 'Adventure'],
+      imageUrl: 'https://example.com/current.jpg',
+      tags: ['favorite'],
+    })
+
+    const wrapper = mount(EditAudiobookModal, {
+      props: {
+        isOpen: true,
+        audiobook,
+      },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(wrapper.text()).toContain('Edit Audiobook: Sample')
+    expect((wrapper.get('#metadata-title').element as HTMLInputElement).value).toBe('Sample')
+    expect((wrapper.get('#metadata-subtitle').element as HTMLInputElement).value).toBe(
+      'Existing Subtitle',
+    )
+    expect((wrapper.get('#metadata-description').element as HTMLTextAreaElement).value).toBe(
+      'Existing description',
+    )
+    expect((wrapper.get('#metadata-publisher').element as HTMLInputElement).value).toBe(
+      'Existing Publisher',
+    )
+    expect((wrapper.get('#metadata-language').element as HTMLInputElement).value).toBe('English')
+    expect((wrapper.get('#metadata-published-date').element as HTMLInputElement).value).toBe(
+      '2024-01-15',
+    )
+
+    const authorTags = wrapper
+      .findAll('.author-tags-editor .tag-item')
+      .map((item) => item.text())
+    expect(authorTags).toEqual(expect.arrayContaining(['Author']))
+
+    const narratorTags = wrapper
+      .findAll('.narrator-tags-editor .tag-item')
+      .map((item) => item.text())
+    expect(narratorTags).toEqual(expect.arrayContaining(['Narrator One', 'Narrator Two']))
+
+    const genreTags = wrapper
+      .findAll('.genre-tags-editor .tag-item')
+      .map((item) => item.text())
+    expect(genreTags).toEqual(expect.arrayContaining(['Fantasy', 'Adventure']))
+    expect((wrapper.get('#metadata-series-name-0').element as HTMLInputElement).value).toBe(
+      'Existing Series',
+    )
+    expect((wrapper.get('#metadata-series-number-1').element as HTMLInputElement).value).toBe('9')
+  })
+
+  it('rehydrates unchanged metadata when the same audiobook receives fuller data', async () => {
+    const { apiService } = await import('@/services/api')
+    ;(apiService.getAudiobook as any).mockResolvedValue({
+      ...audiobook,
+      description: 'Loaded from refreshed detail payload',
+      publishedDate: '2024-03-01',
+      language: 'english',
+      narrators: ['Narrator One'],
+    })
+
+    const wrapper = mount(EditAudiobookModal, {
+      props: {
+        isOpen: true,
+        audiobook,
+      },
+      attachTo: document.body,
+      global: { plugins: [(await import('pinia')).createPinia()] },
+    })
+
+    await new Promise((r) => setTimeout(r, 50))
+
+    await wrapper.setProps({
+      audiobook: {
+        ...audiobook,
+        description: 'Loaded from refreshed detail payload',
+        language: 'english',
+        narrators: ['Narrator One'],
+      },
+    })
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect((wrapper.get('#metadata-description').element as HTMLTextAreaElement).value).toBe(
+      'Loaded from refreshed detail payload',
+    )
+    expect((wrapper.get('#metadata-published-date').element as HTMLInputElement).value).toBe(
+      '2024-03-01',
+    )
+    expect((wrapper.get('#metadata-language').element as HTMLInputElement).value).toBe('English')
+    expect(
+      wrapper.findAll('.narrator-tags-editor .tag-item').map((item) => item.text()),
+    ).toEqual(expect.arrayContaining(['Narrator One']))
   })
 })

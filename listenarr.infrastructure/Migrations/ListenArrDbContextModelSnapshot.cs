@@ -241,6 +241,9 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Edition")
+                        .HasColumnType("TEXT");
+
                     b.Property<bool>("Explicit")
                         .HasColumnType("INTEGER");
 
@@ -423,6 +426,44 @@ namespace Listenarr.Infrastructure.Migrations
                     b.HasIndex("AudiobookId");
 
                     b.ToTable("AudiobookFiles");
+                });
+
+            modelBuilder.Entity("Listenarr.Domain.Models.AudiobookSeriesMembership", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<int>("AudiobookId")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<bool>("IsPrimary")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("SeriesAsin")
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SeriesName")
+                        .HasMaxLength(512)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("SeriesNumber")
+                        .HasMaxLength(128)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("SortOrder")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AudiobookId");
+
+                    b.HasIndex("AudiobookId", "IsPrimary");
+
+                    b.HasIndex("AudiobookId", "SortOrder");
+
+                    b.ToTable("AudiobookSeriesMemberships", (string)null);
                 });
 
             modelBuilder.Entity("Listenarr.Domain.Models.AuthorCacheEntry", b =>
@@ -1405,11 +1446,24 @@ namespace Listenarr.Infrastructure.Migrations
                     b.Navigation("Audiobook");
                 });
 
+            modelBuilder.Entity("Listenarr.Domain.Models.AudiobookSeriesMembership", b =>
+                {
+                    b.HasOne("Listenarr.Domain.Models.Audiobook", "Audiobook")
+                        .WithMany("SeriesMemberships")
+                        .HasForeignKey("AudiobookId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Audiobook");
+                });
+
             modelBuilder.Entity("Listenarr.Domain.Models.Audiobook", b =>
                 {
                     b.Navigation("ExternalIdentifiers");
 
                     b.Navigation("Files");
+
+                    b.Navigation("SeriesMemberships");
                 });
 #pragma warning restore 612, 618
         }

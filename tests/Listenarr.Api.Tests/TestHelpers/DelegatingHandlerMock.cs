@@ -22,11 +22,7 @@ namespace Listenarr.Api.Tests
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            try
-            {
-                _log?.Invoke($"DelegatingHandlerMock invoked for: {request.Method} {request.RequestUri}");
-            }
-            catch { }
+            _log?.Invoke($"DelegatingHandlerMock invoked for: {request.Method} {request.RequestUri}");
 
             return _handlerFunc(request, cancellationToken);
         }

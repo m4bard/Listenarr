@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.64] - 2026-03-29
+
+### Added
+- **User-defined `{Edition}` naming token:** Audiobooks now support a separate user-managed `Edition` field that can be used in folder and file naming patterns to distinguish alternate recordings, custom release labels, or local library variants without reusing source-provided `Version` metadata.
+- **Organize Files preview and execute flow:** Library views now support previewing and applying file and folder renames against the current naming rules so existing audiobooks can be reorganized after metadata or pattern changes without re-importing them.
+- **Multi-series memberships for audiobooks:** Audiobooks can now store multiple series memberships with their own numbering and primary selection instead of being limited to a single series slot.
+
+### Changed
+- **File naming patterns support richer metadata tokens:** Folder and file naming patterns can now use `{Narrator}`, `{Subtitle}`, `{Publisher}`, `{Language}`, and `{Asin}` so libraries can separate alternate narrations and include more audiobook metadata in generated paths when desired.
+- **Audiobook edit flow now supports custom edition metadata:** The existing audiobook edit modal now exposes an `Edition` field, library payloads carry it through the frontend, and the audiobook detail view surfaces the saved edition label alongside other publication metadata.
+- **Add to Library modal metadata is now editable before import:** The Add New flow now lets you adjust title, subtitle, edition, version, authors, narrators, publisher, language, identifiers, series data, and other surfaced metadata before saving the audiobook, and the preview path updates from those edited values.
+- **Add to Library metadata editor is now a dedicated edit mode:** The modal now starts in a cleaner details view and switches into metadata editing when you click `Edit Metadata`, hiding the read-only detail sections until you switch back.
+- **Audiobook detail editing now covers full metadata:** The audiobook detail page’s edit flow now opens a fuller metadata editor, so title, subtitle, authors, narrators, description, publisher, release date, series data, genres, cover URL, edition, and related fields can be corrected directly from the detail view.
+- **Series editing now preserves multiple memberships:** The edit audiobook modal now manages series memberships as repeatable rows with per-series numbering and a primary marker, while the detail view and Add to Library flow preserve and display that richer series data without flattening it down to one series entry.
+- **Bulk and detail library actions now include organization tools:** The audiobook detail page plus the library and collection bulk toolbars can now open the organize preview modal, and the slim library payload now carries `basePath` so path-aware editing and organizing work consistently from list views too.
+- **Audiobook detail metadata links now cover narrators and publishers too:** Narrator and publisher values on the audiobook detail page now open lightweight collection pages, matching the existing genre browsing flow for quickly finding related books in the library.
+
+### Fixed
+- **`{Author}` token could drift into narrator metadata:** Author resolution for generated paths now ignores explicit narrator values instead of reusing them as the author fallback when author metadata is missing or noisy.
+
 ## [0.2.63] - 2026-03-29
 
 ### Changed

@@ -564,9 +564,9 @@ namespace Listenarr.Api.Services
                 .Where(d => d.AudiobookId == audiobook.Id && d.Status == DownloadStatus.Completed)
                 .ToListAsync();
 
-            foreach (var dl in existingDownloads)
+            foreach (var dl in existingDownloads.Where(dl => dl.Metadata != null))
             {
-                if (dl.Metadata != null && dl.Metadata.TryGetValue("Quality", out var qobj) && qobj != null)
+                if (dl.Metadata!.TryGetValue("Quality", out var qobj) && qobj != null)
                 {
                     var q = qobj.ToString();
                     if (!string.IsNullOrEmpty(q))
@@ -581,14 +581,10 @@ namespace Listenarr.Api.Services
                 .Where(f => f.AudiobookId == audiobook.Id)
                 .ToListAsync();
 
-            foreach (var f in existingFiles)
+            foreach (var fq in existingFiles.Select(DetermineFileQuality).Where(fq => !string.IsNullOrEmpty(fq)))
             {
-                var fq = DetermineFileQuality(f);
-                if (!string.IsNullOrEmpty(fq))
-                {
-                    if (bestQuality == null) bestQuality = fq;
-                    else if (IsQualityBetter(fq, bestQuality, audiobook.QualityProfile)) bestQuality = fq;
-                }
+                if (bestQuality == null) bestQuality = fq;
+                else if (IsQualityBetter(fq, bestQuality, audiobook.QualityProfile)) bestQuality = fq;
             }
 
             return (cutoffMet, bestQuality);

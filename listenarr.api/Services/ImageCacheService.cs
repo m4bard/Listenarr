@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -589,7 +589,7 @@ namespace Listenarr.Api.Services
             // Special-case for built-in unavailable cover asset
             if (string.Equals(identifier, "cover-unavailable", StringComparison.OrdinalIgnoreCase))
             {
-                var staticPath = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot", "images", "cover-unavailable.svg");
+                var staticPath = Path.Join(Directory.GetCurrentDirectory(), "wwwroot", "images", "cover-unavailable.svg");
                 if (File.Exists(staticPath))
                     return Task.FromResult<string?>(GetRelativePath(staticPath));
             }
@@ -1016,4 +1016,5 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 

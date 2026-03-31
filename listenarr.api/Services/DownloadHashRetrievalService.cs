@@ -273,39 +273,37 @@ namespace Listenarr.Api.Services
 
             var queries = new List<DownloadClientItemQuery>();
 
-            foreach (var history in pendingImports)
-            {
+            foreach (var history in pendingImports.Where(h =>
                 // Only process if we don't have a valid DownloadId yet
                 // (or if the DownloadId looks like a temporary placeholder)
-                if (string.IsNullOrEmpty(history.DownloadId) || 
-                    history.DownloadId.StartsWith("temp-") ||
-                    history.DownloadId.Length < 10)
+                string.IsNullOrEmpty(h.DownloadId) ||
+                h.DownloadId.StartsWith("temp-") ||
+                h.DownloadId.Length < 10))
+            {
+                // Calculate retry count from history events
+                var allEvents = await _historyRepo.GetByDownloadIdAsync(history.DownloadId, ct);
+                var retryCount = allEvents.Count(e =>
+                    e.EventType == DownloadHistoryEventType.Grabbed &&
+                    e.Data != null &&
+                    e.Data.ContainsKey("HashRetrievalAttempt"));
+
+                var lastRetry = allEvents
+                    .Where(e => e.EventType == DownloadHistoryEventType.Grabbed)
+                    .OrderByDescending(e => e.EventDate)
+                    .FirstOrDefault()?.EventDate;
+
+                queries.Add(new DownloadClientItemQuery
                 {
-                    // Calculate retry count from history events
-                    var allEvents = await _historyRepo.GetByDownloadIdAsync(history.DownloadId, ct);
-                    var retryCount = allEvents.Count(e => 
-                        e.EventType == DownloadHistoryEventType.Grabbed &&
-                        e.Data != null &&
-                        e.Data.ContainsKey("HashRetrievalAttempt"));
-
-                    var lastRetry = allEvents
-                        .Where(e => e.EventType == DownloadHistoryEventType.Grabbed)
-                        .OrderByDescending(e => e.EventDate)
-                        .FirstOrDefault()?.EventDate;
-
-                    queries.Add(new DownloadClientItemQuery
-                    {
-                        DownloadId = history.DownloadId,
-                        Title = history.Title,
-                        AudiobookId = history.AudiobookId,
-                        AddedDate = history.EventDate,
-                        DownloadClient = history.DownloadClient,
-                        DownloadClientId = history.DownloadClientId,
-                        Protocol = history.Protocol,
-                        RetryCount = retryCount,
-                        LastRetry = lastRetry
-                    });
-                }
+                    DownloadId = history.DownloadId,
+                    Title = history.Title,
+                    AudiobookId = history.AudiobookId,
+                    AddedDate = history.EventDate,
+                    DownloadClient = history.DownloadClient,
+                    DownloadClientId = history.DownloadClientId,
+                    Protocol = history.Protocol,
+                    RetryCount = retryCount,
+                    LastRetry = lastRetry
+                });
             }
 
             return queries;

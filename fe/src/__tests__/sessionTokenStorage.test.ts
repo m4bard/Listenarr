@@ -26,7 +26,9 @@ describe('sessionTokenManager storage propagation', () => {
     // Manually set localStorage (emulating other tab)
     localStorage.setItem('listenarr_session_token', token)
     // Emit storage event
-    const ev = new StorageEvent('storage', { key: 'listenarr_session_token', newValue: token })
+    const ev = new Event('storage')
+    Object.defineProperty(ev, 'key', { value: 'listenarr_session_token' })
+    Object.defineProperty(ev, 'newValue', { value: token })
     window.dispatchEvent(ev)
 
     expect(events.length).toBeGreaterThanOrEqual(1)
@@ -34,7 +36,9 @@ describe('sessionTokenManager storage propagation', () => {
 
     // Now simulate removal
     localStorage.removeItem('listenarr_session_token')
-    const ev2 = new StorageEvent('storage', { key: 'listenarr_session_token', newValue: null })
+    const ev2 = new Event('storage')
+    Object.defineProperty(ev2, 'key', { value: 'listenarr_session_token' })
+    Object.defineProperty(ev2, 'newValue', { value: null })
     window.dispatchEvent(ev2)
 
     expect(events[events.length - 1]).toBe(null)

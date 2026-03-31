@@ -103,12 +103,12 @@ namespace Listenarr.Api.Tests.Services
         public async Task StartAndStopBot_WithFakeRunner_StartsAndStopsProcess()
         {
             // Arrange
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr_test_discord_" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr_test_discord_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
-            var botDir = Path.Combine(tempRoot, "tools", "discord-bot");
+            var botDir = Path.Join(tempRoot, "tools", "discord-bot");
             Directory.CreateDirectory(botDir);
             // Create a dummy index.js so DiscordBotService can find it
-            File.WriteAllText(Path.Combine(botDir, "index.js"), "console.log('dummy'); setTimeout(()=>{}, 100000);");
+            File.WriteAllText(Path.Join(botDir, "index.js"), "console.log('dummy'); setTimeout(()=>{}, 100000);");
 
             var hostEnv = new FakeHostEnvironment { ContentRootPath = tempRoot };
             var cfg = new StartupConfig { ApiKey = "test-api-key", EnableSsl = false, Port = 5000 };
@@ -124,7 +124,7 @@ namespace Listenarr.Api.Tests.Services
                 // Debug: ensure test setup is correct
                 _output.WriteLine($"[Test] ContentRootPath: {hostEnv.ContentRootPath}");
                 _output.WriteLine($"[Test] Bot dir exists: {Directory.Exists(botDir)}");
-                _output.WriteLine($"[Test] index.js exists: {File.Exists(Path.Combine(botDir, "index.js"))}");
+                _output.WriteLine($"[Test] index.js exists: {File.Exists(Path.Join(botDir, "index.js"))}");
 
                 // Act - start the bot
                 var started = await svc.StartBotAsync();
@@ -148,7 +148,7 @@ namespace Listenarr.Api.Tests.Services
             finally
             {
                 // Cleanup
-                try { Directory.Delete(tempRoot, true); } catch { }
+                try { Directory.Delete(tempRoot, true); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
             }
         }
     }

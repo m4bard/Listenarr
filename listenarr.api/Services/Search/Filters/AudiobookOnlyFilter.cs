@@ -17,7 +17,7 @@ public class AudiobookOnlyFilter : ISearchResultFilter
         // contains explicit audio signals (runtime or narrator).
         if (result.IsEnriched && !string.IsNullOrWhiteSpace(result.MetadataSource))
         {
-            var source = result.MetadataSource ?? string.Empty;
+            var source = result.MetadataSource;
             var trustedAudioSources = new[] { "Audible", "Audible", "Audnexus" };
 
             var hasExplicitAudioFromMetadata = (result.Runtime.HasValue && result.Runtime.Value > 0)
@@ -65,7 +65,7 @@ public class AudiobookOnlyFilter : ISearchResultFilter
         var hasSuffix = HasAny(suffixIndicators, title) || HasAny(suffixIndicators, format);
 
         // If we see strong signals of a print/box-set/collection (phrase or suffix) and we have no audio evidence, filter out.
-        if ((hasPhrase || hasSuffix || hasSimple) && !hasRuntime && !hasNarrator)
+        if (hasPhrase || hasSuffix || hasSimple)
         {
             return true;
         }

@@ -331,12 +331,9 @@ public class DownloadsController : ControllerBase
             if (d.Metadata != null)
             {
                 var dict = new Dictionary<string, object>();
-                foreach (var kvp in d.Metadata)
+                foreach (var kvp in d.Metadata.Where(kvp => !string.Equals(kvp.Key, "ClientContentPath", StringComparison.OrdinalIgnoreCase)))
                 {
-                    if (!string.Equals(kvp.Key, "ClientContentPath", StringComparison.OrdinalIgnoreCase))
-                    {
-                        dict[kvp.Key] = kvp.Value!;
-                    }
+                    dict[kvp.Key] = kvp.Value!;
                 }
                 sanitizedMetadata = dict;
             }

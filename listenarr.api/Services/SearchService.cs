@@ -544,9 +544,8 @@ namespace Listenarr.Api.Services
                             var converted = new List<SearchResult>();
                             var amFiltered = amRes.Results.AsEnumerable();
                             if (!string.IsNullOrWhiteSpace(language)) amFiltered = amFiltered.Where(b => !string.IsNullOrWhiteSpace(b.Language) && string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
-                            foreach (var book in amFiltered)
+                            foreach (var book in amFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                if (string.IsNullOrWhiteSpace(book.Asin)) continue;
                                 var bookResp = new AudibleBookResponse
                                 {
                                     Asin = book.Asin,
@@ -563,8 +562,8 @@ namespace Listenarr.Api.Services
                                     ReleaseDate = book.ReleaseDate,
                                     Isbn = book.Isbn
                                 };
-                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
-                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
+                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                 sr.IsEnriched = true;
                                 sr.MetadataSource = "Audible";
                                 converted.Add(sr);
@@ -625,9 +624,8 @@ namespace Listenarr.Api.Services
                             var converted = new List<SearchResult>();
                             var authorFiltered = deduplicated.AsEnumerable();
                             if (!string.IsNullOrWhiteSpace(language)) authorFiltered = authorFiltered.Where(b => !string.IsNullOrWhiteSpace(b.Language) && string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
-                            foreach (var book in authorFiltered)
+                            foreach (var book in authorFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                if (string.IsNullOrWhiteSpace(book.Asin)) continue;
                                 var bookResp = new AudibleBookResponse
                                 {
                                     Asin = book.Asin,
@@ -643,8 +641,8 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
-                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
+                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                 sr.IsEnriched = true;
                                 sr.MetadataSource = "Audible";
                                 converted.Add(sr);
@@ -735,14 +733,13 @@ namespace Listenarr.Api.Services
                                 try { _logger.LogInformation("Scanning up to {Limit} author candidates for ISBN {Isbn}", scanCandidates.Count, isbnVal); } catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {
                                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                 }
-                                foreach (var c in scanCandidates)
+                                foreach (var c in scanCandidates.Where(c => !string.IsNullOrWhiteSpace(c.Asin)))
                                 {
-                                    if (string.IsNullOrWhiteSpace(c.Asin)) continue;
                                     try
                                     {
-                                        var meta = await _audibleService.GetBookMetadataAsync(c.Asin, region, true, language);
+                                        var meta = await _audibleService.GetBookMetadataAsync(c.Asin!, region, true, language);
                                         if (meta == null) continue;
-                                        detailedMetaByAsin[c.Asin] = meta;
+                                        detailedMetaByAsin[c.Asin!] = meta;
                                         if (!string.IsNullOrWhiteSpace(meta.Isbn) && string.Equals(meta.Isbn.Trim(), isbnVal, StringComparison.OrdinalIgnoreCase))
                                         {
                                             // Narrow authorFiltered to only matching ASINs
@@ -762,11 +759,10 @@ namespace Listenarr.Api.Services
 
                             // Convert filtered lightweight results; if we collected detailed
                             // metadata for some ASINs (e.g., ISBN scan), prefer that for enrichment.
-                            foreach (var book in authorFiltered)
+                            foreach (var book in authorFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                if (string.IsNullOrWhiteSpace(book.Asin)) continue;
                                 AudibleBookResponse? bookResp = null;
-                                if (detailedMetaByAsin.TryGetValue(book.Asin, out var found)) bookResp = found;
+                                if (detailedMetaByAsin.TryGetValue(book.Asin!, out var found)) bookResp = found;
                                 if (bookResp == null)
                                 {
                                     bookResp = new AudibleBookResponse
@@ -788,8 +784,8 @@ namespace Listenarr.Api.Services
                                 }
                                 try
                                 {
-                                    var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
-                                    var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
+                                    var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
+                                    var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                     sr.IsEnriched = true;
                                     sr.MetadataSource = "Audible";
                                     converted.Add(sr);
@@ -812,9 +808,8 @@ namespace Listenarr.Api.Services
                             var converted = new List<SearchResult>();
                             var titleFiltered = titleRes.Results.AsEnumerable();
                             if (!string.IsNullOrWhiteSpace(language)) titleFiltered = titleFiltered.Where(b => string.IsNullOrWhiteSpace(b.Language) || string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
-                            foreach (var book in titleFiltered)
+                            foreach (var book in titleFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                if (string.IsNullOrWhiteSpace(book.Asin)) continue;
                                 var bookResp = new AudibleBookResponse
                                 {
                                     Asin = book.Asin,
@@ -830,8 +825,8 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
-                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
+                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                 sr.IsEnriched = true;
                                 sr.MetadataSource = "Audible";
                                 converted.Add(sr);
@@ -850,9 +845,8 @@ namespace Listenarr.Api.Services
                             var converted = new List<SearchResult>();
                             var simpleFiltered = simpleRes.Results.AsEnumerable();
                             if (!string.IsNullOrWhiteSpace(language)) simpleFiltered = simpleFiltered.Where(b => string.IsNullOrWhiteSpace(b.Language) || string.Equals(b.Language, language, StringComparison.OrdinalIgnoreCase));
-                            foreach (var book in simpleFiltered)
+                            foreach (var book in simpleFiltered.Where(book => !string.IsNullOrWhiteSpace(book.Asin)))
                             {
-                                if (string.IsNullOrWhiteSpace(book.Asin)) continue;
                                 var bookResp = new AudibleBookResponse
                                 {
                                     Asin = book.Asin,
@@ -868,8 +862,8 @@ namespace Listenarr.Api.Services
                                     Narrators = book.Narrators,
                                     ReleaseDate = book.ReleaseDate
                                 };
-                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin, "Audible");
-                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin);
+                                var meta = _metadataConverters.ConvertAudibleToMetadata(bookResp, book.Asin!, "Audible");
+                                var sr = await _metadataConverters.ConvertMetadataToSearchResultAsync(meta, book.Asin!);
                                 sr.IsEnriched = true;
                                 sr.MetadataSource = "Audible";
                                 converted.Add(sr);
@@ -910,14 +904,11 @@ namespace Listenarr.Api.Services
                     _logger.LogDebug(exAppSettings, "Failed to load application search settings, falling back to defaults");
                 }
 
-                // Initialize ASIN candidate list
-                var asinCandidates = new List<string>();
-
                 // Step 2: Collect candidates from OpenLibrary (and other non-scraping sources)
                 var candidateCollection = await _asinCandidateCollector.CollectCandidatesAsync(
                     query, skipOpenLibrary, ct);
 
-                asinCandidates = candidateCollection.AsinCandidates;
+                var asinCandidates = candidateCollection.AsinCandidates;
                 var asinToRawResult = candidateCollection.AsinToRawResult;
                 var asinToSource = candidateCollection.AsinToSource;
                 var asinToOpenLibrary = candidateCollection.AsinToOpenLibrary;
@@ -957,12 +948,8 @@ namespace Listenarr.Api.Services
                     query,
                     ct);
 
-                var enriched = enrichmentResult.EnrichedResults;
-                var asinsNeedingFallback = enrichmentResult.AsinsNeedingFallback;
+                var enrichedList = enrichmentResult.EnrichedResults;
                 var candidateDropReasons = enrichmentResult.CandidateDropReasons;
-
-                // Only return enriched items (metadata success); skip basic fallbacks entirely
-                var enrichedList = enriched;
                 await _searchProgressReporter.BroadcastAsync($"Enrichment complete. Found {enrichedList.Count} enriched results", null);
 
                 // Merge OpenLibrary-derived results (created earlier) into the enriched list so
@@ -1032,15 +1019,15 @@ namespace Listenarr.Api.Services
                     // Compute containment and fuzzy similarity based on title/author/description
                     try
                     {
-                        containmentScore = ComputeContainmentScore(r, query ?? string.Empty);
-                        fuzzyScore = ComputeFuzzySimilarity((r.Title ?? string.Empty) + " " + (r.Artist ?? string.Empty), query ?? string.Empty);
+                                containmentScore = ComputeContainmentScore(r, query);
+                                fuzzyScore = ComputeFuzzySimilarity((r.Title ?? string.Empty) + " " + (r.Artist ?? string.Empty), query);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogDebug(ex, "Failed to compute containment/fuzzy scores for ASIN {Asin}", r.Asin);
                     }
 
                     // Use the scorer to compute comprehensive relevance score
-                    var scoredResult = _searchResultScorer.ScoreResult(r, query ?? string.Empty, containmentScore, fuzzyScore);
+                            var scoredResult = _searchResultScorer.ScoreResult(r, query, containmentScore, fuzzyScore);
                     
                     // Attach computed score to the SearchResult so callers / UI can inspect it
                     try { r.Score = (int)Math.Round(scoredResult.Score * 100.0); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { 
@@ -1058,13 +1045,10 @@ namespace Listenarr.Api.Services
                     var r = s.Result;
 
                     // Author/publisher requirement
-                    if (requireAuthorAndPublisher)
+                    if (requireAuthorAndPublisher && (string.IsNullOrWhiteSpace(r.Artist) || string.IsNullOrWhiteSpace(r.Publisher)))
                     {
-                        if (string.IsNullOrWhiteSpace(r.Artist) || string.IsNullOrWhiteSpace(r.Publisher))
-                        {
-                            _logger.LogInformation("Dropping ASIN {Asin} because missing author or publisher", r.Asin);
-                            continue;
-                        }
+                        _logger.LogInformation("Dropping ASIN {Asin} because missing author or publisher", r.Asin);
+                        continue;
                     }
 
                     // Containment modes
@@ -1075,7 +1059,7 @@ namespace Listenarr.Api.Services
                         {
                             // Require direct containment (substring) in key fields
                             var hay = string.Join(" ", new[] { r.Title, r.Artist, r.Album, r.Description, r.Publisher, r.Narrator, r.Language, r.Series }.Where(s2 => !string.IsNullOrEmpty(s2))).ToLowerInvariant();
-                            if (string.IsNullOrEmpty(hay) || hay.IndexOf(query ?? string.Empty, StringComparison.OrdinalIgnoreCase) < 0)
+                            if (string.IsNullOrEmpty(hay) || hay.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
                             {
                                 keep = false;
                                 _logger.LogInformation("Dropping ASIN {Asin} (Strict containment failed). containmentScore={Score}, fuzzy={Fuzzy}", r.Asin, s.ContainmentScore, s.FuzzyScore);
@@ -1156,10 +1140,8 @@ namespace Listenarr.Api.Services
                 {
                     var finalAsinEntries = new List<string>();
 
-                    foreach (var asin in asinCandidates)
+                    foreach (var asin in asinCandidates.Where(asin => !string.IsNullOrWhiteSpace(asin)))
                     {
-                        if (string.IsNullOrWhiteSpace(asin)) continue;
-
                         // If already accepted in the final results, mark as accepted
                         if (results.Any(r => string.Equals(r.Asin, asin, StringComparison.OrdinalIgnoreCase)))
                         {
@@ -1199,8 +1181,8 @@ namespace Listenarr.Api.Services
                             var fuzzy = 0.0;
                             try
                             {
-                                containment = ComputeContainmentScore(enrichedCandidate, query ?? string.Empty);
-                                fuzzy = ComputeFuzzySimilarity((enrichedCandidate.Title ?? string.Empty) + " " + (enrichedCandidate.Artist ?? string.Empty), query ?? string.Empty);
+                                containment = ComputeContainmentScore(enrichedCandidate, query);
+                                fuzzy = ComputeFuzzySimilarity(enrichedCandidate.Title + " " + enrichedCandidate.Artist, query);
                             }
                             catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { 
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
@@ -1210,7 +1192,7 @@ namespace Listenarr.Api.Services
                             {
                                 // In strict mode we require direct containment
                                 var hay = string.Join(" ", new[] { enrichedCandidate.Title, enrichedCandidate.Artist, enrichedCandidate.Album, enrichedCandidate.Description, enrichedCandidate.Publisher, enrichedCandidate.Narrator, enrichedCandidate.Language, enrichedCandidate.Series }.Where(s => !string.IsNullOrEmpty(s))).ToLowerInvariant();
-                                if (string.IsNullOrEmpty(hay) || hay.IndexOf(query ?? string.Empty, StringComparison.OrdinalIgnoreCase) < 0)
+                                if (string.IsNullOrEmpty(hay) || hay.IndexOf(query, StringComparison.OrdinalIgnoreCase) < 0)
                                 {
                                     try { candidateDropReasons[asin] = "containment_failed_strict"; } catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) { 
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
@@ -1324,12 +1306,8 @@ namespace Listenarr.Api.Services
 
             if (!queryTokens.Any()) return 0.0;
 
-            int matched = 0;
             var haySet = new HashSet<string>(hayTokens, StringComparer.OrdinalIgnoreCase);
-            foreach (var qt in queryTokens)
-            {
-                if (haySet.Contains(qt)) matched++;
-            }
+            var matched = queryTokens.Count(haySet.Contains);
 
             // Partial credit for hyphen-insensitive matches (e.g., sg-1 vs sg)
             // Also check for substring matches of query tokens in hay tokens.
@@ -1337,14 +1315,8 @@ namespace Listenarr.Api.Services
             {
                 var qt = queryTokens[i];
                 if (haySet.Contains(qt)) continue;
-                foreach (var ht in haySet)
-                {
-                    if (ht.Contains(qt) || qt.Contains(ht))
-                    {
-                        matched += 1; // give partial match same weight as token match
-                        break;
-                    }
-                }
+                if (haySet.Any(ht => ht.Contains(qt) || qt.Contains(ht)))
+                    matched += 1; // give partial match same weight as token match
             }
 
             var score = Math.Min(1.0, (double)matched / Math.Max(1, queryTokens.Count));
@@ -1372,9 +1344,9 @@ namespace Listenarr.Api.Services
             var lowered = s.ToLowerInvariant();
             // Remove punctuation except hyphen
             var sb = new System.Text.StringBuilder(lowered.Length);
-            foreach (var c in lowered)
+            foreach (var c in lowered.Where(c => char.IsLetterOrDigit(c) || c == '-'))
             {
-                if (char.IsLetterOrDigit(c) || c == '-') sb.Append(c);
+                sb.Append(c);
             }
             return sb.ToString();
         }
@@ -1528,17 +1500,11 @@ namespace Listenarr.Api.Services
                 Indexer? indexer = null;
 
                 // Try parsing apiId as numeric indexer ID first
-                if (int.TryParse(apiId, out var indexerId))
-                {
-                    indexer = await _dbContext.Indexers.FindAsync(indexerId);
-                }
-                else
-                {
-                    // If not numeric, try to find an indexer by name (case-insensitive)
-                    indexer = await _dbContext.Indexers
+                indexer = int.TryParse(apiId, out var indexerId)
+                    ? await _dbContext.Indexers.FindAsync(indexerId)
+                    : await _dbContext.Indexers
                         .Where(i => i.Name.Equals(apiId, StringComparison.OrdinalIgnoreCase))
                         .FirstOrDefaultAsync();
-                }
 
                 if (indexer == null)
                 {
@@ -1573,16 +1539,11 @@ namespace Listenarr.Api.Services
             {
                 Indexer? indexer = null;
 
-                if (int.TryParse(apiId, out var indexerId))
-                {
-                    indexer = await _dbContext.Indexers.FindAsync(indexerId);
-                }
-                else
-                {
-                    indexer = await _dbContext.Indexers
+                indexer = int.TryParse(apiId, out var indexerId)
+                    ? await _dbContext.Indexers.FindAsync(indexerId)
+                    : await _dbContext.Indexers
                         .Where(i => i.Name.Equals(apiId, StringComparison.OrdinalIgnoreCase))
                         .FirstOrDefaultAsync();
-                }
 
                 if (indexer == null || !indexer.IsEnabled)
                 {
@@ -1623,7 +1584,7 @@ namespace Listenarr.Api.Services
                 var opts = new Listenarr.Api.Models.MyAnonamouseOptions();
                 if (root.TryGetProperty("mam_options", out var mo) && mo.ValueKind == JsonValueKind.Object)
                 {
-                    if (mo.TryGetProperty("searchInDescription", out var sid) && sid.ValueKind == JsonValueKind.True || sid.ValueKind == JsonValueKind.False)
+                    if (mo.TryGetProperty("searchInDescription", out var sid) && (sid.ValueKind == JsonValueKind.True || sid.ValueKind == JsonValueKind.False))
                         opts.SearchInDescription = sid.GetBoolean();
                     if (mo.TryGetProperty("searchInSeries", out var sis) && (sis.ValueKind == JsonValueKind.True || sis.ValueKind == JsonValueKind.False))
                         opts.SearchInSeries = sis.GetBoolean();
@@ -1631,14 +1592,14 @@ namespace Listenarr.Api.Services
                         opts.SearchInFilenames = sif.GetBoolean();
                     if (mo.TryGetProperty("language", out var lang) && lang.ValueKind == JsonValueKind.String)
                         opts.SearchLanguage = lang.GetString();
-                    if (mo.TryGetProperty("filter", out var filter) && filter.ValueKind == JsonValueKind.String)
-                    {
-                        if (Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(filter.GetString() ?? string.Empty, true, out var f)) opts.Filter = f;
-                    }
-                    if (mo.TryGetProperty("freeleechWedge", out var wedge) && wedge.ValueKind == JsonValueKind.String)
-                    {
-                        if (Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(wedge.GetString() ?? string.Empty, true, out var w)) opts.FreeleechWedge = w;
-                    }
+                    if (mo.TryGetProperty("filter", out var filter) &&
+                        filter.ValueKind == JsonValueKind.String &&
+                        Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(filter.GetString() ?? string.Empty, true, out var f))
+                        opts.Filter = f;
+                    if (mo.TryGetProperty("freeleechWedge", out var wedge) &&
+                        wedge.ValueKind == JsonValueKind.String &&
+                        Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(wedge.GetString() ?? string.Empty, true, out var w))
+                        opts.FreeleechWedge = w;
                     if (mo.TryGetProperty("enrichResults", out var enrich) && (enrich.ValueKind == JsonValueKind.True || enrich.ValueKind == JsonValueKind.False))
                         opts.EnrichResults = enrich.GetBoolean();
                     if (mo.TryGetProperty("enrichTopResults", out var enrichTop) && (enrichTop.ValueKind == JsonValueKind.Number || enrichTop.ValueKind == JsonValueKind.String))
@@ -1658,14 +1619,14 @@ namespace Listenarr.Api.Services
                     opts.SearchInFilenames = sif2.GetBoolean();
                 if (root.TryGetProperty("language", out var lang2) && lang2.ValueKind == JsonValueKind.String)
                     opts.SearchLanguage = lang2.GetString();
-                if (root.TryGetProperty("filter", out var filter2) && filter2.ValueKind == JsonValueKind.String)
-                {
-                    if (Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(filter2.GetString() ?? string.Empty, true, out var f2)) opts.Filter = f2;
-                }
-                if (root.TryGetProperty("freeleechWedge", out var wedge2) && wedge2.ValueKind == JsonValueKind.String)
-                {
-                    if (Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(wedge2.GetString() ?? string.Empty, true, out var w2)) opts.FreeleechWedge = w2;
-                }
+                if (root.TryGetProperty("filter", out var filter2) &&
+                    filter2.ValueKind == JsonValueKind.String &&
+                    Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(filter2.GetString() ?? string.Empty, true, out var f2))
+                    opts.Filter = f2;
+                if (root.TryGetProperty("freeleechWedge", out var wedge2) &&
+                    wedge2.ValueKind == JsonValueKind.String &&
+                    Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(wedge2.GetString() ?? string.Empty, true, out var w2))
+                    opts.FreeleechWedge = w2;
                 if (root.TryGetProperty("enrichResults", out var enrich2) && (enrich2.ValueKind == JsonValueKind.True || enrich2.ValueKind == JsonValueKind.False))
                     opts.EnrichResults = enrich2.GetBoolean();
                 if (root.TryGetProperty("enrichTopResults", out var enrichTop2) && (enrichTop2.ValueKind == JsonValueKind.Number || enrichTop2.ValueKind == JsonValueKind.String))
@@ -1746,9 +1707,9 @@ namespace Listenarr.Api.Services
                 {
                     var providerResults = await provider.SearchAsync(indexer, query, category, request);
                     // Ensure Source is set for all results
-                    foreach (var r in providerResults)
+                    foreach (var r in providerResults.Where(r => string.IsNullOrWhiteSpace(r.Source)))
                     {
-                        if (string.IsNullOrWhiteSpace(r.Source)) r.Source = fallbackName;
+                        r.Source = fallbackName;
                     }
                     return providerResults;
                 }
@@ -1774,12 +1735,12 @@ namespace Listenarr.Api.Services
                 _logger.LogDebug("Indexer API URL: {Url}", LogRedaction.RedactText(url, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
 
                 // Make HTTP request with User-Agent header
-                var request = new HttpRequestMessage(HttpMethod.Get, url);
+                using var request = new HttpRequestMessage(HttpMethod.Get, url);
                 var version = typeof(SearchService).Assembly.GetName().Version?.ToString() ?? "0.0.0";
                 var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
                 request.Headers.UserAgent.ParseAdd(userAgent);
                 
-                var response = await _httpClient.SendAsync(request);
+                using var response = await _httpClient.SendAsync(request);
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Indexer {Name} returned status {Status}", indexer.Name, response.StatusCode);
@@ -1954,7 +1915,7 @@ namespace Listenarr.Api.Services
                 queryParams.Add(new KeyValuePair<string, string>("description", string.Empty));
 
                 // tor[text] is the search query
-                queryParams.Add(new KeyValuePair<string, string>("tor[text]", query ?? string.Empty));
+                    queryParams.Add(new KeyValuePair<string, string>("tor[text]", query));
 
                 // Preserve audiobook filtering if available: include main_cat values
                 if (torObject.TryGetValue("main_cat", out var mainCatObj) && mainCatObj is string[] mainCats)
@@ -2014,7 +1975,7 @@ namespace Listenarr.Api.Services
 
                 _logger.LogInformation("MyAnonamouse outgoing query (loadSearchJSONbasic): {Query}", qs);
 
-                var mamRequest = new HttpRequestMessage(HttpMethod.Get, fullUrl);
+                using var mamRequest = new HttpRequestMessage(HttpMethod.Get, fullUrl);
                 // Add browser-like headers to avoid "invalid request" errors
                 mamRequest.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
                 mamRequest.Headers.Accept.ParseAdd("application/json, text/javascript, */*; q=0.01");
@@ -2022,78 +1983,66 @@ namespace Listenarr.Api.Services
                 mamRequest.Headers.Referrer = new Uri("https://www.myanonamouse.net/");
 
                 // Prefer using the injected HttpClient in tests (so DelegatingHandler stubs can capture requests)
-                HttpClient? disposableClient = null;
-                HttpClient httpClientToUse = _httpClient;
-                List<IndexerSearchResult> results = new List<IndexerSearchResult>();
+                HttpClient? disposableClient =
+                    _httpClient?.BaseAddress == null || !string.Equals(_httpClient.BaseAddress.Host, new Uri(indexer.Url).Host, StringComparison.OrdinalIgnoreCase)
+                        ? MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url)
+                        : null;
+                using var disposableClientScope = disposableClient;
+                var httpClientToUse = disposableClient ?? _httpClient!;
+                
+                if (disposableClient == null && !string.IsNullOrEmpty(mamId))
+                    mamRequest.Headers.Add("Cookie", $"mam_id={mamId}");
+
+                _logger.LogDebug("MyAnonamouse API URL: {Url}", LogRedaction.RedactText(url, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
+
+                using var response = await httpClientToUse.SendAsync(mamRequest);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
+                    return new List<IndexerSearchResult>();
+                }
+
+                // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
                 try
                 {
-                    var indexerUri = new Uri(indexer.Url);
-                    if (_httpClient?.BaseAddress == null || !string.Equals(_httpClient.BaseAddress.Host, indexerUri.Host, StringComparison.OrdinalIgnoreCase))
+                    var newMam = MyAnonamouseHelper.TryExtractMamIdFromResponse(response);
+                    if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
                     {
-                        httpClientToUse = MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
-                        disposableClient = httpClientToUse;
-                    }
-                    else
-                    {
-                        // Add cookie header for injected client so the request is authenticated for MAM
-                        if (!string.IsNullOrEmpty(mamId))
-                            mamRequest.Headers.Add("Cookie", $"mam_id={mamId}");
-                    }
-
-                    _logger.LogDebug("MyAnonamouse API URL: {Url}", LogRedaction.RedactText(url, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
-
-                    var response = await httpClientToUse.SendAsync(mamRequest);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
-                        var errorContent = await response.Content.ReadAsStringAsync();
-                        _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
-                        return new List<IndexerSearchResult>();
-                    }
-
-                    // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
-                    try
-                    {
-                        var newMam = MyAnonamouseHelper.TryExtractMamIdFromResponse(response);
-                        if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
+                        _logger.LogInformation("MyAnonamouse: received updated mam_id from response for indexer {Name}", indexer.Name);
+                        var idx = await _dbContext.Indexers.FindAsync(indexer.Id);
+                        if (idx != null)
                         {
-                            _logger.LogInformation("MyAnonamouse: received updated mam_id from response for indexer {Name}", indexer.Name);
-                            var idx = await _dbContext.Indexers.FindAsync(indexer.Id);
-                            if (idx != null)
-                            {
-                                idx.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(idx.AdditionalSettings, newMam);
-                                _dbContext.Indexers.Update(idx);
-                                await _dbContext.SaveChangesAsync();
-                                mamId = newMam;
-                            }
+                            idx.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(idx.AdditionalSettings, newMam);
+                            _dbContext.Indexers.Update(idx);
+                            await _dbContext.SaveChangesAsync();
+                            mamId = newMam;
                         }
-                    }
-                    catch (Exception exMam) when (exMam is not OperationCanceledException && exMam is not OutOfMemoryException && exMam is not StackOverflowException) {
-                        _logger.LogDebug(exMam, "Failed to persist updated mam_id from MyAnonamouse response");
-                    }
-
-                    var jsonResponse = await response.Content.ReadAsStringAsync();
-                    _logger.LogDebug("MyAnonamouse raw response: {Response}", jsonResponse);
-                    results = ParseMyAnonamouseResponse(jsonResponse, indexer);
-
-                    // Optional per-result enrichment: fetch individual item pages to populate missing fields
-                    try
-                    {
-                        // Respect global IncludeEnrichment and per-indexer MyAnonamouse options
-                        var shouldEnrich = (request?.IncludeEnrichment ?? false) && (request?.MyAnonamouse?.EnrichResults == true);
-                        if (shouldEnrich)
-                        {
-                            var enrichTop = request?.MyAnonamouse?.EnrichTopResults ?? 3;
-                            await EnrichMyAnonamouseResultsAsync(indexer, results, enrichTop, mamId, httpClientToUse);
-                        }
-                    }
-                    catch (Exception exEnrich) when (exEnrich is not OperationCanceledException && exEnrich is not OutOfMemoryException && exEnrich is not StackOverflowException) {
-                        _logger.LogWarning(exEnrich, "MyAnonamouse enrichment step failed");
                     }
                 }
-                finally
+                catch (Exception exMam) when (exMam is not OperationCanceledException && exMam is not OutOfMemoryException && exMam is not StackOverflowException) {
+                    _logger.LogDebug(exMam, "Failed to persist updated mam_id from MyAnonamouse response");
+                }
+
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                _logger.LogDebug("MyAnonamouse raw response: {Response}", jsonResponse);
+                var results = ParseMyAnonamouseResponse(jsonResponse, indexer);
+
+                // Optional per-result enrichment: fetch individual item pages to populate missing fields
+                try
                 {
-                    disposableClient?.Dispose();
+                    // Respect global IncludeEnrichment and per-indexer MyAnonamouse options
+                    var mamRequestOptions = request?.MyAnonamouse;
+                    var shouldEnrich = request?.IncludeEnrichment == true && mamRequestOptions?.EnrichResults == true;
+                    if (shouldEnrich)
+                    {
+                        var enrichTop = mamRequestOptions!.EnrichTopResults ?? 3;
+                        await EnrichMyAnonamouseResultsAsync(indexer, results, enrichTop, mamId, httpClientToUse);
+                    }
+                }
+                catch (Exception exEnrich) when (exEnrich is not OperationCanceledException && exEnrich is not OutOfMemoryException && exEnrich is not StackOverflowException) {
+                    _logger.LogWarning(exEnrich, "MyAnonamouse enrichment step failed");
                 }
 
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
@@ -2181,13 +2130,10 @@ namespace Listenarr.Api.Services
                     else
                     {
                         // As a last resort, try to find the first array value anywhere in the object
-                        foreach (var prop in root.EnumerateObject())
+                        foreach (var prop in root.EnumerateObject().Where(prop => prop.Value.ValueKind == JsonValueKind.Array))
                         {
-                            if (prop.Value.ValueKind == JsonValueKind.Array)
-                            {
-                                dataArrayElement = prop.Value;
-                                break;
-                            }
+                            dataArrayElement = prop.Value;
+                            break;
                         }
 
                         if (dataArrayElement.ValueKind == JsonValueKind.Undefined)
@@ -2246,15 +2192,9 @@ namespace Listenarr.Api.Services
                             }
                         }
 
-                        string id;
-                        if (item.TryGetProperty("id", out var idElem))
-                        {
-                            id = idElem.ValueKind == JsonValueKind.String ? idElem.GetString() ?? "" : idElem.ToString();
-                        }
-                        else
-                        {
-                            id = Guid.NewGuid().ToString();
-                        }
+                        var id = item.TryGetProperty("id", out var idElem)
+                            ? idElem.ValueKind == JsonValueKind.String ? idElem.GetString() ?? string.Empty : idElem.ToString()
+                            : Guid.NewGuid().ToString();
 
                         // MyAnonamouse uses "title" in responses; fall back to "name" if needed
                         var title = "";
@@ -2327,47 +2267,44 @@ namespace Listenarr.Api.Services
                         // Parse grabs/files when present (Prowlarr exposes these directly for MyAnonamouse)
                         var grabs = 0;
                         var grabKeys = new[] { "grabs", "snatches", "snatched", "snatched_count", "snatches_count", "numgrabs", "num_grabs", "grab_count", "times_completed", "completed", "downloaded", "times_downloaded" };
-                        foreach (var prop in item.EnumerateObject())
+                        foreach (var prop in item.EnumerateObject().Where(prop => grabKeys.Any(k => string.Equals(k, prop.Name, StringComparison.OrdinalIgnoreCase))))
                         {
-                            // Case-insensitive match against known grab keys
-                            if (grabKeys.Any(k => string.Equals(k, prop.Name, StringComparison.OrdinalIgnoreCase)))
+                            var ge = prop.Value;
+                            _logger.LogInformation("Found grabs candidate field '{Field}' (kind={Kind}) for '{Title}': {Value}", prop.Name, ge.ValueKind, ge.ToString(), title);
+                            if (ge.ValueKind == JsonValueKind.Number)
                             {
-                                var ge = prop.Value;
-                                _logger.LogInformation("Found grabs candidate field '{Field}' (kind={Kind}) for '{Title}': {Value}", prop.Name, ge.ValueKind, ge.ToString(), title);
-                                if (ge.ValueKind == JsonValueKind.Number)
-                                {
-                                    grabs = ge.GetInt32();
-                                    _logger.LogInformation("Parsed grabs for '{Title}' from field '{Field}': {Grabs}", title, prop.Name, grabs);
-                                    break;
-                                }
-                                else if (ge.ValueKind == JsonValueKind.String && int.TryParse(ge.GetString(), out var gtmp))
-                                {
-                                    grabs = gtmp;
-                                    _logger.LogInformation("Parsed grabs (string) for '{Title}' from field '{Field}': {Grabs}", title, prop.Name, grabs);
-                                    break;
-                                }
+                                grabs = ge.GetInt32();
+                                _logger.LogInformation("Parsed grabs for '{Title}' from field '{Field}': {Grabs}", title, prop.Name, grabs);
+                                break;
+                            }
+                            else if (ge.ValueKind == JsonValueKind.String && int.TryParse(ge.GetString(), out var gtmp))
+                            {
+                                grabs = gtmp;
+                                _logger.LogInformation("Parsed grabs (string) for '{Title}' from field '{Field}': {Grabs}", title, prop.Name, grabs);
+                                break;
                             }
                         }
 
                         var files = 0;
-                        foreach (var prop in item.EnumerateObject())
+                        foreach (var prop in item.EnumerateObject().Where(prop =>
+                            string.Equals(prop.Name, "files", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(prop.Name, "numfiles", StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(prop.Name, "num_files", StringComparison.OrdinalIgnoreCase)))
                         {
-                            if (string.Equals(prop.Name, "files", StringComparison.OrdinalIgnoreCase) || string.Equals(prop.Name, "numfiles", StringComparison.OrdinalIgnoreCase) || string.Equals(prop.Name, "num_files", StringComparison.OrdinalIgnoreCase))
+                            var fe = prop.Value;
+                            _logger.LogInformation("Found files candidate field '{Field}' (kind={Kind}) for '{Title}': {Value}", prop.Name, fe.ValueKind, fe.ToString(), title);
+                            if (fe.ValueKind == JsonValueKind.Number)
                             {
-                                var fe = prop.Value;
-                                _logger.LogInformation("Found files candidate field '{Field}' (kind={Kind}) for '{Title}': {Value}", prop.Name, fe.ValueKind, fe.ToString(), title);
-                                if (fe.ValueKind == JsonValueKind.Number)
-                                {
-                                    files = fe.GetInt32();
-                                    _logger.LogInformation("Parsed files for '{Title}' from field '{Field}': {Files}", title, prop.Name, files);
-                                }
-                                else if (fe.ValueKind == JsonValueKind.String && int.TryParse(fe.GetString(), out var ftmp))
-                                {
-                                    files = ftmp;
-                                    _logger.LogInformation("Parsed files (string) for '{Title}' from field '{Field}': {Files}", title, prop.Name, files);
-                                }
-                                break;
+                                files = fe.GetInt32();
+                                _logger.LogInformation("Parsed files for '{Title}' from field '{Field}': {Files}", title, prop.Name, files);
                             }
+                            else if (fe.ValueKind == JsonValueKind.String && int.TryParse(fe.GetString(), out var ftmp))
+                            {
+                                files = ftmp;
+                                _logger.LogInformation("Parsed files (string) for '{Title}' from field '{Field}': {Files}", title, prop.Name, files);
+                            }
+
+                            break;
                         }
 
                         // Prefer explicit 'added' timestamp when present (MyAnonamouse uses "yyyy-MM-dd HH:mm:ss")
@@ -2533,15 +2470,12 @@ namespace Listenarr.Api.Services
                         // 3) Fallback to description and title (filename) parsing
 
                         // Try to read explicit format/filetype fields from the item (case-insensitive)
-                        string rawFormatField = string.Empty;
-                        foreach (var prop in item.EnumerateObject())
-                        {
-                            if (prop.Value.ValueKind == JsonValueKind.String && (string.Equals(prop.Name, "format", StringComparison.OrdinalIgnoreCase) || string.Equals(prop.Name, "filetype", StringComparison.OrdinalIgnoreCase)))
-                            {
-                                rawFormatField = prop.Value.GetString() ?? string.Empty;
-                                break;
-                            }
-                        }
+                        var rawFormatField = item.EnumerateObject()
+                            .Where(prop => prop.Value.ValueKind == JsonValueKind.String &&
+                                           (string.Equals(prop.Name, "format", StringComparison.OrdinalIgnoreCase) ||
+                                            string.Equals(prop.Name, "filetype", StringComparison.OrdinalIgnoreCase)))
+                            .Select(prop => prop.Value.GetString() ?? string.Empty)
+                            .FirstOrDefault() ?? string.Empty;
 
                         // Detect format from tags and from explicit field
                         var formatFromTags = DetectFormatFromTags(tags ?? "");
@@ -2574,7 +2508,7 @@ namespace Listenarr.Api.Services
 
                             if (finalQuality == "Unknown")
                             {
-                                var probeText = title ?? string.Empty;
+                                var probeText = title;
                                 var q = DetectQualityFromTags(probeText);
                                 if (q != "Unknown") finalQuality = q;
                                 else
@@ -2596,7 +2530,7 @@ namespace Listenarr.Api.Services
 
                             if (finalFormat == "MP3")
                             {
-                                var probeText = title ?? string.Empty;
+                                var probeText = title;
                                 var f = DetectFormatFromTags(probeText);
                                 if (!string.IsNullOrEmpty(f) && f != "MP3") finalFormat = f;
                             }
@@ -2606,9 +2540,9 @@ namespace Listenarr.Api.Services
                         var downloadUrl = "";
                         if (!string.IsNullOrEmpty(dlHash))
                         {
-                            var baseUrl = (indexer?.Url ?? "https://www.myanonamouse.net").TrimEnd('/');
+                            var baseUrl = (indexer.Url ?? "https://www.myanonamouse.net").TrimEnd('/');
                             downloadUrl = $"{baseUrl}/tor/download.php/{dlHash}";
-                            var mamIdLocal = MyAnonamouseHelper.TryGetMamId(indexer?.AdditionalSettings);
+                            var mamIdLocal = MyAnonamouseHelper.TryGetMamId(indexer.AdditionalSettings);
                             if (!string.IsNullOrEmpty(mamIdLocal))
                             {
                                 // Normalize mam_id: if the stored value is already percent-encoded, unescape it first
@@ -2633,20 +2567,20 @@ namespace Listenarr.Api.Services
                         var result = new IndexerSearchResult
                         {
                             Id = id ?? Guid.NewGuid().ToString(),
-                            Title = title ?? "Unknown",
+                            Title = title,
                             Artist = author ?? "Unknown Author",
                             Album = narrator != null ? $"Narrated by {narrator}" : "Unknown",
                             Category = category ?? "Audiobook",
                             Size = size,
                             Seeders = seeders,
                             Leechers = leechers,
-                            Source = indexer?.Name ?? "MyAnonamouse",
+                            Source = indexer.Name ?? "MyAnonamouse",
                             PublishedDate = publishDate?.ToString("o") ?? string.Empty,
                             Quality = finalQuality,
                             Format = finalFormat,
                             TorrentUrl = downloadUrl,
                             // Use MyAnonamouse public item page pattern: https://myanonamouse.net/t/{id}
-                            ResultUrl = !string.IsNullOrEmpty(id) ? $"https://myanonamouse.net/t/{Uri.EscapeDataString(id!)}" : (indexer?.Url ?? ""),
+                            ResultUrl = !string.IsNullOrEmpty(id) ? $"https://myanonamouse.net/t/{Uri.EscapeDataString(id)}" : (indexer.Url ?? ""),
                             MagnetLink = "",
                             NzbUrl = ""
                         };
@@ -2654,12 +2588,9 @@ namespace Listenarr.Api.Services
                         if (!string.IsNullOrEmpty(rawLangCode) && string.IsNullOrEmpty(result.Language))
                         {
                             result.Language = ParseLanguageFromCode(rawLangCode) ?? ParseLanguageFromText(rawLangCode);
-                            if (!string.IsNullOrEmpty(result.Language) && !string.IsNullOrEmpty(rawLangCode)) 
-                            {
-                                rawLangCode = rawLangCode.ToUpperInvariant();
-                            }
-                        }                        result.IndexerId = indexer?.Id;
-                        result.IndexerImplementation = indexer?.Implementation ?? string.Empty;
+                        }
+                        result.IndexerId = indexer.Id;
+                        result.IndexerImplementation = indexer.Implementation ?? string.Empty;
                         // Robust link detection: prefer magnet/hash/torrent indicators, only treat as NZB when explicit NZB fields exist
                         try
                         {
@@ -2678,35 +2609,30 @@ namespace Listenarr.Api.Services
                                 var h = hashElem.GetString();
                                 if (!string.IsNullOrWhiteSpace(h))
                                 {
-                                    magnetLink = $"magnet:?xt=urn:btih:{h}&dn={Uri.EscapeDataString(title ?? string.Empty)}";
+                                    magnetLink = $"magnet:?xt=urn:btih:{h}&dn={Uri.EscapeDataString(title)}";
                                 }
                             }
 
                             // Detect torrent download URL from other common fields
-                            var torrentUrlDetected = result.TorrentUrl ?? string.Empty;
                             string[] torrentFields = new[] { "download", "dlLink", "downloadlink", "download_url", "torrent", "torrent_url", "torrentUrl", "torrentlink" };
-                            foreach (var tf in torrentFields)
-                            {
-                                if (string.IsNullOrEmpty(torrentUrlDetected) && item.TryGetProperty(tf, out var tfElem) && tfElem.ValueKind == JsonValueKind.String)
-                                {
-                                    torrentUrlDetected = tfElem.GetString() ?? string.Empty;
-                                }
-                            }
+                            var torrentUrlDetected = result.TorrentUrl
+                                ?? torrentFields
+                                    .Select(tf => item.TryGetProperty(tf, out var tfElem) && tfElem.ValueKind == JsonValueKind.String
+                                        ? tfElem.GetString()
+                                        : null)
+                                    .FirstOrDefault(url => !string.IsNullOrEmpty(url))
+                                ?? string.Empty;
 
                             // If any URL looks like a .torrent file, prefer it as torrent URL
                             if (string.IsNullOrEmpty(torrentUrlDetected))
                             {
-                                foreach (var prop in item.EnumerateObject())
+                                foreach (var v in item.EnumerateObject()
+                                    .Where(prop => prop.Value.ValueKind == JsonValueKind.String)
+                                    .Select(prop => prop.Value.GetString())
+                                    .Where(v => !string.IsNullOrEmpty(v) && v.EndsWith(".torrent", StringComparison.OrdinalIgnoreCase)))
                                 {
-                                    if (prop.Value.ValueKind == JsonValueKind.String)
-                                    {
-                                        var v = prop.Value.GetString();
-                                        if (!string.IsNullOrEmpty(v) && v.EndsWith(".torrent", StringComparison.OrdinalIgnoreCase))
-                                        {
-                                            torrentUrlDetected = v;
-                                            break;
-                                        }
-                                    }
+                                    torrentUrlDetected = v!;
+                                    break;
                                 }
                             }
 
@@ -2720,26 +2646,26 @@ namespace Listenarr.Api.Services
                                 nzbUrlDetected = nzbElem.GetString() ?? string.Empty;
 
                             // Apply discovered links to the result
-                            if (!string.IsNullOrEmpty(magnetLink)) result.MagnetLink = magnetLink ?? string.Empty;
-                            if (!string.IsNullOrEmpty(torrentUrlDetected)) result.TorrentUrl = torrentUrlDetected ?? string.Empty;
-                            if (!string.IsNullOrEmpty(nzbUrlDetected)) result.NzbUrl = nzbUrlDetected ?? string.Empty;
+                            if (!string.IsNullOrEmpty(magnetLink)) result.MagnetLink = magnetLink;
+                            if (!string.IsNullOrEmpty(torrentUrlDetected)) result.TorrentUrl = torrentUrlDetected;
+                            if (!string.IsNullOrEmpty(nzbUrlDetected)) result.NzbUrl = nzbUrlDetected;
 
                             // If a direct downloadUrl was provided by the API, prefer that as the torrent/nzb URL
                             if (!string.IsNullOrEmpty(downloadUrlField))
                             {
                                 // Choose disposition based on common hints and protocol
-                                if ((downloadUrlField ?? string.Empty).EndsWith(".torrent", StringComparison.OrdinalIgnoreCase) || (item.TryGetProperty("protocol", out var protoElem) && protoElem.ValueKind == JsonValueKind.String && protoElem.GetString()?.Equals("torrent", StringComparison.OrdinalIgnoreCase) == true))
+                                if (downloadUrlField.EndsWith(".torrent", StringComparison.OrdinalIgnoreCase) || (item.TryGetProperty("protocol", out var protoElem) && protoElem.ValueKind == JsonValueKind.String && protoElem.GetString()?.Equals("torrent", StringComparison.OrdinalIgnoreCase) == true))
                                 {
-                                    result.TorrentUrl = downloadUrlField ?? string.Empty;
+                                    result.TorrentUrl = downloadUrlField;
                                 }
-                                else if ((downloadUrlField ?? string.Empty).EndsWith(".nzb", StringComparison.OrdinalIgnoreCase) || (item.TryGetProperty("protocol", out var proto2Elem) && proto2Elem.ValueKind == JsonValueKind.String && proto2Elem.GetString()?.Equals("usenet", StringComparison.OrdinalIgnoreCase) == true))
+                                else if (downloadUrlField.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase) || (item.TryGetProperty("protocol", out var proto2Elem) && proto2Elem.ValueKind == JsonValueKind.String && proto2Elem.GetString()?.Equals("usenet", StringComparison.OrdinalIgnoreCase) == true))
                                 {
-                                    result.NzbUrl = downloadUrlField ?? string.Empty;
+                                    result.NzbUrl = downloadUrlField;
                                 }
                                 else
                                 {
                                     // Unknown, prefer TorrentUrl by default
-                                    result.TorrentUrl = downloadUrlField ?? string.Empty;
+                                    result.TorrentUrl = downloadUrlField;
                                 }
                             }
 
@@ -2775,22 +2701,23 @@ namespace Listenarr.Api.Services
 
                         // Prefer explicit language fields when present (lang_code, language_code, lang, language) - case-insensitive search
                         string explicitLang = string.Empty;
-                        foreach (var prop in item.EnumerateObject())
+                        foreach (var prop in item.EnumerateObject().Where(prop =>
+                            (prop.Name.Equals("lang_code", StringComparison.OrdinalIgnoreCase) ||
+                             prop.Name.Equals("language_code", StringComparison.OrdinalIgnoreCase) ||
+                             prop.Name.Equals("lang", StringComparison.OrdinalIgnoreCase) ||
+                             prop.Name.Equals("language", StringComparison.OrdinalIgnoreCase)) &&
+                            prop.Value.ValueKind == JsonValueKind.String))
                         {
-                            if ((prop.Name.Equals("lang_code", StringComparison.OrdinalIgnoreCase) || prop.Name.Equals("language_code", StringComparison.OrdinalIgnoreCase) || prop.Name.Equals("lang", StringComparison.OrdinalIgnoreCase) || prop.Name.Equals("language", StringComparison.OrdinalIgnoreCase)) && prop.Value.ValueKind == JsonValueKind.String)
-                            {
-                                explicitLang = prop.Value.GetString() ?? string.Empty;
-                                rawLangCode = explicitLang;
-                                _logger.LogDebug("MyAnonamouse: found language field '{Field}'='{Lang}' for item {Id}", prop.Name, explicitLang, id);
-                                break;
-                            }
+                            explicitLang = prop.Value.GetString() ?? string.Empty;
+                            _logger.LogDebug("MyAnonamouse: found language field '{Field}'='{Lang}' for item {Id}", prop.Name, explicitLang, id);
+                            break;
                         }
 
                         // Numeric language id fallback (case-insensitive check)
                         if (string.IsNullOrEmpty(explicitLang) && item.TryGetProperty("language", out var langNumElem) && langNumElem.ValueKind == JsonValueKind.Number)
                         {
                             var numeric = langNumElem.GetInt32();
-                            if (numeric == 1) { explicitLang = "ENG"; rawLangCode = "ENG"; }
+                            if (numeric == 1) { explicitLang = "ENG"; }
                             _logger.LogDebug("MyAnonamouse: found numeric language id={Num} mapped to '{Lang}' for item {Id}", numeric, explicitLang, id);
                         }
 
@@ -2801,66 +2728,17 @@ namespace Listenarr.Api.Services
                             if (!string.IsNullOrWhiteSpace(parsedLang))
                             {
                                 result.Language = parsedLang;
-                                // store normalized code for flags
-                                rawLangCode = explicitLang.ToUpperInvariant();
                             }
                         }
 
                         // Fallback: parse title, tags and description for language codes (e.g. '[ENG / M4B]')
                         if (string.IsNullOrWhiteSpace(result.Language))
                         {
-                            var probe = string.Join(" ", new[] { title ?? string.Empty, tags ?? string.Empty, description ?? string.Empty }).Trim();
+                            var probe = string.Join(" ", new[] { title, tags ?? string.Empty, description ?? string.Empty }).Trim();
                             var detectedLang = ParseLanguageFromText(probe);
                             if (!string.IsNullOrEmpty(detectedLang))
                             {
                                 result.Language = detectedLang;
-                            }
-                        }
-
-                        // Build flags list similar to Prowlarr: include raw language code and filetype (uppercase)
-                        var flagsList = new List<string>();
-                        if (!string.IsNullOrEmpty(rawLangCode)) flagsList.Add(rawLangCode);
-                        if (!string.IsNullOrEmpty(rawFormatField)) flagsList.Add(rawFormatField.ToUpperInvariant());
-
-                        // Append flags to the title if not already present (try to use raw lang/filetype first)
-                        if (flagsList.Count > 0)
-                        {
-                            // Avoid duplicating if title already contains bracketed flags
-                            if (!System.Text.RegularExpressions.Regex.IsMatch(title ?? string.Empty, "\\[.*\\]$"))
-                            {
-                                title = (title ?? string.Empty) + " [" + string.Join(" / ", flagsList) + "]";
-                            }
-                        }
-                        else if (!string.IsNullOrEmpty(fileNameField))
-                        {
-                            // Fallback: extract trailing bracketed flags from filename (before extension) and append them as-is
-                            try
-                            {
-                                var fname = fileNameField;
-                                var dotIdx = fname.LastIndexOf('.');
-                                var nameOnly = dotIdx > 0 ? fname.Substring(0, dotIdx) : fname;
-                                var bracketStart = nameOnly.IndexOf(" [");
-                                if (bracketStart >= 0)
-                                {
-                                    var suffix = nameOnly.Substring(bracketStart);
-                                    if (!System.Text.RegularExpressions.Regex.IsMatch(title ?? string.Empty, "\\[.*\\]$") && !(title ?? string.Empty).Contains(suffix))
-                                    {
-                                        title = (title ?? string.Empty) + suffix;
-                                    }
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger.LogDebug(ex, "Failed to extract bracketed flags from filename for MyAnonamouse item {Id}", id);
-                            }
-                        }
-
-                        // Append VIP marker when the item is flagged as VIP
-                        if (item.TryGetProperty("vip", out var vipElem))
-                        {
-                            if (vipElem.ValueKind == JsonValueKind.True || (vipElem.ValueKind == JsonValueKind.String && string.Equals(vipElem.GetString(), "true", StringComparison.OrdinalIgnoreCase)))
-                            {
-                                title ??= string.Empty;
-                                if (!title.EndsWith(" [VIP]")) title = title + " [VIP]";
                             }
                         }
 
@@ -2923,7 +2801,7 @@ namespace Listenarr.Api.Services
         private string? FindMamIdInJson(JsonElement element)
         {
             // Keys to look for
-            var keys = new[] { "mam_id", "mamid", "mamId", "mamID", "mam" };
+            var keys = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "mam_id", "mamid", "mamId", "mamID", "mam" };
 
             if (element.ValueKind == JsonValueKind.Object)
             {
@@ -2931,7 +2809,7 @@ namespace Listenarr.Api.Services
                 {
                     try
                     {
-                        if (keys.Any(k => string.Equals(prop.Name, k, StringComparison.OrdinalIgnoreCase)))
+                        if (keys.Contains(prop.Name))
                         {
                             if (prop.Value.ValueKind == JsonValueKind.String)
                                 return prop.Value.GetString();
@@ -2951,11 +2829,10 @@ namespace Listenarr.Api.Services
             }
             else if (element.ValueKind == JsonValueKind.Array)
             {
-                foreach (var item in element.EnumerateArray())
-                {
-                    var found = FindMamIdInJson(item);
-                    if (!string.IsNullOrEmpty(found)) return found;
-                }
+                var found = element.EnumerateArray()
+                    .Select(FindMamIdInJson)
+                    .FirstOrDefault(value => !string.IsNullOrEmpty(value));
+                if (!string.IsNullOrEmpty(found)) return found;
             }
 
             return null;
@@ -2998,12 +2875,12 @@ namespace Listenarr.Api.Services
 
                     // Request JSON detail endpoint
                     var detailUrl = $"{indexer.Url.TrimEnd('/')}/tor/js/loadTorrentJSONBasic.php?id={torrentId}";
-                    var req = new HttpRequestMessage(HttpMethod.Get, detailUrl);
+                    using var req = new HttpRequestMessage(HttpMethod.Get, detailUrl);
                     req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
                     req.Headers.Accept.ParseAdd("application/json");
                     if (!string.IsNullOrEmpty(mamId)) req.Headers.Add("Cookie", $"mam_id={mamId}");
 
-                    var resp = await httpClient.SendAsync(req);
+                    using var resp = await httpClient.SendAsync(req);
                     if (!resp.IsSuccessStatusCode) return;
                     var json = await resp.Content.ReadAsStringAsync();
 
@@ -3024,22 +2901,20 @@ namespace Listenarr.Api.Services
                         
                         var grabs = 0;
                         var grabKeys = new[] { "grabs", "snatches", "snatched", "snatched_count", "snatches_count", "numgrabs", "num_grabs", "grab_count", "times_completed", "time_completed", "downloaded", "times_downloaded", "completed" };
-                        foreach (var key in grabKeys)
+                        foreach (var key in grabKeys.Where(key => { JsonElement tmp; return detail.TryGetProperty(key, out tmp); }))
                         {
-                            if (detail.TryGetProperty(key, out var gEl))
+                            var gEl = detail.GetProperty(key);
+                            if (gEl.ValueKind == System.Text.Json.JsonValueKind.Number)
                             {
-                                if (gEl.ValueKind == System.Text.Json.JsonValueKind.Number)
-                                {
-                                    grabs = gEl.GetInt32();
-                                    _logger.LogDebug("Enrichment: found grabs field '{Field}'={Value} for {Id}", key, grabs, r.Id);
-                                    break;
-                                }
-                                else if (gEl.ValueKind == System.Text.Json.JsonValueKind.String && int.TryParse(gEl.GetString(), out var gtmp))
-                                {
-                                    grabs = gtmp;
-                                    _logger.LogDebug("Enrichment: parsed grabs (string) field '{Field}'={Value} for {Id}", key, grabs, r.Id);
-                                    break;
-                                }
+                                grabs = gEl.GetInt32();
+                                _logger.LogDebug("Enrichment: found grabs field '{Field}'={Value} for {Id}", key, grabs, r.Id);
+                                break;
+                            }
+                            else if (gEl.ValueKind == System.Text.Json.JsonValueKind.String && int.TryParse(gEl.GetString(), out var gtmp))
+                            {
+                                grabs = gtmp;
+                                _logger.LogDebug("Enrichment: parsed grabs (string) field '{Field}'={Value} for {Id}", key, grabs, r.Id);
+                                break;
                             }
                         }
                         var files = detail.GetPropertyOrDefault("files", 0);
@@ -3175,7 +3050,7 @@ namespace Listenarr.Api.Services
                 return u.Host;
             }
             catch (Exception caughtEx_21) when (caughtEx_21 is not OperationCanceledException && caughtEx_21 is not OutOfMemoryException && caughtEx_21 is not StackOverflowException) {
-                return rawUrl ?? "Indexer";
+                return rawUrl.TrimEnd('/');
             }
         }
 
@@ -3314,8 +3189,6 @@ namespace Listenarr.Api.Services
                         var identifier = item.TryGetProperty("identifier", out var idElem) ? idElem.GetString() : "";
                         var title = item.TryGetProperty("title", out var titleElem) ? titleElem.GetString() : "";
                         var creator = item.TryGetProperty("creator", out var creatorElem) ? creatorElem.GetString() : "";
-                        var itemSize = item.TryGetProperty("item_size", out var sizeElem) ? sizeElem.GetInt64() : 0;
-
                         if (string.IsNullOrEmpty(identifier) || string.IsNullOrEmpty(title))
                         {
                             _logger.LogDebug("Skipping item with missing identifier or title");
@@ -3379,7 +3252,7 @@ namespace Listenarr.Api.Services
 
                         try
                         {
-                            var detectedLang = ParseLanguageFromText(title ?? string.Empty);
+                            var detectedLang = ParseLanguageFromText(title);
                             if (!string.IsNullOrEmpty(detectedLang)) iaResult.Language = detectedLang;
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -3528,14 +3401,9 @@ namespace Listenarr.Api.Services
 
                         // Parse published date
                         var pubDateStr = item.Element("pubDate")?.Value;
-                        if (DateTime.TryParse(pubDateStr, out var pubDate))
-                        {
-                            result.PublishedDate = pubDate.ToString("o");
-                        }
-                        else
-                        {
-                            result.PublishedDate = string.Empty;
-                        }
+                        result.PublishedDate = DateTime.TryParse(pubDateStr, out var pubDate)
+                            ? pubDate.ToString("o")
+                            : string.Empty;
 
 // Parse Torznab/Newznab attributes (support both torznab and newznab namespaces)
                 var torznabNs = System.Xml.Linq.XNamespace.Get("http://torznab.com/schemas/2015/feed");
@@ -3578,7 +3446,7 @@ namespace Listenarr.Api.Services
                                 case "filetype":
                                 case "format":
                                     // Prefer explicit filetype/format attributes
-                                    var normalizedFmt = value?.ToLowerInvariant() ?? string.Empty;
+                                    var normalizedFmt = value.ToLowerInvariant();
                                     if (normalizedFmt.Contains("m4b")) result.Format = "M4B";
                                     else if (normalizedFmt.Contains("flac")) result.Format = "FLAC";
                                     else if (normalizedFmt.Contains("opus")) result.Format = "OPUS";
@@ -3601,7 +3469,7 @@ namespace Listenarr.Api.Services
                                     // Standardized language codes (e.g., ENG, FR)
                                     try
                                     {
-                                        var parsedLang = ParseLanguageFromText(value ?? string.Empty);
+                                        var parsedLang = ParseLanguageFromText(value);
                                         if (!string.IsNullOrEmpty(parsedLang)) result.Language = parsedLang;
                                     }
                                     catch (Exception caughtEx_22) when (caughtEx_22 is not OperationCanceledException && caughtEx_22 is not OutOfMemoryException && caughtEx_22 is not StackOverflowException) { 
@@ -3619,7 +3487,7 @@ namespace Listenarr.Api.Services
                                     {
                                         try
                                         {
-                                            var pl = ParseLanguageFromText(value ?? string.Empty);
+                                            var pl = ParseLanguageFromText(value);
                                             if (!string.IsNullOrEmpty(pl)) result.Language = pl;
                                         }
                                         catch (Exception caughtEx_23) when (caughtEx_23 is not OperationCanceledException && caughtEx_23 is not OutOfMemoryException && caughtEx_23 is not StackOverflowException) { 
@@ -3827,7 +3695,7 @@ namespace Listenarr.Api.Services
                             // Detect language codes present in title or description (e.g. [ENG / M4B])
                             try
                             {
-                                var lang = ParseLanguageFromText(result.Title + " " + (description ?? string.Empty));
+                                var lang = ParseLanguageFromText(result.Title + " " + description);
                                 if (!string.IsNullOrEmpty(lang)) result.Language = lang;
                             }
                             catch (Exception caughtEx_25) when (caughtEx_25 is not OperationCanceledException && caughtEx_25 is not OutOfMemoryException && caughtEx_25 is not StackOverflowException) { /* Non-critical */ 

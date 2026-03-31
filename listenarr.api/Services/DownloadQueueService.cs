@@ -346,7 +346,7 @@ namespace Listenarr.Api.Services
                             allClientItemIds.Add(mapped.Id);
                         }
 
-                        foreach (var itemId in clientQueue.Select(item => item.Id).Where(itemId => !string.IsNullOrWhiteSpace(itemId)))
+                        foreach (var itemId in clientQueue.Where(item => !string.IsNullOrWhiteSpace(item.Id)).Select(item => item.Id!))
                         {
                             allClientItemIds.Add(itemId!);
                         }

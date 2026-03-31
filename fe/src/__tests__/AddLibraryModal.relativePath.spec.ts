@@ -4,12 +4,13 @@ import { vi, describe, it, expect } from 'vitest'
 // Mock apiService methods used during mount/seedPreview to avoid network calls
 vi.mock('@/services/api', () => ({
   apiService: {
-    getMetadata: vi.fn().mockResolvedValue(null),
+    getAudibleMetadata: vi.fn().mockResolvedValue({}),
     previewLibraryPath: vi
       .fn()
       .mockResolvedValue({ fullPath: 'C:\\root\\Author\\Title', relativePath: '' }),
     getApplicationSettings: vi.fn().mockResolvedValue({ outputPath: 'C:\\root' }),
     getQualityProfiles: vi.fn().mockResolvedValue([]),
+    getRootFolders: vi.fn().mockResolvedValue([]),
   },
 }))
 

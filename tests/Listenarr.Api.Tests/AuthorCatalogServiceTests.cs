@@ -12,10 +12,12 @@ namespace Listenarr.Api.Tests
 {
     public class AuthorCatalogServiceTests
     {
+        private static readonly HttpClient SharedHttpClient = new();
+
         [Fact]
         public async Task GetCatalogAsync_SupplementsSparseFallbackCatalog_WithSearchResults()
         {
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(SharedHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var searchService = new Mock<ISearchService>();
@@ -110,7 +112,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetCatalogAsync_UsesPersistedCatalogCache_BeforeAudible()
         {
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(SharedHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var searchService = new Mock<ISearchService>();
@@ -166,7 +168,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetCatalogAsync_ForceRefresh_BypassesPersistedCatalogCache_AndPersistsFreshBooks()
         {
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(SharedHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var searchService = new Mock<ISearchService>();

@@ -1167,11 +1167,8 @@ namespace Listenarr.Api.Services
             if (string.IsNullOrEmpty(text)) return text;
             var normalized = text.Normalize(NormalizationForm.FormD);
             var sb = new StringBuilder(normalized.Length);
-            foreach (var ch in normalized)
-            {
-                if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
-                    sb.Append(ch);
-            }
+            foreach (var ch in normalized.Where(ch => CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark))
+                sb.Append(ch);
             return sb.ToString().Normalize(NormalizationForm.FormC);
         }
 

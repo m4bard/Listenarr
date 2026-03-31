@@ -82,7 +82,7 @@ namespace Listenarr.Api.Tests
                 _output.WriteLine("Before update: " + dumpPre);
             }
 
-            var updated = await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = "D:\\newroot" }, moveFiles: false);
+            await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = "D:\\newroot" }, moveFiles: false);
 
             // Verify audiobooks' basepaths updated (use a fresh context)
             using (var verifyDb = new ListenArrDbContext(options))
@@ -134,7 +134,7 @@ namespace Listenarr.Api.Tests
                 _output.WriteLine("Before update (with move): " + dumpPre);
             }
 
-            var updated = await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = "D:\\newroot" }, moveFiles: true);
+            await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = "D:\\newroot" }, moveFiles: true);
 
             // Verify DB changed (use fresh context)
             using (var verifyDb = new ListenArrDbContext(options))

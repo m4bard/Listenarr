@@ -86,7 +86,7 @@ public class AsinEnricher
                             var queryMatchesOl = false;
                             if (!string.IsNullOrWhiteSpace(hayOl) && !string.IsNullOrWhiteSpace(query))
                             {
-                                queryMatchesOl = hayOl.IndexOf(query ?? string.Empty, StringComparison.OrdinalIgnoreCase) >= 0;
+                                queryMatchesOl = hayOl.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0;
                             }
 
                             if (queryMatchesOl)

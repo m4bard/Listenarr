@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -20,7 +20,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ScanAudiobook_AllowsRequestPathWithinConfiguredRoot_ReturnsOk()
         {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-root-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-root-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
@@ -88,9 +88,9 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ScanAudiobook_RejectsRequestPathOutsideConfiguredRoots_ReturnsBadRequest()
         {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-root-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-root-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
-            var other = Path.Combine(Path.GetTempPath(), "listenarr-other-" + Guid.NewGuid().ToString("N"));
+            var other = Path.Join(Path.GetTempPath(), "listenarr-other-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(other);
 
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
@@ -106,7 +106,7 @@ namespace Listenarr.Api.Tests
             var services = new ServiceCollection();
             var mockConfig = new Mock<IConfigurationService>();
             // Use an output path that does NOT contain 'other' to ensure the requested path is outside configured roots
-            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = Path.Combine(Path.GetTempPath(), "different-root") });
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = Path.Join(Path.GetTempPath(), "different-root") });
             services.AddSingleton<IConfigurationService>(mockConfig.Object);
 
             var mockHub = new Mock<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();

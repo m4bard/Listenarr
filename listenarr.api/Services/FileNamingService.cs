@@ -1,3 +1,4 @@
+using System.Linq;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -44,53 +45,7 @@ namespace Listenarr.Api.Services
             
             var outputPath = settings.OutputPath;
 
-            // Helper to pick the first non-empty value
-            string FirstNonEmpty(params string?[] candidates)
-            {
-                foreach (var c in candidates)
-                {
-                    if (!string.IsNullOrWhiteSpace(c)) return c!;
-                }
-                return string.Empty;
-            }
-
-            // Build variable dictionary
-            // Heuristic: sometimes metadata.Artist can contain the title/series (noisy tags).
-            // Prefer an AlbumArtist or alternate artist value if the primary artist looks like the title/series.
-            string ChooseAuthor(AudioMetadata md)
-            {
-                var primary = FirstNonEmpty(md.Artist, md.AlbumArtist);
-                var alternate = FirstNonEmpty(md.AlbumArtist, md.Artist);
-
-                if (!string.IsNullOrWhiteSpace(primary) && !string.IsNullOrWhiteSpace(md.Title))
-                {
-                    // If the primary artist contains the title or equals the series/title, prefer the alternate.
-                    if (primary.IndexOf(md.Title, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        (!string.IsNullOrWhiteSpace(md.Series) && string.Equals(primary, md.Series, StringComparison.OrdinalIgnoreCase)) ||
-                        string.Equals(primary, md.Title, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (!string.IsNullOrWhiteSpace(alternate)) return alternate;
-                        return primary;
-                    }
-                }
-
-                return string.IsNullOrWhiteSpace(primary) ? alternate : primary;
-            }
-
-            var variables = new Dictionary<string, object>
-            {
-                // Keep multi-word author names as a single folder name (e.g. "Jane Austen")
-                { "Author", SanitizePathComponent(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
-                // For Series we must not fallback to Album or Title - when Series is blank we want
-                // the variable to be empty so ApplyNamingPattern can remove any adjacent separators
-                { "Series", string.IsNullOrWhiteSpace(metadata.Series) ? string.Empty : SanitizePathComponent(metadata.Series) },
-                { "Title", SanitizePathComponent(FirstNonEmpty(metadata.Title, "Unknown Title")) },
-                { "SeriesNumber", FirstNonEmpty(metadata.SeriesPosition?.ToString(), metadata.TrackNumber?.ToString()) },
-                { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
-                { "Quality", FirstNonEmpty((metadata.Bitrate.HasValue ? metadata.Bitrate.ToString() + "kbps" : null), metadata.Format) },
-                { "DiskNumber", FirstNonEmpty(diskNumber?.ToString(), metadata.DiscNumber?.ToString()) },
-                { "ChapterNumber", FirstNonEmpty(chapterNumber?.ToString(), metadata.TrackNumber?.ToString()) }
-            };
+            var variables = BuildVariables(metadata, diskNumber, chapterNumber);
 
             // Diagnostic logging: record the variables used for pattern replacement
             try
@@ -194,48 +149,7 @@ namespace Listenarr.Api.Services
                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
-            // Helper to pick the first non-empty value
-            string FirstNonEmpty(params string?[] candidates)
-            {
-                foreach (var c in candidates)
-                {
-                    if (!string.IsNullOrWhiteSpace(c)) return c!;
-                }
-                return string.Empty;
-            }
-
-            // Build variable dictionary
-            string ChooseAuthor2(AudioMetadata md)
-            {
-                var primary = FirstNonEmpty(md.Artist, md.AlbumArtist);
-                var alternate = FirstNonEmpty(md.AlbumArtist, md.Artist);
-
-                if (!string.IsNullOrWhiteSpace(primary) && !string.IsNullOrWhiteSpace(md.Title))
-                {
-                    if (primary.IndexOf(md.Title, StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        (!string.IsNullOrWhiteSpace(md.Series) && string.Equals(primary, md.Series, StringComparison.OrdinalIgnoreCase)) ||
-                        string.Equals(primary, md.Title, StringComparison.OrdinalIgnoreCase))
-                    {
-                        if (!string.IsNullOrWhiteSpace(alternate)) return alternate;
-                        return primary;
-                    }
-                }
-
-                return string.IsNullOrWhiteSpace(primary) ? alternate : primary;
-            }
-
-            var variables = new Dictionary<string, object>
-            {
-                { "Author", SanitizePathComponent(FirstNonEmpty(ChooseAuthor2(metadata), "Unknown Author")) },
-                // Same behavior for overload with custom outputPath: do not fallback for Series
-                { "Series", string.IsNullOrWhiteSpace(metadata.Series) ? string.Empty : SanitizePathComponent(metadata.Series) },
-                { "Title", SanitizePathComponent(FirstNonEmpty(metadata.Title, "Unknown Title")) },
-                { "SeriesNumber", FirstNonEmpty(metadata.SeriesPosition?.ToString(), metadata.TrackNumber?.ToString()) },
-                { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
-                { "Quality", FirstNonEmpty((metadata.Bitrate.HasValue ? metadata.Bitrate.ToString() + "kbps" : null), metadata.Format) },
-                { "DiskNumber", FirstNonEmpty(diskNumber?.ToString(), metadata.DiscNumber?.ToString()) },
-                { "ChapterNumber", FirstNonEmpty(chapterNumber?.ToString(), metadata.TrackNumber?.ToString()) }
-            };
+            var variables = BuildVariables(metadata, diskNumber, chapterNumber);
 
             // Diagnostic logging: record the variables used for pattern replacement (custom outputPath overload)
             try
@@ -474,6 +388,76 @@ namespace Listenarr.Api.Services
             }
 
             return result;
+        }
+
+        private Dictionary<string, object> BuildVariables(AudioMetadata metadata, int? diskNumber, int? chapterNumber)
+        {
+            return new Dictionary<string, object>
+            {
+                // Keep multi-word author names as a single folder name (e.g. "Jane Austen")
+                { "Author", SanitizePathComponent(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
+                // For Series we must not fallback to Album or Title - when Series is blank we want
+                // the variable to be empty so ApplyNamingPattern can remove any adjacent separators
+                { "Series", string.IsNullOrWhiteSpace(metadata.Series) ? string.Empty : SanitizePathComponent(metadata.Series) },
+                { "Title", SanitizePathComponent(FirstNonEmpty(metadata.Title, "Unknown Title")) },
+                { "Subtitle", string.IsNullOrWhiteSpace(metadata.Subtitle) ? string.Empty : SanitizePathComponent(metadata.Subtitle) },
+                { "Edition", string.IsNullOrWhiteSpace(metadata.Edition) ? string.Empty : SanitizePathComponent(metadata.Edition) },
+                { "Narrator", string.IsNullOrWhiteSpace(metadata.Narrator) ? string.Empty : SanitizePathComponent(metadata.Narrator) },
+                { "Publisher", string.IsNullOrWhiteSpace(metadata.Publisher) ? string.Empty : SanitizePathComponent(metadata.Publisher) },
+                { "Language", string.IsNullOrWhiteSpace(metadata.Language) ? string.Empty : SanitizePathComponent(metadata.Language) },
+                { "Asin", string.IsNullOrWhiteSpace(metadata.Asin) ? string.Empty : SanitizePathComponent(metadata.Asin) },
+                { "SeriesNumber", FirstNonEmpty(metadata.SeriesPosition?.ToString(), metadata.TrackNumber?.ToString()) },
+                { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
+                { "Quality", FirstNonEmpty((metadata.Bitrate.HasValue ? metadata.Bitrate + "kbps" : null), metadata.Format) },
+                { "DiskNumber", FirstNonEmpty(diskNumber?.ToString(), metadata.DiscNumber?.ToString()) },
+                { "ChapterNumber", FirstNonEmpty(chapterNumber?.ToString(), metadata.TrackNumber?.ToString()) }
+            };
+        }
+
+        private static string FirstNonEmpty(params string?[] candidates)
+        {
+            return candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)) ?? string.Empty;
+        }
+
+        // Heuristic: sometimes metadata.Artist can contain the title/series (noisy tags).
+        // Prefer an AlbumArtist or alternate artist value if the primary artist looks like the title/series.
+        private static string ChooseAuthor(AudioMetadata metadata)
+        {
+            var primary = NonNarratorAuthorCandidate(metadata.Artist, metadata.Narrator);
+            var alternate = NonNarratorAuthorCandidate(metadata.AlbumArtist, metadata.Narrator);
+
+            if (string.IsNullOrWhiteSpace(primary))
+            {
+                return alternate;
+            }
+
+            if (!string.IsNullOrWhiteSpace(metadata.Title) &&
+                (primary.IndexOf(metadata.Title, StringComparison.OrdinalIgnoreCase) >= 0 ||
+                 (!string.IsNullOrWhiteSpace(metadata.Series) && string.Equals(primary, metadata.Series, StringComparison.OrdinalIgnoreCase)) ||
+                 string.Equals(primary, metadata.Title, StringComparison.OrdinalIgnoreCase)))
+            {
+                if (!string.IsNullOrWhiteSpace(alternate)) return alternate;
+                return primary;
+            }
+
+            return string.IsNullOrWhiteSpace(primary) ? alternate : primary;
+        }
+
+        private static string NonNarratorAuthorCandidate(string? candidate, string? narrator)
+        {
+            if (string.IsNullOrWhiteSpace(candidate))
+            {
+                return string.Empty;
+            }
+
+            var trimmedCandidate = candidate.Trim();
+            if (!string.IsNullOrWhiteSpace(narrator) &&
+                string.Equals(trimmedCandidate, narrator.Trim(), StringComparison.OrdinalIgnoreCase))
+            {
+                return string.Empty;
+            }
+
+            return trimmedCandidate;
         }
 
         private static HashSet<char> BuildPortableInvalidFileNameChars()

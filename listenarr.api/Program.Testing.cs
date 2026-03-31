@@ -1,4 +1,4 @@
-// This partial is compiled only for the test host. It applies small DI patches
+﻿// This partial is compiled only for the test host. It applies small DI patches
 // so the WebApplicationFactory used by integration tests has the same persistence
 // registrations as the real app (including IDbContextFactory).
 using System;
@@ -15,7 +15,7 @@ public partial class Program
         // writes to the developer's real config/database/listenarr.db.
         var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
         var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
-            ? Path.Combine(Path.GetTempPath(), "listenarr-tests", "program-testing", $"listenarr-{Guid.NewGuid():N}.db")
+            ? Path.Join(Path.GetTempPath(), "listenarr-tests", "program-testing", $"listenarr-{Guid.NewGuid():N}.db")
             : Path.GetFullPath(sqliteDbPathOverride, builder.Environment.ContentRootPath);
         var sqliteDbDir = Path.GetDirectoryName(sqliteDbPath);
         if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))
@@ -33,3 +33,4 @@ public partial class Program
         builder.Configuration.AddInMemoryCollection(inMemory);
     }
 }
+

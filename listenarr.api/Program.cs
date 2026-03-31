@@ -122,15 +122,15 @@ var isLikelyTestHost =
     !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DOTNET_TEST_RUNNER"));
 
 // Configure Serilog for structured logging, file rotation and SignalR broadcasting
-var logFilePath = Path.Combine(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
+var logFilePath = Path.Join(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
 var signalRSink = new SignalRLogSink();
 // Prefer explicit environment variable (useful for Docker/runtime overrides)
 var logLevelEnv = Environment.GetEnvironmentVariable("LISTENARR_LOG_LEVEL");
 
 // Ensure an external config file in 'config/appsettings/appsettings.json' is available and registered.
 // If the file does not exist on first startup, create a default one so non-Docker users have a place to customize.
-var externalConfigRelative = Path.Combine("config", "appsettings", "appsettings.json");
-var externalConfigAbsolute = Path.Combine(builder.Environment.ContentRootPath, externalConfigRelative);
+var externalConfigRelative = Path.Join("config", "appsettings", "appsettings.json");
+var externalConfigAbsolute = Path.Join(builder.Environment.ContentRootPath, externalConfigRelative);
 try
 {
     var dir = Path.GetDirectoryName(externalConfigAbsolute) ?? string.Empty;
@@ -537,15 +537,15 @@ builder.Services.AddHttpClient("DirectDownload")
 var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
 var hasExplicitSqliteDbPathOverride = !string.IsNullOrWhiteSpace(sqliteDbPathOverride);
 var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
-    ? Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
+    ? Path.Join(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
     : (Path.IsPathRooted(sqliteDbPathOverride)
         ? sqliteDbPathOverride
-        : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
+        : Path.Join(builder.Environment.ContentRootPath, sqliteDbPathOverride));
 
 // Safety guard: test hosts must never write to the repository DB path.
 if (builder.Environment.IsEnvironment("Test") || isLikelyTestHost)
 {
-    var repoDbPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db"));
+    var repoDbPath = Path.GetFullPath(Path.Join(builder.Environment.ContentRootPath, "config", "database", "listenarr.db"));
     var resolvedSqlitePath = Path.GetFullPath(sqliteDbPath);
     if (string.Equals(resolvedSqlitePath, repoDbPath, StringComparison.OrdinalIgnoreCase))
     {
@@ -817,7 +817,7 @@ builder.Services.AddSwaggerGen(options =>
     try
     {
         var xmlFile = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name + ".xml";
-        var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+        var xmlPath = Path.Join(AppContext.BaseDirectory, xmlFile);
         if (File.Exists(xmlPath))
         {
             options.IncludeXmlComments(xmlPath);
@@ -878,25 +878,19 @@ if (builder.Environment.IsProduction())
 }
 
 // During local development we often run the frontend on a different port via Vite
-// and use plain HTTP. Ensure antiforgery cookie can be set in that scenario by
-// relaxing the SecurePolicy and SameSite settings when running in Development.
-// NOTE: CodeQL flags SecurePolicy.None as a security issue, but this is acceptable
-// in Development environment where HTTPS is not available. Production uses SameAsRequest
-// (configured above) which properly enforces Secure flag when behind HTTPS reverse proxy.
+// and use a proxy/front-end on a different port. Keep the cookie policy aligned
+// with the request so local HTTP continues to work without forcing an insecure
+// "always send over HTTP" policy.
 if (builder.Environment.IsDevelopment())
 {
     builder.Services.AddAntiforgery(options =>
     {
         options.HeaderName = "X-XSRF-TOKEN";
-        // Allow the antiforgery cookie to be sent over plain HTTP during local dev
-        // This is safe because Development environment is not exposed to external traffic
-        options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.None; // lgtm[cs/cookie-secure-policy-none]
+        options.Cookie.SecurePolicy = Microsoft.AspNetCore.Http.CookieSecurePolicy.SameAsRequest;
         // During local development the frontend often runs on a different origin
         // (Vite dev server). Use SameSite=Lax so the browser will accept the
-        // cookie for same-site requests to the Vite dev server while avoiding
-        // the requirement to set Secure (which would require HTTPS). In our
-        // setup the dev server proxies /api requests, so Lax is sufficient and
-        // more compatible with local HTTP development.
+        // cookie for proxied same-site requests to the Vite dev server. In our
+        // setup the dev server proxies /api requests, so Lax remains sufficient.
         options.Cookie.SameSite = Microsoft.AspNetCore.Http.SameSiteMode.Lax;
     });
 }
@@ -906,7 +900,7 @@ if (builder.Environment.IsDevelopment())
 // This avoids issues where tokens are protected with an ephemeral key ring and
 // cannot be validated later.
 {
-    var keyDir = Path.Combine(builder.Environment.ContentRootPath, "config", "dataprotection-keys");
+    var keyDir = Path.Join(builder.Environment.ContentRootPath, "config", "dataprotection-keys");
     if (!System.IO.Directory.Exists(keyDir)) System.IO.Directory.CreateDirectory(keyDir);
     builder.Services.AddDataProtection()
         .PersistKeysToFileSystem(new System.IO.DirectoryInfo(keyDir))
@@ -993,7 +987,7 @@ app.UseForwardedHeaders();
 // Map `/placeholder.svg` to the frontend `fe/public/placeholder.svg` so the API
 // serves the exact same placeholder image used by the frontend without
 // modifying any frontend files.
-var frontendPlaceholderPath = Path.Combine(app.Environment.ContentRootPath, "..", "fe", "public", "placeholder.svg");
+var frontendPlaceholderPath = Path.Join(app.Environment.ContentRootPath, "..", "fe", "public", "placeholder.svg");
 app.MapGet("/placeholder.svg", async context =>
 {
     try
@@ -1007,7 +1001,7 @@ app.MapGet("/placeholder.svg", async context =>
         }
 
         // Fallback to backend wwwroot placeholder if the frontend file is not present
-        var fallback = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "placeholder.svg");
+        var fallback = Path.Join(app.Environment.ContentRootPath, "wwwroot", "placeholder.svg");
         if (File.Exists(fallback))
         {
             context.Response.ContentType = "image/svg+xml";
@@ -1029,7 +1023,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 // Serve cached images from config/cache/images directory
-var cacheImagesPath = Path.Combine(app.Environment.ContentRootPath, "config", "cache", "images");
+var cacheImagesPath = Path.Join(app.Environment.ContentRootPath, "config", "cache", "images");
 if (Directory.Exists(cacheImagesPath))
 {
     app.UseStaticFiles(new StaticFileOptions

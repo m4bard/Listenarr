@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -58,7 +58,7 @@ namespace Listenarr.Api.Tests.Services
             _pipeline = new DownloadValidationPipeline(_mockLogger.Object, _stateMachine, _historyRepo);
 
             // Create test directory
-            _testDirectory = Path.Combine(Path.GetTempPath(), "listenarr_pipeline_test_" + Guid.NewGuid().ToString("N"));
+            _testDirectory = Path.Join(Path.GetTempPath(), "listenarr_pipeline_test_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_testDirectory);
         }
 
@@ -66,7 +66,7 @@ namespace Listenarr.Api.Tests.Services
         public async Task ExecutePipeline_SucceedsWithValidDownload()
         {
             // Arrange
-            var testFile = Path.Combine(_testDirectory, "test.m4b");
+            var testFile = Path.Join(_testDirectory, "test.m4b");
             File.WriteAllText(testFile, "test content");
 
             var download = new DownloadClientItem
@@ -171,7 +171,7 @@ namespace Listenarr.Api.Tests.Services
         public async Task CheckPhase_FailsWhenOutputPathDoesNotExist()
         {
             // Arrange
-            var nonExistentPath = Path.Combine(_testDirectory, "nonexistent", "file.m4b");
+            var nonExistentPath = Path.Join(_testDirectory, "nonexistent", "file.m4b");
 
             var download = new DownloadClientItem
             {
@@ -202,7 +202,7 @@ namespace Listenarr.Api.Tests.Services
         public async Task CheckPhase_FailsWhenDownloadIdTemporary()
         {
             // Arrange
-            var testFile = Path.Combine(_testDirectory, "test2.m4b");
+            var testFile = Path.Join(_testDirectory, "test2.m4b");
             File.WriteAllText(testFile, "test");
 
             var download = new DownloadClientItem
@@ -234,7 +234,7 @@ namespace Listenarr.Api.Tests.Services
         public async Task CheckPhase_FailsWhenSizeZero()
         {
             // Arrange
-            var testFile = Path.Combine(_testDirectory, "test3.m4b");
+            var testFile = Path.Join(_testDirectory, "test3.m4b");
             File.WriteAllText(testFile, "test");
 
             var download = new DownloadClientItem
@@ -266,7 +266,7 @@ namespace Listenarr.Api.Tests.Services
         public async Task Pipeline_RecordsAllPhases()
         {
             // Arrange
-            var testFile = Path.Combine(_testDirectory, "test4.m4b");
+            var testFile = Path.Join(_testDirectory, "test4.m4b");
             File.WriteAllText(testFile, "test content");
 
             var download = new DownloadClientItem
@@ -294,15 +294,15 @@ namespace Listenarr.Api.Tests.Services
 
             // Check for phase metadata
             var checkEvent = history.FirstOrDefault(h =>
-                h.Data != null && h.Data.ContainsKey("Phase") && h.Data["Phase"].ToString() == "Check");
+                h.Data != null && h.Data.TryGetValue("Phase", out var phaseObj) && phaseObj?.ToString() == "Check");
             Assert.NotNull(checkEvent);
 
             var importEvent = history.FirstOrDefault(h =>
-                h.Data != null && h.Data.ContainsKey("Phase") && h.Data["Phase"].ToString() == "Import");
+                h.Data != null && h.Data.TryGetValue("Phase", out var phaseObj) && phaseObj?.ToString() == "Import");
             Assert.NotNull(importEvent);
 
             var verifyEvent = history.FirstOrDefault(h =>
-                h.Data != null && h.Data.ContainsKey("Phase") && h.Data["Phase"].ToString() == "Verify");
+                h.Data != null && h.Data.TryGetValue("Phase", out var phaseObj) && phaseObj?.ToString() == "Verify");
             Assert.NotNull(verifyEvent);
         }
 
@@ -310,7 +310,7 @@ namespace Listenarr.Api.Tests.Services
         public async Task Pipeline_IncludesAudiobookId()
         {
             // Arrange
-            var testFile = Path.Combine(_testDirectory, "test5.m4b");
+            var testFile = Path.Join(_testDirectory, "test5.m4b");
             File.WriteAllText(testFile, "test");
 
             var audiobookId = Guid.NewGuid();
@@ -342,7 +342,7 @@ namespace Listenarr.Api.Tests.Services
         public async Task Pipeline_CalculatesDuration()
         {
             // Arrange
-            var testFile = Path.Combine(_testDirectory, "test6.m4b");
+            var testFile = Path.Join(_testDirectory, "test6.m4b");
             File.WriteAllText(testFile, "test");
 
             var download = new DownloadClientItem
@@ -372,7 +372,7 @@ namespace Listenarr.Api.Tests.Services
         public async Task ImportPhase_SetsImportedPath()
         {
             // Arrange
-            var testFile = Path.Combine(_testDirectory, "test7.m4b");
+            var testFile = Path.Join(_testDirectory, "test7.m4b");
             File.WriteAllText(testFile, "test");
 
             var download = new DownloadClientItem
@@ -410,7 +410,7 @@ namespace Listenarr.Api.Tests.Services
                 {
                     Directory.Delete(_testDirectory, true);
                 }
-                catch
+                catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     // Ignore cleanup errors
                 }

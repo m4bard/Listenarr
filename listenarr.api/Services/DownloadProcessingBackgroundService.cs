@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -106,7 +106,7 @@ namespace Listenarr.Api.Services
         {
             using var scope = _serviceScopeFactory.CreateScope();
             var queueService = scope.ServiceProvider.GetRequiredService<IDownloadProcessingQueueService>();
-            var importItemResolution = scope.ServiceProvider.GetRequiredService<IImportItemResolutionService>();
+            _ = scope.ServiceProvider.GetRequiredService<IImportItemResolutionService>();
 
             var job = await queueService.GetNextJobAsync();
             if (job == null) return;
@@ -155,7 +155,6 @@ namespace Listenarr.Api.Services
         private async Task ResetStuckJobsAsync(CancellationToken cancellationToken)
         {
             using var scope = _serviceScopeFactory.CreateScope();
-            var queueService = scope.ServiceProvider.GetRequiredService<IDownloadProcessingQueueService>();
             var dbContext = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
 
             // Find jobs stuck in Processing status (not updated recently)
@@ -491,7 +490,7 @@ namespace Listenarr.Api.Services
             bool finalizeDownload = true)
         {
             var sourcePath = job.SourcePath!;
-            var destinationPath = sourcePath;
+            string destinationPath;
 
             // Handle file move/copy operations if configured
             if (!string.IsNullOrEmpty(settings.OutputPath))
@@ -530,11 +529,27 @@ namespace Listenarr.Api.Services
                                 {
                                     // Create a naming-only metadata object from the Audiobook. This will be
                                     // used as the authoritative source for file naming fields.
+                                    var fallbackAuthor = !string.IsNullOrWhiteSpace(metadata.Artist) &&
+                                        !string.Equals(metadata.Artist.Trim(), metadata.Narrator?.Trim(), StringComparison.OrdinalIgnoreCase)
+                                            ? metadata.Artist
+                                            : (!string.IsNullOrWhiteSpace(metadata.AlbumArtist) &&
+                                               !string.Equals(metadata.AlbumArtist.Trim(), metadata.Narrator?.Trim(), StringComparison.OrdinalIgnoreCase)
+                                                ? metadata.AlbumArtist
+                                                : "Unknown Author");
+
                                     namingMetadata = new AudioMetadata
                                     {
                                         Title = audiobook.Title ?? metadata.Title,
-                                        Artist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : metadata.Artist,
-                                        AlbumArtist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : metadata.Artist,
+                                        Subtitle = !string.IsNullOrWhiteSpace(audiobook.Subtitle) ? audiobook.Subtitle : metadata.Subtitle,
+                                        Edition = !string.IsNullOrWhiteSpace(audiobook.Edition) ? audiobook.Edition : metadata.Edition,
+                                        Artist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : fallbackAuthor,
+                                        AlbumArtist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : fallbackAuthor,
+                                        Narrator = (audiobook.Narrators != null && audiobook.Narrators.Any())
+                                            ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n)))
+                                            : metadata.Narrator,
+                                        Publisher = !string.IsNullOrWhiteSpace(audiobook.Publisher) ? audiobook.Publisher : metadata.Publisher,
+                                        Language = !string.IsNullOrWhiteSpace(audiobook.Language) ? audiobook.Language : metadata.Language,
+                                        Asin = !string.IsNullOrWhiteSpace(audiobook.Asin) ? audiobook.Asin : metadata.Asin,
                                         Series = audiobook.Series,
                                         // Prefer audiobook's publish year when available
                                         Year = int.TryParse(audiobook.PublishYear, out var py) ? py : (int?)null,
@@ -557,7 +572,7 @@ namespace Listenarr.Api.Services
 
                     // Only extract file metadata for naming when we do NOT have audiobook naming metadata.
                     // If the download is linked to an audiobook (namingMetadata != null) we must not use
-                    // file-embedded tags for naming â€” the audiobook DB entry is authoritative.
+                    // file-embedded tags for naming Ã¢â‚¬â€ the audiobook DB entry is authoritative.
                     if (namingMetadata == null && metadataService != null)
                     {
                         try
@@ -579,11 +594,7 @@ namespace Listenarr.Api.Services
                                 // No audiobook naming metadata - merge extracted values without overwriting
                                 string FirstNonEmpty(params string?[] candidates)
                                 {
-                                    foreach (var c in candidates)
-                                    {
-                                        if (!string.IsNullOrWhiteSpace(c)) return c!;
-                                    }
-                                    return string.Empty;
+                                    return candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)) ?? string.Empty;
                                 }
 
                                 metadata.Title = FirstNonEmpty(metadata.Title, extractedMetadata.Title, "Unknown Title");
@@ -642,8 +653,7 @@ namespace Listenarr.Api.Services
                     // ProcessCompletedDownloadAsync will apply the full naming pattern (including
                     // creating subfolders when allowed).
                     var ext = Path.GetExtension(sourcePath);
-                    var basePathForFile = settings.OutputPath ?? string.Empty;
-                    var filenamePattern = settings.FileNamingPattern ?? string.Empty;
+                    var basePathForFile = settings.OutputPath;
 
                     // If the download links to an audiobook and we've built an audiobook naming
                     // metadata above, prefer the audiobook BasePath and switch to a filename-only
@@ -662,8 +672,6 @@ namespace Listenarr.Api.Services
                                 // subfolders under the audiobook base path.
                                 // Use the configured filename pattern in full when computing the
                                 // tentative generated path relative to the audiobook BasePath.
-                                filenamePattern = settings.FileNamingPattern;
-                                if (string.IsNullOrWhiteSpace(filenamePattern)) filenamePattern = "{Author}/{Series}/{Title}";
                             }
                         }
                     }
@@ -675,16 +683,7 @@ namespace Listenarr.Api.Services
                     // so we can compute the destination directory. We'll not actually apply the
                     // full pattern on the source; instead we will place the file into destDir
                     // using original filename first.
-                    string generatedPath;
-                    if (fileNamingService != null && settings.EnableMetadataProcessing)
-                    {
-                        // Generate a full path relative to the chosen basePathForFile (may include subfolders)
-                        generatedPath = await fileNamingService.GenerateFilePathAsync(metadataForNaming, basePathForFile, null, null, ext);
-                    }
-                    else
-                    {
-                        generatedPath = Path.GetFileName(sourcePath);
-                    }
+                    var generatedPath = await fileNamingService.GenerateFilePathAsync(metadataForNaming, basePathForFile, null, null, ext);
 
                     // Preserve subdirectories from the generated path. The naming pattern may include
                     // subfolders (e.g. {Author}/{Series}/...). If the generatedPath is rooted, use it
@@ -773,7 +772,7 @@ namespace Listenarr.Api.Services
                 {
                     // Simple naming - use original filename in output directory
                     var fileName = Path.GetFileName(sourcePath);
-                    destinationPath = Path.Combine(settings.OutputPath, fileName);
+                    destinationPath = Path.Join(settings.OutputPath, fileName);
                     job.AddLogEntry($"Using simple destination: {destinationPath}");
                 }
 
@@ -1118,7 +1117,7 @@ namespace Listenarr.Api.Services
                             // Enqueue a scan using the audiobook's configured library path (null)
                             // rather than the download/destination path. The import process already
                             // hardlinks/copies files into the library folder, so the scanner should
-                            // verify the library location — not the download directory, which would
+                            // verify the library location â€” not the download directory, which would
                             // trigger spurious "Refusing to associate file outside audiobook folder"
                             // warnings from AudioFileService.
                             var jobId = await scanQueue.EnqueueScanAsync(dl.AudiobookId.Value, null);
@@ -1281,4 +1280,5 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 

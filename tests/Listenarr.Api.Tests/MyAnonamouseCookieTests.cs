@@ -23,6 +23,18 @@ namespace Listenarr.Api.Tests
 {
     public class MyAnonamouseCookieTests
     {
+        private static HttpResponseMessage CreateResponse(HttpStatusCode statusCode, HttpContent? content = null, Action<HttpResponseMessage>? configure = null)
+        {
+            var response = new HttpResponseMessage(statusCode);
+            if (content != null)
+            {
+                response.Content = content;
+            }
+
+            configure?.Invoke(response);
+            return response;
+        }
+
         [Fact]
         public async Task SearchMyAnonamouse_Persists_MamIdFromSetCookie()
         {
@@ -40,15 +52,16 @@ namespace Listenarr.Api.Tests
             Uri? capturedUri = null;
             var handler = new DelegatingHandlerMock((req, ct) => {
                 capturedUri = req.RequestUri;
-                var resp = new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
-                resp.Headers.Add("Set-Cookie", "mam_id=\"new_mam\"; Path=/; HttpOnly");
-                return Task.FromResult(resp);
+                return Task.FromResult(CreateResponse(
+                    HttpStatusCode.OK,
+                    new StringContent("[]"),
+                    response => response.Headers.Add("Set-Cookie", "mam_id=\"new_mam\"; Path=/; HttpOnly")));
             });
 
             using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://www.myanonamouse.net") };
             var provider = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient, db);
 
-            var results = await provider.SearchAsync(indexer, "Test Title", null, null);
+            _ = await provider.SearchAsync(indexer, "Test Title", null, null);
 
             // Verify the db indexer was updated with new mam_id
             var updated = db.Indexers.First(i => i.Id == indexer.Id);
@@ -58,7 +71,7 @@ namespace Listenarr.Api.Tests
             var handler2 = new DelegatingHandlerMock((req, ct) => {
                 // Ensure the request includes a Cookie header with the new mam_id
                 Assert.True(req.Headers.Contains("Cookie") && req.Headers.GetValues("Cookie").Any(v => v.Contains("mam_id=new_mam")), "Expected Cookie header with new mam_id");
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") });
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK, new StringContent("[]")));
             });
 
             using var httpClient2 = new HttpClient(handler2) { BaseAddress = new Uri("https://another-host.example") };
@@ -84,10 +97,10 @@ namespace Listenarr.Api.Tests
                 capturedRequest = req;
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes("dummy-torrent"));
                 content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "file.torrent" };
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK, content));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
 
             // Simple IHttpClientFactory that returns our client
             var httpFactory = new SimpleHttpClientFactory(httpClient);
@@ -182,10 +195,10 @@ namespace Listenarr.Api.Tests
                 capturedRequest = req;
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes("dummy-torrent"));
                 content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "file.torrent" };
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK, content));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
 
             // Simple IHttpClientFactory that returns our client
             var httpFactory = new SimpleHttpClientFactory(httpClient);
@@ -274,20 +287,23 @@ namespace Listenarr.Api.Tests
                 callCount++;
                 if (callCount == 1)
                 {
-                    var resp = new HttpResponseMessage(HttpStatusCode.Found);
-                    resp.Headers.Location = new Uri("https://47.39.239.96/tor/download.php/abc");
-                    resp.Headers.Add("Set-Cookie", "mam_id=redirect_mam; Path=/; HttpOnly");
-                    return Task.FromResult(resp);
+                    return Task.FromResult(CreateResponse(
+                        HttpStatusCode.Found,
+                        configure: response =>
+                        {
+                            response.Headers.Location = new Uri("https://47.39.239.96/tor/download.php/abc");
+                            response.Headers.Add("Set-Cookie", "mam_id=redirect_mam; Path=/; HttpOnly");
+                        }));
                 }
 
                 // Second call: capture the redirected request
                 capturedRequest = req;
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes("dummy-torrent"));
                 content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "file.torrent" };
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK, content));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
             var provider = TestServiceFactory.BuildServiceProvider(services => {
@@ -377,10 +393,10 @@ namespace Listenarr.Api.Tests
                 capturedRequest = req;
                 var html = "<html><body>Unrecognized host/PassKey</body></html>";
                 var content = new StringContent(html, Encoding.UTF8, "text/html");
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK, content));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
             var provider = TestServiceFactory.BuildServiceProvider(services => {
@@ -461,10 +477,10 @@ namespace Listenarr.Api.Tests
             var handler = new DelegatingHandlerMock((req, ct) => {
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes("dummy-torrent-bytes"));
                 content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "file.torrent" };
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK, content));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
             var provider = TestServiceFactory.BuildServiceProvider(services => {
@@ -559,10 +575,11 @@ namespace Listenarr.Api.Tests
             var handler = new DelegatingHandlerMock((req, ct) => {
                 capturedUri = req.RequestUri;
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes(sb.ToString()));
-                return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = content });
+                return Task.FromResult(CreateResponse(HttpStatusCode.OK, content));
             });
 
-            var httpFactory = new SimpleHttpClientFactory(new HttpClient(handler));
+            using var httpClient = new HttpClient(handler);
+            var httpFactory = new SimpleHttpClientFactory(httpClient);
 
             // Build a minimal service provider for dependencies (reusing test helpers)
             var provider = TestServiceFactory.BuildServiceProvider(services => {

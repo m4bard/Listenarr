@@ -24,7 +24,7 @@ namespace Listenarr.Api.Tests
             db.Audiobooks.Add(book);
             await db.SaveChangesAsync();
 
-            var testFile = Path.Combine(Path.GetTempPath(), $"meta-int-{Guid.NewGuid()}.m4b");
+            var testFile = Path.Join(Path.GetTempPath(), $"meta-int-{Guid.NewGuid()}.m4b");
             await File.WriteAllTextAsync(testFile, "dummy");
 
             var metadataMock = new Mock<IMetadataService>();

@@ -23,7 +23,8 @@ namespace Listenarr.Api.Tests
             mockImageCache.SetupSequence(m => m.GetCachedImagePathAsync(identifier)).ReturnsAsync((string?)null).ReturnsAsync(relativePath);
             mockImageCache.Setup(m => m.DownloadAndCacheImageAsync(imageUrl, identifier)).ReturnsAsync(relativePath);
 
-            var audibleMock = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            using var httpClientForAudible = new System.Net.Http.HttpClient();
+            var audibleMock = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>());
             audibleMock.Setup(a => a.LookupAuthorAsync(identifier, It.IsAny<string>())).ReturnsAsync(new AuthorLookupItem { Asin = "A1", Name = "J. R. R. Tolkien", Image = imageUrl });
 
             var audnexusMock = new Mock<IAudnexusService>();
@@ -59,7 +60,7 @@ namespace Listenarr.Api.Tests
             {
                 File.Delete(fullPath);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }
@@ -68,7 +69,7 @@ namespace Listenarr.Api.Tests
             {
                 Directory.Delete(Path.Join(tempRoot, "config", "cache", "images", "temp"), true);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }

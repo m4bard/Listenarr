@@ -1,4 +1,4 @@
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 
 namespace Listenarr.Api.Services
 {
@@ -14,13 +14,10 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    foreach (var ext in exts)
-                    {
-                        var candidate = Path.Combine(dir, name + ext);
-                        if (File.Exists(candidate)) return candidate;
-                    }
+                    var found = exts.Select(ext => Path.Join(dir, name + ext)).FirstOrDefault(File.Exists);
+                    if (found != null) return found;
 
-                    var candidateNoExt = Path.Combine(dir, name);
+                    var candidateNoExt = Path.Join(dir, name);
                     if (File.Exists(candidateNoExt)) return candidateNoExt;
                 }
                 catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 

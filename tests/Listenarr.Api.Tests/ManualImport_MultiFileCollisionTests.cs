@@ -13,20 +13,36 @@ namespace Listenarr.Api.Tests
 {
     public class ManualImport_MultiFileCollisionTests
     {
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+        }
+
         [Fact]
         public async Task InteractiveManualImport_MultipleFiles_ResolvesCollisionsWithinBatch()
         {
             // Setup DB-like audiobook object
-            var basePath = Path.Combine(Path.GetTempPath(), "listenarr-manual-batch", Guid.NewGuid().ToString());
+            var basePath = Path.Join(Path.GetTempPath(), "listenarr-manual-batch", Guid.NewGuid().ToString());
             Directory.CreateDirectory(basePath);
 
             var book = new Audiobook { Id = 42, Title = "Batch Book", BasePath = basePath };
 
             // Create two source files
-            var srcDir = Path.Combine(Path.GetTempPath(), "listenarr-manual-src", Guid.NewGuid().ToString());
+            var srcDir = Path.Join(Path.GetTempPath(), "listenarr-manual-src", Guid.NewGuid().ToString());
             Directory.CreateDirectory(srcDir);
-            var src1 = Path.Combine(srcDir, "one.mp3");
-            var src2 = Path.Combine(srcDir, "two.mp3");
+            var src1 = Path.Join(srcDir, "one.mp3");
+            var src2 = Path.Join(srcDir, "two.mp3");
             await File.WriteAllTextAsync(src1, "one");
             await File.WriteAllTextAsync(src2, "two");
 
@@ -40,7 +56,11 @@ namespace Listenarr.Api.Tests
             var fileNamingMock = new Mock<IFileNamingService>();
             // For manual import pattern {Title} we want the generated relative path to be the book title (no extra folders)
             fileNamingMock.Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<System.Collections.Generic.Dictionary<string, object>>(), It.IsAny<bool>()))
-                .Returns((string pattern, System.Collections.Generic.Dictionary<string, object> vars, bool t) => vars.ContainsKey("Title") ? vars["Title"].ToString() ?? "Batch Book" : "Batch Book");
+                .Returns((string pattern, System.Collections.Generic.Dictionary<string, object> vars, bool t) =>
+                {
+                    vars.TryGetValue("Title", out var titleObj);
+                    return titleObj?.ToString() ?? "Batch Book";
+                });
 
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings { OutputPath = basePath });
@@ -75,7 +95,7 @@ namespace Listenarr.Api.Tests
             };
 
             // Act
-            var result = await controller.Start(request);
+            await controller.Start(request);
 
             // Assert: both files should exist in the audiobook base path, second should have a suffix if name collided
             var diskFiles = Directory.GetFiles(basePath, "*", SearchOption.AllDirectories).Select(p => Path.GetFileName(p)).ToList();
@@ -85,23 +105,23 @@ namespace Listenarr.Api.Tests
             Assert.True(diskFiles.Count >= 2, "Expected at least two files in destination (one suffixed for the collision)");
 
             // Cleanup
-            try { Directory.Delete(basePath, true); } catch { }
-            try { Directory.Delete(srcDir, true); } catch { }
+            TryDeleteDirectory(basePath);
+            TryDeleteDirectory(srcDir);
         }
 
         [Fact]
         public async Task InteractiveManualImport_MultipartFiles_UsesStableNaturalOrderAndNumbering()
         {
-            var basePath = Path.Combine(Path.GetTempPath(), "listenarr-manual-ordered", Guid.NewGuid().ToString());
+            var basePath = Path.Join(Path.GetTempPath(), "listenarr-manual-ordered", Guid.NewGuid().ToString());
             Directory.CreateDirectory(basePath);
 
             var book = new Audiobook { Id = 84, Title = "Ordered Book", BasePath = basePath };
 
-            var srcDir = Path.Combine(Path.GetTempPath(), "listenarr-manual-ordered-src", Guid.NewGuid().ToString());
+            var srcDir = Path.Join(Path.GetTempPath(), "listenarr-manual-ordered-src", Guid.NewGuid().ToString());
             Directory.CreateDirectory(srcDir);
-            var part10 = Path.Combine(srcDir, "Part 10.mp3");
-            var part2 = Path.Combine(srcDir, "Part 2.mp3");
-            var part1 = Path.Combine(srcDir, "Part 1.mp3");
+            var part10 = Path.Join(srcDir, "Part 10.mp3");
+            var part2 = Path.Join(srcDir, "Part 2.mp3");
+            var part1 = Path.Join(srcDir, "Part 1.mp3");
             await File.WriteAllTextAsync(part10, "ten");
             await File.WriteAllTextAsync(part2, "two");
             await File.WriteAllTextAsync(part1, "one");
@@ -164,24 +184,24 @@ namespace Listenarr.Api.Tests
             Assert.Contains("Ordered Book-01.mp3", diskFiles);
             Assert.Contains("Ordered Book-02.mp3", diskFiles);
             Assert.Contains("Ordered Book-10.mp3", diskFiles);
-            Assert.Equal("one", await File.ReadAllTextAsync(Path.Combine(basePath, "Ordered Book-01.mp3")));
-            Assert.Equal("two", await File.ReadAllTextAsync(Path.Combine(basePath, "Ordered Book-02.mp3")));
-            Assert.Equal("ten", await File.ReadAllTextAsync(Path.Combine(basePath, "Ordered Book-10.mp3")));
+            Assert.Equal("one", await File.ReadAllTextAsync(Path.Join(basePath, "Ordered Book-01.mp3")));
+            Assert.Equal("two", await File.ReadAllTextAsync(Path.Join(basePath, "Ordered Book-02.mp3")));
+            Assert.Equal("ten", await File.ReadAllTextAsync(Path.Join(basePath, "Ordered Book-10.mp3")));
         }
 
         [Fact]
         public async Task InteractiveManualImport_ForewordAndChapterOne_AvoidsDuplicateNumberedNames()
         {
-            var basePath = Path.Combine(Path.GetTempPath(), "listenarr-manual-foreword", Guid.NewGuid().ToString());
+            var basePath = Path.Join(Path.GetTempPath(), "listenarr-manual-foreword", Guid.NewGuid().ToString());
             Directory.CreateDirectory(basePath);
 
             var book = new Audiobook { Id = 126, Title = "Jack of Shadows", BasePath = basePath };
 
-            var srcDir = Path.Combine(Path.GetTempPath(), "listenarr-manual-foreword-src", Guid.NewGuid().ToString());
+            var srcDir = Path.Join(Path.GetTempPath(), "listenarr-manual-foreword-src", Guid.NewGuid().ToString());
             Directory.CreateDirectory(srcDir);
-            var foreword = Path.Combine(srcDir, "(Foreword by Joe Haldeman).mp3");
-            var chapter1 = Path.Combine(srcDir, "Chapter 01.mp3");
-            var chapter2 = Path.Combine(srcDir, "Chapter 02.mp3");
+            var foreword = Path.Join(srcDir, "(Foreword by Joe Haldeman).mp3");
+            var chapter1 = Path.Join(srcDir, "Chapter 01.mp3");
+            var chapter2 = Path.Join(srcDir, "Chapter 02.mp3");
             await File.WriteAllTextAsync(foreword, "foreword");
             await File.WriteAllTextAsync(chapter1, "chapter1");
             await File.WriteAllTextAsync(chapter2, "chapter2");
@@ -255,15 +275,15 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task InteractiveManualImport_MultiFileBatch_EnqueuesSingleCommonDirectoryScan()
         {
-            var outputRoot = Path.Combine(Path.GetTempPath(), "listenarr-manual-scan-root", Guid.NewGuid().ToString());
+            var outputRoot = Path.Join(Path.GetTempPath(), "listenarr-manual-scan-root", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outputRoot);
 
             var book = new Audiobook { Id = 222, Title = "Jack of Shadows", Authors = new System.Collections.Generic.List<string> { "Roger Zelazny" }, BasePath = outputRoot };
 
-            var srcDir = Path.Combine(Path.GetTempPath(), "listenarr-manual-scan-src", Guid.NewGuid().ToString());
+            var srcDir = Path.Join(Path.GetTempPath(), "listenarr-manual-scan-src", Guid.NewGuid().ToString());
             Directory.CreateDirectory(srcDir);
-            var disc1 = Path.Combine(srcDir, "Disc 1.mp3");
-            var disc2 = Path.Combine(srcDir, "Disc 2.mp3");
+            var disc1 = Path.Join(srcDir, "Disc 1.mp3");
+            var disc2 = Path.Join(srcDir, "Disc 2.mp3");
             await File.WriteAllTextAsync(disc1, "disc1");
             await File.WriteAllTextAsync(disc2, "disc2");
 
@@ -288,7 +308,7 @@ namespace Listenarr.Api.Tests
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
 
-            var expectedScanPath = Path.Combine(outputRoot, "Roger Zelazny", "Jack of Shadows");
+            var expectedScanPath = Path.Join(outputRoot, "Roger Zelazny", "Jack of Shadows");
             var scanMock = new Mock<IScanQueueService>();
             scanMock.Setup(s => s.EnqueueScanAsync(book.Id, expectedScanPath)).ReturnsAsync(Guid.NewGuid());
 
@@ -330,16 +350,16 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task InteractiveManualImport_MoveWithCompanionFiles_ImportsSidecarsAndDeletesSourceFolder()
         {
-            var destinationRoot = Path.Combine(Path.GetTempPath(), "listenarr-manual-companion-dest", Guid.NewGuid().ToString());
+            var destinationRoot = Path.Join(Path.GetTempPath(), "listenarr-manual-companion-dest", Guid.NewGuid().ToString());
             Directory.CreateDirectory(destinationRoot);
 
             var book = new Audiobook { Id = 333, Title = "Companion Book", BasePath = destinationRoot };
 
-            var sourceDir = Path.Combine(Path.GetTempPath(), "listenarr-manual-companion-src", Guid.NewGuid().ToString());
+            var sourceDir = Path.Join(Path.GetTempPath(), "listenarr-manual-companion-src", Guid.NewGuid().ToString());
             Directory.CreateDirectory(sourceDir);
-            var audioFile = Path.Combine(sourceDir, "Track 01.mp3");
-            var coverFile = Path.Combine(sourceDir, "cover.jpg");
-            var notesFile = Path.Combine(sourceDir, "notes.txt");
+            var audioFile = Path.Join(sourceDir, "Track 01.mp3");
+            var coverFile = Path.Join(sourceDir, "cover.jpg");
+            var notesFile = Path.Join(sourceDir, "notes.txt");
             await File.WriteAllTextAsync(audioFile, "audio");
             await File.WriteAllTextAsync(coverFile, "cover");
             await File.WriteAllTextAsync(notesFile, "notes");
@@ -398,27 +418,27 @@ namespace Listenarr.Api.Tests
             var action = await controller.Start(request);
             Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
 
-            Assert.True(File.Exists(Path.Combine(destinationRoot, "Companion Book.mp3")));
-            Assert.True(File.Exists(Path.Combine(destinationRoot, "cover.jpg")));
-            Assert.True(File.Exists(Path.Combine(destinationRoot, "notes.txt")));
+            Assert.True(File.Exists(Path.Join(destinationRoot, "Companion Book.mp3")));
+            Assert.True(File.Exists(Path.Join(destinationRoot, "cover.jpg")));
+            Assert.True(File.Exists(Path.Join(destinationRoot, "notes.txt")));
             Assert.False(Directory.Exists(sourceDir));
 
-            try { Directory.Delete(destinationRoot, true); } catch { }
+            TryDeleteDirectory(destinationRoot);
         }
 
         [Fact]
         public async Task InteractiveManualImport_CompanionPass_SkipsDifferentAudiobookAudioInSameFolder()
         {
-            var destinationRoot = Path.Combine(Path.GetTempPath(), "listenarr-manual-mixed-dest", Guid.NewGuid().ToString());
+            var destinationRoot = Path.Join(Path.GetTempPath(), "listenarr-manual-mixed-dest", Guid.NewGuid().ToString());
             Directory.CreateDirectory(destinationRoot);
 
             var book = new Audiobook { Id = 334, Title = "Companion Book", BasePath = destinationRoot };
 
-            var sourceDir = Path.Combine(Path.GetTempPath(), "listenarr-manual-mixed-src", Guid.NewGuid().ToString());
+            var sourceDir = Path.Join(Path.GetTempPath(), "listenarr-manual-mixed-src", Guid.NewGuid().ToString());
             Directory.CreateDirectory(sourceDir);
-            var selectedAudio = Path.Combine(sourceDir, "Companion Book.mp3");
-            var foreignAudio = Path.Combine(sourceDir, "Different Book.mp3");
-            var coverFile = Path.Combine(sourceDir, "cover.jpg");
+            var selectedAudio = Path.Join(sourceDir, "Companion Book.mp3");
+            var foreignAudio = Path.Join(sourceDir, "Different Book.mp3");
+            var coverFile = Path.Join(sourceDir, "cover.jpg");
             await File.WriteAllTextAsync(selectedAudio, "selected");
             await File.WriteAllTextAsync(foreignAudio, "foreign");
             await File.WriteAllTextAsync(coverFile, "cover");
@@ -490,12 +510,12 @@ namespace Listenarr.Api.Tests
             var action = await controller.Start(request);
             Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
 
-            Assert.True(File.Exists(Path.Combine(destinationRoot, "Companion Book.mp3")));
-            Assert.True(File.Exists(Path.Combine(destinationRoot, "cover.jpg")));
-            Assert.False(File.Exists(Path.Combine(destinationRoot, "Different Book.mp3")));
+            Assert.True(File.Exists(Path.Join(destinationRoot, "Companion Book.mp3")));
+            Assert.True(File.Exists(Path.Join(destinationRoot, "cover.jpg")));
+            Assert.False(File.Exists(Path.Join(destinationRoot, "Different Book.mp3")));
 
-            try { Directory.Delete(destinationRoot, true); } catch { }
-            try { Directory.Delete(sourceDir, true); } catch { }
+            TryDeleteDirectory(destinationRoot);
+            TryDeleteDirectory(sourceDir);
         }
     }
 }

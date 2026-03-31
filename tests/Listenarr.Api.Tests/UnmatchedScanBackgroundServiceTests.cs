@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.IO;
 using Listenarr.Api.Services;
 using Xunit;
@@ -13,18 +13,18 @@ namespace Listenarr.Api.Tests
             var folder = @"D:\test\Jack of Shadows - Roger Zelazny (narrated by Eric Jason Martin)";
             var files = new[]
             {
-                Path.Combine(folder, "(Foreword by Joe Haldeman).mp3"),
-                Path.Combine(folder, "Chapter 01.mp3"),
-                Path.Combine(folder, "Chapter 02.mp3")
+                Path.Join(folder, "(Foreword by Joe Haldeman).mp3"),
+                Path.Join(folder, "Chapter 01.mp3"),
+                Path.Join(folder, "Chapter 02.mp3")
             };
 
             var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(files, folder);
 
             var group = Assert.Single(groups);
             Assert.Equal(3, group.Count);
-            Assert.Contains(Path.Combine(folder, "(Foreword by Joe Haldeman).mp3"), group);
-            Assert.Contains(Path.Combine(folder, "Chapter 01.mp3"), group);
-            Assert.Contains(Path.Combine(folder, "Chapter 02.mp3"), group);
+            Assert.Contains(Path.Join(folder, "(Foreword by Joe Haldeman).mp3"), group);
+            Assert.Contains(Path.Join(folder, "Chapter 01.mp3"), group);
+            Assert.Contains(Path.Join(folder, "Chapter 02.mp3"), group);
         }
 
         [Fact]
@@ -33,24 +33,24 @@ namespace Listenarr.Api.Tests
             var folder = @"D:\test\Roger Zelazny";
             var files = new[]
             {
-                Path.Combine(folder, "Jack of Shadows.mp3"),
-                Path.Combine(folder, "Lord of Light.mp3")
+                Path.Join(folder, "Jack of Shadows.mp3"),
+                Path.Join(folder, "Lord of Light.mp3")
             };
 
             var groups = UnmatchedScanBackgroundService.BuildGroupedFilesForFolder(files, folder);
 
             Assert.Equal(2, groups.Count);
-            Assert.Contains(groups, group => group.Single() == Path.Combine(folder, "Jack of Shadows.mp3"));
-            Assert.Contains(groups, group => group.Single() == Path.Combine(folder, "Lord of Light.mp3"));
+            Assert.Contains(groups, group => group.Single() == Path.Join(folder, "Jack of Shadows.mp3"));
+            Assert.Contains(groups, group => group.Single() == Path.Join(folder, "Lord of Light.mp3"));
         }
 
         [Fact]
         public void BuildGroupedFilesForFolder_UsesEmbeddedTitleAndAuthorToMergeMixedFolderTracks()
         {
             var folder = @"D:\test\test-import";
-            var foreword = Path.Combine(folder, "(Foreword by Joe Haldeman).mp3");
-            var chapter1 = Path.Combine(folder, "Chapter 01.mp3");
-            var alchemised = Path.Combine(folder, "Alchemised (Spanish Edition)_ No queda nadie a quien salvar.m4b");
+            var foreword = Path.Join(folder, "(Foreword by Joe Haldeman).mp3");
+            var chapter1 = Path.Join(folder, "Chapter 01.mp3");
+            var alchemised = Path.Join(folder, "Alchemised (Spanish Edition)_ No queda nadie a quien salvar.m4b");
             var files = new[]
             {
                 foreword,
@@ -76,8 +76,8 @@ namespace Listenarr.Api.Tests
         public void BuildGroupedFilesForFolder_UsesAuthorToKeepSameTitleSeparated()
         {
             var folder = @"D:\test\same-title";
-            var fileA = Path.Combine(folder, "Book A.m4b");
-            var fileB = Path.Combine(folder, "Book B.m4b");
+            var fileA = Path.Join(folder, "Book A.m4b");
+            var fileB = Path.Join(folder, "Book B.m4b");
             var files = new[] { fileA, fileB };
 
             var embeddedTags = new Dictionary<string, PathParsedMetadata>(StringComparer.OrdinalIgnoreCase)

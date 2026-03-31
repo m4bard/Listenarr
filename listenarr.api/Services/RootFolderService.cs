@@ -67,9 +67,9 @@ private readonly ILogger<RootFolderService>? _logger;
                 throw new InvalidOperationException("Root folder is in use by audiobooks; reassign before deletion or provide reassignRootId.");
             }
 
-            if (referenced && reassignRootId.HasValue)
+            if (referenced)
             {
-                var newRoot = await ctx.RootFolders.FindAsync(reassignRootId.Value);
+                var newRoot = await ctx.RootFolders.FindAsync(reassignRootId!.Value);
                 if (newRoot == null) throw new KeyNotFoundException("Reassign root not found");
                 // Reassign audiobooks that start with old path to new root path
                 var affected = ctx.Audiobooks.Where(a => a.BasePath != null && (a.BasePath == root.Path || a.BasePath.StartsWith(root.Path + System.IO.Path.DirectorySeparatorChar))).ToList();

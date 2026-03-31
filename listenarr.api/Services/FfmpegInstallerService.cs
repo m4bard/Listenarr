@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net.Http;
 using System.Security.Cryptography;
@@ -106,11 +106,11 @@ namespace Listenarr.Api.Services
         /// </summary>
         public Task<string?> GetFfprobePathAsync(bool ensureInstalled = false)
         {
-            var baseDir = Path.Combine(AppContext.BaseDirectory, "config", "ffmpeg");
+            var baseDir = Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
             Directory.CreateDirectory(baseDir);
 
             var ffprobeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe";
-            var ffprobePath = Path.Combine(baseDir, ffprobeName);
+            var ffprobePath = Path.Join(baseDir, ffprobeName);
 
             if (File.Exists(ffprobePath))
             {
@@ -128,11 +128,11 @@ namespace Listenarr.Api.Services
         /// </summary>
         public async Task<string?> EnsureFfprobeInstalledAsync()
         {
-            var baseDir = Path.Combine(AppContext.BaseDirectory, "config", "ffmpeg");
+            var baseDir = Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
             Directory.CreateDirectory(baseDir);
 
             var ffprobeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe";
-            var ffprobePath = Path.Combine(baseDir, ffprobeName);
+            var ffprobePath = Path.Join(baseDir, ffprobeName);
 
             if (File.Exists(ffprobePath))
             {
@@ -188,7 +188,7 @@ namespace Listenarr.Api.Services
                 using var resp = await _httpClient.GetAsync(downloadUrl);
                 resp.EnsureSuccessStatusCode();
 
-                var tmpFile = Path.Combine(baseDir, "ffprobe-download.tmp");
+                var tmpFile = Path.Join(baseDir, "ffprobe-download.tmp");
                 await using (var fs = new FileStream(tmpFile, FileMode.Create, FileAccess.Write))
                 {
                     await resp.Content.CopyToAsync(fs);
@@ -482,7 +482,7 @@ namespace Listenarr.Api.Services
                     _logger.LogDebug(ex, "Non-fatal error while locating/copying ffprobe from extracted files");
                 }
 
-                var licensePath = Path.Combine(baseDir, "LICENSE_NOTICE.txt");
+                var licensePath = Path.Join(baseDir, "LICENSE_NOTICE.txt");
                 await File.WriteAllTextAsync(licensePath, "ffprobe binaries downloaded. Review FFmpeg licensing (LGPL/GPL) at https://ffmpeg.org/legal.html\nSource: " + downloadUrl + "\n");
 
                 _logger.LogInformation("ffprobe installed to {Path}", ffprobePath);
@@ -550,7 +550,7 @@ namespace Listenarr.Api.Services
             {
                 // Use GitHub Releases API: https://api.github.com/repos/{owner}/{repo}/releases
                 var releasesUrl = $"https://api.github.com/repos/{repo}/releases";
-                var req = new HttpRequestMessage(HttpMethod.Get, releasesUrl);
+                using var req = new HttpRequestMessage(HttpMethod.Get, releasesUrl);
                 req.Headers.Add("User-Agent", "Listenarr-Installer");
                 using var resp = await _httpClient.SendAsync(req);
                 resp.EnsureSuccessStatusCode();
@@ -566,7 +566,6 @@ namespace Listenarr.Api.Services
                     {
                         string? checksumContent = null;
                         string? chosenUrl = null;
-                        string? chosenName = null;
                         // First, attempt to find checksum asset(s)
                         foreach (var asset in assets.EnumerateArray())
                         {
@@ -596,7 +595,6 @@ namespace Listenarr.Api.Services
                             if (name.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".tar.xz", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".tgz", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".tar.gz", StringComparison.OrdinalIgnoreCase))
                             {
                                 chosenUrl = url;
-                                chosenName = name;
                                 break;
                             }
                         }
@@ -653,4 +651,5 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 

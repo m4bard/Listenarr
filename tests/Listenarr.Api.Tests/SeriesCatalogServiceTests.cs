@@ -14,7 +14,8 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetCatalogAsync_UsesPersistedCatalogCache_BeforeAudible()
         {
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            using var httpClientForAudible = new HttpClient();
+            var audible = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var logger = new Mock<ILogger<SeriesCatalogService>>();
 
@@ -66,7 +67,8 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetCatalogAsync_ForceRefresh_BypassesPersistedCatalogCache_AndPersistsFreshBooks()
         {
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            using var httpClientForAudible = new HttpClient();
+            var audible = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audiobookRepository = new Mock<IAudiobookRepository>();
             var logger = new Mock<ILogger<SeriesCatalogService>>();
 

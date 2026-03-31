@@ -82,7 +82,7 @@ namespace Listenarr.Api.Tests
             {
                 File.Delete(fullPath);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }
@@ -91,7 +91,7 @@ namespace Listenarr.Api.Tests
             {
                 Directory.Delete(Path.Join(tempRoot, "config", "cache", "images", "temp"), true);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }

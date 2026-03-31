@@ -77,6 +77,11 @@ namespace Listenarr.Infrastructure.Models.Configurations
                 .HasForeignKey(i => i.AudiobookId)
                 .OnDelete(DeleteBehavior.Cascade);
 
+            builder.HasMany(a => a.SeriesMemberships)
+                .WithOne(m => m.Audiobook)
+                .HasForeignKey(m => m.AudiobookId)
+                .OnDelete(DeleteBehavior.Cascade);
+
             // Performance indexes commonly used by queries
             builder.HasIndex(a => a.Monitored);
             builder.HasIndex(a => a.LastSearchTime);

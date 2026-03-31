@@ -4,8 +4,10 @@ import { nextTick } from 'vue'
 
 vi.mock('@/services/api', () => ({
   apiService: {
+    getAudiobook: vi.fn().mockImplementation(async (id: number) => ({ id })),
     getQualityProfiles: vi.fn().mockResolvedValue([]),
     getApplicationSettings: vi.fn().mockResolvedValue({ outputPath: 'C:\\root' }),
+    getAudiobookIdentifiers: vi.fn().mockResolvedValue({ identifiers: [] }),
     getRootFolders: vi
       .fn()
       .mockResolvedValue([{ id: 1, name: 'Default', path: 'C:\\root', isDefault: true }]),
@@ -69,6 +71,28 @@ describe('EditAudiobookModal relative path calculation', () => {
 
     // Expect the internal relativePath to be derived from stored basePath
     expect((wrapper.vm as unknown).formData.relativePath).toBe('Some Author\\Some Title')
+  })
+
+  it('treats an exact root-folder basePath as that configured root instead of custom path', async () => {
+    const wrapper = mount(EditAudiobookModal, {
+      props: {
+        isOpen: true,
+        audiobook: {
+          ...audiobook,
+          basePath: 'C:\\root',
+        },
+      },
+      attachTo: document.body,
+      global: {
+        plugins: [(await import('pinia')).createPinia()],
+      },
+    })
+
+    await new Promise((r) => setTimeout(r, 10))
+
+    expect((wrapper.vm as unknown).selectedRootId).toBe(1)
+    expect((wrapper.vm as unknown).customRootPath).toBeUndefined()
+    expect((wrapper.vm as unknown).formData.relativePath).toBe('')
   })
 
   it('normalizes absolute path to relative when Done is clicked', async () => {

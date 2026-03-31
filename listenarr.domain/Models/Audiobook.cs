@@ -35,6 +35,7 @@ namespace Listenarr.Domain.Models
         public string? PublishedDate { get; set; } // Full ISO 8601 date for calendar/timeline features
         public string? Series { get; set; }
         public string? SeriesNumber { get; set; }
+        public List<AudiobookSeriesMembership>? SeriesMemberships { get; set; }
         public string? Description { get; set; }
         public List<string>? Genres { get; set; }
         public List<string>? Tags { get; set; }
@@ -48,6 +49,7 @@ namespace Listenarr.Domain.Models
         public string? Publisher { get; set; }
         public string? Language { get; set; }
         public int? Runtime { get; set; }
+        public string? Edition { get; set; }
         public string? Version { get; set; }
         public bool Explicit { get; set; }
         public bool Abridged { get; set; }

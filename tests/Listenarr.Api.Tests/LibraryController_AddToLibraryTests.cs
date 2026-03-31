@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,6 +18,33 @@ namespace Listenarr.Api.Tests
 {
     public class LibraryController_AddToLibraryTests
     {
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+        }
+
+        private static string BuildLibraryPath(Dictionary<string, object> vars)
+        {
+            vars.TryGetValue("Author", out var authorObj);
+            vars.TryGetValue("Title", out var titleObj);
+
+            var author = authorObj?.ToString() ?? "Unknown";
+            var title = titleObj?.ToString() ?? "Unknown";
+
+            return Path.Join(author, title).Replace("\\", "/");
+        }
+
         [Fact]
         public async Task AddToLibrary_UsesLegacyAuthorField_PopulatesAuthorsAndBasePath()
         {
@@ -42,16 +69,10 @@ namespace Listenarr.Api.Tests
             var mockFileNaming = new Mock<IFileNamingService>();
             mockFileNaming
                 .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool t) =>
-                {
-                    // Simulate FileNamingService producing an Author/Title relative path
-                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
-                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Combine(author, title).Replace("\\", "/");
-                });
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) => BuildLibraryPath(vars));
 
             // Configuration service providing an OutputPath root
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var mockConfigService = new Mock<IConfigurationService>();
@@ -100,7 +121,116 @@ namespace Listenarr.Api.Tests
             Assert.True(string.IsNullOrWhiteSpace(stored.BasePath), "BasePath should be null when no custom destination is provided");
 
             // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch { }
+            TryDeleteDirectory(tempRoot);
+        }
+
+        [Fact]
+        public async Task AddToLibrary_PersistsEditableMetadataFields()
+        {
+            // Arrange
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            var dbContext = new ListenArrDbContext(options);
+
+            var mockRepo = new Mock<IAudiobookRepository>();
+            mockRepo.Setup(r => r.AddAsync(It.IsAny<Audiobook>()))
+                .Returns<Audiobook>(async (ab) =>
+                {
+                    await dbContext.Audiobooks.AddAsync(ab);
+                    await dbContext.SaveChangesAsync();
+                });
+
+            var mockImageCache = new Mock<IImageCacheService>();
+            var mockLogger = new Mock<ILogger<LibraryController>>();
+
+            var mockFileNaming = new Mock<IFileNamingService>();
+            mockFileNaming
+                .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) => BuildLibraryPath(vars));
+
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(tempRoot);
+
+            var mockConfigService = new Mock<IConfigurationService>();
+            mockConfigService.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings { OutputPath = tempRoot, FileNamingPattern = "{Author}/{Title}" });
+
+            var mockQualityProfile = new Mock<IQualityProfileService>();
+            mockQualityProfile.Setup(q => q.GetDefaultAsync()).ReturnsAsync((QualityProfile?)null);
+
+            var services = new ServiceCollection();
+            services.AddSingleton<IConfigurationService>(mockConfigService.Object);
+            services.AddSingleton<IQualityProfileService>(mockQualityProfile.Object);
+            var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+
+            var controller = new LibraryController(
+                mockRepo.Object,
+                mockImageCache.Object,
+                mockLogger.Object,
+                dbContext,
+                scopeFactory,
+                mockFileNaming.Object);
+
+            var request = new LibraryController.AddToLibraryRequest
+            {
+                Metadata = new AudibleBookMetadata
+                {
+                    Title = "Editable Title",
+                    Subtitle = "Editable Subtitle",
+                    Authors = new List<string> { "Edited Author" },
+                    Narrators = new List<string> { "Edited Narrator" },
+                    Publisher = "Edited Publisher",
+                    Language = "english",
+                    Runtime = 615,
+                    Edition = "Collector's Edition",
+                    Version = "Audible Version",
+                    Asin = "B00EDIT123",
+                    Isbn = new List<string> { "9781234567890" },
+                    OpenLibraryId = "OL12345M"
+                },
+                Monitored = true
+            };
+
+            // Act
+            var actionResult = await controller.AddToLibrary(request);
+
+            // Assert
+            Assert.IsType<OkObjectResult>(actionResult);
+
+            var stored = await dbContext.Audiobooks.FirstOrDefaultAsync();
+            Assert.NotNull(stored);
+            Assert.Equal("Editable Title", stored.Title);
+            Assert.Equal("Editable Subtitle", stored.Subtitle);
+            Assert.Equal("Edited Publisher", stored.Publisher);
+            Assert.Equal("english", stored.Language);
+            Assert.Equal(615, stored.Runtime);
+            Assert.Equal("Collector's Edition", stored.Edition);
+            Assert.Equal("Audible Version", stored.Version);
+            Assert.Equal("B00EDIT123", stored.Asin);
+            Assert.Equal("OL12345M", stored.OpenLibraryId);
+            Assert.NotNull(stored.Authors);
+            Assert.Contains("Edited Author", stored.Authors);
+            Assert.NotNull(stored.Narrators);
+            Assert.Contains("Edited Narrator", stored.Narrators);
+            Assert.NotNull(stored.Isbn);
+            Assert.Contains("9781234567890", stored.Isbn);
+
+            // Cleanup
+            try
+            {
+                Directory.Delete(tempRoot, true);
+            }
+            catch (IOException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{tempRoot}': {ex.Message}");
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                Console.Error.WriteLine($"Ignoring cleanup failure for '{tempRoot}': {ex.Message}");
+            }
         }
 
         [Fact]
@@ -131,15 +261,10 @@ namespace Listenarr.Api.Tests
             var mockFileNaming = new Mock<IFileNamingService>();
             mockFileNaming
                 .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool t) =>
-                {
-                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
-                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Combine(author, title).Replace("\\", "/");
-                });
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) => BuildLibraryPath(vars));
 
             // Configuration service providing an OutputPath root
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var mockConfigService = new Mock<IConfigurationService>();
@@ -187,7 +312,7 @@ namespace Listenarr.Api.Tests
             mockImageCache.Verify(m => m.MoveToLibraryStorageAsync(asin, originalUrl), Times.Once);
 
             // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch { }
+            TryDeleteDirectory(tempRoot);
         }
 
         [Fact]
@@ -217,15 +342,10 @@ namespace Listenarr.Api.Tests
             var mockFileNaming = new Mock<IFileNamingService>();
             mockFileNaming
                 .Setup(f => f.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
-                .Returns((string pattern, Dictionary<string, object> vars, bool t) =>
-                {
-                    var author = vars.ContainsKey("Author") ? vars["Author"]?.ToString() ?? "Unknown" : "Unknown";
-                    var title = vars.ContainsKey("Title") ? vars["Title"]?.ToString() ?? "Unknown" : "Unknown";
-                    return Path.Combine(author, title).Replace("\\", "/");
-                });
+                .Returns((string pattern, Dictionary<string, object> vars, bool t) => BuildLibraryPath(vars));
 
             // Configuration service providing an OutputPath root
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempRoot);
 
             var mockConfigService = new Mock<IConfigurationService>();
@@ -272,7 +392,7 @@ namespace Listenarr.Api.Tests
             mockImageCache.Verify(m => m.MoveToLibraryStorageAsync(It.IsAny<string>(), imageUrl), Times.Once);
 
             // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch { }
+            TryDeleteDirectory(tempRoot);
         }
 
         [Fact]

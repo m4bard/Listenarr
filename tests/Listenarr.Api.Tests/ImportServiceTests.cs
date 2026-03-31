@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -226,8 +226,8 @@ namespace Listenarr.Api.Tests
             Assert.NotNull(audiobook);
             Assert.Equal(Path.GetFullPath(outputRoot), audiobook!.BasePath);
             Assert.Equal(2, files.Count);
-            Assert.Contains(files, f => f.Path == Path.Combine(outputRoot, "Jack of Shadows-01.mp3"));
-            Assert.Contains(files, f => f.Path == Path.Combine(outputRoot, "Jack of Shadows-02.mp3"));
+            Assert.Contains(files, f => f.Path == Path.Join(outputRoot, "Jack of Shadows-01.mp3"));
+            Assert.Contains(files, f => f.Path == Path.Join(outputRoot, "Jack of Shadows-02.mp3"));
 
             TryDeleteDirectory(sourceDir, recursive: true);
             TryDeleteDirectory(outputRoot, recursive: true);
@@ -285,9 +285,9 @@ namespace Listenarr.Api.Tests
                 .Where(r => r.Success && !string.IsNullOrWhiteSpace(r.SourcePath) && !string.IsNullOrWhiteSpace(r.FinalPath))
                 .ToDictionary(r => r.SourcePath!, r => r.FinalPath!, StringComparer.OrdinalIgnoreCase);
 
-            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-01.mp3"), mapped[foreword]);
-            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-02.mp3"), mapped[chapter1]);
-            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-03.mp3"), mapped[chapter2]);
+            Assert.Equal(Path.Join(outputRoot, "Jack of Shadows-01.mp3"), mapped[foreword]);
+            Assert.Equal(Path.Join(outputRoot, "Jack of Shadows-02.mp3"), mapped[chapter1]);
+            Assert.Equal(Path.Join(outputRoot, "Jack of Shadows-03.mp3"), mapped[chapter2]);
 
             TryDeleteDirectory(sourceDir, recursive: true);
             TryDeleteDirectory(outputRoot, recursive: true);
@@ -555,6 +555,319 @@ namespace Listenarr.Api.Tests
             var stored = await verify.Audiobooks.FindAsync(321);
             Assert.NotNull(stored);
             Assert.Equal(longBasePath, stored!.BasePath);
+
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        [Fact]
+        public async Task ImportSingleFile_WithAudiobookNarrators_AllowsNarratorTokenInNamingPattern()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            Directory.CreateDirectory(outputRoot);
+
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+            var sourceFile = Path.Join(sourceDir, "gunslinger-source.m4b");
+            await File.WriteAllTextAsync(sourceFile, "dummy");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Copy",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title} ({Narrator})",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using (var seed = new ListenArrDbContext(options))
+            {
+                seed.Audiobooks.Add(new Audiobook
+                {
+                    Id = 987,
+                    Title = "The Gunslinger",
+                    Authors = new System.Collections.Generic.List<string> { "Stephen King" },
+                    Narrators = new System.Collections.Generic.List<string> { "George Guidall", "Frank Muller" }
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.IsAny<string>()))
+                .ReturnsAsync(new AudioMetadata { Title = "The Gunslinger", Format = "m4b" });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock
+                .Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(() => new ListenArrDbContext(options));
+
+            using var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddScoped(_ => new ListenArrDbContext(options));
+                services.AddMemoryCache();
+                services.AddSingleton<MetadataExtractionLimiter>();
+                services.AddSingleton<IMetadataService>(metadataMock.Object);
+            });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var result = await importService.ImportSingleFileAsync("dl-narrator", 987, sourceFile, settings);
+
+            Assert.True(result.Success);
+            Assert.NotNull(result.FinalPath);
+            Assert.Contains("George Guidall, Frank Muller", result.FinalPath!, StringComparison.Ordinal);
+            Assert.True(File.Exists(result.FinalPath));
+
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        [Fact]
+        public async Task ImportSingleFile_WithoutAuthors_DoesNotUseNarratorAsAuthorFallback()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            Directory.CreateDirectory(outputRoot);
+
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+            var sourceFile = Path.Join(sourceDir, "gunslinger-source.m4b");
+            await File.WriteAllTextAsync(sourceFile, "dummy");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Copy",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "{Author}/{Title}",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using (var seed = new ListenArrDbContext(options))
+            {
+                seed.Audiobooks.Add(new Audiobook
+                {
+                    Id = 988,
+                    Title = "The Gunslinger",
+                    Narrators = new System.Collections.Generic.List<string> { "George Guidall" }
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.IsAny<string>()))
+                .ReturnsAsync(new AudioMetadata
+                {
+                    Title = "The Gunslinger",
+                    Format = "m4b",
+                    AlbumArtist = "George Guidall",
+                    Narrator = "George Guidall"
+                });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock
+                .Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(() => new ListenArrDbContext(options));
+
+            using var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddScoped(_ => new ListenArrDbContext(options));
+                services.AddMemoryCache();
+                services.AddSingleton<MetadataExtractionLimiter>();
+                services.AddSingleton<IMetadataService>(metadataMock.Object);
+            });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var result = await importService.ImportSingleFileAsync("dl-author-fallback", 988, sourceFile, settings);
+
+            Assert.True(result.Success);
+            Assert.NotNull(result.FinalPath);
+            Assert.Contains($"Unknown Author{Path.DirectorySeparatorChar}The Gunslinger", result.FinalPath!, StringComparison.Ordinal);
+            Assert.DoesNotContain($"George Guidall{Path.DirectorySeparatorChar}The Gunslinger", result.FinalPath!, StringComparison.Ordinal);
+
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        [Fact]
+        public async Task ImportSingleFile_WithAudiobookMetadata_SupportsSubtitlePublisherLanguageAndAsinTokens()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            Directory.CreateDirectory(outputRoot);
+
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+            var sourceFile = Path.Join(sourceDir, "gunslinger-source.m4b");
+            await File.WriteAllTextAsync(sourceFile, "dummy");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Copy",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "{Publisher}/{Language}/{Asin}",
+                FileNamingPattern = "{Title} - {Edition} - {Subtitle}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            };
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using (var seed = new ListenArrDbContext(options))
+            {
+                seed.Audiobooks.Add(new Audiobook
+                {
+                    Id = 989,
+                    Title = "The Gunslinger",
+                    Subtitle = "The Dark Tower Begins",
+                    Authors = new System.Collections.Generic.List<string> { "Stephen King" },
+                    Publisher = "Penguin Audio",
+                    Language = "English",
+                    Asin = "B000FC1R84",
+                    Edition = "Revised Edition"
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(It.IsAny<string>()))
+                .ReturnsAsync(new AudioMetadata { Title = "The Gunslinger", Format = "m4b" });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock
+                .Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(() => new ListenArrDbContext(options));
+
+            using var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddScoped(_ => new ListenArrDbContext(options));
+                services.AddMemoryCache();
+                services.AddSingleton<MetadataExtractionLimiter>();
+                services.AddSingleton<IMetadataService>(metadataMock.Object);
+            });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var result = await importService.ImportSingleFileAsync("dl-metadata-vars", 989, sourceFile, settings);
+
+            Assert.True(result.Success);
+            Assert.NotNull(result.FinalPath);
+            Assert.Contains($"Penguin Audio{Path.DirectorySeparatorChar}English{Path.DirectorySeparatorChar}B000FC1R84", result.FinalPath!, StringComparison.Ordinal);
+            Assert.Contains("The Gunslinger - Revised Edition - The Dark Tower Begins.m4b", result.FinalPath!, StringComparison.Ordinal);
+
+            TryDeleteDirectory(sourceDir, recursive: true);
+            TryDeleteDirectory(outputRoot, recursive: true);
+        }
+
+        [Fact]
+        public async Task ImportFilesFromDirectory_WithAudiobookMetadata_SupportsEditionSubtitlePublisherLanguageAndAsinTokens()
+        {
+            var outputRoot = Path.Join(Path.GetTempPath(), $"import-out-{Guid.NewGuid()}");
+            Directory.CreateDirectory(outputRoot);
+
+            var sourceDir = Path.Join(Path.GetTempPath(), $"import-src-{Guid.NewGuid()}");
+            Directory.CreateDirectory(sourceDir);
+            var firstSourceFile = Path.Join(sourceDir, "gunslinger-source-1.m4b");
+            var secondSourceFile = Path.Join(sourceDir, "gunslinger-source-2.m4b");
+            await File.WriteAllTextAsync(firstSourceFile, "dummy-1");
+            await File.WriteAllTextAsync(secondSourceFile, "dummy-2");
+
+            var settings = new ApplicationSettings
+            {
+                OutputPath = outputRoot,
+                CompletedFileAction = "Copy",
+                EnableMetadataProcessing = false,
+                FolderNamingPattern = "{Publisher}/{Language}/{Asin}",
+                FileNamingPattern = "{Title} - {Edition} - {Subtitle}",
+                MultiFileNamingPattern = "{Title} - {Edition} - {Subtitle} - {DiskNumber:00}"
+            };
+
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+
+            await using (var seed = new ListenArrDbContext(options))
+            {
+                seed.Audiobooks.Add(new Audiobook
+                {
+                    Id = 990,
+                    Title = "The Gunslinger",
+                    Subtitle = "The Dark Tower Begins",
+                    Authors = new System.Collections.Generic.List<string> { "Stephen King" },
+                    Publisher = "Penguin Audio",
+                    Language = "English",
+                    Asin = "B000FC1R84",
+                    Edition = "Revised Edition"
+                });
+                await seed.SaveChangesAsync();
+            }
+
+            var metadataMock = new Mock<IMetadataService>();
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(firstSourceFile))
+                .ReturnsAsync(new AudioMetadata { Title = "The Gunslinger", Format = "m4b", DiscNumber = 1 });
+            metadataMock.Setup(m => m.ExtractFileMetadataAsync(secondSourceFile))
+                .ReturnsAsync(new AudioMetadata { Title = "The Gunslinger", Format = "m4b", DiscNumber = 2 });
+
+            var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
+            dbFactoryMock
+                .Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>()))
+                .ReturnsAsync(() => new ListenArrDbContext(options));
+
+            using var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
+                services.AddScoped(_ => new ListenArrDbContext(options));
+                services.AddMemoryCache();
+                services.AddSingleton<MetadataExtractionLimiter>();
+                services.AddSingleton<IMetadataService>(metadataMock.Object);
+            });
+
+            var importService = new ImportService(
+                dbFactoryMock.Object,
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
+                metadataMock.Object,
+                new NullLogger<ImportService>());
+
+            var results = await importService.ImportFilesFromDirectoryAsync(
+                "dl-dir-metadata-vars",
+                990,
+                new[] { firstSourceFile, secondSourceFile },
+                settings);
+
+            var successfulResults = results.Where(item => item.Success).ToList();
+            Assert.Equal(2, successfulResults.Count);
+            Assert.All(successfulResults, result =>
+            {
+                Assert.NotNull(result.FinalPath);
+                Assert.Contains($"Penguin Audio{Path.DirectorySeparatorChar}English{Path.DirectorySeparatorChar}B000FC1R84", result.FinalPath!, StringComparison.Ordinal);
+                Assert.Contains("The Gunslinger - Revised Edition - The Dark Tower Begins", result.FinalPath!, StringComparison.Ordinal);
+            });
 
             TryDeleteDirectory(sourceDir, recursive: true);
             TryDeleteDirectory(outputRoot, recursive: true);

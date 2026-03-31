@@ -13,12 +13,19 @@ namespace Listenarr.Api.Tests
 {
     public class MetadataController_AuthorLookupTests
     {
+        private static readonly HttpClient SharedAudibleHttpClient = new();
+
+        private static Mock<AudibleService> CreateAudibleServiceMock()
+        {
+            return new Mock<AudibleService>(SharedAudibleHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+        }
+
         [Fact]
         public async Task LookupAuthor_PrefersCachedImage_AndReturnsBiographyAndSimilarAuthors()
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = CreateAudibleServiceMock();
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -94,7 +101,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = CreateAudibleServiceMock();
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -155,7 +162,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = CreateAudibleServiceMock();
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -239,7 +246,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = CreateAudibleServiceMock();
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -321,7 +328,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = CreateAudibleServiceMock();
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -409,7 +416,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = CreateAudibleServiceMock();
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -506,7 +513,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = CreateAudibleServiceMock();
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -610,7 +617,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = CreateAudibleServiceMock();
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();

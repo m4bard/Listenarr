@@ -202,7 +202,7 @@ namespace Listenarr.Api.Services
 
                         var totalSize = files.Sum(f =>
                         {
-                            try { return new FileInfo(f).Length; } catch { return 0L; }
+                            try { return new FileInfo(f).Length; } catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException) { return 0L; }
                         });
 
                         results.Add(new UnmatchedFileResult

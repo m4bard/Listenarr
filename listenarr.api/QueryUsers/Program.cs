@@ -1,4 +1,4 @@
-// See https://aka.ms/new-console-template for more information
+﻿// See https://aka.ms/new-console-template for more information
 using System;
 using Microsoft.Data.Sqlite;
 using Serilog;
@@ -30,7 +30,7 @@ partial class Program
         try
         {
             // Path to the database file
-            string dbPath = Path.Combine(Directory.GetCurrentDirectory(), "..", "listenarr.db");
+            string dbPath = Path.Join(Directory.GetCurrentDirectory(), "..", "listenarr.db");
             Log.Information("Database path: {DbPath}", dbPath);
 
             using var connection = new SqliteConnection($"Data Source={dbPath}");
@@ -66,3 +66,4 @@ partial class Program
         }
     }
 }
+

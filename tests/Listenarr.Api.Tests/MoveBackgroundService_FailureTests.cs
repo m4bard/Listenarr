@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -13,6 +13,38 @@ namespace Listenarr.Api.Tests
 {
     public class MoveBackgroundService_FailureTests
     {
+        private static void TryDeleteFile(string path)
+        {
+            try
+            {
+                File.Delete(path);
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+        }
+
         [Fact(Timeout = 20000)]
         public async Task MoveBackgroundService_Fails_WhenFileLocked_IncrementsAttemptCount()
         {
@@ -28,12 +60,12 @@ namespace Listenarr.Api.Tests
             var bg = provider.GetRequiredService<MoveBackgroundService>();
 
             // Create source with a file
-            var src = Path.Combine(Path.GetTempPath(), "listenarr_test_src_lock_" + Guid.NewGuid().ToString("N"));
+            var src = Path.Join(Path.GetTempPath(), "listenarr_test_src_lock_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(src);
-            var file = Path.Combine(src, "file_locked.txt");
+            var file = Path.Join(src, "file_locked.txt");
             File.WriteAllText(file, "locked");
 
-            var dst = Path.Combine(Path.GetTempPath(), "listenarr_test_dst_lock_" + Guid.NewGuid().ToString("N"));
+            var dst = Path.Join(Path.GetTempPath(), "listenarr_test_dst_lock_" + Guid.NewGuid().ToString("N"));
 
             // Create a blocking file at the destination path so Directory.Move will fail
             var dstParent = Path.GetDirectoryName(dst) ?? Path.GetTempPath();
@@ -73,9 +105,9 @@ namespace Listenarr.Api.Tests
             }
 
             // Cleanup
-            try { File.Delete(dst); } catch { }
-            try { Directory.Delete(src, true); } catch { }
-            try { Directory.Delete(dst, true); } catch { }
+            TryDeleteFile(dst);
+            TryDeleteDirectory(src);
+            TryDeleteDirectory(dst);
         }
     }
 }

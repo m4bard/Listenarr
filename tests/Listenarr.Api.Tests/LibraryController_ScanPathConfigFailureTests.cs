@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -67,7 +67,7 @@ namespace Listenarr.Api.Tests
                 null,
                 mockRootFolderSvc.Object);
 
-            var request = new LibraryController.ScanRequest { Path = Path.Combine(Path.GetTempPath(), "somepath") };
+            var request = new LibraryController.ScanRequest { Path = Path.Join(Path.GetTempPath(), "somepath") };
 
             var result = await controller.ScanAudiobookFiles(ab.Id, request);
 

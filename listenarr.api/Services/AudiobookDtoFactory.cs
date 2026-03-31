@@ -47,6 +47,19 @@ namespace Listenarr.Api.Services
                 PublishedDate = audiobook.PublishedDate,
                 Series = audiobook.Series,
                 SeriesNumber = audiobook.SeriesNumber,
+                SeriesMemberships = audiobook.SeriesMemberships?
+                    .OrderByDescending(m => m.IsPrimary)
+                    .ThenBy(m => m.SortOrder)
+                    .Select(m => new AudiobookSeriesMembershipDto
+                    {
+                        Id = m.Id,
+                        SeriesName = m.SeriesName,
+                        SeriesNumber = m.SeriesNumber,
+                        SeriesAsin = m.SeriesAsin,
+                        IsPrimary = m.IsPrimary,
+                        SortOrder = m.SortOrder
+                    })
+                    .ToArray(),
                 Monitored = audiobook.Monitored,
                 FilePath = audiobook.FilePath,
                 FileSize = audiobook.FileSize,
@@ -55,6 +68,7 @@ namespace Listenarr.Api.Services
                 ImageUrl = audiobook.ImageUrl,
                 Quality = audiobook.Quality,
                 QualityProfileId = audiobook.QualityProfileId,
+                Edition = audiobook.Edition,
                 Version = audiobook.Version,
                 Abridged = audiobook.Abridged,
                 Explicit = audiobook.Explicit

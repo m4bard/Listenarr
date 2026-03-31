@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.SignalR;
 using Listenarr.Api.Hubs;
@@ -57,8 +57,6 @@ namespace Listenarr.Api.Services
                             }
                             using var scope = _scopeFactory.CreateScope();
                             var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                            var metadataService = scope.ServiceProvider.GetRequiredService<IMetadataService>();
-
                             var audiobook = await db.Audiobooks.FindAsync(job.AudiobookId);
                             if (audiobook == null)
                             {
@@ -248,7 +246,7 @@ namespace Listenarr.Api.Services
                             {
                                 if (string.IsNullOrEmpty(titleToken) && string.IsNullOrEmpty(authorToken))
                                 {
-                                    foreach (var c in candidates) { if (unique.Add(c)) foundFiles.Add(c); }
+                                    foundFiles.AddRange(candidates.Where(unique.Add));
                                 }
                                 else
                                 {
@@ -264,7 +262,7 @@ namespace Listenarr.Api.Services
 
                                         if (groupHasMatch)
                                         {
-                                            foreach (var f in group) { if (unique.Add(f)) foundFiles.Add(f); }
+                                            foundFiles.AddRange(group.Where(unique.Add));
                                         }
                                         else
                                         {
@@ -272,14 +270,11 @@ namespace Listenarr.Api.Services
                                             foreach (var f in group)
                                             {
                                                 var fname = Path.GetFileNameWithoutExtension(f);
-                                                if (!string.IsNullOrEmpty(titleToken) && fname.IndexOf(titleToken, StringComparison.OrdinalIgnoreCase) >= 0)
-                                                {
-                                                    if (unique.Add(f)) foundFiles.Add(f);
-                                                }
-                                                else if (!string.IsNullOrEmpty(authorToken) && f.IndexOf(authorToken, StringComparison.OrdinalIgnoreCase) >= 0)
-                                                {
-                                                    if (unique.Add(f)) foundFiles.Add(f);
-                                                }
+                                                var matchesTitle = !string.IsNullOrEmpty(titleToken)
+                                                    && fname.IndexOf(titleToken, StringComparison.OrdinalIgnoreCase) >= 0;
+                                                var matchesAuthor = !string.IsNullOrEmpty(authorToken)
+                                                    && f.IndexOf(authorToken, StringComparison.OrdinalIgnoreCase) >= 0;
+                                                if ((matchesTitle || matchesAuthor) && unique.Add(f)) foundFiles.Add(f);
                                             }
                                         }
                                     }
@@ -335,20 +330,15 @@ namespace Listenarr.Api.Services
                                 
                                 // Check which existing files still exist
                                 var toRemove = new List<AudiobookFile>();
-                                foreach (var existingFile in existingFiles)
+                                foreach (var existingFile in existingFiles
+                                    .Where(existingFile => !string.IsNullOrEmpty(existingFile.Path))
+                                    .Where(existingFile => FileUtils.IsAudioFile(existingFile.Path!)))
                                 {
-                                    if (string.IsNullOrEmpty(existingFile.Path)) continue;
-
-                                    // Skip files with non-audio extensions — they may have been
-                                    // registered by a different pipeline (e.g. cover images from
-                                    // a legacy import) and shouldn't be governed by the audio scan.
-                                    if (!FileUtils.IsAudioFile(existingFile.Path)) continue;
-                                    
                                     // Normalize path: if relative, make it absolute using basePath
-                                    var fullPath = existingFile.Path;
+                                    var fullPath = existingFile.Path!;
                                     if (!Path.IsPathRooted(fullPath) && !string.IsNullOrEmpty(basePath))
                                     {
-                                        fullPath = Path.GetFullPath(Path.Combine(basePath, fullPath));
+                                        fullPath = Path.GetFullPath(Path.Join(basePath, fullPath));
                                     }
                                     
                                     // Check if file still exists on disk
@@ -613,9 +603,8 @@ namespace Listenarr.Api.Services
             var firstPath = FileUtils.NormalizeStoredPath(paths[0]);
             var commonPath = firstPath;
 
-            foreach (var rawPath in paths.Skip(1))
+            foreach (var path in paths.Skip(1).Select(rawPath => FileUtils.NormalizeStoredPath(rawPath)))
             {
-                var path = FileUtils.NormalizeStoredPath(rawPath);
                 var minLength = Math.Min(commonPath.Length, path.Length);
                 var commonLength = 0;
 
@@ -631,10 +620,7 @@ namespace Listenarr.Api.Services
                 if (commonLength < commonPath.Length)
                 {
                     var lastSep = commonPath.LastIndexOf(Path.DirectorySeparatorChar, commonLength - 1);
-                    if (lastSep >= 0)
-                        commonLength = lastSep + 1;
-                    else
-                        commonLength = 0;
+                    commonLength = lastSep >= 0 ? lastSep + 1 : 0;
                 }
 
                 commonPath = commonPath.Substring(0, commonLength);
@@ -654,5 +640,6 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 
 
