@@ -28,14 +28,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Refresh to current canary head on rerun
-        if: github.run_attempt != 1
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: canary
-          clean: true
-
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v3
         with:
@@ -46,41 +38,82 @@ jobs:
         with:
           node-version: 20
 
-      - name: Resolve version
+      - name: Resolve target version
         id: resolve-version
         run: |
           set -euo pipefail
           CSProj=${{ env.API_PROJECT }}
 
-          # Read <Version> from csproj, then fall back to <AssemblyVersion>
-          VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
-          if [ -z "${VERSION}" ]; then
-            VERSION=$(sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" "$CSProj" 2>/dev/null || true)
+          SOURCE_VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
+          if [ -z "${SOURCE_VERSION}" ]; then
+            SOURCE_VERSION=$(sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" "$CSProj" 2>/dev/null || true)
           fi
-          if [ -z "${VERSION}" ]; then
-            VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
-          fi
-
-          echo "Found base version: ${VERSION}"
-
-          if [ "${{ github.run_attempt }}" != "1" ]; then
-            RESOLVED_VERSION="${VERSION}"
-            echo "Rerun detected. Using current canary version without bump: ${RESOLVED_VERSION}"
-          else
-            IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION}"
-            PATCH=${PATCH:-0}
-            NEWPATCH=$((PATCH + 1))
-            RESOLVED_VERSION="${MAJOR}.${MINOR}.${NEWPATCH}"
-            echo "Bumped canary version: ${RESOLVED_VERSION}"
+          if [ -z "${SOURCE_VERSION}" ]; then
+            SOURCE_VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
           fi
 
-          echo "VERSION=${RESOLVED_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Found source version from triggering commit: ${SOURCE_VERSION}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${SOURCE_VERSION}"
+          PATCH=${PATCH:-0}
+          TARGET_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+
+          echo "Target canary version: ${TARGET_VERSION}"
+          echo "SOURCE_VERSION=${SOURCE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${TARGET_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect current canary version
+        id: inspect_target
+        run: |
+          set -euo pipefail
+          git fetch origin canary --depth=1
+
+          BRANCH_XML="$(git show origin/canary:${{ env.API_PROJECT }} 2>/dev/null || true)"
+          BRANCH_VERSION=$(printf '%s\n' "$BRANCH_XML" | sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" | head -n1)
+          if [ -z "${BRANCH_VERSION}" ]; then
+            BRANCH_VERSION=$(printf '%s\n' "$BRANCH_XML" | sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" | head -n1)
+          fi
+
+          echo "Current canary version: ${BRANCH_VERSION:-<unknown>}"
+          echo "BRANCH_VERSION=${BRANCH_VERSION}" >> "$GITHUB_OUTPUT"
+
+          STATE=$(python3 - "${BRANCH_VERSION}" "${{ steps.resolve-version.outputs.VERSION }}" <<'PY'
+          import sys
+
+          branch = sys.argv[1].strip()
+          target = sys.argv[2].strip()
+
+          def parse(v: str):
+              return tuple(int(x) for x in v.split("."))
+
+          if not branch:
+              print("pending")
+          else:
+              b = parse(branch)
+              t = parse(target)
+              if b == t:
+                  print("applied")
+              elif b > t:
+                  print("superseded")
+              else:
+                  print("pending")
+          PY
+          )
+
+          echo "bump_state=${STATE}" >> "$GITHUB_OUTPUT"
+          echo "Computed bump state: ${STATE}"
+
+      - name: Abort obsolete run
+        if: steps.inspect_target.outputs.bump_state == 'superseded'
+        run: |
+          echo "::error::Current canary version (${{ steps.inspect_target.outputs.BRANCH_VERSION }}) is newer than target version (${{ steps.resolve-version.outputs.VERSION }}). This run is obsolete and will not publish stale artifacts."
+          exit 1
 
       - name: Restore .NET
         run: dotnet restore listenarr.slnx
 
-      - name: Persist bumped version to csproj (first attempt only)
-        if: github.run_attempt == 1 && steps.resolve-version.outputs.VERSION != ''
+      - name: Persist bumped version to csproj
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.VERSION != ''
         env:
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         run: |
@@ -95,7 +128,6 @@ jobs:
           tree = ET.parse(path)
           root = tree.getroot()
 
-          # Update Version
           found_version = False
           for elem in root.findall('.//Version'):
               elem.text = new
@@ -107,7 +139,6 @@ jobs:
                   pg = ET.SubElement(root, 'PropertyGroup')
               ET.SubElement(pg, 'Version').text = new
 
-          # Update AssemblyVersion
           found_assembly = False
           for elem in root.findall('.//AssemblyVersion'):
               elem.text = new
@@ -125,14 +156,14 @@ jobs:
           python3 update_version.py
 
       - name: Sync frontend and package metadata to bumped version
-        if: github.run_attempt == 1 && steps.resolve-version.outputs.VERSION != ''
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.VERSION != ''
         env:
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         run: node scripts/sync-fe-version-from-csproj.mjs
 
       - name: Check for tracked version changes
         id: version_changes
-        if: github.run_attempt == 1
+        if: steps.inspect_target.outputs.bump_state == 'pending'
         run: |
           set -euo pipefail
           if git diff --quiet -- \
@@ -150,7 +181,7 @@ jobs:
 
       - name: Create Pull Request for version bump
         id: create_pr
-        if: github.run_attempt == 1 && steps.version_changes.outputs.has_changes == 'true'
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.version_changes.outputs.has_changes == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GH_PAT }}
@@ -163,8 +194,14 @@ jobs:
             This PR bumps the application version to ${{ steps.resolve-version.outputs.VERSION }}.
             The change was produced automatically by the CI canary workflow.
 
+      - name: Ensure version bump PR exists when required
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number == ''
+        run: |
+          echo "::error::A canary version bump was required, but no pull request was created or found."
+          exit 1
+
       - name: Label version bump PR
-        if: github.run_attempt == 1 && steps.create_pr.outputs.pull-request-number != ''
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number != ''
         continue-on-error: true
         uses: actions/github-script@v6
         with:
@@ -199,7 +236,7 @@ jobs:
             }
 
       - name: Merge version bump PR (skip CI)
-        if: github.run_attempt == 1 && steps.create_pr.outputs.pull-request-number != ''
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number != ''
         uses: actions/github-script@v6
         env:
           PR_NUMBER: ${{ steps.create_pr.outputs['pull-request-number'] }}
@@ -219,7 +256,7 @@ jobs:
             });
 
       - name: Refresh workspace to current canary version
-        if: github.run_attempt != 1 || steps.create_pr.outputs.pull-request-number != ''
+        if: steps.inspect_target.outputs.bump_state == 'applied' || steps.create_pr.outputs.pull-request-number != ''
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -227,7 +264,7 @@ jobs:
           clean: true
 
       - name: Verify synced workspace version
-        if: steps.resolve-version.outputs.VERSION != ''
+        if: steps.inspect_target.outputs.bump_state == 'applied' || steps.create_pr.outputs.pull-request-number != ''
         env:
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         run: |
@@ -297,17 +334,13 @@ jobs:
       - name: Set image name
         id: set-tags
         run: |
-          # Use repository owner as namespace for Docker Hub
           echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
-          # Publish GHCR images under the same owner namespace
           echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
           echo "ATCR_IMAGE=atcr.io/therobbiedavis.com/listenarr" >> $GITHUB_OUTPUT
 
       - name: Find triggering Pull Request
         id: find_triggering_pr
         run: |
-          # Find merged PRs associated with this commit, excluding version bump PRs
-          # Use a simpler approach: get recent merged PRs to canary and find the right one
           PR_DATA=$(gh api graphql -f query='
             query($owner: String!, $repo: String!) {
               repository(owner: $owner, name: $repo) {
@@ -332,7 +365,6 @@ jobs:
               }
             }' -f owner='${{ github.repository_owner }}' -f repo='${{ github.event.repository.name }}')
 
-          # Filter out version bump PRs and find the first non-version-bump PR
           FILTERED_PR=$(echo "$PR_DATA" | jq -r '
             [.data.repository.pullRequests.edges[] |
             select(
@@ -343,11 +375,9 @@ jobs:
             {number, title, body, baseRefName}][0] // null
           ')
 
-          # Debug: Show what PRs we found
           echo "Recent PRs found:"
           echo "$PR_DATA" | jq -r '.data.repository.pullRequests.edges[:5][] | "PR #\(.node.number): \(.node.title)"'
 
-          # Extract PR details from the filtered result
           if [ "$FILTERED_PR" != "" ] && [ "$FILTERED_PR" != "null" ]; then
             PR_NUMBER=$(echo "$FILTERED_PR" | jq -r '.number // ""')
             PR_TITLE=$(echo "$FILTERED_PR" | jq -r '.title // ""')
@@ -367,7 +397,6 @@ jobs:
           echo "PR_TITLE=$PR_TITLE" >> $GITHUB_OUTPUT
           echo "PR_BASE_REF=$PR_BASE_REF" >> $GITHUB_OUTPUT
 
-          # Store raw PR body for sanitization
           echo "PR_BODY_RAW<<EOF_PR_BODY" >> $GITHUB_OUTPUT
           echo "$PR_BODY_RAW" >> $GITHUB_OUTPUT
           echo "EOF_PR_BODY" >> $GITHUB_OUTPUT
@@ -377,39 +406,27 @@ jobs:
       - name: Sanitize PR body and create release notes
         id: sanitize_pr_body
         run: |
-          # Sanitize PR body - remove potential malicious content, limit length
           python3 << 'PYTHON_SCRIPT'
           import os
           import re
           import html
 
-          # Get the raw PR body
           pr_body_raw = os.environ.get('PR_BODY_RAW', '')
 
-          # Basic sanitization
-          # 1. HTML escape to prevent injection
           sanitized = html.escape(pr_body_raw)
-
-          # 2. Remove script tags and other potentially dangerous content
           sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
           sanitized = re.sub(r'<iframe[^>]*>.*?</iframe>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
           sanitized = re.sub(r'javascript:', '', sanitized, flags=re.IGNORECASE)
 
-          # 3. Limit length to prevent overly long descriptions (max 2000 chars)
           if len(sanitized) > 2000:
               sanitized = sanitized[:1997] + '...'
 
-          # 4. Clean up excessive whitespace
           sanitized = re.sub(r'\n\s*\n\s*\n', '\n\n', sanitized)
           sanitized = sanitized.strip()
 
-          # If empty after sanitization, provide a default
           if not sanitized:
               sanitized = "No description provided."
 
-          print(f"Sanitized PR body (length: {len(sanitized)} chars)")
-
-          # Create the full body for the release
           full_body = f"""{sanitized}
 
           ---
@@ -420,11 +437,9 @@ jobs:
           - Commit: {os.environ.get('GITHUB_SHA', 'unknown')}
           - Original PR: #{os.environ.get('PR_NUMBER', 'unknown')}"""
 
-          # Output the sanitized content
           with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
               f.write(f"SANITIZED_PR_BODY<<EOF_SANITIZED\n{sanitized}\nEOF_SANITIZED\n")
               f.write(f"FULL_RELEASE_BODY<<EOF_FULL\n{full_body}\nEOF_FULL\n")
-
           PYTHON_SCRIPT
         env:
           PR_BODY_RAW: ${{ steps.find_triggering_pr.outputs.PR_BODY_RAW }}
@@ -452,7 +467,6 @@ jobs:
       - name: Publish API for runtime image
         run: |
           dotnet publish listenarr.api/Listenarr.Api.csproj -c Release -o listenarr.api/publish
-        # Ensures Listenarr.Api.dll is at listenarr.api/publish/ for Dockerfile.runtime
 
       - name: Show publish contents (sanity check)
         run: |
@@ -515,7 +529,7 @@ jobs:
         if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
         with:
           severity: info
-          description: v${{steps.resolve-version.outputs.VERSION}} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
+          description: v${{ steps.resolve-version.outputs.VERSION }} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
           details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
           text: A new canary build has been released for docker.
           webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}

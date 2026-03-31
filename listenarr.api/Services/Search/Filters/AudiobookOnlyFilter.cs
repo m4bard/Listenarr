@@ -18,7 +18,7 @@ public class AudiobookOnlyFilter : ISearchResultFilter
         if (result.IsEnriched && !string.IsNullOrWhiteSpace(result.MetadataSource))
         {
             var source = result.MetadataSource;
-            var trustedAudioSources = new[] { "Audible", "Audible", "Audnexus" };
+            var trustedAudioSources = new[] { "Audible", "Audnexus" };
 
             var hasExplicitAudioFromMetadata = (result.Runtime.HasValue && result.Runtime.Value > 0)
                                                || !string.IsNullOrWhiteSpace(result.Narrator);
@@ -40,7 +40,6 @@ public class AudiobookOnlyFilter : ISearchResultFilter
         var hasNarrator = !string.IsNullOrWhiteSpace(result.Narrator);
         var metadataIndicatesAudio = !string.IsNullOrWhiteSpace(result.MetadataSource) &&
                                      (result.MetadataSource.Contains("Audible", StringComparison.OrdinalIgnoreCase)
-                                      || result.MetadataSource.Contains("Audible", StringComparison.OrdinalIgnoreCase)
                                       || result.MetadataSource.Contains("Audnexus", StringComparison.OrdinalIgnoreCase)
                                       || result.MetadataSource.Contains("Amazon", StringComparison.OrdinalIgnoreCase));
 

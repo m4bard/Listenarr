@@ -28,14 +28,6 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Refresh to current develop head on rerun
-        if: github.run_attempt != 1
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: develop
-          clean: true
-
       - name: Setup .NET 8
         uses: actions/setup-dotnet@v3
         with:
@@ -46,41 +38,82 @@ jobs:
         with:
           node-version: 20
 
-      - name: Resolve version
+      - name: Resolve target version
         id: resolve-version
         run: |
           set -euo pipefail
           CSProj=${{ env.API_PROJECT }}
 
-          # Read <Version> from csproj, then fall back to <AssemblyVersion>
-          VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
-          if [ -z "${VERSION}" ]; then
-            VERSION=$(sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" "$CSProj" 2>/dev/null || true)
+          SOURCE_VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
+          if [ -z "${SOURCE_VERSION}" ]; then
+            SOURCE_VERSION=$(sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" "$CSProj" 2>/dev/null || true)
           fi
-          if [ -z "${VERSION}" ]; then
-            VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
-          fi
-
-          echo "Found base version: ${VERSION}"
-
-          if [ "${{ github.run_attempt }}" != "1" ]; then
-            RESOLVED_VERSION="${VERSION}"
-            echo "Rerun detected. Using current develop version without bump: ${RESOLVED_VERSION}"
-          else
-            IFS='.' read -r MAJOR MINOR PATCH <<< "${VERSION}"
-            MINOR=${MINOR:-0}
-            NEWMINOR=$((MINOR + 1))
-            RESOLVED_VERSION="${MAJOR}.${NEWMINOR}.0"
-            echo "Bumped nightly version: ${RESOLVED_VERSION}"
+          if [ -z "${SOURCE_VERSION}" ]; then
+            SOURCE_VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
           fi
 
-          echo "VERSION=${RESOLVED_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Found source version from triggering commit: ${SOURCE_VERSION}"
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${SOURCE_VERSION}"
+          MINOR=${MINOR:-0}
+          TARGET_VERSION="${MAJOR}.$((MINOR + 1)).0"
+
+          echo "Target nightly version: ${TARGET_VERSION}"
+          echo "SOURCE_VERSION=${SOURCE_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "VERSION=${TARGET_VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect current develop version
+        id: inspect_target
+        run: |
+          set -euo pipefail
+          git fetch origin develop --depth=1
+
+          BRANCH_XML="$(git show origin/develop:${{ env.API_PROJECT }} 2>/dev/null || true)"
+          BRANCH_VERSION=$(printf '%s\n' "$BRANCH_XML" | sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" | head -n1)
+          if [ -z "${BRANCH_VERSION}" ]; then
+            BRANCH_VERSION=$(printf '%s\n' "$BRANCH_XML" | sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" | head -n1)
+          fi
+
+          echo "Current develop version: ${BRANCH_VERSION:-<unknown>}"
+          echo "BRANCH_VERSION=${BRANCH_VERSION}" >> "$GITHUB_OUTPUT"
+
+          STATE=$(python3 - "${BRANCH_VERSION}" "${{ steps.resolve-version.outputs.VERSION }}" <<'PY'
+          import sys
+
+          branch = sys.argv[1].strip()
+          target = sys.argv[2].strip()
+
+          def parse(v: str):
+              return tuple(int(x) for x in v.split("."))
+
+          if not branch:
+              print("pending")
+          else:
+              b = parse(branch)
+              t = parse(target)
+              if b == t:
+                  print("applied")
+              elif b > t:
+                  print("superseded")
+              else:
+                  print("pending")
+          PY
+          )
+
+          echo "bump_state=${STATE}" >> "$GITHUB_OUTPUT"
+          echo "Computed bump state: ${STATE}"
+
+      - name: Abort obsolete run
+        if: steps.inspect_target.outputs.bump_state == 'superseded'
+        run: |
+          echo "::error::Current develop version (${{ steps.inspect_target.outputs.BRANCH_VERSION }}) is newer than target version (${{ steps.resolve-version.outputs.VERSION }}). This run is obsolete and will not publish stale artifacts."
+          exit 1
 
       - name: Restore .NET
         run: dotnet restore listenarr.slnx
 
-      - name: Persist bumped version to csproj (first attempt only)
-        if: github.run_attempt == 1 && steps.resolve-version.outputs.VERSION != ''
+      - name: Persist bumped version to csproj
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.VERSION != ''
         env:
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         run: |
@@ -95,7 +128,6 @@ jobs:
           tree = ET.parse(path)
           root = tree.getroot()
 
-          # Update Version
           found_version = False
           for elem in root.findall('.//Version'):
               elem.text = new
@@ -107,7 +139,6 @@ jobs:
                   pg = ET.SubElement(root, 'PropertyGroup')
               ET.SubElement(pg, 'Version').text = new
 
-          # Update AssemblyVersion
           found_assembly = False
           for elem in root.findall('.//AssemblyVersion'):
               elem.text = new
@@ -125,14 +156,14 @@ jobs:
           python3 update_version.py
 
       - name: Sync frontend and package metadata to bumped version
-        if: github.run_attempt == 1 && steps.resolve-version.outputs.VERSION != ''
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.VERSION != ''
         env:
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         run: node scripts/sync-fe-version-from-csproj.mjs
 
       - name: Check for tracked version changes
         id: version_changes
-        if: github.run_attempt == 1
+        if: steps.inspect_target.outputs.bump_state == 'pending'
         run: |
           set -euo pipefail
           if git diff --quiet -- \
@@ -150,7 +181,7 @@ jobs:
 
       - name: Create Pull Request for version bump
         id: create_pr
-        if: github.run_attempt == 1 && steps.version_changes.outputs.has_changes == 'true'
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.version_changes.outputs.has_changes == 'true'
         uses: peter-evans/create-pull-request@v8
         with:
           token: ${{ secrets.GH_PAT }}
@@ -163,8 +194,14 @@ jobs:
             This PR bumps the application version to ${{ steps.resolve-version.outputs.VERSION }}.
             The change was produced automatically by the CI nightly workflow.
 
+      - name: Ensure version bump PR exists when required
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number == ''
+        run: |
+          echo "::error::A nightly version bump was required, but no pull request was created or found."
+          exit 1
+
       - name: Label version bump PR
-        if: github.run_attempt == 1 && steps.create_pr.outputs.pull-request-number != ''
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number != ''
         continue-on-error: true
         uses: actions/github-script@v6
         with:
@@ -199,7 +236,7 @@ jobs:
             }
 
       - name: Merge version bump PR (skip CI)
-        if: github.run_attempt == 1 && steps.create_pr.outputs.pull-request-number != ''
+        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number != ''
         uses: actions/github-script@v6
         env:
           PR_NUMBER: ${{ steps.create_pr.outputs['pull-request-number'] }}
@@ -219,7 +256,7 @@ jobs:
             });
 
       - name: Refresh workspace to current develop version
-        if: github.run_attempt != 1 || steps.create_pr.outputs.pull-request-number != ''
+        if: steps.inspect_target.outputs.bump_state == 'applied' || steps.create_pr.outputs.pull-request-number != ''
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
@@ -227,7 +264,7 @@ jobs:
           clean: true
 
       - name: Verify synced workspace version
-        if: steps.resolve-version.outputs.VERSION != ''
+        if: steps.inspect_target.outputs.bump_state == 'applied' || steps.create_pr.outputs.pull-request-number != ''
         env:
           NEW_VERSION: ${{ steps.resolve-version.outputs.VERSION }}
         run: |
@@ -490,7 +527,7 @@ jobs:
         if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
         with:
           severity: info
-          description: v${{steps.resolve-version.outputs.VERSION}} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
+          description: v${{ steps.resolve-version.outputs.VERSION }} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
           details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
           text: A new nightly build has been released for docker.
           webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
