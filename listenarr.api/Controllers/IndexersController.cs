@@ -319,17 +319,11 @@ namespace Listenarr.Api.Controllers
                 // Check for error element (can be at root, under rss, or as a descendant)
                 System.Xml.Linq.XElement? errorElement = null;
                 
-                // Case 1: Root element is <error>
-                if (doc.Root?.Name.LocalName.Equals("error", StringComparison.OrdinalIgnoreCase) == true)
-                {
-                    errorElement = doc.Root;
-                }
-                // Case 2: Error is a child or descendant
-                else
-                {
-                    errorElement = doc.Root?.Descendants().FirstOrDefault(e => e.Name.LocalName.Equals("error", StringComparison.OrdinalIgnoreCase));
-                }
-                
+                // Case 1: Root element is <error>, Case 2: Error is a child or descendant
+                errorElement = doc.Root?.Name.LocalName.Equals("error", StringComparison.OrdinalIgnoreCase) == true
+                    ? doc.Root
+                    : doc.Root?.Descendants().FirstOrDefault(e => e.Name.LocalName.Equals("error", StringComparison.OrdinalIgnoreCase));
+
                 if (errorElement != null)
                 {
                     var code = errorElement.Attribute("code")?.Value;
@@ -460,10 +454,13 @@ namespace Listenarr.Api.Controllers
                 return StatusCode(502, new { message = "Failed to reach Prowlarr API" });
             }
 
-            if (!response.IsSuccessStatusCode)
+            using (response)
             {
-                _logger.LogWarning("Prowlarr API returned {StatusCode}: {Body}", (int)response.StatusCode, LogRedaction.SanitizeText(payload));
-                return StatusCode((int)response.StatusCode, new { message = "Prowlarr API error", status = (int)response.StatusCode });
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("Prowlarr API returned {StatusCode}: {Body}", (int)response.StatusCode, LogRedaction.SanitizeText(payload));
+                    return StatusCode((int)response.StatusCode, new { message = "Prowlarr API error", status = (int)response.StatusCode });
+                }
             }
             using var doc = JsonDocument.Parse(payload);
             if (doc.RootElement.ValueKind != JsonValueKind.Array)
@@ -814,10 +811,10 @@ namespace Listenarr.Api.Controllers
                 var testUrl = $"https://www.myanonamouse.net/tor/js/loadSearchJSONbasic.php";
 
                 _logger.LogInformation("Testing MyAnonamouse indexer '{Name}' with MAM ID '{MamId}'",
-                    LogRedaction.SanitizeText(indexer.Name), LogRedaction.RedactText(mamId, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { mamId ?? string.Empty })));
+                    LogRedaction.SanitizeText(indexer.Name), LogRedaction.RedactText(mamId, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { mamId })));
 
                 // Create request with mam_id as cookie
-                var request = new HttpRequestMessage(HttpMethod.Post, testUrl);
+                using var request = new HttpRequestMessage(HttpMethod.Post, testUrl);
 
                 // Add browser-like headers to avoid "invalid request" errors
                 request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
@@ -885,7 +882,7 @@ namespace Listenarr.Api.Controllers
                 cookieClient.DefaultRequestHeaders.Referrer = new Uri("https://www.myanonamouse.net/");
 
                 // Make HTTP request
-                var response = await cookieClient.SendAsync(request);
+                using var response = await cookieClient.SendAsync(request);
                 response.EnsureSuccessStatusCode();
 
                 // Parse JSON response
@@ -902,7 +899,7 @@ namespace Listenarr.Api.Controllers
                 await SaveTestResultAsync(indexer, persist, true, null);
 
                 _logger.LogInformation("MyAnonamouse indexer '{Name}' test succeeded with MAM ID '{MamId}'",
-                    LogRedaction.SanitizeText(indexer.Name), LogRedaction.RedactText(mamId, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { mamId ?? string.Empty })));
+                    LogRedaction.SanitizeText(indexer.Name), LogRedaction.RedactText(mamId, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { mamId })));
 
                 return Ok(new
                 {
@@ -1013,7 +1010,7 @@ namespace Listenarr.Api.Controllers
                     ["description"] = ""
                 };
 
-                var request = new HttpRequestMessage(HttpMethod.Post, testUrl)
+                using var request = new HttpRequestMessage(HttpMethod.Post, testUrl)
                 {
                     Content = new FormUrlEncodedContent(formData)
                 };
@@ -1052,7 +1049,7 @@ namespace Listenarr.Api.Controllers
                 client.DefaultRequestHeaders.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
                 client.DefaultRequestHeaders.Referrer = new Uri("https://www.myanonamouse.net/");
 
-                var response = await client.SendAsync(request);
+                using var response = await client.SendAsync(request);
                 var raw = await response.Content.ReadAsStringAsync();
 
                 // Get parsed results via the Search API on this host
@@ -1062,7 +1059,7 @@ namespace Listenarr.Api.Controllers
                     var scheme = Request.Scheme;
                     var hostVal = Request.Host.Value;
                     var localSearchUrl = $"{scheme}://{hostVal}{ApiVersionPathBuilder.BuildApiPath($"/search/{id}", HttpContext)}?query={Uri.EscapeDataString(query)}";
-                    var localResp = await _httpClient.GetAsync(localSearchUrl);
+                    using var localResp = await _httpClient.GetAsync(localSearchUrl);
                     if (localResp.IsSuccessStatusCode)
                     {
                         var json = await localResp.Content.ReadAsStringAsync();

@@ -169,7 +169,7 @@ namespace Listenarr.Api.Services.Adapters
             
             _logger.LogDebug("NZBGet REST API POST to {Url} with file {FileName}", LogRedaction.SanitizeUrl(uploadUrl.ToString()), LogRedaction.SanitizeText(nzbFileName));
             
-            var response = await httpClient.SendAsync(request, ct);
+            using var response = await httpClient.SendAsync(request, ct);
             var responseBody = await response.Content.ReadAsStringAsync(ct);
             
             if (!response.IsSuccessStatusCode)
@@ -277,67 +277,63 @@ namespace Listenarr.Api.Services.Adapters
                     
                     if (arrayData != null)
                     {
-                        foreach (var valueElement in arrayData.Elements("value"))
+                        foreach (var members in arrayData.Elements("value")
+                            .Select(valueElement => valueElement.Element("struct"))
+                            .Where(s => s != null)
+                            .Select(s => s!.Elements("member").ToDictionary(
+                                m => m.Element("name")?.Value ?? string.Empty,
+                                m => m.Element("value")?.Elements().FirstOrDefault()
+                            )))
                         {
-                            var structElement = valueElement.Element("struct");
-                            if (structElement != null)
+
+                            // Log what fields this history entry has
+                            _logger.LogInformation("History entry has fields: {Fields}", string.Join(", ", members.Keys));
+
+                            // Check if this history entry has matching droneId in parameters
+                            if (members.TryGetValue("Parameters", out var paramsElement))
                             {
-                                var members = structElement.Elements("member").ToDictionary(
-                                    m => m.Element("name")?.Value ?? string.Empty,
-                                    m => m.Element("value")?.Elements().FirstOrDefault()
-                                );
-                                
-                                // Log what fields this history entry has
-                                _logger.LogInformation("History entry has fields: {Fields}", string.Join(", ", members.Keys));
-                                
-                                // Check if this history entry has matching droneId in parameters
-                                if (members.TryGetValue("Parameters", out var paramsElement))
+                                var paramsArray = paramsElement?.Element("array")?.Element("data");
+                                var paramCount = paramsArray?.Elements("value").Count() ?? 0;
+                                _logger.LogInformation("History entry has {Count} parameters", paramCount);
+
+                                if (paramsArray != null)
                                 {
-                                    var paramsArray = paramsElement?.Element("array")?.Element("data");
-                                    var paramCount = paramsArray?.Elements("value").Count() ?? 0;
-                                    _logger.LogInformation("History entry has {Count} parameters", paramCount);
-                                    
-                                    if (paramsArray != null)
+                                    foreach (var paramMembers in paramsArray.Elements("value")
+                                        .Select(paramValueElement => paramValueElement.Element("struct"))
+                                        .Where(ps => ps != null)
+                                        .Select(ps => ps!.Elements("member").ToDictionary(
+                                            m => m.Element("name")?.Value ?? string.Empty,
+                                            m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty
+                                        )))
                                     {
-                                        foreach (var paramValueElement in paramsArray.Elements("value"))
+
+                                        // Log all parameters for debugging
+                                        foreach (var pm in paramMembers)
                                         {
-                                            var paramStruct = paramValueElement.Element("struct");
-                                            if (paramStruct != null)
+                                            _logger.LogDebug("NZBGet History Parameter: Name={Name}, Value={Value}", pm.Key, LogRedaction.SanitizeText(pm.Value));
+                                        }
+
+                                        if (paramMembers.TryGetValue("Name", out var paramName) &&
+                                            paramMembers.TryGetValue("Value", out var paramValue) &&
+                                            paramName == "*drone" && paramValue == id)
+                                        {
+                                            // Found matching droneId, get the NZBID
+                                            if (members.TryGetValue("ID", out var idElement))
                                             {
-                                                var paramMembers = paramStruct.Elements("member").ToDictionary(
-                                                    m => m.Element("name")?.Value ?? string.Empty,
-                                                    m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty
-                                                );
-                                                
-                                                // Log all parameters for debugging
-                                                foreach (var pm in paramMembers)
+                                                var foundId = idElement?.Value;
+                                                if (int.TryParse(foundId, out var foundNumericId))
                                                 {
-                                                    _logger.LogDebug("NZBGet History Parameter: Name={Name}, Value={Value}", pm.Key, LogRedaction.SanitizeText(pm.Value));
-                                                }
-                                                
-                                                if (paramMembers.TryGetValue("Name", out var paramName) && 
-                                                    paramMembers.TryGetValue("Value", out var paramValue) &&
-                                                    paramName == "*drone" && paramValue == id)
-                                                {
-                                                    // Found matching droneId, get the NZBID
-                                                    if (members.TryGetValue("ID", out var idElement))
-                                                    {
-                                                        var foundId = idElement?.Value;
-                                                        if (int.TryParse(foundId, out var foundNumericId))
-                                                        {
-                                                            _logger.LogDebug("Found NZBID {NzbId} for droneId {DroneId} in history", foundNumericId, LogRedaction.SanitizeText(id));
-                                                            numericId = foundNumericId;
-                                                            break;
-                                                        }
-                                                    }
+                                                    _logger.LogDebug("Found NZBID {NzbId} for droneId {DroneId} in history", foundNumericId, LogRedaction.SanitizeText(id));
+                                                    numericId = foundNumericId;
+                                                    break;
                                                 }
                                             }
                                         }
                                     }
                                 }
-                                
-                                if (numericId.HasValue) break;
                             }
+
+                            if (numericId.HasValue) break;
                         }
                     }
                 }
@@ -577,16 +573,13 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Find matching history entry by ID
-                foreach (var valueElement in arrayData.Elements("value"))
-                {
-                    var structElement = valueElement.Element("struct");
-                    if (structElement == null) continue;
-
-                    var members = structElement.Elements("member").ToDictionary(
+                foreach (var members in arrayData.Elements("value")
+                    .Select(valueElement => valueElement.Element("struct"))
+                    .Where(structElement => structElement != null)
+                    .Select(structElement => structElement!.Elements("member").ToDictionary(
                         m => m.Element("name")?.Value ?? string.Empty,
-                        m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty
-                    );
-
+                        m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty)))
+                {
                     var entryId = members.GetValueOrDefault("ID", string.Empty);
                     if (!string.Equals(entryId, item.DownloadId, StringComparison.OrdinalIgnoreCase)) continue;
 
@@ -891,7 +884,7 @@ namespace Listenarr.Api.Services.Adapters
             if (authHeader != null)
                 request.Headers.Authorization = authHeader;
 
-            var response = await httpClient.SendAsync(request);
+            using var response = await httpClient.SendAsync(request);
             var responseBody = await response.Content.ReadAsStringAsync();
 
             if (!response.IsSuccessStatusCode)
@@ -939,7 +932,7 @@ namespace Listenarr.Api.Services.Adapters
                         new XElement("value", SerializeValue(kvp.Value))
                     ))
                 ),
-                _ => new XElement("string", value?.ToString() ?? string.Empty)
+                _ => new XElement("string", value.ToString() ?? string.Empty)
             };
         }
 
@@ -1055,16 +1048,13 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 // Find the history entry matching our download ID
-                foreach (var valueElement in arrayData.Elements("value"))
-                {
-                    var structElement = valueElement.Element("struct");
-                    if (structElement == null) continue;
-
-                    var members = structElement.Elements("member").ToDictionary(
+                foreach (var members in arrayData.Elements("value")
+                    .Select(valueElement => valueElement.Element("struct"))
+                    .Where(structElement => structElement != null)
+                    .Select(structElement => structElement!.Elements("member").ToDictionary(
                         m => m.Element("name")?.Value ?? string.Empty,
-                        m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty
-                    );
-
+                        m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty)))
+                {
                     var entryId = members.GetValueOrDefault("NZBID", string.Empty);
                     if (entryId != queueItem.Id) continue;
 

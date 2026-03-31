@@ -108,13 +108,7 @@ namespace Listenarr.Api.Services
 
                             if (e is AggregateException agg)
                             {
-                                foreach (var ie in agg.InnerExceptions)
-                                {
-                                    if (IsOrContainsObjectDisposed(ie))
-                                        return true;
-                                }
-
-                                return false;
+                                return agg.InnerExceptions.Any(ie => IsOrContainsObjectDisposed(ie));
                             }
 
                             e = e.InnerException;

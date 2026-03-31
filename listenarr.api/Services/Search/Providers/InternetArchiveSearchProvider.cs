@@ -142,7 +142,6 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                     var identifier = item.TryGetProperty("identifier", out var idElem) ? idElem.GetString() : "";
                     var title = item.TryGetProperty("title", out var titleElem) ? titleElem.GetString() : "";
                     var creator = item.TryGetProperty("creator", out var creatorElem) ? creatorElem.GetString() : "";
-                    var itemSize = item.TryGetProperty("item_size", out var sizeElem) ? sizeElem.GetInt64() : 0;
 
                     if (string.IsNullOrEmpty(identifier) || string.IsNullOrEmpty(title))
                     {
@@ -207,7 +206,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
 
                     try
                     {
-                        var detectedLang = ParseLanguageFromText(title ?? string.Empty);
+                        var detectedLang = ParseLanguageFromText(title);
                         if (!string.IsNullOrEmpty(detectedLang)) iaResult.Language = detectedLang;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

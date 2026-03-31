@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
@@ -16,6 +16,22 @@ namespace Listenarr.Api.Tests
 {
     public class LibraryController_MoveTests
     {
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+        }
+
         [Fact]
         public async Task MoveAudiobook_ReturnsBadRequest_WhenSourceDoesNotExist()
         {
@@ -51,7 +67,7 @@ namespace Listenarr.Api.Tests
             var mockMoveQueue = new Mock<IMoveQueueService>();
 
             // Add an audiobook with a non-existent base path
-            var ab = new Audiobook { Title = "Test", BasePath = Path.Combine(Path.GetTempPath(), "nonexistent-" + Guid.NewGuid().ToString("N")) };
+            var ab = new Audiobook { Title = "Test", BasePath = Path.Join(Path.GetTempPath(), "nonexistent-" + Guid.NewGuid().ToString("N")) };
             dbContext.Audiobooks.Add(ab);
             await dbContext.SaveChangesAsync();
             // Ensure repo returns the audiobook from the in-memory DB when asked
@@ -68,7 +84,7 @@ namespace Listenarr.Api.Tests
                 mockMoveQueue.Object,
                 null);
 
-            var request = new LibraryController.MoveRequest { DestinationPath = Path.Combine(Path.GetTempPath(), "target") };
+            var request = new LibraryController.MoveRequest { DestinationPath = Path.Join(Path.GetTempPath(), "target") };
 
             // Act
             var result = await controller.EnqueueMove(ab.Id, request);
@@ -115,7 +131,7 @@ namespace Listenarr.Api.Tests
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             // Create a real temporary source directory
-            var tempSource = Path.Combine(Path.GetTempPath(), "listenarr-move-src-" + Guid.NewGuid().ToString("N"));
+            var tempSource = Path.Join(Path.GetTempPath(), "listenarr-move-src-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(tempSource);
 
             var ab = new Audiobook { Title = "Test", BasePath = tempSource };
@@ -135,7 +151,7 @@ namespace Listenarr.Api.Tests
                 mockMoveQueue.Object,
                 null);
 
-            var target = Path.Combine(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
+            var target = Path.Join(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
             var request = new LibraryController.MoveRequest { DestinationPath = target };
 
             // Act
@@ -147,8 +163,8 @@ namespace Listenarr.Api.Tests
             Assert.NotNull(acceptedObj.Value);
 
             // Cleanup
-            try { Directory.Delete(tempSource, true); } catch { }
-            try { Directory.Delete(target, true); } catch { }
+            TryDeleteDirectory(tempSource);
+            TryDeleteDirectory(target);
         }
 
         [Fact]
@@ -183,7 +199,7 @@ namespace Listenarr.Api.Tests
             var provider = services.BuildServiceProvider();
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
-            var ab = new Audiobook { Title = "Test", BasePath = Path.Combine(Path.GetTempPath(), "listenarr-move-src-" + Guid.NewGuid().ToString("N")) };
+            var ab = new Audiobook { Title = "Test", BasePath = Path.Join(Path.GetTempPath(), "listenarr-move-src-" + Guid.NewGuid().ToString("N")) };
             dbContext.Audiobooks.Add(ab);
             await dbContext.SaveChangesAsync();
             // Ensure repo returns the audiobook from the in-memory DB when asked
@@ -200,7 +216,7 @@ namespace Listenarr.Api.Tests
                 mockMoveQueue.Object,
                 null);
 
-            var target = Path.Combine(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
+            var target = Path.Join(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
             var request = new LibraryController.MoveRequest { DestinationPath = target, MoveFiles = false };
 
             // Act

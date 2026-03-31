@@ -101,9 +101,8 @@ namespace Listenarr.Api.Services
                 ? foundCutoffPriority
                 : int.MaxValue;
 
-            foreach (var file in candidateFiles)
+            foreach (var derivedQuality in candidateFiles.Select(file => DeriveQualityLabel(file, audiobookQuality)))
             {
-                var derivedQuality = DeriveQualityLabel(file, audiobookQuality);
                 if (derivedQuality.Length == 0)
                 {
                     continue;

@@ -26,7 +26,8 @@ namespace Listenarr.Api.Tests
             // After download, GetCachedImagePathAsync returns the relativePath (first call null, second call returned path)
             mockImageCache.SetupSequence(m => m.GetCachedImagePathAsync(identifier)).ReturnsAsync((string?)null).ReturnsAsync(relativePath);
 
-            var audibleMock = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            using var httpClientForAudible = new System.Net.Http.HttpClient();
+            var audibleMock = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>());
             audibleMock.Setup(a => a.GetBookMetadataAsync(identifier, It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string?>())).ReturnsAsync((AudibleBookResponse?)null);
 
             var mockMetadata = new Mock<IAudiobookMetadataService>();
@@ -71,7 +72,7 @@ namespace Listenarr.Api.Tests
             {
                 File.Delete(fullPath);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }
@@ -80,7 +81,7 @@ namespace Listenarr.Api.Tests
             {
                 Directory.Delete(Path.Join(tempRoot, "config", "cache", "images", "temp"), true);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }

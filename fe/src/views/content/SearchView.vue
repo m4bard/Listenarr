@@ -526,7 +526,7 @@ const getResultScore = (resultId: string): QualityScore | undefined => {
 function getResultLink(result: SearchResult): string | undefined {
   if (!result) return undefined
   const r = result as unknown as Record<string, unknown>
-  const src = !result ? '' : (result.downloadType || '').toLowerCase()
+  const src = (result.downloadType || '').toLowerCase()
 
   if (src === 'usenet' || src === 'nzb') {
     // For Usenet results prefer the ID URL if present and looks like a URL (guid/info page), otherwise prefer details page before NZB download

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -18,6 +18,22 @@ namespace Listenarr.Api.Tests
 {
     public class LibraryController_AddToLibraryTests
     {
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+        }
+
         private static string BuildLibraryPath(Dictionary<string, object> vars)
         {
             vars.TryGetValue("Author", out var authorObj);
@@ -105,7 +121,7 @@ namespace Listenarr.Api.Tests
             Assert.True(string.IsNullOrWhiteSpace(stored.BasePath), "BasePath should be null when no custom destination is provided");
 
             // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch { }
+            TryDeleteDirectory(tempRoot);
         }
 
         [Fact]
@@ -296,7 +312,7 @@ namespace Listenarr.Api.Tests
             mockImageCache.Verify(m => m.MoveToLibraryStorageAsync(asin, originalUrl), Times.Once);
 
             // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch { }
+            TryDeleteDirectory(tempRoot);
         }
 
         [Fact]
@@ -376,7 +392,7 @@ namespace Listenarr.Api.Tests
             mockImageCache.Verify(m => m.MoveToLibraryStorageAsync(It.IsAny<string>(), imageUrl), Times.Once);
 
             // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch { }
+            TryDeleteDirectory(tempRoot);
         }
 
         [Fact]

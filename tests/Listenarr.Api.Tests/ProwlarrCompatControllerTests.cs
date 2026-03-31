@@ -27,8 +27,6 @@ namespace Listenarr.Api.Tests
         public async Task PostIndexers_BroadcastsSignalR_WhenNewIndexersCreated()
         {
             var db = CreateInMemoryDb();
-            var logger = Mock.Of<ILogger<ProwlarrCompatController>>();
-
             var mockClientProxy = new Mock<IClientProxy>();
             var mockHubClients = new Mock<IHubClients>();
             mockHubClients.Setup(c => c.All).Returns(mockClientProxy.Object);
@@ -54,7 +52,7 @@ namespace Listenarr.Api.Tests
             msgDict.Clear();
 
             var payload = JsonDocument.Parse(arr).RootElement;
-            var result = await controller.PostIndexers(payload);
+            _ = await controller.PostIndexers(payload);
 
             // Verify that SendCoreAsync (SignalR) was invoked for the indexer update
             mockClientProxy.Verify(
@@ -233,15 +231,14 @@ namespace Listenarr.Api.Tests
             msgDict.Clear();
 
             var payload = JsonDocument.Parse(arr).RootElement;
-            var postRes = await controller.PostIndexers(payload);
+            _ = await controller.PostIndexers(payload);
             // Ensure created indexer exists in DB
             var created = db.Indexers.FirstOrDefault(i => i.Name == "Recent Import");
             Assert.NotNull(created);
 
             // Immediately send a PUT update for the same indexer - should NOT produce an additional toast due to suppression
             var updatePayload = JsonDocument.Parse(JsonSerializer.Serialize(new { name = "Recent Import Updated", baseUrl = "http://localhost:9090", apiPath = "api" })).RootElement;
-            var putRes = await controller.PutIndexer(created.Id, updatePayload);
-            var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(putRes);
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(await controller.PutIndexer(created.Id, updatePayload));
 
             // Verify notifications: only one PublishNotificationAsync call (from initial POST)
             mockToastService.Verify(
@@ -279,12 +276,10 @@ namespace Listenarr.Api.Tests
 
             // Perform two rapid PUTs for the same indexer
             var updatePayload1 = JsonDocument.Parse(JsonSerializer.Serialize(new { name = "Rapid Update 1", baseUrl = "http://rapid", apiPath = "" })).RootElement;
-            var putRes1 = await controller.PutIndexer(idx.Id, updatePayload1);
-            var ok1 = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(putRes1);
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(await controller.PutIndexer(idx.Id, updatePayload1));
 
             var updatePayload2 = JsonDocument.Parse(JsonSerializer.Serialize(new { name = "Rapid Update 2", baseUrl = "http://rapid", apiPath = "" })).RootElement;
-            var putRes2 = await controller.PutIndexer(idx.Id, updatePayload2);
-            var ok2 = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(putRes2);
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(await controller.PutIndexer(idx.Id, updatePayload2));
 
             // Verify that only one toast was published for the two consecutive PUTs
             mockToastService.Verify(
@@ -295,8 +290,8 @@ namespace Listenarr.Api.Tests
             var newIndexer = new { name = "Batch Import", implementation = "Newznab", baseUrl = "http://localhost:9091", apiPath = "api", apiKey = "KEY" };
             var arr = JsonSerializer.Serialize(new[] { newIndexer });
             var payload = JsonDocument.Parse(arr).RootElement;
-            var postRes1 = await controller.PostIndexers(payload);
-            var postRes2 = await controller.PostIndexers(payload);
+            _ = await controller.PostIndexers(payload);
+            _ = await controller.PostIndexers(payload);
 
             // Only one additional toast should have been published for the two identical batch imports (message-level dedupe)
             mockToastService.Verify(
@@ -348,7 +343,7 @@ namespace Listenarr.Api.Tests
             try
             {
                 var uri = new Uri(url);
-                var path = uri.AbsolutePath ?? string.Empty;
+                var path = uri.AbsolutePath;
                 // Trim trailing slash
                 path = path.TrimEnd('/');
                 // Remove trailing /api if present
@@ -361,9 +356,9 @@ namespace Listenarr.Api.Tests
                 var normalized = $"{uri.Scheme}://{uri.Host}{port}{path}";
                 return normalized.TrimEnd('/');
             }
-            catch
+            catch (UriFormatException)
             {
-                return url?.TrimEnd('/') ?? string.Empty;
+                return url.TrimEnd('/');
             }
         }
     }

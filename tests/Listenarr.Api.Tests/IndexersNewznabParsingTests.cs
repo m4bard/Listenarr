@@ -231,9 +231,7 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(new Indexer { Name = "altHUB2", Url = "https://api.althub.co.za", Implementation = "torznab", Type = "Torrent", IsEnabled = true, EnableInteractiveSearch = true });
             db.SaveChanges();
 
-            var uris = new List<Uri>();
             var handler = new DelegatingHandlerStub(req => {
-                uris.Add(req.RequestUri!);
                 var rss = "<rss><channel></channel></rss>";
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(rss) };
             });

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http;
@@ -122,7 +122,7 @@ namespace Listenarr.Api.Tests
             services.AddSingleton<Listenarr.Api.Services.IFfmpegService>(sp =>
             {
                 var ffmpegMock = new Mock<Listenarr.Api.Services.IFfmpegService>();
-                var mockPath = Path.Combine(Path.GetTempPath(), "mock-ffprobe");
+                var mockPath = Path.Join(Path.GetTempPath(), "mock-ffprobe");
                 ffmpegMock.Setup(f => f.GetFfprobePathAsync(It.IsAny<bool>()))
                     .ReturnsAsync(mockPath);
                 ffmpegMock.Setup(f => f.EnsureFfprobeInstalledAsync())

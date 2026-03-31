@@ -44,6 +44,13 @@ namespace Listenarr.Api.Tests
         {
             // Arrange
             var expectedBytes = new byte[] { 1, 2, 3, 4 };
+            using var mockResponse = new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(expectedBytes)
+                {
+                    Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg") }
+                }
+            };
             var handler = new Mock<HttpMessageHandler>();
             handler
                 .Protected()
@@ -52,15 +59,9 @@ namespace Listenarr.Api.Tests
                     ItExpr.Is<HttpRequestMessage>(r => r.Method == HttpMethod.Get),
                     ItExpr.IsAny<CancellationToken>()
                 )
-                .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.OK)
-                {
-                    Content = new ByteArrayContent(expectedBytes)
-                    {
-                        Headers = { ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("image/jpeg") }
-                    }
-                });
+                .ReturnsAsync(mockResponse);
 
-            var httpClient = new HttpClient(handler.Object);
+            using var httpClient = new HttpClient(handler.Object);
             var services = new ServiceCollection();
             services.AddSingleton<INotificationPayloadBuilder, NotificationPayloadBuilderAdapter>();
             var provider = services.BuildServiceProvider();

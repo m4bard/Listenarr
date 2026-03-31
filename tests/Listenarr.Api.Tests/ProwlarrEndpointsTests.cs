@@ -20,7 +20,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task SystemStatus_ReturnsJsonWithVersion()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
             var resp = await client.GetAsync("/api/v1/system/status");
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
@@ -35,12 +35,13 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task IndexerTest_ReturnsHeaderAndJson()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
             // Prefer GET for indexer test in CI to avoid antiforgery middleware interactions during tests
             var resp = await client.GetAsync("/api/v1/indexer/test");
 
             // Debug POST to ensure POSTs are routed correctly
-            var debug = await client.PostAsync("/api/v1/debug/test", new StringContent("{}", System.Text.Encoding.UTF8, "application/json"));
+            using var debugContent = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
+            var debug = await client.PostAsync("/api/v1/debug/test", debugContent);
             Assert.True(debug.IsSuccessStatusCode, $"Debug POST failed: {(int)debug.StatusCode} {debug.StatusCode}: {await debug.Content.ReadAsStringAsync()}");
 
             var body = await resp.Content.ReadAsStringAsync();
@@ -68,7 +69,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task IndexerSchema_ReturnsFieldsArray()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
             var resp = await client.GetAsync("/api/v1/indexer/schema");
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
@@ -106,12 +107,11 @@ namespace Listenarr.Api.Tests
             bool hasImpl = false;
 
             // If root returned 'implementations' array, use that
-            if (doc.RootElement.ValueKind == JsonValueKind.Object && doc.RootElement.TryGetProperty("implementations", out var implProp))
+            if (doc.RootElement.ValueKind == JsonValueKind.Object
+                && doc.RootElement.TryGetProperty("implementations", out var implProp)
+                && implProp.ValueKind == JsonValueKind.Array)
             {
-                if (implProp.ValueKind == JsonValueKind.Array)
-                {
-                    hasImpl = implProp.EnumerateArray().Any(e => (e.GetString() ?? string.Empty) == "Newznab" || (e.GetString() ?? string.Empty) == "Torznab");
-                }
+                hasImpl = implProp.EnumerateArray().Any(e => (e.GetString() ?? string.Empty) == "Newznab" || (e.GetString() ?? string.Empty) == "Torznab");
             }
 
             // Otherwise, if an array of schema entries was returned, check entries for implementation names
@@ -126,7 +126,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task IndexerRoot_ReturnsJsonWithImplementations()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
             var resp = await client.GetAsync("/api/v1/indexer/info");
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
@@ -143,7 +143,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task IndexersList_Get_ReturnsArray()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
             var resp = await client.GetAsync("/api/v1/indexers");
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
@@ -157,9 +157,10 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task IndexersList_Post_AcceptsArray()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
             var payload = "[]";
-            var resp = await client.PostAsync("/api/v1/indexers", new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+            using var arrayContent = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var resp = await client.PostAsync("/api/v1/indexers", arrayContent);
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             using var stream = await resp.Content.ReadAsStreamAsync();
@@ -171,7 +172,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task IndexersList_Post_AcceptsSingleObject()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
 
             var payload = JsonSerializer.Serialize(new
             {
@@ -201,7 +202,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Indexers_Post_PersistsToDatabaseAndVisibleViaApi()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
 
             var newIndexer = new
             {
@@ -214,7 +215,8 @@ namespace Listenarr.Api.Tests
             };
 
             var arr = "[" + System.Text.Json.JsonSerializer.Serialize(newIndexer) + "]";
-            var resp = await client.PostAsync("/api/v1/indexers", new StringContent(arr, System.Text.Encoding.UTF8, "application/json"));
+            using var batchContent = new StringContent(arr, System.Text.Encoding.UTF8, "application/json");
+            var resp = await client.PostAsync("/api/v1/indexers", batchContent);
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
             // Now fetch persisted indexers via the Prowlarr-compatible endpoint
@@ -232,7 +234,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Indexer_Post_Single_PersistsToDatabaseAndVisibleViaApi()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
 
             var newIndexer = new
             {
@@ -245,7 +247,8 @@ namespace Listenarr.Api.Tests
             };
 
             var payload = System.Text.Json.JsonSerializer.Serialize(newIndexer);
-            var resp = await client.PostAsync("/api/v1/indexer", new StringContent(payload, System.Text.Encoding.UTF8, "application/json"));
+            using var singleContent = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
+            var resp = await client.PostAsync("/api/v1/indexer", singleContent);
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
             // Validate response contains created indexer
@@ -310,7 +313,7 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task Delete_Indexer_WithZeroId_IsNoOp_ReturnsOk()
         {
-            var client = _factory.CreateClient();
+            using var client = _factory.CreateClient();
 
             var resp = await client.DeleteAsync("/api/v1/indexer/0");
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);

@@ -83,7 +83,6 @@ try {
   // If we can't patch (older/newer discord.js shapes), ignore and let warnings surface
 }
 
-const POLL_INTERVAL_MS = 15_000
 const SESSION_TIMEOUT_MS = 1000 * 60 * 10 // 10 minutes
 const sanitizeHtml = require('sanitize-html')
 
@@ -192,45 +191,6 @@ let canManageMessages = false
 // In-memory session store for interactions: customId -> { metadata, timestamp }
 const sessions = new Map()
 
-// Helper: delete previous ack/select messages posted by this bot for the same user
-async function deletePreviousMessagesForUser(channel, userId) {
-  // If we don't have Manage Messages permission, skip deletion attempts early.
-  if (!canManageMessages) return
-  if (!channel || !userId) return
-  try {
-    for (const [k, s] of sessions.entries()) {
-      if (s && s.requestingUserId === userId) {
-        try {
-          if (s.ackMessageId && channel && typeof channel.messages.fetch === 'function') {
-            try {
-              const m = await channel.messages.fetch(s.ackMessageId).catch(() => null)
-              if (m && m.author && m.author.id === (client && client.user && client.user.id)) {
-                await m.delete().catch(() => {})
-              }
-            } catch {}
-          }
-        } catch {}
-        try {
-          if (s.messageId && channel && typeof channel.messages.fetch === 'function') {
-            try {
-              const m2 = await channel.messages.fetch(s.messageId).catch(() => null)
-              if (m2 && m2.author && m2.author.id === (client && client.user && client.user.id)) {
-                await m2.delete().catch(() => {})
-              }
-            } catch {}
-          }
-        } catch {}
-        // remove message id references so we don't try again later
-        try { delete s.ackMessageId } catch {}
-        try { delete s.messageId } catch {}
-        sessions.set(k, s)
-      }
-    }
-  } catch (err) {
-    console.warn('Failed during cleanup of previous messages for user', userId, err)
-  }
-}
-
 // Antiforgery token cache for API requests that require X-XSRF-TOKEN
 let cachedXsrfToken = null
 let cachedXsrfTokenExpires = 0
@@ -327,51 +287,6 @@ function extractSeriesInfo(md) {
   } catch (err) {
     console.warn('extractSeriesInfo failed', err)
     return null
-  }
-}
-
-async function handleSetChannelCommand(interaction) {
-  // Only allow in guild context
-  if (!interaction.guildId) {
-    await interaction.reply({ content: 'This command must be used in a guild.', flags: 64 })
-    return
-  }
-
-  // Use provided channel option or fallback to the channel where the command was invoked
-  const channelOption = interaction.options.getChannel('channel')
-  const channelId = (channelOption && channelOption.id) || interaction.channelId
-
-  // Fetch current settings from Listenarr
-  await interaction.deferReply({ flags: 64 })
-  try {
-    const resp = await fetch(buildApiUrl('/configuration/settings'))
-    if (!resp.ok) {
-      await interaction.editReply({ content: `Failed to fetch Listenarr settings: ${resp.status}` })
-      return
-    }
-    const appSettings = await resp.json()
-    applyApiVersionFromPayload(appSettings)
-
-    // Set guild and channel
-    appSettings.discordGuildId = interaction.guildId
-    appSettings.discordChannelId = channelId
-
-    // POST back to save settings
-    const saveResp = await fetch(buildApiUrl('/configuration/settings'), {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(appSettings)
-    })
-    if (!saveResp.ok) {
-      const txt = await saveResp.text()
-      await interaction.editReply({ content: `Failed to save settings: ${saveResp.status} ${txt}` })
-      return
-    }
-
-    await interaction.editReply({ content: `Configured bot to respond in <#${channelId}> for guild ${interaction.guildId}.` })
-  } catch (err) {
-    console.error('Failed to set channel', err)
-    try { await interaction.editReply({ content: 'Failed to set channel due to an internal error.' }) } catch {}
   }
 }
 
@@ -601,19 +516,6 @@ async function registerCommands(settings) {
       .addStringOption(o => o.setName('title').setDescription('Title to search for').setRequired(false))
       .addStringOption(o => o.setName('author').setDescription('Author to search for').setRequired(false)))
 
-  // Small admin command to set the configured channel in Listenarr (guild-scoped)
-  const configCommand = new SlashCommandBuilder()
-    .setName('request-config')
-    .setDescription('Configure Listenarr Discord integration')
-    // Temporarily disabled: comment out the admin 'set-channel' subcommand so it is not registered
-    // .addSubcommand(sc => sc.setName('set-channel').setDescription('Set the channel the bot should respond in').addChannelOption(o => o.setName('channel').setDescription('Target channel').setRequired(false)));
-
-  // Debug command to inspect permissions and sessions
-  const debugCommand = new SlashCommandBuilder()
-    .setName('request-debug')
-    .setDescription('Debug request flow and permissions')
-    .addSubcommand(sc => sc.setName('perms').setDescription('Show permission and session debug info'))
-
   try {
     if (settings.discordGuildId) {
       console.log(`Registering commands in guild ${settings.discordGuildId}`)
@@ -627,53 +529,6 @@ async function registerCommands(settings) {
     console.log('Commands registered')
   } catch (err) {
     console.error('Failed to register commands', err)
-  }
-}
-
-async function handleDebugCommand(interaction) {
-  try {
-    // Provide ephemeral diagnostic info about permissions and sessions
-    const channelId = currentSettings?.discordChannelId || 'unset'
-    let channelPermsInfo = 'Not configured or channel not found'
-    let missing = []
-    let permsSummary = ''
-    try {
-      if (channelId && client) {
-        const channel = await client.channels.fetch(channelId).catch(() => null)
-        if (channel) {
-          const { PermissionsBitField } = require('discord.js')
-          const perms = channel.permissionsFor(client.user)
-          const needed = [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages, PermissionsBitField.Flags.ManageMessages]
-          const has = (p) => !!(perms && perms.has && perms.has(p))
-          missing = needed.filter(p => !has(p))
-          permsSummary = `ViewChannel=${has(needed[0])} SendMessages=${has(needed[1])} ManageMessages=${has(needed[2])}`
-          channelPermsInfo = `Channel ${channelId} permissions: ${permsSummary}`
-        }
-      }
-    } catch (e) {
-      channelPermsInfo = `Failed to fetch channel permissions: ${e && e.message ? e.message : e}`
-    }
-
-    const totalSessions = sessions.size
-    const sessionsWithEphemeral = Array.from(sessions.values()).filter(s => s && s.ephemeralReplyToken).length
-    const userSessions = Array.from(sessions.entries()).filter(([, s]) => s && s.requestingUserId === interaction.user?.id).map(([k, s]) => ({ id: k, hasEphemeral: !!s.ephemeralReplyToken }))
-
-    const lines = []
-    lines.push(`canManageMessages=${canManageMessages}`)
-    lines.push(`configuredChannel=${channelId}`)
-    lines.push(channelPermsInfo)
-    lines.push(`missingPermIds=[${missing.join(',')}]`)
-    lines.push(`sessions_total=${totalSessions} sessions_with_ephemeral=${sessionsWithEphemeral}`)
-    lines.push(`your_sessions=${JSON.stringify(userSessions)}`)
-
-    try {
-      await interaction.reply({ content: lines.join('\n'), flags: 64 })
-    } catch (e) {
-      try { await interaction.editReply({ content: lines.join('\n') }) } catch {}
-    }
-  } catch (err) {
-    console.error('handleDebugCommand failed', err)
-    try { await interaction.reply({ content: 'Debug failed. See server logs.', flags: 64 }) } catch {}
   }
 }
 
@@ -860,26 +715,6 @@ async function handleSearchCommand(interaction, title, author) {
 
       // Post the confirm embed as a regular channel message (non-ephemeral) so it can be deleted later
       try {
-        const channel = interaction.channel || (await interaction.guild.channels.fetch(currentSettings?.discordChannelId).catch(() => null))
-        // Check whether we can actually post to the configured channel (avoid Missing Access errors)
-        let canPostInChannel = false
-        let missingPerms = []
-        if (channel) {
-          try {
-            const { PermissionsBitField } = require('discord.js')
-            const perms = channel.permissionsFor(client.user)
-            const needed = [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-            canPostInChannel = !!(perms && perms.has && perms.has(needed))
-            if (!canPostInChannel) {
-              // compute missing perms for logging
-              for (const p of needed) {
-                if (!perms || !perms.has || !perms.has(p)) missingPerms.push(p)
-              }
-            }
-          } catch (e) {
-            canPostInChannel = false
-          }
-        }
         // Show the confirm embed ephemerally to the user (do not post non-ephemeral messages)
         try {
           await interaction.editReply({ content: 'See details below. Optionally choose a quality profile, then press Request.', embeds: [embed], components: [row1, row2] })
@@ -909,25 +744,6 @@ async function handleSearchCommand(interaction, title, author) {
     const row = new ActionRowBuilder().addComponents(select)
     // Post the select menu as a regular channel message so the resulting confirm can be deleted
       try {
-        const channel = interaction.channel || (await interaction.guild.channels.fetch(currentSettings?.discordChannelId).catch(() => null))
-        // Check send+view permission to avoid Missing Access
-        let canPostInChannel2 = false
-        let missingPerms2 = []
-        if (channel) {
-          try {
-            const { PermissionsBitField } = require('discord.js')
-            const perms2 = channel.permissionsFor(client.user)
-            const needed2 = [PermissionsBitField.Flags.ViewChannel, PermissionsBitField.Flags.SendMessages]
-            canPostInChannel2 = !!(perms2 && perms2.has && perms2.has(needed2))
-            if (!canPostInChannel2) {
-              for (const p of needed2) {
-                if (!perms2 || !perms2.has || !perms2.has(p)) missingPerms2.push(p)
-              }
-            }
-          } catch (e) {
-            canPostInChannel2 = false
-          }
-        }
         // Post the select menu ephemerally to the interacting user (do not post to channel)
         try {
           const s = sessions.get(id) || {}

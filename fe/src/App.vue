@@ -519,7 +519,7 @@ import { logSessionState, clearAllAuthData } from '@/utils/sessionDebug'
 import { signalRService } from '@/services/signalr'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
 import type { QueueItem } from '@/types'
-import { ref as vueRef2, reactive } from 'vue'
+import { ref as vueRef, ref as vueRef2, reactive } from 'vue'
 import GlobalToast from '@/components/ui/GlobalToast.vue'
 import { useToast } from '@/services/toastService'
 import { logger } from '@/utils/logger'
@@ -858,7 +858,6 @@ const syncLibrarySnapshot = async () => {
 // Inline search is always visible in header; focus on mount if needed
 
 // --- Header search implementation ---
-import { ref as vueRef } from 'vue'
 const router = useRouter()
 const searchQuery = vueRef('')
 const suggestions = vueRef<
@@ -1147,7 +1146,7 @@ onMounted(async () => {
           const status = (d.status || '').toString().toLowerCase()
           const title = d.title || 'Unknown'
 
-          if (status === 'queued' || status === 'queued' /* start */) {
+          if (status === 'queued') {
             pushNotification({
               id: `dl-start-${d.id}-${Date.now()}`,
               title: title || 'Download started',

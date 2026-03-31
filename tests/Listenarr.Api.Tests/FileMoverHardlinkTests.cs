@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
@@ -15,22 +15,22 @@ namespace Listenarr.Api.Tests
 
         public FileMoverHardlinkTests()
         {
-            _root = Path.Combine(Path.GetTempPath(), "listenarr_hardlink_test_" + Guid.NewGuid().ToString("N"));
+            _root = Path.Join(Path.GetTempPath(), "listenarr_hardlink_test_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(_root);
             _mover = new FileMover(new NullLogger<FileMover>());
         }
 
         public void Dispose()
         {
-            try { Directory.Delete(_root, true); } catch { }
+            try { Directory.Delete(_root, true); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
         }
 
         [Fact]
         public async Task HardlinkFileAsync_CreatesHardlink_WhenBothFilesOnSameVolume()
         {
             // Arrange
-            var sourceFile = Path.Combine(_root, "source.mp3");
-            var destFile = Path.Combine(_root, "dest.mp3");
+            var sourceFile = Path.Join(_root, "source.mp3");
+            var destFile = Path.Join(_root, "dest.mp3");
             await File.WriteAllTextAsync(sourceFile, "audio content");
 
             // Act
@@ -51,9 +51,9 @@ namespace Listenarr.Api.Tests
         public async Task HardlinkFileAsync_CreatesDestinationDirectory_WhenMissing()
         {
             // Arrange
-            var sourceFile = Path.Combine(_root, "source.mp3");
-            var destDir = Path.Combine(_root, "subdir");
-            var destFile = Path.Combine(destDir, "dest.mp3");
+            var sourceFile = Path.Join(_root, "source.mp3");
+            var destDir = Path.Join(_root, "subdir");
+            var destFile = Path.Join(destDir, "dest.mp3");
             await File.WriteAllTextAsync(sourceFile, "audio content");
 
             Assert.False(Directory.Exists(destDir), "Destination directory should not exist initially");
@@ -71,8 +71,8 @@ namespace Listenarr.Api.Tests
         public async Task HardlinkFileAsync_OverwritesDestination_WhenDestinationExists()
         {
             // Arrange
-            var sourceFile = Path.Combine(_root, "source.mp3");
-            var destFile = Path.Combine(_root, "dest.mp3");
+            var sourceFile = Path.Join(_root, "source.mp3");
+            var destFile = Path.Join(_root, "dest.mp3");
             await File.WriteAllTextAsync(sourceFile, "new content");
             await File.WriteAllTextAsync(destFile, "old content");
 
@@ -89,12 +89,12 @@ namespace Listenarr.Api.Tests
         public async Task HardlinkFileAsync_FallbacksToCopy_WhenHardlinkFails()
         {
             // Arrange
-            var sourceFile = Path.Combine(_root, "source.mp3");
+            var sourceFile = Path.Join(_root, "source.mp3");
             await File.WriteAllTextAsync(sourceFile, "content");
 
             // Create a path that would cause hardlink to fail (different volume simulation via invalid path)
             // On some systems, hardlink may fail for various reasons - we want to test fallback behavior
-            var destFile = Path.Combine(_root, "dest.mp3");
+            var destFile = Path.Join(_root, "dest.mp3");
 
             // Act - even if hardlink fails internally, the method should fallback to copy
             var result = await _mover.HardlinkFileAsync(sourceFile, destFile);
@@ -108,8 +108,8 @@ namespace Listenarr.Api.Tests
         public async Task HardlinkFileAsync_ReturnsFalse_WhenSourceDoesNotExist()
         {
             // Arrange
-            var sourceFile = Path.Combine(_root, "nonexistent.mp3");
-            var destFile = Path.Combine(_root, "dest.mp3");
+            var sourceFile = Path.Join(_root, "nonexistent.mp3");
+            var destFile = Path.Join(_root, "dest.mp3");
 
             // Act
             var result = await _mover.HardlinkFileAsync(sourceFile, destFile);
@@ -124,8 +124,8 @@ namespace Listenarr.Api.Tests
         public async Task CopyFileAsync_CreatesIndependentCopy()
         {
             // Arrange
-            var sourceFile = Path.Combine(_root, "source.mp3");
-            var destFile = Path.Combine(_root, "dest.mp3");
+            var sourceFile = Path.Join(_root, "source.mp3");
+            var destFile = Path.Join(_root, "dest.mp3");
             await File.WriteAllTextAsync(sourceFile, "original content");
 
             // Act
@@ -146,8 +146,8 @@ namespace Listenarr.Api.Tests
         public async Task MoveFileAsync_RemovesSource_AfterMove()
         {
             // Arrange
-            var sourceFile = Path.Combine(_root, "source.mp3");
-            var destFile = Path.Combine(_root, "dest.mp3");
+            var sourceFile = Path.Join(_root, "source.mp3");
+            var destFile = Path.Join(_root, "dest.mp3");
             await File.WriteAllTextAsync(sourceFile, "content");
 
             // Act
@@ -163,13 +163,13 @@ namespace Listenarr.Api.Tests
         public async Task HardlinkFileAsync_PreservesFileSize()
         {
             // Arrange
-            var sourceFile = Path.Combine(_root, "source.mp3");
+            var sourceFile = Path.Join(_root, "source.mp3");
             var largeContent = new string('x', 10000);
             await File.WriteAllTextAsync(sourceFile, largeContent);
             var sourceInfo = new FileInfo(sourceFile);
 
             // Act
-            var destFile = Path.Combine(_root, "dest.mp3");
+            var destFile = Path.Join(_root, "dest.mp3");
             await _mover.HardlinkFileAsync(sourceFile, destFile);
 
             // Assert

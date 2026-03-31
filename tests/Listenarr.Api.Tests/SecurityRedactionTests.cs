@@ -32,15 +32,16 @@ namespace Listenarr.Api.Tests
             string? capturedLog = null;
 
             var mockHandler = new Mock<HttpMessageHandler>();
+            using var errorResponse = new HttpResponseMessage(HttpStatusCode.InternalServerError)
+            {
+                Content = new StringContent($"Error body includes secret: {secret}")
+            };
             mockHandler
                 .Protected()
                 .Setup<Task<HttpResponseMessage>>("SendAsync", ItExpr.IsAny<HttpRequestMessage>(), ItExpr.IsAny<CancellationToken>())
-                .ReturnsAsync(new HttpResponseMessage(HttpStatusCode.InternalServerError)
-                {
-                    Content = new StringContent($"Error body includes secret: {secret}")
-                });
+                .ReturnsAsync(errorResponse);
 
-            var httpClient = new HttpClient(mockHandler.Object);
+            using var httpClient = new HttpClient(mockHandler.Object);
 
             var mockConfigService = new Mock<IConfigurationService>();
             mockConfigService.Setup(x => x.GetStartupConfigAsync()).ReturnsAsync(new StartupConfig { UrlBase = "https://listenarr.example.com" });
@@ -57,22 +58,17 @@ namespace Listenarr.Api.Tests
                     else
                     {
                         // Try to extract the structured 'Body' value from the state object
-                        try
+                        if (state is System.Collections.IEnumerable enm)
                         {
-                            if (state is System.Collections.IEnumerable enm)
+                            foreach (var kv in enm)
                             {
-                                foreach (var kv in enm)
+                                if (kv is System.Collections.Generic.KeyValuePair<string, object> pair && string.Equals(pair.Key, "Body", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    if (kv is System.Collections.Generic.KeyValuePair<string, object> pair && string.Equals(pair.Key, "Body", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        capturedLog = pair.Value?.ToString();
-                                        break;
-                                    }
+                                    capturedLog = pair.Value?.ToString();
+                                    break;
                                 }
                             }
                         }
-                        catch { }
-
                         // Last-resort: fallback to ToString()
                         if (capturedLog == null) capturedLog = state?.ToString();
                     }
@@ -137,7 +133,7 @@ namespace Listenarr.Api.Tests
                     return new HttpResponseMessage(HttpStatusCode.NotFound);
                 });
 
-            var httpClient = new HttpClient(handler.Object);
+            using var httpClient = new HttpClient(handler.Object);
             var mockFactory = new Mock<IHttpClientFactory>();
             mockFactory.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
@@ -153,22 +149,17 @@ namespace Listenarr.Api.Tests
                         capturedLog = formatter.Invoke(state!, null);
                     else
                     {
-                        try
+                        if (state is System.Collections.IEnumerable enm)
                         {
-                            if (state is System.Collections.IEnumerable enm)
+                            foreach (var kv in enm)
                             {
-                                foreach (var kv in enm)
+                                if (kv is System.Collections.Generic.KeyValuePair<string, object> pair && string.Equals(pair.Key, "Body", StringComparison.OrdinalIgnoreCase))
                                 {
-                                    if (kv is System.Collections.Generic.KeyValuePair<string, object> pair && string.Equals(pair.Key, "Body", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        capturedLog = pair.Value?.ToString();
-                                        break;
-                                    }
+                                    capturedLog = pair.Value?.ToString();
+                                    break;
                                 }
                             }
                         }
-                        catch { }
-
                         if (capturedLog == null) capturedLog = state?.ToString();
                     }
                 }));
@@ -176,7 +167,7 @@ namespace Listenarr.Api.Tests
             var controller = new Controllers.DiscordController(mockConfig.Object, mockFactory.Object, mockLogger.Object, Mock.Of<IDiscordBotService>(), Mock.Of<IProcessRunner>());
 
             // Act
-            var result = await controller.GetStatus();
+            await controller.GetStatus();
 
             // Assert
             Assert.NotNull(capturedLog);

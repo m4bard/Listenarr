@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -29,23 +29,23 @@ namespace Listenarr.Api.Tests
             var db = provider.GetRequiredService<ListenArrDbContext>();
 
             // Create source with files
-            var src = Path.Combine(Path.GetTempPath(), "listenarr_test_src_" + Guid.NewGuid().ToString("N"));
+            var src = Path.Join(Path.GetTempPath(), "listenarr_test_src_" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(src);
-            var nested = Path.Combine(src, "Nested");
+            var nested = Path.Join(src, "Nested");
             Directory.CreateDirectory(nested);
-            File.WriteAllText(Path.Combine(src, "file1.txt"), "one");
-            File.WriteAllText(Path.Combine(nested, "file2.txt"), "two");
+            File.WriteAllText(Path.Join(src, "file1.txt"), "one");
+            File.WriteAllText(Path.Join(nested, "file2.txt"), "two");
             // Additionally create a cover image inside the audiobook folder and set ImageUrl to it
-            File.WriteAllText(Path.Combine(src, "cover.jpg"), "coverdata");
+            File.WriteAllText(Path.Join(src, "cover.jpg"), "coverdata");
 
             // Audiobook record uses src and points to the local cover
-            var ab = new Audiobook { Title = "MoveTest", BasePath = src, ImageUrl = Path.GetFullPath(Path.Combine(src, "cover.jpg")) };
+            var ab = new Audiobook { Title = "MoveTest", BasePath = src, ImageUrl = Path.GetFullPath(Path.Join(src, "cover.jpg")) };
             db.Audiobooks.Add(ab);
             await db.SaveChangesAsync();
 
             // Snapshot source timestamps before move
-            var srcFile1 = Path.Combine(src, "file1.txt");
-            var srcFile2 = Path.Combine(src, "Nested", "file2.txt");
+            var srcFile1 = Path.Join(src, "file1.txt");
+            var srcFile2 = Path.Join(src, "Nested", "file2.txt");
             var srcFile1WriteUtc = File.GetLastWriteTimeUtc(srcFile1);
             var srcFile2WriteUtc = File.GetLastWriteTimeUtc(srcFile2);
 
@@ -53,7 +53,7 @@ namespace Listenarr.Api.Tests
             var bg = provider.GetRequiredService<MoveBackgroundService>();
 
             // Destination
-            var dst = Path.Combine(Path.GetTempPath(), "listenarr_test_dst_" + Guid.NewGuid().ToString("N"));
+            var dst = Path.Join(Path.GetTempPath(), "listenarr_test_dst_" + Guid.NewGuid().ToString("N"));
 
             // Start the background service
             await bg.StartAsync(CancellationToken.None);
@@ -79,13 +79,13 @@ namespace Listenarr.Api.Tests
 
             // Verify destination has files and source removed
             Assert.True(Directory.Exists(dst));
-            Assert.True(File.Exists(Path.Combine(dst, "file1.txt")));
-            Assert.True(File.Exists(Path.Combine(dst, "Nested", "file2.txt")));
+            Assert.True(File.Exists(Path.Join(dst, "file1.txt")));
+            Assert.True(File.Exists(Path.Join(dst, "Nested", "file2.txt")));
             Assert.False(Directory.Exists(src));
 
             // Verify timestamps preserved (took snapshots before move)
-            var dstFile1 = Path.Combine(dst, "file1.txt");
-            var dstFile2 = Path.Combine(dst, "Nested", "file2.txt");
+            var dstFile1 = Path.Join(dst, "file1.txt");
+            var dstFile2 = Path.Join(dst, "Nested", "file2.txt");
 
             Assert.Equal(srcFile1WriteUtc, File.GetLastWriteTimeUtc(dstFile1));
             Assert.Equal(srcFile2WriteUtc, File.GetLastWriteTimeUtc(dstFile2));
@@ -98,12 +98,12 @@ namespace Listenarr.Api.Tests
                 Assert.Equal(Path.GetFullPath(dst), ab2.BasePath);
 
                 // Verify ImageUrl was updated to new location when the cover file exists
-                var expectedCover = Path.GetFullPath(Path.Combine(dst, "cover.jpg"));
+                var expectedCover = Path.GetFullPath(Path.Join(dst, "cover.jpg"));
                 Assert.Equal(expectedCover, ab2.ImageUrl);
             }
 
             // Cleanup
-            try { Directory.Delete(dst, true); } catch { }
+            try { Directory.Delete(dst, true); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
         }
     }
 }

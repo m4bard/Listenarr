@@ -1,4 +1,4 @@
-import { defineStore } from 'pinia'
+﻿import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
@@ -32,30 +32,6 @@ function extractFolderName(relativePath: string): string {
   const parts = relativePath.replace(/\\/g, '/').split('/').filter(Boolean)
   // Prefer the last meaningful segment (author/title structure)
   return parts[parts.length - 1] ?? relativePath
-}
-
-// Build a search query title, using a numeric suffix from the filename when available.
-// Priority: filename stem (when it differs from folder) > folderName
-// detectedTitle comes from the audio file's "album" tag which is often the series name,
-// not the individual book title — so it is intentionally excluded from the search query.
-// e.g. file "The Land (3).m4b" in folder "The Land" → "The Land 3"
-// e.g. file "The Hobbit.m4b" in folder "Lord of the Rings" → "The Hobbit"
-// e.g. file "The Name of the Wind.m4b" in flat author folder → "The Name of the Wind"
-function buildSearchTitle(item: LibraryImportItem): string {
-  const filenameStem = item.fullPath.replace(/\\/g, '/').split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
-  const numericMatch = /\((\d+)\)\s*$/.exec(filenameStem)
-  // Strip numeric suffix for comparison only — keep it in base for the numeric-append path
-  const stemBase = filenameStem.replace(/\s*\(\d+\)\s*$/, '').trim()
-  // Use filename stem when it's more specific than the folder name; otherwise use folder name.
-  // This handles: author folder ("Patrick Rothfuss") containing "The Name of the Wind.m4b",
-  // and series folder ("Lord of the Rings") containing "The Hobbit.m4b".
-  const base = stemBase && stemBase.toLowerCase() !== item.folderName.toLowerCase()
-    ? filenameStem
-    : item.folderName
-  if (numericMatch) {
-    return `${base.replace(/\s*\(\d+\)\s*$/, '').trim()} ${numericMatch[1]}`
-  }
-  return base
 }
 
 // From a list of search results, prefer the one whose author best matches detectedAuthor.
@@ -147,7 +123,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   const metadataFetchCount = ref(0)
   const importErrors = ref<string[]>([])
 
-  // ─── Computed ────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Computed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   const itemList = computed(() => Object.values(items.value))
   const selectedCount = computed(() => itemList.value.filter((i) => i.selected).length)
@@ -155,7 +131,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   const processedCount = computed(() => itemList.value.filter((i) => i.hasSearched).length)
   const matchedCount = computed(() => itemList.value.filter((i) => i.selectedMatch).length)
 
-  // ─── Scan ─────────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function initFromRootFolder(id: number) {
     rootFolderId.value = id
@@ -223,8 +199,8 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       scanError.value = error ?? 'Scan failed'
     }
 
-    // Register before POST — if scan is fast, SignalR may fire before scanUnmatchedFiles() returns.
-    // Allow the event if jobId is not yet assigned (jobId === '') — it must be ours.
+    // Register before POST â€” if scan is fast, SignalR may fire before scanUnmatchedFiles() returns.
+    // Allow the event if jobId is not yet assigned (jobId === '') â€” it must be ours.
     offSignalR = signalRService.onUnmatchedScanComplete(async (payload) => {
       if (!jobId || payload.jobId !== jobId) return
       if (payload.error) { onFailed(payload.error); return }
@@ -235,14 +211,14 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       const result = await apiService.scanUnmatchedFiles(id)
       jobId = result.jobId
       if (settled) return  // SignalR already handled it before this line
-      // Poll once immediately — handles fast scans
+      // Poll once immediately â€” handles fast scans
       const check = await apiService.getUnmatchedResults(jobId)
       if (check.status === 'Completed') {
         await onComplete(jobId)
       } else if (check.status === 'Failed') {
         onFailed(check.error)
       } else {
-        // Polling fallback — keeps checking every 2.5s if SignalR is unavailable or slow
+        // Polling fallback â€” keeps checking every 2.5s if SignalR is unavailable or slow
         pollInterval = setInterval(async () => {
           if (settled || !jobId) return
           try {
@@ -269,7 +245,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     items.value = newItems
   }
 
-  // ─── localStorage persistence ──────────────────────────────────────────────
+  // â”€â”€â”€ localStorage persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   type PersistedEntry = { selectedMatch: SearchResult | null; hasSearched: boolean; selected: boolean }
 
@@ -298,7 +274,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     }
   }
 
-  // ─── Queue Processing ─────────────────────────────────────────────────────
+  // â”€â”€â”€ Queue Processing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function startProcessing() {
     const unsearched = itemList.value.filter((i) => !i.hasSearched).map((i) => i.id)
@@ -336,7 +312,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         const byAsin = !!searchParams.asin
         const results = await apiService.advancedSearch(searchParams)
         metadataFetchCount.value++
-        // ASIN results are authoritative — take the first result directly without author comparison
+        // ASIN results are authoritative â€” take the first result directly without author comparison
         const first = byAsin ? (results[0] ?? null) : pickBestMatch(results, item.detectedAuthor)
         const current = items.value[id]!
         items.value = {
@@ -352,7 +328,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     isProcessing.value = false
   }
 
-  // ─── Per-row manual search ────────────────────────────────────────────────
+  // â”€â”€â”€ Per-row manual search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   async function searchItem(id: string, query: string) {
     const item = items.value[id]
@@ -372,7 +348,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     }
   }
 
-  // ─── Match management ─────────────────────────────────────────────────────
+  // â”€â”€â”€ Match management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function selectMatch(id: string, match: SearchResult) {
     const item = items.value[id]
@@ -388,7 +364,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     _persistMatches()
   }
 
-  // ─── Selection ────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   function toggleSelect(id: string) {
     const item = items.value[id]
@@ -407,10 +383,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     _persistMatches()
   }
 
-  // ─── Import ───────────────────────────────────────────────────────────────
+  // â”€â”€â”€ Import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
   // Enrich metadata with full Audible data before adding to library.
-  // Search results often have authors: [{ asin, name: undefined }] — the full
+  // Search results often have authors: [{ asin, name: undefined }] â€” the full
   // metadata fetch is the only way to get real author/narrator names.
   async function _enrichMetadata(match: SearchResult): Promise<AudibleBookMetadata> {
     const base = matchToMetadata(match)
@@ -461,7 +437,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
           })
           audiobookId = audiobook.id
         } catch (e: any) {
-          // 409 = book already in library — extract existing audiobook from response body
+          // 409 = book already in library â€” extract existing audiobook from response body
           if (e?.status === 409 && e?.body) {
             const body = typeof e.body === 'string' ? JSON.parse(e.body) : e.body
             if (body?.audiobook?.id) {
@@ -472,7 +448,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
                 try {
                   await apiService.updateAudiobook(audiobookId, { basePath: rootFolderPath })
                 } catch {
-                  // Non-critical — import continues, file may go to OutputPath fallback
+                  // Non-critical â€” import continues, file may go to OutputPath fallback
                 }
               }
             } else {
@@ -541,3 +517,4 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     importSelected,
   }
 })
+

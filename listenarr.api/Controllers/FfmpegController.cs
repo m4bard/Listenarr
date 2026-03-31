@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
 using Microsoft.AspNetCore.Mvc;
@@ -39,8 +39,8 @@ namespace Listenarr.Api.Controllers
             if (gate != null) return gate;
 
             var path = await _ffmpegService.GetFfprobePathAsync(false);
-            var baseDir = Path.Combine(Directory.GetCurrentDirectory(), "config", "ffmpeg");
-            var licensePath = Path.Combine(baseDir, "LICENSE_NOTICE.txt");
+            var baseDir = Path.Join(Directory.GetCurrentDirectory(), "config", "ffmpeg");
+            var licensePath = Path.Join(baseDir, "LICENSE_NOTICE.txt");
             string license = string.Empty;
             if (System.IO.File.Exists(licensePath))
             {
@@ -93,7 +93,7 @@ namespace Listenarr.Api.Controllers
             }
 
             var ffprobeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe";
-            var ffprobePath = Path.Combine(Directory.GetCurrentDirectory(), "config", "ffmpeg", ffprobeName);
+            var ffprobePath = Path.Join(Directory.GetCurrentDirectory(), "config", "ffmpeg", ffprobeName);
 
             try
             {
@@ -147,4 +147,5 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
+
 

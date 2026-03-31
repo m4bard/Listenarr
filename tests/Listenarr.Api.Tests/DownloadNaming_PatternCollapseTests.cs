@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using Xunit;
@@ -30,7 +30,7 @@ namespace Listenarr.Api.Tests
             var result = fileNamingService.ApplyNamingPattern(pattern, variables);
 
             // Should collapse adjacent duplicates: "Jane Austen/Pride and Prejudice/Pride and Prejudice (2015)" -> "Jane Austen/Pride and Prejudice (2015)"
-            var expected = Path.Combine("Jane Austen", "Pride and Prejudice (2015)");
+            var expected = Path.Join("Jane Austen", "Pride and Prejudice (2015)");
             Assert.Equal(expected, result);
             Assert.DoesNotContain("Pride and Prejudice" + Path.DirectorySeparatorChar + "Pride and Prejudice", result);
         }

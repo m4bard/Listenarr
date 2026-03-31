@@ -1,4 +1,4 @@
-using Listenarr.Api.Services;
+﻿using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
@@ -229,7 +229,7 @@ namespace Listenarr.Api.Controllers
                 }
 
                 var json = System.Text.Json.JsonSerializer.Serialize(commandsPayload);
-                var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+                using var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
                 var resp = await client.PutAsync(url, content);
                 var body = await resp.Content.ReadAsStringAsync();
                 if (resp.IsSuccessStatusCode)
@@ -337,14 +337,9 @@ namespace Listenarr.Api.Controllers
                 }
 
                 var stopped = await _botService.StopBotAsync();
-                if (stopped)
-                {
-                    return Ok(new { success = true, message = "Bot stopped successfully", status = "stopped" });
-                }
-                else
-                {
-                    return StatusCode(500, new { success = false, message = "Failed to stop bot" });
-                }
+                return stopped
+                    ? Ok(new { success = true, message = "Bot stopped successfully", status = "stopped" })
+                    : StatusCode(500, new { success = false, message = "Failed to stop bot" });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error stopping Discord bot");
@@ -385,10 +380,10 @@ namespace Listenarr.Api.Controllers
 
             try
             {
-                var contentRoot = System.IO.Path.Combine(AppContext.BaseDirectory);
+                var contentRoot = System.IO.Path.Join(AppContext.BaseDirectory);
                 // In ASP.NET Core the content root is typically the ContentRootPath, but in controllers we can use AppContext.BaseDirectory
-                var botDirectory = System.IO.Path.Combine(contentRoot, "tools", "discord-bot");
-                var indexJsPath = System.IO.Path.Combine(botDirectory, "index.js");
+                var botDirectory = System.IO.Path.Join(contentRoot, "tools", "discord-bot");
+                var indexJsPath = System.IO.Path.Join(botDirectory, "index.js");
 
                 var botDirExists = System.IO.Directory.Exists(botDirectory);
                 var indexExists = System.IO.File.Exists(indexJsPath);
@@ -440,5 +435,6 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
+
 
 

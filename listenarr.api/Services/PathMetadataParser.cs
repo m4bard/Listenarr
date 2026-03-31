@@ -1,4 +1,4 @@
-using System.IO;
+﻿using System.IO;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 
@@ -89,8 +89,8 @@ namespace Listenarr.Api.Services
             }
 
             // Build absolute path to the book folder for sidecar reading
-            var bookFolderPath = Path.Combine(normalizedRoot,
-                Path.Combine(folderParts[..(bookFolderIndex + 1)]));
+            var bookFolderPath = Path.Join(normalizedRoot,
+                Path.Join(folderParts[..(bookFolderIndex + 1)]));
 
             TryReadSidecar(bookFolderPath, "desc.txt", content =>
                 result.Description = content.Length > 2000 ? content[..2000] : content);
@@ -106,7 +106,7 @@ namespace Listenarr.Api.Services
                         Path.GetFileNameWithoutExtension(f).Contains("cover", StringComparison.OrdinalIgnoreCase) &&
                         CoverExtensions.Contains(Path.GetExtension(f), StringComparer.OrdinalIgnoreCase));
             }
-            catch { /* ignore */ }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException) { /* ignore */ }
 
             return result;
         }
@@ -145,7 +145,7 @@ namespace Listenarr.Api.Services
                 var doc = JsonSerializer.Deserialize<JsonElement>(stdout);
                 result = ParseEmbeddedTagsFromFfprobeJson(doc);
             }
-            catch { /* silently skip — ffprobe unavailable or file unreadable */ }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException) { /* silently skip - ffprobe unavailable or file unreadable */ }
             return result;
         }
 
@@ -173,13 +173,11 @@ namespace Listenarr.Api.Services
 
         private static string? GetTag(JsonElement tags, params string[] names)
         {
-            foreach (var name in names)
+            foreach (var name in names.Where(n => tags.TryGetProperty(n, out var v) && v.ValueKind == JsonValueKind.String))
             {
-                if (tags.TryGetProperty(name, out var v) && v.ValueKind == JsonValueKind.String)
-                {
-                    var s = v.GetString();
-                    if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
-                }
+                tags.TryGetProperty(name, out var val);
+                var s = val.GetString();
+                if (!string.IsNullOrWhiteSpace(s)) return s.Trim();
             }
             return null;
         }
@@ -218,14 +216,10 @@ namespace Listenarr.Api.Services
             var normalized = NormalizeAsinValue(direct);
             if (!string.IsNullOrWhiteSpace(normalized)) return normalized;
 
-            foreach (var property in tags.EnumerateObject())
+            foreach (var property in tags.EnumerateObject()
+                .Where(p => p.Name.Contains("asin", StringComparison.OrdinalIgnoreCase) || p.Name.Contains("cdek", StringComparison.OrdinalIgnoreCase))
+                .Where(p => p.Value.ValueKind == JsonValueKind.String))
             {
-                if (!property.Name.Contains("asin", StringComparison.OrdinalIgnoreCase)
-                    && !property.Name.Contains("cdek", StringComparison.OrdinalIgnoreCase))
-                    continue;
-                if (property.Value.ValueKind != JsonValueKind.String)
-                    continue;
-
                 normalized = NormalizeAsinValue(property.Value.GetString());
                 if (!string.IsNullOrWhiteSpace(normalized))
                     return normalized;
@@ -250,11 +244,12 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                var path = Path.Combine(folder, filename);
+                var path = Path.Join(folder, filename);
                 if (File.Exists(path))
                     assign(File.ReadAllText(path).Trim());
             }
-            catch { /* silently skip */ }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException) { /* silently skip */ }
         }
     }
 }
+

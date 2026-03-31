@@ -71,14 +71,14 @@ namespace Listenarr.Api.Services
             catch (OperationCanceledException)
             {
                 _logger.LogWarning("Process run cancelled for {File} {Args}", startInfo.FileName, startInfo.Arguments);
-                return new ProcessResult(-1, stdout.ToString(), stderr.ToString() + "\nOperationCanceled", false);
+                return new ProcessResult(-1, stdout.ToString(), stderr + "\nOperationCanceled", false);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 // Include exception details in the returned stderr so callers can surface meaningful diagnostics
                 var errText = stderr.ToString();
                 try
                 {
-                    errText = string.IsNullOrEmpty(errText) ? ex.ToString() : errText + "\n" + ex.ToString();
+                    errText = string.IsNullOrEmpty(errText) ? ex.ToString() : errText + "\n" + ex;
                 }
                 catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { errText = ex.Message; }
 

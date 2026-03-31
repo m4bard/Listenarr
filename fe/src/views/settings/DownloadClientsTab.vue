@@ -302,7 +302,7 @@ const formatApiError = (error: unknown): string => {
   const data = e?.response?.data
   if (data) {
     if (typeof data === 'string') return data
-    if (typeof data === 'object' && data !== null) {
+    if (data && typeof data === 'object') {
       const obj = data as Record<string, unknown>
       if (typeof obj.message === 'string') return obj.message
       if (typeof obj.error === 'string') return obj.error

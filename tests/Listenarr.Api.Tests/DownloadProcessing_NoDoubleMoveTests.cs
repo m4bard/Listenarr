@@ -17,6 +17,29 @@ namespace Listenarr.Api.Tests
 {
     public class DownloadProcessing_NoDoubleMoveTests
     {
+        private static void TryDeletePath(string path, bool directory)
+        {
+            try
+            {
+                if (directory)
+                {
+                    Directory.Delete(path, true);
+                }
+                else
+                {
+                    File.Delete(path);
+                }
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+        }
+
         [Fact]
         public async Task CompletedDownload_LinkedToAudiobook_DoesNotMoveToUnknownAuthor()
         {
@@ -32,16 +55,16 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create a temp directory for the expected output (simulate configured OutputPath)
-            var outputRoot = Path.Combine(Path.GetTempPath(), "listenarr-test-output", Guid.NewGuid().ToString());
+            var outputRoot = Path.Join(Path.GetTempPath(), "listenarr-test-output", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outputRoot);
 
             // Create the expected subdirectory structure that the naming pattern will generate
-            var authorDir = Path.Combine(outputRoot, "Jane Austen");
-            var seriesDir = Path.Combine(authorDir, "Pride and Prejudice");
+            var authorDir = Path.Join(outputRoot, "Jane Austen");
+            var seriesDir = Path.Join(authorDir, "Pride and Prejudice");
             Directory.CreateDirectory(seriesDir);
 
             // Create source file (as if downloader put it here)
-            var sourceFile = Path.Combine(Path.GetTempPath(), $"dl-dbl-{Guid.NewGuid()}.mp3");
+            var sourceFile = Path.Join(Path.GetTempPath(), $"dl-dbl-{Guid.NewGuid()}.mp3");
             await File.WriteAllTextAsync(sourceFile, "dummy");
 
             // Create download record linked to audiobook
@@ -86,7 +109,7 @@ namespace Listenarr.Api.Tests
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            var httpClient = new System.Net.Http.HttpClient();
+            using var httpClient = new System.Net.Http.HttpClient();
             var httpClientFactoryMock = new Mock<IHttpClientFactory>();
             httpClientFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
             var cacheMock = new Mock<IMemoryCache>();
@@ -136,7 +159,7 @@ namespace Listenarr.Api.Tests
             else
             {
                 // Import may be deferred; verify that a file has been moved/copied into the expected author folder on disk or the download status reflects deferred processing
-                var authorPath = Path.Combine(outputRoot, "Jane Austen");
+                var authorPath = Path.Join(outputRoot, "Jane Austen");
                 var found = Directory.Exists(authorPath) && Directory.GetFiles(authorPath, "*", SearchOption.AllDirectories).Length > 0;
                 if (!found)
                 {
@@ -152,8 +175,8 @@ namespace Listenarr.Api.Tests
             }
 
             // Cleanup
-            try { Directory.Delete(outputRoot, true); } catch { }
-            try { File.Delete(sourceFile); } catch { }
+            TryDeletePath(outputRoot, directory: true);
+            TryDeletePath(sourceFile, directory: false);
         }
     }
 }

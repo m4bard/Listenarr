@@ -29,8 +29,7 @@ namespace Listenarr.Api.Middleware
             var authRequired = false;
             if (cfg != null && cfg.AuthenticationRequired != null)
             {
-                if (bool.TryParse(cfg.AuthenticationRequired, out var b)) authRequired = b;
-                else authRequired = cfg.AuthenticationRequired?.ToLower() == "enabled";
+                authRequired = bool.TryParse(cfg.AuthenticationRequired, out var b) ? b : cfg.AuthenticationRequired.ToLower() == "enabled";
             }
 
             // Log logout requests specifically and include masked principal diagnostics

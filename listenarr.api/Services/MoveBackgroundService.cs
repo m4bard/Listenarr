@@ -1,4 +1,4 @@
-using Microsoft.Extensions.Hosting;
+﻿using Microsoft.Extensions.Hosting;
 using System.Threading;
 using System.Threading.Tasks;
 using System;
@@ -113,7 +113,7 @@ namespace Listenarr.Api.Services
                     }
 
                     // Create a temporary directory under the target parent
-                    var tempName = Path.Combine(targetParent, Path.GetFileName(target) + ".tmp-" + job.Id.ToString("N"));
+                    var tempName = Path.Join(targetParent, Path.GetFileName(target) + ".tmp-" + job.Id.ToString("N"));
 
                     // Copy recursively with retries per file
                     try
@@ -408,7 +408,7 @@ namespace Listenarr.Api.Services
 
                         _moveQueue.UpdateJobStatus(job.Id, "Completed");
                         _logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, source, target);
-                        // Completed move job — status updated and broadcasted where configured
+                        // Completed move job â€” status updated and broadcasted where configured
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         // Cleanup any temp dir
@@ -440,8 +440,8 @@ namespace Listenarr.Api.Services
                             {
                                 var historyEntry = new Listenarr.Domain.Models.History
                                 {
-                                    AudiobookId = audiobook?.Id,
-                                    AudiobookTitle = audiobook?.Title,
+                                    AudiobookId = audiobook.Id,
+                                    AudiobookTitle = audiobook.Title,
                                     EventType = "MoveFailed",
                                     Message = $"Move failed: {ex.Message}",
                                     Source = "Move",
@@ -458,7 +458,7 @@ namespace Listenarr.Api.Services
                                     var toastService = historyScope.ServiceProvider.GetService<IToastService>();
                                     if (toastService != null)
                                     {
-                                        var message = !string.IsNullOrEmpty(audiobook?.Title)
+                                        var message = !string.IsNullOrEmpty(audiobook.Title)
                                             ? $"Failed to move {audiobook.Title}: {ex.Message}"
                                             : $"Move failed: {ex.Message}";
 
@@ -477,7 +477,7 @@ namespace Listenarr.Api.Services
 
                         _moveQueue.UpdateJobStatus(job.Id, "Failed", ex.Message);
                         _logger.LogError(ex, "Move job {JobId} failed", job.Id);
-                        // Failure during move job — attempt counts updated and history recorded where configured
+                        // Failure during move job â€” attempt counts updated and history recorded where configured
                     }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
@@ -537,5 +537,6 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 
 

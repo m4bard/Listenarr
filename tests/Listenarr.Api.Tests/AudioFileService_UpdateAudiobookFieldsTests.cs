@@ -45,7 +45,7 @@ namespace Listenarr.Api.Tests
             var svc = new AudioFileService(scopeFactory, logger, memoryCache, limiter);
 
             // Use temp file
-            var tempFile = System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"afs-test-{Guid.NewGuid()}.m4b");
+            var tempFile = System.IO.Path.Join(System.IO.Path.GetTempPath(), $"afs-test-{Guid.NewGuid()}.m4b");
             System.IO.File.WriteAllText(tempFile, "dummy");
 
             // Act

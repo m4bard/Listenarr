@@ -305,13 +305,11 @@ namespace Listenarr.Api.Services
             audiobook.BasePath = normalizedNew;
             if (audiobook.Files != null)
             {
-                foreach (var file in audiobook.Files.Where(f => !string.IsNullOrWhiteSpace(f.Path)))
+                foreach (var file in audiobook.Files.Where(f => !string.IsNullOrWhiteSpace(f.Path)
+                    && (PathsEqual(f.Path, normalizedCurrent) || FileUtils.IsPathWithinRoot(f.Path!, normalizedCurrent))))
                 {
-                    if (PathsEqual(file.Path, normalizedCurrent) || FileUtils.IsPathWithinRoot(file.Path!, normalizedCurrent))
-                    {
-                        var relative = Path.GetRelativePath(normalizedCurrent, file.Path!);
-                        file.Path = CombineRelativePath(normalizedNew, relative);
-                    }
+                    var relative = Path.GetRelativePath(normalizedCurrent, file.Path!);
+                    file.Path = CombineRelativePath(normalizedNew, relative);
                 }
             }
             if (!string.IsNullOrWhiteSpace(audiobook.FilePath)

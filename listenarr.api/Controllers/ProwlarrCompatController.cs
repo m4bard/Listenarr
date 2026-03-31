@@ -46,18 +46,10 @@ namespace Listenarr.Api.Controllers
         private IActionResult? RequireAuthenticatedIfEnabled()
         {
             var cfg = GetStartupConfig();
-            var authEnabled = false;
-            if (cfg.AuthenticationRequired != null)
-            {
-                if (bool.TryParse(cfg.AuthenticationRequired, out var parsed))
-                {
-                    authEnabled = parsed;
-                }
-                else
-                {
-                    authEnabled = cfg.AuthenticationRequired.ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
-                }
-            }
+            var authEnabled = cfg.AuthenticationRequired != null &&
+                (bool.TryParse(cfg.AuthenticationRequired, out var parsed)
+                    ? parsed
+                    : cfg.AuthenticationRequired.ToLowerInvariant() is "true" or "yes" or "1" or "enabled");
             if (authEnabled && !(User?.Identity?.IsAuthenticated ?? false))
             {
                 return Unauthorized();
@@ -435,7 +427,7 @@ namespace Listenarr.Api.Controllers
                             _logger?.LogDebug("Suppressing delete toast for indexer {Id} due to recent toast or duplicate message", i.Id);
                         }
                     }
-                    catch (System.Exception ex)
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         _logger?.LogWarning(ex, "Failed to broadcast IndexersUpdated after delete");
                     }
@@ -446,7 +438,7 @@ namespace Listenarr.Api.Controllers
                 }
                 return Ok(new { });
             }
-            catch (System.Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger?.LogError(ex, "Failed to delete indexer {Id}", id);
                 return StatusCode(500, new { error = "Failed to delete indexer" });
@@ -503,28 +495,30 @@ namespace Listenarr.Api.Controllers
                     // Try fields array
                     if (payload.TryGetProperty("fields", out var fieldsArray) && fieldsArray.ValueKind == System.Text.Json.JsonValueKind.Array)
                     {
-                        foreach (var f in fieldsArray.EnumerateArray())
+                        foreach (var f in fieldsArray.EnumerateArray().Where(field => field.ValueKind == System.Text.Json.JsonValueKind.Object))
                         {
-                            if (f.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
                             var fname = GetStringProperty(f, "name", null);
                             if (string.IsNullOrEmpty(fname)) continue;
 
-                            if (fname.Equals("baseUrl", System.StringComparison.InvariantCultureIgnoreCase))
+                            if (fname.Equals("baseUrl", System.StringComparison.InvariantCultureIgnoreCase) &&
+                                f.TryGetProperty("value", out var baseUrlValue) &&
+                                baseUrlValue.ValueKind == System.Text.Json.JsonValueKind.String)
                             {
-                                if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                    baseUrlFromPayload = v.GetString() ?? baseUrlFromPayload;
+                                baseUrlFromPayload = baseUrlValue.GetString() ?? baseUrlFromPayload;
                             }
 
-                            if (fname.Equals("apiKey", System.StringComparison.InvariantCultureIgnoreCase))
+                            if (fname.Equals("apiKey", System.StringComparison.InvariantCultureIgnoreCase) &&
+                                f.TryGetProperty("value", out var apiKeyValue) &&
+                                apiKeyValue.ValueKind == System.Text.Json.JsonValueKind.String)
                             {
-                                if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                    apiKeyFromPayload = v.GetString() ?? apiKeyFromPayload;
+                                apiKeyFromPayload = apiKeyValue.GetString() ?? apiKeyFromPayload;
                             }
 
-                            if (fname.Equals("apiPath", System.StringComparison.InvariantCultureIgnoreCase))
+                            if (fname.Equals("apiPath", System.StringComparison.InvariantCultureIgnoreCase) &&
+                                f.TryGetProperty("value", out var apiPathValue) &&
+                                apiPathValue.ValueKind == System.Text.Json.JsonValueKind.String)
                             {
-                                if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                    apiPathFromPayload = v.GetString() ?? apiPathFromPayload;
+                                apiPathFromPayload = apiPathValue.GetString() ?? apiPathFromPayload;
                             }
 
                             if (fname.Equals("categories", System.StringComparison.InvariantCultureIgnoreCase))
@@ -618,35 +612,37 @@ namespace Listenarr.Api.Controllers
 
                 if (payload.TryGetProperty("fields", out var fieldsProp) && fieldsProp.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
-                    foreach (var f in fieldsProp.EnumerateArray())
+                    foreach (var f in fieldsProp.EnumerateArray().Where(field => field.ValueKind == System.Text.Json.JsonValueKind.Object))
                     {
-                        if (f.ValueKind != System.Text.Json.JsonValueKind.Object) continue;
                         var fname = GetStringProperty(f, "name", null);
                         if (string.IsNullOrEmpty(fname)) continue;
 
-                        if (fname.Equals("baseUrl", System.StringComparison.InvariantCultureIgnoreCase))
+                        if (fname.Equals("baseUrl", System.StringComparison.InvariantCultureIgnoreCase) &&
+                            f.TryGetProperty("value", out var baseUrlValue) &&
+                            baseUrlValue.ValueKind == System.Text.Json.JsonValueKind.String)
                         {
-                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                baseUrl = v.GetString() ?? baseUrl;
+                            baseUrl = baseUrlValue.GetString() ?? baseUrl;
                         }
 
-                        if (fname.Equals("apiKey", System.StringComparison.InvariantCultureIgnoreCase))
+                        if (fname.Equals("apiKey", System.StringComparison.InvariantCultureIgnoreCase) &&
+                            f.TryGetProperty("value", out var apiKeyValue) &&
+                            apiKeyValue.ValueKind == System.Text.Json.JsonValueKind.String)
                         {
-                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                apiKey = v.GetString() ?? apiKey;
+                            apiKey = apiKeyValue.GetString() ?? apiKey;
                         }
 
-                        if (fname.Equals("apiPath", System.StringComparison.InvariantCultureIgnoreCase))
+                        if (fname.Equals("apiPath", System.StringComparison.InvariantCultureIgnoreCase) &&
+                            f.TryGetProperty("value", out var apiPathValue) &&
+                            apiPathValue.ValueKind == System.Text.Json.JsonValueKind.String)
                         {
-                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                apiPath = v.GetString() ?? apiPath;
+                            apiPath = apiPathValue.GetString() ?? apiPath;
                         }
 
                         if (fname.Equals("categories", System.StringComparison.InvariantCultureIgnoreCase))
                         {
-                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Array)
+                            if (f.TryGetProperty("value", out var categoriesValue) && categoriesValue.ValueKind == System.Text.Json.JsonValueKind.Array)
                             {
-                                var parts = v.EnumerateArray().Select(x => x.ValueKind == System.Text.Json.JsonValueKind.Number ? x.GetInt32().ToString() : x.GetString() ?? string.Empty).Where(s => !string.IsNullOrEmpty(s));
+                                var parts = categoriesValue.EnumerateArray().Select(x => x.ValueKind == System.Text.Json.JsonValueKind.Number ? x.GetInt32().ToString() : x.GetString() ?? string.Empty).Where(s => !string.IsNullOrEmpty(s));
                                 categories = string.Join(',', parts);
                             }
                             else if (f.TryGetProperty("value", out var vs) && vs.ValueKind == System.Text.Json.JsonValueKind.String)
@@ -737,7 +733,7 @@ namespace Listenarr.Api.Controllers
                         }
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                 {
                     _logger?.LogWarning(ex, "Failed to broadcast IndexersUpdated after update");
                 }
@@ -775,7 +771,7 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(dto);
             }
-            catch (System.Exception ex)
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger?.LogError(ex, "Failed to update indexer {Id}", id);
                 return StatusCode(500, new { error = "Failed to update indexer" });
@@ -799,7 +795,6 @@ namespace Listenarr.Api.Controllers
                 if (duplicates.Count <= 1) return;
 
                 // Keep the first, remove the rest
-                var keep = duplicates.First();
                 var remove = duplicates.Skip(1).ToList();
 
                 _logger?.LogInformation("Dedupe: Removing {Count} duplicate indexer(s) for url={Url}", remove.Count, normalizedUrl);
@@ -855,11 +850,8 @@ namespace Listenarr.Api.Controllers
             var skipped = 0;
             var createdIndexers = new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>();
 
-            foreach (var item in payload.EnumerateArray())
+            foreach (var item in payload.EnumerateArray().Where(item => item.ValueKind == System.Text.Json.JsonValueKind.Object))
             {
-                if (item.ValueKind != System.Text.Json.JsonValueKind.Object)
-                    continue;
-
                 // Extract common fields with tolerant mapping
                 string getString(System.Text.Json.JsonElement el, string prop1, string? prop2 = null)
                 {
@@ -908,39 +900,42 @@ namespace Listenarr.Api.Controllers
                 if ((string.IsNullOrEmpty(baseUrl) || string.IsNullOrEmpty(apiKey) || string.IsNullOrEmpty(apiPath) || string.IsNullOrEmpty(categories)) &&
                     item.TryGetProperty("fields", out var fields) && fields.ValueKind == System.Text.Json.JsonValueKind.Array)
                 {
-                    foreach (var f in fields.EnumerateArray())
+                    foreach (var f in fields.EnumerateArray().Where(field => field.ValueKind == System.Text.Json.JsonValueKind.Object))
                     {
-                        if (f.ValueKind != System.Text.Json.JsonValueKind.Object)
-                            continue;
-
                         var fname = getString(f, "name", null);
                         if (string.IsNullOrEmpty(fname))
                             continue;
 
                         // baseUrl, apiKey, apiPath are strings inside field.value
-                        if (string.IsNullOrEmpty(baseUrl) && fname.Equals("baseUrl", StringComparison.InvariantCultureIgnoreCase))
+                        if (string.IsNullOrEmpty(baseUrl) &&
+                            fname.Equals("baseUrl", StringComparison.InvariantCultureIgnoreCase) &&
+                            f.TryGetProperty("value", out var v) &&
+                            v.ValueKind == System.Text.Json.JsonValueKind.String)
                         {
-                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                baseUrl = v.GetString() ?? string.Empty;
+                            baseUrl = v.GetString() ?? string.Empty;
                         }
 
-                        if (string.IsNullOrEmpty(apiKey) && fname.Equals("apiKey", StringComparison.InvariantCultureIgnoreCase))
+                        if (string.IsNullOrEmpty(apiKey) &&
+                            fname.Equals("apiKey", StringComparison.InvariantCultureIgnoreCase) &&
+                            f.TryGetProperty("value", out v) &&
+                            v.ValueKind == System.Text.Json.JsonValueKind.String)
                         {
-                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                apiKey = v.GetString() ?? string.Empty;
+                            apiKey = v.GetString() ?? string.Empty;
                         }
 
-                        if (string.IsNullOrEmpty(apiPath) && fname.Equals("apiPath", StringComparison.InvariantCultureIgnoreCase))
+                        if (string.IsNullOrEmpty(apiPath) &&
+                            fname.Equals("apiPath", StringComparison.InvariantCultureIgnoreCase) &&
+                            f.TryGetProperty("value", out v) &&
+                            v.ValueKind == System.Text.Json.JsonValueKind.String)
                         {
-                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.String)
-                                apiPath = v.GetString() ?? string.Empty;
+                            apiPath = v.GetString() ?? string.Empty;
                         }
 
                         if (string.IsNullOrEmpty(categories) && fname.Equals("categories", StringComparison.InvariantCultureIgnoreCase))
                         {
-                            if (f.TryGetProperty("value", out var v) && v.ValueKind == System.Text.Json.JsonValueKind.Array)
+                            if (f.TryGetProperty("value", out var categoriesValue) && categoriesValue.ValueKind == System.Text.Json.JsonValueKind.Array)
                             {
-                                var parts = v.EnumerateArray().Select(x => x.ValueKind == System.Text.Json.JsonValueKind.Number ? x.GetInt32().ToString() : x.GetString() ?? string.Empty).Where(s => !string.IsNullOrEmpty(s));
+                                var parts = categoriesValue.EnumerateArray().Select(x => x.ValueKind == System.Text.Json.JsonValueKind.Number ? x.GetInt32().ToString() : x.GetString() ?? string.Empty).Where(s => !string.IsNullOrEmpty(s));
                                 categories = string.Join(',', parts);
                             }
                             else if (f.TryGetProperty("value", out var vs) && vs.ValueKind == System.Text.Json.JsonValueKind.String)
@@ -1044,7 +1039,7 @@ namespace Listenarr.Api.Controllers
                             _logger?.LogWarning(ex, "Failed to publish indexer import notification");
                         }
                     }
-                    catch (System.Exception ex)
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         _logger?.LogWarning(ex, "Failed to broadcast IndexersUpdated via SignalR");
                     }
@@ -1280,7 +1275,7 @@ namespace Listenarr.Api.Controllers
                 return normalized.TrimEnd('/');
             }
             catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) {
-                return url?.TrimEnd('/') ?? string.Empty;
+                return url.TrimEnd('/');
             }
         }
 

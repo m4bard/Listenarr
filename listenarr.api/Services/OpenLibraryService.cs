@@ -70,18 +70,11 @@ namespace Listenarr.Api.Services
                 var searchResponse = await SearchBooksAsync(title, author, 20); // Get more results for better ISBN coverage
                 var isbns = new List<string>();
 
-                foreach (var book in searchResponse.Docs)
+                foreach (var book in searchResponse.Docs.Where(book => book.Isbn != null))
                 {
-                    if (book.Isbn != null)
+                    foreach (var cleanIsbn in book.Isbn!.Select(isbn => isbn.Replace("-", "").Replace(" ", "")).Where(i => !string.IsNullOrEmpty(i) && (i.Length == 10 || i.Length == 13)))
                     {
-                        foreach (var isbn in book.Isbn)
-                        {
-                            var cleanIsbn = isbn.Replace("-", "").Replace(" ", "");
-                            if (!string.IsNullOrEmpty(cleanIsbn) && (cleanIsbn.Length == 10 || cleanIsbn.Length == 13))
-                            {
-                                isbns.Add(cleanIsbn);
-                            }
-                        }
+                        isbns.Add(cleanIsbn);
                     }
                 }
 
@@ -164,10 +157,9 @@ namespace Listenarr.Api.Services
             // Extract tokens: letters, digits, and hyphens
             var matches = System.Text.RegularExpressions.Regex.Matches(lower, @"[a-z0-9\-]+");
             var tokens = new List<string>();
-            foreach (System.Text.RegularExpressions.Match m in matches)
+            foreach (var v in matches.Select(m => m.Value.Trim('-')).Where(v => !string.IsNullOrEmpty(v)))
             {
-                var v = m.Value.Trim('-');
-                if (!string.IsNullOrEmpty(v)) tokens.Add(v);
+                tokens.Add(v);
             }
             return string.Join("+", tokens);
         }

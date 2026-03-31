@@ -39,7 +39,8 @@ namespace Listenarr.Api.Tests
             var mockRepo = new Mock<IAudiobookRepository>();
             mockRepo.Setup(r => r.GetByAsinAsync(identifier)).ReturnsAsync(new Audiobook { Asin = identifier });
 
-            var audibleMock = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            using var httpClientForAudible = new System.Net.Http.HttpClient();
+            var audibleMock = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>());
 
             // Set ContentRootPath on the mocked environment to our tempRoot
             var mockEnv = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
@@ -68,7 +69,7 @@ namespace Listenarr.Api.Tests
             {
                 File.Delete(tempFull);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }
@@ -77,7 +78,7 @@ namespace Listenarr.Api.Tests
             {
                 File.Delete(libFull);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }
@@ -86,7 +87,7 @@ namespace Listenarr.Api.Tests
             {
                 Directory.Delete(Path.Join(tempRoot, "config"), true);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }

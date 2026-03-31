@@ -40,7 +40,8 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(persisted);
             db.SaveChanges();
 
-            var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
+            using var loggerFactory = new LoggerFactory();
+            var logger = loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>();
             var handler = new CaptureHandler(httpResponse);
             var client = new HttpClient(handler);
             var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());

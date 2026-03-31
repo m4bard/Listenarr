@@ -146,13 +146,10 @@ namespace Listenarr.Api.Services
                     continue;
                 }
 
-                foreach (var author in b.Authors ?? new List<string>())
+                if (b.Authors.Any(a => NormalizeAuthorName(a) == target))
                 {
-                    if (NormalizeAuthorName(author) == target)
-                    {
-                        var asin = b.AuthorAsins?.FirstOrDefault();
-                        if (!string.IsNullOrWhiteSpace(asin)) return asin;
-                    }
+                    var asin = b.AuthorAsins.FirstOrDefault();
+                    if (!string.IsNullOrWhiteSpace(asin)) return asin;
                 }
             }
 

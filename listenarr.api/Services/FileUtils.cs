@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -28,7 +28,7 @@ namespace Listenarr.Api.Services
         /// <summary>
         /// Audio file extensions recognized by the import and scan pipelines.
         /// Centralized here so that the scan service, import service, and completed download
-        /// processor all use the same set – preventing non-audio files (cover images, NFOs, etc.)
+        /// processor all use the same set â€“ preventing non-audio files (cover images, NFOs, etc.)
         /// from being registered as AudiobookFile records only to be removed on the next scan.
         /// </summary>
         public static readonly HashSet<string> AudioExtensions = new(StringComparer.OrdinalIgnoreCase)
@@ -62,20 +62,9 @@ namespace Listenarr.Api.Services
                 }
 
                 var tokens = rawValue.Split(new[] { ',', ';', '\r', '\n', '\t' }, StringSplitOptions.RemoveEmptyEntries);
-                foreach (var token in tokens)
+                foreach (var extension in tokens.Select(t => t.Trim()).Where(e => !string.IsNullOrWhiteSpace(e)))
                 {
-                    var extension = token.Trim();
-                    if (string.IsNullOrWhiteSpace(extension))
-                    {
-                        continue;
-                    }
-
-                    if (!extension.StartsWith(".", StringComparison.Ordinal))
-                    {
-                        extension = "." + extension;
-                    }
-
-                    normalized.Add(extension);
+                    normalized.Add(extension.StartsWith(".", StringComparison.Ordinal) ? extension : "." + extension);
                 }
             }
 
@@ -349,7 +338,7 @@ namespace Listenarr.Api.Services
                 string candidate;
                 do
                 {
-                    candidate = Path.Combine(dir, $"{name} ({idx}){ext}");
+                    candidate = Path.Join(dir, $"{name} ({idx}){ext}");
                     idx++;
                 }
                 while (existsPredicate(candidate) || (inMemoryUsed != null && inMemoryUsed.Contains(candidate)));
@@ -382,7 +371,7 @@ namespace Listenarr.Api.Services
                 var suffixed = $"{filename}-{sequenceNumber:00}{extension}";
                 return string.IsNullOrWhiteSpace(directory)
                     ? suffixed
-                    : Path.Combine(directory, suffixed);
+                    : Path.Join(directory, suffixed);
             }
             catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
                 return desiredPath;
@@ -413,19 +402,13 @@ namespace Listenarr.Api.Services
             try
             {
                 var directories = paths
+                    .Where(path => !string.IsNullOrWhiteSpace(path))
                     .Select(path =>
                     {
-                        if (string.IsNullOrWhiteSpace(path))
-                        {
-                            return null;
-                        }
-
                         var fullPath = NormalizeStoredPath(path);
                         return Path.GetDirectoryName(fullPath) ?? fullPath;
                     })
-                    .Where(path => !string.IsNullOrWhiteSpace(path))
                     .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .Cast<string>()
                     .ToList();
 
                 if (directories.Count == 0)
@@ -574,15 +557,7 @@ namespace Listenarr.Api.Services
 
         private static string FirstNonEmpty(params string?[] values)
         {
-            foreach (var value in values)
-            {
-                if (!string.IsNullOrWhiteSpace(value))
-                {
-                    return value!;
-                }
-            }
-
-            return string.Empty;
+            return values.FirstOrDefault(v => !string.IsNullOrWhiteSpace(v)) ?? string.Empty;
         }
 
         private static string ExpandKnownWindowsPathSegments(string path, Func<string, string?> longPathResolver)
@@ -608,10 +583,9 @@ namespace Listenarr.Api.Services
             var currentPath = pathRoot;
             var forceResolve = longPathResolver != TryResolveLongWindowsPath;
 
-            foreach (var segment in segments)
+            foreach (var normalizedSegment in segments.Select(NormalizeRelativePathSegment))
             {
-                var normalizedSegment = NormalizeRelativePathSegment(segment);
-                var candidatePath = Path.Combine(currentPath, normalizedSegment);
+                var candidatePath = Path.Join(currentPath, normalizedSegment);
                 var canResolve = forceResolve || Directory.Exists(candidatePath) || File.Exists(candidatePath);
                 if (!canResolve)
                 {
@@ -689,3 +663,4 @@ namespace Listenarr.Api.Services
         private static extern uint GetLongPathName(string shortPath, StringBuilder longPathBuffer, int bufferLength);
     }
 }
+

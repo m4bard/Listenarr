@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -21,12 +21,12 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task DeleteAudiobook_DeleteFiles_RemovesAllFilesInFolderButPreservesDirectory()
         {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
-            var bookFolder = Path.Combine(tempRoot, "Jack of Shadows");
-            var extrasFolder = Path.Combine(bookFolder, "Extras");
-            var audioPath = Path.Combine(bookFolder, "Jack of Shadows.mp3");
-            var sidecarPath = Path.Combine(bookFolder, "cover.jpg");
-            var notePath = Path.Combine(extrasFolder, "notes.txt");
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
+            var bookFolder = Path.Join(tempRoot, "Jack of Shadows");
+            var extrasFolder = Path.Join(bookFolder, "Extras");
+            var audioPath = Path.Join(bookFolder, "Jack of Shadows.mp3");
+            var sidecarPath = Path.Join(bookFolder, "cover.jpg");
+            var notePath = Path.Join(extrasFolder, "notes.txt");
 
             Directory.CreateDirectory(extrasFolder);
             await File.WriteAllTextAsync(audioPath, "audio");
@@ -78,10 +78,10 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task DeleteAudiobook_DeleteFilesAndFolder_RemovesTrackedFilesAndDirectory()
         {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
-            var bookFolder = Path.Combine(tempRoot, "Jack of Shadows");
-            var audioPath = Path.Combine(bookFolder, "Jack of Shadows.mp3");
-            var sidecarPath = Path.Combine(bookFolder, "cover.jpg");
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
+            var bookFolder = Path.Join(tempRoot, "Jack of Shadows");
+            var audioPath = Path.Join(bookFolder, "Jack of Shadows.mp3");
+            var sidecarPath = Path.Join(bookFolder, "cover.jpg");
 
             Directory.CreateDirectory(bookFolder);
             await File.WriteAllTextAsync(audioPath, "audio");
@@ -129,10 +129,10 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task DeleteAudiobook_DeleteFolder_PreservesSharedDirectoryWhenAnotherAudiobookUsesIt()
         {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
-            var sharedFolder = Path.Combine(tempRoot, "Shared");
-            var currentAudioPath = Path.Combine(sharedFolder, "current.mp3");
-            var otherAudioPath = Path.Combine(sharedFolder, "other.mp3");
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
+            var sharedFolder = Path.Join(tempRoot, "Shared");
+            var currentAudioPath = Path.Join(sharedFolder, "current.mp3");
+            var otherAudioPath = Path.Join(sharedFolder, "other.mp3");
 
             Directory.CreateDirectory(sharedFolder);
             await File.WriteAllTextAsync(currentAudioPath, "audio");
@@ -203,10 +203,10 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task DeleteAudiobook_DeleteFolder_UsesTrackedFileCommonDirectoryWhenBasePathIsProtectedRoot()
         {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
-            var bookFolder = Path.Combine(tempRoot, "Roger Zelazny", "Jack of Shadows");
-            var discFolder = Path.Combine(bookFolder, "Disc 01");
-            var audioPath = Path.Combine(discFolder, "Jack of Shadows-01.mp3");
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
+            var bookFolder = Path.Join(tempRoot, "Roger Zelazny", "Jack of Shadows");
+            var discFolder = Path.Join(bookFolder, "Disc 01");
+            var audioPath = Path.Join(discFolder, "Jack of Shadows-01.mp3");
 
             Directory.CreateDirectory(discFolder);
             await File.WriteAllTextAsync(audioPath, "audio");
@@ -265,10 +265,10 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task DeleteAudiobook_DeleteFolder_RemovesEmptyAuthorFolder()
         {
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
-            var authorFolder = Path.Combine(tempRoot, "Roger Zelazny");
-            var bookFolder = Path.Combine(authorFolder, "Jack of Shadows");
-            var audioPath = Path.Combine(bookFolder, "Jack of Shadows.mp3");
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-delete-" + Guid.NewGuid().ToString("N"));
+            var authorFolder = Path.Join(tempRoot, "Roger Zelazny");
+            var bookFolder = Path.Join(authorFolder, "Jack of Shadows");
+            var audioPath = Path.Join(bookFolder, "Jack of Shadows.mp3");
 
             Directory.CreateDirectory(bookFolder);
             await File.WriteAllTextAsync(audioPath, "audio");
@@ -389,8 +389,9 @@ namespace Listenarr.Api.Tests
                     Directory.Delete(path, recursive: true);
                 }
             }
-            catch
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
+                _ = ex;
             }
         }
     }

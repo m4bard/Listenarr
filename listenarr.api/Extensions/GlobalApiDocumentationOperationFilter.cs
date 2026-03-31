@@ -132,12 +132,9 @@ namespace Listenarr.Api.Extensions
                 };
             }
 
-            foreach (var response in operation.Responses)
+            foreach (var response in operation.Responses.Where(r => string.IsNullOrWhiteSpace(r.Value.Description)))
             {
-                if (string.IsNullOrWhiteSpace(response.Value.Description))
-                {
-                    response.Value.Description = ResolveResponseDescription(response.Key);
-                }
+                response.Value.Description = ResolveResponseDescription(response.Key);
             }
 
             if (!operation.Responses.ContainsKey("500"))

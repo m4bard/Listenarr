@@ -184,11 +184,9 @@ namespace Listenarr.Api.Services
             }
             else if (element.ValueKind == JsonValueKind.Array)
             {
-                foreach (var item in element.EnumerateArray())
+                foreach (var nested in element.EnumerateArray().Select(FindMamId).Where(n => !string.IsNullOrEmpty(n)))
                 {
-                    var nested = FindMamId(item);
-                    if (!string.IsNullOrEmpty(nested))
-                        return nested;
+                    return nested;
                 }
             }
 
@@ -587,13 +585,9 @@ namespace Listenarr.Api.Services
                 {
                     var asciiAll = System.Text.Encoding.ASCII.GetString(torrentBytes);
                     var matches = System.Text.RegularExpressions.Regex.Matches(asciiAll, @"(https?|udp)://[^\s\""']+", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-                    foreach (System.Text.RegularExpressions.Match m in matches)
+                    foreach (var v in matches.Select(m => m.Value).Where(v => v.Contains("/announce", StringComparison.OrdinalIgnoreCase) || v.Contains("/tracker", StringComparison.OrdinalIgnoreCase)))
                     {
-                        var v = m.Value;
-                        if (v.Contains("/announce", StringComparison.OrdinalIgnoreCase) || v.Contains("/tracker", StringComparison.OrdinalIgnoreCase))
-                        {
-                            resultSet.Add(v);
-                        }
+                        resultSet.Add(v);
                     }
                 }
                 catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {

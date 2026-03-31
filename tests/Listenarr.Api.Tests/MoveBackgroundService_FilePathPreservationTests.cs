@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -45,14 +45,14 @@ namespace Listenarr.Api.Tests
             var db = rootScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
 
             // Create source and target dirs
-            var src = Path.Combine(Path.GetTempPath(), "listenarr_test_move_src_" + Guid.NewGuid().ToString("N"));
-            var dst = Path.Combine(Path.GetTempPath(), "listenarr_test_move_dst_" + Guid.NewGuid().ToString("N"));
+            var src = Path.Join(Path.GetTempPath(), "listenarr_test_move_src_" + Guid.NewGuid().ToString("N"));
+            var dst = Path.Join(Path.GetTempPath(), "listenarr_test_move_dst_" + Guid.NewGuid().ToString("N"));
 
             Directory.CreateDirectory(src);
             Directory.CreateDirectory(dst);
 
             var audioFileName = "dune.m4b";
-            var srcFile = Path.Combine(src, audioFileName);
+            var srcFile = Path.Join(src, audioFileName);
             await File.WriteAllTextAsync(srcFile, "dummy");
 
             var ab = new Audiobook { Title = "MoveFilePathTest", BasePath = src, FilePath = srcFile };
@@ -89,7 +89,7 @@ namespace Listenarr.Api.Tests
             var fresh = await dbAfter.Audiobooks.FirstOrDefaultAsync(a => a.Id == ab.Id);
             Assert.NotNull(fresh);
 
-            var expectedNewFilePath = Path.GetFullPath(Path.Combine(dst, Path.GetRelativePath(src, srcFile)));
+            var expectedNewFilePath = Path.GetFullPath(Path.Join(dst, Path.GetRelativePath(src, srcFile)));
 
             // The file should have been moved to target
             Assert.True(File.Exists(expectedNewFilePath), "Moved file not found at expected target path");
@@ -111,7 +111,7 @@ namespace Listenarr.Api.Tests
             Assert.NotNull(fileRecord);
 
             // Cleanup
-            try { Directory.Delete(dst, true); } catch { }
+            try { Directory.Delete(dst, true); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
         }
     }
 }

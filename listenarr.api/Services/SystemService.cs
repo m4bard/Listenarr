@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -175,10 +175,9 @@ namespace Listenarr.Api.Services
                         continue;
                     }
 
-                    var status = "unknown";
                     // TODO: Implement actual connection testing for each client type
                     // For now, assume enabled clients are connected
-                    status = "connected";
+                    var status = "connected";
                     connectedCount++;
 
                     clientStatuses.Add(new ClientStatus
@@ -235,10 +234,9 @@ namespace Listenarr.Api.Services
                         continue;
                     }
 
-                    var status = "unknown";
                     // TODO: Implement actual connection testing for each API
                     // For now, assume enabled APIs are connected
-                    status = "connected";
+                    var status = "connected";
                     connectedCount++;
 
                     apiStatuses.Add(new ApiStatus
@@ -454,14 +452,7 @@ namespace Listenarr.Api.Services
                     lines = allLines.TakeLast(limit).ToList();
                 }
 
-                foreach (var line in lines)
-                {
-                    var logEntry = ParseLogLine(line);
-                    if (logEntry != null)
-                    {
-                        logs.Add(logEntry);
-                    }
-                }
+                logs.AddRange(lines.Select(ParseLogLine).Where(logEntry => logEntry != null)!);
 
                 // If no logs were parsed, return sample logs
                 if (logs.Count == 0)
@@ -492,7 +483,7 @@ namespace Listenarr.Api.Services
         public string GetLogFilePath()
         {
             // Get the logs directory from the application base path
-            var logsDir = Path.Combine(Directory.GetCurrentDirectory(), "config", "logs");
+            var logsDir = Path.Join(Directory.GetCurrentDirectory(), "config", "logs");
 
             // Ensure the directory exists
             if (!Directory.Exists(logsDir))
@@ -503,7 +494,7 @@ namespace Listenarr.Api.Services
             // Use today's date for the log file name (Serilog format with RollingInterval.Day)
             // Serilog will create files like: listenarr-20251105.log
             var logFileName = $"listenarr-{DateTime.UtcNow:yyyyMMdd}.log";
-            var todayLogPath = Path.Combine(logsDir, logFileName);
+            var todayLogPath = Path.Join(logsDir, logFileName);
 
             // If today's log doesn't exist yet, find the most recent log file
             if (!File.Exists(todayLogPath))
@@ -583,5 +574,6 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 
 

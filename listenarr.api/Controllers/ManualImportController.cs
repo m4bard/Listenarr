@@ -239,7 +239,9 @@ public class ManualImportController : ControllerBase
                     return FileUtils.IsPathWithinRoot(normalizedSource, r.Path)
                         || string.Equals(normalizedSource, Path.GetFullPath(r.Path), StringComparison.OrdinalIgnoreCase);
                 }
-                catch { return false; }
+                catch (ArgumentException) { return false; }
+                catch (NotSupportedException) { return false; }
+                catch (PathTooLongException) { return false; }
             });
             if (!isUnderRequestedRoot && !isUnderConfiguredRoot)
             {
@@ -513,7 +515,9 @@ public class ManualImportController : ControllerBase
                     var isRootFolder = rootFolders.Any(r =>
                     {
                         try { return string.Equals(FileUtils.NormalizeStoredPath(r.Path), baseFull, StringComparison.OrdinalIgnoreCase); }
-                        catch { return false; }
+                        catch (ArgumentException) { return false; }
+                        catch (NotSupportedException) { return false; }
+                        catch (PathTooLongException) { return false; }
                     });
                     if (isRootFolder) isCustomBasePath = false;
                 }
@@ -571,10 +575,9 @@ public class ManualImportController : ControllerBase
             && !audiobook.Title.Contains(audiobook.Subtitle, StringComparison.OrdinalIgnoreCase)
             ? $"{audiobook.Title}: {audiobook.Subtitle}"
             : audiobook.Title;
-        if (!string.IsNullOrWhiteSpace(titleFull))
-            variables["Title"] = titleFull;
-        else
-            variables["Title"] = "Unknown Title"; // Title is required as fallback
+        variables["Title"] = !string.IsNullOrWhiteSpace(titleFull)
+            ? titleFull
+            : "Unknown Title"; // Title is required as fallback
         
         if (!string.IsNullOrWhiteSpace(audiobook.Series))
             variables["Series"] = audiobook.Series;
@@ -650,10 +653,12 @@ public class ManualImportController : ControllerBase
                 : CombineWithOptionalBase(folderRelative, fileRelative);
         }
 
-        if (string.IsNullOrWhiteSpace(folderPattern) || isCustomBasePath)
+        if ((string.IsNullOrWhiteSpace(folderPattern) || isCustomBasePath)
+            && isMultiFile
+            && !patternHasNumberTokens
+            && stableSuffixNumber.HasValue)
         {
-            if (isMultiFile && !patternHasNumberTokens && stableSuffixNumber.HasValue)
-                relativePath = FileUtils.AppendSequenceSuffix(relativePath, stableSuffixNumber.Value);
+            relativePath = FileUtils.AppendSequenceSuffix(relativePath, stableSuffixNumber.Value);
         }
 
         // Ensure it has the correct extension
@@ -679,7 +684,15 @@ public class ManualImportController : ControllerBase
         {
             associationBasePath = Path.GetDirectoryName(FileUtils.NormalizeStoredPath(destinationPath));
         }
-        catch
+        catch (ArgumentException)
+        {
+            associationBasePath = Path.GetDirectoryName(destinationPath);
+        }
+        catch (NotSupportedException)
+        {
+            associationBasePath = Path.GetDirectoryName(destinationPath);
+        }
+        catch (PathTooLongException)
         {
             associationBasePath = Path.GetDirectoryName(destinationPath);
         }
@@ -707,7 +720,21 @@ public class ManualImportController : ControllerBase
                     return;
                 }
             }
-            catch
+            catch (ArgumentException)
+            {
+                if (string.Equals(audiobook.BasePath, associationBasePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+            catch (NotSupportedException)
+            {
+                if (string.Equals(audiobook.BasePath, associationBasePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+            catch (PathTooLongException)
             {
                 if (string.Equals(audiobook.BasePath, associationBasePath, StringComparison.OrdinalIgnoreCase))
                 {
@@ -757,12 +784,8 @@ public class ManualImportController : ControllerBase
     {
         var ordered = new List<ManualImportItem>();
 
-        foreach (var group in items.GroupBy(i => i.MatchedAudiobookId))
+        foreach (var validItems in items.GroupBy(i => i.MatchedAudiobookId).Select(g => g.Where(i => !string.IsNullOrWhiteSpace(i.FullPath)).ToList()))
         {
-            var validItems = group
-                .Where(i => !string.IsNullOrWhiteSpace(i.FullPath))
-                .ToList();
-
             if (validItems.Count == 0)
             {
                 continue;
@@ -773,18 +796,21 @@ public class ManualImportController : ControllerBase
             var diskNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plans, p => p.DiskNumberHint);
             var chapterNumbersForNaming = MultiFileImportPlanner.BuildStableNamingNumbers(plans, p => p.ChapterNumberHint);
 
-            foreach (var plan in plans)
-            {
-                if (!itemLookup.TryGetValue(plan.FullPath, out var item))
+            ordered.AddRange(plans
+                .Select(plan =>
                 {
-                    continue;
-                }
+                    if (!itemLookup.TryGetValue(plan.FullPath, out var item))
+                    {
+                        return null;
+                    }
 
-                item.SequenceNumberHint = plan.SequenceNumber;
-                item.DiskNumberHint = diskNumbersForNaming.TryGetValue(plan.FullPath, out var diskNumber) ? diskNumber : plan.DiskNumberHint;
-                item.ChapterNumberHint = chapterNumbersForNaming.TryGetValue(plan.FullPath, out var chapterNumber) ? chapterNumber : plan.ChapterNumberHint;
-                ordered.Add(item);
-            }
+                    item.SequenceNumberHint = plan.SequenceNumber;
+                    item.DiskNumberHint = diskNumbersForNaming.TryGetValue(plan.FullPath, out var diskNumber) ? diskNumber : plan.DiskNumberHint;
+                    item.ChapterNumberHint = chapterNumbersForNaming.TryGetValue(plan.FullPath, out var chapterNumber) ? chapterNumber : plan.ChapterNumberHint;
+                    return item;
+                })
+                .Where(item => item != null)!
+                .Cast<ManualImportItem>());
         }
 
         foreach (var invalidItem in items.Where(i => string.IsNullOrWhiteSpace(i.FullPath)))
@@ -915,19 +941,13 @@ public class ManualImportController : ControllerBase
 
     private async Task<IReadOnlyCollection<FileUtils.AudioMatchProfile>> BuildAudioMatchProfilesAsync(IEnumerable<string> filePaths)
     {
-        var profiles = new List<FileUtils.AudioMatchProfile>();
-        foreach (var filePath in filePaths
-            .Where(path => !string.IsNullOrWhiteSpace(path))
-            .Distinct(StringComparer.OrdinalIgnoreCase))
-        {
-            var profile = await BuildAudioMatchProfileAsync(filePath);
-            if (profile != null)
-            {
-                profiles.Add(profile);
-            }
-        }
-
-        return profiles;
+        return (await Task.WhenAll(filePaths
+                .Where(path => !string.IsNullOrWhiteSpace(path))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .Select(BuildAudioMatchProfileAsync)))
+            .Where(profile => profile != null)
+            .Cast<FileUtils.AudioMatchProfile>()
+            .ToList();
     }
 
     private async Task<FileUtils.AudioMatchProfile?> BuildAudioMatchProfileAsync(string filePath)

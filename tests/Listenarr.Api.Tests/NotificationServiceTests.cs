@@ -17,6 +17,13 @@ namespace Listenarr.Api.Tests
 {
     public partial class NotificationServiceTests
     {
+        private static JsonNode RequireProperty(JsonObject obj, string propertyName)
+        {
+            Assert.True(obj.TryGetPropertyValue(propertyName, out var value), $"Expected property '{propertyName}' to be present.");
+            Assert.NotNull(value);
+            return value!;
+        }
+
         [Fact]
         public void CreateDiscordPayload_IncludesTitleAuthorAndThumbnail_WhenAsinAndBaseProvided()
         {
@@ -39,23 +46,17 @@ namespace Listenarr.Api.Tests
             Assert.True(node is JsonObject);
             var obj = node.AsObject();
 
-            Assert.True(obj.ContainsKey("content"));
-            Assert.Equal("Test Book by Jane Doe has been added", obj["content"]?.ToString());
+            Assert.Equal("Test Book by Jane Doe has been added", RequireProperty(obj, "content").ToString());
 
-            Assert.True(obj.ContainsKey("embeds"));
-            Assert.NotNull(obj["embeds"]);
-            var embeds = obj["embeds"]!.AsArray();
+            var embeds = RequireProperty(obj, "embeds").AsArray();
             Assert.Single(embeds);
 
             var embed = embeds[0]!.AsObject();
             Assert.Equal("Test Book", embed["title"]?.ToString());
             // Author should be present as a labeled field
-            Assert.True(embed.ContainsKey("fields"));
-            var fields = embed["fields"]!.AsArray();
+            var fields = RequireProperty(embed, "fields").AsArray();
             Assert.Contains(fields, f => f.AsObject()!["name"]!.ToString() == "Author" && f.AsObject()!["value"]!.ToString() == "Jane Doe");
-            Assert.True(embed.ContainsKey("thumbnail"));
-            Assert.NotNull(embed["thumbnail"]);
-            var thumb = embed["thumbnail"]!.AsObject();
+            var thumb = RequireProperty(embed, "thumbnail").AsObject();
             Assert.Equal("https://listenarr.example.com/api/v1/images/B00TEST", thumb["url"]?.ToString());
         }
     }
@@ -82,9 +83,7 @@ namespace Listenarr.Api.Tests
             // Assert
             Assert.NotNull(node);
             var obj = node.AsObject();
-            Assert.True(obj.ContainsKey("embeds"));
-            Assert.NotNull(obj["embeds"]);
-            var embeds = obj["embeds"]!.AsArray();
+            var embeds = RequireProperty(obj, "embeds").AsArray();
             Assert.Single(embeds);
             var embed = embeds[0]!.AsObject();
 
@@ -92,16 +91,12 @@ namespace Listenarr.Api.Tests
 
             // Author should be present in fields and truncated to field limit (1024)
             string authorFieldValue = string.Empty;
-            if (embed.ContainsKey("fields"))
+            if (embed.TryGetPropertyValue("fields", out var fieldsNode) && fieldsNode is not null)
             {
-                foreach (var f in embed["fields"]!.AsArray())
+                foreach (var fo in fieldsNode.AsArray().Select(f => f!.AsObject()).Where(fo => fo["name"]?.ToString() == "Author"))
                 {
-                    var fo = f!.AsObject();
-                    if (fo["name"]?.ToString() == "Author")
-                    {
-                        authorFieldValue = fo["value"]?.ToString() ?? string.Empty;
-                        break;
-                    }
+                    authorFieldValue = fo["value"]?.ToString() ?? string.Empty;
+                    break;
                 }
             }
 
@@ -130,29 +125,21 @@ namespace Listenarr.Api.Tests
             // Assert
             Assert.NotNull(node);
             var obj = node.AsObject();
-            Assert.True(obj.ContainsKey("embeds"));
-            Assert.NotNull(obj["embeds"]);
-            var embeds = obj["embeds"]!.AsArray();
+            var embeds = RequireProperty(obj, "embeds").AsArray();
             Assert.Single(embeds);
             var embed = embeds[0]!.AsObject();
 
             // fields should include Publisher and Year
-            Assert.True(embed.ContainsKey("fields"));
-            Assert.NotNull(embed["fields"]);
-            var fields = embed["fields"]!.AsArray();
+            var fields = RequireProperty(embed, "fields").AsArray();
             Assert.Contains(fields, f => f.AsObject()!["name"]!.ToString() == "Publisher");
             Assert.Contains(fields, f => f.AsObject()!["name"]!.ToString() == "Year");
 
             // thumbnail should be present (we use thumbnail only now)
-            Assert.True(embed.ContainsKey("thumbnail"));
-            Assert.NotNull(embed["thumbnail"]);
-            var thumb = embed["thumbnail"]!.AsObject();
+            var thumb = RequireProperty(embed, "thumbnail").AsObject();
             Assert.Equal("https://cdn.example.com/covers/test.jpg", thumb["url"]?.ToString());
 
             // footer should contain publisher and year
-            Assert.True(embed.ContainsKey("footer"));
-            Assert.NotNull(embed["footer"]);
-            var footer = embed["footer"]!.AsObject();
+            var footer = RequireProperty(embed, "footer").AsObject();
             var footerText = footer["text"]?.ToString() ?? string.Empty;
             Assert.Contains("Test Publisher", footerText);
             Assert.Contains("2021", footerText);
@@ -177,15 +164,12 @@ namespace Listenarr.Api.Tests
             // Assert
             Assert.NotNull(node);
             var obj = node.AsObject();
-            Assert.True(obj.ContainsKey("embeds"));
-            var embeds = obj["embeds"]!.AsArray();
+            var embeds = RequireProperty(obj, "embeds").AsArray();
             Assert.Single(embeds);
             var embed = embeds[0]!.AsObject();
 
             // thumbnail should be present and converted to absolute URL
-            Assert.True(embed.ContainsKey("thumbnail"));
-            Assert.NotNull(embed["thumbnail"]);
-            var image = embed["thumbnail"]!.AsObject();
+            var image = RequireProperty(embed, "thumbnail").AsObject();
             Assert.Equal("https://listenarr.example.com/api/v1/images/B123RELATIVE", image["url"]?.ToString());
         }
     }
@@ -224,10 +208,8 @@ namespace Listenarr.Api.Tests
             var node = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, derived);
             Assert.NotNull(node);
             var obj = node.AsObject();
-            Assert.NotNull(obj["embeds"]);
-            var embed = obj["embeds"]!.AsArray()[0]!.AsObject();
-            Assert.True(embed.ContainsKey("thumbnail"));
-            var thumb = embed["thumbnail"]!.AsObject();
+            var embed = RequireProperty(obj, "embeds").AsArray()[0]!.AsObject();
+            var thumb = RequireProperty(embed, "thumbnail").AsObject();
             Assert.Equal("https://listenarr.example.com/api/v1/images/B123DERIVE", thumb["url"]?.ToString());
         }
 
@@ -235,19 +217,8 @@ namespace Listenarr.Api.Tests
         public void CreateDiscordPayload_EnforcesOverallEmbedLimit_TruncatesAsNeeded()
         {
             var trigger = "book-added";
-            // Create a very large description and many large fields to exceed the 6000 char limit
+            // Create a very large description to exceed the 6000 char limit
             var desc = new string('D', 5000);
-            var fields = new List<JsonObject>();
-            for (int i = 0; i < 10; i++)
-            {
-                var f = new JsonObject
-                {
-                    ["name"] = "F" + i,
-                    ["value"] = new string('V', 1000),
-                    ["inline"] = true
-                };
-                fields.Add(f);
-            }
 
             var data = new JsonObject
             {
@@ -263,19 +234,17 @@ namespace Listenarr.Api.Tests
             var node = NotificationPayloadBuilder.CreateDiscordPayload(trigger, data, null);
             Assert.NotNull(node);
             var obj = node.AsObject();
-            Assert.NotNull(obj["embeds"]);
-            var embed = obj["embeds"]!.AsArray()[0]!.AsObject();
+            var embed = RequireProperty(obj, "embeds").AsArray()[0]!.AsObject();
 
             // Calculate total embed size
             int total = 0;
-            if (embed.ContainsKey("title")) total += embed["title"]?.ToString()?.Length ?? 0;
-            if (embed.ContainsKey("description")) total += embed["description"]?.ToString()?.Length ?? 0;
-            if (embed.ContainsKey("footer")) total += embed["footer"]?.AsObject()?["text"]?.ToString()?.Length ?? 0;
-            if (embed.ContainsKey("fields"))
+            if (embed.TryGetPropertyValue("title", out var titleNode) && titleNode is not null) total += titleNode.ToString().Length;
+            if (embed.TryGetPropertyValue("description", out var descriptionNode) && descriptionNode is not null) total += descriptionNode.ToString().Length;
+            if (embed.TryGetPropertyValue("footer", out var footerNode) && footerNode is not null) total += footerNode.AsObject()?["text"]?.ToString()?.Length ?? 0;
+            if (embed.TryGetPropertyValue("fields", out var embedFieldsNode) && embedFieldsNode is not null)
             {
-                foreach (var f in embed["fields"]!.AsArray())
+                foreach (var fo in embedFieldsNode.AsArray().Select(f => f!.AsObject()))
                 {
-                    var fo = f!.AsObject();
                     total += fo["name"]?.ToString()?.Length ?? 0;
                     total += fo["value"]?.ToString()?.Length ?? 0;
                 }
@@ -366,10 +335,8 @@ namespace Listenarr.Api.Tests
             Assert.Equal(expectedObj["content"]?.ToString(), postedObj["content"]?.ToString());
 
             // Compare embeds (excluding timestamp)
-            Assert.True(postedObj.ContainsKey("embeds"));
-            Assert.True(expectedObj.ContainsKey("embeds"));
-            var postedEmbeds = postedObj["embeds"]!.AsArray();
-            var expectedEmbeds = expectedObj["embeds"]!.AsArray();
+            var postedEmbeds = RequireProperty(postedObj, "embeds").AsArray();
+            var expectedEmbeds = RequireProperty(expectedObj, "embeds").AsArray();
             Assert.Single(postedEmbeds);
             Assert.Single(expectedEmbeds);
 
@@ -381,20 +348,18 @@ namespace Listenarr.Api.Tests
             Assert.Equal(expectedEmbed["description"]?.ToString(), postedEmbed["description"]?.ToString());
 
             // Compare thumbnail if present
-            if (expectedEmbed.ContainsKey("thumbnail"))
+            if (expectedEmbed.TryGetPropertyValue("thumbnail", out var expectedThumbNode) && expectedThumbNode is not null)
             {
-                Assert.True(postedEmbed.ContainsKey("thumbnail"));
-                var expectedThumb = expectedEmbed["thumbnail"]!.AsObject();
-                var postedThumb = postedEmbed["thumbnail"]!.AsObject();
+                var expectedThumb = expectedThumbNode.AsObject();
+                var postedThumb = RequireProperty(postedEmbed, "thumbnail").AsObject();
                 Assert.Equal(expectedThumb["url"]?.ToString(), postedThumb["url"]?.ToString());
             }
 
             // Compare fields if present
-            if (expectedEmbed.ContainsKey("fields"))
+            if (expectedEmbed.TryGetPropertyValue("fields", out var expectedFieldsNode) && expectedFieldsNode is not null)
             {
-                Assert.True(postedEmbed.ContainsKey("fields"));
-                var expectedFields = expectedEmbed["fields"]!.AsArray();
-                var postedFields = postedEmbed["fields"]!.AsArray();
+                var expectedFields = expectedFieldsNode.AsArray();
+                var postedFields = RequireProperty(postedEmbed, "fields").AsArray();
                 Assert.Equal(expectedFields.Count, postedFields.Count);
 
                 for (int i = 0; i < expectedFields.Count; i++)
@@ -408,11 +373,10 @@ namespace Listenarr.Api.Tests
             }
 
             // Compare footer if present
-            if (expectedEmbed.ContainsKey("footer"))
+            if (expectedEmbed.TryGetPropertyValue("footer", out var expectedFooterNode) && expectedFooterNode is not null)
             {
-                Assert.True(postedEmbed.ContainsKey("footer"));
-                var expectedFooter = expectedEmbed["footer"]!.AsObject();
-                var postedFooter = postedEmbed["footer"]!.AsObject();
+                var expectedFooter = expectedFooterNode.AsObject();
+                var postedFooter = RequireProperty(postedEmbed, "footer").AsObject();
                 Assert.Equal(expectedFooter["text"]?.ToString(), postedFooter["text"]?.ToString());
             }
 
@@ -478,9 +442,9 @@ namespace Listenarr.Api.Tests
                         var bytes = await request.Content!.ReadAsByteArrayAsync();
                         bodyText = System.Text.Encoding.UTF8.GetString(bytes);
                     }
-                    catch
+                    catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
-                        try { bodyText = await request.Content!.ReadAsStringAsync(); } catch { bodyText = string.Empty; }
+                        try { bodyText = await request.Content!.ReadAsStringAsync(); } catch (Exception ex2) when (ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) { bodyText = string.Empty; }
                     }
 
                     capturedBodies.Add(contentType + "\n" + bodyText);

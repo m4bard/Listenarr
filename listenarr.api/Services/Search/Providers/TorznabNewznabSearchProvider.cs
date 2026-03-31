@@ -56,12 +56,12 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
             _logger.LogDebug("Indexer API URL: {Url}", redactedUrl);
 
             // Make HTTP request with User-Agent header
-            var request_msg = new HttpRequestMessage(HttpMethod.Get, url);
+            using var requestMessage = new HttpRequestMessage(HttpMethod.Get, url);
             var version = typeof(TorznabNewznabSearchProvider).Assembly.GetName().Version?.ToString() ?? "0.0.0";
             var userAgent = $"Listenarr/{version} (+https://github.com/Listenarrs/listenarr)";
-            request_msg.Headers.UserAgent.ParseAdd(userAgent);
-            
-            var response = await _httpClient.SendAsync(request_msg);
+            requestMessage.Headers.UserAgent.ParseAdd(userAgent);
+             
+            var response = await _httpClient.SendAsync(requestMessage);
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogWarning("Indexer {Name} returned status {Status}", indexer.Name, response.StatusCode);
@@ -184,14 +184,9 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
 
                     // Parse published date
                     var pubDateStr = item.Element("pubDate")?.Value;
-                    if (DateTime.TryParse(pubDateStr, out var pubDate))
-                    {
-                        result.PublishedDate = pubDate.ToString("o");
-                    }
-                    else
-                    {
-                        result.PublishedDate = string.Empty;
-                    }
+                    result.PublishedDate = DateTime.TryParse(pubDateStr, out var pubDate)
+                        ? pubDate.ToString("o")
+                        : string.Empty;
 
                     // Parse Torznab/Newznab attributes (support both torznab and newznab namespaces)
                     var torznabNs = System.Xml.Linq.XNamespace.Get("http://torznab.com/schemas/2015/feed");
@@ -244,7 +239,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                             case "filetype":
                             case "format":
                                 // Prefer explicit filetype/format attributes
-                                var normalizedFmt = value?.ToLowerInvariant() ?? string.Empty;
+                                var normalizedFmt = value.ToLowerInvariant();
                                 if (normalizedFmt.Contains("m4b")) result.Format = "M4B";
                                 else if (normalizedFmt.Contains("flac")) result.Format = "FLAC";
                                 else if (normalizedFmt.Contains("opus")) result.Format = "OPUS";
@@ -267,7 +262,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                 // Standardized language codes (e.g., ENG, FR)
                                 try
                                 {
-                                    var parsedLang = ParseLanguageFromText(value ?? string.Empty);
+                                    var parsedLang = ParseLanguageFromText(value);
                                     if (!string.IsNullOrEmpty(parsedLang)) result.Language = parsedLang;
                                 }
                                 catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
@@ -285,7 +280,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                                 {
                                     try
                                     {
-                                        var pl = ParseLanguageFromText(value ?? string.Empty);
+                                        var pl = ParseLanguageFromText(value);
                                         if (!string.IsNullOrEmpty(pl)) result.Language = pl;
                                     }
                                     catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
@@ -493,7 +488,7 @@ public class TorznabNewznabSearchProvider : IIndexerSearchProvider
                         // Detect language codes present in title or description (e.g. [ENG / M4B])
                         try
                         {
-                            var lang = ParseLanguageFromText(result.Title + " " + (description ?? string.Empty));
+                            var lang = ParseLanguageFromText(result.Title + " " + description);
                             if (!string.IsNullOrEmpty(lang)) result.Language = lang;
                         }
                         catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { /* Non-critical */ 

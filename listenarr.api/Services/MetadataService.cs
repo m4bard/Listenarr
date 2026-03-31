@@ -150,9 +150,11 @@ namespace Listenarr.Api.Services
                                     // Try to get format info
                                     if (doc.TryGetProperty("format", out var fmt))
                                     {
-                                        if (fmt.TryGetProperty("duration", out var durEl) && durEl.ValueKind == JsonValueKind.String)
+                                        if (fmt.TryGetProperty("duration", out var durEl)
+                                            && durEl.ValueKind == JsonValueKind.String
+                                            && double.TryParse(durEl.GetString(), out var dur))
                                         {
-                                            if (double.TryParse(durEl.GetString(), out var dur)) metadata.Duration = TimeSpan.FromSeconds(dur);
+                                            metadata.Duration = TimeSpan.FromSeconds(dur);
                                         }
                                         if (fmt.TryGetProperty("format_name", out var fmtName) && fmtName.ValueKind == JsonValueKind.String)
                                         {
@@ -192,32 +194,31 @@ namespace Listenarr.Api.Services
                                     // Streams: look for audio stream for sample rate, channels
                                     if (doc.TryGetProperty("streams", out var streams) && streams.ValueKind == JsonValueKind.Array)
                                     {
-                                        foreach (var s in streams.EnumerateArray())
+                                        foreach (var s in streams
+                                            .EnumerateArray()
+                                            .Where(s => s.TryGetProperty("codec_type", out var codecType) && codecType.GetString() == "audio"))
                                         {
-                                            if (s.TryGetProperty("codec_type", out var codecType) && codecType.GetString() == "audio")
+                                            if (s.TryGetProperty("sample_rate", out var sr) && sr.ValueKind == JsonValueKind.String && int.TryParse(sr.GetString(), out var sampleRate))
                                             {
-                                                if (s.TryGetProperty("sample_rate", out var sr) && sr.ValueKind == JsonValueKind.String && int.TryParse(sr.GetString(), out var sampleRate))
-                                                {
-                                                    metadata.SampleRate = sampleRate;
-                                                }
-                                                if (s.TryGetProperty("channels", out var ch) && ch.ValueKind == JsonValueKind.Number)
-                                                {
-                                                    metadata.Channels = ch.GetInt32();
-                                                }
-                                                if (s.TryGetProperty("bit_rate", out var sbr) && sbr.ValueKind == JsonValueKind.String && int.TryParse(sbr.GetString(), out var sbit))
-                                                {
-                                                    metadata.Bitrate = metadata.Bitrate == 0 ? sbit : metadata.Bitrate;
-                                                }
-                                                if (s.TryGetProperty("codec_name", out var codecName) && codecName.ValueKind == JsonValueKind.String)
-                                                {
-                                                    metadata.Codec = codecName.GetString();
-                                                }
-                                                if (s.TryGetProperty("tags", out var streamTags) && streamTags.ValueKind == JsonValueKind.Object)
-                                                {
-                                                    ApplyTagMetadata(metadata, streamTags);
-                                                }
-                                                break;
+                                                metadata.SampleRate = sampleRate;
                                             }
+                                            if (s.TryGetProperty("channels", out var ch) && ch.ValueKind == JsonValueKind.Number)
+                                            {
+                                                metadata.Channels = ch.GetInt32();
+                                            }
+                                            if (s.TryGetProperty("bit_rate", out var sbr) && sbr.ValueKind == JsonValueKind.String && int.TryParse(sbr.GetString(), out var sbit))
+                                            {
+                                                metadata.Bitrate = metadata.Bitrate == 0 ? sbit : metadata.Bitrate;
+                                            }
+                                            if (s.TryGetProperty("codec_name", out var codecName) && codecName.ValueKind == JsonValueKind.String)
+                                            {
+                                                metadata.Codec = codecName.GetString();
+                                            }
+                                            if (s.TryGetProperty("tags", out var streamTags) && streamTags.ValueKind == JsonValueKind.Object)
+                                            {
+                                                ApplyTagMetadata(metadata, streamTags);
+                                            }
+                                            break;
                                         }
                                     }
 
@@ -281,12 +282,9 @@ namespace Listenarr.Api.Services
 
         private static string FirstNonEmpty(params string?[] candidates)
         {
-            foreach (var candidate in candidates)
+            foreach (var candidate in candidates.Where(candidate => !string.IsNullOrWhiteSpace(candidate)))
             {
-                if (!string.IsNullOrWhiteSpace(candidate))
-                {
-                    return candidate!;
-                }
+                return candidate!;
             }
 
             return string.Empty;
@@ -294,15 +292,10 @@ namespace Listenarr.Api.Services
 
         private static string? GetTag(JsonElement tags, params string[] names)
         {
-            foreach (var name in names)
-            {
-                if (TryGetTagValue(tags, name, out var value) && !string.IsNullOrWhiteSpace(value))
-                {
-                    return value.Trim();
-                }
-            }
-
-            return null;
+            return names
+                .Select(name => TryGetTagValue(tags, name, out var value) ? value : null)
+                .FirstOrDefault(static value => !string.IsNullOrWhiteSpace(value))
+                ?.Trim();
         }
 
         private static int? ParseNumericTag(JsonElement tags, params string[] names)
@@ -417,7 +410,7 @@ namespace Listenarr.Api.Services
 
             if (audnexusData.TryGetProperty("authors", out var authors) && authors.ValueKind == JsonValueKind.Array)
             {
-                var authorNames = authors.EnumerateArray().Select(a => a.GetString()).Where(s => !string.IsNullOrEmpty(s));
+                var authorNames = authors.EnumerateArray().Where(a => a.ValueKind == JsonValueKind.String && !string.IsNullOrEmpty(a.GetString())).Select(a => a.GetString()!);
                 metadata.Artist = string.Join(", ", authorNames);
             }
 

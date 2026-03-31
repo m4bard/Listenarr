@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -1581,7 +1581,7 @@ namespace Listenarr.Api.Controllers
         // Diagnostics endpoints removed - cleanup completed
 
         /// <summary>
-        /// Update an existing audiobook's metadata and settings. Supports partial updates — only non-null fields are applied.
+        /// Update an existing audiobook's metadata and settings. Supports partial updates â€” only non-null fields are applied.
         /// </summary>
         /// <param name="id">Audiobook ID.</param>
         /// <param name="updatedAudiobook">Fields to update (null fields are left unchanged).</param>
@@ -1768,7 +1768,7 @@ namespace Listenarr.Api.Controllers
                     {
                         // Safely extract identifier from an internal library image URL
                         const string __marker = "/config/cache/images/library/";
-                        var __url = audiobook.ImageUrl ?? string.Empty;
+                        var __url = audiobook.ImageUrl;
                         var __idx = __url.IndexOf(__marker, StringComparison.OrdinalIgnoreCase);
                         if (__idx >= 0)
                         {
@@ -1880,13 +1880,11 @@ namespace Listenarr.Api.Controllers
 
             if (audiobook.Files != null)
             {
-                foreach (var file in audiobook.Files)
+                foreach (var normalizedTracked in audiobook.Files
+                    .Select(file => NormalizePath(file.Path))
+                    .Where(normalizedTracked => !string.IsNullOrWhiteSpace(normalizedTracked)))
                 {
-                    var normalizedTracked = NormalizePath(file.Path);
-                    if (!string.IsNullOrWhiteSpace(normalizedTracked))
-                    {
-                        paths.Add(normalizedTracked);
-                    }
+                    paths.Add(normalizedTracked!);
                 }
             }
 
@@ -2153,13 +2151,11 @@ namespace Listenarr.Api.Controllers
                 if (_rootFolderService != null)
                 {
                     var roots = await _rootFolderService.GetAllAsync();
-                    foreach (var root in roots)
+                    foreach (var normalizedRoot in roots
+                        .Select(root => NormalizePath(root.Path))
+                        .Where(normalizedRoot => !string.IsNullOrWhiteSpace(normalizedRoot)))
                     {
-                        var normalizedRoot = NormalizePath(root.Path);
-                        if (!string.IsNullOrWhiteSpace(normalizedRoot))
-                        {
-                            protectedRoots.Add(normalizedRoot);
-                        }
+                        protectedRoots.Add(normalizedRoot!);
                     }
                 }
                 else
@@ -2169,13 +2165,11 @@ namespace Listenarr.Api.Controllers
                         .Select(r => r.Path)
                         .ToListAsync();
 
-                    foreach (var root in roots)
+                    foreach (var normalizedRoot in roots
+                        .Select(root => NormalizePath(root))
+                        .Where(normalizedRoot => !string.IsNullOrWhiteSpace(normalizedRoot)))
                     {
-                        var normalizedRoot = NormalizePath(root);
-                        if (!string.IsNullOrWhiteSpace(normalizedRoot))
-                        {
-                            protectedRoots.Add(normalizedRoot);
-                        }
+                        protectedRoots.Add(normalizedRoot!);
                     }
                 }
             }
@@ -2316,7 +2310,7 @@ namespace Listenarr.Api.Controllers
                 return FileUtils.NormalizeStoredPath(path)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             }
-            catch
+            catch (ArgumentException)
             {
                 return null;
             }
@@ -2468,7 +2462,7 @@ namespace Listenarr.Api.Controllers
                                     {
                                         // Safely extract identifier from an internal library image URL
                                         const string __marker = "/config/cache/images/library/";
-                                        var __url = audiobook.ImageUrl ?? string.Empty;
+                                        var __url = audiobook.ImageUrl;
                                         var __idx = __url.IndexOf(__marker, StringComparison.OrdinalIgnoreCase);
                                         if (__idx >= 0)
                                         {
@@ -2555,28 +2549,22 @@ namespace Listenarr.Api.Controllers
                 }
             }
 
-            object result;
-            if (errors.Any())
-            {
-                result = new
+            object result = errors.Any()
+                ? new
                 {
                     message = $"Partially successful: deleted {deletedCount} audiobook{(deletedCount != 1 ? "s" : "")}, {errors.Count} error{(errors.Count != 1 ? "s" : "")} occurred",
                     deletedCount,
                     deletedImagesCount,
                     ids = deletedIds,
                     errors
-                };
-            }
-            else
-            {
-                result = new
+                }
+                : new
                 {
                     message = $"Successfully deleted {deletedCount} audiobook{(deletedCount != 1 ? "s" : "")}",
                     deletedCount,
                     deletedImagesCount,
                     ids = deletedIds
                 };
-            }
 
             return Ok(result);
         }
@@ -2630,15 +2618,9 @@ namespace Listenarr.Api.Controllers
                     {
                         try
                         {
-                            bool monVal;
-                            if (monitoredObj is JsonElement je)
-                            {
-                                monVal = je.ValueKind == JsonValueKind.True;
-                            }
-                            else
-                            {
-                                monVal = Convert.ToBoolean(monitoredObj);
-                            }
+                            var monVal = monitoredObj is JsonElement je
+                                ? je.ValueKind == JsonValueKind.True
+                                : Convert.ToBoolean(monitoredObj);
 
                             audiobook.Monitored = monVal;
                             changed = true;
@@ -2665,15 +2647,9 @@ namespace Listenarr.Api.Controllers
                     {
                         try
                         {
-                            int qpVal;
-                            if (qpObj is JsonElement jq)
-                            {
-                                qpVal = jq.GetInt32();
-                            }
-                            else
-                            {
-                                qpVal = Convert.ToInt32(qpObj);
-                            }
+                            var qpVal = qpObj is JsonElement jq
+                                ? jq.GetInt32()
+                                : Convert.ToInt32(qpObj);
 
                             audiobook.QualityProfileId = qpVal;
                             changed = true;
@@ -3069,24 +3045,23 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // Add history entries for newly scanned files
-                foreach (var fileRecord in created)
+                foreach (var historyEntry in created.Select(fileRecord => new History
+                         {
+                             AudiobookId = audiobook.Id,
+                             AudiobookTitle = audiobook.Title ?? "Unknown",
+                             EventType = "File Added",
+                             Message = $"File scanned and added: {Path.GetFileName(fileRecord.Path)}",
+                             Source = "Scan",
+                             Data = JsonSerializer.Serialize(new
+                             {
+                                 FilePath = fileRecord.Path,
+                                 FileSize = fileRecord.Size,
+                                 Format = fileRecord.Format,
+                                 Source = fileRecord.Source
+                             }),
+                             Timestamp = DateTime.UtcNow
+                         }))
                 {
-                    var historyEntry = new History
-                    {
-                        AudiobookId = audiobook.Id,
-                        AudiobookTitle = audiobook.Title ?? "Unknown",
-                        EventType = "File Added",
-                        Message = $"File scanned and added: {Path.GetFileName(fileRecord.Path)}",
-                        Source = "Scan",
-                        Data = JsonSerializer.Serialize(new
-                        {
-                            FilePath = fileRecord.Path,
-                            FileSize = fileRecord.Size,
-                            Format = fileRecord.Format,
-                            Source = fileRecord.Source
-                        }),
-                        Timestamp = DateTime.UtcNow
-                    };
                     db.History.Add(historyEntry);
                 }
                 await db.SaveChangesAsync();
@@ -3293,11 +3268,11 @@ namespace Listenarr.Api.Controllers
                 if (!Path.IsPathRooted(final))
                 {
                     var root = settings.OutputPath ?? string.Empty;
-                    final = Path.Combine(root, final.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
+                    final = Path.Join(root, final.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 }
 
                 // If caller explicitly asked to change the DB without moving files, update the BasePath and return early.
-                if (request.MoveFiles.HasValue && request.MoveFiles.Value == false)
+                if (request.MoveFiles == false)
                 {
                     try
                     {
@@ -4071,9 +4046,8 @@ namespace Listenarr.Api.Controllers
             var firstPath = FileUtils.NormalizeStoredPath(paths[0]);
             var commonPath = firstPath;
 
-            foreach (var rawPath in paths.Skip(1))
+            foreach (var path in paths.Skip(1).Select(rawPath => FileUtils.NormalizeStoredPath(rawPath)))
             {
-                var path = FileUtils.NormalizeStoredPath(rawPath);
                 var minLength = Math.Min(commonPath.Length, path.Length);
                 var commonLength = 0;
 
@@ -4087,13 +4061,9 @@ namespace Listenarr.Api.Controllers
 
                 // Ensure we don't break in the middle of a directory name
                 if (commonLength < commonPath.Length)
-                {
-                    var lastSep = commonPath.LastIndexOf(Path.DirectorySeparatorChar, commonLength - 1);
-                    if (lastSep >= 0)
-                        commonLength = lastSep + 1;
-                    else
-                        commonLength = 0;
-                }
+                    commonLength = commonPath.LastIndexOf(Path.DirectorySeparatorChar, commonLength - 1) is var lastSep && lastSep >= 0
+                        ? lastSep + 1
+                        : 0;
 
                 commonPath = commonPath.Substring(0, commonLength);
 
@@ -4791,5 +4761,6 @@ namespace Listenarr.Api.Controllers
 
     }
 }
+
 
 

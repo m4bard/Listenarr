@@ -117,7 +117,7 @@ namespace Listenarr.Api.Services
                 }
 
                 result.CompletedAt = DateTime.UtcNow;
-                result.Success = checkResult.Success && importResult.Success && verifyResult.Success;
+                result.Success = verifyResult.Success;
 
                 if (result.Success)
                 {

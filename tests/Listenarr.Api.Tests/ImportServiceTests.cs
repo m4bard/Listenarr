@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
@@ -226,8 +226,8 @@ namespace Listenarr.Api.Tests
             Assert.NotNull(audiobook);
             Assert.Equal(Path.GetFullPath(outputRoot), audiobook!.BasePath);
             Assert.Equal(2, files.Count);
-            Assert.Contains(files, f => f.Path == Path.Combine(outputRoot, "Jack of Shadows-01.mp3"));
-            Assert.Contains(files, f => f.Path == Path.Combine(outputRoot, "Jack of Shadows-02.mp3"));
+            Assert.Contains(files, f => f.Path == Path.Join(outputRoot, "Jack of Shadows-01.mp3"));
+            Assert.Contains(files, f => f.Path == Path.Join(outputRoot, "Jack of Shadows-02.mp3"));
 
             TryDeleteDirectory(sourceDir, recursive: true);
             TryDeleteDirectory(outputRoot, recursive: true);
@@ -285,9 +285,9 @@ namespace Listenarr.Api.Tests
                 .Where(r => r.Success && !string.IsNullOrWhiteSpace(r.SourcePath) && !string.IsNullOrWhiteSpace(r.FinalPath))
                 .ToDictionary(r => r.SourcePath!, r => r.FinalPath!, StringComparer.OrdinalIgnoreCase);
 
-            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-01.mp3"), mapped[foreword]);
-            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-02.mp3"), mapped[chapter1]);
-            Assert.Equal(Path.Combine(outputRoot, "Jack of Shadows-03.mp3"), mapped[chapter2]);
+            Assert.Equal(Path.Join(outputRoot, "Jack of Shadows-01.mp3"), mapped[foreword]);
+            Assert.Equal(Path.Join(outputRoot, "Jack of Shadows-02.mp3"), mapped[chapter1]);
+            Assert.Equal(Path.Join(outputRoot, "Jack of Shadows-03.mp3"), mapped[chapter2]);
 
             TryDeleteDirectory(sourceDir, recursive: true);
             TryDeleteDirectory(outputRoot, recursive: true);

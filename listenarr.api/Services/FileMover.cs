@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -273,13 +273,11 @@ namespace Listenarr.Api.Services
                 }
 
                 // Try creating hardlink using P/Invoke
-                bool success = false;
                 try
                 {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        success = CreateHardLink(destFile, sourceFile, IntPtr.Zero);
-                        if (!success)
+                        if (!CreateHardLink(destFile, sourceFile, IntPtr.Zero))
                         {
                             var error = Marshal.GetLastWin32Error();
                             throw new IOException($"CreateHardLink failed with error code {error}");
@@ -294,7 +292,6 @@ namespace Listenarr.Api.Services
                             var error = Marshal.GetLastWin32Error();
                             throw new IOException($"link() failed with error code {error}");
                         }
-                        success = true;
                     }
 
                     _logger.LogInformation("Hardlinked file: {Source} -> {Dest}", sourceFile, destFile);
@@ -328,13 +325,13 @@ namespace Listenarr.Api.Services
             Directory.CreateDirectory(dst);
             foreach (var dir in Directory.GetDirectories(src, "*", SearchOption.TopDirectoryOnly))
             {
-                var sub = Path.Combine(dst, Path.GetFileName(dir));
+                var sub = Path.Join(dst, Path.GetFileName(dir));
                 CopyDirRecursive(dir, sub);
             }
 
             foreach (var file in Directory.GetFiles(src, "*.*", SearchOption.TopDirectoryOnly))
             {
-                var destFile = Path.Combine(dst, Path.GetFileName(file));
+                var destFile = Path.Join(dst, Path.GetFileName(file));
                 File.Copy(file, destFile, true);
             }
         }
@@ -418,4 +415,5 @@ namespace Listenarr.Api.Services
         }
     }
 }
+
 

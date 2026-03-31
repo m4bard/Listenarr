@@ -40,7 +40,8 @@ namespace Listenarr.Api.Tests
             var mockEnv = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
             mockEnv.SetupGet(e => e.ContentRootPath).Returns(tempRoot);
 
-            var audibleMock = new Mock<AudibleService>(new System.Net.Http.HttpClient(), Mock.Of<ILogger<AudibleService>>());
+            using var httpClientForAudible = new System.Net.Http.HttpClient();
+            var audibleMock = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>());
             var audnexusMock = Mock.Of<IAudnexusService>();
             var controller = new ImagesController(mockImageCache.Object, mockMetadata.Object, audibleMock.Object, audnexusMock, Mock.Of<IAudiobookRepository>(), Mock.Of<ILogger<ImagesController>>(), mockEnv.Object);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
@@ -66,7 +67,7 @@ namespace Listenarr.Api.Tests
             {
                 File.Delete(fullPath);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }
@@ -75,7 +76,7 @@ namespace Listenarr.Api.Tests
             {
                 Directory.Delete(Path.Join(tempRoot, "config", "cache", "images", "temp"), true);
             }
-            catch (System.Exception)
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 // Best-effort test cleanup; ignore cleanup failures.
             }

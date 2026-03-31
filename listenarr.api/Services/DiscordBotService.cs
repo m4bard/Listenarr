@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace Listenarr.Api.Services
@@ -55,14 +55,14 @@ namespace Listenarr.Api.Services
 
             try
             {
-                var botDirectory = Path.Combine(_hostEnvironment.ContentRootPath, "tools", "discord-bot");
+                var botDirectory = Path.Join(_hostEnvironment.ContentRootPath, "tools", "discord-bot");
                 if (!Directory.Exists(botDirectory))
                 {
                     _logger.LogError("Discord bot directory not found at {Path}", botDirectory);
                     return false;
                 }
 
-                var indexJsPath = Path.Combine(botDirectory, "index.js");
+                var indexJsPath = Path.Join(botDirectory, "index.js");
                 if (!File.Exists(indexJsPath))
                 {
                     _logger.LogError("Discord bot index.js not found at {Path}", indexJsPath);
@@ -103,14 +103,7 @@ namespace Listenarr.Api.Services
                     _logger.LogWarning(ex, "Failed to read startup config for API key passthrough");
                 }
 
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    startInfo.Arguments = "/c node index.js";
-                }
-                else
-                {
-                    startInfo.Arguments = "-c \"node index.js\"";
-                }
+                startInfo.Arguments = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "/c node index.js" : "-c \"node index.js\"";
 
                 _logger.LogInformation("Starting Discord bot with command: {Command} {Args} in {WorkingDir}",
                     startInfo.FileName, startInfo.Arguments, startInfo.WorkingDirectory);
@@ -428,3 +421,4 @@ namespace Listenarr.Api.Services
 
     }
 }
+

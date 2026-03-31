@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
  * 
@@ -149,7 +149,7 @@ public class FileSystemController : ControllerBase
                 try
                 {
                     // Try to create a temporary file to check write permissions
-                    var testFile = Path.Combine(normalizedPath, $".listenarr_test_{Guid.NewGuid()}.tmp");
+                    var testFile = Path.Join(normalizedPath, $".listenarr_test_{Guid.NewGuid()}.tmp");
                     System.IO.File.WriteAllText(testFile, "test");
                     System.IO.File.Delete(testFile);
                     isWritable = true;
@@ -186,18 +186,15 @@ public class FileSystemController : ControllerBase
         if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
         {
             // Get all drives on Windows
-            foreach (var drive in DriveInfo.GetDrives())
+            foreach (var drive in DriveInfo.GetDrives().Where(drive => drive.IsReady))
             {
-                if (drive.IsReady)
+                items.Add(new FileSystemItem
                 {
-                    items.Add(new FileSystemItem
-                    {
-                        Name = $"{drive.Name} ({drive.VolumeLabel})",
-                        Path = drive.Name,
-                        IsDirectory = true,
-                        LastModified = DateTime.Now
-                    });
-                }
+                    Name = $"{drive.Name} ({drive.VolumeLabel})",
+                    Path = drive.Name,
+                    IsDirectory = true,
+                    LastModified = DateTime.Now
+                });
             }
         }
         else
@@ -213,20 +210,13 @@ public class FileSystemController : ControllerBase
 
             // Add common directories
             var commonDirs = new[] { "/home", "/mnt", "/media", "/opt" };
-            foreach (var dir in commonDirs)
+            items.AddRange(commonDirs.Where(Directory.Exists).Select(dir => new DirectoryInfo(dir)).Select(dirInfo => new FileSystemItem
             {
-                if (Directory.Exists(dir))
-                {
-                    var dirInfo = new DirectoryInfo(dir);
-                    items.Add(new FileSystemItem
-                    {
-                        Name = dirInfo.Name,
-                        Path = dirInfo.FullName,
-                        IsDirectory = true,
-                        LastModified = dirInfo.LastWriteTime
-                    });
-                }
-            }
+                Name = dirInfo.Name,
+                Path = dirInfo.FullName,
+                IsDirectory = true,
+                LastModified = dirInfo.LastWriteTime
+            }));
         }
 
         return new FileSystemBrowseResponse
@@ -271,7 +261,7 @@ public class FileSystemController : ControllerBase
                 DestVolume = destRoot,
                 Message = sameVolume 
                     ? "Paths are on the same volume" 
-                    : "⚠️ Moving across volumes will break hardlinks and create independent copies"
+                    : "âš ï¸ Moving across volumes will break hardlinks and create independent copies"
             });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -317,4 +307,5 @@ public class VolumeCheckResponse
     public string? DestVolume { get; set; }
     public string? Message { get; set; }
 }
+
 

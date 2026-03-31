@@ -33,7 +33,7 @@ namespace Listenarr.Api.Tests
             db.Audiobooks.Add(book);
             await db.SaveChangesAsync();
 
-            var testPath = Path.Combine(Path.GetTempPath(), $"dl-test-{Guid.NewGuid()}.m4b");
+            var testPath = Path.Join(Path.GetTempPath(), $"dl-test-{Guid.NewGuid()}.m4b");
             await File.WriteAllTextAsync(testPath, "dummy content");
 
             var download = new Download
@@ -75,8 +75,6 @@ namespace Listenarr.Api.Tests
             var loggerAfMock = new Mock<Microsoft.Extensions.Logging.ILogger<AudioFileService>>();
             services.AddScoped<IAudioFileService, Listenarr.Api.Services.AudioFileService>();
             services.AddSingleton(loggerAfMock.Object);
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             // Construct DownloadService with required dependencies (use nulls/mocks where not needed)
             var repoMock = new Mock<IAudiobookRepository>();
@@ -86,7 +84,7 @@ namespace Listenarr.Api.Tests
             configMock.Setup(c => c.GetApplicationSettingsAsync())
                 .ReturnsAsync(new ApplicationSettings { OutputPath = Path.GetTempPath(), EnableMetadataProcessing = true, CompletedFileAction = "Move" });
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            var httpClient = new System.Net.Http.HttpClient();
+            using var httpClient = new System.Net.Http.HttpClient();
             var httpClientFactoryMock = new Mock<IHttpClientFactory>();
             httpClientFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
             var cacheMock = new Mock<IMemoryCache>();
@@ -171,7 +169,7 @@ namespace Listenarr.Api.Tests
             var db = new ListenArrDbContext(options);
 
             // Create a temporary base path directory for the audiobook
-            var basePath = Path.Combine(Path.GetTempPath(), $"audiobook-base-{Guid.NewGuid()}");
+            var basePath = Path.Join(Path.GetTempPath(), $"audiobook-base-{Guid.NewGuid()}");
             Directory.CreateDirectory(basePath);
 
             // Seed an audiobook with BasePath
@@ -185,9 +183,9 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create source file in a different location
-            var sourceDir = Path.Combine(Path.GetTempPath(), $"source-{Guid.NewGuid()}");
+            var sourceDir = Path.Join(Path.GetTempPath(), $"source-{Guid.NewGuid()}");
             Directory.CreateDirectory(sourceDir);
-            var sourceFile = Path.Combine(sourceDir, "source-file.m4b");
+            var sourceFile = Path.Join(sourceDir, "source-file.m4b");
             await File.WriteAllTextAsync(sourceFile, "dummy content");
 
             var download = new Download
@@ -246,13 +244,11 @@ namespace Listenarr.Api.Tests
             var loggerAfMock = new Mock<Microsoft.Extensions.Logging.ILogger<AudioFileService>>();
             services.AddScoped<IAudioFileService, Listenarr.Api.Services.AudioFileService>();
             services.AddSingleton(loggerAfMock.Object);
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             // Construct DownloadService
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            var httpClient = new System.Net.Http.HttpClient();
+            using var httpClient = new System.Net.Http.HttpClient();
             var httpClientFactoryMock = new Mock<IHttpClientFactory>();
             httpClientFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
             var cacheMock = new Mock<IMemoryCache>();
@@ -340,7 +336,7 @@ namespace Listenarr.Api.Tests
                 if (Directory.Exists(basePath)) Directory.Delete(basePath, true);
                 if (Directory.Exists(sourceDir)) Directory.Delete(sourceDir, true);
             }
-            catch { /* Ignore cleanup errors */ }
+            catch (Exception ex) when (ex is not OutOfMemoryException && ex is not StackOverflowException) { /* Ignore cleanup errors */ }
         }
     }
 }

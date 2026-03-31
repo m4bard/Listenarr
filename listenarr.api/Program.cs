@@ -122,15 +122,15 @@ var isLikelyTestHost =
     !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("DOTNET_TEST_RUNNER"));
 
 // Configure Serilog for structured logging, file rotation and SignalR broadcasting
-var logFilePath = Path.Combine(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
+var logFilePath = Path.Join(builder.Environment.ContentRootPath, "config", "logs", "listenarr-.log");
 var signalRSink = new SignalRLogSink();
 // Prefer explicit environment variable (useful for Docker/runtime overrides)
 var logLevelEnv = Environment.GetEnvironmentVariable("LISTENARR_LOG_LEVEL");
 
 // Ensure an external config file in 'config/appsettings/appsettings.json' is available and registered.
 // If the file does not exist on first startup, create a default one so non-Docker users have a place to customize.
-var externalConfigRelative = Path.Combine("config", "appsettings", "appsettings.json");
-var externalConfigAbsolute = Path.Combine(builder.Environment.ContentRootPath, externalConfigRelative);
+var externalConfigRelative = Path.Join("config", "appsettings", "appsettings.json");
+var externalConfigAbsolute = Path.Join(builder.Environment.ContentRootPath, externalConfigRelative);
 try
 {
     var dir = Path.GetDirectoryName(externalConfigAbsolute) ?? string.Empty;
@@ -537,15 +537,15 @@ builder.Services.AddHttpClient("DirectDownload")
 var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
 var hasExplicitSqliteDbPathOverride = !string.IsNullOrWhiteSpace(sqliteDbPathOverride);
 var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
-    ? Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
+    ? Path.Join(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
     : (Path.IsPathRooted(sqliteDbPathOverride)
         ? sqliteDbPathOverride
-        : Path.Combine(builder.Environment.ContentRootPath, sqliteDbPathOverride));
+        : Path.Join(builder.Environment.ContentRootPath, sqliteDbPathOverride));
 
 // Safety guard: test hosts must never write to the repository DB path.
 if (builder.Environment.IsEnvironment("Test") || isLikelyTestHost)
 {
-    var repoDbPath = Path.GetFullPath(Path.Combine(builder.Environment.ContentRootPath, "config", "database", "listenarr.db"));
+    var repoDbPath = Path.GetFullPath(Path.Join(builder.Environment.ContentRootPath, "config", "database", "listenarr.db"));
     var resolvedSqlitePath = Path.GetFullPath(sqliteDbPath);
     if (string.Equals(resolvedSqlitePath, repoDbPath, StringComparison.OrdinalIgnoreCase))
     {
@@ -817,7 +817,7 @@ builder.Services.AddSwaggerGen(options =>
     try
     {
         var xmlFile = System.Reflection.Assembly.GetExecutingAssembly().GetName().Name + ".xml";
-        var xmlPath = Path.Combine(AppContext.BaseDirectory, xmlFile);
+        var xmlPath = Path.Join(AppContext.BaseDirectory, xmlFile);
         if (File.Exists(xmlPath))
         {
             options.IncludeXmlComments(xmlPath);
@@ -900,7 +900,7 @@ if (builder.Environment.IsDevelopment())
 // This avoids issues where tokens are protected with an ephemeral key ring and
 // cannot be validated later.
 {
-    var keyDir = Path.Combine(builder.Environment.ContentRootPath, "config", "dataprotection-keys");
+    var keyDir = Path.Join(builder.Environment.ContentRootPath, "config", "dataprotection-keys");
     if (!System.IO.Directory.Exists(keyDir)) System.IO.Directory.CreateDirectory(keyDir);
     builder.Services.AddDataProtection()
         .PersistKeysToFileSystem(new System.IO.DirectoryInfo(keyDir))
@@ -987,7 +987,7 @@ app.UseForwardedHeaders();
 // Map `/placeholder.svg` to the frontend `fe/public/placeholder.svg` so the API
 // serves the exact same placeholder image used by the frontend without
 // modifying any frontend files.
-var frontendPlaceholderPath = Path.Combine(app.Environment.ContentRootPath, "..", "fe", "public", "placeholder.svg");
+var frontendPlaceholderPath = Path.Join(app.Environment.ContentRootPath, "..", "fe", "public", "placeholder.svg");
 app.MapGet("/placeholder.svg", async context =>
 {
     try
@@ -1001,7 +1001,7 @@ app.MapGet("/placeholder.svg", async context =>
         }
 
         // Fallback to backend wwwroot placeholder if the frontend file is not present
-        var fallback = Path.Combine(app.Environment.ContentRootPath, "wwwroot", "placeholder.svg");
+        var fallback = Path.Join(app.Environment.ContentRootPath, "wwwroot", "placeholder.svg");
         if (File.Exists(fallback))
         {
             context.Response.ContentType = "image/svg+xml";
@@ -1023,7 +1023,7 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 
 // Serve cached images from config/cache/images directory
-var cacheImagesPath = Path.Combine(app.Environment.ContentRootPath, "config", "cache", "images");
+var cacheImagesPath = Path.Join(app.Environment.ContentRootPath, "config", "cache", "images");
 if (Directory.Exists(cacheImagesPath))
 {
     app.UseStaticFiles(new StaticFileOptions

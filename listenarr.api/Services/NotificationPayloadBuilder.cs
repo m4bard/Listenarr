@@ -49,10 +49,9 @@ namespace Listenarr.Api.Services
                 if (obj.TryGetPropertyValue("title", out var t) && t != null) title = t.ToString();
                 if (obj.TryGetPropertyValue("authors", out var a) && a != null)
                 {
-                    if (a is JsonArray arr && arr.Count > 0)
-                        author = arr[0]?.ToString() ?? string.Empty;
-                    else
-                        author = a.ToString() ?? string.Empty;
+                    author = a is JsonArray arr && arr.Count > 0
+                        ? arr[0]?.ToString() ?? string.Empty
+                        : a.ToString() ?? string.Empty;
                 }
                 if (obj.TryGetPropertyValue("asin", out var s) && s != null) asin = s.ToString();
                 if (obj.TryGetPropertyValue("publisher", out var p) && p != null) publisher = p.ToString();
@@ -62,18 +61,16 @@ namespace Listenarr.Api.Services
                     var pdStr = pd.ToString();
                     if (!string.IsNullOrWhiteSpace(pdStr))
                     {
-                        if (DateTime.TryParse(pdStr, out var pdDate)) year = pdDate.Year.ToString();
-                        else if (pdStr.Length >= 4) year = pdStr.Substring(0, 4);
+                        year = DateTime.TryParse(pdStr, out var pdDate) ? pdDate.Year.ToString() : pdStr.Length >= 4 ? pdStr.Substring(0, 4) : year;
                     }
                 }
                 if (obj.TryGetPropertyValue("imageUrl", out var iu) && iu != null) imageUrl = iu.ToString();
                 if (obj.TryGetPropertyValue("coverUrl", out var cu) && cu != null) imageUrl = imageUrl ?? cu.ToString();
                 if (obj.TryGetPropertyValue("narrators", out var n) && n != null)
                 {
-                    if (n is JsonArray narrArr && narrArr.Count > 0)
-                        narrators = string.Join(", ", narrArr.Select(x => x?.ToString()).Where(x => !string.IsNullOrEmpty(x)));
-                    else
-                        narrators = n.ToString();
+                    narrators = n is JsonArray narrArr && narrArr.Count > 0
+                        ? string.Join(", ", narrArr.Where(x => x != null && !string.IsNullOrEmpty(x.ToString())).Select(x => x!.ToString()))
+                        : n.ToString();
                 }
                 if (obj.TryGetPropertyValue("description", out var d) && d != null) description = d.ToString();
             }
@@ -201,9 +198,8 @@ namespace Listenarr.Api.Services
                 int total = titleText.Length + descriptionText.Length;
                 if (e.TryGetPropertyValue("fields", out var fieldsObj) && fieldsObj != null)
                 {
-                    foreach (var f in fieldsObj!.AsArray())
+                    foreach (var fo in fieldsObj!.AsArray().Select(f => f!.AsObject()))
                     {
-                        var fo = f!.AsObject();
                         var n = fo["name"]?.ToString() ?? string.Empty;
                         var v = fo["value"]?.ToString() ?? string.Empty;
                         total += n.Length + v.Length;
@@ -269,10 +265,9 @@ namespace Listenarr.Api.Services
                 if (obj.TryGetPropertyValue("title", out var t) && t != null) title = t.ToString();
                 if (obj.TryGetPropertyValue("authors", out var a) && a != null)
                 {
-                    if (a is JsonArray arr && arr.Count > 0)
-                        author = arr[0]?.ToString() ?? string.Empty;
-                    else
-                        author = a.ToString() ?? string.Empty;
+                    author = a is JsonArray arr && arr.Count > 0
+                        ? arr[0]?.ToString() ?? string.Empty
+                        : a.ToString() ?? string.Empty;
                 }
                 if (obj.TryGetPropertyValue("asin", out var s) && s != null) asin = s.ToString();
                 if (obj.TryGetPropertyValue("publisher", out var p) && p != null) publisher = p.ToString();
@@ -282,18 +277,16 @@ namespace Listenarr.Api.Services
                     var pdStr = pd.ToString();
                     if (!string.IsNullOrWhiteSpace(pdStr))
                     {
-                        if (DateTime.TryParse(pdStr, out var pdDate)) year = pdDate.Year.ToString();
-                        else if (pdStr.Length >= 4) year = pdStr.Substring(0, 4);
+                        year = DateTime.TryParse(pdStr, out var pdDate) ? pdDate.Year.ToString() : pdStr.Length >= 4 ? pdStr.Substring(0, 4) : year;
                     }
                 }
                 if (obj.TryGetPropertyValue("imageUrl", out var iu) && iu != null) imageUrl = iu.ToString();
                 if (obj.TryGetPropertyValue("coverUrl", out var cu) && cu != null) imageUrl = imageUrl ?? cu.ToString();
                 if (obj.TryGetPropertyValue("narrators", out var n) && n != null)
                 {
-                    if (n is JsonArray narrArr && narrArr.Count > 0)
-                        narrators = string.Join(", ", narrArr.Select(x => x?.ToString()).Where(x => !string.IsNullOrEmpty(x)));
-                    else
-                        narrators = n.ToString();
+                    narrators = n is JsonArray narrArr && narrArr.Count > 0
+                        ? string.Join(", ", narrArr.Where(x => x != null && !string.IsNullOrEmpty(x.ToString())).Select(x => x!.ToString()))
+                        : n.ToString();
                 }
                 if (obj.TryGetPropertyValue("description", out var d) && d != null) description = d.ToString();
             }

@@ -29,18 +29,9 @@ public class SearchResultFilterPipeline
 
         foreach (var result in results)
         {
-            bool shouldFilter = false;
-            string? filterReason = null;
-
-            foreach (var filter in _filters)
-            {
-                if (filter.ShouldFilter(result))
-                {
-                    shouldFilter = true;
-                    filterReason = filter.FilterReason;
-                    break;
-                }
-            }
+            var matchingFilter = _filters.FirstOrDefault(f => f.ShouldFilter(result));
+            bool shouldFilter = matchingFilter != null;
+            string? filterReason = matchingFilter?.FilterReason;
 
             if (shouldFilter)
             {
@@ -64,13 +55,10 @@ public class SearchResultFilterPipeline
     /// </summary>
     public bool WouldFilter(SearchResult result, out string? filterReason)
     {
-        foreach (var filter in _filters)
+        foreach (var filter in _filters.Where(f => f.ShouldFilter(result)))
         {
-            if (filter.ShouldFilter(result))
-            {
-                filterReason = filter.FilterReason;
-                return true;
-            }
+            filterReason = filter.FilterReason;
+            return true;
         }
 
         filterReason = null;

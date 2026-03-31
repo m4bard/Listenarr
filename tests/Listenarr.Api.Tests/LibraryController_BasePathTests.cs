@@ -78,7 +78,7 @@ namespace Listenarr.Api.Tests
             var result = (string)method.Invoke(controller, new object[] { audiobook, rootPath, fileNamingPattern });
 
             // Assert
-            var expected = Path.Combine("/server/mnt/drive/Audiobooks", "Stephen Graham Jones/The Buffalo Hunter Hunter");
+            var expected = Path.Join("/server/mnt/drive/Audiobooks", "Stephen Graham Jones/The Buffalo Hunter Hunter");
             Assert.Equal(expected, result);
         }
 
@@ -144,7 +144,7 @@ namespace Listenarr.Api.Tests
             var result = (string)method.Invoke(controller, new object[] { audiobook, rootPath, fileNamingPattern });
 
             // Assert
-            var expected = Path.Combine("/server/mnt/drive/Audiobooks", "Stephen King/The Dark Tower/The Gunslinger");
+            var expected = Path.Join("/server/mnt/drive/Audiobooks", "Stephen King/The Dark Tower/The Gunslinger");
             Assert.Equal(expected, result);
         }
     }

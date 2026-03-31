@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Net.Http;
 using System.Threading.Tasks;
@@ -15,36 +15,37 @@ namespace Listenarr.Api.Tests
         public async Task MoveToAuthorLibraryStorageAsync_UsesRepoRoot_WhenDevContentRootPointsToBinOutput()
         {
             var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-image-cache-tests", Guid.NewGuid().ToString("N"));
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-image-cache-tests", Guid.NewGuid().ToString("N"));
 
             try
             {
                 Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
 
-                var repoApiRoot = Path.Combine(tempRoot, "listenarr.api");
-                var binRoot = Path.Combine(repoApiRoot, "bin", "Debug", "net8.0");
-                Directory.CreateDirectory(Path.Combine(repoApiRoot, "config"));
-                Directory.CreateDirectory(Path.Combine(binRoot, "config"));
-                File.WriteAllText(Path.Combine(repoApiRoot, "listenarr.api.csproj"), "<Project />");
+                var repoApiRoot = Path.Join(tempRoot, "listenarr.api");
+                var binRoot = Path.Join(repoApiRoot, "bin", "Debug", "net8.0");
+                Directory.CreateDirectory(Path.Join(repoApiRoot, "config"));
+                Directory.CreateDirectory(Path.Join(binRoot, "config"));
+                File.WriteAllText(Path.Join(repoApiRoot, "listenarr.api.csproj"), "<Project />");
 
+                using var httpClientForFactory = new HttpClient();
                 var httpClientFactory = new Mock<IHttpClientFactory>();
                 httpClientFactory
                     .Setup(factory => factory.CreateClient(It.IsAny<string>()))
-                    .Returns(new HttpClient());
+                    .Returns(httpClientForFactory);
 
                 var service = new ImageCacheService(
                     Mock.Of<ILogger<ImageCacheService>>(),
                     httpClientFactory.Object,
                     binRoot);
 
-                var repoTempImage = Path.Combine(repoApiRoot, "config", "cache", "images", "temp", "AUTHOR123.jpg");
+                var repoTempImage = Path.Join(repoApiRoot, "config", "cache", "images", "temp", "AUTHOR123.jpg");
                 Directory.CreateDirectory(Path.GetDirectoryName(repoTempImage)!);
                 await File.WriteAllBytesAsync(repoTempImage, new byte[] { 1, 2, 3, 4 });
 
                 var relativePath = await service.MoveToAuthorLibraryStorageAsync("AUTHOR123");
 
-                var expectedAuthorImage = Path.Combine(repoApiRoot, "config", "cache", "images", "authors", "AUTHOR123.jpg");
-                var wrongAuthorImage = Path.Combine(binRoot, "config", "cache", "images", "authors", "AUTHOR123.jpg");
+                var expectedAuthorImage = Path.Join(repoApiRoot, "config", "cache", "images", "authors", "AUTHOR123.jpg");
+                var wrongAuthorImage = Path.Join(binRoot, "config", "cache", "images", "authors", "AUTHOR123.jpg");
 
                 Assert.Equal("config/cache/images/authors/AUTHOR123.jpg", relativePath);
                 Assert.True(File.Exists(expectedAuthorImage));

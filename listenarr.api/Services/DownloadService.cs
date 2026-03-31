@@ -696,7 +696,6 @@ namespace Listenarr.Api.Services
                 using (var scope = _serviceScopeFactory.CreateScope())
                 {
                     var configService = scope.ServiceProvider.GetService<IConfigurationService>() ?? _configurationService;
-                    var fileNamingService = scope.ServiceProvider.GetService<IFileNamingService>();
                     var settings = configService != null ? await configService.GetApplicationSettingsAsync() : new ApplicationSettings();
 
                     // Fetch audiobook data if available for better notification content
@@ -705,10 +704,8 @@ namespace Listenarr.Api.Services
                     {
                         var notifContext = await _dbContextFactory.CreateDbContextAsync();
                         var audiobook = await notifContext.Audiobooks.FindAsync(audiobookId.Value);
-                        if (audiobook != null)
-                        {
-                            // Use audiobook metadata for the notification
-                            notificationData = new
+                        notificationData = audiobook != null
+                            ? new
                             {
                                 title = audiobook.Title,
                                 authors = audiobook.Authors,
@@ -719,17 +716,12 @@ namespace Listenarr.Api.Services
                                 imageUrl = audiobook.ImageUrl,
                                 narrators = audiobook.Narrators,
                                 description = audiobook.Description,
-                                // Include download metadata
                                 downloadId = downloadId,
                                 source = searchResult.Source ?? "Unknown Source",
                                 downloadClient = downloadClient.Name ?? "Unknown Client",
                                 size = searchResult.Size
-                            };
-                        }
-                        else
-                        {
-                            // Fallback to search result data if audiobook not found
-                            notificationData = new
+                            }
+                            : new
                             {
                                 downloadId = downloadId,
                                 title = searchResult.Title ?? "Unknown Title",
@@ -740,7 +732,6 @@ namespace Listenarr.Api.Services
                                 downloadClient = downloadClient.Name ?? "Unknown Client",
                                 audiobookId = audiobookId
                             };
-                        }
                     }
                     else
                     {
@@ -798,16 +789,18 @@ namespace Listenarr.Api.Services
 
         private async Task TryPrepareMyAnonamouseTorrentAsync(SearchResult searchResult, string? downloadId = null)
         {
+            ArgumentNullException.ThrowIfNull(searchResult);
+
             _logger.LogInformation("TryPrepareMyAnonamouseTorrentAsync called for '{Title}', IndexerId: {IndexerId}, TorrentUrl: '{TorrentUrl}'", 
-                searchResult?.Title, searchResult?.IndexerId, searchResult?.TorrentUrl);
+                searchResult.Title, searchResult.IndexerId, searchResult.TorrentUrl);
             
             // Security: Validate all preconditions before performing sensitive operations
             // This method downloads content using authenticated HTTP clients, so we must
             // ensure the request is legitimate and comes from a trusted, configured source.
             
-            if (searchResult?.IndexerId == null)
+            if (searchResult.IndexerId == null)
             {
-                _logger.LogWarning("TryPrepareMyAnonamouseTorrentAsync: No IndexerId for '{Title}' - skipping", searchResult?.Title);
+                _logger.LogWarning("TryPrepareMyAnonamouseTorrentAsync: No IndexerId for '{Title}' - skipping", searchResult.Title);
                 // Reject: No database-backed indexer ID provided
                 return;
             }
@@ -870,15 +863,9 @@ namespace Listenarr.Api.Services
                 // Use factory client for the initial attempt (allows test injection).
                 // If auto-redirect drops the Cookie header, a fallback retry with
                 // CreateAuthenticatedHttpClient (AllowAutoRedirect=false) handles it below.
-                HttpClient httpClientToUse;
-                if (_httpClientFactory != null)
-                {
-                    httpClientToUse = _httpClientFactory.CreateClient();
-                }
-                else
-                {
-                    httpClientToUse = MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
-                }
+                var httpClientToUse = _httpClientFactory != null
+                    ? _httpClientFactory.CreateClient()
+                    : MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
 
                 _logger.LogDebug("Downloading MyAnonamouse torrent for '{Title}' from {Url}", searchResult.Title, LogRedaction.SanitizeUrl(searchResult.TorrentUrl));
 
@@ -887,7 +874,7 @@ namespace Listenarr.Api.Services
                 HttpResponseMessage? response = null;
                 for (int redirectAttempt = 0; redirectAttempt < 6; redirectAttempt++)
                 {
-                    var req = new HttpRequestMessage(HttpMethod.Get, currentUri);
+                    using var req = new HttpRequestMessage(HttpMethod.Get, currentUri);
                     // Set common headers for MAM to mimic a browser request (some endpoints require this)
                     req.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36");
                     req.Headers.Referrer = new Uri("https://www.myanonamouse.net/");
@@ -1085,22 +1072,18 @@ namespace Listenarr.Api.Services
                         {
                             var ipMatches = System.Text.RegularExpressions.Regex.Matches(ascii, @"\b\d{1,3}(?:\.\d{1,3}){3}\b");
                             var distinctIps = ipMatches.Cast<System.Text.RegularExpressions.Match>().Select(m => m.Value).Distinct().ToList();
-                            foreach (var ip in distinctIps)
+                            foreach (var ip in distinctIps.Where(ip =>
+                                !ip.StartsWith("127.")
+                                && !ip.StartsWith("10.")
+                                && !ip.StartsWith("192.168.")
+                                && !ip.StartsWith("172.")
+                                && !string.Equals(ip, indexerUri.Host, StringComparison.OrdinalIgnoreCase)))
                             {
-                                // Skip common local addresses that shouldn't be replaced
-                                if (ip.StartsWith("127.") || ip.StartsWith("10.") || ip.StartsWith("192.168.") || ip.StartsWith("172."))
-                                    continue;
-
-                                if (!string.Equals(ip, indexerUri.Host, StringComparison.OrdinalIgnoreCase))
+                                var replaced2 = MyAnonamouseHelper.ReplaceHostInTorrent(torrentBytes, ip, indexerUri.Host);
+                                if (replaced2 != null && replaced2.Length > 0)
                                 {
-                                    var replaced2 = MyAnonamouseHelper.ReplaceHostInTorrent(torrentBytes, ip, indexerUri.Host);
-                                    if (replaced2 != null && replaced2.Length > 0)
-                                    {
-                                        torrentBytes = replaced2;
-                                        _logger.LogInformation("Rewrote torrent IP host {Ip} to indexer host {Host} for '{Title}'", ip, indexerUri.Host, searchResult.Title);
-                                        // refresh ascii for further processing
-                                        ascii = System.Text.Encoding.ASCII.GetString(torrentBytes);
-                                    }
+                                    torrentBytes = replaced2;
+                                    _logger.LogInformation("Rewrote torrent IP host {Ip} to indexer host {Host} for '{Title}'", ip, indexerUri.Host, searchResult.Title);
                                 }
                             }
                         }
@@ -1139,9 +1122,10 @@ namespace Listenarr.Api.Services
                         var updatedAnnounces = new System.Collections.Generic.List<string>();
                         var modified = false;
 
-                        foreach (var ann in (currentAnnounces ?? new System.Collections.Generic.List<string>()).Distinct())
+                        foreach (var ann in (currentAnnounces ?? new System.Collections.Generic.List<string>())
+                            .Where(ann => !string.IsNullOrWhiteSpace(ann))
+                            .Distinct())
                         {
-                            if (string.IsNullOrWhiteSpace(ann)) continue;
                             // Only append mam_id to actual tracker announce URLs, not file/web-seed URLs
                             if (!ann.Contains("/announce", StringComparison.OrdinalIgnoreCase) && !ann.Contains("/tracker", StringComparison.OrdinalIgnoreCase))
                             {
@@ -1250,14 +1234,9 @@ namespace Listenarr.Api.Services
         {
             // For torrents, prefer highest seeders
             // For NZBs, prefer newest/largest
-            if (IsTorrentIndexer(indexerType))
-            {
-                return results.OrderByDescending(r => r.Seeders).ThenByDescending(r => r.Size).First();
-            }
-            else
-            {
-                return results.OrderByDescending(r => r.PublishedDate).ThenByDescending(r => r.Size).First();
-            }
+            return IsTorrentIndexer(indexerType)
+                ? results.OrderByDescending(r => r.Seeders).ThenByDescending(r => r.Size).First()
+                : results.OrderByDescending(r => r.PublishedDate).ThenByDescending(r => r.Size).First();
         }
 
         private bool IsTorrentIndexer(string indexerType)
@@ -2386,7 +2365,7 @@ namespace Listenarr.Api.Services
                 return false;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogWarning(ex, "RemoveFromClientAsync fallback failed for client {Client}", client?.Name ?? client?.Id);
+                _logger.LogWarning(ex, "RemoveFromClientAsync fallback failed for client {Client}", client.Name ?? client.Id);
                 return false;
             }
         }

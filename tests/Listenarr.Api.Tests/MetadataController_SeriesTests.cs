@@ -14,12 +14,14 @@ namespace Listenarr.Api.Tests
 {
     public class MetadataController_SeriesTests
     {
+        private static readonly HttpClient SharedHttpClient = new();
+
         [Fact]
         public async Task LookupSeries_UsesPersistedSeriesCache_BeforeAudible()
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(SharedHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -79,7 +81,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(SharedHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();
@@ -186,7 +188,7 @@ namespace Listenarr.Api.Tests
         {
             using var memoryCache = new MemoryCache(new MemoryCacheOptions());
             var metadataService = new Mock<IAudiobookMetadataService>();
-            var audible = new Mock<AudibleService>(new HttpClient(), Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
+            var audible = new Mock<AudibleService>(SharedHttpClient, Mock.Of<ILogger<AudibleService>>()) { CallBase = false };
             var audnexus = new Mock<IAudnexusService>();
             var imageCache = new Mock<IImageCacheService>();
             var audiobookRepository = new Mock<IAudiobookRepository>();

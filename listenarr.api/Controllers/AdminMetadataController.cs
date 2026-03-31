@@ -75,7 +75,7 @@ namespace Listenarr.Api.Controllers
             var fi = new System.IO.FileInfo(path);
             file.Size = fi.Exists ? fi.Length : file.Size;
             file.DurationSeconds = meta?.Duration.TotalSeconds ?? file.DurationSeconds;
-            file.Format = string.IsNullOrEmpty(meta?.Format) ? file.Format : meta?.Format;
+            file.Format = string.IsNullOrEmpty(meta?.Format) ? file.Format : meta!.Format;
             file.Bitrate = (meta?.Bitrate != 0) ? meta?.Bitrate : file.Bitrate;
             file.SampleRate = meta?.SampleRate ?? file.SampleRate;
             file.Channels = meta?.Channels ?? file.Channels;

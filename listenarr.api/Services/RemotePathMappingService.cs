@@ -194,15 +194,7 @@ public class RemotePathMappingService : IRemotePathMappingService
 
         // Use cached mappings to avoid hitting the database on every check.
         var mappings = await GetByClientIdAsync(downloadClientId);
-        foreach (var m in mappings)
-        {
-            if (normalizedRemotePath.StartsWith(NormalizePath(m.RemotePath)))
-            {
-                return true;
-            }
-        }
-
-        return false;
+        return mappings.Any(m => normalizedRemotePath.StartsWith(NormalizePath(m.RemotePath)));
     }
 
     /// <summary>

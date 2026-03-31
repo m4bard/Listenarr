@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Threading.Tasks;
 using Xunit;
@@ -95,7 +95,7 @@ namespace Listenarr.Api.Tests
         public async Task FileNamingService_RealWorldScenario_GeneratesValidFilesystem()
         {
             // Arrange - simulate a real import workflow
-            var tempBase = Path.Combine(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
+            var tempBase = Path.Join(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempBase);
 
             try
@@ -163,7 +163,7 @@ namespace Listenarr.Api.Tests
             finally
             {
                 // Cleanup
-                try { Directory.Delete(tempBase, true); } catch { }
+                try { Directory.Delete(tempBase, true); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
             }
         }
 

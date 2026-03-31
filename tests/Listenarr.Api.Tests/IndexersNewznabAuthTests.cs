@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
 
 namespace Listenarr.Api.Tests
@@ -15,6 +16,28 @@ namespace Listenarr.Api.Tests
     /// </summary>
     public class IndexersNewznabAuthTests
     {
+        private sealed class ControllerContext : IDisposable
+        {
+            public ControllerContext(ListenArrDbContext db, HttpClient client, Listenarr.Api.Controllers.IndexersController controller)
+            {
+                Db = db;
+                Client = client;
+                Controller = controller;
+            }
+
+            public ListenArrDbContext Db { get; }
+
+            public HttpClient Client { get; }
+
+            public Listenarr.Api.Controllers.IndexersController Controller { get; }
+
+            public void Dispose()
+            {
+                Client.Dispose();
+                Db.Dispose();
+            }
+        }
+
         private class CaptureHandler : HttpMessageHandler
         {
             public HttpRequestMessage? LastRequest { get; private set; }
@@ -32,17 +55,21 @@ namespace Listenarr.Api.Tests
             }
         }
 
-        private Listenarr.Api.Controllers.IndexersController CreateController(HttpMessageHandler handler)
+        private static ControllerContext CreateController(HttpMessageHandler handler)
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
 
             var db = new ListenArrDbContext(options);
-            var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
             var client = new HttpClient(handler);
+            var controller = new Listenarr.Api.Controllers.IndexersController(
+                db,
+                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+                client,
+                new TestConfigurationService());
 
-            return new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
+            return new ControllerContext(db, client, controller);
         }
 
         [Fact]
@@ -51,7 +78,8 @@ namespace Listenarr.Api.Tests
             // Arrange - Server would return OK, but we should reject before sending request
             var resp = new HttpResponseMessage(HttpStatusCode.OK);
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -79,7 +107,8 @@ namespace Listenarr.Api.Tests
             // Arrange
             var resp = new HttpResponseMessage(HttpStatusCode.OK);
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -106,7 +135,8 @@ namespace Listenarr.Api.Tests
             // Arrange
             var resp = new HttpResponseMessage(HttpStatusCode.OK);
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -133,7 +163,8 @@ namespace Listenarr.Api.Tests
             // Arrange - Torznab should also require API key
             var resp = new HttpResponseMessage(HttpStatusCode.OK);
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -172,7 +203,8 @@ namespace Listenarr.Api.Tests
                 Content = new StringContent(validXml, System.Text.Encoding.UTF8, "application/xml")
             };
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -209,7 +241,8 @@ namespace Listenarr.Api.Tests
                 Content = new StringContent(errorXml, System.Text.Encoding.UTF8, "application/xml")
             };
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -241,7 +274,8 @@ namespace Listenarr.Api.Tests
                 Content = new StringContent(errorXml, System.Text.Encoding.UTF8, "application/xml")
             };
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -267,7 +301,8 @@ namespace Listenarr.Api.Tests
             // Arrange - Some indexers return 403 Forbidden for invalid API keys
             var resp = new HttpResponseMessage(HttpStatusCode.Forbidden);
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -293,7 +328,8 @@ namespace Listenarr.Api.Tests
             // Arrange - Some indexers return 401 Unauthorized
             var resp = new HttpResponseMessage(HttpStatusCode.Unauthorized);
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -329,7 +365,8 @@ namespace Listenarr.Api.Tests
                 Content = new StringContent(validXml, System.Text.Encoding.UTF8, "application/xml")
             };
             var handler = new CaptureHandler(resp);
-            var controller = CreateController(handler);
+            using var context = CreateController(handler);
+            var controller = context.Controller;
 
             var indexer = new Indexer
             {
@@ -382,12 +419,15 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(indexer);
             await db.SaveChangesAsync();
 
-            var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
-            var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
+            using var client = new HttpClient(handler);
+            var controller = new Listenarr.Api.Controllers.IndexersController(
+                db,
+                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+                client,
+                new TestConfigurationService());
 
             // Act - Test persisted indexer
-            var result = await controller.Test(indexer.Id);
+            _ = await controller.Test(indexer.Id);
 
             // Assert - Check failure was persisted to database
             var dbIndexer = await db.Indexers.FindAsync(indexer.Id);
@@ -432,12 +472,15 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(indexer);
             await db.SaveChangesAsync();
 
-            var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
-            var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
+            using var client = new HttpClient(handler);
+            var controller = new Listenarr.Api.Controllers.IndexersController(
+                db,
+                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+                client,
+                new TestConfigurationService());
 
             // Act
-            var result = await controller.Test(indexer.Id);
+            _ = await controller.Test(indexer.Id);
 
             // Assert
             var dbIndexer = await db.Indexers.FindAsync(indexer.Id);

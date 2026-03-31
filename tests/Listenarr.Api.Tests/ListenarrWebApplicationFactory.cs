@@ -1,4 +1,4 @@
-using Listenarr.Api.Services;
+﻿using Listenarr.Api.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.Configuration;
@@ -35,9 +35,9 @@ namespace Listenarr.Api.Tests
             {
                 if (string.IsNullOrWhiteSpace(_sqliteDbPath))
                 {
-                    _sqliteDbRootDir = Path.Combine(Path.GetTempPath(), "listenarr-tests", $"host-{Guid.NewGuid():N}");
+                    _sqliteDbRootDir = Path.Join(Path.GetTempPath(), "listenarr-tests", $"host-{Guid.NewGuid():N}");
                     Directory.CreateDirectory(_sqliteDbRootDir);
-                    _sqliteDbPath = Path.Combine(_sqliteDbRootDir, "listenarr.db");
+                    _sqliteDbPath = Path.Join(_sqliteDbRootDir, "listenarr.db");
                     RegisterDbPathForCleanup(_sqliteDbPath);
                 }
 
@@ -69,7 +69,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IFfmpegService>(_ =>
                 {
                     var ffmpegMock = new Mock<IFfmpegService>();
-                    var mockPath = Path.Combine(Path.GetTempPath(), "mock-ffprobe");
+                    var mockPath = Path.Join(Path.GetTempPath(), "mock-ffprobe");
                     ffmpegMock.Setup(f => f.GetFfprobePathAsync(It.IsAny<bool>()))
                         .ReturnsAsync(mockPath);
                     ffmpegMock.Setup(f => f.EnsureFfprobeInstalledAsync())

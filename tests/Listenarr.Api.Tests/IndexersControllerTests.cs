@@ -38,7 +38,8 @@ namespace Listenarr.Api.Tests
                 .Options;
 
             using var db = new ListenArrDbContext(options);
-            var logger = new LoggerFactory().CreateLogger<Listenarr.Api.Controllers.IndexersController>();
+            using var loggerFactory = new LoggerFactory();
+            var logger = loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>();
 
             // Prepare a handler that captures outgoing requests and returns OK
             var resp = new HttpResponseMessage(HttpStatusCode.OK)
@@ -71,7 +72,7 @@ namespace Listenarr.Api.Tests
             };
 
             // Act
-            var result = await controller.TestDraft(indexer);
+            await controller.TestDraft(indexer);
 
             // Assert
             Assert.NotNull(handler.LastRequest);

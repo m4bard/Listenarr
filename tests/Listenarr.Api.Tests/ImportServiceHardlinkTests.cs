@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
@@ -19,22 +19,38 @@ namespace Listenarr.Api.Tests
 
         public ImportServiceHardlinkTests()
         {
-            _outputRoot = Path.Combine(Path.GetTempPath(), $"import-hardlink-out-{Guid.NewGuid()}");
-            _sourceDir = Path.Combine(Path.GetTempPath(), $"import-hardlink-src-{Guid.NewGuid()}");
+            _outputRoot = Path.Join(Path.GetTempPath(), $"import-hardlink-out-{Guid.NewGuid()}");
+            _sourceDir = Path.Join(Path.GetTempPath(), $"import-hardlink-src-{Guid.NewGuid()}");
             Directory.CreateDirectory(_sourceDir);
+        }
+
+        private static void TryDeleteDirectory(string path)
+        {
+            try
+            {
+                Directory.Delete(path, true);
+            }
+            catch (IOException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
+            catch (UnauthorizedAccessException ex)
+            {
+                System.Diagnostics.Debug.WriteLine(ex.Message);
+            }
         }
 
         public void Dispose()
         {
-            try { Directory.Delete(_sourceDir, true); } catch { }
-            try { Directory.Delete(_outputRoot, true); } catch { }
+            TryDeleteDirectory(_sourceDir);
+            TryDeleteDirectory(_outputRoot);
         }
 
         [Fact]
         public async Task ImportFilesFromDirectory_UsesHardlink_WhenModeIsHardlinkCopy()
         {
             // Arrange
-            var file1 = Path.Combine(_sourceDir, "track1.m4b");
+            var file1 = Path.Join(_sourceDir, "track1.m4b");
             await File.WriteAllTextAsync(file1, "audio data");
 
             var settings = new ApplicationSettings 
@@ -62,7 +78,7 @@ namespace Listenarr.Api.Tests
         public async Task ImportFilesFromDirectory_UsesMove_WhenModeIsMove()
         {
             // Arrange
-            var file1 = Path.Combine(_sourceDir, "track1.m4b");
+            var file1 = Path.Join(_sourceDir, "track1.m4b");
             await File.WriteAllTextAsync(file1, "audio data");
 
             var settings = new ApplicationSettings 
@@ -90,7 +106,7 @@ namespace Listenarr.Api.Tests
         public async Task ImportFilesFromDirectory_UsesCopy_WhenModeIsCopy()
         {
             // Arrange
-            var file1 = Path.Combine(_sourceDir, "track1.m4b");
+            var file1 = Path.Join(_sourceDir, "track1.m4b");
             await File.WriteAllTextAsync(file1, "audio data");
 
             var settings = new ApplicationSettings 
@@ -118,7 +134,7 @@ namespace Listenarr.Api.Tests
         public async Task ImportSingleFileAsync_UsesHardlink_WhenModeIsHardlinkCopy()
         {
             // Arrange
-            var sourceFile = Path.Combine(_sourceDir, "audiobook.m4b");
+            var sourceFile = Path.Join(_sourceDir, "audiobook.m4b");
             await File.WriteAllTextAsync(sourceFile, "single file audio");
 
             var settings = new ApplicationSettings 
@@ -144,7 +160,7 @@ namespace Listenarr.Api.Tests
         public async Task ImportSingleFileAsync_UsesMove_WhenModeIsMove()
         {
             // Arrange
-            var sourceFile = Path.Combine(_sourceDir, "audiobook.m4b");
+            var sourceFile = Path.Join(_sourceDir, "audiobook.m4b");
             await File.WriteAllTextAsync(sourceFile, "single file audio");
 
             var settings = new ApplicationSettings 
@@ -170,9 +186,9 @@ namespace Listenarr.Api.Tests
         public async Task ImportFilesFromDirectory_HandlesMultipleFiles_WithHardlinkCopy()
         {
             // Arrange
-            var file1 = Path.Combine(_sourceDir, "track1.m4b");
-            var file2 = Path.Combine(_sourceDir, "track2.m4b");
-            var file3 = Path.Combine(_sourceDir, "track3.m4b");
+            var file1 = Path.Join(_sourceDir, "track1.m4b");
+            var file2 = Path.Join(_sourceDir, "track2.m4b");
+            var file3 = Path.Join(_sourceDir, "track3.m4b");
             await File.WriteAllTextAsync(file1, "audio1");
             await File.WriteAllTextAsync(file2, "audio2");
             await File.WriteAllTextAsync(file3, "audio3");
@@ -209,7 +225,7 @@ namespace Listenarr.Api.Tests
         public async Task ImportFilesFromDirectory_FallbacksToCopy_WhenHardlinkFails()
         {
             // Arrange - hardlink might fail on some systems or across volumes
-            var file1 = Path.Combine(_sourceDir, "track1.m4b");
+            var file1 = Path.Join(_sourceDir, "track1.m4b");
             await File.WriteAllTextAsync(file1, "audio data");
 
             var settings = new ApplicationSettings 

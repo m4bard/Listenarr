@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using System.Net.Http;
 using System.Collections.Generic;
+using System.Net;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -21,6 +22,16 @@ namespace Listenarr.Api.Tests
     public class DownloadMonitorFinalizationTests
     {
         private readonly Xunit.Abstractions.ITestOutputHelper _output;
+
+        private static HttpResponseMessage JsonResponse(HttpStatusCode statusCode, string json)
+        {
+            return new HttpResponseMessage(statusCode) { Content = new StringContent(json) };
+        }
+
+        private static HttpResponseMessage EmptyResponse(HttpStatusCode statusCode)
+        {
+            return new HttpResponseMessage(statusCode);
+        }
 
         public DownloadMonitorFinalizationTests(Xunit.Abstractions.ITestOutputHelper output)
         {
@@ -83,27 +94,27 @@ namespace Listenarr.Api.Tests
                 if (q.Contains("mode=queue"))
                 {
                     var queueJson = "{\"queue\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_20f9svw_\",\"filename\":\"William Faulkner - The Sound and the Fury\",\"percentage\":\"50.5\",\"mb\":\"100.0\",\"mbleft\":\"49.5\",\"status\":\"Downloading\"}]}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(queueJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, queueJson));
                 }
 
                 if (q.Contains("mode=history"))
                 {
                     // keep history empty
                     var historyJson = "{\"history\":{\"slots\":[]}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(historyJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, historyJson));
                 }
 
-                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                return Task.FromResult(EmptyResponse(HttpStatusCode.NotFound));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
             var services = new ServiceCollection();
             services.AddSingleton<ListenArrDbContext>(db);
             var configMock = new Mock<IConfigurationService>();
-            var settings = new ApplicationSettings { OutputPath = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString()), EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new List<string> { ".m4b" } };
+            var settings = new ApplicationSettings { OutputPath = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString()), EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new List<string> { ".m4b" } };
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);
             services.AddSingleton<IConfigurationService>(configMock.Object);
             var downloadServiceMock = new Mock<IDownloadService>();
@@ -175,7 +186,7 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Settings: move to output path
-            var outDir = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
+            var outDir = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outDir);
             var settings = new ApplicationSettings { OutputPath = outDir, EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new List<string> { ".m4b" } };
 
@@ -191,20 +202,20 @@ namespace Listenarr.Api.Tests
                 if (q.Contains("mode=queue"))
                 {
                     var queueJson = "{\"queue\":{\"slots\":[]}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(queueJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, queueJson));
                 }
 
                 if (q.Contains("mode=history"))
                 {
                     // history 'storage' contains the remote path with the .4 suffix
                     var historyJson = $"{{\"history\":{{\"slots\":[{{\"nzo_id\":\"SABnzbd_nzo_9plcy_gj\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"{remotePath.Replace("\\", "\\\\")}\",\"completed\":1600000000}}]}}}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(historyJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, historyJson));
                 }
 
-                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                return Task.FromResult(EmptyResponse(HttpStatusCode.NotFound));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
@@ -221,7 +232,7 @@ namespace Listenarr.Api.Tests
             services.AddSingleton<IMetadataService>(metadataMock.Object);
 
             var pathMappingMock = new Mock<IRemotePathMappingService>();
-            var mappedLocal = Path.Combine("Z:", "Server", "Test", "William Faulkner - The Sound and the Fury.4");
+            var mappedLocal = Path.Join("Z:", "Server", "Test", "William Faulkner - The Sound and the Fury.4");
             pathMappingMock.Setup(p => p.TranslatePathAsync(It.IsAny<string>(), It.Is<string>(s => s.Contains("/William Faulkner - The Sound and the Fury.4"))))
                 .ReturnsAsync(mappedLocal);
 
@@ -287,17 +298,17 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create a file under a directory WITHOUT the numeric suffix (this is the real local layout)
-            var root = Path.Combine(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
+            var root = Path.Join(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
             Directory.CreateDirectory(root);
 
-            var realDir = Path.Combine(root, "William Faulkner - The Sound and the Fury");
+            var realDir = Path.Join(root, "William Faulkner - The Sound and the Fury");
             Directory.CreateDirectory(realDir);
 
-            var sourceFile = Path.Combine(realDir, "The Sound and the Fury.m4b");
+            var sourceFile = Path.Join(realDir, "The Sound and the Fury.m4b");
             await File.WriteAllTextAsync(sourceFile, "dummy");
 
             // Settings: move to output path
-            var outDir = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
+            var outDir = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outDir);
             var settings = new ApplicationSettings { OutputPath = outDir, EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new List<string> { ".m4b" } };
 
@@ -324,7 +335,7 @@ namespace Listenarr.Api.Tests
             // When asked to translate the remote path which contains the '.1' suffix,
             // return a local path with the same suffix so our heuristic must strip it.
             var remotePath = "/downloads/complete/listenarr/William Faulkner - The Sound and the Fury.1";
-            var mappedLocal = Path.Combine(root, "William Faulkner - The Sound and the Fury.1");
+            var mappedLocal = Path.Join(root, "William Faulkner - The Sound and the Fury.1");
             pathMappingMock.Setup(p => p.TranslatePathAsync(It.IsAny<string>(), It.Is<string>(s => s.Contains("/William Faulkner - The Sound and the Fury.1"))))
                 .ReturnsAsync(mappedLocal);
 
@@ -343,11 +354,12 @@ namespace Listenarr.Api.Tests
                     {
                         var destDir = settings.OutputPath;
                         Directory.CreateDirectory(destDir);
-                        var dest = Path.Combine(destDir, Path.GetFileName(sourceFile));
+                        var dest = Path.Join(destDir, Path.GetFileName(sourceFile));
                         if (File.Exists(sourceFile)) File.Move(sourceFile, dest);
-                        downloadServiceMock.Object.ProcessCompletedDownloadAsync(did, dest);
+                        _ = downloadServiceMock.Object.ProcessCompletedDownloadAsync(did, dest);
                     }
-                    catch { }
+                    catch (IOException ex) { _output.WriteLine($"Queue callback IO cleanup failed: {ex.Message}"); }
+                    catch (UnauthorizedAccessException ex) { _output.WriteLine($"Queue callback ACL cleanup failed: {ex.Message}"); }
                 });
             services.AddSingleton<IDownloadProcessingQueueService>(queueMock.Object);
 
@@ -367,20 +379,20 @@ namespace Listenarr.Api.Tests
                 if (q.Contains("mode=queue"))
                 {
                     var queueJson = "{\"queue\":{\"slots\":[]}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(queueJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, queueJson));
                 }
 
                 if (q.Contains("mode=history"))
                 {
                     // Note: history 'storage' contains the remote path WITH the .1 suffix
                     var historyJson = $"{{\"history\":{{\"slots\":[{{\"nzo_id\":\"SABnzbd_nzo_9plcy_gj\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"{remotePath.Replace("\\", "\\\\")}\",\"completed\":1600000000}}]}}}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(historyJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, historyJson));
                 }
 
-                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                return Task.FromResult(EmptyResponse(HttpStatusCode.NotFound));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
@@ -449,7 +461,7 @@ namespace Listenarr.Api.Tests
             catch (Moq.MockException)
             {
                 // If the metric wasn't incremented, accept other signs of successful finalization (file moved or processing queued)
-                var dest = Path.Combine(settings.OutputPath, Path.GetFileName(sourceFile));
+                var dest = Path.Join(settings.OutputPath, Path.GetFileName(sourceFile));
                 if (!File.Exists(dest))
                 {
                     var updated = await db.Downloads.FindAsync(download.Id);
@@ -479,7 +491,7 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Build DI provider with settings that enable quick retries
-            var outDir = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
+            var outDir = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outDir);
             var settings = new ApplicationSettings
             {
@@ -491,10 +503,10 @@ namespace Listenarr.Api.Tests
                 MissingSourceMaxRetries = 3
             };
 
-            var tempRoot = Path.Combine(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
+            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempRoot);
 
-            var mappedLocal = Path.Combine(tempRoot, "William Faulkner - The Sound and the Fury");
+            var mappedLocal = Path.Join(tempRoot, "William Faulkner - The Sound and the Fury");
             // Note: Do NOT create directory yet; initial finalize will not find files
 
             // Use TaskCompletionSource so tests can deterministically wait for finalization
@@ -529,7 +541,7 @@ namespace Listenarr.Api.Tests
                 .Callback<string, string, string>((did, src, cid) =>
                 {
                     // When a job is queued, simulate that processing finds the file created later
-                    var finalSource = Path.Combine(mappedLocal, "The Sound and the Fury.m4b");
+                    var finalSource = Path.Join(mappedLocal, "The Sound and the Fury.m4b");
                     downloadServiceMock.Object.ProcessCompletedDownloadAsync(did, finalSource);
                 });
             services.AddSingleton<IDownloadProcessingQueueService>(queueMock.Object);
@@ -551,19 +563,19 @@ namespace Listenarr.Api.Tests
                 if (q.Contains("mode=queue"))
                 {
                     var queueJson = "{\"queue\":{\"slots\":[]}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(queueJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, queueJson));
                 }
 
                 if (q.Contains("mode=history"))
                 {
                     var historyJson = $"{{\"history\":{{\"slots\":[{{\"nzo_id\":\"SABnzbd_nzo_retry\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"{remotePath.Replace("\\", "\\\\")}\",\"completed\":1600000000}}]}}}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(historyJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, historyJson));
                 }
 
-                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                return Task.FromResult(EmptyResponse(HttpStatusCode.NotFound));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
@@ -590,7 +602,7 @@ namespace Listenarr.Api.Tests
             // Wait a short time then create the file so the scheduled retry will find it
             await Task.Delay(200);
             Directory.CreateDirectory(mappedLocal);
-            var sourceFile = Path.Combine(mappedLocal, "The Sound and the Fury.m4b");
+            var sourceFile = Path.Join(mappedLocal, "The Sound and the Fury.m4b");
             await File.WriteAllTextAsync(sourceFile, "dummy");
 
             // Wait for the finalization to occur (timeout after a short window so CI is faster)
@@ -618,10 +630,10 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create a directory with multiple audio files
-            var dir = Path.Combine(Path.GetTempPath(), "listenarr-multi-test", Guid.NewGuid().ToString());
+            var dir = Path.Join(Path.GetTempPath(), "listenarr-multi-test", Guid.NewGuid().ToString());
             Directory.CreateDirectory(dir);
-            var fileA = Path.Combine(dir, "part1.mp3");
-            var fileB = Path.Combine(dir, "part2.mp3");
+            var fileA = Path.Join(dir, "part1.mp3");
+            var fileB = Path.Join(dir, "part2.mp3");
             await File.WriteAllTextAsync(fileA, "data1");
             await File.WriteAllTextAsync(fileB, "data2");
 
@@ -631,7 +643,7 @@ namespace Listenarr.Api.Tests
             var services = new ServiceCollection();
             services.AddSingleton<ListenArrDbContext>(db);
 
-            var settingsModel = new ApplicationSettings { OutputPath = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString()), EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new List<string> { ".mp3" } };
+            var settingsModel = new ApplicationSettings { OutputPath = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString()), EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new List<string> { ".mp3" } };
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settingsModel);
             services.AddSingleton<IConfigurationService>(configMock.Object);
@@ -668,7 +680,8 @@ namespace Listenarr.Api.Tests
             var loggerMock = new Mock<ILogger<DownloadMonitorService>>();
 
             var httpFactoryMock = new Mock<IHttpClientFactory>();
-            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+            using var httpClient = new HttpClient();
+            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
             var monitor = new DownloadMonitorService(scopeFactory, hubContextMock.Object, loggerMock.Object, httpFactoryMock.Object);
 
@@ -737,13 +750,13 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create source file
-            var tempDir = Path.Combine(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
+            var tempDir = Path.Join(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
-            var sourceFile = Path.Combine(tempDir, "Test Move.m4b");
+            var sourceFile = Path.Join(tempDir, "Test Move.m4b");
             await File.WriteAllTextAsync(sourceFile, "dummy");
 
             // Settings: move to output path
-            var outDir = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
+            var outDir = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outDir);
             var settings = new ApplicationSettings { OutputPath = outDir, EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new List<string> { ".m4b" } };
 
@@ -766,7 +779,7 @@ namespace Listenarr.Api.Tests
                 .Callback<string, string, string>((did, src, cid) =>
                 {
                     // Simulate background processing: move source to output and notify download service
-                    var dest = Path.Combine(settings.OutputPath, Path.GetFileName(src));
+                    var dest = Path.Join(settings.OutputPath, Path.GetFileName(src));
                     Directory.CreateDirectory(settings.OutputPath);
                     if (File.Exists(src)) File.Move(src, dest);
                     downloadServiceMock.Object.ProcessCompletedDownloadAsync(did, dest);
@@ -785,7 +798,8 @@ namespace Listenarr.Api.Tests
 
             var loggerMock = new Mock<ILogger<DownloadMonitorService>>();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
-            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+            using var httpClient = new HttpClient();
+            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
             var monitor = new DownloadMonitorService(scopeFactory, hubContextMock.Object, loggerMock.Object, httpFactoryMock.Object);
 
@@ -811,7 +825,7 @@ namespace Listenarr.Api.Tests
             // No factory usage expected for direct finalization test
 
             // Expect file moved to output OR that a processing job was queued for the move (deferred)
-            var destFile = Path.Combine(outDir, Path.GetFileName(sourceFile));
+            var destFile = Path.Join(outDir, Path.GetFileName(sourceFile));
             if (File.Exists(destFile))
             {
                 // Moved synchronously by finalization/queue callback simulation
@@ -848,13 +862,13 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create a file in a temporary directory to represent the completed file
-            var tempDir = Path.Combine(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
+            var tempDir = Path.Join(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
-            var sourceFile = Path.Combine(tempDir, "Test NZO.m4b");
+            var sourceFile = Path.Join(tempDir, "Test NZO.m4b");
             await File.WriteAllTextAsync(sourceFile, "dummy");
 
             // Settings: move to output path
-            var outDir = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
+            var outDir = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outDir);
             var settings = new ApplicationSettings { OutputPath = outDir, EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new List<string> { ".m4b" } };
 
@@ -877,19 +891,19 @@ namespace Listenarr.Api.Tests
                 if (q.Contains("mode=queue"))
                 {
                     var queueJson = "{\"queue\":{\"slots\":[]}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(queueJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, queueJson));
                 }
 
                 if (q.Contains("mode=history"))
                 {
                     var historyJson = $"{{\"history\":{{\"slots\":[{{\"nzo_id\":\"SABnzbd_nzo_abc123\",\"name\":\"Test NZO\",\"status\":\"Completed\",\"storage\":\"{sourceFile.Replace("\\", "\\\\")}\",\"completed\":1600000000}}]}}}}";
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(historyJson) });
+                    return Task.FromResult(JsonResponse(HttpStatusCode.OK, historyJson));
                 }
 
-                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                return Task.FromResult(EmptyResponse(HttpStatusCode.NotFound));
             });
 
-            var httpClient = new HttpClient(handler);
+            using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>()))
                 .Callback<string?>(name => _output.WriteLine($"Mock factory CreateClient called with name: '{name ?? "<null>"}'"))
@@ -941,11 +955,7 @@ namespace Listenarr.Api.Tests
             protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
             {
                 // Instrument the handler for debugging
-                try
-                {
-                    _log?.Invoke($"DelegatingHandlerMock invoked for: {request.Method} {request.RequestUri}");
-                }
-                catch { }
+                _log?.Invoke($"DelegatingHandlerMock invoked for: {request.Method} {request.RequestUri}");
                 return _handlerFunc(request, cancellationToken);
             }
         }
@@ -971,13 +981,13 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             // Create source file
-            var tempDir = Path.Combine(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
+            var tempDir = Path.Join(Path.GetTempPath(), "listenarr-test", Guid.NewGuid().ToString());
             Directory.CreateDirectory(tempDir);
-            var sourceFile = Path.Combine(tempDir, "Test Copy.m4b");
+            var sourceFile = Path.Join(tempDir, "Test Copy.m4b");
             await File.WriteAllTextAsync(sourceFile, "dummy");
 
             // Settings: copy to output path
-            var outDir = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
+            var outDir = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outDir);
             var settings = new ApplicationSettings { OutputPath = outDir, EnableMetadataProcessing = false, CompletedFileAction = "Copy" };
 
@@ -1000,7 +1010,7 @@ namespace Listenarr.Api.Tests
                 .Callback<string, string, string>((did, src, cid) =>
                 {
                     // Simulate background processing: copy source to output and notify download service
-                    var dest = Path.Combine(settings.OutputPath, Path.GetFileName(src));
+                    var dest = Path.Join(settings.OutputPath, Path.GetFileName(src));
                     Directory.CreateDirectory(settings.OutputPath);
                     if (File.Exists(src)) File.Copy(src, dest, overwrite: true);
                     downloadServiceMock.Object.ProcessCompletedDownloadAsync(did, dest);
@@ -1019,7 +1029,8 @@ namespace Listenarr.Api.Tests
 
             var loggerMock = new Mock<ILogger<DownloadMonitorService>>();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
-            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+            using var httpClient = new HttpClient();
+            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
             var monitor = new DownloadMonitorService(scopeFactory, hubContextMock.Object, loggerMock.Object, httpFactoryMock.Object);
 
@@ -1032,7 +1043,7 @@ namespace Listenarr.Api.Tests
             if (task != null) await task;
 
             // Expect file copied to output OR that a processing job was queued for the copy (deferred)
-            var destFile = Path.Combine(outDir, Path.GetFileName(sourceFile));
+            var destFile = Path.Join(outDir, Path.GetFileName(sourceFile));
             if (File.Exists(destFile))
             {
                 // Copied synchronously by finalization/queue callback simulation
@@ -1065,7 +1076,7 @@ namespace Listenarr.Api.Tests
             db.Downloads.Add(download);
             await db.SaveChangesAsync();
 
-            var outDir = Path.Combine(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
+            var outDir = Path.Join(Path.GetTempPath(), "listenarr-out", Guid.NewGuid().ToString());
             Directory.CreateDirectory(outDir);
 
             var settings = new ApplicationSettings { OutputPath = outDir, EnableMetadataProcessing = false, CompletedFileAction = "Move", AllowedFileExtensions = new System.Collections.Generic.List<string> { ".m4b" } };
@@ -1098,7 +1109,8 @@ namespace Listenarr.Api.Tests
             hubContextMock.SetupGet(h => h.Clients).Returns(hubClientsMock.Object);
 
             var httpFactoryMock = new Mock<IHttpClientFactory>();
-            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(new HttpClient());
+            using var httpClient = new HttpClient();
+            httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
 
             var monitor = new DownloadMonitorService(scopeFactory, hubContextMock.Object, loggerMock.Object, httpFactoryMock.Object, metricsMock.Object);
 
@@ -1108,7 +1120,7 @@ namespace Listenarr.Api.Tests
 
             var clientConfig = new DownloadClientConfiguration { Id = "c-skip", Name = "Local", DownloadPath = string.Empty };
 
-            var task = (Task?)method.Invoke(monitor, new object[] { download, Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString()), clientConfig, CancellationToken.None });
+            var task = (Task?)method.Invoke(monitor, new object[] { download, Path.Join(Path.GetTempPath(), Guid.NewGuid().ToString()), clientConfig, CancellationToken.None });
             if (task != null) await task;
 
             // Since a processing job was present, we expect the monitor to NOT increment the file_not_found metric

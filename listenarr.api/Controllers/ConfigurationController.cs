@@ -223,7 +223,7 @@ namespace Listenarr.Api.Controllers
                 // If updating an existing configuration, avoid overwriting sensitive fields
                 // with blank values from the incoming payload. Fetch existing config
                 // and copy username/password and any client-specific apiKey when missing.
-                if (!string.IsNullOrWhiteSpace(config?.Id))
+                if (!string.IsNullOrWhiteSpace(config.Id))
                 {
                     var existing = await _configurationService.GetDownloadClientConfigurationAsync(config.Id);
                     if (existing != null)
@@ -347,12 +347,9 @@ namespace Listenarr.Api.Controllers
                             {
                                 config.Settings ??= new System.Collections.Generic.Dictionary<string, object>();
 
-                                foreach (var kvp in existing.Settings)
+                                foreach (var kvp in existing.Settings.Where(kvp => !config.Settings.ContainsKey(kvp.Key)))
                                 {
-                                    if (!config.Settings.ContainsKey(kvp.Key))
-                                    {
-                                        config.Settings[kvp.Key] = kvp.Value;
-                                    }
+                                    config.Settings[kvp.Key] = kvp.Value;
                                 }
                             }
                         }
