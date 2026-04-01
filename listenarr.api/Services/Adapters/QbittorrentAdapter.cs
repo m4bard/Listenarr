@@ -269,6 +269,7 @@ namespace Listenarr.Api.Services.Adapters
                     else
                     {
                         _logger.LogWarning("qBittorrent login failed: {Status} - {Body}", loginResponse.StatusCode, redacted);
+                        throw new Exception($"qBittorrent login failed with status {loginResponse.StatusCode}");
                     }
                 }
                 else
