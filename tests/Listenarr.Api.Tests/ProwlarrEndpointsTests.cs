@@ -21,7 +21,7 @@ namespace Listenarr.Api.Tests
         public async Task SystemStatus_ReturnsJsonWithVersion()
         {
             using var client = _factory.CreateClient();
-            var resp = await client.GetAsync("/api/v1/system/status");
+            var resp = await client.GetAsync("/api/v1/prowlarr/system/status");
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             Assert.Equal("application/json", resp.Content.Headers.ContentType?.MediaType);
@@ -37,11 +37,11 @@ namespace Listenarr.Api.Tests
         {
             using var client = _factory.CreateClient();
             // Prefer GET for indexer test in CI to avoid antiforgery middleware interactions during tests
-            var resp = await client.GetAsync("/api/v1/indexer/test");
+            var resp = await client.GetAsync("/api/v1/prowlarr/indexer/test");
 
             // Debug POST to ensure POSTs are routed correctly
             using var debugContent = new StringContent("{}", System.Text.Encoding.UTF8, "application/json");
-            var debug = await client.PostAsync("/api/v1/debug/test", debugContent);
+            var debug = await client.PostAsync("/api/v1/prowlarr/debug/test", debugContent);
             Assert.True(debug.IsSuccessStatusCode, $"Debug POST failed: {(int)debug.StatusCode} {debug.StatusCode}: {await debug.Content.ReadAsStringAsync()}");
 
             var body = await resp.Content.ReadAsStringAsync();
@@ -70,7 +70,7 @@ namespace Listenarr.Api.Tests
         public async Task IndexerSchema_ReturnsFieldsArray()
         {
             using var client = _factory.CreateClient();
-            var resp = await client.GetAsync("/api/v1/indexer/schema");
+            var resp = await client.GetAsync("/api/v1/prowlarr/indexer/schema");
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             Assert.Equal("application/json", resp.Content.Headers.ContentType?.MediaType);
@@ -127,7 +127,7 @@ namespace Listenarr.Api.Tests
         public async Task IndexerRoot_ReturnsJsonWithImplementations()
         {
             using var client = _factory.CreateClient();
-            var resp = await client.GetAsync("/api/v1/indexer/info");
+            var resp = await client.GetAsync("/api/v1/prowlarr/indexer/info");
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             Assert.Equal("application/json", resp.Content.Headers.ContentType?.MediaType);
@@ -144,7 +144,7 @@ namespace Listenarr.Api.Tests
         public async Task IndexersList_Get_ReturnsArray()
         {
             using var client = _factory.CreateClient();
-            var resp = await client.GetAsync("/api/v1/indexers");
+            var resp = await client.GetAsync("/api/v1/prowlarr/indexers");
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             Assert.Equal("application/json", resp.Content.Headers.ContentType?.MediaType);
@@ -160,7 +160,7 @@ namespace Listenarr.Api.Tests
             using var client = _factory.CreateClient();
             var payload = "[]";
             using var arrayContent = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-            var resp = await client.PostAsync("/api/v1/indexers", arrayContent);
+            var resp = await client.PostAsync("/api/v1/prowlarr/indexers", arrayContent);
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             using var stream = await resp.Content.ReadAsStreamAsync();
@@ -186,7 +186,7 @@ namespace Listenarr.Api.Tests
 
             using var content = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
             var resp = await client.PostAsync(
-                "/api/v1/indexers",
+                "/api/v1/prowlarr/indexers",
                 content);
 
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
@@ -216,11 +216,11 @@ namespace Listenarr.Api.Tests
 
             var arr = "[" + System.Text.Json.JsonSerializer.Serialize(newIndexer) + "]";
             using var batchContent = new StringContent(arr, System.Text.Encoding.UTF8, "application/json");
-            var resp = await client.PostAsync("/api/v1/indexers", batchContent);
+            var resp = await client.PostAsync("/api/v1/prowlarr/indexers", batchContent);
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
             // Now fetch persisted indexers via the Prowlarr-compatible endpoint
-            var resp2 = await client.GetAsync("/api/v1/indexer");
+            var resp2 = await client.GetAsync("/api/v1/prowlarr/indexer");
             Assert.Equal(HttpStatusCode.OK, resp2.StatusCode);
 
             using var stream = await resp2.Content.ReadAsStreamAsync();
@@ -248,7 +248,7 @@ namespace Listenarr.Api.Tests
 
             var payload = System.Text.Json.JsonSerializer.Serialize(newIndexer);
             using var singleContent = new StringContent(payload, System.Text.Encoding.UTF8, "application/json");
-            var resp = await client.PostAsync("/api/v1/indexer", singleContent);
+            var resp = await client.PostAsync("/api/v1/prowlarr/indexer", singleContent);
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
             // Validate response contains created indexer
@@ -269,7 +269,7 @@ namespace Listenarr.Api.Tests
             else
             {
                 // If the response didn't include the created indexer (dedupe / existing indexer case), search persisted indexers by URL
-                var listResp = await client.GetAsync("/api/v1/indexer");
+                var listResp = await client.GetAsync("/api/v1/prowlarr/indexer");
                 Assert.Equal(HttpStatusCode.OK, listResp.StatusCode);
                 using var listStream = await listResp.Content.ReadAsStreamAsync();
                 var listDoc = await JsonDocument.ParseAsync(listStream);
@@ -280,7 +280,7 @@ namespace Listenarr.Api.Tests
                 id = createdElem.GetProperty("id").GetInt32();
             }
 
-            var getResp = await client.GetAsync($"/api/v1/indexer/{id}");
+            var getResp = await client.GetAsync($"/api/v1/prowlarr/indexer/{id}");
             Assert.Equal(HttpStatusCode.OK, getResp.StatusCode);
 
             using var getStream = await getResp.Content.ReadAsStreamAsync();
@@ -292,14 +292,14 @@ namespace Listenarr.Api.Tests
             Assert.Equal("http://localhost:8081/api", sb.GetString());
 
             // Ensure requesting id 0 returns a compatibility object rather than 404 HTML
-            var respZero = await client.GetAsync("/api/v1/indexer/0");
+            var respZero = await client.GetAsync("/api/v1/prowlarr/indexer/0");
             Assert.Equal(HttpStatusCode.OK, respZero.StatusCode);
             var zeroBody = await respZero.Content.ReadAsStringAsync();
             Assert.Contains("Prowlarr Indexer", zeroBody);
 
 
             // Now fetch persisted indexers via the Prowlarr-compatible endpoint
-            var resp2 = await client.GetAsync("/api/v1/indexer");
+            var resp2 = await client.GetAsync("/api/v1/prowlarr/indexer");
             Assert.Equal(HttpStatusCode.OK, resp2.StatusCode);
 
             using var stream = await resp2.Content.ReadAsStreamAsync();
@@ -315,7 +315,7 @@ namespace Listenarr.Api.Tests
         {
             using var client = _factory.CreateClient();
 
-            var resp = await client.DeleteAsync("/api/v1/indexer/0");
+            var resp = await client.DeleteAsync("/api/v1/prowlarr/indexer/0");
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
 
             var body = await resp.Content.ReadAsStringAsync();
