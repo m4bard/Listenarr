@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading;
 
 namespace Listenarr.Api.Services
 {
@@ -15,7 +16,14 @@ namespace Listenarr.Api.Services
 
     public class LoginRateLimiter : ILoginRateLimiter
     {
-        private class Entry { public int Failures; public DateTime? BlockUntil; }
+        private class Entry
+        {
+            // Failures is incremented atomically via Interlocked; BlockUntil is
+            // written inside a lock on the Entry instance to avoid TOCTOU races.
+            public int Failures;
+            public DateTime? BlockUntil;
+        }
+
         private readonly ConcurrentDictionary<string, Entry> _map = new();
 
         // Configurable thresholds
@@ -24,7 +32,13 @@ namespace Listenarr.Api.Services
 
         public bool IsBlocked(string key)
         {
-            if (_map.TryGetValue(key, out var e) && e.BlockUntil.HasValue && e.BlockUntil.Value > DateTime.UtcNow) return true;
+            if (_map.TryGetValue(key, out var e))
+            {
+                lock (e)
+                {
+                    if (e.BlockUntil.HasValue && e.BlockUntil.Value > DateTime.UtcNow) return true;
+                }
+            }
             return false;
         }
 
@@ -32,8 +46,14 @@ namespace Listenarr.Api.Services
         {
             if (_map.TryGetValue(key, out var e) && e.BlockUntil.HasValue)
             {
-                var ts = e.BlockUntil.Value - DateTime.UtcNow;
-                return ts.Ticks > 0 ? (int)Math.Ceiling(ts.TotalSeconds) : 0;
+                lock (e)
+                {
+                    if (e.BlockUntil.HasValue)
+                    {
+                        var ts = e.BlockUntil.Value - DateTime.UtcNow;
+                        return ts.Ticks > 0 ? (int)Math.Ceiling(ts.TotalSeconds) : 0;
+                    }
+                }
             }
             return 0;
         }
@@ -41,10 +61,15 @@ namespace Listenarr.Api.Services
         public void RecordFailure(string key)
         {
             var entry = _map.GetOrAdd(key, _ => new Entry());
-            entry.Failures++;
-            if (entry.Failures >= _maxFailures)
+            // Atomically increment and then decide whether to set BlockUntil under the same lock
+            // so that concurrent callers cannot both observe Failures < _maxFailures and skip blocking.
+            lock (entry)
             {
-                entry.BlockUntil = DateTime.UtcNow.Add(_blockDuration);
+                entry.Failures++;
+                if (entry.Failures >= _maxFailures)
+                {
+                    entry.BlockUntil = DateTime.UtcNow.Add(_blockDuration);
+                }
             }
         }
 

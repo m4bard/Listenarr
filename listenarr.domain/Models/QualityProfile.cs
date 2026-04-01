@@ -160,7 +160,7 @@ namespace Listenarr.Domain.Models
             return Quality == other.Quality && Allowed == other.Allowed && Priority == other.Priority;
         }
 
-        public override bool Equals(object? obj) => obj is QualityDefinition qd && Equals(qd);
+        public override bool Equals(object? obj) => obj is QualityDefinition other && Equals(other);
 
         public override int GetHashCode() => HashCode.Combine(Quality, Allowed, Priority);
     }

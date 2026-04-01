@@ -106,7 +106,7 @@ public class FileSystemController : ControllerBase
             }
             catch (UnauthorizedAccessException ex)
             {
-                _logger.LogWarning(ex, "Access denied to directory: {Path}", LogRedaction.SanitizeText(normalizedPath));
+                _logger.LogWarning(ex, "Access denied to directory: {Path}", LogRedaction.SanitizeFilePath(normalizedPath));
             }
 
             return new FileSystemBrowseResponse
@@ -117,7 +117,7 @@ public class FileSystemController : ControllerBase
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-            _logger.LogError(ex, "Error browsing directory: {Path}", LogRedaction.SanitizeText(path));
+            _logger.LogError(ex, "Error browsing directory: {Path}", LogRedaction.SanitizeFilePath(path));
             return StatusCode(500, new { error = "Error browsing directory" });
         }
     }
@@ -171,7 +171,7 @@ public class FileSystemController : ControllerBase
             };
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-            _logger.LogError(ex, "Error validating path: {Path}", LogRedaction.SanitizeText(path));
+            _logger.LogError(ex, "Error validating path: {Path}", LogRedaction.SanitizeFilePath(path));
             return new FileSystemValidateResponse
             {
                 IsValid = false,
@@ -266,7 +266,7 @@ public class FileSystemController : ControllerBase
             });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-            _logger.LogError(ex, "Error checking volume for paths: {Source} -> {Dest}", LogRedaction.SanitizeText(sourcePath), LogRedaction.SanitizeText(destPath));
+            _logger.LogError(ex, "Error checking volume for paths: {Source} -> {Dest}", LogRedaction.SanitizeFilePath(sourcePath), LogRedaction.SanitizeFilePath(destPath));
             return Ok(new VolumeCheckResponse
             {
                 SameVolume = false,

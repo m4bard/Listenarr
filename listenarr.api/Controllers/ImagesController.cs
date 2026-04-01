@@ -130,7 +130,7 @@ namespace Listenarr.Api.Controllers
             {
                 // Get the cached image path (checks library first, then temp)
                 var relativePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
-                _logger.LogInformation("ImagesController DEBUG: returned relativePath='{RelativePath}' for identifier {Identifier}", LogRedaction.SanitizeText(relativePath), LogRedaction.SanitizeText(identifier));
+                _logger.LogInformation("ImagesController DEBUG: returned relativePath='{RelativePath}' for identifier {Identifier}", LogRedaction.SanitizeFilePath(relativePath), LogRedaction.SanitizeText(identifier));
                 bool movedAttempted = false;
 
                 // Shortcut: if the returned relative path clearly points to a temp cache
@@ -924,7 +924,7 @@ namespace Listenarr.Api.Controllers
 
                 if (!System.IO.File.Exists(fullPath))
                 {
-                    _logger.LogWarning("Image file does not exist at path: {Path}", LogRedaction.SanitizeText(fullPath));
+                    _logger.LogWarning("Image file does not exist at path: {Path}", LogRedaction.SanitizeFilePath(fullPath));
                     return CreatePlaceholderResult(
                         logContext: "missing file",
                         logValue: fullPath,
