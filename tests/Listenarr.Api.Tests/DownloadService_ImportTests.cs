@@ -377,30 +377,25 @@ namespace Listenarr.Api.Tests
             using var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
             const string queueJson = "{\"queue\":{\"slots\":[]}}";
             const string historyJson = "{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_x123\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"/downloads/complete/listenarr/William Faulkner - The Sound and the Fury\",\"completed\":1600000000}]}}";
+
+            // Local factories transfer HttpResponseMessage ownership to the caller (HttpClient pipeline),
+            // satisfying CodeQL's IDisposable-not-disposed analysis.
+            static HttpResponseMessage CreateOkResponse(string json) =>
+                new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json) };
+            static HttpResponseMessage CreateNotFoundResponse() =>
+                new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+
             // Setup HTTP handler that returns empty queue but history contains the completed entry
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
                 var q = req.RequestUri?.Query ?? string.Empty;
                 if (q.Contains("mode=queue"))
-                {
-                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-                    {
-                        Content = new StringContent(queueJson)
-                    };
-                    return Task.FromResult(response);
-                }
+                    return Task.FromResult(CreateOkResponse(queueJson));
 
                 if (q.Contains("mode=history"))
-                {
-                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-                    {
-                        Content = new StringContent(historyJson)
-                    };
-                    return Task.FromResult(response);
-                }
+                    return Task.FromResult(CreateOkResponse(historyJson));
 
-                var notFound = new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
-                return Task.FromResult(notFound);
+                return Task.FromResult(CreateNotFoundResponse());
             });
 
             using var httpClient = new HttpClient(handler);
@@ -524,11 +519,9 @@ namespace Listenarr.Api.Tests
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            var handler = new DelegatingHandlerMock((_, _) =>
-            {
-                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
-                return Task.FromResult(response);
-            });
+            // Local factory transfers HttpResponseMessage ownership to caller (satisfies CodeQL IDisposable analysis)
+            static HttpResponseMessage CreateOkResponse2() => new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+            var handler = new DelegatingHandlerMock((_, _) => Task.FromResult(CreateOkResponse2()));
             using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);

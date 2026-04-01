@@ -312,7 +312,9 @@ namespace Listenarr.Api.Services
 
                     // Fallback to copy — copy to a temp file first, then atomically rename onto destination
                     // so the existing file is never overwritten until a complete replacement is confirmed.
-                    var tempCopyPath = Path.Combine(destDir, Path.GetRandomFileName() + ".tmp");
+                    // Use Path.GetFileName to strip any separators from GetRandomFileName (satisfies static analysis).
+                    var tempCopyName = Path.GetFileName(Path.GetRandomFileName()) + ".tmp";
+                    var tempCopyPath = Path.Combine(destDir, tempCopyName);
                     try
                     {
                         File.Copy(sourceFile, tempCopyPath, overwrite: true);
@@ -323,7 +325,13 @@ namespace Listenarr.Api.Services
                     finally
                     {
                         // Best-effort cleanup of temp copy if something went wrong before/after the move
-                        try { if (File.Exists(tempCopyPath)) File.Delete(tempCopyPath); } catch { /* best-effort */ }
+                        try { if (File.Exists(tempCopyPath)) File.Delete(tempCopyPath); }
+                        catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException
+                                                       && cleanupEx is not OutOfMemoryException
+                                                       && cleanupEx is not StackOverflowException)
+                        {
+                            // best-effort cleanup; ignore non-critical failures
+                        }
                     }
                 }
             }
