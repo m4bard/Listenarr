@@ -269,7 +269,9 @@ namespace Listenarr.Api.Services
                 // Safe ordering: hardlink/copy to a temp path first, then atomically rename
                 // onto the destination. This ensures the original destFile is never deleted
                 // until we have a confirmed replacement ready.
-                var tempDest = Path.Combine(destDir, Path.GetRandomFileName() + ".tmp");
+                // Use Path.GetFileName to ensure the random name has no separators (satisfies static analysis).
+                var tempDestName = Path.GetFileName(Path.GetRandomFileName()) + ".tmp";
+                var tempDest = Path.Combine(destDir, tempDestName);
                 try
                 {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
