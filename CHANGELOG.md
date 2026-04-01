@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.65] - 2026-04-01
+
+### Fixed
+- **Log injection (CWE-117) remediated across all services:** File paths, URLs, search result fields, download IDs, ASINs, and other user-controlled strings are now run through `LogRedaction` helpers (`SanitizeFilePath`, `SanitizeUrl`, `SanitizeText`) before being written to structured log statements, preventing newline injection attacks across controllers, background services, and adapters.
+- **SQL injection risk removed from dynamic schema queries:** Column and table identifiers interpolated into raw `PRAGMA` and `SELECT` statements in `LibraryController` are now double-quoted and validated against a whitelist before use.
+- **SSRF guards added to outbound NZB and torrent file downloads:** `NzbgetAdapter.DownloadNzbAsync` and `TorrentFileDownloader` now call `OutboundRequestSecurity.TryValidateExternalHttpUrl` before any outbound request (and on every redirect hop), blocking requests to loopback addresses, `.local` hostnames, URLs with embedded credentials, and non-HTTP(S) schemes.
+- **`LoginRateLimiter` race condition fixed:** The entry's `BlockUntil` timestamp and failure counter are now protected by a per-entry lock, eliminating a TOCTOU window where concurrent login attempts could slip through the rate limit or cause incorrect increment counts.
+- **Session token removed from `ClaimsPrincipal`:** `SessionService` no longer emits the raw session token as a claim, reducing the risk of the token leaking through claim-inspection APIs or middleware.
+- **`StartupDbNormalizer` column injection hardened:** Dynamically resolved column names are now validated against a strict whitelist and regex guard before being interpolated into `ALTER TABLE` SQL, preventing column-name injection during startup normalisation.
+- **Bulk audiobook updates are now fully transactional:** `BulkUpdateAudiobooks` wraps all per-audiobook changes in a single database transaction; all updates are committed atomically, and a failure on any audiobook rolls back the entire batch with a logged error and a `500` response.
+- **`FileMover.HardlinkFileAsync` data-loss edge case resolved:** Hard-links and copies are now written to a temporary file first and then atomically renamed over the destination (`File.Move` with `overwrite:true`), ensuring the original file is never deleted until the replacement is confirmed on disk.
+- **`QualityProfile.Equals` variable name bug fixed:** The `Equals(object?)` override was referencing the wrong variable (`qd` instead of `other`), causing it to always delegate to a comparison against itself; this is now corrected.
+- **`AccountController.Me()` boolean precedence fixed:** A missing parenthesis in a null/authentication check could allow an unauthenticated request to proceed as a valid session lookup under certain middleware orderings.
+- **Nullable tuple mismatch in `UnmatchedScanBackgroundService`:** The tuple passed to `MultiFileImportPlanner.BuildPlans` now uses named fields (`FullPath`, `RelativePath`) with an explicit `string?` cast, eliminating the CS8620 nullable-reference warning.
+
+### Changed
+- **`update_version.py` hardened for CI reliability:** The version bump script now validates the presence and format of `NEW_VERSION` (`MAJOR.MINOR.PATCH[.REVISION]`) before modifying any files, exits with a non-zero code and a descriptive message on validation failure, and wraps the XML write in a `try/except` to surface filesystem errors cleanly.
+- **Duplicate suffix indicators removed from `AudiobookOnlyFilter`:** The `suffixIndicators` array had duplicate `"Paperback –"` and `"Hardcover –"` entries that were redundant; the array is now de-duplicated.
+- **Test suite migrated to SQLite in-memory for transaction-dependent tests:** `LibraryController_BulkUpdateTests` now uses a real SQLite in-memory connection (seeded with required FK rows) instead of the EF in-memory provider, which does not support transactions, so the bulk-update transaction path is fully exercised.
+- **Reflection-based tests guarded against renamed private methods:** All `GetMethod()`/`Invoke()` call sites in `IndexersNewznabParsingTests` now include `Assert.NotNull` checks and null-forgiving operators so a refactored method name produces a clear test failure rather than a `NullReferenceException`.
+- **Shared `HttpResponseMessage` instances in mock handlers replaced:** `DownloadService_ImportTests` mock HTTP handlers now create a fresh `HttpResponseMessage` per call instead of returning a shared instance whose content stream may already be consumed, eliminating flaky test failures on repeated handler invocations.
+
 ## [0.2.64] - 2026-03-29
 
 ### Added
