@@ -160,7 +160,7 @@ namespace Listenarr.Api.Tests
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             using var factoryHttpClient = new HttpClient();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(factoryHttpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(factoryHttpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(factoryHttpClient);
 
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             pathMappingMock

@@ -191,7 +191,7 @@ namespace Listenarr.Api.Services
             }
             if (!TryValidateExternalImageUrl(imageUrl, out var validationReason))
             {
-                _logger.LogWarning("Blocked image download URL for {Identifier}: {Reason}", identifier, validationReason);
+                _logger.LogWarning("Blocked image download URL for {Identifier}: {Reason}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(validationReason));
                 return null;
             }
 
@@ -201,7 +201,7 @@ namespace Listenarr.Api.Services
                 var libraryPath = GetImagePath(identifier, _libraryImagePath);
                 if (File.Exists(libraryPath) && IsValidCachedCoverFile(libraryPath, identifier, "library"))
                 {
-                    _logger.LogInformation("Image already in library storage: {Identifier}", identifier);
+                    _logger.LogInformation("Image already in library storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(libraryPath);
                 }
 
@@ -209,14 +209,14 @@ namespace Listenarr.Api.Services
                 var authorPath = GetImagePath(identifier, _authorImagePath);
                 if (File.Exists(authorPath) && IsValidCachedCoverFile(authorPath, identifier, "author"))
                 {
-                    _logger.LogInformation("Image already in author storage: {Identifier}", identifier);
+                    _logger.LogInformation("Image already in author storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(authorPath);
                 }
 
                 var seriesPath = GetImagePath(identifier, _seriesImagePath);
                 if (File.Exists(seriesPath) && IsValidCachedCoverFile(seriesPath, identifier, "series"))
                 {
-                    _logger.LogInformation("Image already in series storage: {Identifier}", identifier);
+                    _logger.LogInformation("Image already in series storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(seriesPath);
                 }
 
@@ -224,16 +224,16 @@ namespace Listenarr.Api.Services
                 var tempExisting = GetBestTempImagePathIfValid(identifier);
                 if (!string.IsNullOrEmpty(tempExisting))
                 {
-                    _logger.LogInformation("Image already cached: {Identifier}", identifier);
+                    _logger.LogInformation("Image already cached: {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(tempExisting);
                 }
 
-                _logger.LogInformation("Downloading image from {Url} for {Identifier}", imageUrl, identifier);
+                _logger.LogInformation("Downloading image from {Url} for {Identifier}", LogRedaction.SanitizeText(imageUrl), LogRedaction.SanitizeText(identifier));
 
                 // Skip known Amazon placeholder URL to avoid caching tiny grey-pixel images
                 if (imageUrl.Contains("grey-pixel.gif", StringComparison.OrdinalIgnoreCase))
                 {
-                    _logger.LogInformation("Skipping known grey-pixel placeholder URL for {Identifier}", identifier);
+                    _logger.LogInformation("Skipping known grey-pixel placeholder URL for {Identifier}", LogRedaction.SanitizeText(identifier));
                     return null;
                 }
 
@@ -244,7 +244,7 @@ namespace Listenarr.Api.Services
                 libraryPath = GetImagePath(identifier, _libraryImagePath);
                 if (File.Exists(libraryPath) && IsValidCachedCoverFile(libraryPath, identifier, "library"))
                 {
-                    _logger.LogInformation("Image already in library storage (after wait): {Identifier}", identifier);
+                    _logger.LogInformation("Image already in library storage (after wait): {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(libraryPath);
                 }
 
@@ -252,21 +252,21 @@ namespace Listenarr.Api.Services
                 authorPath = GetImagePath(identifier, _authorImagePath);
                 if (File.Exists(authorPath) && IsValidCachedCoverFile(authorPath, identifier, "author"))
                 {
-                    _logger.LogInformation("Image already in author storage (after wait): {Identifier}", identifier);
+                    _logger.LogInformation("Image already in author storage (after wait): {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(authorPath);
                 }
 
                 seriesPath = GetImagePath(identifier, _seriesImagePath);
                 if (File.Exists(seriesPath) && IsValidCachedCoverFile(seriesPath, identifier, "series"))
                 {
-                    _logger.LogInformation("Image already in series storage (after wait): {Identifier}", identifier);
+                    _logger.LogInformation("Image already in series storage (after wait): {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(seriesPath);
                 }
 
                 tempExisting = GetBestTempImagePathIfValid(identifier);
                 if (!string.IsNullOrEmpty(tempExisting))
                 {
-                    _logger.LogInformation("Image already cached (after wait): {Identifier}", identifier);
+                    _logger.LogInformation("Image already cached (after wait): {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(tempExisting);
                 }
 
@@ -281,7 +281,7 @@ namespace Listenarr.Api.Services
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
                 if (IsPlaceholderImage(imageBytes, mediaType))
                 {
-                    _logger.LogInformation("Skipping placeholder/tiny image for {Identifier} from {Url}", identifier, imageUrl);
+                    _logger.LogInformation("Skipping placeholder/tiny image for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(imageUrl));
                     return null;
                 }
 
@@ -293,12 +293,12 @@ namespace Listenarr.Api.Services
                 // Save to temp cache
                 await File.WriteAllBytesAsync(filePath, imageBytes);
 
-                _logger.LogInformation("Image cached successfully: {FilePath}", filePath);
+                _logger.LogInformation("Image cached successfully: {FilePath}", LogRedaction.SanitizeText(filePath));
                 return GetRelativePath(filePath);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Failed to download and cache image from {Url}", imageUrl);
+                _logger.LogError(ex, "Failed to download and cache image from {Url}", LogRedaction.SanitizeText(imageUrl));
                 return null;
             }
         }
@@ -320,7 +320,7 @@ namespace Listenarr.Api.Services
                 var libraryPath = GetImagePath(identifier, _libraryImagePath);
                 if (File.Exists(libraryPath))
                 {
-                    _logger.LogInformation("Image already in library storage: {Identifier}", identifier);
+                    _logger.LogInformation("Image already in library storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(libraryPath);
                 }
 
@@ -328,15 +328,15 @@ namespace Listenarr.Api.Services
                 var tempPath = GetImagePath(identifier, _tempCachePath);
                 if (!File.Exists(tempPath))
                 {
-                    _logger.LogWarning("Temp cached image not found for {Identifier}", identifier);
+                    _logger.LogWarning("Temp cached image not found for {Identifier}", LogRedaction.SanitizeText(identifier));
                     // If imageUrl provided, attempt to download to temp cache using the identifier
                     if (!string.IsNullOrWhiteSpace(imageUrl))
                     {
-                        _logger.LogInformation("Attempting to download image for {Identifier} from provided URL", identifier);
+                        _logger.LogInformation("Attempting to download image for {Identifier} from provided URL", LogRedaction.SanitizeText(identifier));
                         var cached = await DownloadAndCacheImageAsync(imageUrl, identifier);
                         if (string.IsNullOrWhiteSpace(cached))
                         {
-                            _logger.LogWarning("Download to temp cache failed for {Identifier}", identifier);
+                            _logger.LogWarning("Download to temp cache failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                             return null;
                         }
 
@@ -344,7 +344,7 @@ namespace Listenarr.Api.Services
                         tempPath = GetImagePath(identifier, _tempCachePath);
                         if (!File.Exists(tempPath))
                         {
-                            _logger.LogWarning("Downloaded file not found in temp cache for {Identifier}", identifier);
+                            _logger.LogWarning("Downloaded file not found in temp cache for {Identifier}", LogRedaction.SanitizeText(identifier));
                             return null;
                         }
                     }
@@ -358,12 +358,12 @@ namespace Listenarr.Api.Services
                 Directory.CreateDirectory(_libraryImagePath);
                 File.Move(tempPath, libraryPath, overwrite: true);
 
-                _logger.LogInformation("Image moved to library storage: {Identifier}", identifier);
+                _logger.LogInformation("Image moved to library storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                 return GetRelativePath(libraryPath);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Failed to move image to library storage for {Identifier}", identifier);
+                _logger.LogError(ex, "Failed to move image to library storage for {Identifier}", LogRedaction.SanitizeText(identifier));
                 return null;
             }
         }
@@ -430,22 +430,22 @@ namespace Listenarr.Api.Services
                 // Check if already in author storage
                 if (File.Exists(authorPath))
                 {
-                    _logger.LogInformation("Author image already in author storage: {Identifier}", identifier);
+                    _logger.LogInformation("Author image already in author storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(authorPath);
                 }
 
                 // Find the temp cached file
                 if (!File.Exists(tempPath))
                 {
-                    _logger.LogWarning("Temp cached author image not found for {Identifier}", identifier);
+                    _logger.LogWarning("Temp cached author image not found for {Identifier}", LogRedaction.SanitizeText(identifier));
                     // If imageUrl provided, attempt to download to temp cache using the identifier
                     if (!string.IsNullOrWhiteSpace(imageUrl))
                     {
-                        _logger.LogInformation("Attempting to download author image for {Identifier} from provided URL", identifier);
+                        _logger.LogInformation("Attempting to download author image for {Identifier} from provided URL", LogRedaction.SanitizeText(identifier));
                         var cached = await DownloadAndCacheImageAsync(imageUrl, identifier);
                         if (string.IsNullOrWhiteSpace(cached))
                         {
-                            _logger.LogWarning("Download to temp cache failed for {Identifier}", identifier);
+                            _logger.LogWarning("Download to temp cache failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                             return null;
                         }
 
@@ -453,7 +453,7 @@ namespace Listenarr.Api.Services
                         tempPath = GetImagePath(identifier, _tempCachePath);
                         if (!File.Exists(tempPath))
                         {
-                            _logger.LogWarning("Downloaded file not found in temp cache for {Identifier}", identifier);
+                            _logger.LogWarning("Downloaded file not found in temp cache for {Identifier}", LogRedaction.SanitizeText(identifier));
                             return null;
                         }
                     }
@@ -467,12 +467,12 @@ namespace Listenarr.Api.Services
                 Directory.CreateDirectory(_authorImagePath);
                 File.Move(tempPath, authorPath, overwrite: true);
 
-                _logger.LogInformation("Author image moved to author storage: {Identifier}", identifier);
+                _logger.LogInformation("Author image moved to author storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                 return GetRelativePath(authorPath);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Failed to move author image to author storage for {Identifier}", identifier);
+                _logger.LogError(ex, "Failed to move author image to author storage for {Identifier}", LogRedaction.SanitizeText(identifier));
                 return null;
             }
         }
@@ -535,27 +535,27 @@ namespace Listenarr.Api.Services
 
                 if (File.Exists(seriesPath))
                 {
-                    _logger.LogInformation("Series image already in series storage: {Identifier}", identifier);
+                    _logger.LogInformation("Series image already in series storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                     return GetRelativePath(seriesPath);
                 }
 
                 if (!File.Exists(tempPath))
                 {
-                    _logger.LogWarning("Temp cached series image not found for {Identifier}", identifier);
+                    _logger.LogWarning("Temp cached series image not found for {Identifier}", LogRedaction.SanitizeText(identifier));
                     if (!string.IsNullOrWhiteSpace(imageUrl))
                     {
-                        _logger.LogInformation("Attempting to download series image for {Identifier} from provided URL", identifier);
+                        _logger.LogInformation("Attempting to download series image for {Identifier} from provided URL", LogRedaction.SanitizeText(identifier));
                         var cached = await DownloadAndCacheImageAsync(imageUrl, identifier);
                         if (string.IsNullOrWhiteSpace(cached))
                         {
-                            _logger.LogWarning("Download to temp cache failed for series {Identifier}", identifier);
+                            _logger.LogWarning("Download to temp cache failed for series {Identifier}", LogRedaction.SanitizeText(identifier));
                             return null;
                         }
 
                         tempPath = GetImagePath(identifier, _tempCachePath);
                         if (!File.Exists(tempPath))
                         {
-                            _logger.LogWarning("Downloaded series file not found in temp cache for {Identifier}", identifier);
+                            _logger.LogWarning("Downloaded series file not found in temp cache for {Identifier}", LogRedaction.SanitizeText(identifier));
                             return null;
                         }
                     }
@@ -568,12 +568,12 @@ namespace Listenarr.Api.Services
                 Directory.CreateDirectory(_seriesImagePath);
                 File.Move(tempPath, seriesPath, overwrite: true);
 
-                _logger.LogInformation("Series image moved to series storage: {Identifier}", identifier);
+                _logger.LogInformation("Series image moved to series storage: {Identifier}", LogRedaction.SanitizeText(identifier));
                 return GetRelativePath(seriesPath);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Failed to move series image to series storage for {Identifier}", identifier);
+                _logger.LogError(ex, "Failed to move series image to series storage for {Identifier}", LogRedaction.SanitizeText(identifier));
                 return null;
             }
         }
@@ -861,7 +861,7 @@ namespace Listenarr.Api.Services
                 var addresses = await Dns.GetHostAddressesAsync(host);
                 if (addresses == null || addresses.Length == 0)
                 {
-                    _logger.LogWarning("Blocked image URL because DNS resolution returned no addresses: {Host}", host);
+                    _logger.LogWarning("Blocked image URL because DNS resolution returned no addresses: {Host}", LogRedaction.SanitizeText(host));
                     return false;
                 }
 
@@ -870,7 +870,7 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogWarning(
                         "Blocked image URL because DNS resolved to private/loopback address. Host={Host}, Address={Address}",
-                        host,
+                        LogRedaction.SanitizeText(host),
                         privateOrLoopback);
                     return false;
                 }
@@ -879,12 +879,12 @@ namespace Listenarr.Api.Services
             }
             catch (SocketException ex)
             {
-                _logger.LogWarning(ex, "Blocked image URL because DNS resolution failed for host {Host}", uri.Host);
+                _logger.LogWarning(ex, "Blocked image URL because DNS resolution failed for host {Host}", LogRedaction.SanitizeText(uri.Host));
                 return false;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Blocked image URL due to unexpected DNS validation error for host {Host}", uri.Host);
+                _logger.LogWarning(ex, "Blocked image URL due to unexpected DNS validation error for host {Host}", LogRedaction.SanitizeText(uri.Host));
                 return false;
             }
         }
@@ -938,14 +938,14 @@ namespace Listenarr.Api.Services
                 var mediaType = GetMediaTypeFromExtension(Path.GetExtension(filePath));
                 if (IsPlaceholderImage(bytes, mediaType))
                 {
-                    _logger.LogInformation("Deleting placeholder/tiny cached image for {Identifier} in {Bucket}: {Path}", identifier, bucket, filePath);
+                    _logger.LogInformation("Deleting placeholder/tiny cached image for {Identifier} in {Bucket}: {Path}", LogRedaction.SanitizeText(identifier), bucket, LogRedaction.SanitizeText(filePath));
                     try
                     {
                         File.Delete(filePath);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
-                        _logger.LogDebug(ex, "Failed deleting invalid cached image for {Identifier} in {Bucket}: {Path}", identifier, bucket, filePath);
+                        _logger.LogDebug(ex, "Failed deleting invalid cached image for {Identifier} in {Bucket}: {Path}", LogRedaction.SanitizeText(identifier), bucket, LogRedaction.SanitizeText(filePath));
                     }
                     return false;
                 }
@@ -953,7 +953,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed validating cached image file for {Identifier}: {Path}", identifier, filePath);
+                _logger.LogWarning(ex, "Failed validating cached image file for {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(filePath));
                 return false;
             }
         }

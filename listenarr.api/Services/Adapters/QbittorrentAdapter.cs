@@ -221,8 +221,8 @@ namespace Listenarr.Api.Services.Adapters
 
         public async Task<string?> AddAsync(DownloadClientConfiguration client, SearchResult result, CancellationToken ct = default)
         {
-            ArgumentNullException.ThrowIfNull(client);
-            ArgumentNullException.ThrowIfNull(result);
+            if (client == null) throw new ArgumentNullException(nameof(client));
+            if (result == null) throw new ArgumentNullException(nameof(result));
 
             var magnetLink = DownloadClientUriBuilder.NormalizeMagnetLink(result.MagnetLink);
             var httpTorrentUrl = NormalizeTorrentUrl(result.TorrentUrl);
@@ -404,14 +404,14 @@ namespace Listenarr.Api.Services.Adapters
                             var afterList = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(afterJson);
                             if (afterList != null)
                             {
-                                foreach (var hash in afterList.Where(t => t.TryGetValue("hash", out _)).Select(t => t["hash"].GetString() ?? string.Empty))
+                                foreach (var hash in afterList
+                                    .Where(t => t.TryGetValue("hash", out _))
+                                    .Select(t => t["hash"].GetString() ?? string.Empty)
+                                    .Where(h => !existingHashes.Contains(h)))
                                 {
-                                    if (!existingHashes.Contains(hash))
-                                    {
-                                        _logger.LogInformation("Detected new qBittorrent torrent: hash={Hash}", hash);
-                                        detectedHash = hash;
-                                        break;
-                                    }
+                                    _logger.LogInformation("Detected new qBittorrent torrent: hash={Hash}", hash);
+                                    detectedHash = hash;
+                                    break;
                                 }
                             }
                         }
@@ -465,7 +465,7 @@ namespace Listenarr.Api.Services.Adapters
                 return detectedHash;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "qBittorrent AddAsync failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id));
+                _logger.LogError(ex, "qBittorrent AddAsync failed for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                 throw;
             }
         }
@@ -595,16 +595,13 @@ namespace Listenarr.Api.Services.Adapters
                 });
 
                 using var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
-                if (!loginResp.IsSuccessStatusCode)
+                if (!loginResp.IsSuccessStatusCode && loginResp.StatusCode == HttpStatusCode.Forbidden)
                 {
-                    if (loginResp.StatusCode == HttpStatusCode.Forbidden)
+                    using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                    if (!testResp.IsSuccessStatusCode)
                     {
-                        using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
-                        if (!testResp.IsSuccessStatusCode)
-                        {
-                            _logger.LogWarning("qBittorrent auth appears enabled and credentials are invalid for client {ClientId}", client.Id);
-                            return false;
-                        }
+                        _logger.LogWarning("qBittorrent auth appears enabled and credentials are invalid for client {ClientId}", client.Id);
+                        return false;
                     }
                 }
 
@@ -1252,13 +1249,10 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 var outputPath = ResolveTorrentContentPath(savePath, files);
-                if (string.IsNullOrEmpty(outputPath))
+                if (string.IsNullOrEmpty(outputPath) && string.IsNullOrWhiteSpace(resolvedExistingContentPath))
                 {
-                    if (string.IsNullOrWhiteSpace(resolvedExistingContentPath))
-                    {
-                        _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
-                        return result;
-                    }
+                    _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
+                    return result;
                 }
 
                 // ✅ Apply remote path mapping

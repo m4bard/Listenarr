@@ -109,27 +109,26 @@ namespace Listenarr.Api.Tests
             if (_db != null)
             {
                 var projected = _db.Downloads
-                    .Where(d =>
-                        (d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved) ||
-                        (d.DownloadClientId != "DDL" &&
-                         d.Status != DownloadStatus.Moved &&
-                         d.Status != DownloadStatus.Failed &&
-                         (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))))
+                    .Where(IsQueueDisplayCandidate)
                     .Select(ToQueueTrackedDownloadProjection)
                     .ToList();
                 return Task.FromResult(projected);
             }
 
             var list = _mem.Values
-                .Where(d =>
-                    (d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved) ||
-                    (d.DownloadClientId != "DDL" &&
-                     d.Status != DownloadStatus.Moved &&
-                     d.Status != DownloadStatus.Failed &&
-                     (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))))
+                .Where(IsQueueDisplayCandidate)
                 .Select(ToQueueTrackedDownloadProjection)
                 .ToList();
             return Task.FromResult(list);
+        }
+
+        private static bool IsQueueDisplayCandidate(Download d)
+        {
+            bool isDdl = d.DownloadClientId == "DDL";
+            bool notMoved = d.Status != DownloadStatus.Moved;
+            bool notFailed = d.Status != DownloadStatus.Failed;
+            bool notCompletedWithPath = d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath);
+            return (isDdl && notMoved) || (!isDdl && notMoved && notFailed && notCompletedWithPath);
         }
 
         public Task<List<QueueTrackedDownload>> GetQueueMatchingCandidatesAsync()

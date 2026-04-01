@@ -164,7 +164,7 @@ namespace Listenarr.Api.Tests.Services
 
             // Assert
             Assert.NotNull(currentState);
-            Assert.Equal(DownloadItemStatus.Downloading, currentState.Value);
+            Assert.Equal(DownloadItemStatus.Downloading, currentState!.Value);
         }
 
         [Fact]

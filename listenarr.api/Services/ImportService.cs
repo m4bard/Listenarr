@@ -111,7 +111,7 @@ namespace Listenarr.Api.Services
                         if (audiobook != null)
                         {
                             namingMetadata = BuildNamingMetadata(audiobook, extractedMetadata, metadata.Title);
-                            _logger.LogDebug("ImportSingleFile: Using audiobook metadata for naming (Download {DownloadId}): {Title} by {Artist}", downloadId, namingMetadata.Title, namingMetadata.Artist);
+                            _logger.LogDebug("ImportSingleFile: Using audiobook metadata for naming (Download {DownloadId}): {Title} by {Artist}", LogRedaction.SanitizeText(downloadId), LogRedaction.SanitizeText(namingMetadata.Title), LogRedaction.SanitizeText(namingMetadata.Artist));
                         }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

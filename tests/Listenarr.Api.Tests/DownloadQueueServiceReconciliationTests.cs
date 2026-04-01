@@ -77,12 +77,7 @@ namespace Listenarr.Api.Tests
             downloadRepoMock
                 .Setup(r => r.GetQueueDisplayCandidatesAsync())
                 .ReturnsAsync(downloads
-                    .Where(d =>
-                        (d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved) ||
-                        (d.DownloadClientId != "DDL" &&
-                         d.Status != DownloadStatus.Moved &&
-                         d.Status != DownloadStatus.Failed &&
-                         (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))))
+                    .Where(IsQueueDisplayCandidate)
                     .Select(ToQueueTrackedDownload)
                     .ToList());
             downloadRepoMock
@@ -726,6 +721,15 @@ namespace Listenarr.Api.Tests
             Assert.Equal("HASH-ARTEMIS", persistedMetadata["TorrentHash"]?.ToString());
             downloadRepoMock.Verify(r => r.UpdateMetadataAsync("tracked-artemis", "ClientDownloadId", "HASH-ARTEMIS"), Times.Once);
             downloadRepoMock.Verify(r => r.UpdateMetadataAsync("tracked-artemis", "TorrentHash", "HASH-ARTEMIS"), Times.Once);
+        }
+
+        private static bool IsQueueDisplayCandidate(Download d)
+        {
+            bool isDdl = d.DownloadClientId == "DDL";
+            bool notMoved = d.Status != DownloadStatus.Moved;
+            bool notFailed = d.Status != DownloadStatus.Failed;
+            bool notCompletedWithPath = d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath);
+            return (isDdl && notMoved) || (!isDdl && notMoved && notFailed && notCompletedWithPath);
         }
     }
 }

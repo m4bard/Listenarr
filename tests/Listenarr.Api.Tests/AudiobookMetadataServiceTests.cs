@@ -52,11 +52,12 @@ namespace Listenarr.Api.Tests
             Assert.NotNull(res);
             // Expect the returned object to contain the converted metadata (as AudibleBookResponse wrapper)
             var asObj = res as dynamic;
-            Assert.NotNull(asObj.metadata);
+            Assert.NotNull(asObj);
+            Assert.NotNull(asObj!.metadata);
             var metadata = asObj.metadata as AudibleBookResponse;
             Assert.NotNull(metadata);
-            Assert.Equal("BTESTASIN", metadata.Asin);
-            Assert.Equal("https://audnexus.covers/cover.jpg", metadata.ImageUrl);
+            Assert.Equal("BTESTASIN", metadata!.Asin);
+            Assert.Equal("https://audnexus.covers/cover.jpg", metadata!.ImageUrl);
             Assert.Equal("Audnexus", (string)asObj.source);
 
             // New assertions for mapped fields

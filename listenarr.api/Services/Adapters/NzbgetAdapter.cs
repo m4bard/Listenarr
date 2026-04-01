@@ -315,19 +315,14 @@ namespace Listenarr.Api.Services.Adapters
 
                                         if (paramMembers.TryGetValue("Name", out var paramName) &&
                                             paramMembers.TryGetValue("Value", out var paramValue) &&
-                                            paramName == "*drone" && paramValue == id)
+                                            paramName == "*drone" && paramValue == id &&
+                                            members.TryGetValue("ID", out var idElement) &&
+                                            int.TryParse(idElement?.Value, out var foundNumericId))
                                         {
                                             // Found matching droneId, get the NZBID
-                                            if (members.TryGetValue("ID", out var idElement))
-                                            {
-                                                var foundId = idElement?.Value;
-                                                if (int.TryParse(foundId, out var foundNumericId))
-                                                {
-                                                    _logger.LogDebug("Found NZBID {NzbId} for droneId {DroneId} in history", foundNumericId, LogRedaction.SanitizeText(id));
-                                                    numericId = foundNumericId;
-                                                    break;
-                                                }
-                                            }
+                                            _logger.LogDebug("Found NZBID {NzbId} for droneId {DroneId} in history", foundNumericId, LogRedaction.SanitizeText(id));
+                                            numericId = foundNumericId;
+                                            break;
                                         }
                                     }
                                 }
@@ -614,11 +609,11 @@ namespace Listenarr.Api.Services.Adapters
 
         private async Task<DownloadClientItem> MapGroupToDownloadClientItemAsync(DownloadClientConfiguration client, XElement structElement)
         {
-            var members = structElement.Elements("member").ToDictionary(
+            var members = (IReadOnlyDictionary<string, string?>)structElement.Elements("member").ToDictionary(
                 m => m.Element("name")?.Value ?? string.Empty,
                 m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty
-            ) as IReadOnlyDictionary<string, string?>;
-            
+            );
+
             var id = members.GetValueOrDefault("GroupID", null)
                 ?? members.GetValueOrDefault("LastID", null)
                 ?? Guid.NewGuid().ToString("N");
@@ -698,11 +693,11 @@ namespace Listenarr.Api.Services.Adapters
 
         private QueueItem MapGroup(DownloadClientConfiguration client, XElement structElement)
         {
-            var members = structElement.Elements("member").ToDictionary(
+            var members = (IReadOnlyDictionary<string, string?>)structElement.Elements("member").ToDictionary(
                 m => m.Element("name")?.Value ?? string.Empty,
                 m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty
-            ) as IReadOnlyDictionary<string, string?>;
-            
+            );
+
             var id = members.GetValueOrDefault("GroupID", null)
                 ?? members.GetValueOrDefault("LastID", null)
                 ?? Guid.NewGuid().ToString("N");

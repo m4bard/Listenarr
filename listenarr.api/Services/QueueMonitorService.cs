@@ -192,7 +192,7 @@ namespace Listenarr.Api.Services
 
                 // Check if any important properties changed
                 if (oldItem.Status != newItem.Status ||
-                    oldItem.Progress != newItem.Progress ||
+                    Math.Abs(oldItem.Progress - newItem.Progress) > 1e-9 ||
                     oldItem.Downloaded != newItem.Downloaded ||
                     oldItem.ErrorMessage != newItem.ErrorMessage)
                 {

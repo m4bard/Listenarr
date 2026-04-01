@@ -320,16 +320,16 @@ namespace Listenarr.Api.Services
                     return true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogWarning(ex, "Directory.Move attempt {Attempt}/{Max} failed: {Source} -> {Dest}", attempt + 1, maxAttempts, sourceDir, destDir);
+                    _logger.LogWarning(ex, "Directory.Move attempt {Attempt}/{Max} failed: {Source} -> {Dest}", attempt + 1, maxAttempts, LogRedaction.SanitizeText(sourceDir), LogRedaction.SanitizeText(destDir));
 
                     // Dump a small directory listing sample for diagnostics
                     try
                     {
                         var files = Directory.GetFiles(sourceDir, "*.*", SearchOption.AllDirectories);
-                        _logger.LogWarning("Directory listing for {Source} (count={Count}), sample: {Sample}", sourceDir, files.Length, string.Join(", ", files.Take(5).Select(f => Path.GetFileName(f))));
+                        _logger.LogWarning("Directory listing for {Source} (count={Count}), sample: {Sample}", LogRedaction.SanitizeText(sourceDir), files.Length, LogRedaction.SanitizeText(string.Join(", ", files.Take(5).Select(f => Path.GetFileName(f)))));
                     }
                     catch (Exception listEx) when (listEx is not OperationCanceledException && listEx is not OutOfMemoryException && listEx is not StackOverflowException) {
-                        _logger.LogDebug(listEx, "Failed to enumerate files in {Source} while diagnosing move failure", sourceDir);
+                        _logger.LogDebug(listEx, "Failed to enumerate files in {Source} while diagnosing move failure", LogRedaction.SanitizeText(sourceDir));
                     }
 
                     // Dump ACL/owner information if available (Windows-friendly). Failures are non-blocking.
@@ -339,21 +339,21 @@ namespace Listenarr.Api.Services
                         {
                             var dirSec = new DirectoryInfo(sourceDir).GetAccessControl();
                             var owner = dirSec.GetOwner(typeof(NTAccount))?.ToString() ?? "unknown";
-                            _logger.LogWarning("Directory owner for {Source}: {Owner}", sourceDir, owner);
+                            _logger.LogWarning("Directory owner for {Source}: {Owner}", LogRedaction.SanitizeText(sourceDir), LogRedaction.SanitizeText(owner));
 
                             var rules = dirSec.GetAccessRules(true, true, typeof(NTAccount));
                             foreach (FileSystemAccessRule rule in rules.Cast<FileSystemAccessRule>().Take(10))
                             {
-                                _logger.LogWarning("ACL {Source}: {Identity} {Type} {Rights}", sourceDir, rule.IdentityReference.Value, rule.AccessControlType, rule.FileSystemRights);
+                                _logger.LogWarning("ACL {Source}: {Identity} {Type} {Rights}", LogRedaction.SanitizeText(sourceDir), LogRedaction.SanitizeText(rule.IdentityReference.Value), rule.AccessControlType, rule.FileSystemRights);
                             }
                         }
                         else
                         {
-                            _logger.LogDebug("Skipping ACL diagnostics for {Source} (non-Windows OS)", sourceDir);
+                            _logger.LogDebug("Skipping ACL diagnostics for {Source} (non-Windows OS)", LogRedaction.SanitizeText(sourceDir));
                         }
                     }
                     catch (Exception aclEx) when (aclEx is not OperationCanceledException && aclEx is not OutOfMemoryException && aclEx is not StackOverflowException) {
-                        _logger.LogDebug(aclEx, "Failed to read ACLs for {Source}", sourceDir);
+                        _logger.LogDebug(aclEx, "Failed to read ACLs for {Source}", LogRedaction.SanitizeText(sourceDir));
                     }
 
                     if (attempt < maxAttempts - 1)
@@ -382,16 +382,16 @@ namespace Listenarr.Api.Services
                     return true;
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogWarning(ex, "File.Move attempt {Attempt}/{Max} failed: {Source} -> {Dest}", attempt + 1, maxAttempts, sourceFile, destFile);
+                    _logger.LogWarning(ex, "File.Move attempt {Attempt}/{Max} failed: {Source} -> {Dest}", attempt + 1, maxAttempts, LogRedaction.SanitizeText(sourceFile), LogRedaction.SanitizeText(destFile));
 
                     // Try opening the source file to detect locks
                     try
                     {
                         using var stream = File.Open(sourceFile, FileMode.Open, FileAccess.Read, FileShare.Read);
-                        _logger.LogDebug("Able to open source file for read during diagnostic: {File}", sourceFile);
+                        _logger.LogDebug("Able to open source file for read during diagnostic: {File}", LogRedaction.SanitizeText(sourceFile));
                     }
                     catch (Exception openEx) when (openEx is not OperationCanceledException && openEx is not OutOfMemoryException && openEx is not StackOverflowException) {
-                        _logger.LogWarning(openEx, "Failed to open source file for read (may be locked): {File}", sourceFile);
+                        _logger.LogWarning(openEx, "Failed to open source file for read (may be locked): {File}", LogRedaction.SanitizeText(sourceFile));
                     }
 
                     try
@@ -400,20 +400,20 @@ namespace Listenarr.Api.Services
                         {
                             var fileSec = new FileInfo(sourceFile).GetAccessControl();
                             var owner = fileSec.GetOwner(typeof(NTAccount))?.ToString() ?? "unknown";
-                            _logger.LogWarning("File owner for {File}: {Owner}", sourceFile, owner);
+                            _logger.LogWarning("File owner for {File}: {Owner}", LogRedaction.SanitizeText(sourceFile), LogRedaction.SanitizeText(owner));
                             var rules = fileSec.GetAccessRules(true, true, typeof(NTAccount));
                             foreach (FileSystemAccessRule rule in rules.Cast<FileSystemAccessRule>().Take(10))
                             {
-                                _logger.LogWarning("ACL {File}: {Identity} {Type} {Rights}", sourceFile, rule.IdentityReference.Value, rule.AccessControlType, rule.FileSystemRights);
+                                _logger.LogWarning("ACL {File}: {Identity} {Type} {Rights}", LogRedaction.SanitizeText(sourceFile), LogRedaction.SanitizeText(rule.IdentityReference.Value), rule.AccessControlType, rule.FileSystemRights);
                             }
                         }
                         else
                         {
-                            _logger.LogDebug("Skipping file ACL diagnostics for {File} (non-Windows OS)", sourceFile);
+                            _logger.LogDebug("Skipping file ACL diagnostics for {File} (non-Windows OS)", LogRedaction.SanitizeText(sourceFile));
                         }
                     }
                     catch (Exception aclEx) when (aclEx is not OperationCanceledException && aclEx is not OutOfMemoryException && aclEx is not StackOverflowException) {
-                        _logger.LogDebug(aclEx, "Failed to read file ACLs for {File}", sourceFile);
+                        _logger.LogDebug(aclEx, "Failed to read file ACLs for {File}", LogRedaction.SanitizeText(sourceFile));
                     }
 
                     if (attempt < maxAttempts - 1)
@@ -576,7 +576,7 @@ namespace Listenarr.Api.Services
             foreach (var dl in activeDownloads)
             {
                 _logger.LogInformation("Active download: {Id} - {Title} - Status: {Status} - Client: {ClientId}",
-                    dl.Id, dl.Title, dl.Status, dl.DownloadClientId);
+                    LogRedaction.SanitizeText(dl.Id), LogRedaction.SanitizeText(dl.Title), dl.Status, LogRedaction.SanitizeText(dl.DownloadClientId));
             }
 
             // Only poll download clients if there are active downloads

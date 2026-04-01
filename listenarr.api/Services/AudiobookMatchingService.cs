@@ -131,12 +131,10 @@ namespace Listenarr.Api.Services
                 confidence += seriesMatch * 0.07;
 
                 // Series number match (3% additional weight)
-                if (!string.IsNullOrEmpty(download.SeriesNumber) && !string.IsNullOrEmpty(audiobook.SeriesNumber))
+                if (!string.IsNullOrEmpty(download.SeriesNumber) && !string.IsNullOrEmpty(audiobook.SeriesNumber) &&
+                    string.Equals(download.SeriesNumber, audiobook.SeriesNumber, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (string.Equals(download.SeriesNumber, audiobook.SeriesNumber, StringComparison.OrdinalIgnoreCase))
-                    {
-                        confidence += 0.03;
-                    }
+                    confidence += 0.03;
                 }
                 criteriaCount++;
             }
@@ -222,12 +220,10 @@ namespace Listenarr.Api.Services
                 var seriesMatch = CalculateTitleSimilarity(searchResult.Series, audiobook.Series);
                 confidence += seriesMatch * 0.07;
 
-                if (!string.IsNullOrEmpty(searchResult.SeriesNumber) && !string.IsNullOrEmpty(audiobook.SeriesNumber))
+                if (!string.IsNullOrEmpty(searchResult.SeriesNumber) && !string.IsNullOrEmpty(audiobook.SeriesNumber) &&
+                    string.Equals(searchResult.SeriesNumber, audiobook.SeriesNumber, StringComparison.OrdinalIgnoreCase))
                 {
-                    if (string.Equals(searchResult.SeriesNumber, audiobook.SeriesNumber, StringComparison.OrdinalIgnoreCase))
-                    {
-                        confidence += 0.03;
-                    }
+                    confidence += 0.03;
                 }
                 criteriaCount++;
             }

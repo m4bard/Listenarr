@@ -28,7 +28,7 @@ namespace Listenarr.Api.Tests
 
             if (_db != null)
             {
-                return _db.DownloadProcessingJobs
+                return _db.DownloadProcessingJobs!
                     .Where(j => ids.Contains(j.DownloadId) && (j.Status == ProcessingJobStatus.Pending || j.Status == ProcessingJobStatus.Processing || j.Status == ProcessingJobStatus.Retry))
                     .Select(j => j.DownloadId)
                     .Distinct()
@@ -48,7 +48,7 @@ namespace Listenarr.Api.Tests
 
             if (_db != null)
             {
-                return _db.DownloadProcessingJobs
+                return _db.DownloadProcessingJobs!
                     .Where(j => ids.Contains(j.DownloadId))
                     .Select(j => j.DownloadId)
                     .Distinct()

@@ -108,7 +108,7 @@ namespace Listenarr.Api.Services
             var results = new List<SearchResult>();
 
             // Diagnostic log to help trace which callers invoke automatic vs interactive searches
-            _logger.LogInformation("SearchAsync called. Query='{Query}', isAutomaticSearch={IsAutomaticSearch}", query, isAutomaticSearch);
+            _logger.LogInformation("SearchAsync called. Query='{Query}', isAutomaticSearch={IsAutomaticSearch}", LogRedaction.SanitizeText(query), isAutomaticSearch);
 
             // For automatic search, only search indexers - skip Amazon/Audible entirely
             if (isAutomaticSearch)
@@ -117,11 +117,11 @@ namespace Listenarr.Api.Services
                 if (automaticIndexerResults.Any())
                 {
                     results.AddRange(automaticIndexerResults.Select((IndexerSearchResult r) => SearchResultConverters.ToSearchResult(r)));
-                    _logger.LogInformation("Found {Count} indexer results for automatic search query: {Query}", automaticIndexerResults.Count, query);
+                    _logger.LogInformation("Found {Count} indexer results for automatic search query: {Query}", automaticIndexerResults.Count, LogRedaction.SanitizeText(query));
                 }
                 else
                 {
-                    _logger.LogInformation("No indexer results found for automatic search query: {Query}", query);
+                    _logger.LogInformation("No indexer results found for automatic search query: {Query}", LogRedaction.SanitizeText(query));
                 }
                 return ApplySorting(results, sortBy, sortDirection);
             }
@@ -131,11 +131,11 @@ namespace Listenarr.Api.Services
             if (intelligentResults.Any())
             {
                 results.AddRange(intelligentResults.Select((MetadataSearchResult r) => SearchResultConverters.ToSearchResult(r)));
-                _logger.LogInformation("Found {Count} valid metadata results using intelligent search for query: {Query}", intelligentResults.Count, query);
+                _logger.LogInformation("Found {Count} valid metadata results using intelligent search for query: {Query}", intelligentResults.Count, LogRedaction.SanitizeText(query));
             }
             else
             {
-                _logger.LogInformation("No metadata results found for query: {Query}", query);
+                _logger.LogInformation("No metadata results found for query: {Query}", LogRedaction.SanitizeText(query));
             }
 
             // Also search configured indexers for additional results (including DDL downloads)
@@ -143,7 +143,7 @@ namespace Listenarr.Api.Services
             if (indexerResults.Any())
             {
                 results.AddRange(indexerResults.Select(r => SearchResultConverters.ToSearchResult(r)));
-                _logger.LogInformation("Added {Count} indexer results (including DDL downloads) for query: {Query}", indexerResults.Count, query);
+                _logger.LogInformation("Added {Count} indexer results (including DDL downloads) for query: {Query}", indexerResults.Count, LogRedaction.SanitizeText(query));
             }
 
             return ApplySorting(results, sortBy, sortDirection);
@@ -165,7 +165,7 @@ namespace Listenarr.Api.Services
                     {
                         Indexer? idx = null;
                         if (r.IndexerId.HasValue)
-                            idx = _dbContext.Indexers.FirstOrDefault(i => i.Id == r.IndexerId.Value);
+                            idx = _dbContext.Indexers.FirstOrDefault(i => i.Id == r.IndexerId!.Value);
                         var score = CalculateProwlarrStyleScore(r, idx);
                         return new { Result = r, Score = score };
                     }).ToList();
@@ -217,7 +217,7 @@ namespace Listenarr.Api.Services
                     {
                         Indexer? idx = null;
                         if (r.IndexerId.HasValue)
-                            idx = _dbContext.Indexers.FirstOrDefault(i => i.Id == r.IndexerId.Value);
+                            idx = _dbContext.Indexers.FirstOrDefault(i => i.Id == r.IndexerId!.Value);
                         var score = CalculateProwlarrStyleScore(r, idx);
                         return new { Result = r, Score = score };
                     }).ToList();
@@ -967,14 +967,17 @@ namespace Listenarr.Api.Services
                         foreach (var ol in openLibraryDerivedResults)
                         {
                             // Basic dedupe: avoid adding items with same Title+Artist
-                            var duplicate = enrichedList.Any(e =>
+                            var duplicate = enrichedList.Any(e => {
                                 // Prefer exact identifier matches (OpenLibrary ID or ASIN)
-                                (!string.IsNullOrWhiteSpace(e.Id) && !string.IsNullOrWhiteSpace(ol.Id) && string.Equals(e.Id, ol.Id, StringComparison.OrdinalIgnoreCase))
-                                || (!string.IsNullOrWhiteSpace(e.Asin) && !string.IsNullOrWhiteSpace(ol.Asin) && string.Equals(e.Asin, ol.Asin, StringComparison.OrdinalIgnoreCase))
+                                bool idMatch = !string.IsNullOrWhiteSpace(e.Id) && !string.IsNullOrWhiteSpace(ol.Id)
+                                    && string.Equals(e.Id, ol.Id, StringComparison.OrdinalIgnoreCase);
+                                bool asinMatch = !string.IsNullOrWhiteSpace(e.Asin) && !string.IsNullOrWhiteSpace(ol.Asin)
+                                    && string.Equals(e.Asin, ol.Asin, StringComparison.OrdinalIgnoreCase);
                                 // Fallback: Title+Artist equality (defensive)
-                                || (string.Equals(e.Title ?? string.Empty, ol.Title ?? string.Empty, StringComparison.OrdinalIgnoreCase)
-                                    && string.Equals(e.Artist ?? string.Empty, ol.Artist ?? string.Empty, StringComparison.OrdinalIgnoreCase))
-                            );
+                                bool titleArtistMatch = string.Equals(e.Title ?? string.Empty, ol.Title ?? string.Empty, StringComparison.OrdinalIgnoreCase)
+                                    && string.Equals(e.Artist ?? string.Empty, ol.Artist ?? string.Empty, StringComparison.OrdinalIgnoreCase);
+                                return idMatch || asinMatch || titleArtistMatch;
+                            });
 
                             if (!duplicate)
                             {
@@ -2809,11 +2812,8 @@ namespace Listenarr.Api.Services
                 {
                     try
                     {
-                        if (keys.Contains(prop.Name))
-                        {
-                            if (prop.Value.ValueKind == JsonValueKind.String)
-                                return prop.Value.GetString();
-                        }
+                        if (keys.Contains(prop.Name) && prop.Value.ValueKind == JsonValueKind.String)
+                            return prop.Value.GetString();
 
                         // Recurse into objects and arrays
                         if (prop.Value.ValueKind == JsonValueKind.Object || prop.Value.ValueKind == JsonValueKind.Array)
@@ -4077,25 +4077,23 @@ namespace Listenarr.Api.Services
             // Handle formats like "500 MB", "1.2 GB", "1024 KB", "3.7 GiB", "279.0 MiB", etc.
             // Support both decimal (KB/MB/GB/TB) and binary (KiB/MiB/GiB/TiB) units
             var match = System.Text.RegularExpressions.Regex.Match(sizeStr, @"^([\d\.]+)\s*(KiB|MiB|GiB|TiB|KB|MB|GB|TB|B)$", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-            if (match.Success)
+            if (match.Success &&
+                double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value))
             {
-                if (double.TryParse(match.Groups[1].Value, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var value))
+                var unit = match.Groups[2].Value.ToUpper();
+                return unit switch
                 {
-                    var unit = match.Groups[2].Value.ToUpper();
-                    return unit switch
-                    {
-                        "B" => (long)value,
-                        "KB" => (long)(value * 1000),
-                        "MB" => (long)(value * 1000 * 1000),
-                        "GB" => (long)(value * 1000 * 1000 * 1000),
-                        "TB" => (long)(value * 1000 * 1000 * 1000 * 1000),
-                        "KIB" => (long)(value * 1024),
-                        "MIB" => (long)(value * 1024 * 1024),
-                        "GIB" => (long)(value * 1024 * 1024 * 1024),
-                        "TIB" => (long)(value * 1024 * 1024 * 1024 * 1024),
-                        _ => (long)value
-                    };
-                }
+                    "B" => (long)value,
+                    "KB" => (long)(value * 1000),
+                    "MB" => (long)(value * 1000 * 1000),
+                    "GB" => (long)(value * 1000 * 1000 * 1000),
+                    "TB" => (long)(value * 1000 * 1000 * 1000 * 1000),
+                    "KIB" => (long)(value * 1024),
+                    "MIB" => (long)(value * 1024 * 1024),
+                    "GIB" => (long)(value * 1024 * 1024 * 1024),
+                    "TIB" => (long)(value * 1024 * 1024 * 1024 * 1024),
+                    _ => (long)value
+                };
             }
 
             _logger.LogWarning("Unable to parse size string: '{SizeStr}'", sizeStr);

@@ -83,12 +83,9 @@ public class DownloadsController : ControllerBase
                 d.DownloadClientId == "DDL" ||
                 (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)));
 
-            if (!string.IsNullOrEmpty(status))
+            if (!string.IsNullOrEmpty(status) && Enum.TryParse<DownloadStatus>(status, true, out var parsedStatus))
             {
-                if (Enum.TryParse<DownloadStatus>(status, true, out var parsedStatus))
-                {
-                    query = query.Where(d => d.Status == parsedStatus);
-                }
+                query = query.Where(d => d.Status == parsedStatus);
             }
 
             var downloads = await query

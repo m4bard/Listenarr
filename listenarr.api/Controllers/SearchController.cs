@@ -169,7 +169,7 @@ namespace Listenarr.Api.Controllers
 
                 var req = JsonSerializer.Deserialize<Listenarr.Api.Models.SearchRequest>(reqJson.GetRawText(), options);
                 if (req == null) return BadRequest("SearchRequest body is required");
-                _logger.LogDebug("[DBG] Search received mode={Mode}, query='{Query}'", req.Mode, req.Query ?? "<null>");
+                _logger.LogDebug("[DBG] Search received mode={Mode}, query='{Query}'", req.Mode, LogRedaction.SanitizeText(req.Query ?? "<null>"));
 
                 // Default to simplified=true for both modes (user only needs metadata for Add New feature)
                 var useSimplified = simplified ?? true;
@@ -280,11 +280,11 @@ namespace Listenarr.Api.Controllers
                         return BadRequest("At least one advanced search parameter (title, author, isbn, asin, series, or query) is required");
                     }
                     // Debug: log incoming advanced parameters for diagnostics
-                    try { _logger.LogInformation("[DBG] Advanced search request: Author='{Author}', Title='{Title}', Isbn='{Isbn}', Asin='{Asin}', Query='{Query}', Region='{Region}', Language='{Language}'", req.Author, req.Title, req.Isbn, req.Asin, req.Query, region, language); }
+                    try { _logger.LogInformation("[DBG] Advanced search request: Author='{Author}', Title='{Title}', Isbn='{Isbn}', Asin='{Asin}', Query='{Query}', Region='{Region}', Language='{Language}'", LogRedaction.SanitizeText(req.Author), LogRedaction.SanitizeText(req.Title), LogRedaction.SanitizeText(req.Isbn), LogRedaction.SanitizeText(req.Asin), LogRedaction.SanitizeText(req.Query), LogRedaction.SanitizeText(region), LogRedaction.SanitizeText(language)); }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         System.Diagnostics.Debug.WriteLine($"SearchController advanced-search info logging failed: {ex.Message}");
                     }
-                    try { _logger.LogDebug("[DBG] Advanced params: Title='{Title}', Author='{Author}', Isbn='{Isbn}'", req.Title, req.Author, req.Isbn); }
+                    try { _logger.LogDebug("[DBG] Advanced params: Title='{Title}', Author='{Author}', Isbn='{Isbn}'", LogRedaction.SanitizeText(req.Title), LogRedaction.SanitizeText(req.Author), LogRedaction.SanitizeText(req.Isbn)); }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         System.Diagnostics.Debug.WriteLine($"SearchController advanced-search debug logging failed: {ex.Message}");
                     }
@@ -366,7 +366,7 @@ namespace Listenarr.Api.Controllers
                                 if (seriesSearch is IEnumerable<Listenarr.Api.Services.SeriesLookupItem> seriesList)
                                 {
                                     var seriesListMaterialized = seriesList.ToList();
-                                    _logger.LogInformation("Series lookup for '{SeriesName}' returned {Count} items", seriesInput, seriesListMaterialized.Count);
+                                    _logger.LogInformation("Series lookup for '{SeriesName}' returned {Count} items", LogRedaction.SanitizeText(seriesInput), seriesListMaterialized.Count);
                                     var chosenItem = seriesListMaterialized.FirstOrDefault(s =>
                                                         !string.IsNullOrWhiteSpace(s.Asin) &&
                                                         string.Equals(s.Region, region, StringComparison.OrdinalIgnoreCase))
@@ -374,13 +374,13 @@ namespace Listenarr.Api.Controllers
                                     if (chosenItem != null)
                                     {
                                         seriesAsin = chosenItem.Asin;
-                                        _logger.LogInformation("Resolved series '{SeriesName}' to ASIN {SeriesAsin}", req.Series, seriesAsin);
+                                        _logger.LogInformation("Resolved series '{SeriesName}' to ASIN {SeriesAsin}", LogRedaction.SanitizeText(req.Series), LogRedaction.SanitizeText(seriesAsin));
                                     }
                                 }
 
                                 if (string.IsNullOrWhiteSpace(seriesAsin))
                                 {
-                                    _logger.LogInformation("No series ASIN found for '{SeriesName}'; falling back to unified search", req.Series);
+                                    _logger.LogInformation("No series ASIN found for '{SeriesName}'; falling back to unified search", LogRedaction.SanitizeText(req.Series));
                                 }
                             }
 
@@ -431,7 +431,7 @@ namespace Listenarr.Api.Controllers
                             }
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogWarning(ex, "Failed to perform series lookup for '{Series}' in advanced search; falling back to unified search", req.Series);
+                            _logger.LogWarning(ex, "Failed to perform series lookup for '{Series}' in advanced search; falling back to unified search", LogRedaction.SanitizeText(req.Series));
                         }
                     }
 
@@ -521,7 +521,7 @@ namespace Listenarr.Api.Controllers
                             results = filtered;
                         }
                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogDebug(ex, "Failed to apply series filter '{Series}' to advanced search results", req.Series);
+                            _logger.LogDebug(ex, "Failed to apply series filter '{Series}' to advanced search results", LogRedaction.SanitizeText(req.Series));
                         }
                     }
 
@@ -965,13 +965,13 @@ namespace Listenarr.Api.Controllers
             try
             {
                 // Debug: log raw incoming query to help integration-test diagnostics
-                try { _logger.LogDebug("[DEBUG] IntelligentSearch called with query='{Query}'", query ?? "<null>"); }
+                try { _logger.LogDebug("[DEBUG] IntelligentSearch called with query='{Query}'", LogRedaction.SanitizeText(query ?? "<null>")); }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     System.Diagnostics.Debug.WriteLine($"SearchController IntelligentSearch debug logging failed: {ex.Message}");
                 }
 
                 // Also emit a warning-level log so test output captures the value
-                try { _logger.LogWarning("[DBG] IntelligentSearch called with query='{Query}'", query ?? "<null>"); }
+                try { _logger.LogWarning("[DBG] IntelligentSearch called with query='{Query}'", LogRedaction.SanitizeText(query ?? "<null>")); }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     System.Diagnostics.Debug.WriteLine($"SearchController IntelligentSearch warning logging failed: {ex.Message}");
                 }

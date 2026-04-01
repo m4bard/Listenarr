@@ -63,12 +63,12 @@ namespace Listenarr.Api.Services
                     searchQuery = $"{audnexusUrl}/search?" + string.Join("&", queryParams);
                 }
 
-                _logger.LogInformation($"Fetching metadata from Audnexus: {searchQuery}");
+                _logger.LogInformation("Fetching metadata from Audnexus: {Query}", LogRedaction.SanitizeUrl(searchQuery));
 
                 var response = await _httpClient.GetAsync(searchQuery);
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning($"Audnexus API returned {response.StatusCode} for query: {searchQuery}");
+                    _logger.LogWarning("Audnexus API returned {Status} for query: {Query}", response.StatusCode, LogRedaction.SanitizeUrl(searchQuery));
                     return null;
                 }
 
@@ -81,7 +81,7 @@ namespace Listenarr.Api.Services
                 return ParseAudnexusResponse(audnexusData);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, $"Error fetching metadata for title: {title}, artist: {artist}");
+                _logger.LogError(ex, "Error fetching metadata for title: {Title}, artist: {Artist}", LogRedaction.SanitizeText(title), LogRedaction.SanitizeText(artist));
                 return null;
             }
         }
@@ -99,7 +99,7 @@ namespace Listenarr.Api.Services
                         Title = Path.GetFileNameWithoutExtension(filePath),
                         Format = Path.GetExtension(filePath).TrimStart('.').ToUpper()
                     };
-                    _logger.LogInformation($"Extracted basic metadata from (missing) file: {filePath}");
+                    _logger.LogInformation("Extracted basic metadata from (missing) file: {File}", LogRedaction.SanitizeText(filePath));
                     return fallbackMissingFile;
                 }
 
@@ -227,7 +227,7 @@ namespace Listenarr.Api.Services
                                     if (string.IsNullOrEmpty(metadata.Format)) metadata.Format = Path.GetExtension(filePath).TrimStart('.').ToUpper();
                                     if (string.IsNullOrEmpty(metadata.Container)) metadata.Container = Path.GetExtension(filePath).TrimStart('.').ToUpper();
 
-                                    _logger.LogInformation($"Extracted ffprobe metadata from file: {filePath}");
+                                    _logger.LogInformation("Extracted ffprobe metadata from file: {File}", LogRedaction.SanitizeText(filePath));
                                     _logger.LogDebug("Parsed metadata: Duration={Duration} seconds, Format={Format}, Bitrate={Bitrate}, SampleRate={SampleRate}, Channels={Channels}", metadata.Duration.TotalSeconds, metadata.Format, metadata.Bitrate, metadata.SampleRate, metadata.Channels);
 
                                     return metadata;
@@ -342,11 +342,11 @@ namespace Listenarr.Api.Services
             try
             {
                 // This would use a library like TagLib# to apply metadata to audio files
-                _logger.LogInformation($"Applied metadata to file: {filePath}");
+                _logger.LogInformation("Applied metadata to file: {File}", LogRedaction.SanitizeText(filePath));
                 await Task.CompletedTask;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, $"Error applying metadata to file: {filePath}");
+                _logger.LogError(ex, "Error applying metadata to file: {File}", LogRedaction.SanitizeText(filePath));
             }
         }
 
@@ -395,7 +395,7 @@ namespace Listenarr.Api.Services
                 return null;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, $"Error downloading cover art from: {coverArtUrl}");
+                _logger.LogError(ex, "Error downloading cover art from: {Url}", LogRedaction.SanitizeUrl(coverArtUrl));
                 return null;
             }
         }

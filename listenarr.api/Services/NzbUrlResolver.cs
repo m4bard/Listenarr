@@ -55,7 +55,7 @@ namespace Listenarr.Api.Services
                 {
                     indexer = await dbContext.Indexers
                         .AsNoTracking()
-                        .FirstOrDefaultAsync(i => i.Id == result.IndexerId.Value, ct);
+                        .FirstOrDefaultAsync(i => i.Id == result.IndexerId!.Value, ct);
                 }
                 else if (!string.IsNullOrWhiteSpace(result.Source))
                 {

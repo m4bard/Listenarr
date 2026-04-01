@@ -24,22 +24,16 @@ namespace Listenarr.Api.Services
 
         public bool IsBlocked(string key)
         {
-            if (_map.TryGetValue(key, out var e))
-            {
-                if (e.BlockUntil.HasValue && e.BlockUntil.Value > DateTime.UtcNow) return true;
-            }
+            if (_map.TryGetValue(key, out var e) && e.BlockUntil.HasValue && e.BlockUntil.Value > DateTime.UtcNow) return true;
             return false;
         }
 
         public int GetSecondsUntilUnblock(string key)
         {
-            if (_map.TryGetValue(key, out var e))
+            if (_map.TryGetValue(key, out var e) && e.BlockUntil.HasValue)
             {
-                if (e.BlockUntil.HasValue)
-                {
-                    var ts = e.BlockUntil.Value - DateTime.UtcNow;
-                    return ts.Ticks > 0 ? (int)Math.Ceiling(ts.TotalSeconds) : 0;
-                }
+                var ts = e.BlockUntil.Value - DateTime.UtcNow;
+                return ts.Ticks > 0 ? (int)Math.Ceiling(ts.TotalSeconds) : 0;
             }
             return 0;
         }

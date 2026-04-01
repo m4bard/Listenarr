@@ -254,11 +254,12 @@ namespace Listenarr.Api.Services
                                     foreach (var group in groups)
                                     {
                                         var dirName = Path.GetFileName(group.Key) ?? string.Empty;
-                                        var groupHasMatch = group.Any(f =>
-                                            (!string.IsNullOrEmpty(titleToken) && Path.GetFileNameWithoutExtension(f).IndexOf(titleToken, StringComparison.OrdinalIgnoreCase) >= 0)
-                                            || (!string.IsNullOrEmpty(authorToken) && f.IndexOf(authorToken, StringComparison.OrdinalIgnoreCase) >= 0)
-                                            || (!string.IsNullOrEmpty(titleToken) && dirName.IndexOf(titleToken, StringComparison.OrdinalIgnoreCase) >= 0)
-                                        );
+                                        var groupHasMatch = group.Any(f => {
+                                            bool fileNameMatchesTitle = !string.IsNullOrEmpty(titleToken) && Path.GetFileNameWithoutExtension(f).IndexOf(titleToken, StringComparison.OrdinalIgnoreCase) >= 0;
+                                            bool filePathMatchesAuthor = !string.IsNullOrEmpty(authorToken) && f.IndexOf(authorToken, StringComparison.OrdinalIgnoreCase) >= 0;
+                                            bool dirMatchesTitle = !string.IsNullOrEmpty(titleToken) && dirName.IndexOf(titleToken, StringComparison.OrdinalIgnoreCase) >= 0;
+                                            return fileNameMatchesTitle || filePathMatchesAuthor || dirMatchesTitle;
+                                        });
 
                                         if (groupHasMatch)
                                         {

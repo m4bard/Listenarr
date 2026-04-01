@@ -596,13 +596,10 @@ namespace Listenarr.Api.Services.Adapters
                 var downloadDir = torrent.TryGetProperty("downloadDir", out var dirProp) ? dirProp.GetString() : null;
                 var name = torrent.TryGetProperty("name", out var nameProp) ? nameProp.GetString() : null;
 
-                if (string.IsNullOrEmpty(downloadDir) || string.IsNullOrEmpty(name))
+                if ((string.IsNullOrEmpty(downloadDir) || string.IsNullOrEmpty(name)) && string.IsNullOrWhiteSpace(resolvedExistingContentPath))
                 {
-                    if (string.IsNullOrWhiteSpace(resolvedExistingContentPath))
-                    {
-                        _logger.LogWarning("Missing downloadDir or name for torrent {TorrentId}", queueItem.Id);
-                        return result;
-                    }
+                    _logger.LogWarning("Missing downloadDir or name for torrent {TorrentId}", queueItem.Id);
+                    return result;
                 }
 
                 // Transmission stores files as: downloadDir/name

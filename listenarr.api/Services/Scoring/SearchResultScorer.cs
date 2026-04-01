@@ -76,13 +76,7 @@ namespace Listenarr.Api.Services.Scoring
             }
 
             // Detect NZB/Usenet more broadly
-            var isNzb = !string.IsNullOrEmpty(searchResult.NzbUrl) ||
-                         string.Equals(searchResult.DownloadType, "nzb", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(searchResult.DownloadType, "usenet", StringComparison.OrdinalIgnoreCase) ||
-                         (!string.IsNullOrEmpty(searchResult.IndexerImplementation) && (searchResult.IndexerImplementation.IndexOf("nzb", StringComparison.OrdinalIgnoreCase) >= 0 || searchResult.IndexerImplementation.IndexOf("usenet", StringComparison.OrdinalIgnoreCase) >= 0)) ||
-                         (!string.IsNullOrEmpty(searchResult.Source) && searchResult.Source.IndexOf("usenet", StringComparison.OrdinalIgnoreCase) >= 0) ||
-                         (!string.IsNullOrEmpty(searchResult.ResultUrl) && (searchResult.ResultUrl.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase) || searchResult.ResultUrl.IndexOf("/nzb", StringComparison.OrdinalIgnoreCase) >= 0)) ||
-                         (!string.IsNullOrEmpty(searchResult.TorrentUrl) && searchResult.TorrentUrl.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase));
+            var isNzb = IsNzbResult(searchResult);
 
             // Size checks (skip for NZB)
             if (!isNzb && searchResult.Size > 0)
@@ -238,7 +232,7 @@ namespace Listenarr.Api.Services.Scoring
                     var qualityLower = (normalizedQuality ?? string.Empty).ToLower();
                     var urlLower = (searchResult.TorrentUrl ?? searchResult.Source ?? string.Empty).ToLower();
 
-                    if ((profile.PreferredFormats ?? new List<string>())
+                    if (profile.PreferredFormats!
                         .Where(format => !string.IsNullOrWhiteSpace(format))
                         .Select(format => format.ToLower().Trim())
                         .Any(token => fmtLower.Contains(token) || qualityLower.Contains(token) || urlLower.Contains("." + token) || urlLower.Contains(token) || titleLower.Contains(token)))
@@ -429,5 +423,23 @@ namespace Listenarr.Api.Services.Scoring
 
         private static bool ContainsVbrPreset(string qualityLower, string preset) => qualityLower.Contains(preset) || qualityLower.Contains($"-{preset}") || qualityLower.Contains($" {preset}");
         private static bool ContainsAnyBitrate(string qualityLower, params string[] bitrates) => bitrates.Any(b => qualityLower.Contains(b));
+
+        private static bool IsNzbResult(SearchResult r)
+        {
+            bool hasNzbUrl = !string.IsNullOrEmpty(r.NzbUrl);
+            bool isNzbType = string.Equals(r.DownloadType, "nzb", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(r.DownloadType, "usenet", StringComparison.OrdinalIgnoreCase);
+            bool indexerIndicatesNzb = !string.IsNullOrEmpty(r.IndexerImplementation)
+                && (r.IndexerImplementation.IndexOf("nzb", StringComparison.OrdinalIgnoreCase) >= 0
+                    || r.IndexerImplementation.IndexOf("usenet", StringComparison.OrdinalIgnoreCase) >= 0);
+            bool sourceIndicatesNzb = !string.IsNullOrEmpty(r.Source)
+                && r.Source.IndexOf("usenet", StringComparison.OrdinalIgnoreCase) >= 0;
+            bool urlIndicatesNzb = !string.IsNullOrEmpty(r.ResultUrl)
+                && (r.ResultUrl.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase)
+                    || r.ResultUrl.IndexOf("/nzb", StringComparison.OrdinalIgnoreCase) >= 0);
+            bool torrentIndicatesNzb = !string.IsNullOrEmpty(r.TorrentUrl)
+                && r.TorrentUrl.EndsWith(".nzb", StringComparison.OrdinalIgnoreCase);
+            return hasNzbUrl || isNzbType || indexerIndicatesNzb || sourceIndicatesNzb || urlIndicatesNzb || torrentIndicatesNzb;
+        }
     }
 }

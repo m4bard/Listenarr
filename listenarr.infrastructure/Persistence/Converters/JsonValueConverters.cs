@@ -47,36 +47,33 @@ namespace Listenarr.Infrastructure.Persistence.Converters
                 // If T is a collection of strings, be permissive: allow a primitive
                 // JSON value (number/string) or a JSON string to be treated as a
                 // single-item array. This helps tolerate legacy DB rows while we
-                // normalize storage.
+                // normalize storage. If the JSON is not an array or object, try wrapping it.
                 if (typeof(T).IsGenericType && typeof(T).GetGenericArguments().Length == 1 &&
-                    typeof(T).GetGenericArguments()[0] == typeof(string))
+                    typeof(T).GetGenericArguments()[0] == typeof(string) &&
+                    first != '[' && first != '{')
                 {
-                    // If the JSON is not an array or object, try wrapping it.
-                    if (first != '[' && first != '{')
+                    try
                     {
-                        try
+                        string wrappedJson;
+                        if (first == '"')
                         {
-                            string wrappedJson;
-                            if (first == '"')
-                            {
-                                // Deserialize the single JSON string and re-serialize as array
-                                var single = JsonSerializer.Deserialize<string>(json);
-                                wrappedJson = JsonSerializer.Serialize(new[] { single ?? string.Empty });
-                            }
-                            else
-                            {
-                                // Treat numeric or bare token as string and wrap
-                                var raw = trimmed;
-                                wrappedJson = JsonSerializer.Serialize(new[] { raw });
-                            }
+                            // Deserialize the single JSON string and re-serialize as array
+                            var single = JsonSerializer.Deserialize<string>(json);
+                            wrappedJson = JsonSerializer.Serialize(new[] { single ?? string.Empty });
+                        }
+                        else
+                        {
+                            // Treat numeric or bare token as string and wrap
+                            var raw = trimmed;
+                            wrappedJson = JsonSerializer.Serialize(new[] { raw });
+                        }
 
-                            var desWrapped = JsonSerializer.Deserialize<T>(wrappedJson);
-                            if (desWrapped != null) return desWrapped;
-                        }
-                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
-                            // Fall through to the default attempt below
-                                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                        }
+                        var desWrapped = JsonSerializer.Deserialize<T>(wrappedJson);
+                        if (desWrapped != null) return desWrapped;
+                    }
+                    catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
+                        // Fall through to the default attempt below
+                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
                 }
 

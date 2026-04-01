@@ -533,7 +533,7 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
@@ -629,7 +629,7 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
@@ -733,7 +733,7 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
@@ -839,7 +839,7 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();

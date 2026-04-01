@@ -1570,20 +1570,18 @@ namespace Listenarr.Api.Controllers
         {
             var categories = new HashSet<int>();
 
-            if (element.TryGetProperty("capabilities", out var caps) && caps.ValueKind == JsonValueKind.Object)
+            if (element.TryGetProperty("capabilities", out var caps) && caps.ValueKind == JsonValueKind.Object &&
+                caps.TryGetProperty("categories", out var catArray) && catArray.ValueKind == JsonValueKind.Array)
             {
-                if (caps.TryGetProperty("categories", out var catArray) && catArray.ValueKind == JsonValueKind.Array)
+                foreach (var cat in catArray.EnumerateArray())
                 {
-                    foreach (var cat in catArray.EnumerateArray())
-                    {
-                        TryAddCategoryId(cat, categories);
+                    TryAddCategoryId(cat, categories);
 
-                        if (cat.ValueKind == JsonValueKind.Object && cat.TryGetProperty("subCategories", out var subCats) && subCats.ValueKind == JsonValueKind.Array)
+                    if (cat.ValueKind == JsonValueKind.Object && cat.TryGetProperty("subCategories", out var subCats) && subCats.ValueKind == JsonValueKind.Array)
+                    {
+                        foreach (var sub in subCats.EnumerateArray())
                         {
-                            foreach (var sub in subCats.EnumerateArray())
-                            {
-                                TryAddCategoryId(sub, categories);
-                            }
+                            TryAddCategoryId(sub, categories);
                         }
                     }
                 }
