@@ -2594,6 +2594,11 @@ namespace Listenarr.Api.Controllers
                 _logger.LogWarning(ex, "Failed to load application settings while performing bulk update");
             }
 
+            // Wrap all updates in a single transaction so a failure on one audiobook doesn't
+            // leave earlier ones partially committed while later ones are rolled back.
+            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
+            try
+            {
             foreach (var id in request.Ids.Distinct())
             {
                 var entryErrors = new List<string>();
@@ -2724,18 +2729,11 @@ namespace Listenarr.Api.Controllers
                         }
                     }
 
-                    // Persist updates for this audiobook
+                    // Stage update for this audiobook (persisted in the single SaveChanges below)
                     if (changed)
                     {
-                        try
-                        {
-                            _dbContext.Audiobooks.Update(audiobook);
-                            await _dbContext.SaveChangesAsync();
-                            success = true;
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            entryErrors.Add($"Failed to save changes for audiobook {id}: {ex.Message}");
-                        }
+                        _dbContext.Audiobooks.Update(audiobook);
+                        success = true;
                     }
                     else
                     {
@@ -2747,6 +2745,17 @@ namespace Listenarr.Api.Controllers
                 }
 
                 results.Add(new { id, success, errors = entryErrors });
+            }
+
+                // Persist all staged changes atomically
+                await _dbContext.SaveChangesAsync();
+                await transaction.CommitAsync();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Bulk update failed; all changes have been rolled back");
+                return StatusCode(500, new { message = "Bulk update failed and was rolled back", error = ex.Message });
             }
 
             return Ok(new { message = "Bulk update completed", results });

@@ -260,24 +260,21 @@ namespace Listenarr.Api.Services
             try
             {
                 // Ensure destination directory exists
-                var destDir = Path.GetDirectoryName(destFile);
+                var destDir = Path.GetDirectoryName(destFile) ?? string.Empty;
                 if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
                 {
                     Directory.CreateDirectory(destDir);
                 }
 
-                // Delete destination if it exists (hardlink requires non-existent target)
-                if (File.Exists(destFile))
-                {
-                    File.Delete(destFile);
-                }
-
-                // Try creating hardlink using P/Invoke
+                // Safe ordering: hardlink/copy to a temp path first, then atomically rename
+                // onto the destination. This ensures the original destFile is never deleted
+                // until we have a confirmed replacement ready.
+                var tempDest = Path.Combine(destDir, Path.GetRandomFileName() + ".tmp");
                 try
                 {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        if (!CreateHardLink(destFile, sourceFile, IntPtr.Zero))
+                        if (!CreateHardLink(tempDest, sourceFile, IntPtr.Zero))
                         {
                             var error = Marshal.GetLastWin32Error();
                             throw new IOException($"CreateHardLink failed with error code {error}");
@@ -286,7 +283,7 @@ namespace Listenarr.Api.Services
                     else
                     {
                         // Unix/Linux/macOS
-                        var result = link(sourceFile, destFile);
+                        var result = link(sourceFile, tempDest);
                         if (result != 0)
                         {
                             var error = Marshal.GetLastWin32Error();
@@ -294,22 +291,27 @@ namespace Listenarr.Api.Services
                         }
                     }
 
+                    // Hardlink succeeded — atomically replace destination
+                    File.Move(tempDest, destFile, overwrite: true);
                     _logger.LogInformation("Hardlinked file: {Source} -> {Dest}", sourceFile, destFile);
                     return Task.FromResult(true);
                 }
                 catch (Exception linkEx) when (linkEx is not OperationCanceledException && linkEx is not OutOfMemoryException && linkEx is not StackOverflowException) {
+                    // Clean up temp file if hardlink left one behind
+                    try { if (File.Exists(tempDest)) File.Delete(tempDest); } catch { /* best-effort */ }
+
                     // Hardlink failed (likely cross-volume or unsupported filesystem)
                     var isCrossDevice = linkEx is IOException ioEx && ioEx.Message.Contains("error code 17");
                     if (!isCrossDevice)
                         isCrossDevice = linkEx is IOException ioEx2 && ioEx2.Message.Contains("error code 18"); // Unix EXDEV
-                    
+
                     if (isCrossDevice)
                         _logger.LogInformation("Hardlink not possible (source and destination are on different drives), falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
                     else
                         _logger.LogWarning(linkEx, "Hardlink failed, falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
-                    
-                    // Fallback to copy
-                    File.Copy(sourceFile, destFile, true);
+
+                    // Fallback to copy — File.Copy with overwrite:true is safe (dest is untouched until copy succeeds)
+                    File.Copy(sourceFile, destFile, overwrite: true);
                     _logger.LogInformation("Copied file (hardlink fallback): {Source} -> {Dest}", sourceFile, destFile);
                     return Task.FromResult(true);
                 }
