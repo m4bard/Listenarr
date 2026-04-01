@@ -73,8 +73,9 @@ namespace Listenarr.Api.Services.Adapters
             var currentUrl = torrentUrl;
             for (var hop = 0; hop < 10; hop++)
             {
-                // SSRF guard: reject localhost/private-IP targets on every hop (including redirects)
-                if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(currentUrl, out var ssrfReason))
+                // SSRF guard: reject non-HTTP(S) schemes and embedded credentials on every hop; allow
+                // private/LAN hosts because torrent indexers are commonly self-hosted on local networks.
+                if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(currentUrl, out var ssrfReason, allowPrivateTargets: true))
                 {
                     _logger.LogWarning("Blocked SSRF attempt in torrent download (hop {Hop}): {Reason}", hop, ssrfReason);
                     return TorrentDownloadResult.Empty;

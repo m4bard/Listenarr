@@ -36,7 +36,7 @@ namespace Listenarr.Api.Services
                     (string.Equals(existing.Status, "Queued", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(existing.Status, "Processing", StringComparison.OrdinalIgnoreCase)))
                 {
-                    _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", existing.Id, audiobookId, path, existing.Status);
+                    _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", existing.Id, audiobookId, LogRedaction.SanitizeFilePath(path), existing.Status);
                     return existing.Id;
                 }
             }
@@ -47,7 +47,7 @@ namespace Listenarr.Api.Services
 
             var job = new ScanJob { AudiobookId = audiobookId, Path = path };
             _jobs[job.Id] = job;
-            _logger.LogInformation("Enqueueing scan job {JobId} for audiobook {AudiobookId} (path: {Path})", job.Id, audiobookId, path);
+            _logger.LogInformation("Enqueueing scan job {JobId} for audiobook {AudiobookId} (path: {Path})", job.Id, audiobookId, LogRedaction.SanitizeFilePath(path));
             await _channel.Writer.WriteAsync(job);
             _logger.LogInformation("Scan job {JobId} written to channel", job.Id);
             return job.Id;

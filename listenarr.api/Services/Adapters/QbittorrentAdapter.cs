@@ -595,12 +595,22 @@ namespace Listenarr.Api.Services.Adapters
                 });
 
                 using var loginResp = await httpClient.PostAsync($"{baseUrl}/api/v2/auth/login", loginData, ct);
-                if (!loginResp.IsSuccessStatusCode && loginResp.StatusCode == HttpStatusCode.Forbidden)
+                if (!loginResp.IsSuccessStatusCode)
                 {
-                    using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
-                    if (!testResp.IsSuccessStatusCode)
+                    if (loginResp.StatusCode == HttpStatusCode.Forbidden)
                     {
-                        _logger.LogWarning("qBittorrent auth appears enabled and credentials are invalid for client {ClientId}", client.Id);
+                        // 403 may mean auth is disabled — probe a version endpoint to confirm
+                        using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                        if (!testResp.IsSuccessStatusCode)
+                        {
+                            _logger.LogWarning("qBittorrent auth appears enabled and credentials are invalid for client {ClientId}", client.Id);
+                            return false;
+                        }
+                        // Auth is disabled; fall through to the delete call
+                    }
+                    else
+                    {
+                        _logger.LogWarning("qBittorrent login failed with status {Status} for client {ClientId}", loginResp.StatusCode, client.Id);
                         return false;
                     }
                 }

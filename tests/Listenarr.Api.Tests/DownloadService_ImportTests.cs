@@ -383,21 +383,24 @@ namespace Listenarr.Api.Tests
                 var q = req.RequestUri?.Query ?? string.Empty;
                 if (q.Contains("mode=queue"))
                 {
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
                     {
                         Content = new StringContent(queueJson)
-                    });
+                    };
+                    return Task.FromResult(response);
                 }
 
                 if (q.Contains("mode=history"))
                 {
-                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
                     {
                         Content = new StringContent(historyJson)
-                    });
+                    };
+                    return Task.FromResult(response);
                 }
 
-                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
+                var notFound = new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+                return Task.FromResult(notFound);
             });
 
             using var httpClient = new HttpClient(handler);
@@ -522,7 +525,10 @@ namespace Listenarr.Api.Tests
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
             var handler = new DelegatingHandlerMock((_, _) =>
-                Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)));
+            {
+                var response = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+                return Task.FromResult(response);
+            });
             using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);

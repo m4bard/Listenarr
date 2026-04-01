@@ -310,10 +310,21 @@ namespace Listenarr.Api.Services
                     else
                         _logger.LogWarning(linkEx, "Hardlink failed, falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
 
-                    // Fallback to copy — File.Copy with overwrite:true is safe (dest is untouched until copy succeeds)
-                    File.Copy(sourceFile, destFile, overwrite: true);
-                    _logger.LogInformation("Copied file (hardlink fallback): {Source} -> {Dest}", sourceFile, destFile);
-                    return Task.FromResult(true);
+                    // Fallback to copy — copy to a temp file first, then atomically rename onto destination
+                    // so the existing file is never overwritten until a complete replacement is confirmed.
+                    var tempCopyPath = Path.Combine(destDir, Path.GetRandomFileName() + ".tmp");
+                    try
+                    {
+                        File.Copy(sourceFile, tempCopyPath, overwrite: true);
+                        File.Move(tempCopyPath, destFile, overwrite: true);
+                        _logger.LogInformation("Copied file (hardlink fallback): {Source} -> {Dest}", sourceFile, destFile);
+                        return Task.FromResult(true);
+                    }
+                    finally
+                    {
+                        // Best-effort cleanup of temp copy if something went wrong before/after the move
+                        try { if (File.Exists(tempCopyPath)) File.Delete(tempCopyPath); } catch { /* best-effort */ }
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

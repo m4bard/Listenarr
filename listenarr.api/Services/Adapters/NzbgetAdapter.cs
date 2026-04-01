@@ -934,8 +934,9 @@ namespace Listenarr.Api.Services.Adapters
 
         private async Task<byte[]> DownloadNzbAsync(string nzbUrl, string? indexerApiKey, CancellationToken ct)
         {
-            // SSRF guard: reject localhost/private-IP targets before making any outbound request
-            if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(nzbUrl, out var ssrfReason))
+            // SSRF guard: reject non-HTTP(S) schemes and embedded credentials; allow private/LAN hosts
+            // because indexers are commonly self-hosted (Prowlarr, Jackett, etc.) on local networks.
+            if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(nzbUrl, out var ssrfReason, allowPrivateTargets: true))
             {
                 _logger.LogWarning("Blocked SSRF attempt in NZB download: {Reason}", ssrfReason);
                 throw new InvalidOperationException($"NZB URL blocked: {ssrfReason}");
