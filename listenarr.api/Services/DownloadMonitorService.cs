@@ -254,9 +254,11 @@ namespace Listenarr.Api.Services
                     using var scope = _serviceScopeFactory.CreateScope();
                     var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
                     var client = db.DownloadClientConfigurations.FirstOrDefault(c => c.Id == clientId);
-                    if (client != null && client.Settings != null && client.Settings.TryGetValue("PollingIntervalSeconds", out var v) && int.TryParse(v?.ToString() ?? string.Empty, out var custom) && custom >= 15)
+                    if (client != null && client.Settings != null)
                     {
-                        interval = custom;
+                        bool hasSetting = client.Settings.TryGetValue("PollingIntervalSeconds", out var v);
+                        if (hasSetting && int.TryParse(v?.ToString() ?? string.Empty, out var custom) && custom >= 15)
+                            interval = custom;
                     }
                 }
                 catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
@@ -548,13 +550,13 @@ namespace Listenarr.Api.Services
             // - ImportBlocked (blocked due to repeated failures, no point in retrying)
             // - Failed, Cancelled (terminal states)
             var activeDownloadsAll = await dbContext.Downloads
-                .Where(d => (d.Status == DownloadStatus.Queued ||
+                .Where(d => d.Status != DownloadStatus.ImportBlocked)
+                .Where(d => d.Status == DownloadStatus.Queued ||
                             d.Status == DownloadStatus.Downloading ||
                             d.Status == DownloadStatus.Paused ||
                             d.Status == DownloadStatus.Processing ||
                             ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && string.IsNullOrEmpty(d.FinalPath)) ||
-                            (d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId))) &&
-                           d.Status != DownloadStatus.ImportBlocked)
+                            (d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId)))
                 .ToListAsync(cancellationToken);
 
             // Skip downloads from disabled/missing external clients.
@@ -3158,11 +3160,13 @@ namespace Listenarr.Api.Services
             if (seedRatioMode == 1 && isStopped && ratio >= seedRatioLimit)
                 return true;
 
-            if (seedRatioMode == 0 && isStopped && sessionSeedRatioLimited && ratio >= sessionSeedRatioLimit)
+            bool globalRatioExceeded = seedRatioMode == 0 && isStopped && sessionSeedRatioLimited && ratio >= sessionSeedRatioLimit;
+            if (globalRatioExceeded)
                 return true;
 
             // seedIdleMode: 0 = global, 1 = per-torrent, 2 = unlimited
-            if (seedIdleMode == 1 && (isStopped || isSeeding) && secondsSeeding > seedIdleLimit * 60)
+            bool perTorrentIdleExceeded = seedIdleMode == 1 && (isStopped || isSeeding) && secondsSeeding > seedIdleLimit * 60;
+            if (perTorrentIdleExceeded)
                 return true;
 
             if (seedIdleMode == 0 && isStopped && sessionIdleSeedingLimitEnabled)

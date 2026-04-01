@@ -69,7 +69,7 @@ namespace Listenarr.Api.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Audnexus API returned status code {StatusCode} for ASIN {Asin}",
-                        response.StatusCode, asin);
+                        response.StatusCode, LogRedaction.SanitizeText(asin));
                     return null;
                 }
 
@@ -102,7 +102,7 @@ namespace Listenarr.Api.Services
                 }
                 else
                 {
-                    _logger.LogWarning("Audnexus deserialization returned null for ASIN {Asin}", asin);
+                    _logger.LogWarning("Audnexus deserialization returned null for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 }
 
                 return result;

@@ -579,12 +579,12 @@ namespace Listenarr.Api.Services
                         .ToHashSet();
 
                     var existingActive = await checkContext.Downloads
-                        .Where(d => d.AudiobookId == audiobookIdValue &&
-                                    (d.Status == DownloadStatus.Queued ||
-                                     d.Status == DownloadStatus.Downloading ||
-                                     d.Status == DownloadStatus.ImportPending) &&
-                                    (d.DownloadClientId == "DDL" ||
-                                     (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId))))
+                        .Where(d => d.AudiobookId == audiobookIdValue)
+                        .Where(d => d.Status == DownloadStatus.Queued ||
+                                    d.Status == DownloadStatus.Downloading ||
+                                    d.Status == DownloadStatus.ImportPending)
+                        .Where(d => d.DownloadClientId == "DDL" ||
+                                    (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)))
                         .AnyAsync();
 
                     if (existingActive)

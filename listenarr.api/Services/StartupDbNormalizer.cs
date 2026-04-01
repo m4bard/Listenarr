@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
@@ -33,10 +34,22 @@ namespace Listenarr.Api.Services
                 var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
                 await using var ctx = await factory.CreateDbContextAsync(cancellationToken);
 
+                // IMPORTANT: column names are interpolated directly into raw SQL.
+                // This whitelist MUST be kept up-to-date if new columns are added.
+                // Never replace this with a caller-supplied or user-supplied list.
                 var columns = new[] { "Authors", "Genres", "Tags", "Narrators", "AuthorAsins", "Isbn" };
+                var allowedColumns = new HashSet<string>(columns, StringComparer.Ordinal);
 
                 foreach (var col in columns)
                 {
+                    // Defensive check: reject any column name that was not explicitly whitelisted
+                    // or that contains characters invalid for an unquoted SQL identifier.
+                    if (!allowedColumns.Contains(col) || !System.Text.RegularExpressions.Regex.IsMatch(col, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+                    {
+                        _logger.LogError("StartupDbNormalizer: refusing to process unexpected column name '{Column}'", col);
+                        continue;
+                    }
+
                     try
                     {
                         var update = $@"UPDATE Audiobooks SET {col} = json_array(json_extract({col}, '$')) WHERE {col} IS NOT NULL AND json_valid({col})=1 AND json_type({col}) NOT IN ('array','object')";

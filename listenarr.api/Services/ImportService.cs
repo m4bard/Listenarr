@@ -170,7 +170,7 @@ namespace Listenarr.Api.Services
                                 result.Success = false;
                                 result.SkippedReason = $"candidate quality '{candidateQuality}' is not better than existing '{bestExisting}'";
                                 result.Message = result.SkippedReason;
-                                _logger.LogInformation("ImportSingleFile: Skipping import of file {File} for audiobook {AudiobookId} because candidate quality '{Candidate}' is not better than existing '{Existing}'", sourcePath, ab.Id, candidateQuality, bestExisting);
+                                _logger.LogInformation("ImportSingleFile: Skipping import of file {File} for audiobook {AudiobookId} because candidate quality '{Candidate}' is not better than existing '{Existing}'", LogRedaction.SanitizeText(sourcePath), ab.Id, candidateQuality, bestExisting);
                                 return result;
                             }
                         }

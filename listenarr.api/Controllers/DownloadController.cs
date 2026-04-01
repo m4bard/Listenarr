@@ -136,14 +136,14 @@ namespace Listenarr.Api.Controllers
                 var fileName = tuple.FileName ?? "download.torrent";
                 if (bytes != null && bytes.Length > 0)
                 {
-                    _logger.LogInformation("Served cached torrent for download {DownloadId}", downloadId);
+                    _logger.LogInformation("Served cached torrent for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                     return File(bytes, "application/x-bittorrent", fileName);
                 }
 
                 return NotFound(new { error = "Cached torrent not found", downloadId });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error retrieving cached torrent for download {DownloadId}", downloadId);
+                _logger.LogError(ex, "Error retrieving cached torrent for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                 return StatusCode(500, new { message = "Failed to retrieve cached torrent", error = ex.Message });
             }
         }
@@ -160,13 +160,13 @@ namespace Listenarr.Api.Controllers
                 var announces = await _downloadService.GetCachedAnnouncesAsync(downloadId);
                 if (announces != null && announces.Count > 0)
                 {
-                    _logger.LogInformation("Served cached announces for download {DownloadId}", downloadId);
+                    _logger.LogInformation("Served cached announces for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                     return Ok(new { downloadId, announces });
                 }
                 return NotFound(new { error = "Cached announces not found", downloadId });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error retrieving cached announces for download {DownloadId}", downloadId);
+                _logger.LogError(ex, "Error retrieving cached announces for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                 return StatusCode(500, new { message = "Failed to retrieve cached announces", error = ex.Message });
             }
         }

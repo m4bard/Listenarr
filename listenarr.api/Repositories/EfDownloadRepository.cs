@@ -69,16 +69,19 @@ namespace Listenarr.Api.Repositories
         public async Task<List<QueueTrackedDownload>> GetQueueDisplayCandidatesAsync()
         {
             var ctx = await _dbFactory.CreateDbContextAsync();
-            return await ctx.Downloads
+            var ddl = await ctx.Downloads
                 .AsNoTracking()
-                .Where(d =>
-                    (d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved) ||
-                    (d.DownloadClientId != "DDL" &&
-                     d.Status != DownloadStatus.Moved &&
-                     d.Status != DownloadStatus.Failed &&
-                     (d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))))
+                .Where(d => d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved)
                 .Select(ToQueueTrackedDownloadProjection())
                 .ToListAsync();
+            var nonDdl = await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.DownloadClientId != "DDL")
+                .Where(d => d.Status != DownloadStatus.Moved && d.Status != DownloadStatus.Failed)
+                .Where(d => d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))
+                .Select(ToQueueTrackedDownloadProjection())
+                .ToListAsync();
+            return ddl.Concat(nonDdl).ToList();
         }
 
         public async Task<List<QueueTrackedDownload>> GetQueueMatchingCandidatesAsync()
