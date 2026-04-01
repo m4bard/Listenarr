@@ -29,7 +29,7 @@ namespace Listenarr.Api.Services
             {
                 if (!FileUtils.IsAudioFile(filePath))
                 {
-                    _logger.LogInformation("Skipping non-audio audiobook file registration for audiobook {AudiobookId}: {Path}", audiobookId, filePath);
+                    _logger.LogInformation("Skipping non-audio audiobook file registration for audiobook {AudiobookId}: {Path}", audiobookId, LogRedaction.SanitizeFilePath(filePath));
                     return false;
                 }
 
@@ -41,7 +41,7 @@ namespace Listenarr.Api.Services
                 var exists = await db.AudiobookFiles.AnyAsync(x => x.AudiobookId == audiobookId && x.Path == filePath);
                 if (exists)
                 {
-                    _logger.LogDebug("AudiobookFile already exists for audiobook {AudiobookId} at path {Path}", audiobookId, filePath);
+                    _logger.LogDebug("AudiobookFile already exists for audiobook {AudiobookId} at path {Path}", audiobookId, LogRedaction.SanitizeFilePath(filePath));
                     return false;
                 }
 
@@ -51,7 +51,7 @@ namespace Listenarr.Api.Services
                 var registeredElsewhere = await db.AudiobookFiles.AnyAsync(x => x.AudiobookId != audiobookId && x.Path == filePath);
                 if (registeredElsewhere)
                 {
-                    _logger.LogInformation("Skipping file {Path} for audiobook {AudiobookId} — already registered to another audiobook", filePath, audiobookId);
+                    _logger.LogInformation("Skipping file {Path} for audiobook {AudiobookId} — already registered to another audiobook", LogRedaction.SanitizeFilePath(filePath), audiobookId);
                     return false;
                 }
 
@@ -86,7 +86,7 @@ namespace Listenarr.Api.Services
                             if (!isInExistingDir && !isInBasePath)
                             {
                                 var audiobookTitle = audiobook.Title ?? "Unknown";
-                                _logger.LogWarning("Refusing to associate file outside audiobook folder. AudiobookId={AudiobookId}, AudiobookDir={AudiobookDir}, BasePath={BasePath}, File={File}", audiobookId, existingDir, audiobook.BasePath, filePath);
+                                _logger.LogWarning("Refusing to associate file outside audiobook folder. AudiobookId={AudiobookId}, AudiobookDir={AudiobookDir}, BasePath={BasePath}, File={File}", audiobookId, LogRedaction.SanitizeFilePath(existingDir), LogRedaction.SanitizeFilePath(audiobook.BasePath), LogRedaction.SanitizeFilePath(filePath));
                                 // Create a history entry so the UI can show that an attempted association was refused
                                 try
                                 {
@@ -120,7 +120,7 @@ namespace Listenarr.Api.Services
                                 }
                                 catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException)
                                 {
-                                    _logger.LogDebug(hx, "Failed to persist history for refused file association (AudiobookId={AudiobookId}, File={File})", audiobookId, filePath);
+                                    _logger.LogDebug(hx, "Failed to persist history for refused file association (AudiobookId={AudiobookId}, File={File})", audiobookId, LogRedaction.SanitizeFilePath(filePath));
                                 }
 
                                 return false;
@@ -130,7 +130,7 @@ namespace Listenarr.Api.Services
                 }
                 catch (Exception exDir) when (exDir is not OperationCanceledException && exDir is not OutOfMemoryException && exDir is not StackOverflowException)
                 {
-                    _logger.LogDebug(exDir, "Failed to verify audiobook folder containment for AudiobookId={AudiobookId} File={File}", audiobookId, filePath);
+                    _logger.LogDebug(exDir, "Failed to verify audiobook folder containment for AudiobookId={AudiobookId} File={File}", audiobookId, LogRedaction.SanitizeFilePath(filePath));
                 }
 
                 AudioMetadata? meta = null;
@@ -154,7 +154,7 @@ namespace Listenarr.Api.Services
                 }
                 catch (Exception mEx) when (mEx is not OperationCanceledException && mEx is not OutOfMemoryException && mEx is not StackOverflowException)
                 {
-                    _logger.LogInformation(mEx, "Metadata extraction failed for {Path}", filePath);
+                    _logger.LogInformation(mEx, "Metadata extraction failed for {Path}", LogRedaction.SanitizeFilePath(filePath));
                 }
                 // If metadata extraction produced minimal results, attempt to ensure ffprobe is installed
                 // and retry extraction once. This helps scans capture technical metadata even when ffprobe
@@ -190,7 +190,7 @@ namespace Listenarr.Api.Services
                                 }
                                 catch (Exception rex) when (rex is not OperationCanceledException && rex is not OutOfMemoryException && rex is not StackOverflowException)
                                 {
-                                    _logger.LogInformation(rex, "Retry metadata extraction failed for {Path}", filePath);
+                                    _logger.LogInformation(rex, "Retry metadata extraction failed for {Path}", LogRedaction.SanitizeFilePath(filePath));
                                 }
                             }
                         }
@@ -198,7 +198,7 @@ namespace Listenarr.Api.Services
                 }
                 catch (Exception exRetry) when (exRetry is not OperationCanceledException && exRetry is not OutOfMemoryException && exRetry is not StackOverflowException)
                 {
-                    _logger.LogDebug(exRetry, "Non-fatal error while attempting ffprobe install/retry for {Path}", filePath);
+                    _logger.LogDebug(exRetry, "Non-fatal error while attempting ffprobe install/retry for {Path}", LogRedaction.SanitizeFilePath(filePath));
                 }
                 var fi = new FileInfo(filePath);
                 var fileRecord = new AudiobookFile
@@ -228,11 +228,11 @@ namespace Listenarr.Api.Services
                         try
                         {
                             var conn = db.Database.GetDbConnection();
-                            _logger.LogInformation("Created AudiobookFile for audiobook {AudiobookId}: {Path} (Db: {Db}) Id={Id}", audiobookId, filePath, conn?.ConnectionString, fileRecord.Id);
+                            _logger.LogInformation("Created AudiobookFile for audiobook {AudiobookId}: {Path} (Db: {Db}) Id={Id}", audiobookId, LogRedaction.SanitizeFilePath(filePath), conn?.ConnectionString, fileRecord.Id);
                         }
                         catch (Exception logEx) when (logEx is not OperationCanceledException && logEx is not OutOfMemoryException && logEx is not StackOverflowException)
                         {
-                            _logger.LogInformation("Created AudiobookFile for audiobook {AudiobookId}: {Path} (Db: unknown) Id={Id}", audiobookId, filePath, fileRecord.Id);
+                            _logger.LogInformation("Created AudiobookFile for audiobook {AudiobookId}: {Path} (Db: unknown) Id={Id}", audiobookId, LogRedaction.SanitizeFilePath(filePath), fileRecord.Id);
                             _logger.LogDebug(logEx, "Failed to log DB connection string for AudiobookFile creation");
                         }
 
@@ -291,7 +291,7 @@ namespace Listenarr.Api.Services
                         }
                         catch (Exception hx) when (hx is not OperationCanceledException && hx is not OutOfMemoryException && hx is not StackOverflowException)
                         {
-                            _logger.LogDebug(hx, "Failed to create history entry for added audiobook file {Path}", filePath);
+                            _logger.LogDebug(hx, "Failed to create history entry for added audiobook file {Path}", LogRedaction.SanitizeFilePath(filePath));
                         }
 
                         return true;
@@ -303,12 +303,12 @@ namespace Listenarr.Api.Services
                         var inner = dbEx.InnerException?.Message ?? dbEx.Message;
                         if (inner != null && inner.IndexOf("UNIQUE", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
-                            _logger.LogInformation("AudiobookFile insertion conflict detected (likely already created): {Path}", filePath);
+                            _logger.LogInformation("AudiobookFile insertion conflict detected (likely already created): {Path}", LogRedaction.SanitizeFilePath(filePath));
                             return false;
                         }
                         if (attempts >= 3)
                         {
-                            _logger.LogWarning(dbEx, "Failed to save AudiobookFile after {Attempts} attempts: {Path}", attempts, filePath);
+                            _logger.LogWarning(dbEx, "Failed to save AudiobookFile after {Attempts} attempts: {Path}", attempts, LogRedaction.SanitizeFilePath(filePath));
                             return false;
                         }
                         // small backoff
@@ -318,7 +318,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to create AudiobookFile record for audiobook {AudiobookId} at {Path}", audiobookId, filePath);
+                _logger.LogWarning(ex, "Failed to create AudiobookFile record for audiobook {AudiobookId} at {Path}", audiobookId, LogRedaction.SanitizeFilePath(filePath));
                 return false;
             }
         }

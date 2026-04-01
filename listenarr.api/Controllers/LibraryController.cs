@@ -1400,8 +1400,8 @@ namespace Listenarr.Api.Controllers
                     if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
 
                     using var cmd = conn.CreateCommand();
-                    var cols = string.Join(", ", new[] { keyColumn }.Concat(columns));
-                    cmd.CommandText = $"SELECT {cols} FROM {table}";
+                    var cols = string.Join(", ", new[] { keyColumn }.Concat(columns).Select(c => "\"" + c + "\""));
+                    cmd.CommandText = $"SELECT {cols} FROM \"{table}\"";
                     using var rdr = await cmd.ExecuteReaderAsync();
                     while (await rdr.ReadAsync())
                     {
@@ -1501,7 +1501,7 @@ namespace Listenarr.Api.Controllers
                 {
                     // Get columns and their types
                     using var colCmd = conn.CreateCommand();
-                    colCmd.CommandText = $"PRAGMA table_info('{table}')";
+                    colCmd.CommandText = $"PRAGMA table_info(\"{table}\")";
                     using var colRdr = await colCmd.ExecuteReaderAsync();
                     var cols = new List<(string name, string type, int pk)>();
                     while (await colRdr.ReadAsync())

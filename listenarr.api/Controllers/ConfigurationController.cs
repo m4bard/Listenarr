@@ -486,7 +486,7 @@ namespace Listenarr.Api.Controllers
                 var rawAuth = config.AuthenticationRequired;
                 var authEnabled = rawAuth?.ToLowerInvariant() is "true" or "yes" or "1";
                 var isAuthenticated = User?.Identity?.IsAuthenticated ?? false;
-                _logger.LogInformation($"[ConfigurationController] AuthenticationRequired config value: '{rawAuth}', authEnabled: {authEnabled}, user authenticated: {isAuthenticated}");
+                _logger.LogInformation("[ConfigurationController] AuthenticationRequired config value: '{AuthRequired}', authEnabled: {AuthEnabled}, user authenticated: {IsAuthenticated}", LogRedaction.SanitizeText(rawAuth), authEnabled, isAuthenticated);
                 if (authEnabled && !isAuthenticated)
                 {
                     _logger.LogWarning("[ConfigurationController] Authentication is enabled and user is not authenticated. Returning 401.");

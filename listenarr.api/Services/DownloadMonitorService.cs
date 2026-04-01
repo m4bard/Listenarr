@@ -2205,7 +2205,7 @@ namespace Listenarr.Api.Services
                             (status.Equals("Completed", StringComparison.OrdinalIgnoreCase) ||
                              status.Equals("Complete", StringComparison.OrdinalIgnoreCase)))
                         {
-                            _logger.LogInformation("SABnzbd history slot parsed: nzo_id={NzoId}, name={Name}, status={Status}, path={Path}, completed={Completed}", nzoId, name, status, path, completedTime);
+                            _logger.LogInformation("SABnzbd history slot parsed: nzo_id={NzoId}, name={Name}, status={Status}, path={Path}, completed={Completed}", nzoId, LogRedaction.SanitizeText(name), LogRedaction.SanitizeText(status), LogRedaction.SanitizeFilePath(path), completedTime);
 
                             completedItems.Add((name, status, path, completedTime, nzoId));
                         }

@@ -94,7 +94,7 @@ namespace Listenarr.Api.Services
 
                             if (usedBasePath && (string.IsNullOrEmpty(scanRoot) || !Directory.Exists(scanRoot)))
                             {
-                                _logger.LogWarning("Audiobook BasePath missing for job {JobId}: {Path}. Removing tracked files.", job.Id, scanRoot);
+                                _logger.LogWarning("Audiobook BasePath missing for job {JobId}: {Path}. Removing tracked files.", job.Id, LogRedaction.SanitizeFilePath(scanRoot));
 
                                 try
                                 {
@@ -109,7 +109,7 @@ namespace Listenarr.Api.Services
                                         {
                                             removedFilesDto.Add(new { id = rem.Id, path = rem.Path });
                                             db.AudiobookFiles.Remove(rem);
-                                            _logger.LogInformation("Removing AudiobookFile DB row Id={Id} Path={Path} due to missing BasePath", rem.Id, rem.Path);
+                                            _logger.LogInformation("Removing AudiobookFile DB row Id={Id} Path={Path} due to missing BasePath", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
 
                                             var historyEntry = new History
                                             {
@@ -175,7 +175,7 @@ namespace Listenarr.Api.Services
 
                             if (string.IsNullOrEmpty(scanRoot) || !Directory.Exists(scanRoot))
                             {
-                                _logger.LogWarning("Scan path not found for job {JobId}: {Path}", job.Id, scanRoot);
+                                _logger.LogWarning("Scan path not found for job {JobId}: {Path}", job.Id, LogRedaction.SanitizeFilePath(scanRoot));
                                 continue;
                             }
 
@@ -288,7 +288,7 @@ namespace Listenarr.Api.Services
                             {
                                 var basePathChanged = !string.Equals(audiobook.BasePath, basePath, StringComparison.OrdinalIgnoreCase);
                                 audiobook.BasePath = basePath;
-                                _logger.LogInformation("Set base path for audiobook '{Title}' (ID: {AudiobookId}): {BasePath}", audiobook.Title, audiobook.Id, basePath);
+                                _logger.LogInformation("Set base path for audiobook '{Title}' (ID: {AudiobookId}): {BasePath}", LogRedaction.SanitizeText(audiobook.Title), audiobook.Id, LogRedaction.SanitizeFilePath(basePath));
 
                                 // Persist the recalculated base path before delegating to AudioFileService.
                                 // That service resolves the audiobook in a separate scope/db context and
@@ -358,7 +358,7 @@ namespace Listenarr.Api.Services
                                         {
                                             removedFilesDto.Add(new { id = rem.Id, path = rem.Path });
                                             db.AudiobookFiles.Remove(rem);
-                                            _logger.LogInformation("Removing missing AudiobookFile DB row Id={Id} Path={Path}", rem.Id, rem.Path);
+                                            _logger.LogInformation("Removing missing AudiobookFile DB row Id={Id} Path={Path}", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
 
                                             // Add history entry for removed file
                                             var historyEntry = new History
@@ -380,7 +380,7 @@ namespace Listenarr.Api.Services
                                             db.History.Add(historyEntry);
                                         }
                                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                            _logger.LogWarning(ex, "Failed to remove AudiobookFile Id={Id} Path={Path}", rem.Id, rem.Path);
+                                            _logger.LogWarning(ex, "Failed to remove AudiobookFile Id={Id} Path={Path}", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
                                         }
                                     }
 
@@ -423,12 +423,12 @@ namespace Listenarr.Api.Services
                                                 var created = await audioFileService.EnsureAudiobookFileAsync(audiobook.Id, audiobook.FilePath, "scan-legacy");
                                                 if (created)
                                                 {
-                                                    _logger.LogInformation("Migrated legacy filePath to AudiobookFile record for audiobook {AudiobookId}: {Path}", audiobook.Id, audiobook.FilePath);
+                                                    _logger.LogInformation("Migrated legacy filePath to AudiobookFile record for audiobook {AudiobookId}: {Path}", audiobook.Id, LogRedaction.SanitizeFilePath(audiobook.FilePath));
                                                     createdFiles++;
                                                 }
                                             }
                                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                                _logger.LogWarning(ex, "Failed to migrate legacy filePath for audiobook {AudiobookId}: {Path}", audiobook.Id, audiobook.FilePath);
+                                                _logger.LogWarning(ex, "Failed to migrate legacy filePath for audiobook {AudiobookId}: {Path}", audiobook.Id, LogRedaction.SanitizeFilePath(audiobook.FilePath));
                                             }
                                         }
                                     }
@@ -438,7 +438,7 @@ namespace Listenarr.Api.Services
                                         audiobook.FilePath = null;
                                         audiobook.FileSize = null;
                                         needsUpdate = true;
-                                        _logger.LogInformation("Cleared missing legacy filePath for audiobook {AudiobookId}: {Path}", audiobook.Id, audiobook.FilePath);
+                                        _logger.LogInformation("Cleared missing legacy filePath for audiobook {AudiobookId}: {Path}", audiobook.Id, LogRedaction.SanitizeFilePath(audiobook.FilePath));
 
                                         // Add history entry for cleared filePath
                                         var historyEntry = new History
