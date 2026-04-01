@@ -72,12 +72,12 @@ namespace Listenarr.Api.Controllers
             try
             {
                 _logger.LogInformation("=== SendToDownloadClient RECEIVED REQUEST ===");
-                _logger.LogInformation("Title: {Title}", request.SearchResult?.Title ?? "NULL");
-                _logger.LogInformation("DownloadType: '{DownloadType}'", request.SearchResult?.DownloadType ?? "NULL");
+                _logger.LogInformation("Title: {Title}", LogRedaction.SanitizeText(request.SearchResult?.Title));
+                _logger.LogInformation("DownloadType: '{DownloadType}'", LogRedaction.SanitizeText(request.SearchResult?.DownloadType));
                 _logger.LogInformation("TorrentUrl: {TorrentUrl}", LogRedaction.SanitizeUrl(request.SearchResult?.TorrentUrl));
                 _logger.LogInformation("NzbUrl: {NzbUrl}", LogRedaction.SanitizeUrl(request.SearchResult?.NzbUrl));
                 _logger.LogInformation("MagnetLink: {MagnetLink}", LogRedaction.SanitizeUrl(request.SearchResult?.MagnetLink));
-                _logger.LogInformation("Source: {Source}", request.SearchResult?.Source ?? "NULL");
+                _logger.LogInformation("Source: {Source}", LogRedaction.SanitizeText(request.SearchResult?.Source));
                 _logger.LogInformation("==========================================");
 
                 if (request.SearchResult == null)
