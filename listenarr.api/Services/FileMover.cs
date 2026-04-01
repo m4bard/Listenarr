@@ -14,12 +14,18 @@ namespace Listenarr.Api.Services
 {
     public class FileMover : IFileMover
     {
-        // P/Invoke for hardlink creation
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+        // P/Invoke declarations are grouped in a private NativeMethods class per CA1060.
+        // Hardlink creation has no managed BCL equivalent in .NET 8, so P/Invoke is required.
+        private static class NativeMethods
+        {
+            [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+            [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
+            internal static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
 
-        [DllImport("libc", SetLastError = true)]
-        private static extern int link(string oldpath, string newpath);
+            [DllImport("libc", SetLastError = true)]
+            [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
+            internal static extern int link(string oldpath, string newpath);
+        }
 
         private readonly ILogger<FileMover> _logger;
         private readonly IProcessRunner? _processRunner;
@@ -270,13 +276,14 @@ namespace Listenarr.Api.Services
                 // onto the destination. This ensures the original destFile is never deleted
                 // until we have a confirmed replacement ready.
                 // Use Path.GetFileName to ensure the random name has no separators (satisfies static analysis).
+                // Use Path.Join (not Path.Combine) to prevent a rooted second arg from silently discarding destDir.
                 var tempDestName = Path.GetFileName(Path.GetRandomFileName()) + ".tmp";
-                var tempDest = Path.Combine(destDir, tempDestName);
+                var tempDest = Path.Join(destDir, tempDestName);
                 try
                 {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        if (!CreateHardLink(tempDest, sourceFile, IntPtr.Zero))
+                        if (!NativeMethods.CreateHardLink(tempDest, sourceFile, IntPtr.Zero))
                         {
                             var error = Marshal.GetLastWin32Error();
                             throw new IOException($"CreateHardLink failed with error code {error}");
@@ -285,7 +292,7 @@ namespace Listenarr.Api.Services
                     else
                     {
                         // Unix/Linux/macOS
-                        var result = link(sourceFile, tempDest);
+                        var result = NativeMethods.link(sourceFile, tempDest);
                         if (result != 0)
                         {
                             var error = Marshal.GetLastWin32Error();
@@ -300,7 +307,13 @@ namespace Listenarr.Api.Services
                 }
                 catch (Exception linkEx) when (linkEx is not OperationCanceledException && linkEx is not OutOfMemoryException && linkEx is not StackOverflowException) {
                     // Clean up temp file if hardlink left one behind
-                    try { if (File.Exists(tempDest)) File.Delete(tempDest); } catch { /* best-effort */ }
+                    try { if (File.Exists(tempDest)) File.Delete(tempDest); }
+                    catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException
+                                                   && cleanupEx is not OutOfMemoryException
+                                                   && cleanupEx is not StackOverflowException)
+                    {
+                        /* best-effort temp cleanup */
+                    }
 
                     // Hardlink failed (likely cross-volume or unsupported filesystem)
                     var isCrossDevice = linkEx is IOException ioEx && ioEx.Message.Contains("error code 17");
@@ -315,8 +328,9 @@ namespace Listenarr.Api.Services
                     // Fallback to copy — copy to a temp file first, then atomically rename onto destination
                     // so the existing file is never overwritten until a complete replacement is confirmed.
                     // Use Path.GetFileName to strip any separators from GetRandomFileName (satisfies static analysis).
+                    // Use Path.Join (not Path.Combine) to prevent rooted second arg from silently discarding destDir.
                     var tempCopyName = Path.GetFileName(Path.GetRandomFileName()) + ".tmp";
-                    var tempCopyPath = Path.Combine(destDir, tempCopyName);
+                    var tempCopyPath = Path.Join(destDir, tempCopyName);
                     try
                     {
                         File.Copy(sourceFile, tempCopyPath, overwrite: true);
