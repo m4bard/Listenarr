@@ -3,6 +3,7 @@ using System.Net;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Listenarr.Api.Services;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services.Adapters
@@ -72,6 +73,13 @@ namespace Listenarr.Api.Services.Adapters
             var currentUrl = torrentUrl;
             for (var hop = 0; hop < 10; hop++)
             {
+                // SSRF guard: reject localhost/private-IP targets on every hop (including redirects)
+                if (!OutboundRequestSecurity.TryValidateExternalHttpUrl(currentUrl, out var ssrfReason))
+                {
+                    _logger.LogWarning("Blocked SSRF attempt in torrent download (hop {Hop}): {Reason}", hop, ssrfReason);
+                    return TorrentDownloadResult.Empty;
+                }
+
                 using var request = new HttpRequestMessage(HttpMethod.Get, currentUrl);
                 request.Headers.Accept.ParseAdd("application/x-bittorrent, application/octet-stream, */*");
                 request.Headers.UserAgent.ParseAdd("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36");
