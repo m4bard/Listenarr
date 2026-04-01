@@ -377,31 +377,27 @@ namespace Listenarr.Api.Tests
             using var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
             const string queueJson = "{\"queue\":{\"slots\":[]}}";
             const string historyJson = "{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_x123\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"/downloads/complete/listenarr/William Faulkner - The Sound and the Fury\",\"completed\":1600000000}]}}";
-            using var queueResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent(queueJson)
-            };
-            using var historyResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent(historyJson)
-            };
-            using var notFoundResponse = new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
-
             // Setup HTTP handler that returns empty queue but history contains the completed entry
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
                 var q = req.RequestUri?.Query ?? string.Empty;
                 if (q.Contains("mode=queue"))
                 {
-                    return Task.FromResult(queueResponse);
+                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(queueJson)
+                    });
                 }
 
                 if (q.Contains("mode=history"))
                 {
-                    return Task.FromResult(historyResponse);
+                    return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)
+                    {
+                        Content = new StringContent(historyJson)
+                    });
                 }
 
-                return Task.FromResult(notFoundResponse);
+                return Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.NotFound));
             });
 
             using var httpClient = new HttpClient(handler);
@@ -525,11 +521,8 @@ namespace Listenarr.Api.Tests
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            using var okResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
             var handler = new DelegatingHandlerMock((_, _) =>
-            {
-                return Task.FromResult(okResponse);
-            });
+                Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK)));
             using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
