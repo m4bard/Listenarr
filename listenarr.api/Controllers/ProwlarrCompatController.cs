@@ -12,7 +12,7 @@ using Listenarr.Api.Services;
 namespace Listenarr.Api.Controllers
 {
     [ApiController]
-    [Route("api/v1")]
+    [Route("api/v1/prowlarr")]
     [Tags("Prowlarr Compatibility")]
     [ApiExplorerSettings(IgnoreApi = true)]
     public class ProwlarrCompatController : ControllerBase
