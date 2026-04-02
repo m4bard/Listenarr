@@ -7,25 +7,25 @@ using System.Security.Principal;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
 {
-    public class FileMover : IFileMover
+    public partial class FileMover : IFileMover
     {
-        // P/Invoke declarations are grouped in a private NativeMethods class per CA1060.
-        // Hardlink creation has no managed BCL equivalent in .NET 8, so P/Invoke is required.
-        private static class NativeMethods
-        {
-            [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-            [DefaultDllImportSearchPaths(DllImportSearchPath.System32)]
-            internal static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+        // .NET 8 has no managed BCL equivalent for hardlink creation.
+        // LibraryImport (source-generated P/Invoke, .NET 7+) is used instead of the legacy
+        // DllImport attribute to minimise unmanaged interop overhead and satisfy CA1060/CA2101.
+        [LibraryImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        [SuppressMessage("Interoperability", "SYSLIB1054", Justification = "No managed BCL equivalent for hardlink creation exists in .NET 8.")]
+        private static partial bool CreateHardLinkNative(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
 
-            [DllImport("libc", SetLastError = true)]
-            [DefaultDllImportSearchPaths(DllImportSearchPath.SafeDirectories)]
-            internal static extern int link(string oldpath, string newpath);
-        }
+        [LibraryImport("libc", EntryPoint = "link", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        [SuppressMessage("Interoperability", "SYSLIB1054", Justification = "No managed BCL equivalent for hardlink creation exists in .NET 8.")]
+        private static partial int LinkNative(string oldpath, string newpath);
 
         private readonly ILogger<FileMover> _logger;
         private readonly IProcessRunner? _processRunner;
@@ -283,7 +283,7 @@ namespace Listenarr.Api.Services
                 {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        if (!NativeMethods.CreateHardLink(tempDest, sourceFile, IntPtr.Zero))
+                        if (!CreateHardLinkNative(tempDest, sourceFile, IntPtr.Zero))
                         {
                             var error = Marshal.GetLastWin32Error();
                             throw new IOException($"CreateHardLink failed with error code {error}");
@@ -292,7 +292,7 @@ namespace Listenarr.Api.Services
                     else
                     {
                         // Unix/Linux/macOS
-                        var result = NativeMethods.link(sourceFile, tempDest);
+                        var result = LinkNative(sourceFile, tempDest);
                         if (result != 0)
                         {
                             var error = Marshal.GetLastWin32Error();
