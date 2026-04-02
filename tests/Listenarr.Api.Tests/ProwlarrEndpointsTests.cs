@@ -67,6 +67,22 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
+        public async Task SchemaShorthand_ReturnsFieldsArray()
+        {
+            // Verify the /schema shorthand route works (used by some Prowlarr clients)
+            using var client = _factory.CreateClient();
+            var resp = await client.GetAsync("/api/v1/prowlarr/schema");
+
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            Assert.Equal("application/json", resp.Content.Headers.ContentType?.MediaType);
+
+            using var stream = await resp.Content.ReadAsStreamAsync();
+            var doc = await JsonDocument.ParseAsync(stream);
+            Assert.True(doc.RootElement.ValueKind == JsonValueKind.Array);
+            Assert.True(doc.RootElement.GetArrayLength() >= 1);
+        }
+
+        [Fact]
         public async Task IndexerSchema_ReturnsFieldsArray()
         {
             using var client = _factory.CreateClient();
