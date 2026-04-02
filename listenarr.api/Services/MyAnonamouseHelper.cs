@@ -168,11 +168,9 @@ namespace Listenarr.Api.Services
             {
                 foreach (var prop in element.EnumerateObject())
                 {
-                    if (MamKeys.Any(k => string.Equals(prop.Name, k, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        if (prop.Value.ValueKind == JsonValueKind.String)
-                            return prop.Value.GetString();
-                    }
+                    if (MamKeys.Any(k => string.Equals(prop.Name, k, StringComparison.OrdinalIgnoreCase)) &&
+                        prop.Value.ValueKind == JsonValueKind.String)
+                        return prop.Value.GetString();
 
                     if (prop.Value.ValueKind == JsonValueKind.Object || prop.Value.ValueKind == JsonValueKind.Array)
                     {

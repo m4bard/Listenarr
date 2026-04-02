@@ -72,12 +72,12 @@ namespace Listenarr.Api.Controllers
             try
             {
                 _logger.LogInformation("=== SendToDownloadClient RECEIVED REQUEST ===");
-                _logger.LogInformation("Title: {Title}", request.SearchResult?.Title ?? "NULL");
-                _logger.LogInformation("DownloadType: '{DownloadType}'", request.SearchResult?.DownloadType ?? "NULL");
-                _logger.LogInformation("TorrentUrl: {TorrentUrl}", request.SearchResult?.TorrentUrl ?? "NULL");
-                _logger.LogInformation("NzbUrl: {NzbUrl}", request.SearchResult?.NzbUrl ?? "NULL");
-                _logger.LogInformation("MagnetLink: {MagnetLink}", request.SearchResult?.MagnetLink ?? "NULL");
-                _logger.LogInformation("Source: {Source}", request.SearchResult?.Source ?? "NULL");
+                _logger.LogInformation("Title: {Title}", LogRedaction.SanitizeText(request.SearchResult?.Title));
+                _logger.LogInformation("DownloadType: '{DownloadType}'", LogRedaction.SanitizeText(request.SearchResult?.DownloadType));
+                _logger.LogInformation("TorrentUrl: {TorrentUrl}", LogRedaction.SanitizeUrl(request.SearchResult?.TorrentUrl));
+                _logger.LogInformation("NzbUrl: {NzbUrl}", LogRedaction.SanitizeUrl(request.SearchResult?.NzbUrl));
+                _logger.LogInformation("MagnetLink: {MagnetLink}", LogRedaction.SanitizeUrl(request.SearchResult?.MagnetLink));
+                _logger.LogInformation("Source: {Source}", LogRedaction.SanitizeText(request.SearchResult?.Source));
                 _logger.LogInformation("==========================================");
 
                 if (request.SearchResult == null)
@@ -136,14 +136,14 @@ namespace Listenarr.Api.Controllers
                 var fileName = tuple.FileName ?? "download.torrent";
                 if (bytes != null && bytes.Length > 0)
                 {
-                    _logger.LogInformation("Served cached torrent for download {DownloadId}", downloadId);
+                    _logger.LogInformation("Served cached torrent for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                     return File(bytes, "application/x-bittorrent", fileName);
                 }
 
                 return NotFound(new { error = "Cached torrent not found", downloadId });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error retrieving cached torrent for download {DownloadId}", downloadId);
+                _logger.LogError(ex, "Error retrieving cached torrent for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                 return StatusCode(500, new { message = "Failed to retrieve cached torrent", error = ex.Message });
             }
         }
@@ -160,13 +160,13 @@ namespace Listenarr.Api.Controllers
                 var announces = await _downloadService.GetCachedAnnouncesAsync(downloadId);
                 if (announces != null && announces.Count > 0)
                 {
-                    _logger.LogInformation("Served cached announces for download {DownloadId}", downloadId);
+                    _logger.LogInformation("Served cached announces for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                     return Ok(new { downloadId, announces });
                 }
                 return NotFound(new { error = "Cached announces not found", downloadId });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error retrieving cached announces for download {DownloadId}", downloadId);
+                _logger.LogError(ex, "Error retrieving cached announces for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                 return StatusCode(500, new { message = "Failed to retrieve cached announces", error = ex.Message });
             }
         }

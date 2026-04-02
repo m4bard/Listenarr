@@ -168,7 +168,7 @@ namespace Listenarr.Api.Services
 
             return await _db.AuthorCacheEntries
                 .AsNoTracking()
-                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
+                .OrderByDescending(entry => entry.LastFetchedAt.GetValueOrDefault(entry.UpdatedAt))
                 .FirstOrDefaultAsync(entry =>
                     entry.AuthorNameNormalized == normalizedName &&
                     entry.Region == normalizedRegion);
@@ -186,7 +186,7 @@ namespace Listenarr.Api.Services
 
             return await _db.AuthorCacheEntries
                 .AsNoTracking()
-                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
+                .OrderByDescending(entry => entry.LastFetchedAt.GetValueOrDefault(entry.UpdatedAt))
                 .FirstOrDefaultAsync(entry =>
                     entry.AuthorAsin != null &&
                     entry.AuthorAsin.ToUpper() == normalizedAsin &&
@@ -271,7 +271,7 @@ namespace Listenarr.Api.Services
 
             return await _db.SeriesCacheEntries
                 .AsNoTracking()
-                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
+                .OrderByDescending(entry => entry.LastFetchedAt.GetValueOrDefault(entry.UpdatedAt))
                 .FirstOrDefaultAsync(entry =>
                     entry.SeriesNameNormalized == normalizedName &&
                     entry.Region == normalizedRegion);
@@ -289,7 +289,7 @@ namespace Listenarr.Api.Services
 
             return await _db.SeriesCacheEntries
                 .AsNoTracking()
-                .OrderByDescending(entry => entry.LastFetchedAt ?? entry.UpdatedAt)
+                .OrderByDescending(entry => entry.LastFetchedAt.GetValueOrDefault(entry.UpdatedAt))
                 .FirstOrDefaultAsync(entry =>
                     entry.SeriesAsin != null &&
                     entry.SeriesAsin.ToUpper() == normalizedAsin &&

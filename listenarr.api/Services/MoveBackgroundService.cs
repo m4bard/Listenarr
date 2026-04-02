@@ -37,7 +37,7 @@ namespace Listenarr.Api.Services
 
                     try
                     {
-                        _logger.LogInformation("Processing move job {JobId} for audiobook {AudiobookId} to {Path}", job.Id, job.AudiobookId, job.RequestedPath);
+                        _logger.LogInformation("Processing move job {JobId} for audiobook {AudiobookId} to {Path}", job.Id, job.AudiobookId, LogRedaction.SanitizeFilePath(job.RequestedPath));
                         _moveQueue.UpdateJobStatus(job.Id, "Processing");
 
                     using var scope = _scopeFactory.CreateScope();
@@ -53,7 +53,7 @@ namespace Listenarr.Api.Services
                     var source = job.SourcePath;
                     if (!string.IsNullOrWhiteSpace(source) && !Directory.Exists(source))
                     {
-                        _logger.LogWarning("Provided source path {Source} for job {JobId} does not exist; falling back to audiobook.BasePath", source, job.Id);
+                        _logger.LogWarning("Provided source path {Source} for job {JobId} does not exist; falling back to audiobook.BasePath", LogRedaction.SanitizeFilePath(source), job.Id);
                         source = null;
                     }
 
@@ -109,7 +109,7 @@ namespace Listenarr.Api.Services
                             continue;
                         }
                         // Target exists but is empty - safe to proceed (will use it instead of creating new)
-                        _logger.LogInformation("Target directory {Target} exists but is empty; proceeding with move", target);
+                        _logger.LogInformation("Target directory {Target} exists but is empty; proceeding with move", LogRedaction.SanitizeFilePath(target));
                     }
 
                     // Create a temporary directory under the target parent
@@ -161,7 +161,7 @@ namespace Listenarr.Api.Services
                                         File.SetCreationTimeUtc(destPath, creation);
                                     }
                                     catch (Exception attrEx) when (attrEx is not OperationCanceledException && attrEx is not OutOfMemoryException && attrEx is not StackOverflowException) {
-                                        _logger.LogDebug(attrEx, "Non-fatal: failed to preserve attributes for {File}", entry);
+                                        _logger.LogDebug(attrEx, "Non-fatal: failed to preserve attributes for {File}", LogRedaction.SanitizeFilePath(entry));
                                     }
 
                                     succeeded = true;
@@ -169,7 +169,7 @@ namespace Listenarr.Api.Services
                                 }
                                 catch (IOException ioex)
                                 {
-                                    _logger.LogWarning(ioex, "IO error copying file {File} attempt {Attempt}", entry, attempt);
+                                    _logger.LogWarning(ioex, "IO error copying file {File} attempt {Attempt}", LogRedaction.SanitizeFilePath(entry), attempt);
 
                                     // exponential backoff
                                     var delay = TimeSpan.FromSeconds(Math.Min(8, Math.Pow(2, attempt - 1)));
@@ -407,7 +407,7 @@ namespace Listenarr.Api.Services
                         }
 
                         _moveQueue.UpdateJobStatus(job.Id, "Completed");
-                        _logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, source, target);
+                        _logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, LogRedaction.SanitizeFilePath(source), LogRedaction.SanitizeFilePath(target));
                         // Completed move job â€” status updated and broadcasted where configured
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

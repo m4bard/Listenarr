@@ -63,12 +63,12 @@ namespace Listenarr.Api.Services
                     searchQuery = $"{audnexusUrl}/search?" + string.Join("&", queryParams);
                 }
 
-                _logger.LogInformation($"Fetching metadata from Audnexus: {searchQuery}");
+                _logger.LogInformation("Fetching metadata from Audnexus: {Query}", LogRedaction.SanitizeUrl(searchQuery));
 
                 var response = await _httpClient.GetAsync(searchQuery);
                 if (!response.IsSuccessStatusCode)
                 {
-                    _logger.LogWarning($"Audnexus API returned {response.StatusCode} for query: {searchQuery}");
+                    _logger.LogWarning("Audnexus API returned {Status} for query: {Query}", response.StatusCode, LogRedaction.SanitizeUrl(searchQuery));
                     return null;
                 }
 
@@ -81,7 +81,7 @@ namespace Listenarr.Api.Services
                 return ParseAudnexusResponse(audnexusData);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, $"Error fetching metadata for title: {title}, artist: {artist}");
+                _logger.LogError(ex, "Error fetching metadata for title: {Title}, artist: {Artist}", LogRedaction.SanitizeText(title), LogRedaction.SanitizeText(artist));
                 return null;
             }
         }
@@ -93,13 +93,13 @@ namespace Listenarr.Api.Services
                 // If the file doesn't exist, skip running ffprobe and return basic metadata from filename
                 if (!File.Exists(filePath))
                 {
-                    _logger.LogWarning("File not found when attempting metadata extraction: {File}", filePath);
+                    _logger.LogWarning("File not found when attempting metadata extraction: {File}", LogRedaction.SanitizeFilePath(filePath));
                     var fallbackMissingFile = new AudioMetadata
                     {
                         Title = Path.GetFileNameWithoutExtension(filePath),
                         Format = Path.GetExtension(filePath).TrimStart('.').ToUpper()
                     };
-                    _logger.LogInformation($"Extracted basic metadata from (missing) file: {filePath}");
+                    _logger.LogInformation("Extracted basic metadata from (missing) file: {File}", LogRedaction.SanitizeText(filePath));
                     return fallbackMissingFile;
                 }
 
@@ -107,7 +107,7 @@ namespace Listenarr.Api.Services
                 var ffprobePathService = await _ffmpegService.GetFfprobePathAsync();
                 if (string.IsNullOrEmpty(ffprobePathService) || !File.Exists(ffprobePathService))
                 {
-                    _logger.LogInformation("No bundled ffprobe available at configured location; skipping ffprobe for file: {File}", filePath);
+                    _logger.LogInformation("No bundled ffprobe available at configured location; skipping ffprobe for file: {File}", LogRedaction.SanitizeFilePath(filePath));
                     // Let the outer method fall back to filename-based metadata
                     return null;
                 }
@@ -117,7 +117,7 @@ namespace Listenarr.Api.Services
                     try
                     {
                         var ffprobeCmd = ffprobePathService;
-                        _logger.LogDebug("Attempting to run bundled ffprobe at '{Path}' for file {File}", ffprobeCmd, filePath);
+                        _logger.LogDebug("Attempting to run bundled ffprobe at '{Path}' for file {File}", LogRedaction.SanitizeFilePath(ffprobeCmd), LogRedaction.SanitizeFilePath(filePath));
 
                         var startInfo = new System.Diagnostics.ProcessStartInfo
                         {
@@ -138,8 +138,8 @@ namespace Listenarr.Api.Services
                         if (_processRunner != null)
                         {
                             var pr = await _processRunner.RunAsync(startInfo, timeoutMs: 5000).ConfigureAwait(false);
-                            _logger.LogDebug("ffprobe finished for {File} with ExitCode={Exit} StdErrLength={ErrLen}", filePath, pr.ExitCode, pr.Stderr?.Length ?? 0);
-                            if (!string.IsNullOrEmpty(pr.Stderr)) _logger.LogDebug("ffprobe stderr for {File}: {Err}", filePath, pr.Stderr);
+                            _logger.LogDebug("ffprobe finished for {File} with ExitCode={Exit} StdErrLength={ErrLen}", LogRedaction.SanitizeFilePath(filePath), pr.ExitCode, pr.Stderr?.Length ?? 0);
+                            if (!string.IsNullOrEmpty(pr.Stderr)) _logger.LogDebug("ffprobe stderr for {File}: {Err}", LogRedaction.SanitizeFilePath(filePath), LogRedaction.SanitizeText(pr.Stderr));
                             if (!string.IsNullOrEmpty(pr.Stdout))
                             {
                                 try
@@ -227,13 +227,13 @@ namespace Listenarr.Api.Services
                                     if (string.IsNullOrEmpty(metadata.Format)) metadata.Format = Path.GetExtension(filePath).TrimStart('.').ToUpper();
                                     if (string.IsNullOrEmpty(metadata.Container)) metadata.Container = Path.GetExtension(filePath).TrimStart('.').ToUpper();
 
-                                    _logger.LogInformation($"Extracted ffprobe metadata from file: {filePath}");
+                                    _logger.LogInformation("Extracted ffprobe metadata from file: {File}", LogRedaction.SanitizeText(filePath));
                                     _logger.LogDebug("Parsed metadata: Duration={Duration} seconds, Format={Format}, Bitrate={Bitrate}, SampleRate={SampleRate}, Channels={Channels}", metadata.Duration.TotalSeconds, metadata.Format, metadata.Bitrate, metadata.SampleRate, metadata.Channels);
 
                                     return metadata;
                                 }
                                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                    _logger.LogDebug(ex, "Failed parsing ffprobe JSON for file: {File}", filePath);
+                                    _logger.LogDebug(ex, "Failed parsing ffprobe JSON for file: {File}", LogRedaction.SanitizeFilePath(filePath));
                                 }
                             }
                         }
@@ -241,7 +241,7 @@ namespace Listenarr.Api.Services
                         return null;
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogInformation(ex, "ffprobe not available or failed for file: {File}", filePath);
+                        _logger.LogInformation(ex, "ffprobe not available or failed for file: {File}", LogRedaction.SanitizeFilePath(filePath));
                         return null;
                     }
                 });
@@ -259,11 +259,11 @@ namespace Listenarr.Api.Services
                     Format = Path.GetExtension(filePath).TrimStart('.').ToUpper()
                 };
 
-                _logger.LogInformation($"Extracted basic metadata from file: {filePath}");
+                _logger.LogInformation("Extracted basic metadata from file: {File}", LogRedaction.SanitizeFilePath(filePath));
                 return fallback;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, $"Error extracting metadata from file: {filePath}");
+                _logger.LogError(ex, "Error extracting metadata from file: {File}", LogRedaction.SanitizeFilePath(filePath));
                 return new AudioMetadata();
             }
         }
@@ -342,11 +342,11 @@ namespace Listenarr.Api.Services
             try
             {
                 // This would use a library like TagLib# to apply metadata to audio files
-                _logger.LogInformation($"Applied metadata to file: {filePath}");
+                _logger.LogInformation("Applied metadata to file: {File}", LogRedaction.SanitizeText(filePath));
                 await Task.CompletedTask;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, $"Error applying metadata to file: {filePath}");
+                _logger.LogError(ex, "Error applying metadata to file: {File}", LogRedaction.SanitizeText(filePath));
             }
         }
 
@@ -374,11 +374,11 @@ namespace Listenarr.Api.Services
                     return Task.CompletedTask; // Unknown format — skip silently
 
                 file.Save();
-                _logger.LogDebug("Wrote ASIN tag '{Asin}' to {File}", asin, filePath);
+                _logger.LogDebug("Wrote ASIN tag '{Asin}' to {File}", asin, LogRedaction.SanitizeFilePath(filePath));
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to write ASIN tag to {File} — import will continue", filePath);
+                _logger.LogWarning(ex, "Failed to write ASIN tag to {File} — import will continue", LogRedaction.SanitizeFilePath(filePath));
             }
             return Task.CompletedTask;
         }
@@ -395,7 +395,7 @@ namespace Listenarr.Api.Services
                 return null;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, $"Error downloading cover art from: {coverArtUrl}");
+                _logger.LogError(ex, "Error downloading cover art from: {Url}", LogRedaction.SanitizeUrl(coverArtUrl));
                 return null;
             }
         }

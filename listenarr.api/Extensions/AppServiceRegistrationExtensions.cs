@@ -110,11 +110,7 @@ namespace Listenarr.Api.Extensions
             // build absolute image URLs when the startup config doesn't supply a base URL.
             services.AddHttpContextAccessor();
 
-            // Ensure API shim interface resolves by forwarding to the application-level
-            // IHubBroadcaster registration (added in AddListenarrAdapters). Some test
-            // hosts reference the API shim type directly, so provide this mapping.
-            services.AddSingleton<Listenarr.Api.Services.IHubBroadcaster>(sp =>
-                (Listenarr.Api.Services.IHubBroadcaster)sp.GetRequiredService<Listenarr.Application.Services.IHubBroadcaster>());
+
             // Always register session service, but it will check config internally
             services.AddScoped<SessionService>();
             services.AddScoped<ISessionService, ConditionalSessionService>();

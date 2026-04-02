@@ -158,25 +158,18 @@ namespace Listenarr.Api.Services.Search.Providers
                 mamRequest.Headers.Referrer = new Uri("https://www.myanonamouse.net/");
 
                 // Prefer using the injected HttpClient in tests (so DelegatingHandler stubs can capture requests)
-                HttpClient? disposableClient = null;
-                HttpClient httpClientToUse = _httpClient;
+                using var disposableClient = _httpClient.BaseAddress == null
+                    ? MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url)
+                    : null;
+                HttpClient httpClientToUse = disposableClient ?? _httpClient;
                 List<IndexerSearchResult> results = new List<IndexerSearchResult>();
-                try
+
+                if (_httpClient.BaseAddress != null && !string.IsNullOrEmpty(mamId))
                 {
-                    if (_httpClient.BaseAddress == null)
-                    {
-                        httpClientToUse = MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url);
-                        disposableClient = httpClientToUse;
-                    }
-                    else
-                    {
-                        // Add cookie header for injected client so the request is authenticated for MAM.
-                        // This keeps test handlers in place even when the BaseAddress host differs.
-                        if (!string.IsNullOrEmpty(mamId))
-                        {
-                            mamRequest.Headers.Add("Cookie", $"mam_id={mamId}");
-                        }
-                    }
+                    // Add cookie header for injected client so the request is authenticated for MAM.
+                    // This keeps test handlers in place even when the BaseAddress host differs.
+                    mamRequest.Headers.Add("Cookie", $"mam_id={mamId}");
+                }
 
                     _logger.LogDebug("MyAnonamouse API URL: {Url}", LogRedaction.RedactText(url, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
 
@@ -229,11 +222,6 @@ namespace Listenarr.Api.Services.Search.Providers
                     catch (Exception exEnrich) when (exEnrich is not OperationCanceledException && exEnrich is not OutOfMemoryException && exEnrich is not StackOverflowException) {
                         _logger.LogWarning(exEnrich, "MyAnonamouse enrichment step failed");
                     }
-                }
-                finally
-                {
-                    disposableClient?.Dispose();
-                }
 
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
                 return results;

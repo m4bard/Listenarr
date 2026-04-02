@@ -22,20 +22,22 @@ namespace Listenarr.Api.Services
             // queued/processing/completed, return that job id instead of creating a duplicate.
             try
             {
-                var existing = _jobs.Values.FirstOrDefault(j => j.AudiobookId == audiobookId && (
-                    (j.Path == null && path == null) || (j.Path != null && path != null && string.Equals(j.Path, path, StringComparison.OrdinalIgnoreCase))));
+                var existing = _jobs.Values.FirstOrDefault(j => {
+                    if (j.AudiobookId != audiobookId) return false;
+                    bool bothNull = j.Path == null && path == null;
+                    bool bothMatch = j.Path != null && path != null && string.Equals(j.Path, path, StringComparison.OrdinalIgnoreCase);
+                    return bothNull || bothMatch;
+                });
 
-                if (existing != null)
+                // Only dedupe when an existing job is actively queued or processing.
+                // If a previous job Completed or Failed, allow a new job to be created so
+                // explicit re-scans can be scheduled.
+                if (existing != null &&
+                    (string.Equals(existing.Status, "Queued", StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(existing.Status, "Processing", StringComparison.OrdinalIgnoreCase)))
                 {
-                    // Only dedupe when an existing job is actively queued or processing.
-                    // If a previous job Completed or Failed, allow a new job to be created so
-                    // explicit re-scans can be scheduled.
-                    if (string.Equals(existing.Status, "Queued", StringComparison.OrdinalIgnoreCase) ||
-                        string.Equals(existing.Status, "Processing", StringComparison.OrdinalIgnoreCase))
-                    {
-                        _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", existing.Id, audiobookId, path, existing.Status);
-                        return existing.Id;
-                    }
+                    _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", existing.Id, audiobookId, LogRedaction.SanitizeFilePath(path), existing.Status);
+                    return existing.Id;
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -45,7 +47,7 @@ namespace Listenarr.Api.Services
 
             var job = new ScanJob { AudiobookId = audiobookId, Path = path };
             _jobs[job.Id] = job;
-            _logger.LogInformation("Enqueueing scan job {JobId} for audiobook {AudiobookId} (path: {Path})", job.Id, audiobookId, path);
+            _logger.LogInformation("Enqueueing scan job {JobId} for audiobook {AudiobookId} (path: {Path})", job.Id, audiobookId, LogRedaction.SanitizeFilePath(path));
             await _channel.Writer.WriteAsync(job);
             _logger.LogInformation("Scan job {JobId} written to channel", job.Id);
             return job.Id;

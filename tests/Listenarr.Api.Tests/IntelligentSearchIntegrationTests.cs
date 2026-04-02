@@ -28,7 +28,7 @@ namespace Listenarr.Api.Tests
             // Build controller directly to avoid in-memory HTTP binding issues in CI environment
             var mockSearch = new Moq.Mock<ISearchService>();
             mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
-                .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "B0TESTASIN", Title = "Clean Title" } } as System.Collections.Generic.List<MetadataSearchResult>));
+                .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "B0TESTASIN", Title = "Clean Title" } }));
 
             var logger = Mock.Of<Microsoft.Extensions.Logging.ILogger<SearchController>>();
             var audible = new TestEmptyAudibleService();
@@ -52,7 +52,7 @@ namespace Listenarr.Api.Tests
         {
             var mockSearch = new Moq.Mock<ISearchService>();
             mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
-                .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "B000000001", Title = "Ingram: A Novel" }, new MetadataSearchResult { Asin = "B000000002", Title = "Different Book", Author = "Ingram" } } as System.Collections.Generic.List<MetadataSearchResult>));
+                .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "B000000001", Title = "Ingram: A Novel" }, new MetadataSearchResult { Asin = "B000000002", Title = "Different Book", Author = "Ingram" } }));
 
             var logger = Mock.Of<Microsoft.Extensions.Logging.ILogger<SearchController>>();
             var audible = new TestEmptyAudibleService();
@@ -76,7 +76,7 @@ namespace Listenarr.Api.Tests
             var mockSearch = new Moq.Mock<ISearchService>();
             // Return empty intelligent-search results when Amazon/Audible are empty
             mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
-                .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult>() as System.Collections.Generic.List<MetadataSearchResult>));
+                .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult>()));
 
             var logger = Mock.Of<Microsoft.Extensions.Logging.ILogger<SearchController>>();
             var audible = new TestEmptyAudibleService();
@@ -98,12 +98,12 @@ namespace Listenarr.Api.Tests
         {
             var mockSearch = new Moq.Mock<ISearchService>();
             mockSearch.Setup(s => s.IntelligentSearchAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<double>(), It.IsAny<string>(), It.IsAny<string?>(), It.IsAny<System.Threading.CancellationToken>()))
-                .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "0563528885", Title = "The Lord of the Rings: The Trilogy", ImageUrl = "http://example.com/audio_cd.jpg" } } as System.Collections.Generic.List<MetadataSearchResult>));
+                .Returns(Task.FromResult(new System.Collections.Generic.List<MetadataSearchResult> { new MetadataSearchResult { Asin = "0563528885", Title = "The Lord of the Rings: The Trilogy", ImageUrl = "http://example.com/audio_cd.jpg" } }));
 
             var logger = Mock.Of<Microsoft.Extensions.Logging.ILogger<SearchController>>();
             var audible = new TestEmptyAudibleService();
             var metadata = Mock.Of<IAudiobookMetadataService>();
-            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audible, (IAudiobookMetadataService)metadata);
+            var controller = new Listenarr.Api.Controllers.SearchController(mockSearch.Object, logger, audible, metadata);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             var actionResult = await controller.IntelligentSearch("9780261103573");

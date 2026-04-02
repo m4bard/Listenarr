@@ -111,7 +111,7 @@ namespace Listenarr.Api.Services
                         if (audiobook != null)
                         {
                             namingMetadata = BuildNamingMetadata(audiobook, extractedMetadata, metadata.Title);
-                            _logger.LogDebug("ImportSingleFile: Using audiobook metadata for naming (Download {DownloadId}): {Title} by {Artist}", downloadId, namingMetadata.Title, namingMetadata.Artist);
+                            _logger.LogDebug("ImportSingleFile: Using audiobook metadata for naming (Download {DownloadId}): {Title} by {Artist}", LogRedaction.SanitizeText(downloadId), LogRedaction.SanitizeText(namingMetadata.Title), LogRedaction.SanitizeText(namingMetadata.Artist));
                         }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -170,7 +170,7 @@ namespace Listenarr.Api.Services
                                 result.Success = false;
                                 result.SkippedReason = $"candidate quality '{candidateQuality}' is not better than existing '{bestExisting}'";
                                 result.Message = result.SkippedReason;
-                                _logger.LogInformation("ImportSingleFile: Skipping import of file {File} for audiobook {AudiobookId} because candidate quality '{Candidate}' is not better than existing '{Existing}'", sourcePath, ab.Id, candidateQuality, bestExisting);
+                                _logger.LogInformation("ImportSingleFile: Skipping import of file {File} for audiobook {AudiobookId} because candidate quality '{Candidate}' is not better than existing '{Existing}'", LogRedaction.SanitizeText(sourcePath), ab.Id, candidateQuality, bestExisting);
                                 return result;
                             }
                         }

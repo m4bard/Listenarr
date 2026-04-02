@@ -71,11 +71,11 @@ namespace Listenarr.Api.Services
 
                                     taskDb.AudiobookFiles.Remove(file);
                                     await taskDb.SaveChangesAsync(stoppingToken);
-                                    _logger.LogInformation("Removed non-audio AudiobookFile entry id={Id} path={Path}", file.Id, file.Path);
+                                    _logger.LogInformation("Removed non-audio AudiobookFile entry id={Id} path={Path}", file.Id, LogRedaction.SanitizeFilePath(file.Path));
                                     return;
                                 }
 
-                                _logger.LogInformation("Re-extracting metadata for file id={Id} path={Path}", file.Id, file.Path);
+                                _logger.LogInformation("Re-extracting metadata for file id={Id} path={Path}", file.Id, LogRedaction.SanitizeFilePath(file.Path));
 
                                 // Bail early if cancellation requested
                                 if (stoppingToken.IsCancellationRequested)
@@ -106,7 +106,7 @@ namespace Listenarr.Api.Services
                                 _logger.LogDebug("Metadata rescan cancelled for file id={Id}", candidate.Id);
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger.LogWarning(ex, "Failed to rescan metadata for file id={Id} path={Path}", candidate.Id, candidate.Path);
+                                _logger.LogWarning(ex, "Failed to rescan metadata for file id={Id} path={Path}", candidate.Id, LogRedaction.SanitizeFilePath(candidate.Path));
                             }
                         }));
                     }

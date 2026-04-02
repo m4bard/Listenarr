@@ -182,7 +182,7 @@ namespace Listenarr.Api.Services
                 };
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error fetching books for author ASIN {AuthorAsin}", authorAsin);
+                _logger.LogError(ex, "Error fetching books for author ASIN {AuthorAsin}", LogRedaction.SanitizeText(authorAsin));
                 return null;
             }
         }
@@ -195,7 +195,7 @@ namespace Listenarr.Api.Services
                 return await LookupSeriesItemsAsync(name, region);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error searching Audible series for name {Name}", name);
+                _logger.LogError(ex, "Error searching Audible series for name {Name}", LogRedaction.SanitizeText(name));
                 return null;
             }
         }
@@ -218,7 +218,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to lookup series {Series}", seriesName);
+                _logger.LogWarning(ex, "Failed to lookup series {Series}", LogRedaction.SanitizeText(seriesName));
                 return null;
             }
         }
@@ -251,7 +251,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to lookup Audible series details by ASIN {SeriesAsin}", seriesAsin);
+                _logger.LogWarning(ex, "Failed to lookup Audible series details by ASIN {SeriesAsin}", LogRedaction.SanitizeText(seriesAsin));
                 return null;
             }
         }
@@ -263,7 +263,7 @@ namespace Listenarr.Api.Services
                 return await GetTypedBooksBySeriesAsinAsync(seriesAsin, region);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error fetching Audible series books for ASIN {Asin}", seriesAsin);
+                _logger.LogError(ex, "Error fetching Audible series books for ASIN {Asin}", LogRedaction.SanitizeText(seriesAsin));
                 return null;
             }
         }
@@ -282,7 +282,7 @@ namespace Listenarr.Api.Services
                     !doc.RootElement.TryGetProperty("product", out var product) ||
                     product.ValueKind != JsonValueKind.Object)
                 {
-                    _logger.LogWarning("GetTypedBooksBySeriesAsinAsync: No product document for series ASIN {Asin} (doc={DocNull})", seriesAsin, doc == null);
+                    _logger.LogWarning("GetTypedBooksBySeriesAsinAsync: No product document for series ASIN {Asin} (doc={DocNull})", LogRedaction.SanitizeText(seriesAsin), doc == null);
                     return null;
                 }
 
@@ -290,7 +290,7 @@ namespace Listenarr.Api.Services
                     relationships.ValueKind != JsonValueKind.Array)
                 {
                     _logger.LogWarning("GetTypedBooksBySeriesAsinAsync: No relationships array for series ASIN {Asin}. Product has properties: {Props}",
-                        seriesAsin,
+                        LogRedaction.SanitizeText(seriesAsin),
                         string.Join(", ", product.EnumerateObject().Select(p => p.Name).Take(15)));
                     return new List<AudibleSearchResult>();
                 }
@@ -307,14 +307,14 @@ namespace Listenarr.Api.Services
                     .OrderBy(item => ParseSeriesPosition(item.Position))
                     .ToList();
 
-                _logger.LogInformation("GetTypedBooksBySeriesAsinAsync: Series ASIN {Asin} has {Count} relationship entries", seriesAsin, relationshipEntries.Count);
+                _logger.LogInformation("GetTypedBooksBySeriesAsinAsync: Series ASIN {Asin} has {Count} relationship entries", LogRedaction.SanitizeText(seriesAsin), relationshipEntries.Count);
 
                 var books = await GetBooksMetadataByAsinsAsync(
                     relationshipEntries.Select(item => item.Asin!),
                     region);
 
                 _logger.LogInformation("GetTypedBooksBySeriesAsinAsync: Fetched metadata for {FetchedCount}/{TotalCount} books from series {Asin}",
-                    books.Count, relationshipEntries.Count, seriesAsin);
+                    books.Count, relationshipEntries.Count, LogRedaction.SanitizeText(seriesAsin));
 
                 var booksByAsin = books
                     .Where(book => !string.IsNullOrWhiteSpace(book.Asin))
@@ -351,7 +351,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogError(ex, "Error fetching Audible typed series books for ASIN {Asin}", seriesAsin);
+                _logger.LogError(ex, "Error fetching Audible typed series books for ASIN {Asin}", LogRedaction.SanitizeText(seriesAsin));
                 return null;
             }
         }
@@ -371,7 +371,7 @@ namespace Listenarr.Api.Services
                 return result;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error fetching metadata from Audible for ASIN {Asin}", asin);
+                _logger.LogError(ex, "Error fetching metadata from Audible for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
         }
@@ -407,7 +407,7 @@ namespace Listenarr.Api.Services
 
             _logger.LogInformation(
                 "Audible keyword title search returned no results for '{Title}' in region {Region}; retrying title-field search",
-                normalizedTitle,
+                LogRedaction.SanitizeText(normalizedTitle),
                 NormalizeRegion(region));
 
             var titleFieldResponse = await SearchProductsDirectAsync(
@@ -444,7 +444,7 @@ namespace Listenarr.Api.Services
                 var authorAsin = authorLookupItems.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.Asin))?.Asin;
                 if (string.IsNullOrWhiteSpace(authorAsin))
                 {
-                    _logger.LogWarning("No author ASIN found for author '{Author}', falling back to direct Audible title/author search", author);
+                    _logger.LogWarning("No author ASIN found for author '{Author}', falling back to direct Audible title/author search", LogRedaction.SanitizeText(author));
                     var response = await SearchProductsDirectAsync(
                         query: null,
                         title: title,
@@ -532,7 +532,7 @@ namespace Listenarr.Api.Services
             var authorAsin = authorLookupItems.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.Asin))?.Asin;
             if (string.IsNullOrWhiteSpace(authorAsin))
             {
-                _logger.LogWarning("No author ASIN found for author '{Author}'", author);
+                _logger.LogWarning("No author ASIN found for author '{Author}'", LogRedaction.SanitizeText(author));
                 return null;
             }
 
@@ -572,8 +572,8 @@ namespace Listenarr.Api.Services
 
             _logger.LogWarning(
                 "Direct Audible author catalog lookup returned no results for author {Author} (ASIN {AuthorAsin}); falling back to Audible author page scraping",
-                author,
-                authorAsin);
+                LogRedaction.SanitizeText(author),
+                LogRedaction.SanitizeText(authorAsin));
 
             return await ScrapeAudibleAuthorPageAsync(author, authorAsin, 1, fallbackLimit, region, language);
         }
@@ -607,7 +607,7 @@ namespace Listenarr.Api.Services
                 return candidate;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogWarning(ex, "Failed to lookup author {Author}", author);
+                _logger.LogWarning(ex, "Failed to lookup author {Author}", LogRedaction.SanitizeText(author));
                 return null;
             }
         }
@@ -644,7 +644,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to lookup Audible author details by ASIN {AuthorAsin}", authorAsin);
+                _logger.LogWarning(ex, "Failed to lookup Audible author details by ASIN {AuthorAsin}", LogRedaction.SanitizeText(authorAsin));
                 return null;
             }
         }
@@ -726,7 +726,7 @@ namespace Listenarr.Api.Services
                 returnRawProducts: true));
 
             _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}' region={Region}: title search returned {TitleCount} raw products, query search returned {QueryCount} raw products",
-                seriesName, region,
+                LogRedaction.SanitizeText(seriesName), LogRedaction.SanitizeText(region),
                 responses.ElementAtOrDefault(0)?.RawProducts?.Count ?? 0,
                 responses.ElementAtOrDefault(1)?.RawProducts?.Count ?? 0);
 
@@ -753,7 +753,7 @@ namespace Listenarr.Api.Services
                 .ToList();
 
             _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}': extracted {Count} series items from raw products. Unique names: {Names}",
-                seriesName, allSeriesItems.Count,
+                LogRedaction.SanitizeText(seriesName), allSeriesItems.Count,
                 string.Join(", ", allSeriesItems.Select(i => i.Name).Distinct(StringComparer.OrdinalIgnoreCase).Take(10)));
 
             var matched = allSeriesItems
@@ -767,7 +767,7 @@ namespace Listenarr.Api.Services
                 .ToList();
 
             _logger.LogInformation("LookupSeriesItemsAsync '{SeriesName}': {MatchCount} series items matched after name filter",
-                seriesName, matched.Count);
+                LogRedaction.SanitizeText(seriesName), matched.Count);
 
             return matched;
         }
@@ -1464,7 +1464,7 @@ namespace Listenarr.Api.Services
                 var response = await GetWithTimeoutAsync(authorPageUrl, timeoutSeconds: 10);
                 if (response == null)
                 {
-                    _logger.LogWarning("Audible author page request timed out for author {Author}", author);
+                    _logger.LogWarning("Audible author page request timed out for author {Author}", LogRedaction.SanitizeText(author));
                     return null;
                 }
 
@@ -1477,7 +1477,7 @@ namespace Listenarr.Api.Services
                 var html = await response.Content.ReadAsStringAsync();
                 if (string.IsNullOrWhiteSpace(html))
                 {
-                    _logger.LogWarning("Audible author page returned empty HTML for author {Author}", author);
+                    _logger.LogWarning("Audible author page returned empty HTML for author {Author}", LogRedaction.SanitizeText(author));
                     return null;
                 }
 
@@ -1489,7 +1489,7 @@ namespace Listenarr.Api.Services
                 if ((tiles == null || tiles.Count == 0) &&
                     (legacyProductListItems == null || legacyProductListItems.Count == 0))
                 {
-                    _logger.LogWarning("Audible author page contained no recognizable product tiles for author {Author}", author);
+                    _logger.LogWarning("Audible author page contained no recognizable product tiles for author {Author}", LogRedaction.SanitizeText(author));
                     return null;
                 }
 
@@ -1532,7 +1532,7 @@ namespace Listenarr.Api.Services
 
                 if (parsedTiles.Count == 0)
                 {
-                    _logger.LogWarning("Audible author page tiles could not be parsed for author {Author}", author);
+                    _logger.LogWarning("Audible author page tiles could not be parsed for author {Author}", LogRedaction.SanitizeText(author));
                     return null;
                 }
 
@@ -1557,7 +1557,7 @@ namespace Listenarr.Api.Services
                     "Audible author page fallback returned {PagedCount} of {TotalCount} parsed title(s) for author {Author}",
                     pagedTiles.Count,
                     filteredTiles.Count,
-                    author);
+                    LogRedaction.SanitizeText(author));
 
                 return new AudibleSearchResponse
                 {
@@ -1567,7 +1567,7 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed to scrape Audible author page fallback for author {Author}", author);
+                _logger.LogWarning(ex, "Failed to scrape Audible author page fallback for author {Author}", LogRedaction.SanitizeText(author));
                 return null;
             }
         }
@@ -1892,7 +1892,7 @@ namespace Listenarr.Api.Services
             if (IsAsin(query?.Trim() ?? string.Empty))
             {
                 var asin = query?.Trim() ?? string.Empty;
-                _logger.LogInformation("Query appears to be an ASIN; performing direct Audible book lookup for {Asin}", asin);
+                _logger.LogInformation("Query appears to be an ASIN; performing direct Audible book lookup for {Asin}", LogRedaction.SanitizeText(asin));
                 var meta = await GetBookMetadataAsync(asin, region, true, language);
                 if (meta == null) return null;
 

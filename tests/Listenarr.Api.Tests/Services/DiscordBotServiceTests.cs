@@ -59,31 +59,9 @@ namespace Listenarr.Api.Tests.Services
             public Process StartProcess(ProcessStartInfo startInfo)
             {
                 // Start a short-lived sleeper process so the service sees a running Process
-                ProcessStartInfo psi;
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    psi = new ProcessStartInfo
-                    {
-                        FileName = "cmd.exe",
-                        Arguments = "/c ping -n 30 127.0.0.1 > nul",
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                    };
-                }
-                else
-                {
-                    psi = new ProcessStartInfo
-                    {
-                        FileName = "sleep",
-                        Arguments = "30",
-                        CreateNoWindow = true,
-                        UseShellExecute = false,
-                        RedirectStandardOutput = true,
-                        RedirectStandardError = true,
-                    };
-                }
+                var psi = RuntimeInformation.IsOSPlatform(OSPlatform.Windows)
+                    ? new ProcessStartInfo { FileName = "cmd.exe", Arguments = "/c ping -n 30 127.0.0.1 > nul", CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true }
+                    : new ProcessStartInfo { FileName = "sleep", Arguments = "30", CreateNoWindow = true, UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
 
                 var proc = new Process { StartInfo = psi };
                 proc.Start();

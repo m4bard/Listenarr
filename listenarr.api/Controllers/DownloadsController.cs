@@ -83,12 +83,9 @@ public class DownloadsController : ControllerBase
                 d.DownloadClientId == "DDL" ||
                 (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)));
 
-            if (!string.IsNullOrEmpty(status))
+            if (!string.IsNullOrEmpty(status) && Enum.TryParse<DownloadStatus>(status, true, out var parsedStatus))
             {
-                if (Enum.TryParse<DownloadStatus>(status, true, out var parsedStatus))
-                {
-                    query = query.Where(d => d.Status == parsedStatus);
-                }
+                query = query.Where(d => d.Status == parsedStatus);
             }
 
             var downloads = await query
@@ -149,7 +146,7 @@ public class DownloadsController : ControllerBase
             return Ok(downloadObj);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-            _logger.LogError(ex, "Error retrieving download {DownloadId}", id);
+            _logger.LogError(ex, "Error retrieving download {DownloadId}", LogRedaction.SanitizeText(id));
             return StatusCode(500, new { error = "Failed to retrieve download", message = ex.Message });
         }
       }
@@ -186,7 +183,7 @@ public class DownloadsController : ControllerBase
 
             await _dbContext.SaveChangesAsync();
 
-            _logger.LogInformation("Reset blocked import {DownloadId} back to ImportPending", id);
+            _logger.LogInformation("Reset blocked import {DownloadId} back to ImportPending", LogRedaction.SanitizeText(id));
             return Ok(new
             {
                 message = "Import retry queued",
@@ -257,11 +254,11 @@ public class DownloadsController : ControllerBase
             _dbContext.Downloads.Remove(download);
             await _dbContext.SaveChangesAsync();
 
-            _logger.LogInformation("Deleted download record {DownloadId}", id);
+            _logger.LogInformation("Deleted download record {DownloadId}", LogRedaction.SanitizeText(id));
             return Ok(new { message = "Download deleted successfully", id });
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-            _logger.LogError(ex, "Error deleting download {DownloadId}", id);
+            _logger.LogError(ex, "Error deleting download {DownloadId}", LogRedaction.SanitizeText(id));
             return StatusCode(500, new { error = "Failed to delete download", message = ex.Message });
         }
     }

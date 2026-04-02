@@ -119,7 +119,7 @@ namespace Listenarr.Domain.Models
     /// <summary>
     /// Quality definition with priority - supports both flat (legacy) and grouped structure
     /// </summary>
-    public class QualityDefinition : IEquatable<QualityDefinition>
+    public sealed class QualityDefinition : IEquatable<QualityDefinition>
     {
         /// <summary>
         /// Quality identifier (e.g., "MP3 320kbps", "AAC 192kbps", "FLAC")
@@ -160,7 +160,7 @@ namespace Listenarr.Domain.Models
             return Quality == other.Quality && Allowed == other.Allowed && Priority == other.Priority;
         }
 
-        public override bool Equals(object? obj) => Equals(obj as QualityDefinition);
+        public override bool Equals(object? obj) => obj is QualityDefinition other && Equals(other);
 
         public override int GetHashCode() => HashCode.Combine(Quality, Allowed, Priority);
     }

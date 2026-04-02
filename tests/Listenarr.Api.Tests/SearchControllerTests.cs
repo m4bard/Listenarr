@@ -48,7 +48,7 @@ namespace Listenarr.Api.Tests
             List<MetadataSearchResult>? returned = null;
             if (actionResult.Value != null)
             {
-                returned = actionResult.Value as List<MetadataSearchResult>;
+                returned = actionResult.Value;
             }
             else if (actionResult.Result is OkObjectResult ok)
             {
@@ -91,7 +91,7 @@ namespace Listenarr.Api.Tests
             List<MetadataSearchResult>? returned = null;
             if (actionResult.Value != null)
             {
-                returned = actionResult.Value as List<MetadataSearchResult>;
+                returned = actionResult.Value;
             }
             else if (actionResult.Result is OkObjectResult ok)
             {
@@ -132,7 +132,7 @@ namespace Listenarr.Api.Tests
             List<MetadataSearchResult>? returned = null;
             if (actionResult.Value != null)
             {
-                returned = actionResult.Value as List<MetadataSearchResult>;
+                returned = actionResult.Value;
             }
             else if (actionResult.Result is OkObjectResult ok)
             {

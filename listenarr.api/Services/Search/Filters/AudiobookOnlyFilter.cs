@@ -55,7 +55,7 @@ public class AudiobookOnlyFilter : ISearchResultFilter
 
         var simpleIndicators = new[] { "Paperback", "Hardcover", "Mass Market Paperback", "eBook", "Kindle Edition", "Audio CD", "Board book" };
         var phraseIndicators = new[] { "Box Set", "3 Books", "3 Book", "3-Book", "Three Volume", "Three Volume Set", "Volume Set", "Trilogy", "Collector's Edition", "Slipcase", "Box Set:", "Box set:" };
-        var suffixIndicators = new[] { "Paperback –", "Hardcover –", "Mass Market Paperback –", "Paperback –", "Hardcover –" };
+        var suffixIndicators = new[] { "Paperback –", "Hardcover –", "Mass Market Paperback –" };
 
         bool HasAny(IEnumerable<string> patterns, string input) => patterns.Any(p => input.IndexOf(p, StringComparison.OrdinalIgnoreCase) >= 0);
 

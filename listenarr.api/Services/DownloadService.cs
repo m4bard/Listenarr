@@ -387,7 +387,7 @@ namespace Listenarr.Api.Services
 
             // Build search query from audiobook metadata
             var searchQuery = BuildSearchQuery(audiobook);
-            _logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", audiobook.Title, searchQuery);
+            _logger.LogInformation("Searching for audiobook '{Title}' with query: {Query}", LogRedaction.SanitizeText(audiobook.Title), LogRedaction.SanitizeText(searchQuery));
 
             // Search using the working search service. This is an automatic search (triggered
             // by the background/manual 'search-and-download' endpoint), so set isAutomaticSearch
@@ -409,12 +409,12 @@ namespace Listenarr.Api.Services
             var scoredResults = await qualityProfileService.ScoreSearchResults(searchResults, audiobook.QualityProfile);
 
             // Log all scored results for debugging
-            _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, audiobook.Title);
+            _logger.LogInformation("Scored {Count} search results for audiobook '{Title}':", scoredResults.Count, LogRedaction.SanitizeText(audiobook.Title));
             foreach (var scoredResult in scoredResults.OrderByDescending(s => s.TotalScore))
             {
                 var status = scoredResult.IsRejected ? "REJECTED" : (scoredResult.TotalScore > 0 ? "ACCEPTABLE" : "LOW SCORE");
                 _logger.LogInformation("  [{Status}] Score: {Score} | Title: {Title} | Source: {Source} | Size: {Size}MB | Seeders: {Seeders} | Quality: {Quality}",
-                    status, scoredResult.TotalScore, scoredResult.SearchResult.Title, scoredResult.SearchResult.Source,
+                    status, scoredResult.TotalScore, LogRedaction.SanitizeText(scoredResult.SearchResult.Title), LogRedaction.SanitizeText(scoredResult.SearchResult.Source),
                     scoredResult.SearchResult.Size / 1024 / 1024, scoredResult.SearchResult.Seeders, scoredResult.SearchResult.Quality);
                 if (scoredResult.IsRejected && scoredResult.RejectionReasons.Any())
                 {
@@ -579,12 +579,12 @@ namespace Listenarr.Api.Services
                         .ToHashSet();
 
                     var existingActive = await checkContext.Downloads
-                        .Where(d => d.AudiobookId == audiobookIdValue &&
-                                    (d.Status == DownloadStatus.Queued ||
-                                     d.Status == DownloadStatus.Downloading ||
-                                     d.Status == DownloadStatus.ImportPending) &&
-                                    (d.DownloadClientId == "DDL" ||
-                                     (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId))))
+                        .Where(d => d.AudiobookId == audiobookIdValue)
+                        .Where(d => d.Status == DownloadStatus.Queued ||
+                                    d.Status == DownloadStatus.Downloading ||
+                                    d.Status == DownloadStatus.ImportPending)
+                        .Where(d => d.DownloadClientId == "DDL" ||
+                                    (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)))
                         .AnyAsync();
 
                     if (existingActive)

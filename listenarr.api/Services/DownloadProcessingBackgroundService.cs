@@ -291,7 +291,7 @@ namespace Listenarr.Api.Services
                             Id = GetClientDownloadItemId(dl) ?? dl.Id,
                             Title = dl.Title ?? "Unknown",
                             Status = "completed",
-                            ContentPath = dl.FinalPath ?? clientContentPath ?? dl.DownloadPath,
+                            ContentPath = dl.FinalPath is not null ? dl.FinalPath : clientContentPath ?? dl.DownloadPath,
                             DownloadClientId = dl.DownloadClientId
                         };
 
@@ -1166,7 +1166,7 @@ namespace Listenarr.Api.Services
                     Id = GetClientDownloadItemId(download) ?? download.Id,
                     Title = download.Title ?? "Unknown",
                     Status = "completed",
-                    ContentPath = clientContentPath ?? download.FinalPath ?? download.DownloadPath,
+                    ContentPath = clientContentPath ?? (download.FinalPath is not null ? download.FinalPath : download.DownloadPath),
                     DownloadClientId = download.DownloadClientId
                 };
 

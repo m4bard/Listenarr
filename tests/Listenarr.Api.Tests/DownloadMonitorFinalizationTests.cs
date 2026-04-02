@@ -909,7 +909,7 @@ namespace Listenarr.Api.Tests
                 .Callback<string?>(name => _output.WriteLine($"Mock factory CreateClient called with name: '{name ?? "<null>"}'"))
                 .Returns(httpClient);
             // Ensure CreateClient(null) also returns our HttpClient (CreateClient may be called without a name)
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
 
             // Sanity-check our mock HttpClient handler works as expected
             var selfResp = await httpClient.GetAsync($"http://localhost:8080/api?mode=history&output=json&apikey=apikey");

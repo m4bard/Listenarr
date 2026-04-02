@@ -435,10 +435,7 @@ namespace Listenarr.Api.Services
                 (primary.IndexOf(metadata.Title, StringComparison.OrdinalIgnoreCase) >= 0 ||
                  (!string.IsNullOrWhiteSpace(metadata.Series) && string.Equals(primary, metadata.Series, StringComparison.OrdinalIgnoreCase)) ||
                  string.Equals(primary, metadata.Title, StringComparison.OrdinalIgnoreCase)))
-            {
-                if (!string.IsNullOrWhiteSpace(alternate)) return alternate;
-                return primary;
-            }
+                return !string.IsNullOrWhiteSpace(alternate) ? alternate : primary;
 
             return string.IsNullOrWhiteSpace(primary) ? alternate : primary;
         }

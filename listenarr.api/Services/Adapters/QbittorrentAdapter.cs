@@ -269,6 +269,7 @@ namespace Listenarr.Api.Services.Adapters
                     else
                     {
                         _logger.LogWarning("qBittorrent login failed: {Status} - {Body}", loginResponse.StatusCode, redacted);
+                        throw new Exception($"qBittorrent login failed with status {loginResponse.StatusCode}");
                     }
                 }
                 else
@@ -404,14 +405,14 @@ namespace Listenarr.Api.Services.Adapters
                             var afterList = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(afterJson);
                             if (afterList != null)
                             {
-                                foreach (var hash in afterList.Where(t => t.TryGetValue("hash", out _)).Select(t => t["hash"].GetString() ?? string.Empty))
+                                foreach (var hash in afterList
+                                    .Where(t => t.TryGetValue("hash", out _))
+                                    .Select(t => t["hash"].GetString() ?? string.Empty)
+                                    .Where(h => !existingHashes.Contains(h)))
                                 {
-                                    if (!existingHashes.Contains(hash))
-                                    {
-                                        _logger.LogInformation("Detected new qBittorrent torrent: hash={Hash}", hash);
-                                        detectedHash = hash;
-                                        break;
-                                    }
+                                    _logger.LogInformation("Detected new qBittorrent torrent: hash={Hash}", hash);
+                                    detectedHash = hash;
+                                    break;
                                 }
                             }
                         }
@@ -465,7 +466,7 @@ namespace Listenarr.Api.Services.Adapters
                 return detectedHash;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "qBittorrent AddAsync failed for client {ClientId}", LogRedaction.SanitizeText(client?.Id));
+                _logger.LogError(ex, "qBittorrent AddAsync failed for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                 throw;
             }
         }
@@ -576,7 +577,7 @@ namespace Listenarr.Api.Services.Adapters
 
         public async Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)
         {
-            if (client == null) throw new ArgumentNullException(nameof(client));
+            ArgumentNullException.ThrowIfNull(client);
             if (string.IsNullOrEmpty(id)) throw new ArgumentNullException(nameof(id));
 
             var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
@@ -599,12 +600,19 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     if (loginResp.StatusCode == HttpStatusCode.Forbidden)
                     {
+                        // 403 may mean auth is disabled — probe a version endpoint to confirm
                         using var testResp = await httpClient.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                         if (!testResp.IsSuccessStatusCode)
                         {
                             _logger.LogWarning("qBittorrent auth appears enabled and credentials are invalid for client {ClientId}", client.Id);
                             return false;
                         }
+                        // Auth is disabled; fall through to the delete call
+                    }
+                    else
+                    {
+                        _logger.LogWarning("qBittorrent login failed with status {Status} for client {ClientId}", loginResp.StatusCode, client.Id);
+                        return false;
                     }
                 }
 
@@ -1252,13 +1260,10 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 var outputPath = ResolveTorrentContentPath(savePath, files);
-                if (string.IsNullOrEmpty(outputPath))
+                if (string.IsNullOrEmpty(outputPath) && string.IsNullOrWhiteSpace(resolvedExistingContentPath))
                 {
-                    if (string.IsNullOrWhiteSpace(resolvedExistingContentPath))
-                    {
-                        _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
-                        return result;
-                    }
+                    _logger.LogWarning("Unable to resolve content path from torrent files for hash {Hash}", hash);
+                    return result;
                 }
 
                 // ✅ Apply remote path mapping

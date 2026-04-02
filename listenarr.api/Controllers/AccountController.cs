@@ -163,7 +163,7 @@ namespace Listenarr.Api.Controllers
         [AllowAnonymous]
         public ActionResult<object> Me()
         {
-            if (!User?.Identity?.IsAuthenticated ?? false)
+            if (!(User?.Identity?.IsAuthenticated ?? false))
                 return Ok(new { authenticated = false });
 
             return Ok(new { authenticated = true, name = User?.Identity?.Name ?? string.Empty });

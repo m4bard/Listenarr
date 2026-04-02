@@ -1023,7 +1023,7 @@ namespace Listenarr.Api.Services
                     }
                     else
                     {
-                        await _hubContext.Clients.All.SendAsync("QueueUpdate", currentQueue);
+                        await _hubContext!.Clients.All.SendAsync("QueueUpdate", currentQueue);
                         try
                         {
                             var clientProxy = _hubContext?.Clients?.All;

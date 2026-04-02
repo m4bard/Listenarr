@@ -117,7 +117,6 @@ namespace Listenarr.Api.Services
             var claims = new List<Claim>
             {
                 new(ClaimTypes.Name, session.Username),
-                new("session_token", sessionToken),
             };
 
             if (session.IsAdmin)

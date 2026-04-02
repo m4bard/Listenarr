@@ -89,7 +89,7 @@ namespace Listenarr.Api.Services
 
         public void UpdateJobStatus(Guid id, string status, string? error = null)
         {
-            if (_jobs.TryGetValue(id, out var job))
+            if (_jobs.TryGetValue(id, out var job) && job != null)
             {
                 job.Status = status;
                 job.Error = error;

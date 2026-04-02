@@ -1,10 +1,11 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -17,18 +18,46 @@ using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Tests
 {
-    public class LibraryController_BulkUpdateTests
+    public class LibraryController_BulkUpdateTests : IDisposable
     {
+        private readonly SqliteConnection _connection;
+        private readonly ListenArrDbContext _dbContext;
+
+        public LibraryController_BulkUpdateTests()
+        {
+            _connection = new SqliteConnection("Data Source=:memory:");
+            _connection.Open();
+            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseSqlite(_connection)
+                .Options;
+            _dbContext = new ListenArrDbContext(options);
+            _dbContext.Database.EnsureCreated();
+
+            // Seed the quality profile that the bulk update test will reference via QualityProfileId = 42
+            _dbContext.QualityProfiles.Add(new QualityProfile
+            {
+                Id = 42,
+                Name = "Test Profile",
+                Qualities = new List<QualityDefinition>(),
+                PreferredFormats = new List<string>(),
+                PreferredLanguages = new List<string>(),
+                MustContain = new List<string>(),
+                MustNotContain = new List<string>()
+            });
+            _dbContext.SaveChanges();
+        }
+
+        public void Dispose()
+        {
+            _dbContext.Dispose();
+            _connection.Dispose();
+        }
+
         [Fact]
         public async Task BulkUpdate_ApplyRootMonitoredQuality_ReturnsPerIdResultsAndPersistsChanges()
         {
             // Arrange
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-
-            var dbContext = new ListenArrDbContext(options);
-
+            var dbContext = _dbContext;
             // Create two audiobooks in DB
             var a1 = new Audiobook
             {

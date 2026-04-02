@@ -69,13 +69,13 @@ namespace Listenarr.Api.Services
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Audnexus API returned status code {StatusCode} for ASIN {Asin}",
-                        response.StatusCode, asin);
+                        response.StatusCode, LogRedaction.SanitizeText(asin));
                     return null;
                 }
 
                 var json = await response.Content.ReadAsStringAsync();
 
-                _logger.LogDebug("Audnexus raw JSON response for ASIN {Asin}: {Json}", asin, json.Length > 500 ? json.Substring(0, 500) + "..." : json);
+                _logger.LogDebug("Audnexus raw JSON response for ASIN {Asin}: {Json}", LogRedaction.SanitizeText(asin), json.Length > 500 ? json.Substring(0, 500) + "..." : json);
 
                 var options = new JsonSerializerOptions
                 {
@@ -91,24 +91,24 @@ namespace Listenarr.Api.Services
                 catch (JsonException jsonEx)
                 {
                     _logger.LogError(jsonEx, "JSON deserialization failed for Audnexus ASIN {Asin}. JSON: {Json}",
-                        asin, json.Length > 200 ? json.Substring(0, 200) + "..." : json);
+                        LogRedaction.SanitizeText(asin), json.Length > 200 ? json.Substring(0, 200) + "..." : json);
                     return null;
                 }
 
                 if (result != null)
                 {
                     _logger.LogInformation("Successfully fetched metadata for ASIN {Asin} from Audnexus. Title: {Title}",
-                        asin, result.Title ?? "null");
+                        LogRedaction.SanitizeText(asin), LogRedaction.SanitizeText(result.Title ?? "null"));
                 }
                 else
                 {
-                    _logger.LogWarning("Audnexus deserialization returned null for ASIN {Asin}", asin);
+                    _logger.LogWarning("Audnexus deserialization returned null for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 }
 
                 return result;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error fetching metadata from Audnexus for ASIN {Asin}", asin);
+                _logger.LogError(ex, "Error fetching metadata from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
         }
@@ -124,14 +124,14 @@ namespace Listenarr.Api.Services
             try
             {
                 var url = $"{BASE_URL}/authors?name={Uri.EscapeDataString(name)}&region={region}";
-                _logger.LogInformation("Searching Audnexus authors: {Url}", url);
+                _logger.LogInformation("Searching Audnexus authors: {Url}", LogRedaction.SanitizeUrl(url));
 
                 var response = await _httpClient.GetAsync(url);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Audnexus author search returned status code {StatusCode} for query {Query}",
-                        response.StatusCode, name);
+                        response.StatusCode, LogRedaction.SanitizeText(name));
                     return null;
                 }
 
@@ -145,11 +145,11 @@ namespace Listenarr.Api.Services
                 var result = JsonSerializer.Deserialize<List<AudnexusAuthorSearchResult>>(json, options);
 
                 _logger.LogInformation("Successfully searched Audnexus for author: {Name}, found {Count} results",
-                    name, result?.Count ?? 0);
+                    LogRedaction.SanitizeText(name), result?.Count ?? 0);
                 return result;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error searching Audnexus for author {Name}", name);
+                _logger.LogError(ex, "Error searching Audnexus for author {Name}", LogRedaction.SanitizeText(name));
                 return null;
             }
         }
@@ -168,14 +168,14 @@ namespace Listenarr.Api.Services
                 var updateParam = update ? "1" : "0";
                 var url = $"{BASE_URL}/authors/{asin}?region={region}&update={updateParam}";
 
-                _logger.LogInformation("Fetching author from Audnexus: {Url}", url);
+                _logger.LogInformation("Fetching author from Audnexus: {Url}", LogRedaction.SanitizeUrl(url));
 
                 var response = await _httpClient.GetAsync(url);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Audnexus API returned status code {StatusCode} for author ASIN {Asin}",
-                        response.StatusCode, asin);
+                        response.StatusCode, LogRedaction.SanitizeText(asin));
                     return null;
                 }
 
@@ -188,22 +188,22 @@ namespace Listenarr.Api.Services
 
                 var result = JsonSerializer.Deserialize<AudnexusAuthorResponse>(json, options);
 
-                _logger.LogInformation("Successfully fetched author ASIN {Asin} from Audnexus", asin);
+                _logger.LogInformation("Successfully fetched author ASIN {Asin} from Audnexus", LogRedaction.SanitizeText(asin));
                 return result;
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "HTTP error fetching author from Audnexus for ASIN {Asin}", asin);
+                _logger.LogError(ex, "HTTP error fetching author from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
             catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Request timed out or was canceled fetching author from Audnexus for ASIN {Asin}", asin);
+                _logger.LogError(ex, "Request timed out or was canceled fetching author from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "JSON deserialization error fetching author from Audnexus for ASIN {Asin}", asin);
+                _logger.LogError(ex, "JSON deserialization error fetching author from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
         }
@@ -222,14 +222,14 @@ namespace Listenarr.Api.Services
                 var updateParam = update ? "1" : "0";
                 var url = $"{BASE_URL}/books/{asin}/chapters?region={region}&update={updateParam}";
 
-                _logger.LogInformation("Fetching chapters from Audnexus: {Url}", url);
+                _logger.LogInformation("Fetching chapters from Audnexus: {Url}", LogRedaction.SanitizeUrl(url));
 
                 var response = await _httpClient.GetAsync(url);
 
                 if (!response.IsSuccessStatusCode)
                 {
                     _logger.LogWarning("Audnexus API returned status code {StatusCode} for chapters of ASIN {Asin}",
-                        response.StatusCode, asin);
+                        response.StatusCode, LogRedaction.SanitizeText(asin));
                     return null;
                 }
 
@@ -242,22 +242,22 @@ namespace Listenarr.Api.Services
 
                 var result = JsonSerializer.Deserialize<AudnexusChapterResponse>(json, options);
 
-                _logger.LogInformation("Successfully fetched chapters for ASIN {Asin} from Audnexus", asin);
+                _logger.LogInformation("Successfully fetched chapters for ASIN {Asin} from Audnexus", LogRedaction.SanitizeText(asin));
                 return result;
             }
             catch (HttpRequestException ex)
             {
-                _logger.LogError(ex, "HTTP error fetching chapters from Audnexus for ASIN {Asin}", asin);
+                _logger.LogError(ex, "HTTP error fetching chapters from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
             catch (TaskCanceledException ex)
             {
-                _logger.LogError(ex, "Request timed out fetching chapters from Audnexus for ASIN {Asin}", asin);
+                _logger.LogError(ex, "Request timed out fetching chapters from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
             catch (JsonException ex)
             {
-                _logger.LogError(ex, "JSON deserialization error fetching chapters from Audnexus for ASIN {Asin}", asin);
+                _logger.LogError(ex, "JSON deserialization error fetching chapters from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
         }

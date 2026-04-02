@@ -104,7 +104,7 @@ namespace Listenarr.Api.Controllers
             // Identifiers should be simple ASINs, numeric IDs or author namesâ€”disallow path separators.
             if (identifier.IndexOfAny(new char[] { '\\', '/', '\0' }) >= 0 || identifier.Length > 256)
             {
-                _logger.LogWarning("Rejected invalid identifier: {Identifier}", identifier);
+                _logger.LogWarning("Rejected invalid identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                 return BadRequest("Invalid identifier");
             }
 
@@ -118,11 +118,11 @@ namespace Listenarr.Api.Controllers
                     var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(url, identifier);
                     if (!string.IsNullOrWhiteSpace(downloaded))
                     {
-                        _logger.LogInformation("Downloaded image on demand for identifier: {Identifier}", identifier);
+                        _logger.LogInformation("Downloaded image on demand for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogWarning(ex, "Failed to download image on demand for identifier: {Identifier}", identifier);
+                    _logger.LogWarning(ex, "Failed to download image on demand for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                 }
             }
 
@@ -130,7 +130,7 @@ namespace Listenarr.Api.Controllers
             {
                 // Get the cached image path (checks library first, then temp)
                 var relativePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
-                _logger.LogInformation("ImagesController DEBUG: returned relativePath='{RelativePath}' for identifier {Identifier}", relativePath, identifier);
+                _logger.LogInformation("ImagesController DEBUG: returned relativePath='{RelativePath}' for identifier {Identifier}", LogRedaction.SanitizeFilePath(relativePath), LogRedaction.SanitizeText(identifier));
                 bool movedAttempted = false;
 
                 // Shortcut: if the returned relative path clearly points to a temp cache
@@ -158,7 +158,7 @@ namespace Listenarr.Api.Controllers
                         }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "Pre-validation move attempt failed for identifier {Identifier}", identifier);
+                        _logger.LogWarning(ex, "Pre-validation move attempt failed for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                     }
                 }
 
@@ -172,12 +172,12 @@ namespace Listenarr.Api.Controllers
                     // Defend against services returning absolute paths unexpectedly
                     if (Path.IsPathRooted(relativePath))
                     {
-                        _logger.LogWarning("Image service returned rooted path for identifier {Identifier}: {Path}", identifier, relativePath);
+                        _logger.LogWarning("Image service returned rooted path for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(relativePath));
                         relativePath = null;
                     }
                     else
                     {
-                    _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", identifier, relativePath);
+                    _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(relativePath));
                     try
                     {
                         var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath));
@@ -193,7 +193,7 @@ namespace Listenarr.Api.Controllers
 
                         if (!insideImagesRoot && !insideImagesRootConfig && !insideWwwroot)
                         {
-                            _logger.LogWarning("Resolved image path outside permitted directories for identifier {Identifier}: {Path}", identifier, candidateFull);
+                            _logger.LogWarning("Resolved image path outside permitted directories for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateFull));
                             relativePath = null;
                         }
                         else
@@ -206,19 +206,19 @@ namespace Listenarr.Api.Controllers
                                     var attrs = System.IO.File.GetAttributes(candidateFull);
                                     if ((attrs & System.IO.FileAttributes.ReparsePoint) != 0)
                                     {
-                                        _logger.LogWarning("Rejected reparse-point (symlink) image path for identifier {Identifier}: {Path}", identifier, candidateFull);
+                                        _logger.LogWarning("Rejected reparse-point (symlink) image path for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateFull));
                                         relativePath = null;
                                     }
                                 }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger.LogWarning(ex, "Failed to inspect candidate image attributes for identifier {Identifier}", identifier);
+                                _logger.LogWarning(ex, "Failed to inspect candidate image attributes for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                                 relativePath = null;
                             }
                         }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "Failed to validate image path for identifier {Identifier}", identifier);
+                        _logger.LogWarning(ex, "Failed to validate image path for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                         relativePath = null;
                     }
                     }
@@ -229,7 +229,7 @@ namespace Listenarr.Api.Controllers
                     if (!string.IsNullOrWhiteSpace(relativePath))
                 {
                     var normalizedRelative = relativePath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
-                    _logger.LogDebug("ImagesController: normalizedRelative for {Identifier}: {Normalized}", identifier, normalizedRelative);
+                    _logger.LogDebug("ImagesController: normalizedRelative for {Identifier}: {Normalized}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(normalizedRelative));
                     if (!movedAttempted && normalizedRelative.Contains(Path.Join("cache", "images", "temp")))
                     {
                     try
@@ -237,7 +237,7 @@ namespace Listenarr.Api.Controllers
                         var book = await _audiobookRepository.GetByAsinAsync(identifier);
                         if (book != null)
                         {
-                            _logger.LogInformation("Found temp cached image for library audiobook {Identifier}, attempting move to library storage", identifier);
+                            _logger.LogInformation("Found temp cached image for library audiobook {Identifier}, attempting move to library storage", LogRedaction.SanitizeText(identifier));
                             var moved = await _imageCacheService.MoveToLibraryStorageAsync(identifier, null);
                             if (!string.IsNullOrWhiteSpace(moved))
                             {
@@ -259,7 +259,7 @@ namespace Listenarr.Api.Controllers
                                                 var matt = System.IO.File.GetAttributes(movedFull);
                                                 if ((matt & System.IO.FileAttributes.ReparsePoint) != 0)
                                                 {
-                                                    _logger.LogWarning("Rejected moved reparse-point (symlink) image path for identifier {Identifier}: {Path}", identifier, movedFull);
+                                                    _logger.LogWarning("Rejected moved reparse-point (symlink) image path for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
                                                 }
                                                 else
                                                 {
@@ -269,26 +269,26 @@ namespace Listenarr.Api.Controllers
                                             else
                                             {
                                                 // If file doesn't yet exist, conservatively reject the moved path
-                                                _logger.LogWarning("Moved image file does not exist for identifier {Identifier}: {Path}", identifier, movedFull);
+                                                _logger.LogWarning("Moved image file does not exist for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
                                             }
                                         }
                                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                            _logger.LogWarning(ex, "Failed to inspect moved image attributes for identifier {Identifier}", identifier);
+                                            _logger.LogWarning(ex, "Failed to inspect moved image attributes for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                                         }
                                     }
                                     else
                                     {
-                                        _logger.LogWarning("Moved image path outside permitted directories for identifier {Identifier}: {Path}", identifier, movedFull);
+                                        _logger.LogWarning("Moved image path outside permitted directories for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
                                     }
                                 }
                                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                    _logger.LogWarning(ex, "Failed to validate moved image path for identifier {Identifier}", identifier);
+                                    _logger.LogWarning(ex, "Failed to validate moved image path for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                                 }
                             }
                         }
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "Failed to move temp image to library for {Identifier}", identifier);
+                        _logger.LogWarning(ex, "Failed to move temp image to library for {Identifier}", LogRedaction.SanitizeText(identifier));
                     }
                 }
 
@@ -298,7 +298,7 @@ namespace Listenarr.Api.Controllers
                 var hasRequestedImageUrl = !string.IsNullOrWhiteSpace(url);
                 if (!hasValidImagePath && !hasRequestedImageUrl)
                 {
-                    _logger.LogWarning("Image not found for identifier: {Identifier}", identifier);
+                    _logger.LogWarning("Image not found for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
 
                     // Cache is missing and caller did not provide a URL. Try metadata providers:
                     // ASIN => Audible, then Audnexus; ISBN => OpenLibrary cover URL.
@@ -325,7 +325,7 @@ namespace Listenarr.Api.Controllers
                             if (candidateUrlSet.Add(normalized))
                             {
                                 candidateUrls.Add(normalized);
-                                _logger.LogDebug("Queued image candidate for {Identifier} from {Source}: {Url}", identifier, source, normalized);
+                                _logger.LogDebug("Queued image candidate for {Identifier} from {Source}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(source), LogRedaction.SanitizeText(normalized));
                             }
                             if (string.IsNullOrWhiteSpace(candidateUrl))
                             {
@@ -389,7 +389,7 @@ namespace Listenarr.Api.Controllers
                                             localIsbnCandidates.Add(localIsbn);
                                         }
                                         candidateIsbn ??= localIsbn;
-                                        _logger.LogDebug("Seeded candidate ISBN {Isbn} from local library record for {Identifier}", candidateIsbn, identifier);
+                                        _logger.LogDebug("Seeded candidate ISBN {Isbn} from local library record for {Identifier}", LogRedaction.SanitizeText(candidateIsbn), LogRedaction.SanitizeText(identifier));
                                     }
 
                                     if (!string.IsNullOrWhiteSpace(localBook.OpenLibraryId))
@@ -422,7 +422,7 @@ namespace Listenarr.Api.Controllers
                         }
                         catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                         {
-                            _logger.LogDebug(ex, "Failed to seed image fallback metadata from local library record for {Identifier}", identifier);
+                            _logger.LogDebug(ex, "Failed to seed image fallback metadata from local library record for {Identifier}", LogRedaction.SanitizeText(identifier));
                         }
 
                         // If the requested identifier key has no cached image, reuse an existing
@@ -446,9 +446,9 @@ namespace Listenarr.Api.Controllers
                                         relativePath = aliasPath;
                                         _logger.LogInformation(
                                             "Reused cached image for identifier {Identifier} via alternate identifier {AliasIdentifier}: {Path}",
-                                            identifier,
-                                            aliasIdentifier,
-                                            relativePath);
+                                            LogRedaction.SanitizeText(identifier),
+                                            LogRedaction.SanitizeText(aliasIdentifier),
+                                            LogRedaction.SanitizeText(relativePath));
                                         break;
                                     }
                                 }
@@ -458,7 +458,7 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogDebug(ex, "Failed probing alternate cached image identifier {AliasIdentifier} for {Identifier}", aliasIdentifier, identifier);
+                                    _logger.LogDebug(ex, "Failed probing alternate cached image identifier {AliasIdentifier} for {Identifier}", LogRedaction.SanitizeText(aliasIdentifier), LogRedaction.SanitizeText(identifier));
                                 }
                             }
                         }
@@ -498,7 +498,7 @@ namespace Listenarr.Api.Controllers
                             }
                             catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
-                                _logger.LogDebug(ex, "Audnexus ASIN lookup failed for {Identifier}", identifier);
+                                _logger.LogDebug(ex, "Audnexus ASIN lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                             }
                         }
 
@@ -529,7 +529,7 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogDebug(ex, "Audible alternate ASIN lookup failed for {Identifier} via {AltAsin}", identifier, altAsin);
+                                    _logger.LogDebug(ex, "Audible alternate ASIN lookup failed for {Identifier} via {AltAsin}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(altAsin));
                                 }
 
                                 try
@@ -550,7 +550,7 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogDebug(ex, "Audnexus alternate ASIN lookup failed for {Identifier} via {AltAsin}", identifier, altAsin);
+                                    _logger.LogDebug(ex, "Audnexus alternate ASIN lookup failed for {Identifier} via {AltAsin}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(altAsin));
                                 }
                             }
                         }
@@ -566,7 +566,7 @@ namespace Listenarr.Api.Controllers
                             AddCandidateUrl(olIsbnCandidate, "OpenLibraryIsbn");
                             if (candidateUrls.Count == 1)
                             {
-                                _logger.LogInformation("Using OpenLibrary ISBN cover candidate for {Identifier}: ISBN={Isbn}", identifier, candidateIsbn);
+                                _logger.LogInformation("Using OpenLibrary ISBN cover candidate for {Identifier}: ISBN={Isbn}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateIsbn));
                             }
                         }
 
@@ -580,7 +580,7 @@ namespace Listenarr.Api.Controllers
                         // Legacy fallback path through configured source envelope for compatibility.
                         if (string.IsNullOrWhiteSpace(candidateUrl) || string.IsNullOrWhiteSpace(candidateIsbn))
                         {
-                            _logger.LogDebug("No image found in audible, attempting fallback GetMetadataAsync for {Identifier}", identifier);
+                            _logger.LogDebug("No image found in audible, attempting fallback GetMetadataAsync for {Identifier}", LogRedaction.SanitizeText(identifier));
                             try
                             {
                                 var metadataEnvelope = await _audiobookMetadataService.GetMetadataAsync(identifier, region, cache: true);
@@ -597,7 +597,7 @@ namespace Listenarr.Api.Controllers
                                         {
                                             // Try dynamic access
                                             dynamic env = metadataEnvelope;
-                                            object? mdObj = env.metadata as object;
+                                            object? mdObj = env.metadata;
 
                                             // If it's already the Audible type, use it
                                             if (mdObj is global::Listenarr.Api.Services.AudibleBookResponse mdMeta)
@@ -629,21 +629,21 @@ namespace Listenarr.Api.Controllers
 
                                         if (!string.IsNullOrWhiteSpace(candidateUrl))
                                         {
-                                            _logger.LogInformation("Found image URL in fallback metadata source for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                            _logger.LogInformation("Found image URL in fallback metadata source for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
                                         }
                                         else
                                         {
-                                            _logger.LogDebug("Fallback metadata returned no image URL for {Identifier}", identifier);
+                                            _logger.LogDebug("Fallback metadata returned no image URL for {Identifier}", LogRedaction.SanitizeText(identifier));
                                         }
                                     }
                                     catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                     {
-                                        _logger.LogDebug(ex, "Failed to parse fallback metadata envelope for {Identifier}", identifier);
+                                        _logger.LogDebug(ex, "Failed to parse fallback metadata envelope for {Identifier}", LogRedaction.SanitizeText(identifier));
                                     }
                                 }
                                 else
                                 {
-                                    _logger.LogDebug("GetMetadataAsync returned null for {Identifier}", identifier);
+                                    _logger.LogDebug("GetMetadataAsync returned null for {Identifier}", LogRedaction.SanitizeText(identifier));
                                 }
                             }
                             catch (OperationCanceledException)
@@ -652,7 +652,7 @@ namespace Listenarr.Api.Controllers
                             }
                             catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
-                                _logger.LogDebug(ex, "Fallback metadata lookup failed for {Identifier}", identifier);
+                                _logger.LogDebug(ex, "Fallback metadata lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                             }
                         }
 
@@ -695,9 +695,9 @@ namespace Listenarr.Api.Controllers
                                     _logger.LogInformation(
                                         "Derived {Count} OpenLibrary ISBN candidate(s) from local title/author for {Identifier}: Title={Title}, Author={Author}",
                                         normalizedTitleIsbns.Count,
-                                        identifier,
-                                        localTitle,
-                                        localAuthor);
+                                        LogRedaction.SanitizeText(identifier),
+                                        LogRedaction.SanitizeText(localTitle),
+                                        LogRedaction.SanitizeText(localAuthor));
 
                                     foreach (var titleIsbn in normalizedTitleIsbns)
                                     {
@@ -713,7 +713,7 @@ namespace Listenarr.Api.Controllers
                             }
                             catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
-                                _logger.LogDebug(ex, "OpenLibrary title/author ISBN fallback failed for {Identifier}", identifier);
+                                _logger.LogDebug(ex, "OpenLibrary title/author ISBN fallback failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                             }
                         }
 
@@ -735,7 +735,7 @@ namespace Listenarr.Api.Controllers
                                             {
                                                 // Use cached author image by ASIN (prefer authors storage path)
                                                 relativePath = "/" + diskPath.TrimStart('/');
-                                                _logger.LogInformation("Found cached author image for identifier {Identifier} via stored ASIN {Asin}: {Path}", identifier, authorAsin, relativePath);
+                                                _logger.LogInformation("Found cached author image for identifier {Identifier} via stored ASIN {Asin}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(authorAsin), LogRedaction.SanitizeText(relativePath));
                                             }
                                         }
                                     }
@@ -746,7 +746,7 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogDebug(ex, "Failed to lookup stored author ASIN for identifier {Identifier}", identifier);
+                                    _logger.LogDebug(ex, "Failed to lookup stored author ASIN for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                                 }
 
                                 // If we didn't find a cached author image via stored ASIN, fallback to Audible lookup by name
@@ -756,7 +756,7 @@ namespace Listenarr.Api.Controllers
                                     if (authorLookup != null && !string.IsNullOrWhiteSpace(authorLookup.Image) && (authorLookup.Image.StartsWith("http://") || authorLookup.Image.StartsWith("https://")))
                                     {
                                         AddCandidateUrl(authorLookup.Image, "AudibleAuthor");
-                                        _logger.LogInformation("Found author image from Audible for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                        _logger.LogInformation("Found author image from Audible for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
                                     }
                                 }
                             }
@@ -766,7 +766,7 @@ namespace Listenarr.Api.Controllers
                             }
                             catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                             {
-                                _logger.LogDebug(ex, "Audible author lookup failed for {Identifier}", identifier);
+                                _logger.LogDebug(ex, "Audible author lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                             }
 
                             // 2) Audnexus author search fallback
@@ -783,7 +783,7 @@ namespace Listenarr.Api.Controllers
                                             if (authorResp != null && !string.IsNullOrWhiteSpace(authorResp.Image) && (authorResp.Image.StartsWith("http://") || authorResp.Image.StartsWith("https://")))
                                             {
                                                 AddCandidateUrl(authorResp.Image, "AudnexusAuthorByAsin");
-                                                _logger.LogInformation("Found author image from Audnexus (by ASIN) for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                                _logger.LogInformation("Found author image from Audnexus (by ASIN) for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
                                             }
                                         }
                                         catch (OperationCanceledException)
@@ -792,7 +792,7 @@ namespace Listenarr.Api.Controllers
                                         }
                                         catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                         {
-                                            _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Identifier}", identifier);
+                                            _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Identifier}", LogRedaction.SanitizeText(identifier));
                                         }
                                     }
 
@@ -813,7 +813,7 @@ namespace Listenarr.Api.Controllers
                                                         if (authorResp != null && !string.IsNullOrWhiteSpace(authorResp.Image) && (authorResp.Image.StartsWith("http://") || authorResp.Image.StartsWith("https://")))
                                                         {
                                                             AddCandidateUrl(authorResp.Image, "AudnexusAuthorByStoredAsin");
-                                                            _logger.LogInformation("Found author image from Audnexus by stored ASIN {Asin} for identifier {Identifier}: {Url}", authorAsin, identifier, candidateUrl);
+                                                            _logger.LogInformation("Found author image from Audnexus by stored ASIN {Asin} for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(authorAsin), LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
                                                         }
                                                     }
                                                     catch (OperationCanceledException)
@@ -822,7 +822,7 @@ namespace Listenarr.Api.Controllers
                                                     }
                                                     catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                                     {
-                                                        _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Asin}", authorAsin);
+                                                        _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Asin}", LogRedaction.SanitizeText(authorAsin));
                                                     }
                                                 }
                                             }
@@ -833,7 +833,7 @@ namespace Listenarr.Api.Controllers
                                         }
                                         catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                         {
-                                            _logger.LogDebug(ex, "Failed to lookup author ASINs in database for identifier {Identifier}", identifier);
+                                            _logger.LogDebug(ex, "Failed to lookup author ASINs in database for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                                         }
 
                                         // If still not found, fallback to searching by name
@@ -844,7 +844,7 @@ namespace Listenarr.Api.Controllers
                                             if (first != null && !string.IsNullOrWhiteSpace(first.Image) && (first.Image.StartsWith("http://") || first.Image.StartsWith("https://")))
                                             {
                                                 AddCandidateUrl(first.Image, "AudnexusAuthorSearch");
-                                                _logger.LogInformation("Found author image from Audnexus (search) for identifier {Identifier}: {Url}", identifier, candidateUrl);
+                                                _logger.LogInformation("Found author image from Audnexus (search) for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
                                             }
                                         }
                                     }
@@ -855,7 +855,7 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogDebug(ex, "Audnexus author search failed for {Identifier}", identifier);
+                                    _logger.LogDebug(ex, "Audnexus author search failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                                 }
                             }
                         }
@@ -864,14 +864,14 @@ namespace Listenarr.Api.Controllers
                         {
                             foreach (var urlCandidate in candidateUrls)
                             {
-                                _logger.LogInformation("Attempting metadata-driven image download for identifier {Identifier} from {Url}", identifier, urlCandidate);
+                                _logger.LogInformation("Attempting metadata-driven image download for identifier {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
                                 try
                                 {
-                                    _logger.LogDebug("Calling DownloadAndCacheImageAsync for {Identifier} from {Url}", identifier, urlCandidate);
+                                    _logger.LogDebug("Calling DownloadAndCacheImageAsync for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
                                     var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(urlCandidate, identifier!);
                                     if (!string.IsNullOrWhiteSpace(downloaded))
                                     {
-                                        _logger.LogInformation("Downloaded metadata image for identifier: {Identifier}", identifier);
+                                        _logger.LogInformation("Downloaded metadata image for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                                         // Re-check cache
                                         relativePath = await _imageCacheService.GetCachedImagePathAsync(identifier!);
                                         if (!string.IsNullOrWhiteSpace(relativePath))
@@ -886,7 +886,7 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogWarning(ex, "Failed to download metadata-driven image for {Identifier} from {Url}", identifier, urlCandidate);
+                                    _logger.LogWarning(ex, "Failed to download metadata-driven image for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
                                 }
                             }
                         }
@@ -898,7 +898,7 @@ namespace Listenarr.Api.Controllers
                     }
                     catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                     {
-                        _logger.LogDebug(ex, "Metadata-driven image download failed for {Identifier}", identifier);
+                        _logger.LogDebug(ex, "Metadata-driven image download failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                     }
 
                     if (relativePath == null)
@@ -914,7 +914,7 @@ namespace Listenarr.Api.Controllers
                 // Defensive: If relativePath is null, return NotFound
                 if (relativePath == null)
                 {
-                    _logger.LogWarning("Image service returned null relativePath for identifier {Identifier}", identifier);
+                    _logger.LogWarning("Image service returned null relativePath for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                     Response.Headers["Cache-Control"] = "public, max-age=300";
                     return NotFound(new { message = "Image not found" });
                 }
@@ -924,7 +924,7 @@ namespace Listenarr.Api.Controllers
 
                 if (!System.IO.File.Exists(fullPath))
                 {
-                    _logger.LogWarning("Image file does not exist at path: {Path}", fullPath);
+                    _logger.LogWarning("Image file does not exist at path: {Path}", LogRedaction.SanitizeFilePath(fullPath));
                     return CreatePlaceholderResult(
                         logContext: "missing file",
                         logValue: fullPath,
@@ -943,13 +943,13 @@ namespace Listenarr.Api.Controllers
                     _ => "application/octet-stream"
                 };
 
-                _logger.LogInformation("Serving cached image for identifier: {Identifier}, path: {Path}", identifier, relativePath);
+                _logger.LogInformation("Serving cached image for identifier: {Identifier}, path: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(relativePath));
 
                 // Return the image with caching headers
                 return PhysicalFile(fullPath, contentType, enableRangeProcessing: true);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error retrieving image for identifier: {Identifier}", identifier);
+                _logger.LogError(ex, "Error retrieving image for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                 return StatusCode(500, new { message = "Error retrieving image" });
             }
         }
@@ -1094,14 +1094,14 @@ namespace Listenarr.Api.Controllers
                 var placeholderPath = ResolvePlaceholderPath();
                 if (!string.IsNullOrWhiteSpace(placeholderPath))
                 {
-                    _logger.LogInformation("Serving placeholder image for {LogContext}: {LogValue}", logContext, logValue);
+                    _logger.LogInformation("Serving placeholder image for {LogContext}: {LogValue}", LogRedaction.SanitizeText(logContext), LogRedaction.SanitizeText(logValue));
                     Response.Headers["Cache-Control"] = "public, max-age=300";
                     return PhysicalFile(placeholderPath, "image/svg+xml");
                 }
             }
             catch (Exception ex) when (IsRecoverableImageLookupException(ex))
             {
-                _logger.LogDebug(ex, "Failed to resolve placeholder for {LogContext}: {LogValue}", logContext, logValue);
+                _logger.LogDebug(ex, "Failed to resolve placeholder for {LogContext}: {LogValue}", LogRedaction.SanitizeText(logContext), LogRedaction.SanitizeText(logValue));
             }
 
             // Fall back to the shared placeholder route before returning JSON 404. This
@@ -1155,7 +1155,7 @@ namespace Listenarr.Api.Controllers
             {
                 _logger.LogInformation(
                     "Resolved image controller content root to repo path: {ResolvedRoot}",
-                    resolvedRoot);
+                    LogRedaction.SanitizeText(resolvedRoot));
                 return resolvedRoot;
             }
 
@@ -1303,14 +1303,14 @@ namespace Listenarr.Api.Controllers
                 if (System.IO.File.Exists(fullPath))
                 {
                     System.IO.File.Delete(fullPath);
-                    _logger.LogInformation("Deleted cached image for identifier: {Identifier}", identifier);
+                    _logger.LogInformation("Deleted cached image for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                     return Ok(new { message = "Image deleted successfully" });
                 }
 
                 return NotFound(new { message = "Image file not found" });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogError(ex, "Error deleting image for identifier: {Identifier}", identifier);
+                _logger.LogError(ex, "Error deleting image for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                 return StatusCode(500, new { message = "Error deleting image" });
             }
         }

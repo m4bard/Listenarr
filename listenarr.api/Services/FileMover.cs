@@ -7,19 +7,25 @@ using System.Security.Principal;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
 {
-    public class FileMover : IFileMover
+    public partial class FileMover : IFileMover
     {
-        // P/Invoke for hardlink creation
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern bool CreateHardLink(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
+        // .NET 8 has no managed BCL equivalent for hardlink creation.
+        // LibraryImport (source-generated P/Invoke, .NET 7+) is used instead of the legacy
+        // DllImport attribute to minimise unmanaged interop overhead and satisfy CA1060/CA2101.
+        [LibraryImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]
+        [return: MarshalAs(UnmanagedType.Bool)]
+        [SuppressMessage("Interoperability", "SYSLIB1054", Justification = "No managed BCL equivalent for hardlink creation exists in .NET 8.")]
+        private static partial bool CreateHardLinkNative(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);
 
-        [DllImport("libc", SetLastError = true)]
-        private static extern int link(string oldpath, string newpath);
+        [LibraryImport("libc", EntryPoint = "link", SetLastError = true, StringMarshalling = StringMarshalling.Utf8)]
+        [SuppressMessage("Interoperability", "SYSLIB1054", Justification = "No managed BCL equivalent for hardlink creation exists in .NET 8.")]
+        private static partial int LinkNative(string oldpath, string newpath);
 
         private readonly ILogger<FileMover> _logger;
         private readonly IProcessRunner? _processRunner;
@@ -260,24 +266,24 @@ namespace Listenarr.Api.Services
             try
             {
                 // Ensure destination directory exists
-                var destDir = Path.GetDirectoryName(destFile);
+                var destDir = Path.GetDirectoryName(destFile) ?? string.Empty;
                 if (!string.IsNullOrEmpty(destDir) && !Directory.Exists(destDir))
                 {
                     Directory.CreateDirectory(destDir);
                 }
 
-                // Delete destination if it exists (hardlink requires non-existent target)
-                if (File.Exists(destFile))
-                {
-                    File.Delete(destFile);
-                }
-
-                // Try creating hardlink using P/Invoke
+                // Safe ordering: hardlink/copy to a temp path first, then atomically rename
+                // onto the destination. This ensures the original destFile is never deleted
+                // until we have a confirmed replacement ready.
+                // Use Path.GetFileName to ensure the random name has no separators (satisfies static analysis).
+                // Use Path.Join (not Path.Combine) to prevent a rooted second arg from silently discarding destDir.
+                var tempDestName = Path.GetFileName(Path.GetRandomFileName()) + ".tmp";
+                var tempDest = Path.Join(destDir, tempDestName);
                 try
                 {
                     if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
                     {
-                        if (!CreateHardLink(destFile, sourceFile, IntPtr.Zero))
+                        if (!CreateHardLinkNative(tempDest, sourceFile, IntPtr.Zero))
                         {
                             var error = Marshal.GetLastWin32Error();
                             throw new IOException($"CreateHardLink failed with error code {error}");
@@ -286,7 +292,7 @@ namespace Listenarr.Api.Services
                     else
                     {
                         // Unix/Linux/macOS
-                        var result = link(sourceFile, destFile);
+                        var result = LinkNative(sourceFile, tempDest);
                         if (result != 0)
                         {
                             var error = Marshal.GetLastWin32Error();
@@ -294,24 +300,55 @@ namespace Listenarr.Api.Services
                         }
                     }
 
+                    // Hardlink succeeded — atomically replace destination
+                    File.Move(tempDest, destFile, overwrite: true);
                     _logger.LogInformation("Hardlinked file: {Source} -> {Dest}", sourceFile, destFile);
                     return Task.FromResult(true);
                 }
                 catch (Exception linkEx) when (linkEx is not OperationCanceledException && linkEx is not OutOfMemoryException && linkEx is not StackOverflowException) {
+                    // Clean up temp file if hardlink left one behind
+                    try { if (File.Exists(tempDest)) File.Delete(tempDest); }
+                    catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException
+                                                   && cleanupEx is not OutOfMemoryException
+                                                   && cleanupEx is not StackOverflowException)
+                    {
+                        /* best-effort temp cleanup */
+                    }
+
                     // Hardlink failed (likely cross-volume or unsupported filesystem)
                     var isCrossDevice = linkEx is IOException ioEx && ioEx.Message.Contains("error code 17");
                     if (!isCrossDevice)
                         isCrossDevice = linkEx is IOException ioEx2 && ioEx2.Message.Contains("error code 18"); // Unix EXDEV
-                    
+
                     if (isCrossDevice)
                         _logger.LogInformation("Hardlink not possible (source and destination are on different drives), falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
                     else
                         _logger.LogWarning(linkEx, "Hardlink failed, falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
-                    
-                    // Fallback to copy
-                    File.Copy(sourceFile, destFile, true);
-                    _logger.LogInformation("Copied file (hardlink fallback): {Source} -> {Dest}", sourceFile, destFile);
-                    return Task.FromResult(true);
+
+                    // Fallback to copy — copy to a temp file first, then atomically rename onto destination
+                    // so the existing file is never overwritten until a complete replacement is confirmed.
+                    // Use Path.GetFileName to strip any separators from GetRandomFileName (satisfies static analysis).
+                    // Use Path.Join (not Path.Combine) to prevent rooted second arg from silently discarding destDir.
+                    var tempCopyName = Path.GetFileName(Path.GetRandomFileName()) + ".tmp";
+                    var tempCopyPath = Path.Join(destDir, tempCopyName);
+                    try
+                    {
+                        File.Copy(sourceFile, tempCopyPath, overwrite: true);
+                        File.Move(tempCopyPath, destFile, overwrite: true);
+                        _logger.LogInformation("Copied file (hardlink fallback): {Source} -> {Dest}", sourceFile, destFile);
+                        return Task.FromResult(true);
+                    }
+                    finally
+                    {
+                        // Best-effort cleanup of temp copy if something went wrong before/after the move
+                        try { if (File.Exists(tempCopyPath)) File.Delete(tempCopyPath); }
+                        catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException
+                                                       && cleanupEx is not OutOfMemoryException
+                                                       && cleanupEx is not StackOverflowException)
+                        {
+                            // best-effort cleanup; ignore non-critical failures
+                        }
+                    }
                 }
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

@@ -377,31 +377,25 @@ namespace Listenarr.Api.Tests
             using var memoryCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
             const string queueJson = "{\"queue\":{\"slots\":[]}}";
             const string historyJson = "{\"history\":{\"slots\":[{\"nzo_id\":\"SABnzbd_nzo_x123\",\"name\":\"William Faulkner - The Sound and the Fury\",\"status\":\"Completed\",\"storage\":\"/downloads/complete/listenarr/William Faulkner - The Sound and the Fury\",\"completed\":1600000000}]}}";
-            using var queueResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent(queueJson)
-            };
-            using var historyResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK)
-            {
-                Content = new StringContent(historyJson)
-            };
-            using var notFoundResponse = new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
+
+            // Local factories transfer HttpResponseMessage ownership to the caller (HttpClient pipeline),
+            // satisfying CodeQL's IDisposable-not-disposed analysis.
+            static HttpResponseMessage CreateOkResponse(string json) =>
+                new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(json) };
+            static HttpResponseMessage CreateNotFoundResponse() =>
+                new HttpResponseMessage(System.Net.HttpStatusCode.NotFound);
 
             // Setup HTTP handler that returns empty queue but history contains the completed entry
             var handler = new DelegatingHandlerMock((req, ct) =>
             {
                 var q = req.RequestUri?.Query ?? string.Empty;
                 if (q.Contains("mode=queue"))
-                {
-                    return Task.FromResult(queueResponse);
-                }
+                    return Task.FromResult(CreateOkResponse(queueJson));
 
                 if (q.Contains("mode=history"))
-                {
-                    return Task.FromResult(historyResponse);
-                }
+                    return Task.FromResult(CreateOkResponse(historyJson));
 
-                return Task.FromResult(notFoundResponse);
+                return Task.FromResult(CreateNotFoundResponse());
             });
 
             using var httpClient = new HttpClient(handler);
@@ -525,15 +519,13 @@ namespace Listenarr.Api.Tests
 
             var repoMock = new Mock<IAudiobookRepository>();
             var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadService>>();
-            using var okResponse = new HttpResponseMessage(System.Net.HttpStatusCode.OK);
-            var handler = new DelegatingHandlerMock((_, _) =>
-            {
-                return Task.FromResult(okResponse);
-            });
+            // Local factory transfers HttpResponseMessage ownership to caller (satisfies CodeQL IDisposable analysis)
+            static HttpResponseMessage CreateOkResponse2() => new HttpResponseMessage(System.Net.HttpStatusCode.OK);
+            var handler = new DelegatingHandlerMock((_, _) => Task.FromResult(CreateOkResponse2()));
             using var httpClient = new HttpClient(handler);
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
@@ -629,7 +621,7 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
@@ -733,7 +725,7 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
@@ -839,7 +831,7 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient();
             var httpFactoryMock = new Mock<IHttpClientFactory>();
             httpFactoryMock.Setup(f => f.CreateClient(It.IsAny<string>())).Returns(httpClient);
-            httpFactoryMock.Setup(f => f.CreateClient((string?)null)).Returns(httpClient);
+            httpFactoryMock.Setup(f => f.CreateClient(null)).Returns(httpClient);
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();

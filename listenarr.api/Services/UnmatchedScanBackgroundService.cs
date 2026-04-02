@@ -176,7 +176,7 @@ namespace Listenarr.Api.Services
                     foreach (var files in groupedFiles)
                     {
                         var plans = MultiFileImportPlanner.BuildPlans(
-                            files.Select(f => (f, (string?)Path.GetRelativePath(bookFolder, f))));
+                            files.Select(f => (FullPath: f, RelativePath: (string?)Path.GetRelativePath(bookFolder, f))));
                         var orderedFiles = plans.Select(p => p.FullPath).ToList();
                         var representative = orderedFiles.First();
                         var parsed = PathMetadataParser.Parse(representative, rootFolderPath);
