@@ -1214,7 +1214,6 @@ namespace Listenarr.Api.Controllers
         /// GET /api/v1/indexer/schema
         /// Returns a minimal list of indexer fields / schema entries.
         /// </summary>
-        [HttpGet("schema")]
         [HttpGet("indexer/schema")]
         [AllowAnonymous]
         [Produces("application/json")]

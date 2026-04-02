@@ -14,9 +14,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [0.2.65] - 2026-04-01
 
-### Added
-- **Prowlarr `/schema` shorthand route:** Added `GET /api/v1/prowlarr/schema` as an alias for the existing `/api/v1/prowlarr/indexer/schema` endpoint so application health checks and Prowlarr clients that call the shorter path no longer receive a 404.
-
 ### Fixed
 - **Log injection (CWE-117) remediated across all services:** File paths, URLs, search result fields, download IDs, ASINs, and other user-controlled strings are now run through `LogRedaction` helpers (`SanitizeFilePath`, `SanitizeUrl`, `SanitizeText`) before being written to structured log statements, preventing newline injection attacks across controllers, background services, and adapters.
 - **SQL injection risk removed from dynamic schema queries:** Column and table identifiers interpolated into raw `PRAGMA` and `SELECT` statements in `LibraryController` are now double-quoted and validated against a whitelist before use.
