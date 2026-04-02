@@ -5,12 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-# Changelog
+## [0.2.66] - current
 
-All notable changes to this project will be documented in this file.
+### Changed
+- **Reduced redundancy for the manual import modal:** Small improvement that make it easier to add or edit import fields.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Added
+- **Bulk field editing in Manual Import:** The Manual Import modal now includes a field-selector dropdown (Audiobook, Release Group, Quality, Language) that opens the cell editor for all selected files at once, allowing a single value to be applied across multiple files instead of having to edit each row individually.
 
 ## [0.2.65] - 2026-04-01
 
