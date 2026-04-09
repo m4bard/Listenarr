@@ -6,5 +6,6 @@
 
   <ItemGroup>
     <Compile Include="Models\**\*.cs" />
+    <Compile Include="Utils\**\*.cs" />
   </ItemGroup>
 </Project>

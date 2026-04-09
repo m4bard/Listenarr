@@ -21,6 +21,7 @@ using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Linq;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
 {
@@ -411,9 +412,8 @@ namespace Listenarr.Api.Services
             if (Directory.Exists(job.SourcePath) && !File.Exists(job.SourcePath))
             {
                 job.AddLogEntry($"Source is a directory, scanning for importable files: {job.SourcePath}");
-                var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
                 var importableFiles = Directory.EnumerateFiles(job.SourcePath, "*.*", SearchOption.AllDirectories)
-                    .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
+                    .Where(f => !FileUtils.IsBlacklistedFile(f, settings.ImportBlacklistExtensions))
                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
@@ -1094,45 +1094,7 @@ namespace Listenarr.Api.Services
 
             if (finalizeDownload && !string.IsNullOrWhiteSpace(job.DestinationPath))
             {
-                await downloadService.ProcessCompletedDownloadAsync(job.DownloadId, job.DestinationPath);
-                job.AddLogEntry($"Updated download record with final path: {job.DestinationPath}");
-            }
-
-            if (finalizeDownload && !string.IsNullOrWhiteSpace(job.DestinationPath))
-            {
-                // If the download was linked to an Audiobook, enqueue a scan for that audiobook
-                try
-                {
-                using var scope = _serviceScopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetService<ListenArrDbContext>();
-                var scanQueue = scope.ServiceProvider.GetService<IScanQueueService>();
-
-                if (scanQueue != null && dbContext != null)
-                {
-                    var dl = await dbContext.Downloads.FindAsync(job.DownloadId);
-                    if (dl != null && dl.AudiobookId != null)
-                    {
-                        try
-                        {
-                            // Enqueue a scan using the audiobook's configured library path (null)
-                            // rather than the download/destination path. The import process already
-                            // hardlinks/copies files into the library folder, so the scanner should
-                            // verify the library location â€” not the download directory, which would
-                            // trigger spurious "Refusing to associate file outside audiobook folder"
-                            // warnings from AudioFileService.
-                            var jobId = await scanQueue.EnqueueScanAsync(dl.AudiobookId.Value, null);
-                            job.AddLogEntry($"Enqueued scan job {jobId} for audiobook {dl.AudiobookId}");
-                            _logger.LogInformation("Enqueued scan job {JobId} for audiobook {AudiobookId} after processing download {DownloadId}", jobId, dl.AudiobookId, job.DownloadId);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            job.AddLogEntry($"Failed to enqueue scan job: {ex.Message}");
-                        }
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                job.AddLogEntry($"Failed to attempt enqueueing scan job: {ex.Message}");
-            }
+                await FinalizeProcessedDownloadAsync(job, downloadService, job.DestinationPath);
             }
         }
 
@@ -1255,27 +1217,36 @@ namespace Listenarr.Api.Services
                 var dbContext = scope.ServiceProvider.GetService<ListenArrDbContext>();
                 var scanQueue = scope.ServiceProvider.GetService<IScanQueueService>();
 
-                if (scanQueue != null && dbContext != null)
+                if (scanQueue == null || dbContext == null)
                 {
-                    var dl = await dbContext.Downloads.FindAsync(job.DownloadId);
-                    if (dl != null && dl.AudiobookId != null)
-                    {
-                        try
-                        {
-                            var jobId = await scanQueue.EnqueueScanAsync(dl.AudiobookId.Value, null);
-                            job.AddLogEntry($"Enqueued scan job {jobId} for audiobook {dl.AudiobookId}");
-                            _logger.LogInformation("Enqueued scan job {JobId} for audiobook {AudiobookId} after processing download {DownloadId}", jobId, dl.AudiobookId, job.DownloadId);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                        {
-                            job.AddLogEntry($"Failed to enqueue scan job: {ex.Message}");
-                        }
-                    }
+                    return;
                 }
+
+                var dl = await dbContext.Downloads.FindAsync(job.DownloadId);
+                if (dl == null || dl.AudiobookId == null)
+                {
+                    return;
+                }
+
+                var audiobook = await dbContext.Audiobooks.FindAsync(dl.AudiobookId);
+                if (audiobook == null)
+                {
+                    return;
+                }
+                
+                // Enqueue a scan using the audiobook's configured library path (null)
+                // rather than the download/destination path. The import process already
+                // hardlinks/copies files into the library folder, so the scanner should
+                // verify the library location and not the download directory, which would
+                // trigger spurious "Refusing to associate file outside audiobook folder"
+                // warnings from AudioFileService.
+                var jobId = await scanQueue.EnqueueScanAsync(audiobook, null);
+                job.AddLogEntry($"Enqueued scan job {jobId} for audiobook {dl.AudiobookId}");
+                _logger.LogInformation("Enqueued scan job {JobId} for audiobook {AudiobookId} after processing download {DownloadId}", jobId, dl.AudiobookId, job.DownloadId);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                job.AddLogEntry($"Failed to attempt enqueueing scan job: {ex.Message}");
+                job.AddLogEntry($"Failed to enqueue scan job: {ex.Message}");
             }
         }
     }

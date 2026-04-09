@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -85,8 +86,8 @@ namespace Listenarr.Api.Tests
         {
             var svc = new FakeService();
             svc.Store.AddRange(new[] {
-                new RootFolder { Id = 1, Name = "Root1", Path = "C:/root1" },
-                new RootFolder { Id = 2, Name = "Root2", Path = "D:/root2" }
+                new RootFolder { Id = 1, Name = "Root1", Path = FileUtils.GetAbsolutePath("root1") },
+                new RootFolder { Id = 2, Name = "Root2", Path = FileUtils.GetAbsolutePath("root2") }
             });
 
             var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
@@ -112,10 +113,10 @@ namespace Listenarr.Api.Tests
         public async Task Create_DuplicatePath_ReturnsBadRequest()
         {
             var svc = new FakeService();
-            svc.Store.Add(new RootFolder { Id = 1, Name = "R1", Path = "C:/dup" });
+            svc.Store.Add(new RootFolder { Id = 1, Name = "R1", Path = FileUtils.GetAbsolutePath("dup") });
             var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
 
-            var req = new RootFolder { Name = "New", Path = "C:/dup" };
+            var req = new RootFolder { Name = "New", Path = FileUtils.GetAbsolutePath("dup") };
             var res = await controller.Create(req);
 
             var bad = Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(res);
@@ -128,7 +129,7 @@ namespace Listenarr.Api.Tests
             var svc = new FakeService();
             var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
 
-            var req = new RootFolder { Id = 2, Name = "R", Path = "C:/p" };
+            var req = new RootFolder { Id = 2, Name = "R", Path = FileUtils.GetAbsolutePath("p") };
             var res = await controller.Update(1, req);
 
             var bad = Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(res);
@@ -141,7 +142,7 @@ namespace Listenarr.Api.Tests
             var svc = new FakeService();
             var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
 
-            var req = new RootFolder { Id = 99, Name = "R", Path = "C:/p" };
+            var req = new RootFolder { Id = 99, Name = "R", Path = FileUtils.GetAbsolutePath("p") };
             var res = await controller.Update(99, req);
 
             var nf = Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(res);
@@ -152,7 +153,7 @@ namespace Listenarr.Api.Tests
         public async Task Delete_InUseWithoutReassign_ReturnsBadRequest()
         {
             var svc = new FakeService();
-            svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = "C:/inuse" });
+            svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = FileUtils.GetAbsolutePath("inuse") });
             var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
 
             var res = await controller.Delete(1, null);
@@ -164,8 +165,8 @@ namespace Listenarr.Api.Tests
         public async Task Delete_WithReassign_Succeeds()
         {
             var svc = new FakeService();
-            svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = "C:/inuse" });
-            svc.Store.Add(new RootFolder { Id = 2, Name = "R2", Path = "D:/r" });
+            svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = FileUtils.GetAbsolutePath("inuse") });
+            svc.Store.Add(new RootFolder { Id = 2, Name = "R2", Path = FileUtils.GetAbsolutePath("r") });
             var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
 
             var res = await controller.Delete(1, 2);

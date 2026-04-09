@@ -49,5 +49,9 @@ export const useRootFoldersStore = defineStore('rootFolders', () => {
     return r
   }
 
-  return { folders, loading, defaultFolder, load, create, update, remove }
+  function getLast() {
+    return folders.value.at(-1);
+  }
+
+  return { folders, loading, defaultFolder, load, create, update, remove, getLast }
 })

@@ -6,6 +6,7 @@ using Moq;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Microsoft.Extensions.Logging;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Tests
 {
@@ -227,7 +228,7 @@ namespace Listenarr.Api.Tests
         {
             var settings = new ApplicationSettings
             {
-                OutputPath = "/audiobooks",
+                OutputPath = FileUtils.GetAbsolutePath("audiobooks"),
                 FolderNamingPattern = "{Author}/{Series}/{Title}",
                 FileNamingPattern = "{Title}",
                 MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
@@ -243,7 +244,7 @@ namespace Listenarr.Api.Tests
 
             var result = await _service.GenerateFilePathAsync(metadata, diskNumber: null, chapterNumber: null, ".m4b");
 
-            Assert.DoesNotContain(":", result);
+            Assert.DoesNotContain(":", result.Substring(2));
             Assert.DoesNotContain("?", result);
             Assert.DoesNotContain($"{Path.DirectorySeparatorChar}Murder by Other Means - The Dispatcher - Book 2 - ", result);
             Assert.Contains("Murder by Other Means - The Dispatcher - Book 2", result);

@@ -1,17 +1,14 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Runtime.InteropServices;
+﻿using System.Runtime.InteropServices;
 using System.Text;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Models;
 
-namespace Listenarr.Api.Services
+namespace Listenarr.Domain.Utils
 {
-    internal static class FileUtils
+    public static class FileUtils
     {
-        internal sealed record AudioMatchProfile(
+        public sealed record AudioMatchProfile(
             string FilePath,
             string StemKey,
             string TitleKey,
@@ -111,57 +108,23 @@ namespace Listenarr.Api.Services
             }
         }
 
-        public static bool IsBlacklistedImportFile(string filePath, IEnumerable<string>? blacklistExtensions)
+        public static bool IsBlacklistedFile(string filePath, IEnumerable<string>? blacklistExtensions)
         {
+            if (string.IsNullOrWhiteSpace(filePath))
+            {
+                return true;
+            }
+
             var extension = Path.GetExtension(filePath);
             if (string.IsNullOrWhiteSpace(extension))
             {
                 return false;
             }
 
-            var normalized = NormalizeExtensions(blacklistExtensions);
-            return normalized.Contains(extension);
-        }
-
-        public static bool IsBlacklistedImportFile(string filePath, ISet<string>? blacklistExtensions)
-        {
-            var extension = Path.GetExtension(filePath);
-            if (string.IsNullOrWhiteSpace(extension) || blacklistExtensions == null || blacklistExtensions.Count == 0)
-            {
-                return false;
-            }
-
-            return blacklistExtensions.Contains(extension);
-        }
-
-        public static bool ShouldSkipImportFile(string filePath, IEnumerable<string>? blacklistExtensions)
-        {
-            if (string.IsNullOrWhiteSpace(filePath))
-            {
-                return true;
-            }
-
-            if (filePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            return IsBlacklistedImportFile(filePath, blacklistExtensions);
-        }
-
-        public static bool ShouldSkipImportFile(string filePath, ISet<string>? blacklistExtensions)
-        {
-            if (string.IsNullOrWhiteSpace(filePath))
-            {
-                return true;
-            }
-
-            if (filePath.EndsWith(".tmp", StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-
-            return IsBlacklistedImportFile(filePath, blacklistExtensions);
+            blacklistExtensions ??= [];
+            blacklistExtensions = blacklistExtensions.Append(".tmp");
+            
+            return blacklistExtensions != null && blacklistExtensions.ToHashSet().Contains(extension);
         }
 
         public static string NormalizeComparisonValue(string? value)
@@ -281,8 +244,8 @@ namespace Listenarr.Api.Services
                         NormalizeStoredPath(candidateDirectory),
                         NormalizeStoredPath(directory),
                         StringComparison.OrdinalIgnoreCase)
-                    || IsPathWithinRoot(candidateDirectory, directory)
-                    || IsPathWithinRoot(directory, candidateDirectory)));
+                    || IsPathInsideOf(candidateDirectory, directory)
+                    || IsPathInsideOf(directory, candidateDirectory)));
 
             if (!sharesReferenceDirectory)
             {
@@ -378,15 +341,21 @@ namespace Listenarr.Api.Services
             }
         }
 
-        public static bool IsPathWithinRoot(string childPath, string rootPath)
+        /// <summary>
+        /// Returns true if the given childPath (either file or directory) is inside of the parentPath
+        /// </summary>
+        /// <param name="childPath">Path to test</param>
+        /// <param name="parentPath">Supposed parent path</param>
+        /// <returns>True when childPath is inside parentPath</returns>
+        public static bool IsPathInsideOf(string childPath, string parentPath)
         {
             try
             {
-                if (string.IsNullOrWhiteSpace(childPath) || string.IsNullOrWhiteSpace(rootPath))
+                if (string.IsNullOrWhiteSpace(childPath) || string.IsNullOrWhiteSpace(parentPath))
                     return false;
 
                 var normalizedChild = NormalizeStoredPath(childPath);
-                var normalizedRoot = NormalizeStoredPath(rootPath)
+                var normalizedRoot = NormalizeStoredPath(parentPath)
                     .TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
                     + Path.DirectorySeparatorChar;
 
@@ -661,6 +630,17 @@ namespace Listenarr.Api.Services
 
         [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
         private static extern uint GetLongPathName(string shortPath, StringBuilder longPathBuffer, int bufferLength);
+
+        /// <summary>
+        /// Returns a path composed of all the given segments. The returned path is OS agnostic (C:\ or /)
+        /// </summary>
+        public static string GetAbsolutePath(params string[] segments)
+        {
+            string root = Path.GetPathRoot(Directory.GetCurrentDirectory()) ?? "/";
+            return Path.Combine(root, Path.Combine(segments));
+        }
+
+        
     }
 }
 

@@ -374,7 +374,7 @@ namespace Listenarr.Api.Services
                                     var scanQueue = historyScope.ServiceProvider.GetService<IScanQueueService>();
                                     if (scanQueue != null)
                                     {
-                                        var scanJobId = await scanQueue.EnqueueScanAsync(audiobook.Id, null);
+                                        var scanJobId = await scanQueue.EnqueueScanAsync(audiobook, null);
                                         _logger.LogInformation("Enqueued scan job {ScanJobId} for audiobook {AudiobookId} after move", scanJobId, audiobook.Id);
                                     }
 

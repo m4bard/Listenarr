@@ -15,7 +15,7 @@ namespace Listenarr.Api.Services
 
     public interface IScanQueueService
     {
-        Task<Guid> EnqueueScanAsync(int audiobookId, string? path = null);
+        Task<Guid> EnqueueScanAsync(Audiobook audiobook, string? path = null);
         Task<Guid?> RequeueScanAsync(Guid jobId);
         bool TryGetJob(Guid id, out ScanJob? job);
         void UpdateJobStatus(Guid id, string status, string? error = null, int? found = null, int? created = null);

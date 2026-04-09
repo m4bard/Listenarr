@@ -10,6 +10,8 @@ using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using Microsoft.Extensions.Options;
 using Microsoft.Extensions.Logging;
+using System.Text.Json.Serialization;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
 {
@@ -449,6 +451,60 @@ namespace Listenarr.Api.Services
             }
 
             return startInfo;
+        }
+
+        public enum FileAction
+        {
+            [JsonPropertyName("none")]
+            None,
+            [JsonPropertyName("move")]
+            Move,
+            [JsonPropertyName("copy")]
+            Copy,
+            [JsonPropertyName("hardlink/copy")]
+            HardlinkCopy
+        }
+        
+        public async Task PerformActionOn(FileAction action, string source, string? destination = null, HashSet<string>? usedDestinations = null)
+        {
+            if (action == FileAction.None || destination == null) return;
+
+            if (usedDestinations == null)
+            {
+                usedDestinations = [];
+            }
+
+            // Ensure destination directory exists
+            var directory = Path.GetDirectoryName(destination);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            destination = FileUtils.GetUniqueDestinationPath(destination, System.IO.File.Exists, usedDestinations);
+            
+            try
+            {
+                switch(action)
+                {
+                    case FileAction.Move:
+                        System.IO.File.Move(source, destination, overwrite: false);
+                        break;
+                    case FileAction.HardlinkCopy:
+                        if(!await HardlinkFileAsync(source, destination))
+                            throw new IOException($"HardlinkFileAsync failed: {source} -> {destination}");
+                        break;
+                    case FileAction.Copy:
+                        System.IO.File.Copy(source, destination, overwrite: false);
+                        break;
+                }
+            
+                usedDestinations.Add(destination);
+            }
+            catch (IOException exception)
+            {
+                throw new InvalidOperationException($"Unable to perform {action} on {source}", exception);
+            }
         }
     }
 }

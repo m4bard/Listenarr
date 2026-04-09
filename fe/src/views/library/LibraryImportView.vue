@@ -14,6 +14,9 @@
           <option v-for="f in rootFoldersStore.folders" :key="f.id" :value="f.id">
             {{ f.name || f.path }}
           </option>
+          <option :value="null">
+            Choose another folder...
+          </option>
         </select>
       </div>
 
@@ -175,6 +178,12 @@
       :folders="rootFoldersStore.folders"
     />
   </div>
+
+  <RootFolderFormModal
+    v-if="addRootFolder"
+    @saved="refreshRootFolders"
+    @close="addRootFolder = false"
+  />
 </template>
 
 <script setup lang="ts">
@@ -202,6 +211,7 @@ import {
   type LibraryImportSortDirection,
   type LibraryImportSortKey,
 } from '@/utils/libraryImportTable'
+import RootFolderFormModal from '@/components/settings/RootFolderFormModal.vue'
 
 const COLUMN_WIDTH_STORAGE_KEY = 'listenarr.libraryImport.columnWidths.v1'
 const MAX_COLUMN_WIDTH = 960
@@ -216,6 +226,7 @@ const sortKey = ref<LibraryImportSortKey>('folder')
 const sortDirection = ref<LibraryImportSortDirection>('asc')
 const columnWidths = ref<LibraryImportColumnWidths>({ ...DEFAULT_LIBRARY_IMPORT_COLUMN_WIDTHS })
 const resizingColumn = ref<LibraryImportResizableColumnKey | null>(null)
+const addRootFolder = ref<boolean>(false)
 
 const sortOptions: Array<{ value: LibraryImportSortKey; label: string }> = [
   { value: 'folder', label: 'Book' },
@@ -271,8 +282,7 @@ onMounted(async () => {
     await store.initFromRootFolder(defaultFolder.id)
   }
 
-  const action = configStore.applicationSettings?.completedFileAction
-  store.inputMode = action === 'Move' || !action ? 'move' : 'hardlink/copy'
+  store.action = 'none'
 })
 
 onBeforeUnmount(() => {
@@ -280,9 +290,15 @@ onBeforeUnmount(() => {
 })
 
 async function onFolderChange() {
-  if (!selectedFolderId.value) return
-  store.stopProcessing()
-  await store.initFromRootFolder(selectedFolderId.value)
+  // Selected a valid root folder
+  if (selectedFolderId.value) {
+    store.stopProcessing()
+    await store.initFromRootFolder(selectedFolderId.value)
+  }
+  // Tries to create a new root folder
+  else {
+    addRootFolder.value = true;
+  }
 }
 
 async function startScan() {
@@ -402,6 +418,18 @@ function persistColumnWidths() {
     localStorage.setItem(COLUMN_WIDTH_STORAGE_KEY, JSON.stringify(columnWidths.value))
   } catch {
     // Non-fatal: resizing still works for the current session.
+  }
+}
+
+async function refreshRootFolders() {
+  addRootFolder.value = false
+
+  await rootFoldersStore.load()
+
+  const newFolder = rootFoldersStore.getLast();
+  if (newFolder) {
+    selectedFolderId.value = newFolder.id
+    await store.initFromRootFolder(newFolder.id)
   }
 }
 </script>

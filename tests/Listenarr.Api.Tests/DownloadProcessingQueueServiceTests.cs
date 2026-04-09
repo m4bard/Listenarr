@@ -5,6 +5,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Tests
 {
@@ -30,10 +31,10 @@ namespace Listenarr.Api.Tests
             var svc = provider.GetRequiredService<IDownloadProcessingQueueService>();
 
             // Enqueue first
-            var job1 = await svc.QueueDownloadProcessingAsync("dl-1", "C:/tmp/source.mp3", null);
+            var job1 = await svc.QueueDownloadProcessingAsync("dl-1", FileUtils.GetAbsolutePath("tmp", "source.mp3"), null);
 
             // Add a pending job check creates same id
-            var job2 = await svc.QueueDownloadProcessingAsync("dl-1", "C:/tmp/source.mp3", null);
+            var job2 = await svc.QueueDownloadProcessingAsync("dl-1", FileUtils.GetAbsolutePath("tmp", "source.mp3"), null);
 
             Assert.Equal(job1, job2);
 
@@ -61,7 +62,7 @@ namespace Listenarr.Api.Tests
             var provider = services.BuildServiceProvider();
             var svc = provider.GetRequiredService<IDownloadProcessingQueueService>();
 
-            var jobId = await svc.QueueDownloadProcessingAsync("dl-2", "C:/tmp/s1.mp3", null);
+            var jobId = await svc.QueueDownloadProcessingAsync("dl-2", FileUtils.GetAbsolutePath("tmp", "s1.mp3"), null);
             var job = await svc.GetJobAsync(jobId);
             Assert.NotNull(job);
 
@@ -71,7 +72,7 @@ namespace Listenarr.Api.Tests
             await svc.UpdateJobAsync(job);
 
             // attempt to queue again should return the recently completed job id
-            var returned = await svc.QueueDownloadProcessingAsync("dl-2", "C:/tmp/s1.mp3", null);
+            var returned = await svc.QueueDownloadProcessingAsync("dl-2", FileUtils.GetAbsolutePath("tmp", "s1.mp3"), null);
             Assert.Equal(jobId, returned);
 
             // now pretend the completed job is old -> set CompletedAt far in past
@@ -79,7 +80,7 @@ namespace Listenarr.Api.Tests
             await svc.UpdateJobAsync(job);
 
             // now new queue should create a fresh job id
-            var newId = await svc.QueueDownloadProcessingAsync("dl-2", "C:/tmp/s1.mp3", null);
+            var newId = await svc.QueueDownloadProcessingAsync("dl-2", FileUtils.GetAbsolutePath("tmp", "s1.mp3"), null);
             Assert.NotEqual(jobId, newId);
         }
     }

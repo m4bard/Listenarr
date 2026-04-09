@@ -8,6 +8,7 @@ using Xunit;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Tests
 {
@@ -16,6 +17,9 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task SaveApplicationSettings_PersistsChanges()
         {
+            var testOutputPath = FileUtils.GetAbsolutePath("test-output");
+            var partialUpdatePath = FileUtils.GetAbsolutePath("partial-update");
+
             // Arrange - build service provider with in-memory DB
             var services = new ServiceCollection();
             services.AddLogging();
@@ -35,7 +39,7 @@ namespace Listenarr.Api.Tests
 
             // Act - save a modified settings object
             var settings = await svc.GetApplicationSettingsAsync();
-            settings.OutputPath = "C:\\test-output";
+            settings.OutputPath = testOutputPath;
             settings.ShowCompletedExternalDownloads = true;
             settings.EnabledNotificationTriggers = new System.Collections.Generic.List<string> { "book-added", "book-completed" };
             settings.Webhooks = new System.Collections.Generic.List<WebhookConfiguration>
@@ -49,7 +53,7 @@ namespace Listenarr.Api.Tests
             var saved = await svc.GetApplicationSettingsAsync();
 
             // Assert
-            Assert.Equal("C:\\test-output", saved.OutputPath);
+            Assert.Equal(testOutputPath, saved.OutputPath);
             Assert.True(saved.ShowCompletedExternalDownloads);
             Assert.NotNull(saved.EnabledNotificationTriggers);
             Assert.Contains("book-completed", saved.EnabledNotificationTriggers);
@@ -58,12 +62,12 @@ namespace Listenarr.Api.Tests
             Assert.Equal("UnitWebhook", saved.Webhooks![0].Name);
 
             // Now simulate a partial update where collections are omitted from the payload
-            var partial = new ApplicationSettings { Id = 1, OutputPath = "C:\\partial-update" };
+            var partial = new ApplicationSettings { Id = 1, OutputPath = partialUpdatePath };
             await svc.SaveApplicationSettingsAsync(partial);
 
             var afterPartial = await svc.GetApplicationSettingsAsync();
             // Ensure previously saved collections were not cleared by the partial update
-            Assert.Equal("C:\\partial-update", afterPartial.OutputPath);
+            Assert.Equal(partialUpdatePath, afterPartial.OutputPath);
             Assert.NotNull(afterPartial.EnabledNotificationTriggers);
             Assert.Contains("book-completed", afterPartial.EnabledNotificationTriggers);
             Assert.NotNull(afterPartial.Webhooks);
@@ -183,7 +187,7 @@ namespace Listenarr.Api.Tests
             await svc.SaveApplicationSettingsAsync(new ApplicationSettings
             {
                 Id = 1,
-                OutputPath = "C:\\updated-output"
+                OutputPath = FileUtils.GetAbsolutePath("updated-output")
             });
 
             var savedConnection = await svc.GetProwlarrImportSettingsAsync(includeSecret: true);

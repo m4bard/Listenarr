@@ -84,7 +84,7 @@ describe('library import store', () => {
     expect(startManualImport).toHaveBeenCalledWith({
       path: 'C:\\incoming',
       mode: 'interactive',
-      inputMode: 'move',
+      action: 'move',
       includeCompanionFiles: true,
       cleanupEmptySourceFolders: true,
       items: [

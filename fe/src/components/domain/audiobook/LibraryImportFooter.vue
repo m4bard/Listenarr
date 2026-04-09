@@ -2,20 +2,33 @@
   <div class="import-footer">
     <div class="footer-left">
       <label class="footer-label">
-        <select v-model="store.inputMode" class="mode-select" :disabled="isImporting">
+        Monitor:
+        <select v-model="store.monitor" class="mode-select" :disabled="isImporting">
+          <option value="all">All</option>
+          <option value="none">None</option>
+        </select>
+      </label>
+      <label class="footer-label">
+        On import:
+        <select v-model="store.action" class="mode-select" :disabled="isImporting">
+          <option value="none">Do nothing</option>
           <option value="move">Move</option>
           <option value="hardlink/copy">Hardlink / Copy</option>
         </select>
-        <span class="footer-to">to:</span>
-        <select
-          v-model="destinationFolderId"
-          class="mode-select destination-select"
-          :disabled="isImporting"
-        >
-          <option v-for="f in props.folders" :key="f.id" :value="f.id">
-            {{ f.path }}
-          </option>
-        </select>
+        <div v-if="store.action != 'none'">
+          <label class="footer-label">to
+            <select
+              v-model="destinationFolderId"
+              class="mode-select destination-select"
+              :disabled="isImporting"
+            >
+              <option v-for="f in props.folders" :key="f.id" :value="f.id">
+                {{ f.path }}
+              </option>
+            </select>
+          </label>
+        </div>
+        <span v-else>Imported files will be left where they are</span>
       </label>
 
       <div v-if="store.metadataFetchCount > 100" class="rate-limit-warning">
@@ -81,7 +94,10 @@ const isImporting = ref(false)
 const importingCount = ref(0)
 
 const destinationPath = computed(
-  () => props.folders.find((f) => f.id === destinationFolderId.value)?.path ?? '',
+  () => {
+    if (store.action == 'none') return '';
+    return props.folders.find((f) => f.id === destinationFolderId.value)?.path ?? ''
+  }
 )
 
 const displayImportCount = computed(() =>

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.ComponentModel.DataAnnotations.Schema;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Domain.Models
 {
@@ -84,7 +85,15 @@ namespace Listenarr.Domain.Models
     public class ApplicationSettings
     {
         public int Id { get; set; } = 1; // Singleton pattern - only one settings record
-        public string OutputPath { get; set; } = string.Empty;
+        public string OutputPath 
+        {
+            get 
+            {
+                return FileUtils.NormalizeStoredPath(field);
+            } 
+            set; 
+        } = string.Empty;
+        
         // Folder naming pattern (base directory structure)
         // Available variables:
         // {Author} - Audiobook author
@@ -141,7 +150,13 @@ namespace Listenarr.Domain.Models
         public int MaxConcurrentDownloads { get; set; } = 3;
         public int PollingIntervalSeconds { get; set; } = 30;
         public bool EnableNotifications { get; set; } = false;
-        public List<string> AllowedFileExtensions { get; set; } = new() { ".mp3", ".flac", ".m4a", ".m4b", ".ogg" };
+        public List<string> AllowedFileExtensions {
+            get
+            {
+                return [.. FileUtils.NormalizeExtensions(field)];
+            }
+            set;
+        } = [".mp3", ".flac", ".m4a", ".m4b", ".ogg"];
 
         // Number of seconds a download must be observed in the client as "complete" before
         // the system will finalize it (stability window). Keeping a short default (10s)
@@ -170,7 +185,13 @@ namespace Listenarr.Domain.Models
         // Failed download handling settings
         public bool FailedDownloadHandlingEnabled { get; set; } = true;
         public bool FailedDownloadAutoSearch { get; set; } = false;
-        public List<string> ImportBlacklistExtensions { get; set; } = new();
+        public List<string> ImportBlacklistExtensions {
+            get
+            {
+                return [.. FileUtils.NormalizeExtensions(field)];
+            }
+            set;
+        } = [];
 
         /// <summary>
         /// Webhook URL for sending notifications (legacy single webhook).
