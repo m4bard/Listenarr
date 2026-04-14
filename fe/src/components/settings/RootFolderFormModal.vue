@@ -63,7 +63,10 @@ import { useToast } from '@/services/toastService'
 import type { RootFolder } from '@/types'
 
 const { root } = defineProps<{ root?: RootFolder }>()
-const emit = defineEmits(['close', 'saved'])
+const emit = defineEmits<{
+  close: []
+  saved: [rootFolder: RootFolder]
+}>()
 
 const store = useRootFoldersStore()
 const toast = useToast()
@@ -93,13 +96,14 @@ async function save() {
     return
   }
   try {
+    var newRoot;
     if (root?.id) {
       // If path changed, show confirmation to choose whether to move files
       if (form.value.path !== root.path) {
         showConfirm.value = true
         return
       }
-      await store.update(root.id, {
+      newRoot = await store.update(root.id, {
         id: root.id,
         name: form.value.name,
         path: form.value.path,
@@ -107,14 +111,14 @@ async function save() {
       })
       toast.success('Success', 'Root folder updated')
     } else {
-      await store.create({
+      newRoot = await store.create({
         name: form.value.name,
         path: form.value.path,
         isDefault: form.value.isDefault,
       })
       toast.success('Success', 'Root folder created')
     }
-    emit('saved')
+    emit('saved', newRoot)
   } catch (e: unknown) {
     const error = e as Error
     toast.error('Error', error?.message || 'Failed to save root folder')

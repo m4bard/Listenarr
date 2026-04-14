@@ -16,7 +16,7 @@ namespace Listenarr.Api.Services
         /// <param name="action">What we want to do with the file</param>
         /// <param name="source">File</param>
         /// <param name="destination">Optional destination of the action</param>
-        /// <param name="usedDestinations">To remove probably</param>
+        /// <param name="usedDestinations">List of file name already assigned during a given operation to make sure no collision happens while creating multiple files at the same time</param>
         Task PerformActionOn(FileAction action, string source, string? destination = null, HashSet<string>? usedDestinations = null);
     }
 }

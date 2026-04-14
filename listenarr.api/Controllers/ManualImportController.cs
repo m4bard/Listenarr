@@ -146,7 +146,7 @@ public class ManualImportController : ControllerBase
 
             foreach (var item in orderedItems)
             {
-                var fileCount = orderedItems.Select(f => f.MatchedAudiobookId).Count();
+                var fileCount = orderedItems.Count(f => f.MatchedAudiobookId == item.MatchedAudiobookId);
                 _logger.LogDebug("Importing item {Index}: {Path} for audiobook {AudiobookId}, fileCount: {FileCount}", orderedItems.IndexOf(item), item.FullPath, item.MatchedAudiobookId, fileCount);
                 var result = await ImportFileAsync(item, request.Action, sourceDirectory, usedDestinations, fileCount > 1);
                 _logger.LogDebug("Import result {Index}: Success={Success}, Destination={Destination}, Error={Error}", orderedItems.IndexOf(item), result.Success, result.DestinationPath, result.Error);

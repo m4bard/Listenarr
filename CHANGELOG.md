@@ -5,12 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-# Changelog
+## [0.2.66] - ?
 
-All notable changes to this project will be documented in this file.
-
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+### Added
+- **Library import:**
+  - Ability to add root folders while selecting the root folder from which we want to import files
+  - Ability to leave files in place when importing library
+  - Ability to set the desired monitoring for audiobooks added through library importation
 
 ## [0.2.65] - 2026-04-01
 

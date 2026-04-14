@@ -13,6 +13,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Listenarr.Domain.Utils;
+using static Listenarr.Api.Services.FileMover;
 
 namespace Listenarr.Api.Services
 {
@@ -1248,19 +1249,25 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
         }
     }
 
-    public async Task PerformActionOn(Listenarr.Api.Services.FileMover.FileAction action, string source, string? destination = null, HashSet<string>? usedDestinations = null)
+    public async Task PerformActionOn(FileAction action, string source, string? destination = null, HashSet<string>? usedDestinations = null)
     {
         if (destination == null) return;
+
+        if (action != FileAction.None)
+        {
+            destination = FileUtils.GetUniqueDestinationPath(destination, File.Exists, usedDestinations);
+            usedDestinations?.Add(destination);
+        }
         
         switch(action)
         {
-            case Listenarr.Api.Services.FileMover.FileAction.Move:
+            case FileAction.Move:
                 await MoveFileAsync(source, destination);
                 return;
-            case Listenarr.Api.Services.FileMover.FileAction.Copy:
+            case FileAction.Copy:
                 await CopyFileAsync(source, destination);
                 return;
-            case Listenarr.Api.Services.FileMover.FileAction.HardlinkCopy:
+            case FileAction.HardlinkCopy:
                 await HardlinkFileAsync(source, destination);
                 return;
         }

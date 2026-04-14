@@ -14,11 +14,17 @@
           <option v-for="f in rootFoldersStore.folders" :key="f.id" :value="f.id">
             {{ f.name || f.path }}
           </option>
-          <option :value="null">
-            Choose another folder...
-          </option>
         </select>
       </div>
+
+      <button
+        class="btn btn-secondary btn-sm"
+        :disabled="store.scanStatus === 'scanning'"
+        @click="openAddRootFolder"
+      >
+        <PhFolderPlus :size="15" />
+        Choose another folder...
+      </button>
 
       <button
         class="btn btn-primary btn-sm"
@@ -182,7 +188,7 @@
   <RootFolderFormModal
     v-if="addRootFolder"
     @saved="refreshRootFolders"
-    @close="addRootFolder = false"
+    @close="closeAddRootFolder"
   />
 </template>
 
@@ -196,6 +202,7 @@ import {
   PhArrowDown,
   PhArrowUp,
   PhArrowsDownUp,
+  PhFolderPlus,
 } from '@phosphor-icons/vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
 import { useRootFoldersStore } from '@/stores/rootFolders'
@@ -212,6 +219,7 @@ import {
   type LibraryImportSortKey,
 } from '@/utils/libraryImportTable'
 import RootFolderFormModal from '@/components/settings/RootFolderFormModal.vue'
+import type { RootFolder } from '@/types'
 
 const COLUMN_WIDTH_STORAGE_KEY = 'listenarr.libraryImport.columnWidths.v1'
 const MAX_COLUMN_WIDTH = 960
@@ -290,14 +298,9 @@ onBeforeUnmount(() => {
 })
 
 async function onFolderChange() {
-  // Selected a valid root folder
   if (selectedFolderId.value) {
     store.stopProcessing()
     await store.initFromRootFolder(selectedFolderId.value)
-  }
-  // Tries to create a new root folder
-  else {
-    addRootFolder.value = true;
   }
 }
 
@@ -421,12 +424,19 @@ function persistColumnWidths() {
   }
 }
 
-async function refreshRootFolders() {
+function openAddRootFolder() {
+  addRootFolder.value = true
+}
+
+function closeAddRootFolder() {
   addRootFolder.value = false
+}
+
+async function refreshRootFolders(newFolder: RootFolder) {
+  closeAddRootFolder()
 
   await rootFoldersStore.load()
 
-  const newFolder = rootFoldersStore.getLast();
   if (newFolder) {
     selectedFolderId.value = newFolder.id
     await store.initFromRootFolder(newFolder.id)
