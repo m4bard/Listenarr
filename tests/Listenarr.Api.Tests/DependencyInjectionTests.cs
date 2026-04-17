@@ -19,8 +19,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Xunit;
-using Listenarr.Api.Services;
-using Listenarr.Infrastructure.Models;
 using Listenarr.Infrastructure.Extensions;
 
 namespace Listenarr.Api.Tests

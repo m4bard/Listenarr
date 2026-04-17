@@ -91,7 +91,7 @@ public class RemotePathMappingsController : ControllerBase
     {
         try
         {
-            var mappings = await _mappingService.GetByClientIdAsync(downloadClientId);
+            var mappings = await _mappingService.GetPathMappingByClientIdAsync(downloadClientId);
             return Ok(mappings);
         }
         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

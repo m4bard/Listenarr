@@ -15,11 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Listenarr.Api.Services;
-using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -27,21 +23,52 @@ using Moq;
 using Xunit;
 using System.IO.Compression;
 using System.Reflection;
-using Listenarr.Infrastructure.Repositories;
-using Listenarr.Application.Services;
 
 namespace Listenarr.Api.Tests
 {
     [Trait("Area", "CompletedDownloadProcessing")]
-    public class CompletedDownloadProcessorTests
+    [Trait("Category", "CompletedDownloadProcessor")]
+    public class CompletedDownloadProcessorTests : BaseTests
     {
+        private readonly string CLIENT_CONFIG_ID = "dl-client-1";
+        private readonly string DOWNLOAD_COMPLETE_ID = "dl-complete-1";
+        private readonly int AUDIOBOOK_ID = 1;
+
+        private async Task InitDB(IServiceProvider provider)
+        {
+            var downloadClientConfigurationRepository = provider.GetRequiredService<IDownloadClientConfigurationRepository>();
+            var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
+
+            await downloadClientConfigurationRepository.SaveAsync(new DownloadClientConfiguration
+            {
+                Id = CLIENT_CONFIG_ID,
+                Name = "Slskd",
+                Type = "slskd",
+                Host = "localhost",
+                Port = 5030
+            });
+
+            await downloadRepository.AddAsync(new Download
+            {
+                Id = DOWNLOAD_COMPLETE_ID,
+                DownloadClientId = CLIENT_CONFIG_ID,
+                AudiobookId = AUDIOBOOK_ID,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["Uploader"] = "USER1",
+                    ["Protocol"] = DownloadProtocol.Torrent
+                }
+            });
+        }
+
         [Fact]
         [Trait("Scenario", "TransientFailureStaysImportPending")]
         public async Task MarkImportFailureAsync_FirstAttempt_KeepsImportPendingForRetry()
         {
             var downloadId = Guid.NewGuid().ToString();
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download
             {
                 Id = downloadId,
@@ -145,7 +172,8 @@ namespace Listenarr.Api.Tests
         {
             var downloadId = Guid.NewGuid().ToString();
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download
             {
                 Id = downloadId,
@@ -263,7 +291,8 @@ namespace Listenarr.Api.Tests
         {
             var downloadId = Guid.NewGuid().ToString();
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download
             {
                 Id = downloadId,
@@ -373,7 +402,8 @@ namespace Listenarr.Api.Tests
         {
             var downloadId = Guid.NewGuid().ToString();
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download
             {
                 Id = downloadId,
@@ -478,7 +508,8 @@ namespace Listenarr.Api.Tests
             var downloadId = Guid.NewGuid().ToString();
             var finalPath = "C:\\temp\\audiobook.mp3";
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download { Id = downloadId, Status = DownloadStatus.Downloading, AudiobookId = null });
 
             var fileFinalizer = new TestFileFinalizer(null);
@@ -527,7 +558,8 @@ namespace Listenarr.Api.Tests
             var filePath = System.IO.Path.Join(tempDir, "file1.mp3");
             System.IO.File.WriteAllText(filePath, "dummy");
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download { Id = downloadId, Status = DownloadStatus.Downloading });
 
             var fileFinalizer = new TestFileFinalizer(null);
@@ -580,7 +612,8 @@ namespace Listenarr.Api.Tests
             System.IO.File.WriteAllText(nfoPath, "nfo");
             System.IO.File.WriteAllText(archivePath, "zip");
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download { Id = downloadId, Status = DownloadStatus.Downloading });
 
             string[]? capturedFiles = null;
@@ -657,7 +690,10 @@ namespace Listenarr.Api.Tests
             System.IO.File.WriteAllText(foreignAudioPath, "foreign");
             System.IO.File.WriteAllText(coverPath, "cover");
 
-            var repo = new TestDownloadRepository();
+            
+            var importResolverMock = new Mock<IImportItemResolutionService>();
+            var provider = MockUtils.CreateServiceProvider(importResolverMock.Object, "");
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download
             {
                 Id = downloadId,
@@ -687,10 +723,7 @@ namespace Listenarr.Api.Tests
 
             var scopeFactoryMock = new Mock<IServiceScopeFactory>();
             var scopeMock = new Mock<IServiceScope>();
-            var spMock = new Mock<IServiceProvider>();
-            spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
-            spMock.Setup(sp => sp.GetService(typeof(IMetadataService))).Returns(null);
-            scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
+            scopeMock.Setup(s => s.ServiceProvider).Returns(provider);
             scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
 
             var importMock = new Mock<IImportService>();
@@ -740,19 +773,6 @@ namespace Listenarr.Api.Tests
             System.IO.File.WriteAllText(txtPath, "txt");
             System.IO.File.WriteAllText(unrelatedPath, "ignore");
 
-            var repo = new TestDownloadRepository();
-            await repo.AddAsync(new Download
-            {
-                Id = downloadId,
-                Status = DownloadStatus.Downloading,
-                DownloadClientId = "client-source-truth",
-                Title = "Alpha Book",
-                Metadata = new Dictionary<string, object>
-                {
-                    ["TorrentHash"] = "ABC123"
-                }
-            });
-
             string[]? capturedFiles = null;
             var fileFinalizerMock = new Mock<IFileFinalizer>();
             fileFinalizerMock
@@ -795,13 +815,26 @@ namespace Listenarr.Api.Tests
             hubClientsMock.Setup(c => c.All).Returns(clientProxyMock.Object);
             var hubContextMock = new Mock<IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
             hubContextMock.Setup(h => h.Clients).Returns(hubClientsMock.Object);
+            
+            var provider = MockUtils.CreateServiceProvider(importResolverMock.Object, "");
+            await InitDB(provider);
+
+            var repo = provider.GetRequiredService<IDownloadRepository>();
+            await repo.AddAsync(new Download
+            {
+                Id = downloadId,
+                Status = DownloadStatus.Downloading,
+                DownloadClientId = "client-source-truth",
+                Title = "Alpha Book",
+                Metadata = new Dictionary<string, object>
+                {
+                    ["TorrentHash"] = "ABC123"
+                }
+            });
 
             var scopeFactoryMock = new Mock<IServiceScopeFactory>();
             var scopeMock = new Mock<IServiceScope>();
-            var spMock = new Mock<IServiceProvider>();
-            spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
-            spMock.Setup(sp => sp.GetService(typeof(IImportItemResolutionService))).Returns(importResolverMock.Object);
-            scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
+            scopeMock.Setup(s => s.ServiceProvider).Returns(provider);
             scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
 
             var importMock = new Mock<IImportService>();
@@ -846,7 +879,8 @@ namespace Listenarr.Api.Tests
             System.IO.File.WriteAllText(audioPath, "audio");
             System.IO.File.WriteAllText(coverPath, "cover");
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download
             {
                 Id = downloadId,
@@ -938,7 +972,8 @@ namespace Listenarr.Api.Tests
             var filePath = System.IO.Path.Join(nested, "file2.mp3");
             System.IO.File.WriteAllText(filePath, "dummy");
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download { Id = downloadId, Status = DownloadStatus.Downloading });
 
             var fileFinalizer = new TestFileFinalizer(null);
@@ -988,7 +1023,8 @@ namespace Listenarr.Api.Tests
             var zipPath = System.IO.Path.Join(tempDir, "release.zip");
             ZipFile.CreateFromDirectory(inner, zipPath);
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download { Id = downloadId, Status = DownloadStatus.Downloading });
 
             var fileFinalizer = new TestFileFinalizer(null);
@@ -1031,7 +1067,8 @@ namespace Listenarr.Api.Tests
         {
             var downloadId = Guid.NewGuid().ToString();
 
-            var repo = new TestDownloadRepository();
+            var provider = MockUtils.CreateServiceProvider();
+            var repo = provider.GetRequiredService<IDownloadRepository>();
             await repo.AddAsync(new Download
             {
                 Id = downloadId,
@@ -1080,13 +1117,100 @@ namespace Listenarr.Api.Tests
             queueMock.Verify(q => q.GetQueueAsync(), Times.Never);
         }
 
+        [Fact]
+        public async Task ProcessCOmpleteDownloadAsync_MultipleFiles()
+        {
+            var remoteSource = GetTempDirectory("dl-remote-source");
+            var localSource = GetTempDirectory("dl-local-source");
+            var localDestination = GetTempDirectory("dl-destination");
+
+            var remoteChapter1 = Path.Join(remoteSource, "01 - Seconde Fondation Isaac Asimov.mp3");
+            var remoteChapter2 = Path.Join(remoteSource, "02 - Seconde Fondation Isaac Asimov.mp3");
+            var remoteChapter3 = Path.Join(remoteSource, "03 - Seconde Fondation Isaac Asimov.mp3");
+            var remoteChapter4 = Path.Join(remoteSource, "04 - Seconde Fondation Isaac Asimov.mp3");
+            var remoteCompanion = Path.Join(remoteSource, "Seconde Fondation Isaac Asimov.nfo");
+
+            var localChapter1 = await GetFileAsync(localSource, "01 - Seconde Fondation Isaac Asimov.mp3");
+            var localChapter2 = await GetFileAsync(localSource, "02 - Seconde Fondation Isaac Asimov.mp3");
+            var localChapter3 = await GetFileAsync(localSource, "03 - Seconde Fondation Isaac Asimov.mp3");
+            var localChapter4 = await GetFileAsync(localSource, "04 - Seconde Fondation Isaac Asimov.mp3");
+            var localCompanion = await GetFileAsync(localSource, "Seconde Fondation Isaac Asimov.nfo");
+
+            var importItemResolutionServiceMock = new Mock<IImportItemResolutionService>();
+            importItemResolutionServiceMock
+                .Setup(r => r.ResolveImportItemAsync(
+                    It.Is<Download>(d => d.Id == DOWNLOAD_COMPLETE_ID),
+                    It.IsAny<QueueItem>(),
+                    It.IsAny<QueueItem?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((Download download, QueueItem queueItem, QueueItem? previousAttempt, CancellationToken ct) =>
+                {
+                    queueItem.SourceFiles = new List<string> {
+                        remoteChapter1,
+                        remoteChapter2,
+                        remoteChapter3,
+                        remoteChapter4,
+                        remoteCompanion
+                    };
+                    return queueItem;
+                });
+
+            var provider = MockUtils.CreateServiceProvider(importItemResolutionServiceMock.Object, localDestination);
+            var downloadClientConfigurationRepository = provider.GetRequiredService<IDownloadClientConfigurationRepository>();
+            var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
+            var remotePathMappingRepository = provider.GetRequiredService<IRemotePathMappingRepository>();
+            var audiobookRepository = provider.GetRequiredService<IAudiobookRepository>();
+            var audiobookFileRepository = provider.GetRequiredService<IAudiobookFileRepository>();
+
+            await InitDB(provider);
+            var client = await downloadClientConfigurationRepository.GetByIdAsync(CLIENT_CONFIG_ID);
+            var download = (await downloadRepository.GetByIdsAsync([DOWNLOAD_COMPLETE_ID])).First();
+
+            await remotePathMappingRepository.SaveAsync(new RemotePathMapping
+            {
+                Id = 1,
+                DownloadClientId = CLIENT_CONFIG_ID,
+                Name = "TEST_REMOTE_MAPPING",
+                RemotePath = remoteSource,
+                LocalPath = localSource,
+            });
+
+            var basePath = Path.Join(localDestination, "Isaac Asimov", "Le Cycle de Fondation", "Seconde Fondation");
+
+            await audiobookRepository.AddAsync(new Audiobook
+            {
+                Id = AUDIOBOOK_ID,
+                Title = "Seconde Fondation",
+                Authors = [
+                    "Isaac Asimov"
+                ],
+                PublishYear = "1996",
+                Series = "Le Cycle de Fondation",
+                BasePath = basePath
+            });
+
+            var completeDownloadProcessor = MockUtils.CreateCompletedDownloadProcessor(provider);
+
+            await completeDownloadProcessor.ProcessCompletedDownloadAsync(download.Id, localSource);
+            
+            var audiobook = await audiobookRepository.GetByIdAsync(AUDIOBOOK_ID);
+            var files = await audiobookFileRepository.GetAllAsync();
+
+            // FIXME: disc and track number are the same because ffprobe metadata are not used (see ImportService.ImportFilesFromDirectoryAsync)
+            Assert.True(File.Exists(Path.Join(basePath, "Seconde Fondation-01-01.mp3")));
+            Assert.True(File.Exists(Path.Join(basePath, "Seconde Fondation-02-02.mp3")));
+            Assert.True(File.Exists(Path.Join(basePath, "Seconde Fondation-03-03.mp3")));
+            Assert.True(File.Exists(Path.Join(basePath, "Seconde Fondation-04-04.mp3")));
+            Assert.True(File.Exists(Path.Join(basePath, "Seconde Fondation Isaac Asimov.nfo")));
+        }
+
         private static void TryDeleteFile(string path)
         {
             try
             {
-                System.IO.File.Delete(path);
+                File.Delete(path);
             }
-            catch (System.IO.IOException ex)
+            catch (IOException ex)
             {
                 Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
             }
@@ -1100,9 +1224,9 @@ namespace Listenarr.Api.Tests
         {
             try
             {
-                System.IO.Directory.Delete(path, recursive);
+                Directory.Delete(path, recursive);
             }
-            catch (System.IO.IOException ex)
+            catch (IOException ex)
             {
                 Console.Error.WriteLine($"Ignoring cleanup failure for '{path}': {ex.Message}");
             }

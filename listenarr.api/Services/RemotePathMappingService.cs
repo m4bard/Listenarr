@@ -16,8 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using AsyncKeyedLock;
-using Listenarr.Application.Repositories;
-using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Listenarr.Api.Services;
@@ -50,7 +49,7 @@ public class RemotePathMappingService : IRemotePathMappingService
         return await _mappings.GetByIdAsync(id);
     }
 
-    public async Task<List<RemotePathMapping>> GetByClientIdAsync(string downloadClientId)
+    public async Task<List<RemotePathMapping>> GetPathMappingByClientIdAsync(string downloadClientId)
     {
         if (string.IsNullOrEmpty(downloadClientId)) return new List<RemotePathMapping>();
         var cacheKey = $"rpm_client_{downloadClientId}";
@@ -143,29 +142,26 @@ public class RemotePathMappingService : IRemotePathMappingService
             return remotePath;
         }
 
-        var normalizedRemotePath = NormalizePath(remotePath);
-        var mappings = await GetByClientIdAsync(downloadClientId);
+        remotePath = FileUtils.NormalizeStoredPath(remotePath);
 
-        foreach (var mapping in mappings)
+        // We cannot make sure the given path is a file or a directory as it is possibly unnaccessible in its current form
+        // thus we try the mapping on the unmodified given path and then we try to map as if it were a directory
+        string[] tryingRemotePaths = [
+            remotePath,
+            FileUtils.EnsureTrailingSeparator(remotePath)
+        ];
+
+        foreach(var currentRemotePath in tryingRemotePaths)
         {
-            var normalizedMappingPath = NormalizePath(mapping.RemotePath);
-
-            if (normalizedRemotePath.StartsWith(normalizedMappingPath, StringComparison.OrdinalIgnoreCase))
+            var mappings = await GetPathMappingByClientIdAsync(downloadClientId);
+            foreach (var mapping in mappings)
             {
-                var relativePath = normalizedRemotePath.Substring(normalizedMappingPath.Length);
-                var localPath = NormalizePath(mapping.LocalPath) + relativePath;
-
-                _logger.LogDebug(
-                    "Translated path for client {ClientId}: {RemotePath} -> {LocalPath} (using mapping {MappingId})",
-                    downloadClientId, remotePath, localPath, mapping.Id);
-
-                return localPath;
+                if (currentRemotePath.StartsWith(mapping.RemotePath, StringComparison.OrdinalIgnoreCase))
+                {
+                    return currentRemotePath.Replace(mapping.RemotePath, mapping.LocalPath, StringComparison.OrdinalIgnoreCase);
+                }
             }
         }
-
-        _logger.LogDebug(
-            "No path mapping found for client {ClientId} and path {RemotePath}, returning original path",
-            downloadClientId, remotePath);
 
         return remotePath;
     }
@@ -177,25 +173,9 @@ public class RemotePathMappingService : IRemotePathMappingService
             return false;
         }
 
-        var normalizedRemotePath = NormalizePath(remotePath);
-        var mappings = await GetByClientIdAsync(downloadClientId);
-        return mappings.Any(m => normalizedRemotePath.StartsWith(NormalizePath(m.RemotePath)));
-    }
+        var normalizedRemotePath = FileUtils.NormalizeStoredPath(remotePath);
 
-    private static string NormalizePath(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return string.Empty;
-        }
-
-        path = path.Trim().Replace('\\', '/');
-
-        if (!path.EndsWith('/'))
-        {
-            path += '/';
-        }
-
-        return path;
+        var mappings = await GetPathMappingByClientIdAsync(downloadClientId);
+        return mappings.Any(m => normalizedRemotePath.StartsWith(FileUtils.NormalizeStoredPath(m.RemotePath)));
     }
 }

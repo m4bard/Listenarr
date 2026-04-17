@@ -18,20 +18,41 @@
 using System;
 using System.Net;
 using System.Net.Http;
+using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
 using Listenarr.Api.Services.Adapters;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
 
 namespace Listenarr.Api.Tests
 {
-    public class TransmissionAdapterTests
+    [Trait("Category", "DownloadClientAdapter")]
+    [Trait("Third-Party", "Transmission")]
+    public class TransmissionAdapterTests : BaseTests
     {
+        private readonly string CLIENT_CONFIG_ID = "slskd-1";
+        private readonly string DOWNLOAD_COMPLETE_ID = "dl-complete-1";
+
+        public IDownloadClientAdapter CreateAdapter(IServiceProvider provider)
+        {
+            var httpClientFactoryMock = new Mock<IHttpClientFactory>();
+            httpClientFactoryMock.Setup(_ => _.CreateClient(It.IsAny<string>())).Returns(new HttpClient(new TransmissionApiMock()));
+
+            return new TransmissionAdapter(
+                httpClientFactoryMock.Object,
+                provider.GetRequiredService<IRemotePathMappingService>(),
+                Mock.Of<ITorrentFileDownloader>(),
+                NullLogger<TransmissionAdapter>.Instance);
+        }
+        
         private sealed class TestHttpClientFactory : IHttpClientFactory
         {
             private readonly HttpClient _client;
@@ -228,6 +249,63 @@ namespace Listenarr.Api.Tests
             var ex = await Assert.ThrowsAsync<ArgumentException>(() => adapter.AddAsync(client, searchResult));
 
             Assert.Contains("HTTP or HTTPS", ex.Message, StringComparison.OrdinalIgnoreCase);
+        }
+
+        [Fact]
+        public async Task GetImportItemAsync_WithSpaceInRemoteDirectory()
+        {
+            var client = new DownloadClientConfiguration
+            {
+                Id = CLIENT_CONFIG_ID,
+                Name = "Transmission",
+                Type = "torrent",
+                Host = "localhost",
+                Port = 9091
+            };
+
+            var download = new Download
+            {
+                Id = DOWNLOAD_COMPLETE_ID,
+                DownloadClientId = CLIENT_CONFIG_ID,
+                Metadata = new Dictionary<string, object>
+                {
+                    ["Uploader"] = "USER2",
+                    ["Protocol"] = DownloadProtocol.Torrent
+                }
+            };
+
+            var queueItem = new QueueItem
+            {
+                Id = "305",
+                Title = "Seconde Fondation",
+                Status = "completed",
+                ContentPath = FileUtils.GetAbsolutePath("UNKNOWN_YET"),
+                DownloadClientId = client.Id
+            };
+            
+            var provider = MockUtils.CreateServiceProvider();
+            var downloadClientConfigurationRepository = provider.GetRequiredService<IDownloadClientConfigurationRepository>();
+            var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
+            
+            await downloadClientConfigurationRepository.SaveAsync(client);
+            
+            await downloadRepository.AddAsync(download);
+
+            var retrievedQeue = await CreateAdapter(provider).GetImportItemAsync(client, download, queueItem);
+
+            Assert.NotNull(retrievedQeue);
+
+            if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+            {
+                // On Windows, path cannot ends with a space
+                Assert.Equal(FileUtils.GetAbsolutePath("downloads", "complete", "audiobooks", "Isaac Asimov - Le Cycle de Fondation - Tome 3 - Seconde Fondation"), retrievedQeue.ContentPath);
+            }
+            else
+            {
+                // On other OS, path should ends with a space
+                Assert.Equal(FileUtils.GetAbsolutePath("downloads", "complete", "audiobooks", "Isaac Asimov - Le Cycle de Fondation - Tome 3 - Seconde Fondation "), retrievedQeue.ContentPath);
+                Assert.EndsWith(" ", retrievedQeue.ContentPath);
+            }
         }
     }
 }

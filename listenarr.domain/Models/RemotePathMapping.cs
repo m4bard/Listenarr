@@ -17,6 +17,7 @@
  */
 
 using System.ComponentModel.DataAnnotations;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Domain.Models
 {
@@ -44,13 +45,37 @@ namespace Listenarr.Domain.Models
         /// The path as seen by the download client (e.g., "/downloads/listenarr/")
         /// </summary>
         [Required]
-        public string RemotePath { get; set; } = string.Empty;
+        public string RemotePath {
+            get
+            {
+                // FIXME: Previous version did not save normalized paths
+                var normalizedValue = FileUtils.NormalizeStoredPath(field);
+                return FileUtils.EnsureTrailingSeparator(normalizedValue);
+            }
+            set
+            {
+                value = FileUtils.NormalizeStoredPath(value);
+                field = FileUtils.EnsureTrailingSeparator(value);
+            }
+        } = string.Empty;
 
         /// <summary>
         /// The path as seen by Listenarr (e.g., "/server/downloads/complete/listenarr/")
         /// </summary>
         [Required]
-        public string LocalPath { get; set; } = string.Empty;
+        public string LocalPath {
+            get
+            {
+                // FIXME: Previous version did not save normalized paths
+                var normalizedValue = FileUtils.NormalizeStoredPath(field);
+                return FileUtils.EnsureTrailingSeparator(normalizedValue);
+            }
+            set
+            {
+                value = FileUtils.NormalizeStoredPath(value);
+                field = FileUtils.EnsureTrailingSeparator(value);
+            }
+        } = string.Empty;
 
         /// <summary>
         /// When this mapping was created

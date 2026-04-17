@@ -15,15 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System;
 using System.Collections.Concurrent;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Listenarr.Application.Repositories;
-using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Tests
 {
@@ -121,20 +114,18 @@ namespace Listenarr.Api.Tests
             return Task.FromResult(_mem.Values.ToList());
         }
 
-        public Task<List<QueueTrackedDownload>> GetQueueDisplayCandidatesAsync()
+        public Task<List<Download>> GetQueueDisplayCandidatesAsync()
         {
             if (_db != null)
             {
                 var projected = _db.Downloads
                     .Where(IsQueueDisplayCandidate)
-                    .Select(ToQueueTrackedDownloadProjection)
                     .ToList();
                 return Task.FromResult(projected);
             }
 
             var list = _mem.Values
                 .Where(IsQueueDisplayCandidate)
-                .Select(ToQueueTrackedDownloadProjection)
                 .ToList();
             return Task.FromResult(list);
         }
@@ -148,20 +139,18 @@ namespace Listenarr.Api.Tests
             return (isDdl && notMoved) || (!isDdl && notMoved && notFailed && notCompletedWithPath);
         }
 
-        public Task<List<QueueTrackedDownload>> GetQueueMatchingCandidatesAsync()
+        public Task<List<Download>> GetQueueMatchingCandidatesAsync()
         {
             if (_db != null)
             {
                 var projected = _db.Downloads
                     .Where(d => d.DownloadClientId != "DDL" && d.Status != DownloadStatus.Failed)
-                    .Select(ToQueueTrackedDownloadProjection)
                     .ToList();
                 return Task.FromResult(projected);
             }
 
             var list = _mem.Values
                 .Where(d => d.DownloadClientId != "DDL" && d.Status != DownloadStatus.Failed)
-                .Select(ToQueueTrackedDownloadProjection)
                 .ToList();
             return Task.FromResult(list);
         }
@@ -206,6 +195,15 @@ namespace Listenarr.Api.Tests
             return Task.FromResult(list);
         }
 
+        public Task<Download> GetByIdAsync(string id)
+        {
+            if (_db != null)
+                return _db.Downloads.FirstAsync(d => d.Id == id);
+
+            var download = _mem.Values.First(d => d.Id == id);
+            return Task.FromResult(download);
+        }
+
         public Task<List<Download>> GetByIdsAsync(IEnumerable<string> ids)
         {
             var idSet = ids?.ToList() ?? new List<string>();
@@ -216,7 +214,7 @@ namespace Listenarr.Api.Tests
             return Task.FromResult(list);
         }
 
-        public Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, System.Threading.CancellationToken ct = default)
+        public Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, CancellationToken ct = default)
         {
             if (_db != null)
                 return _db.Downloads.Where(d => d.AudiobookId == audiobookId).ToListAsync(ct);
@@ -289,26 +287,6 @@ namespace Listenarr.Api.Tests
                 .Distinct()
                 .ToList();
             return Task.FromResult(list);
-        }
-
-        private static QueueTrackedDownload ToQueueTrackedDownloadProjection(Download download)
-        {
-            return new QueueTrackedDownload
-            {
-                Id = download.Id,
-                DownloadClientId = download.DownloadClientId,
-                Title = download.Title,
-                Artist = download.Artist,
-                Status = download.Status,
-                StartedAt = download.StartedAt,
-                TotalSize = download.TotalSize,
-                DownloadedSize = download.DownloadedSize,
-                DownloadPath = download.DownloadPath,
-                FinalPath = download.FinalPath,
-                Metadata = download.Metadata,
-                AudiobookId = download.AudiobookId,
-                Language = download.Language
-            };
         }
     }
 }
