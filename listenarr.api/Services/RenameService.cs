@@ -1,5 +1,6 @@
 using Listenarr.Api.Models;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 using Listenarr.Infrastructure.Models;
 using Listenarr.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -306,14 +307,14 @@ namespace Listenarr.Api.Services
             if (audiobook.Files != null)
             {
                 foreach (var file in audiobook.Files.Where(f => !string.IsNullOrWhiteSpace(f.Path)
-                    && (PathsEqual(f.Path, normalizedCurrent) || FileUtils.IsPathWithinRoot(f.Path!, normalizedCurrent))))
+                    && (PathsEqual(f.Path, normalizedCurrent) || FileUtils.IsPathInsideOf(f.Path!, normalizedCurrent))))
                 {
                     var relative = Path.GetRelativePath(normalizedCurrent, file.Path!);
                     file.Path = CombineRelativePath(normalizedNew, relative);
                 }
             }
             if (!string.IsNullOrWhiteSpace(audiobook.FilePath)
-                && (PathsEqual(audiobook.FilePath, normalizedCurrent) || FileUtils.IsPathWithinRoot(audiobook.FilePath, normalizedCurrent)))
+                && (PathsEqual(audiobook.FilePath, normalizedCurrent) || FileUtils.IsPathInsideOf(audiobook.FilePath, normalizedCurrent)))
             {
                 var relative = Path.GetRelativePath(normalizedCurrent, audiobook.FilePath);
                 audiobook.FilePath = CombineRelativePath(normalizedNew, relative);
@@ -552,7 +553,7 @@ namespace Listenarr.Api.Services
                 && string.Equals(NormalizePath(left), NormalizePath(right), StringComparison.OrdinalIgnoreCase);
 
         private static bool IsSamePathOrWithin(string childPath, string rootPath)
-            => PathsEqual(childPath, rootPath) || FileUtils.IsPathWithinRoot(childPath, rootPath);
+            => PathsEqual(childPath, rootPath) || FileUtils.IsPathInsideOf(childPath, rootPath);
 
         private static bool PatternAllowsSubfolders(string pattern)
             => pattern.IndexOf("DiskNumber", StringComparison.OrdinalIgnoreCase) >= 0

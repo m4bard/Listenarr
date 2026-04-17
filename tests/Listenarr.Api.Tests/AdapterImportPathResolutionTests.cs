@@ -8,6 +8,7 @@ using System.Threading.Tasks;
 using Listenarr.Api.Services;
 using Listenarr.Api.Services.Adapters;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -48,7 +49,7 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync(
                     "trans-client",
                     It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book.m4b", StringComparison.Ordinal))))
-                .ReturnsAsync("D:/import/Book.m4b");
+                .ReturnsAsync(FileUtils.GetAbsolutePath("import", "Book.m4b"));
 
             using var httpClient = new HttpClient(handler);
             var adapter = new TransmissionAdapter(
@@ -68,7 +69,7 @@ namespace Listenarr.Api.Tests
             var item = new DownloadClientItem { DownloadId = "1", OutputPath = string.Empty };
             var resolved = await adapter.GetImportItemAsync(client, item);
 
-            Assert.Equal("D:/import/Book.m4b", resolved.OutputPath);
+            Assert.Equal(FileUtils.GetAbsolutePath("import", "Book.m4b"), resolved.OutputPath);
         }
 
         [Fact]
@@ -88,7 +89,7 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync(
                     "trans-client",
                     It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book Folder", StringComparison.Ordinal))))
-                .ReturnsAsync("D:/import/Book Folder");
+                .ReturnsAsync(FileUtils.GetAbsolutePath("import", "Book Folder"));
 
             using var httpClient = new HttpClient(handler);
             var adapter = new TransmissionAdapter(
@@ -108,7 +109,7 @@ namespace Listenarr.Api.Tests
             var item = new DownloadClientItem { DownloadId = "2", OutputPath = string.Empty };
             var resolved = await adapter.GetImportItemAsync(client, item);
 
-            Assert.Equal("D:/import/Book Folder", resolved.OutputPath);
+            Assert.Equal(FileUtils.GetAbsolutePath("import", "Book Folder"), resolved.OutputPath);
         }
 
         [Fact]
@@ -128,17 +129,17 @@ namespace Listenarr.Api.Tests
                 .Setup(m => m.TranslatePathAsync(
                     "trans-client",
                     It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book Folder", StringComparison.Ordinal))))
-                .ReturnsAsync("D:/import/Book Folder");
+                .ReturnsAsync(FileUtils.GetAbsolutePath("import", "Book Folder"));
             pathMapMock
                 .Setup(m => m.TranslatePathAsync(
                     "trans-client",
                     It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book Folder/chapter1.m4b", StringComparison.Ordinal))))
-                .ReturnsAsync("D:/import/Book Folder/chapter1.m4b");
+                .ReturnsAsync(FileUtils.GetAbsolutePath("import", "Book Folder", "chapter1.m4b"));
             pathMapMock
                 .Setup(m => m.TranslatePathAsync(
                     "trans-client",
                     It.Is<string>(p => string.Equals((p ?? string.Empty).Replace('\\', '/'), "/downloads/Book Folder/book.txt", StringComparison.Ordinal))))
-                .ReturnsAsync("D:/import/Book Folder/book.txt");
+                .ReturnsAsync(FileUtils.GetAbsolutePath("import", "Book Folder", "book.txt"));
 
             using var httpClient = new HttpClient(handler);
             var adapter = new TransmissionAdapter(
@@ -160,12 +161,12 @@ namespace Listenarr.Api.Tests
                 new Download { Id = "download-1" },
                 new QueueItem { Id = "2", ContentPath = string.Empty });
 
-            Assert.Equal("D:/import/Book Folder", resolved.ContentPath);
+            Assert.Equal(FileUtils.GetAbsolutePath("import", "Book Folder"), resolved.ContentPath);
             Assert.Equal(
                 new[]
                 {
-                    "D:/import/Book Folder/chapter1.m4b",
-                    "D:/import/Book Folder/book.txt"
+                    FileUtils.GetAbsolutePath("import", "Book Folder", "chapter1.m4b"),
+                    FileUtils.GetAbsolutePath("import", "Book Folder", "book.txt")
                 },
                 resolved.SourceFiles);
         }

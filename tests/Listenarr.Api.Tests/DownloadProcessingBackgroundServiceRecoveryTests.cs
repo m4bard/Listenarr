@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
@@ -32,7 +33,7 @@ namespace Listenarr.Api.Tests
                     DownloadId = "dl-1",
                     JobType = ProcessingJobType.MoveOrCopyFile,
                     Status = ProcessingJobStatus.Processing,
-                    SourcePath = "C:/tmp/a.mp3"
+                    SourcePath = FileUtils.GetAbsolutePath("tmp", "a.mp3")
                 },
                 new DownloadProcessingJob
                 {
@@ -40,7 +41,7 @@ namespace Listenarr.Api.Tests
                     DownloadId = "dl-2",
                     JobType = ProcessingJobType.MoveOrCopyFile,
                     Status = ProcessingJobStatus.Pending,
-                    SourcePath = "C:/tmp/b.mp3"
+                    SourcePath = FileUtils.GetAbsolutePath("tmp", "b.mp3")
                 });
             await db.SaveChangesAsync();
 

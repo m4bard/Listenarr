@@ -6,6 +6,7 @@ using Listenarr.Api.Services;
 using System.Runtime.InteropServices;
 using System.Security.AccessControl;
 using System.Security.Principal;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Tests
 {

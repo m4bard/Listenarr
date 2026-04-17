@@ -1,16 +1,11 @@
-using System;
-using System.Linq;
 using System.Text.Json;
-using System.Threading.Tasks;
-using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Listenarr.Infrastructure.Repositories;
 using Listenarr.Application.Services;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
 {
@@ -122,8 +117,7 @@ namespace Listenarr.Api.Services
                     _logger.LogWarning(ex, "ProcessCompletedDownloadAsync: Failed to load application settings, using defaults");
                     settings = new ApplicationSettings();
                 }
-                var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
-                var importPath = ResolveCompletedImportPath(finalPath, normalizedBlacklist);
+                var importPath = ResolveCompletedImportPath(finalPath, settings.ImportBlacklistExtensions);
 
                 if (string.IsNullOrWhiteSpace(importPath))
                 {
@@ -138,7 +132,7 @@ namespace Listenarr.Api.Services
                         try
                         {
                             var files = System.IO.Directory.GetFiles(finalPath, "*", System.IO.SearchOption.AllDirectories)
-                                .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
+                                .Where(f => !FileUtils.IsBlacklistedFile(f, settings.ImportBlacklistExtensions))
                                 .ToArray();
                             var clientScopedFiles = await FilterToClientReportedFilesAsync(download, finalPath, files);
                             files = clientScopedFiles.Files;
@@ -287,7 +281,7 @@ namespace Listenarr.Api.Services
                                         if (!string.IsNullOrWhiteSpace(tempDirExtracted) && System.IO.Directory.Exists(tempDirExtracted))
                                         {
                                             var extractedFiles = System.IO.Directory.GetFiles(tempDirExtracted, "*", System.IO.SearchOption.AllDirectories)
-                                                .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
+                                                .Where(f => !FileUtils.IsBlacklistedFile(f, settings.ImportBlacklistExtensions))
                                                 .ToArray();
                                             if (extractedFiles != null && extractedFiles.Length > 0)
                                             {
@@ -383,7 +377,7 @@ namespace Listenarr.Api.Services
                                     if (!string.IsNullOrWhiteSpace(tempExtractDir) && System.IO.Directory.Exists(tempExtractDir))
                                     {
                                         var extractedFiles = System.IO.Directory.GetFiles(tempExtractDir, "*", System.IO.SearchOption.AllDirectories)
-                                            .Where(f => !FileUtils.ShouldSkipImportFile(f, normalizedBlacklist))
+                                            .Where(f => !FileUtils.IsBlacklistedFile(f, settings.ImportBlacklistExtensions))
                                             .ToArray();
                                         if (extractedFiles != null && extractedFiles.Length > 0)
                                         {
@@ -1372,7 +1366,7 @@ namespace Listenarr.Api.Services
                 .FirstOrDefault();
         }
 
-        private string? ResolveCompletedImportPath(string? finalPath, ISet<string> normalizedBlacklist)
+        private string? ResolveCompletedImportPath(string? finalPath, IEnumerable<string> blacklist)
         {
             if (string.IsNullOrWhiteSpace(finalPath))
             {
@@ -1404,7 +1398,7 @@ namespace Listenarr.Api.Services
             try
             {
                 siblingFiles = System.IO.Directory.GetFiles(parentDirectory, "*", System.IO.SearchOption.AllDirectories)
-                    .Where(path => !FileUtils.ShouldSkipImportFile(path, normalizedBlacklist))
+                    .Where(path => !FileUtils.IsBlacklistedFile(path, blacklist))
                     .ToArray();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

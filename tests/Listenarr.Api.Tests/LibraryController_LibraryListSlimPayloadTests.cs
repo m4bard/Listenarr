@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -34,8 +35,8 @@ namespace Listenarr.Api.Tests
                 Monitored = true,
                 Description = "Detail-only field",
                 Subtitle = "Detail Subtitle",
-                BasePath = @"C:\library\Slim Book",
-                FilePath = @"C:\library\Slim Book\book.m4b",
+                BasePath = FileUtils.GetAbsolutePath("library", "Slim Book"),
+                FilePath = FileUtils.GetAbsolutePath("library", "Slim Book", "book.m4b"),
                 FileSize = 12345,
                 OpenLibraryId = "OL123",
                 AuthorAsins = new System.Collections.Generic.List<string> { "AUTHORASIN1" }
@@ -59,7 +60,7 @@ namespace Listenarr.Api.Tests
                 Album = book.Title ?? string.Empty,
                 DownloadClientId = "TEST",
                 OriginalUrl = "https://example.invalid",
-                DownloadPath = @"C:\downloads",
+                DownloadPath = FileUtils.GetAbsolutePath("downloads"),
                 FinalPath = book.FilePath ?? string.Empty,
                 StartedAt = DateTime.UtcNow,
                 Status = DownloadStatus.Downloading

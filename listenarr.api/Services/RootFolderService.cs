@@ -1,12 +1,6 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Listenarr.Api.Repositories;
-using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
 {
@@ -14,10 +8,10 @@ namespace Listenarr.Api.Services
     {
         private readonly IRootFolderRepository _repo;
         private readonly IDbContextFactory<ListenArrDbContext> _dbFactory;
-private readonly ILogger<RootFolderService>? _logger;
-    private readonly IMoveQueueService? _moveQueue;
+        private readonly ILogger<RootFolderService>? _logger;
+        private readonly IMoveQueueService? _moveQueue;
 
-    public RootFolderService(IRootFolderRepository repo, IDbContextFactory<ListenArrDbContext> dbFactory, ILogger<RootFolderService>? logger, IMoveQueueService? moveQueue = null)
+        public RootFolderService(IRootFolderRepository repo, IDbContextFactory<ListenArrDbContext> dbFactory, ILogger<RootFolderService>? logger, IMoveQueueService? moveQueue = null)
         {
             _repo = repo;
             _dbFactory = dbFactory;

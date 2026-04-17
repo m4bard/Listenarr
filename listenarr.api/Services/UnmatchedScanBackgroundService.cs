@@ -5,6 +5,7 @@ using Listenarr.Api.Hubs;
 using Listenarr.Infrastructure.Models;
 using System.IO;
 using System.Text.RegularExpressions;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
 {

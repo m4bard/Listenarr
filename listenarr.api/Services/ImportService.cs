@@ -12,6 +12,8 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Domain.Utils;
+using static Listenarr.Api.Services.FileMover;
 
 namespace Listenarr.Api.Services
 {
@@ -396,9 +398,8 @@ namespace Listenarr.Api.Services
         {
             var results = new List<ImportResult>();
             var folderPattern = settings.FolderNamingPattern;
-            var normalizedBlacklist = FileUtils.NormalizeExtensions(settings.ImportBlacklistExtensions);
             var sourceFiles = files
-                .Where(file => !FileUtils.ShouldSkipImportFile(file, normalizedBlacklist))
+                .Where(file => !FileUtils.IsBlacklistedFile(file, settings.ImportBlacklistExtensions))
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .ToList();
             var plannedAudioFiles = MultiFileImportPlanner.BuildPlans(
@@ -983,7 +984,7 @@ namespace Listenarr.Api.Services
                 {
                     var normalizedExisting = FileUtils.NormalizeStoredPath(audiobook.BasePath);
                     var matchesExisting = string.Equals(normalizedExisting, normalizedCandidate, StringComparison.OrdinalIgnoreCase);
-                    var candidateWithinExisting = FileUtils.IsPathWithinRoot(normalizedCandidate, normalizedExisting);
+                    var candidateWithinExisting = FileUtils.IsPathInsideOf(normalizedCandidate, normalizedExisting);
                     if (matchesExisting || candidateWithinExisting)
                     {
                         if (!string.Equals(audiobook.BasePath, normalizedExisting, StringComparison.Ordinal))
@@ -1247,4 +1248,29 @@ internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
             }
         }
     }
+
+    public async Task PerformActionOn(FileAction action, string source, string? destination = null, HashSet<string>? usedDestinations = null)
+    {
+        if (destination == null) return;
+
+        if (action != FileAction.None)
+        {
+            destination = FileUtils.GetUniqueDestinationPath(destination, File.Exists, usedDestinations);
+            usedDestinations?.Add(destination);
+        }
+        
+        switch(action)
+        {
+            case FileAction.Move:
+                await MoveFileAsync(source, destination);
+                return;
+            case FileAction.Copy:
+                await CopyFileAsync(source, destination);
+                return;
+            case FileAction.HardlinkCopy:
+                await HardlinkFileAsync(source, destination);
+                return;
+        }
+    }
+
 }

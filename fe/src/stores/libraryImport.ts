@@ -119,7 +119,8 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   const scanStatus = ref<'idle' | 'scanning' | 'done' | 'error'>('idle')
   const scanError = ref<string | null>(null)
   const lastScannedAt = ref<string | null>(null)
-  const inputMode = ref<'move' | 'hardlink/copy'>('move')
+  const action = ref<'none' | 'move' | 'hardlink/copy'>('none')
+  const monitor = ref<'none' | 'all'>('all')
   const metadataFetchCount = ref(0)
   const importErrors = ref<string[]>([])
 
@@ -432,6 +433,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
               : match.series,
           }
           const { audiobook } = await apiService.addToLibrary(metadata, {
+            monitored: monitor.value != 'none',
             destinationPath: rootFolderPath,
             searchResult: sanitizedMatch,
           })
@@ -461,9 +463,9 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         await apiService.startManualImport({
           path: item.folderPath,
           mode: 'interactive',
-          inputMode: inputMode.value,
-          includeCompanionFiles: true,
-          cleanupEmptySourceFolders: inputMode.value === 'move',
+          action: action.value,
+          includeCompanionFiles: action.value !== 'none',
+          cleanupEmptySourceFolders: action.value === 'move',
           items: item.sourceFiles.map((fullPath) => ({
             fullPath,
             matchedAudiobookId: audiobookId,
@@ -494,7 +496,8 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     scanStatus,
     scanError,
     lastScannedAt,
-    inputMode,
+    action,
+    monitor,
     metadataFetchCount,
     importErrors,
     // Computed

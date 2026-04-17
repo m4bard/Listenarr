@@ -36,6 +36,7 @@ using System.IO;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Text;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Controllers
 {
@@ -2327,7 +2328,7 @@ namespace Listenarr.Api.Controllers
 
         private static bool IsSamePathOrWithin(string path, string rootPath)
         {
-            return PathsEqual(path, rootPath) || FileUtils.IsPathWithinRoot(path, rootPath);
+            return PathsEqual(path, rootPath) || FileUtils.IsPathInsideOf(path, rootPath);
         }
 
         private static bool IsFilesystemRoot(string? path)
@@ -2776,7 +2777,7 @@ namespace Listenarr.Api.Controllers
             {
                 try
                 {
-                    var jobId = await _scanQueueService.EnqueueScanAsync(id, request?.Path);
+                    var jobId = await _scanQueueService.EnqueueScanAsync(audiobook, request?.Path);
                     _logger.LogInformation("Enqueued scan job {JobId} for audiobook {AudiobookId}", jobId, id);
 
                     // Broadcast initial job status via SignalR so clients can show queued state

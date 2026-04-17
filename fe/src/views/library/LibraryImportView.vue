@@ -18,6 +18,15 @@
       </div>
 
       <button
+        class="btn btn-secondary btn-sm"
+        :disabled="store.scanStatus === 'scanning'"
+        @click="openAddRootFolder"
+      >
+        <PhFolderPlus :size="15" />
+        Choose another folder...
+      </button>
+
+      <button
         class="btn btn-primary btn-sm"
         :disabled="!selectedFolderId || store.scanStatus === 'scanning'"
         @click="startScan"
@@ -175,6 +184,12 @@
       :folders="rootFoldersStore.folders"
     />
   </div>
+
+  <RootFolderFormModal
+    v-if="addRootFolder"
+    @saved="refreshRootFolders"
+    @close="closeAddRootFolder"
+  />
 </template>
 
 <script setup lang="ts">
@@ -187,6 +202,7 @@ import {
   PhArrowDown,
   PhArrowUp,
   PhArrowsDownUp,
+  PhFolderPlus,
 } from '@phosphor-icons/vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
 import { useRootFoldersStore } from '@/stores/rootFolders'
@@ -202,6 +218,8 @@ import {
   type LibraryImportSortDirection,
   type LibraryImportSortKey,
 } from '@/utils/libraryImportTable'
+import RootFolderFormModal from '@/components/settings/RootFolderFormModal.vue'
+import type { RootFolder } from '@/types'
 
 const COLUMN_WIDTH_STORAGE_KEY = 'listenarr.libraryImport.columnWidths.v1'
 const MAX_COLUMN_WIDTH = 960
@@ -216,6 +234,7 @@ const sortKey = ref<LibraryImportSortKey>('folder')
 const sortDirection = ref<LibraryImportSortDirection>('asc')
 const columnWidths = ref<LibraryImportColumnWidths>({ ...DEFAULT_LIBRARY_IMPORT_COLUMN_WIDTHS })
 const resizingColumn = ref<LibraryImportResizableColumnKey | null>(null)
+const addRootFolder = ref<boolean>(false)
 
 const sortOptions: Array<{ value: LibraryImportSortKey; label: string }> = [
   { value: 'folder', label: 'Book' },
@@ -271,8 +290,7 @@ onMounted(async () => {
     await store.initFromRootFolder(defaultFolder.id)
   }
 
-  const action = configStore.applicationSettings?.completedFileAction
-  store.inputMode = action === 'Move' || !action ? 'move' : 'hardlink/copy'
+  store.action = 'none'
 })
 
 onBeforeUnmount(() => {
@@ -280,9 +298,10 @@ onBeforeUnmount(() => {
 })
 
 async function onFolderChange() {
-  if (!selectedFolderId.value) return
-  store.stopProcessing()
-  await store.initFromRootFolder(selectedFolderId.value)
+  if (selectedFolderId.value) {
+    store.stopProcessing()
+    await store.initFromRootFolder(selectedFolderId.value)
+  }
 }
 
 async function startScan() {
@@ -402,6 +421,25 @@ function persistColumnWidths() {
     localStorage.setItem(COLUMN_WIDTH_STORAGE_KEY, JSON.stringify(columnWidths.value))
   } catch {
     // Non-fatal: resizing still works for the current session.
+  }
+}
+
+function openAddRootFolder() {
+  addRootFolder.value = true
+}
+
+function closeAddRootFolder() {
+  addRootFolder.value = false
+}
+
+async function refreshRootFolders(newFolder: RootFolder) {
+  closeAddRootFolder()
+
+  await rootFoldersStore.load()
+
+  if (newFolder) {
+    selectedFolderId.value = newFolder.id
+    await store.initFromRootFolder(newFolder.id)
   }
 }
 </script>

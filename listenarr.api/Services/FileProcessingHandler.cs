@@ -1,6 +1,7 @@
 using System.Runtime.InteropServices;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
 {

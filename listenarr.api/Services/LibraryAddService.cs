@@ -2,6 +2,7 @@ using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Services

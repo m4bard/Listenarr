@@ -10,29 +10,37 @@ using Listenarr.Infrastructure.Models;
 using Listenarr.Api.Repositories;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Tests
 {
     public class RootFolderServiceTests
     {
+        private string booksPath = FileUtils.GetAbsolutePath("books");
+        private string rootPath = FileUtils.GetAbsolutePath("root");
+        private string newRootPath = FileUtils.GetAbsolutePath("newroot");
+        private string rootAuthorTitlePath = FileUtils.GetAbsolutePath("root", "Author", "Title");
+        private string newRootAuthorTitlePath = FileUtils.GetAbsolutePath("newroot", "Author", "Title");
+
         private readonly ITestOutputHelper _output;
         public RootFolderServiceTests(ITestOutputHelper output) { _output = output; }
         [Fact]
         public async Task Create_Throws_WhenPathDuplicate()
         {
+            
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
 
             var db = new ListenArrDbContext(options);
-            db.RootFolders.Add(new RootFolder { Name = "A", Path = "C:\\books" });
+            db.RootFolders.Add(new RootFolder { Name = "A", Path = booksPath });
             await db.SaveChangesAsync();
 
             var dbFactory = new TestDbFactory(options);
             var repo = new EfRootFolderRepository(dbFactory, null!);
             var svc = new RootFolderService(repo, dbFactory, null!);
 
-            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CreateAsync(new RootFolder { Name = "B", Path = "C:\\books" }));
+            await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CreateAsync(new RootFolder { Name = "B", Path = booksPath }));
         }
 
         [Fact]
@@ -43,9 +51,9 @@ namespace Listenarr.Api.Tests
                 .Options;
 
             var db = new ListenArrDbContext(options);
-            var root = new RootFolder { Name = "A", Path = "C:\\books" };
+            var root = new RootFolder { Name = "A", Path = booksPath };
             db.RootFolders.Add(root);
-            db.Audiobooks.Add(new Domain.Models.Audiobook { Title = "T", BasePath = "C:\\books" });
+            db.Audiobooks.Add(new Domain.Models.Audiobook { Title = "T", BasePath = booksPath });
             await db.SaveChangesAsync();
 
             var dbFactory = new TestDbFactory(options);
@@ -64,10 +72,10 @@ namespace Listenarr.Api.Tests
                 .Options;
 
             var db = new ListenArrDbContext(options);
-            var root = new RootFolder { Name = "R", Path = "C:\\root" };
+            var root = new RootFolder { Name = "R", Path = rootPath };
             db.RootFolders.Add(root);
-            db.Audiobooks.Add(new Domain.Models.Audiobook { Title = "A1", BasePath = "C:\\root\\Author\\Title" });
-            db.Audiobooks.Add(new Domain.Models.Audiobook { Title = "A2", BasePath = "C:\\root" });
+            db.Audiobooks.Add(new Domain.Models.Audiobook { Title = "A1", BasePath = rootAuthorTitlePath });
+            db.Audiobooks.Add(new Domain.Models.Audiobook { Title = "A2", BasePath = rootPath });
             await db.SaveChangesAsync();
 
             var dbFactory = new TestDbFactory(options);
@@ -82,7 +90,7 @@ namespace Listenarr.Api.Tests
                 _output.WriteLine("Before update: " + dumpPre);
             }
 
-            await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = "D:\\newroot" }, moveFiles: false);
+            await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath }, moveFiles: false);
 
             // Verify audiobooks' basepaths updated (use a fresh context)
             using (var verifyDb = new ListenArrDbContext(options))
@@ -92,13 +100,13 @@ namespace Listenarr.Api.Tests
 
                 var a1 = verifyDb.Audiobooks.First(a => a.Title == "A1").BasePath;
                 var a2 = verifyDb.Audiobooks.First(a => a.Title == "A2").BasePath;
-                if (a1 != "D:\\newroot\\Author\\Title" || a2 != "D:\\newroot")
+                if (a1 != newRootAuthorTitlePath || a2 != newRootPath)
                 {
                     var dump = string.Join("; ", verifyDb.Audiobooks.Select(a => $"{a.Title} => {a.BasePath}"));
                     throw new Xunit.Sdk.XunitException($"Unexpected audiobook base paths after root update. Dump: {dump}");
                 }
-                Assert.Equal("D:\\newroot\\Author\\Title", a1);
-                Assert.Equal("D:\\newroot", a2);
+                Assert.Equal(newRootAuthorTitlePath, a1);
+                Assert.Equal(newRootPath, a2);
             }
         }
 
@@ -110,10 +118,10 @@ namespace Listenarr.Api.Tests
                 .Options;
 
             var db = new ListenArrDbContext(options);
-            var root = new RootFolder { Name = "R", Path = "C:\\root" };
+            var root = new RootFolder { Name = "R", Path = rootPath };
             db.RootFolders.Add(root);
-            var ab1 = new Domain.Models.Audiobook { Id = 1, Title = "A1", BasePath = "C:\\root\\Author\\Title" };
-            var ab2 = new Domain.Models.Audiobook { Id = 2, Title = "A2", BasePath = "C:\\root" };
+            var ab1 = new Domain.Models.Audiobook { Id = 1, Title = "A1", BasePath = rootAuthorTitlePath };
+            var ab2 = new Domain.Models.Audiobook { Id = 2, Title = "A2", BasePath = rootPath };
             db.Audiobooks.AddRange(ab1, ab2);
             await db.SaveChangesAsync();
 
@@ -134,7 +142,7 @@ namespace Listenarr.Api.Tests
                 _output.WriteLine("Before update (with move): " + dumpPre);
             }
 
-            await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = "D:\\newroot" }, moveFiles: true);
+            await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath }, moveFiles: true);
 
             // Verify DB changed (use fresh context)
             using (var verifyDb = new ListenArrDbContext(options))
@@ -144,18 +152,18 @@ namespace Listenarr.Api.Tests
 
                 var a1 = verifyDb.Audiobooks.First(a => a.Title == "A1").BasePath;
                 var a2 = verifyDb.Audiobooks.First(a => a.Title == "A2").BasePath;
-                if (a1 != "D:\\newroot\\Author\\Title" || a2 != "D:\\newroot")
+                if (a1 != newRootAuthorTitlePath || a2 != newRootPath)
                 {
                     var dump = string.Join("; ", verifyDb.Audiobooks.Select(a => $"{a.Title} => {a.BasePath}"));
                     throw new Xunit.Sdk.XunitException($"Unexpected audiobook base paths after root update (with move). Dump: {dump}");
                 }
-                Assert.Equal("D:\\newroot\\Author\\Title", a1);
-                Assert.Equal("D:\\newroot", a2);
+                Assert.Equal(newRootAuthorTitlePath, a1);
+                Assert.Equal(newRootPath, a2);
             }
 
             // Ensure moves enqueued for both audiobooks
-            mockMove.Verify(m => m.EnqueueMoveAsync(1, "D:\\newroot\\Author\\Title", "C:\\root\\Author\\Title"), Times.Once);
-            mockMove.Verify(m => m.EnqueueMoveAsync(2, "D:\\newroot", "C:\\root"), Times.Once);
+            mockMove.Verify(m => m.EnqueueMoveAsync(1, newRootAuthorTitlePath, rootAuthorTitlePath), Times.Once);
+            mockMove.Verify(m => m.EnqueueMoveAsync(2, newRootPath, rootPath), Times.Once);
         }
 
         // Minimal test db factory to satisfy IDbContextFactory<T>

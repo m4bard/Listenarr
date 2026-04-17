@@ -5,6 +5,7 @@ using Listenarr.Infrastructure.Models;
 using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
 using System.IO;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
 {
@@ -76,12 +77,12 @@ namespace Listenarr.Api.Services
                         {
                             // Ensure candidate is the same directory or a subdirectory of the existing dir
                             var isInExistingDir = candidateDir.Equals(existingDir, StringComparison.OrdinalIgnoreCase) ||
-                                                  FileUtils.IsPathWithinRoot(candidateDir, existingDir);
+                                                  FileUtils.IsPathInsideOf(candidateDir, existingDir);
 
                             // Also allow if file is within the audiobook's BasePath (multi-file migration)
                             var isInBasePath = !string.IsNullOrWhiteSpace(normalizedBasePath) &&
                                                (candidateDir.Equals(normalizedBasePath, StringComparison.OrdinalIgnoreCase)
-                                                || FileUtils.IsPathWithinRoot(candidateFull, normalizedBasePath));
+                                                || FileUtils.IsPathInsideOf(candidateFull, normalizedBasePath));
 
                             if (!isInExistingDir && !isInBasePath)
                             {

@@ -10,6 +10,7 @@ using System.Linq;
 using System.Collections.Generic;
 using System.Threading;
 using System.Text.Json;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
 {

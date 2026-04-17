@@ -16,14 +16,14 @@ namespace Listenarr.Api.Services
             _logger = logger;
         }
 
-        public async Task<Guid> EnqueueScanAsync(int audiobookId, string? path = null)
+        public async Task<Guid> EnqueueScanAsync(Audiobook audiobook, string? path = null)
         {
             // Deduplicate: if there's already a job for the same audiobook and path that is
             // queued/processing/completed, return that job id instead of creating a duplicate.
             try
             {
                 var existing = _jobs.Values.FirstOrDefault(j => {
-                    if (j.AudiobookId != audiobookId) return false;
+                    if (j.AudiobookId != audiobook.Id) return false;
                     bool bothNull = j.Path == null && path == null;
                     bool bothMatch = j.Path != null && path != null && string.Equals(j.Path, path, StringComparison.OrdinalIgnoreCase);
                     return bothNull || bothMatch;
@@ -36,7 +36,7 @@ namespace Listenarr.Api.Services
                     (string.Equals(existing.Status, "Queued", StringComparison.OrdinalIgnoreCase) ||
                      string.Equals(existing.Status, "Processing", StringComparison.OrdinalIgnoreCase)))
                 {
-                    _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", existing.Id, audiobookId, LogRedaction.SanitizeFilePath(path), existing.Status);
+                    _logger.LogInformation("Found active scan job {JobId} for audiobook {AudiobookId} (path: {Path}) with status {Status}; deduping and returning existing job id", existing.Id, audiobook.Id, LogRedaction.SanitizeFilePath(path), existing.Status);
                     return existing.Id;
                 }
             }
@@ -45,9 +45,9 @@ namespace Listenarr.Api.Services
                 _logger.LogWarning(ex, "Failed while checking existing scan jobs for dedupe; will enqueue new job");
             }
 
-            var job = new ScanJob { AudiobookId = audiobookId, Path = path };
+            var job = new ScanJob { AudiobookId = audiobook.Id, Path = path };
             _jobs[job.Id] = job;
-            _logger.LogInformation("Enqueueing scan job {JobId} for audiobook {AudiobookId} (path: {Path})", job.Id, audiobookId, LogRedaction.SanitizeFilePath(path));
+            _logger.LogInformation("Enqueueing scan job {JobId} for audiobook {AudiobookId} (path: {Path})", job.Id, audiobook.Id, LogRedaction.SanitizeFilePath(path));
             await _channel.Writer.WriteAsync(job);
             _logger.LogInformation("Scan job {JobId} written to channel", job.Id);
             return job.Id;
