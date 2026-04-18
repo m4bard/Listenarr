@@ -7,7 +7,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
 using Listenarr.Infrastructure.Models;
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
 

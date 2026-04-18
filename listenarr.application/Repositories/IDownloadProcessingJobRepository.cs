@@ -1,7 +1,7 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 
-namespace Listenarr.Api.Repositories
+namespace Listenarr.Application.Repositories
 {
     public interface IDownloadProcessingJobRepository
     {

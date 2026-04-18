@@ -2,11 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Listenarr.Application.Repositories;
+using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Listenarr.Api.Repositories
+namespace Listenarr.Infrastructure.Repositories
 {
     public class EfDownloadProcessingJobRepository : IDownloadProcessingJobRepository
     {
@@ -24,7 +26,7 @@ namespace Listenarr.Api.Repositories
             var ids = (completedDownloadIds ?? Array.Empty<string>()).ToList();
             if (!ids.Any()) return new List<string>();
 
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.DownloadProcessingJobs
                 .Where(j => ids.Contains(j.DownloadId) && (j.Status == ProcessingJobStatus.Pending || j.Status == ProcessingJobStatus.Processing || j.Status == ProcessingJobStatus.Retry))
                 .Select(j => j.DownloadId)
@@ -37,7 +39,7 @@ namespace Listenarr.Api.Repositories
             var ids = (completedDownloadIds ?? Array.Empty<string>()).ToList();
             if (!ids.Any()) return new List<string>();
 
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.DownloadProcessingJobs
                 .Where(j => ids.Contains(j.DownloadId))
                 .Select(j => j.DownloadId)

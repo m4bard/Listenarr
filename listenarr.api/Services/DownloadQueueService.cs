@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;

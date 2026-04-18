@@ -1,8 +1,8 @@
-using System.Threading.Tasks;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 
-namespace Listenarr.Api.Repositories
+namespace Listenarr.Application.Repositories
 {
     public interface IDownloadRepository
     {

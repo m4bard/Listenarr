@@ -4,7 +4,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services

@@ -275,11 +275,11 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         ForwardedHeaders.XForwardedProto |
         ForwardedHeaders.XForwardedHost;
 
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("fc00::"), 7));
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("fe80::"), 10));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("fc00::"), 7));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("fe80::"), 10));
 });
 
 // Add SignalR for real-time updates
@@ -291,7 +291,7 @@ builder.Services.AddSignalR()
     });
 
 // RootFolder repository + service
-builder.Services.AddScoped<Listenarr.Api.Repositories.IRootFolderRepository, Listenarr.Api.Repositories.EfRootFolderRepository>();
+builder.Services.AddScoped<Listenarr.Application.Repositories.IRootFolderRepository, Listenarr.Infrastructure.Repositories.EfRootFolderRepository>();
 builder.Services.AddScoped<Listenarr.Api.Services.IRootFolderService, Listenarr.Api.Services.RootFolderService>();
 // Migrator for legacy single-outputPath -> RootFolder migration
 builder.Services.AddScoped<Listenarr.Api.Services.ILegacyOutputPathMigrator, Listenarr.Api.Services.LegacyOutputPathMigrator>();

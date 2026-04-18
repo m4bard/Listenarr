@@ -5,7 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;

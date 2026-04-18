@@ -73,13 +73,13 @@ namespace Listenarr.Api.Tests
             // Provide a test-friendly IDownloadRepository so tests that resolve DownloadService
             // from the root provider don't need to register it explicitly. Prefer an existing
             // ListenArrDbContext if present, otherwise fall back to an in-memory test repo.
-            services.AddSingleton<Listenarr.Api.Repositories.IDownloadRepository>(sp =>
+            services.AddSingleton<Listenarr.Application.Repositories.IDownloadRepository>(sp =>
             {
                 var dbFactory = sp.GetService<IDbContextFactory<ListenArrDbContext>>();
                 if (dbFactory != null)
                 {
-                    var logger = sp.GetRequiredService<ILogger<Listenarr.Api.Repositories.EfDownloadRepository>>();
-                    return new Listenarr.Api.Repositories.EfDownloadRepository(dbFactory, logger);
+                    var logger = sp.GetRequiredService<ILogger<Listenarr.Infrastructure.Repositories.EfDownloadRepository>>();
+                    return new Listenarr.Infrastructure.Repositories.EfDownloadRepository(dbFactory, logger);
                 }
 
                 var db = sp.GetService<ListenArrDbContext>();
@@ -87,13 +87,13 @@ namespace Listenarr.Api.Tests
             });
 
             // Provide a test-friendly IDownloadProcessingJobRepository for tests.
-            services.AddSingleton<Listenarr.Api.Repositories.IDownloadProcessingJobRepository>(sp =>
+            services.AddSingleton<Listenarr.Application.Repositories.IDownloadProcessingJobRepository>(sp =>
             {
                 var dbFactory = sp.GetService<IDbContextFactory<ListenArrDbContext>>();
                 if (dbFactory != null)
                 {
-                    var logger = sp.GetRequiredService<ILogger<Listenarr.Api.Repositories.EfDownloadProcessingJobRepository>>();
-                    return new Listenarr.Api.Repositories.EfDownloadProcessingJobRepository(dbFactory, logger);
+                    var logger = sp.GetRequiredService<ILogger<Listenarr.Infrastructure.Repositories.EfDownloadProcessingJobRepository>>();
+                    return new Listenarr.Infrastructure.Repositories.EfDownloadProcessingJobRepository(dbFactory, logger);
                 }
 
                 var db = sp.GetService<ListenArrDbContext>();
@@ -107,7 +107,7 @@ namespace Listenarr.Api.Tests
                 var import = sp.GetService<Listenarr.Api.Services.IImportService>();
                 if (import != null)
                 {
-                    var downloadRepo = sp.GetRequiredService<Listenarr.Api.Repositories.IDownloadRepository>();
+                    var downloadRepo = sp.GetRequiredService<Listenarr.Application.Repositories.IDownloadRepository>();
                     var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                     var logger = sp.GetRequiredService<ILogger<Listenarr.Api.Services.FileFinalizer>>();
                     return new Listenarr.Api.Services.FileFinalizer(import, downloadRepo, scopeFactory, logger);
@@ -133,7 +133,7 @@ namespace Listenarr.Api.Tests
             // Provide a test-friendly IDownloadQueueService so DownloadService can be resolved
             services.AddSingleton<Listenarr.Api.Services.IDownloadQueueService>(sp =>
             {
-                var downloadRepo = sp.GetService<Listenarr.Api.Repositories.IDownloadRepository>();
+                var downloadRepo = sp.GetService<Listenarr.Application.Repositories.IDownloadRepository>();
                 var clientGateway = sp.GetService<IDownloadClientGateway>();
                 var config = sp.GetService<IConfigurationService>();
                 var logger = sp.GetService<ILogger<TestDownloadQueueService>>();
@@ -152,7 +152,7 @@ namespace Listenarr.Api.Tests
             // Provide a test-friendly ICompletedDownloadProcessor so DownloadService can be resolved in tests.
             services.AddSingleton<Listenarr.Api.Services.ICompletedDownloadProcessor>(sp =>
             {
-                var downloadRepo = sp.GetService<Listenarr.Api.Repositories.IDownloadRepository>();
+                var downloadRepo = sp.GetService<Listenarr.Application.Repositories.IDownloadRepository>();
                 var fileFinalizer = sp.GetService<Listenarr.Api.Services.IFileFinalizer>();
                 var config = sp.GetService<IConfigurationService>();
                 var scopeFactory = sp.GetService<IServiceScopeFactory>();

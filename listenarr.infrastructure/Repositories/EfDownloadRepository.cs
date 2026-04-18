@@ -2,12 +2,13 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Listenarr.Api.Repositories
+namespace Listenarr.Infrastructure.Repositories
 {
     public class EfDownloadRepository : IDownloadRepository
     {
@@ -22,30 +23,30 @@ namespace Listenarr.Api.Repositories
 
         public async Task AddAsync(Download download)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             ctx.Downloads.Add(download);
             await ctx.SaveChangesAsync();
         }
 
         public async Task<Download?> FindAsync(string id)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads.FindAsync(id);
         }
 
         public async Task UpdateAsync(Download download)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             ctx.Downloads.Update(download);
             await ctx.SaveChangesAsync();
         }
 
         public async Task UpdateMetadataAsync(string id, string key, object? value)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             var d = await ctx.Downloads.FindAsync(id);
             if (d == null) return;
-            if (d.Metadata == null) d.Metadata = new System.Collections.Generic.Dictionary<string, object>();
+            if (d.Metadata == null) d.Metadata = new Dictionary<string, object>();
             d.Metadata[key] = value ?? string.Empty;
             ctx.Downloads.Update(d);
             await ctx.SaveChangesAsync();
@@ -53,7 +54,7 @@ namespace Listenarr.Api.Repositories
 
         public async Task RemoveAsync(string id)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             var d = await ctx.Downloads.FindAsync(id);
             if (d == null) return;
             ctx.Downloads.Remove(d);
@@ -62,13 +63,13 @@ namespace Listenarr.Api.Repositories
 
         public async Task<List<Download>> GetAllAsync()
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads.AsNoTracking().ToListAsync();
         }
 
         public async Task<List<QueueTrackedDownload>> GetQueueDisplayCandidatesAsync()
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             var ddl = await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved)
@@ -86,7 +87,7 @@ namespace Listenarr.Api.Repositories
 
         public async Task<List<QueueTrackedDownload>> GetQueueMatchingCandidatesAsync()
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId != "DDL" && d.Status != DownloadStatus.Failed)
@@ -96,7 +97,7 @@ namespace Listenarr.Api.Repositories
 
         public async Task<List<string>> GetKnownClientItemIdsAsync()
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             var metadataEntries = await ctx.Downloads
                 .AsNoTracking()
                 .Select(d => d.Metadata)
@@ -105,20 +106,11 @@ namespace Listenarr.Api.Repositories
             var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var metadata in metadataEntries)
             {
-                if (metadata == null)
-                {
-                    continue;
-                }
-
+                if (metadata == null) continue;
                 if (TryGetMetadataString(metadata, "ClientDownloadId", out var clientDownloadId))
-                {
                     ids.Add(clientDownloadId);
-                }
-
                 if (TryGetMetadataString(metadata, "TorrentHash", out var torrentHash))
-                {
                     ids.Add(torrentHash);
-                }
             }
 
             return ids.ToList();
@@ -126,7 +118,7 @@ namespace Listenarr.Api.Repositories
 
         public async Task<List<Download>> GetByClientAsync(string clientId)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId == clientId)
@@ -137,7 +129,7 @@ namespace Listenarr.Api.Repositories
         {
             var idSet = ids?.ToList() ?? new List<string>();
             if (!idSet.Any()) return new List<Download>();
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => idSet.Contains(d.Id))
@@ -147,12 +139,8 @@ namespace Listenarr.Api.Repositories
         private static bool TryGetMetadataString(Dictionary<string, object>? metadata, string key, out string value)
         {
             value = string.Empty;
-
             if (metadata == null || !metadata.TryGetValue(key, out var raw) || raw == null)
-            {
                 return false;
-            }
-
             value = raw.ToString() ?? string.Empty;
             return !string.IsNullOrWhiteSpace(value);
         }

@@ -372,9 +372,8 @@ namespace Listenarr.Api.Services
                 return Guid.NewGuid().ToString("N").Substring(0, 12);
             }
 
-            using var sha1 = SHA1.Create();
             var bytes = Encoding.UTF8.GetBytes(input);
-            var hash = sha1.ComputeHash(bytes);
+            var hash = SHA1.HashData(bytes);
             return BitConverter.ToString(hash).Replace("-", "").Substring(0, 16).ToLowerInvariant();
         }
 

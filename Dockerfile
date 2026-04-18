@@ -8,11 +8,11 @@ FROM golang:1.26-alpine AS gosu-builder
 ARG GOSU_VERSION=1.19
 RUN CGO_ENABLED=0 go install github.com/tianon/gosu@${GOSU_VERSION}
 
-FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS base
+FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
 EXPOSE 4545
 
-FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY ["listenarr.api/Listenarr.Api.csproj", "listenarr.api/"]
 RUN dotnet restore "listenarr.api/Listenarr.Api.csproj"

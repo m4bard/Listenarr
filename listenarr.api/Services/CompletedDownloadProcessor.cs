@@ -11,7 +11,7 @@ namespace Listenarr.Api.Services
 {
     public class CompletedDownloadProcessor : ICompletedDownloadProcessor
     {
-        private readonly Listenarr.Api.Repositories.IDownloadRepository _downloadRepository;
+        private readonly Listenarr.Application.Repositories.IDownloadRepository _downloadRepository;
         private readonly IFileFinalizer _fileFinalizer;
         private readonly IConfigurationService _configurationService;
         private readonly IServiceScopeFactory _serviceScopeFactory;
@@ -25,7 +25,7 @@ namespace Listenarr.Api.Services
         private readonly IAppMetricsService _metrics;
 
         public CompletedDownloadProcessor(
-            Listenarr.Api.Repositories.IDownloadRepository downloadRepository,
+            Listenarr.Application.Repositories.IDownloadRepository downloadRepository,
             IFileFinalizer fileFinalizer,
             IConfigurationService configurationService,
             IServiceScopeFactory serviceScopeFactory,

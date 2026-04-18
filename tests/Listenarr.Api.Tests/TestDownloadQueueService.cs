@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Tests

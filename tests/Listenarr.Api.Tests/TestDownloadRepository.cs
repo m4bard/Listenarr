@@ -3,7 +3,7 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Infrastructure.Models;

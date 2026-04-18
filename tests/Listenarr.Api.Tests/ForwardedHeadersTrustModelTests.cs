@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using Xunit;
-using HttpOverridesIPNetwork = Microsoft.AspNetCore.HttpOverrides.IPNetwork;
 
 namespace Listenarr.Api.Tests
 {
@@ -27,16 +26,16 @@ namespace Listenarr.Api.Tests
             Assert.True(options.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedProto));
             Assert.True(options.ForwardedHeaders.HasFlag(ForwardedHeaders.XForwardedHost));
 
-            Assert.Contains(options.KnownNetworks, network => Matches(network, "10.0.0.0", 8));
-            Assert.Contains(options.KnownNetworks, network => Matches(network, "172.16.0.0", 12));
-            Assert.Contains(options.KnownNetworks, network => Matches(network, "192.168.0.0", 16));
-            Assert.Contains(options.KnownNetworks, network => Matches(network, "fc00::", 7));
-            Assert.Contains(options.KnownNetworks, network => Matches(network, "fe80::", 10));
+            Assert.Contains(options.KnownIPNetworks, network => Matches(network, "10.0.0.0", 8));
+            Assert.Contains(options.KnownIPNetworks, network => Matches(network, "172.16.0.0", 12));
+            Assert.Contains(options.KnownIPNetworks, network => Matches(network, "192.168.0.0", 16));
+            Assert.Contains(options.KnownIPNetworks, network => Matches(network, "fc00::", 7));
+            Assert.Contains(options.KnownIPNetworks, network => Matches(network, "fe80::", 10));
         }
 
-        private static bool Matches(HttpOverridesIPNetwork network, string prefix, int prefixLength)
+        private static bool Matches(System.Net.IPNetwork network, string prefix, int prefixLength)
         {
-            return network.Prefix.Equals(IPAddress.Parse(prefix)) && network.PrefixLength == prefixLength;
+            return network.BaseAddress.Equals(IPAddress.Parse(prefix)) && network.PrefixLength == prefixLength;
         }
     }
 }

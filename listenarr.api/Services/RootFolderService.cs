@@ -1,4 +1,4 @@
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 

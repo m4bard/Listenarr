@@ -115,8 +115,7 @@ namespace Listenarr.Api.Services
             var salt = new byte[16];
             rng.GetBytes(salt);
 
-            using var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 100_000, HashAlgorithmName.SHA256);
-            var hash = pbkdf2.GetBytes(32);
+            var hash = Rfc2898DeriveBytes.Pbkdf2(password, salt, 100_000, HashAlgorithmName.SHA256, 32);
 
             return Convert.ToBase64String(salt) + ":" + Convert.ToBase64String(hash);
         }
@@ -130,8 +129,7 @@ namespace Listenarr.Api.Services
                 var salt = Convert.FromBase64String(parts[0]);
                 var hash = Convert.FromBase64String(parts[1]);
 
-                using var pbkdf2 = new Rfc2898DeriveBytes(password, salt, 100_000, HashAlgorithmName.SHA256);
-                var computed = pbkdf2.GetBytes(hash.Length);
+                var computed = Rfc2898DeriveBytes.Pbkdf2(password, salt, 100_000, HashAlgorithmName.SHA256, hash.Length);
                 return CryptographicOperations.FixedTimeEquals(computed, hash);
             }
             catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {

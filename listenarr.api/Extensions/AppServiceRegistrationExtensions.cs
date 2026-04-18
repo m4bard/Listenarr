@@ -93,9 +93,9 @@ namespace Listenarr.Api.Extensions
             services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
 
             // Repository for Download entity encapsulating EF operations used by application services
-            services.AddScoped<Listenarr.Api.Repositories.IDownloadRepository, Listenarr.Api.Repositories.EfDownloadRepository>();
+            services.AddScoped<Listenarr.Application.Repositories.IDownloadRepository, Listenarr.Infrastructure.Repositories.EfDownloadRepository>();
             // Repository for DownloadProcessingJob queries
-            services.AddScoped<Listenarr.Api.Repositories.IDownloadProcessingJobRepository, Listenarr.Api.Repositories.EfDownloadProcessingJobRepository>();
+            services.AddScoped<Listenarr.Application.Repositories.IDownloadProcessingJobRepository, Listenarr.Infrastructure.Repositories.EfDownloadProcessingJobRepository>();
 
             // Discord bot service for managing bot process
             services.AddSingleton<IDiscordBotService, DiscordBotService>();
