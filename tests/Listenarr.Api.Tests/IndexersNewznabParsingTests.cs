@@ -1,5 +1,6 @@
 using System.Xml.Linq;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Api.Services.Search;
 using Listenarr.Api.Services.Search.Filters;
 using Listenarr.Api.Services.Search.Strategies;
@@ -28,7 +29,6 @@ namespace Listenarr.Api.Tests
         var logger = NullLogger<SearchService>.Instance;
         var openLibraryService = Mock.Of<IOpenLibraryService>();
         var imageCache = Mock.Of<IImageCacheService>();
-        ListenArrDbContext dbContext = null!;
         var hubContext = Mock.Of<IHubContext<DownloadHub>>();
         var audible = new AudibleService(new HttpClient(), NullLogger<AudibleService>.Instance);
         var audnexus = new AudnexusService(new HttpClient(), NullLogger<AudnexusService>.Instance);
@@ -48,7 +48,8 @@ namespace Listenarr.Api.Tests
           logger,
           openLibraryService,
           imageCache,
-          dbContext,
+          Mock.Of<IIndexerRepository>(),
+          Mock.Of<IApiConfigurationRepository>(),
           hubContext,
           audible,
           audnexus,
@@ -270,7 +271,7 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient = new HttpClient(handler) { BaseAddress = new System.Uri("https://www.myanonamouse.net") };
-            var provider = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient, db);
+            var provider = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient, new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db));
 
             // Call provider directly to ensure the AdditionalSettings are applied to the generated request -
             // The provider no longer parses indexer.AdditionalSettings for options automatically, callers should pass a SearchRequest.

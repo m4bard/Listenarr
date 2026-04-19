@@ -96,7 +96,7 @@ async function save() {
     return
   }
   try {
-    var newRoot;
+    let newRoot;
     if (root?.id) {
       // If path changed, show confirmation to choose whether to move files
       if (form.value.path !== root.path) {

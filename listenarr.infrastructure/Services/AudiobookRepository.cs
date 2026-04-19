@@ -1,4 +1,5 @@
 // csharp
+using System.Threading;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using System.Linq;
@@ -71,6 +72,15 @@ namespace Listenarr.Api.Services
                 .FirstOrDefaultAsync(a => a.Id == id);
         }
 
+        public async Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, System.Threading.CancellationToken ct = default)
+        {
+            var idSet = ids.ToHashSet();
+            return await _db.Audiobooks
+                .Include(a => a.Files)
+                .Where(a => idSet.Contains(a.Id))
+                .ToListAsync(ct);
+        }
+
         public async Task AddAsync(Audiobook audiobook)
         {
             _db.Audiobooks.Add(audiobook);
@@ -112,6 +122,20 @@ namespace Listenarr.Api.Services
                 return false;
 
             return await DeleteAsync(audiobook);
+        }
+
+        public async Task<bool> UpdateWithIdentifierReplaceAsync(Audiobook audiobook, List<AudiobookExternalIdentifier> newIdentifiers, CancellationToken ct = default)
+        {
+            var existing = await _db.AudiobookExternalIdentifiers
+                .Where(i => i.AudiobookId == audiobook.Id)
+                .ToListAsync(ct);
+            if (existing.Count > 0)
+                _db.AudiobookExternalIdentifiers.RemoveRange(existing);
+
+            audiobook.ExternalIdentifiers = newIdentifiers;
+            _db.Audiobooks.Update(audiobook);
+            await _db.SaveChangesAsync(ct);
+            return true;
         }
 
         public async Task<int> DeleteBulkAsync(List<int> ids)
@@ -384,6 +408,36 @@ namespace Listenarr.Api.Services
                 StringSplitOptions.RemoveEmptyEntries);
 
             return string.Join(' ', parts).ToLowerInvariant();
+        }
+
+        public async Task SaveChangesAsync(System.Threading.CancellationToken ct = default)
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+
+        public async Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, System.Threading.CancellationToken ct = default)
+        {
+            return await _db.Audiobooks
+                .Include(a => a.QualityProfile)
+                .Where(a => a.Monitored &&
+                            a.QualityProfileId != null &&
+                            (a.LastSearchTime == null || a.LastSearchTime < cutoff))
+                .ToListAsync(ct);
+        }
+
+        public async Task NormalizeJsonColumnsAsync(System.Threading.CancellationToken ct = default)
+        {
+            var columns = new[] { "Authors", "Genres", "Tags", "Narrators", "AuthorAsins", "Isbn" };
+            var allowedColumns = new HashSet<string>(columns, StringComparer.Ordinal);
+
+            foreach (var col in columns)
+            {
+                if (!allowedColumns.Contains(col) || !System.Text.RegularExpressions.Regex.IsMatch(col, @"^[A-Za-z_][A-Za-z0-9_]*$"))
+                    continue;
+
+                var sql = $"UPDATE Audiobooks SET {col} = json_array(json_extract({col}, '$')) WHERE {col} IS NOT NULL AND json_valid({col})=1 AND json_type({col}) NOT IN ('array','object')";
+                await _db.Database.ExecuteSqlRawAsync(sql, ct);
+            }
         }
 
         private static string NormalizeSeriesName(string? value)

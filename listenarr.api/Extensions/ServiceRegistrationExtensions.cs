@@ -7,8 +7,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Polly;
 using Polly.Extensions.Http;
-using Microsoft.EntityFrameworkCore;
-using Listenarr.Infrastructure.Models;
 using Listenarr.Api.Services.Adapters;
 using Listenarr.Api.Services;
 using Microsoft.Extensions.Options;
@@ -167,46 +165,6 @@ namespace Listenarr.Api.Extensions
         }
 
         /// <summary>
-        /// Register persistence (DbContextFactory + compatibility DbContext).
-        /// This is intentionally minimal and safe for test hosts.
-        /// </summary>
-        public static IServiceCollection AddListenarrPersistence(this IServiceCollection services, IConfiguration configuration, string sqliteDbPath)
-        {
-            // Build DbContextOptions once and register as a singleton so factories
-            // and background services can create contexts without forcing EF to
-            // resolve scoped option-configurators from the root provider.
-            var dbOptionsBuilder = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<ListenArrDbContext>();
-            dbOptionsBuilder.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
-            {
-                sqliteOptions.MigrationsAssembly(typeof(Listenarr.Infrastructure.Repositories.QualityProfileRepository).Assembly.GetName().Name);
-            });
-
-            services.AddSingleton<Microsoft.EntityFrameworkCore.DbContextOptions<ListenArrDbContext>>(sp => dbOptionsBuilder.Options);
-
-            // Provide a simple IDbContextFactory implementation that uses the
-            // singleton DbContextOptions to construct contexts on demand.
-            services.AddSingleton<Microsoft.EntityFrameworkCore.IDbContextFactory<ListenArrDbContext>>(sp =>
-                new SimpleDbContextFactory(sp.GetRequiredService<Microsoft.EntityFrameworkCore.DbContextOptions<ListenArrDbContext>>()));
-
-            // Register the scoped DbContext for controllers but register the
-            // options/configuration with a Singleton lifetime so EF's
-            // CreateDbContextOptions can resolve any IDbContextOptionsConfiguration
-            // instances from the application (root) provider during request handling.
-            services.AddDbContext<ListenArrDbContext>(options =>
-            {
-                options.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
-                {
-                    sqliteOptions.MigrationsAssembly(typeof(Listenarr.Infrastructure.Repositories.QualityProfileRepository).Assembly.GetName().Name);
-                });
-            }, ServiceLifetime.Scoped, ServiceLifetime.Singleton);
-
-            // Register infrastructure repository implementations
-            services.AddScoped<Listenarr.Application.Repositories.IQualityProfileRepository, Listenarr.Infrastructure.Repositories.QualityProfileRepository>();
-
-            return services;
-        }
-
-        /// <summary>
         /// Registers adapters, their options and validators.
         /// </summary>
         public static IServiceCollection AddListenarrAdapters(this IServiceCollection services, IConfiguration config)
@@ -273,29 +231,4 @@ namespace Listenarr.Api.Extensions
         }
     }
 
-    /// <summary>
-    /// Lightweight factory that creates ListenArrDbContext instances from a
-    /// pre-built DbContextOptions instance. This avoids EF registering
-    /// IDbContextOptionsConfiguration services with scoped lifetimes that
-    /// would otherwise be resolved from the root provider.
-    /// </summary>
-    internal class SimpleDbContextFactory : Microsoft.EntityFrameworkCore.IDbContextFactory<ListenArrDbContext>
-    {
-        private readonly Microsoft.EntityFrameworkCore.DbContextOptions<ListenArrDbContext> _options;
-
-        public SimpleDbContextFactory(Microsoft.EntityFrameworkCore.DbContextOptions<ListenArrDbContext> options)
-        {
-            _options = options ?? throw new ArgumentNullException(nameof(options));
-        }
-
-        public ListenArrDbContext CreateDbContext()
-        {
-            return new ListenArrDbContext(_options);
-        }
-
-        public System.Threading.Tasks.Task<ListenArrDbContext> CreateDbContextAsync()
-        {
-            return System.Threading.Tasks.Task.FromResult(CreateDbContext());
-        }
-    }
 }

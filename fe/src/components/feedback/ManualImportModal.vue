@@ -69,14 +69,14 @@
                 <div class="col col-check">
                   <Checkbox :modelValue="allSelected" @update:modelValue="setAllSelected" />
                 </div>
-                <div v-for="(field, _) in importFields" :class="`col ${ field.class }`">{{ field.label }}</div>
+                <div v-for="field in importFields" :key="field.key" :class="`col ${ field.class }`">{{ field.label }}</div>
                 <div class="col col-action"></div>
               </div>
 
               <div class="preview-body">
                 <div v-for="(it, idx) in previewItems" :key="idx" class="preview-row">
                   <div class="col col-check"><Checkbox v-model="it.selected" /></div>
-                  <div v-for="(field, _) in importFields" :class="`col ${ field.class }`">
+                  <div v-for="field in importFields" :key="field.key" :class="`col ${ field.class }`">
                     <div v-if="field.editable" class="clickable-cell" @click="openCellEditor(it, field.key)">
                       <span v-if="field.get(it)">{{
                         field.display(it)
@@ -122,7 +122,7 @@
             :disabled="selectedCount === 0 || loading"
           >
             <option value="">Select...</option>
-            <option v-for="(field, _) in importFields.filter((field: ImportField) => field.editable)" :value="field.key">{{ field.label }}</option>
+            <option v-for="field in importFields.filter((field: ImportField) => field.editable)" :key="field.key" :value="field.key">{{ field.label }}</option>
           </select>
 
           <select v-if="showPreview" class="extra-select" v-model="action">
@@ -323,8 +323,8 @@ interface ImportField {
   label: string;
   class: string;
   editable: boolean;
-  set: (item: PreviewItem, value: any) => void;
-  get: (item: PreviewItem) => any;
+  set: (item: PreviewItem, value: string | number | null) => void;
+  get: (item: PreviewItem) => string | number | null;
   display: (item: PreviewItem) => string;
 }
 const importFields = [

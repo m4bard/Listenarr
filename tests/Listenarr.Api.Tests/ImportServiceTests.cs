@@ -47,7 +47,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IFileNamingService>(new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()));
                 services.AddSingleton<IMetadataService>(new Mock<IMetadataService>().Object);
                 // ImportService uses NullFileMover by default when not provided, which is fine for tests
-                services.AddSingleton<IImportService>(sp => new ImportService(dbFactoryMock.Object, sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<IFileNamingService>(), sp.GetService<IMetadataService>(), new NullLogger<ImportService>()));
+                services.AddSingleton<IImportService>(sp => new ImportService(new AudiobookRepository(new ListenArrDbContext(options)), sp.GetRequiredService<IServiceScopeFactory>(), sp.GetRequiredService<IFileNamingService>(), sp.GetService<IMetadataService>(), new NullLogger<ImportService>()));
             });
 
             var importService = provider.GetRequiredService<IImportService>();
@@ -121,7 +121,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IFileNamingService>(new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()));
                 services.AddSingleton<IMetadataService>(new Mock<IMetadataService>().Object);
                 services.AddSingleton<IImportService>(sp => new ImportService(
-                    dbFactoryMock.Object,
+                    new AudiobookRepository(new ListenArrDbContext(options)),
                     sp.GetRequiredService<IServiceScopeFactory>(),
                     sp.GetRequiredService<IFileNamingService>(),
                     sp.GetService<IMetadataService>(),
@@ -202,10 +202,41 @@ namespace Listenarr.Api.Tests
                 services.AddMemoryCache();
                 services.AddSingleton<MetadataExtractionLimiter>();
                 services.AddSingleton<IMetadataService>(metadataMock.Object);
+                // AudioFileService needs these from scoped provider to persist AudiobookFile records
+                services.AddScoped<Listenarr.Application.Repositories.IAudiobookFileRepository, Listenarr.Infrastructure.Repositories.EfAudiobookFileRepository>();
+                services.AddScoped<Listenarr.Application.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.EfHistoryRepository>();
+                services.AddScoped<Listenarr.Api.Services.IAudiobookRepository, Listenarr.Api.Services.AudiobookRepository>();
             });
 
+            // Use a mock repository that creates a fresh DbContext per operation to avoid EF InMemory
+            // navigation fixup populating batchAudiobook.Files during the import loop (which would
+            // trigger the quality-check skip path on the second file).
+            var audiobookRepoMock = new Mock<IAudiobookRepository>();
+            audiobookRepoMock
+                .Setup(r => r.GetByIdAsync(456))
+                .ReturnsAsync(() =>
+                {
+                    using var ctx = new ListenArrDbContext(options);
+                    return ctx.Audiobooks.AsNoTracking().FirstOrDefault(a => a.Id == 456);
+                });
+            audiobookRepoMock
+                .Setup(r => r.UpdateAsync(It.IsAny<Audiobook>()))
+                .Returns<Audiobook>(ab =>
+                {
+                    using var ctx = new ListenArrDbContext(options);
+                    var existing = ctx.Audiobooks.Find(ab.Id);
+                    if (existing != null)
+                    {
+                        existing.BasePath = ab.BasePath;
+                        existing.FilePath = ab.FilePath;
+                        existing.FileSize = ab.FileSize;
+                        ctx.SaveChanges();
+                    }
+                    return Task.FromResult(true);
+                });
+
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                audiobookRepoMock.Object,
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -269,7 +300,7 @@ namespace Listenarr.Api.Tests
             using var provider = TestServiceFactory.BuildServiceProvider(_ => { });
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                Mock.Of<IAudiobookRepository>(),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -325,7 +356,7 @@ namespace Listenarr.Api.Tests
             using var provider = TestServiceFactory.BuildServiceProvider(_ => { });
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                Mock.Of<IAudiobookRepository>(),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -378,7 +409,7 @@ namespace Listenarr.Api.Tests
             using var provider = TestServiceFactory.BuildServiceProvider(_ => { });
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                Mock.Of<IAudiobookRepository>(),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -442,7 +473,7 @@ namespace Listenarr.Api.Tests
             using var provider = TestServiceFactory.BuildServiceProvider(_ => { });
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                Mock.Of<IAudiobookRepository>(),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -535,7 +566,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IFileNamingService>(new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()));
                 services.AddSingleton<IMetadataService>(new Mock<IMetadataService>().Object);
                 services.AddSingleton<IImportService>(sp => new ImportService(
-                    dbFactoryMock.Object,
+                    new AudiobookRepository(new ListenArrDbContext(options)),
                     sp.GetRequiredService<IServiceScopeFactory>(),
                     sp.GetRequiredService<IFileNamingService>(),
                     sp.GetService<IMetadataService>(),
@@ -615,7 +646,7 @@ namespace Listenarr.Api.Tests
             });
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                new AudiobookRepository(new ListenArrDbContext(options)),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -692,7 +723,7 @@ namespace Listenarr.Api.Tests
             });
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                Mock.Of<IAudiobookRepository>(),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -768,7 +799,7 @@ namespace Listenarr.Api.Tests
             });
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                new AudiobookRepository(new ListenArrDbContext(options)),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -848,7 +879,7 @@ namespace Listenarr.Api.Tests
             });
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                new AudiobookRepository(new ListenArrDbContext(options)),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()),
                 metadataMock.Object,

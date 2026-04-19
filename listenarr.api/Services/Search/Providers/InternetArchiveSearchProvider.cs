@@ -17,7 +17,6 @@
  */
 
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using System.Text.Json;
 
 namespace Listenarr.Api.Services.Search.Providers;

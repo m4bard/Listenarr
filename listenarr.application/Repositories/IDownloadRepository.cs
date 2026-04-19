@@ -17,5 +17,6 @@ namespace Listenarr.Application.Repositories
         Task<List<string>> GetKnownClientItemIdsAsync();
         Task<List<Download>> GetByClientAsync(string clientId);
         Task<List<Download>> GetByIdsAsync(IEnumerable<string> ids);
+        Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, CancellationToken ct = default);
     }
 }

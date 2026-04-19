@@ -1,5 +1,4 @@
-using Listenarr.Domain.Models; // SearchResult, QualityProfile
-using Listenarr.Infrastructure.Models; // Indexer
+using Listenarr.Domain.Models; // SearchResult, QualityProfile, Indexer
 using Microsoft.Extensions.Logging;
 using System.Linq;
 

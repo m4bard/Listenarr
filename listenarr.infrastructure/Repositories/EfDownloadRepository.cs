@@ -136,6 +136,15 @@ namespace Listenarr.Infrastructure.Repositories
                 .ToListAsync();
         }
 
+        public async Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, System.Threading.CancellationToken ct = default)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.AudiobookId == audiobookId)
+                .ToListAsync(ct);
+        }
+
         private static bool TryGetMetadataString(Dictionary<string, object>? metadata, string key, out string value)
         {
             value = string.Empty;

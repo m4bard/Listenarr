@@ -2,8 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -88,8 +90,12 @@ namespace Listenarr.Api.Tests
                     }
                 });
 
+            var authorsRepo = new EfMonitoredAuthorRepository(dbContext);
+            var audiobooksRepo = new AudiobookRepository(dbContext);
+
             var service = new AuthorMonitoringService(
-                dbContext,
+                authorsRepo,
+                audiobooksRepo,
                 authorCatalogService.Object,
                 libraryAddService.Object,
                 Mock.Of<ILogger<AuthorMonitoringService>>());
@@ -157,8 +163,12 @@ namespace Listenarr.Api.Tests
                     Books = new List<AudibleSearchResult>()
                 });
 
+            var authorsRepo = new EfMonitoredAuthorRepository(dbContext);
+            var audiobooksRepo = new AudiobookRepository(dbContext);
+
             var service = new AuthorMonitoringService(
-                dbContext,
+                authorsRepo,
+                audiobooksRepo,
                 authorCatalogService.Object,
                 Mock.Of<ILibraryAddService>(),
                 Mock.Of<ILogger<AuthorMonitoringService>>());

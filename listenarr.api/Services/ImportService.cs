@@ -11,7 +11,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.DependencyInjection;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Utils;
 using static Listenarr.Api.Services.FileMover;
 
@@ -19,7 +19,7 @@ namespace Listenarr.Api.Services
 {
     public class ImportService : IImportService
     {
-        private readonly IDbContextFactory<ListenArrDbContext> _dbFactory;
+        private readonly IAudiobookRepository _audiobookRepository;
         private readonly IServiceScopeFactory _scopeFactory;
         public IServiceScopeFactory ScopeFactory => _scopeFactory;
         private readonly IFileNamingService _fileNamingService;
@@ -28,14 +28,14 @@ namespace Listenarr.Api.Services
         private readonly ILogger<ImportService> _logger;
 
         public ImportService(
-            IDbContextFactory<ListenArrDbContext> dbFactory,
+            IAudiobookRepository audiobookRepository,
             IServiceScopeFactory scopeFactory,
             IFileNamingService fileNamingService,
             IMetadataService? metadataService,
             IFileMover fileMover,
             ILogger<ImportService>? logger = null)
         {
-            _dbFactory = dbFactory;
+            _audiobookRepository = audiobookRepository;
             _scopeFactory = scopeFactory;
             _fileNamingService = fileNamingService;
             _metadataService = metadataService;
@@ -44,14 +44,13 @@ namespace Listenarr.Api.Services
         }
 
         // Compatibility overload: older tests and callers used to pass ILogger as the fifth parameter.
-        // Preserve that signature by providing an overload that supplies a no-op NullFileMover.
         public ImportService(
-            IDbContextFactory<ListenArrDbContext> dbFactory,
+            IAudiobookRepository audiobookRepository,
             IServiceScopeFactory scopeFactory,
             IFileNamingService fileNamingService,
             IMetadataService? metadataService,
             ILogger<ImportService>? logger = null)
-            : this(dbFactory, scopeFactory, fileNamingService, metadataService, new NullFileMover(), logger)
+            : this(audiobookRepository, scopeFactory, fileNamingService, metadataService, new NullFileMover(), logger)
         {
         }
 
@@ -108,8 +107,7 @@ namespace Listenarr.Api.Services
                 {
                     try
                     {
-                        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-                        var audiobook = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
+                        var audiobook = await _audiobookRepository.GetByIdAsync(audiobookId.Value);
                         if (audiobook != null)
                         {
                             namingMetadata = BuildNamingMetadata(audiobook, extractedMetadata, metadata.Title);
@@ -128,11 +126,7 @@ namespace Listenarr.Api.Services
                 {
                     try
                     {
-                        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-                        var ab = await db.Audiobooks
-                            .Include(a => a.QualityProfile)
-                            .Include(a => a.Files)
-                            .FirstOrDefaultAsync(a => a.Id == audiobookId.Value, ct);
+                        var ab = await _audiobookRepository.GetByIdAsync(audiobookId.Value);
 
                         if (ab != null && ab.Files != null && ab.Files.Any())
                         {
@@ -214,8 +208,7 @@ namespace Listenarr.Api.Services
                 {
                     try
                     {
-                        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-                        var ab = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
+                        var ab = await _audiobookRepository.GetByIdAsync(audiobookId.Value);
                         if (ab != null && !string.IsNullOrWhiteSpace(ab.BasePath))
                         {
                             basePathForFile = FileUtils.NormalizeStoredPath(ab.BasePath); // custom/base path
@@ -428,11 +421,7 @@ namespace Listenarr.Api.Services
                 {
                     try
                     {
-                        await using var db = await _dbFactory.CreateDbContextAsync(ct);
-                        batchAudiobook = await db.Audiobooks
-                            .Include(a => a.QualityProfile)
-                            .Include(a => a.Files)
-                            .FirstOrDefaultAsync(a => a.Id == audiobookId.Value, ct);
+                        batchAudiobook = await _audiobookRepository.GetByIdAsync(audiobookId.Value);
 
                         abProfile = batchAudiobook?.QualityProfile;
                         batchDestinationRoot = string.IsNullOrWhiteSpace(batchAudiobook?.BasePath) ? null : batchAudiobook!.BasePath;
@@ -602,8 +591,7 @@ namespace Listenarr.Api.Services
                         {
                             try
                             {
-                                await using var db = await _dbFactory.CreateDbContextAsync(ct);
-                                abForNaming = await db.Audiobooks.FindAsync(new object[] { audiobookId.Value }, ct);
+                                abForNaming = await _audiobookRepository.GetByIdAsync(audiobookId.Value);
                                 if (abForNaming != null && !string.IsNullOrWhiteSpace(abForNaming.BasePath)) destDirForFile = FileUtils.NormalizeStoredPath(abForNaming.BasePath);
                             }
                             catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { destDirForFile = string.Empty; }
@@ -973,8 +961,7 @@ namespace Listenarr.Api.Services
                 var normalizedCandidate = Path.GetFullPath(candidateBasePath);
                 normalizedCandidate = FileUtils.NormalizeStoredPath(normalizedCandidate);
 
-                await using var db = await _dbFactory.CreateDbContextAsync(ct);
-                var audiobook = await db.Audiobooks.FindAsync(new object[] { audiobookId }, ct);
+                var audiobook = await _audiobookRepository.GetByIdAsync(audiobookId);
                 if (audiobook == null)
                 {
                     return;
@@ -990,7 +977,7 @@ namespace Listenarr.Api.Services
                         if (!string.Equals(audiobook.BasePath, normalizedExisting, StringComparison.Ordinal))
                         {
                             audiobook.BasePath = normalizedExisting;
-                            await db.SaveChangesAsync(ct);
+                            await _audiobookRepository.UpdateAsync(audiobook);
                         }
 
                         return;
@@ -998,7 +985,7 @@ namespace Listenarr.Api.Services
                 }
 
                 audiobook.BasePath = normalizedCandidate;
-                await db.SaveChangesAsync(ct);
+                await _audiobookRepository.UpdateAsync(audiobook);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

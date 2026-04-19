@@ -23,7 +23,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Api.Services.Adapters;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
@@ -45,7 +45,7 @@ namespace Listenarr.Api.Services
     public class DownloadHashRetrievalService
     {
         private readonly ILogger<DownloadHashRetrievalService> _logger;
-        private readonly DownloadHistoryRepository _historyRepo;
+        private readonly IDownloadHistoryRepository _historyRepo;
         private readonly Dictionary<string, IDownloadClientAdapter> _adapters;
 
         // Retry configuration with exponential backoff
@@ -55,7 +55,7 @@ namespace Listenarr.Api.Services
 
         public DownloadHashRetrievalService(
             ILogger<DownloadHashRetrievalService> logger,
-            DownloadHistoryRepository historyRepo,
+            IDownloadHistoryRepository historyRepo,
             IDownloadClientAdapter qbittorrentAdapter,
             IDownloadClientAdapter transmissionAdapter,
             IDownloadClientAdapter sabnzbdAdapter,

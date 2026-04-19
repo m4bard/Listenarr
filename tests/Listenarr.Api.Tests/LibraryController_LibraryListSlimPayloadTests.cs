@@ -1,9 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
+using Listenarr.Application.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Utils;
 using Listenarr.Infrastructure.Models;
@@ -67,13 +70,31 @@ namespace Listenarr.Api.Tests
             });
             await db.SaveChangesAsync();
 
+            var allBooks = db.Audiobooks.ToList();
+            var allFiles = db.AudiobookFiles.ToList();
+            var allDownloads = db.Downloads.ToList();
+
+            var mockRepo = new Mock<IAudiobookRepository>();
+            mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allBooks);
+
+            var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
+            mockAudioFileRepo.Setup(r => r.GetAllAsync(default)).ReturnsAsync(allFiles);
+
+            var mockDownloadRepo = new Mock<IDownloadRepository>();
+            mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allDownloads);
+
             using var provider = new ServiceCollection().BuildServiceProvider();
             var controller = new LibraryController(
-                Mock.Of<IAudiobookRepository>(),
+                mockRepo.Object,
                 Mock.Of<IImageCacheService>(),
                 NullLogger<LibraryController>.Instance,
-                db,
                 provider.GetRequiredService<IServiceScopeFactory>(),
+                Mock.Of<IHistoryRepository>(),
+                mockAudioFileRepo.Object,
+                Mock.Of<IQualityProfileRepository>(),
+                mockDownloadRepo.Object,
+                Mock.Of<IRootFolderRepository>(),
+                Mock.Of<IDatabaseConnectionProvider>(),
                 Mock.Of<IFileNamingService>());
 
             var actionResult = await controller.GetAll();

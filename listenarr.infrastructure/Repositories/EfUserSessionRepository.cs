@@ -63,5 +63,19 @@ namespace Listenarr.Infrastructure.Repositories
             await _db.SaveChangesAsync(ct);
             return expired.Count;
         }
+
+        public async Task<int> GetActiveCountAsync(string username, CancellationToken ct = default)
+        {
+            var now = DateTime.UtcNow;
+            var expired = await _db.UserSessions
+                .Where(s => s.Username == username && s.ExpiresAt <= now)
+                .ToListAsync(ct);
+            if (expired.Count > 0)
+            {
+                _db.UserSessions.RemoveRange(expired);
+                await _db.SaveChangesAsync(ct);
+            }
+            return await _db.UserSessions.CountAsync(s => s.Username == username && s.ExpiresAt > now, ct);
+        }
     }
 }

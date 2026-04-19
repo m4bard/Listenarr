@@ -241,8 +241,8 @@ describe('EditAudiobookModal move options', () => {
 
   it('hydrates current metadata immediately and renders person fields as tags', async () => {
     const { apiService } = await import('@/services/api')
-    ;(apiService.getQualityProfiles as any).mockImplementation(() => new Promise(() => {}))
-    ;(apiService.getAudiobook as any).mockResolvedValue({
+    vi.mocked(apiService.getQualityProfiles).mockImplementation(() => new Promise(() => {}))
+    vi.mocked(apiService.getAudiobook).mockResolvedValue({
       ...audiobook,
       subtitle: 'Existing Subtitle',
       narrators: ['Narrator One', 'Narrator Two'],
@@ -313,7 +313,7 @@ describe('EditAudiobookModal move options', () => {
 
   it('rehydrates unchanged metadata when the same audiobook receives fuller data', async () => {
     const { apiService } = await import('@/services/api')
-    ;(apiService.getAudiobook as any).mockResolvedValue({
+    vi.mocked(apiService.getAudiobook).mockResolvedValue({
       ...audiobook,
       description: 'Loaded from refreshed detail payload',
       publishedDate: '2024-03-01',

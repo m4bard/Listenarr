@@ -1,6 +1,5 @@
 using System.Text.Json;
-using Listenarr.Infrastructure.Models;
-using Listenarr.Infrastructure.Repositories;
+using Listenarr.Application.Repositories;
 using Listenarr.Application.Services;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
@@ -87,24 +86,6 @@ namespace Listenarr.Api.Services
                         _logger.LogDebug(broadcastEx, "Failed to broadcast after marking as Completed");
                     }
 
-                    try
-                    {
-                        var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                        using var scopeSync = scopeFactoryToUse.CreateScope();
-                        var scopedDb = scopeSync.ServiceProvider.GetService<ListenArrDbContext>();
-                        if (scopedDb != null)
-                        {
-                            var local = await scopedDb.Downloads.FindAsync(downloadId);
-                            if (local != null)
-                            {
-                                local.Status = DownloadStatus.ImportPending;
-                                _logger.LogDebug("Synchronized ImportPending status into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                            }
-                        }
-                    }
-                    catch (Exception syncEx) when (syncEx is not OperationCanceledException && syncEx is not OutOfMemoryException && syncEx is not StackOverflowException) {
-                        _logger.LogDebug(syncEx, "Failed to synchronize status into scoped ListenArrDbContext (non-fatal)");
-                    }
                 }
 
                 var importToastSent = false;
@@ -185,25 +166,6 @@ namespace Listenarr.Api.Services
                                         }
                                     }
 
-                                    try
-                                    {
-                                        var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                                        using var afScope = scopeFactoryToUse.CreateScope();
-                                        var scopedDb2 = afScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                        if (scopedDb2 != null)
-                                        {
-                                            var local2 = await scopedDb2.Downloads.FindAsync(downloadId);
-                                            if (local2 != null)
-                                            {
-                                                local2.FinalPath = finalFromDirectory;
-                                                local2.Status = DownloadStatus.Moved;
-                                                _logger.LogDebug("Synchronized FinalPath into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                                            }
-                                        }
-                                    }
-                                    catch (Exception sync2Ex) when (sync2Ex is not OperationCanceledException && sync2Ex is not OutOfMemoryException && sync2Ex is not StackOverflowException) {
-                                        _logger.LogDebug(sync2Ex, "Failed to synchronize FinalPath into scoped ListenArrDbContext (non-fatal)");
-                                    }
                                 }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -250,14 +212,14 @@ namespace Listenarr.Api.Services
                                         {
                                             var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
                                             using var bpScope = scopeFactoryToUse.CreateScope();
-                                            var bpDb = bpScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                            if (bpDb != null)
+                                            var bpAudiobookRepo = bpScope.ServiceProvider.GetService<IAudiobookRepository>();
+                                            if (bpAudiobookRepo != null)
                                             {
-                                                var audiobook = await bpDb.Audiobooks.FindAsync(download.AudiobookId.Value);
+                                                var audiobook = await bpAudiobookRepo.GetByIdAsync(download.AudiobookId.Value);
                                                 if (audiobook != null && !commonDir.Equals(audiobook.BasePath, StringComparison.OrdinalIgnoreCase))
                                                 {
                                                     audiobook.BasePath = commonDir;
-                                                    await bpDb.SaveChangesAsync();
+                                                    await bpAudiobookRepo.UpdateAsync(audiobook);
                                                     _logger.LogInformation("Updated audiobook {AudiobookId} BasePath after directory import: {BasePath}", download.AudiobookId, commonDir);
                                                 }
                                             }
@@ -317,25 +279,6 @@ namespace Listenarr.Api.Services
                                                         }
                                                     }
 
-                                                    try
-                                                    {
-                                                        var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                                                        using var afScope = scopeFactoryToUse.CreateScope();
-                                                        var scopedDb2 = afScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                                        if (scopedDb2 != null)
-                                                        {
-                                                            var local2 = await scopedDb2.Downloads.FindAsync(downloadId);
-                                                            if (local2 != null)
-                                                            {
-                                                                local2.FinalPath = finalFromExtracted;
-                                                                local2.Status = DownloadStatus.Moved;
-                                                                _logger.LogDebug("Synchronized FinalPath into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                                                            }
-                                                        }
-                                                    }
-                                                    catch (Exception sync2Ex) when (sync2Ex is not OperationCanceledException && sync2Ex is not OutOfMemoryException && sync2Ex is not StackOverflowException) {
-                                                        _logger.LogDebug(sync2Ex, "Failed to synchronize FinalPath into scoped ListenArrDbContext (non-fatal)");
-                                                    }
                                                 }
                                             }
                                         }
@@ -413,25 +356,6 @@ namespace Listenarr.Api.Services
                                                     }
                                                 }
 
-                                                try
-                                                {
-                                                    var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                                                    using var afScope = scopeFactoryToUse.CreateScope();
-                                                    var scopedDb2 = afScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                                    if (scopedDb2 != null)
-                                                    {
-                                                        var local2 = await scopedDb2.Downloads.FindAsync(downloadId);
-                                                        if (local2 != null)
-                                                        {
-                                                            local2.FinalPath = finalFromExtracted;
-                                                            local2.Status = DownloadStatus.Moved;
-                                                            _logger.LogDebug("Synchronized FinalPath into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                                                        }
-                                                    }
-                                                }
-                                                catch (Exception sync2Ex) when (sync2Ex is not OperationCanceledException && sync2Ex is not OutOfMemoryException && sync2Ex is not StackOverflowException) {
-                                                    _logger.LogDebug(sync2Ex, "Failed to synchronize FinalPath into scoped ListenArrDbContext (non-fatal)");
-                                                }
                                             }
                                         }
                                     }
@@ -484,25 +408,6 @@ namespace Listenarr.Api.Services
                                             }
                                         }
 
-                                        try
-                                        {
-                                            var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                                            using var scopeSync2 = scopeFactoryToUse.CreateScope();
-                                            var scopedDb2 = scopeSync2.ServiceProvider.GetService<ListenArrDbContext>();
-                                            if (scopedDb2 != null)
-                                            {
-                                                var local2 = await scopedDb2.Downloads.FindAsync(downloadId);
-                                                if (local2 != null)
-                                                {
-                                                    local2.FinalPath = importResult.FinalPath;
-                                                    local2.Status = DownloadStatus.Moved;
-                                                    _logger.LogDebug("Synchronized FinalPath into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                                                }
-                                            }
-                                        }
-                                        catch (Exception sync2Ex) when (sync2Ex is not OperationCanceledException && sync2Ex is not OutOfMemoryException && sync2Ex is not StackOverflowException) {
-                                            _logger.LogDebug(sync2Ex, "Failed to synchronize FinalPath into scoped ListenArrDbContext (non-fatal)");
-                                        }
                                     }
                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogWarning(ex, "Failed to update Download.FinalPath after import for {DownloadId}", downloadId);
@@ -533,13 +438,13 @@ namespace Listenarr.Api.Services
                                         int? maxExistingBitrate = null;
                                         try
                                         {
-                                            var scopedDb = afScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                            if (scopedDb != null && download != null && download.AudiobookId != null)
+                                            var fileRepo = afScope.ServiceProvider.GetService<IAudiobookFileRepository>();
+                                            if (fileRepo != null && download != null && download.AudiobookId != null)
                                             {
-                                                var existing = await scopedDb.AudiobookFiles
-                                                    .Where(f => f.AudiobookId == download.AudiobookId && f.Bitrate.HasValue)
+                                                var existing = (await fileRepo.GetByAudiobookIdAsync(download.AudiobookId.Value))
+                                                    .Where(f => f.Bitrate.HasValue)
                                                     .Select(f => f.Bitrate!.Value)
-                                                    .ToListAsync();
+                                                    .ToList();
                                                 if (existing.Any()) maxExistingBitrate = existing.Max();
                                             }
                                         }
@@ -960,14 +865,13 @@ namespace Listenarr.Api.Services
                                     // Delete the download record from database after successful cleanup
                                     try
                                     {
-                                        var dbContext = cleanupScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                        if (dbContext != null)
+                                        var downloadRepo = cleanupScope.ServiceProvider.GetService<IDownloadRepository>();
+                                        if (downloadRepo != null)
                                         {
-                                            var downloadToDelete = await dbContext.Downloads.FindAsync(downloadId);
+                                            var downloadToDelete = await downloadRepo.FindAsync(downloadId);
                                             if (downloadToDelete != null)
                                             {
-                                                dbContext.Downloads.Remove(downloadToDelete);
-                                                await dbContext.SaveChangesAsync();
+                                                await downloadRepo.RemoveAsync(downloadId);
                                                 _logger.LogInformation("Deleted download {DownloadId} from database after successful cleanup", downloadId);
                                                 
                                                 // Small delay to ensure database changes are visible to other contexts
@@ -1064,12 +968,12 @@ namespace Listenarr.Api.Services
             {
                 using var scope = _serviceScopeFactory.CreateScope();
                 var metadataService = scope.ServiceProvider.GetService<IMetadataService>();
-                var db = scope.ServiceProvider.GetService<ListenArrDbContext>();
+                var audiobookRepo = scope.ServiceProvider.GetService<IAudiobookRepository>();
 
                 Audiobook? audiobook = null;
-                if (download?.AudiobookId != null && db != null)
+                if (download?.AudiobookId != null && audiobookRepo != null)
                 {
-                    audiobook = await db.Audiobooks.FindAsync(download.AudiobookId.Value);
+                    audiobook = await audiobookRepo.GetByIdAsync(download.AudiobookId.Value);
                 }
 
                 var targetTitle = FileUtils.NormalizeComparisonValue(audiobook?.Title ?? download?.Title);

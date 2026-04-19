@@ -1,18 +1,18 @@
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Utils;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Services
 {
     public class LibraryAddService : ILibraryAddService
     {
         private readonly IAudiobookRepository _repo;
+        private readonly IHistoryRepository _historyRepo;
         private readonly IImageCacheService _imageCacheService;
         private readonly ILogger<LibraryAddService> _logger;
-        private readonly ListenArrDbContext _dbContext;
         private readonly IQualityProfileService _qualityProfileService;
         private readonly AudibleService _audibleService;
         private readonly IConfigurationService _configurationService;
@@ -20,18 +20,18 @@ namespace Listenarr.Api.Services
 
         public LibraryAddService(
             IAudiobookRepository repo,
+            IHistoryRepository historyRepo,
             IImageCacheService imageCacheService,
             ILogger<LibraryAddService> logger,
-            ListenArrDbContext dbContext,
             IQualityProfileService qualityProfileService,
             AudibleService audibleService,
             IConfigurationService configurationService,
             INotificationService? notificationService = null)
         {
             _repo = repo;
+            _historyRepo = historyRepo;
             _imageCacheService = imageCacheService;
             _logger = logger;
-            _dbContext = dbContext;
             _qualityProfileService = qualityProfileService;
             _audibleService = audibleService;
             _configurationService = configurationService;
@@ -298,8 +298,7 @@ namespace Listenarr.Api.Services
                     }
                 }
 
-                _dbContext.Audiobooks.Update(audiobook);
-                await _dbContext.SaveChangesAsync();
+                await _repo.UpdateAsync(audiobook);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -351,8 +350,7 @@ namespace Listenarr.Api.Services
                 Timestamp = DateTime.UtcNow
             };
 
-            _dbContext.History.Add(historyEntry);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _historyRepo.AddAsync(historyEntry, cancellationToken);
         }
 
         private static string? ToStringOrFirst(object? value)

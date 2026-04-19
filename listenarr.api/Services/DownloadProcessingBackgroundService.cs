@@ -17,10 +17,8 @@
  */
 
 using System.Runtime.InteropServices;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Microsoft.EntityFrameworkCore;
-using System.Linq;
-using Listenarr.Infrastructure.Models;
 using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
@@ -156,12 +154,9 @@ namespace Listenarr.Api.Services
         private async Task ResetStuckJobsAsync(CancellationToken cancellationToken)
         {
             using var scope = _serviceScopeFactory.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+            var jobRepo = scope.ServiceProvider.GetRequiredService<IDownloadProcessingJobRepository>();
 
-            // Find jobs stuck in Processing status (not updated recently)
-            var stuckJobs = await dbContext.DownloadProcessingJobs
-                .Where(j => j.Status == ProcessingJobStatus.Processing)
-                .ToListAsync(cancellationToken);
+            var stuckJobs = await jobRepo.GetStuckProcessingJobsAsync();
 
             if (stuckJobs.Any())
             {
@@ -171,8 +166,8 @@ namespace Listenarr.Api.Services
                     job.Status = ProcessingJobStatus.Pending;
                     job.AddLogEntry("Reset from stuck Processing state after service restart");
                     _logger.LogInformation("Reset stuck job {JobId} for download {DownloadId}", job.Id, job.DownloadId);
+                    await jobRepo.UpdateAsync(job);
                 }
-                await dbContext.SaveChangesAsync(cancellationToken);
             }
         }
 
@@ -206,7 +201,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _serviceScopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                var downloadRepo = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                var jobRepo = scope.ServiceProvider.GetRequiredService<IDownloadProcessingJobRepository>();
                 var queueService = scope.ServiceProvider.GetRequiredService<IDownloadProcessingQueueService>();
                 var pathMapping = scope.ServiceProvider.GetService<IRemotePathMappingService>();
                 var importItemResolution = scope.ServiceProvider.GetRequiredService<IImportItemResolutionService>();
@@ -233,13 +229,14 @@ namespace Listenarr.Api.Services
                 // Include Processing status to recover downloads orphaned by a crash/restart
                 // that occurred after FinalizeDownloadAsync set the status but before the
                 // processing job was queued.
-                var candidates = await dbContext.Downloads
+                var allDownloads = await downloadRepo.GetAllAsync();
+                var candidates = allDownloads
                     .Where(d => d.Status == DownloadStatus.Completed
                              || d.Status == DownloadStatus.ImportPending
                              || d.Status == DownloadStatus.Processing)
                     .OrderByDescending(d => d.CompletedAt)
                     .Take(200)
-                    .ToListAsync(cancellationToken);
+                    .ToList();
 
                 // Filter out downloads from disabled or missing clients
                 var originalCount = candidates.Count;
@@ -253,27 +250,18 @@ namespace Listenarr.Api.Services
                         originalCount - candidates.Count);
                 }
 
-                // Batch load all processing jobs for these candidates to avoid N+1 queries
+                // Get download IDs that already have active jobs to avoid N+1 queries
                 var candidateIds = candidates.Select(d => d.Id).ToList();
-                var allJobsForCandidates = await dbContext.DownloadProcessingJobs
-                    .Where(j => candidateIds.Contains(j.DownloadId))
-                    .ToListAsync(cancellationToken);
-
-                // Group jobs by DownloadId for efficient lookup
-                var jobsByDownloadId = allJobsForCandidates
-                    .GroupBy(j => j.DownloadId)
-                    .ToDictionary(g => g.Key, g => g.ToList());
+                var alreadyQueuedIds = new HashSet<string>(
+                    await jobRepo.GetPendingDownloadIdsAsync(candidateIds),
+                    StringComparer.OrdinalIgnoreCase);
 
                 foreach (var dl in candidates)
                 {
                     try
                     {
                         // Skip if there is already a job for this download pending/processing/retry
-                        if (!jobsByDownloadId.TryGetValue(dl.Id, out var existingJobs))
-                        {
-                            existingJobs = new List<DownloadProcessingJob>();
-                        }
-                        if (existingJobs.Any(j => j.Status == ProcessingJobStatus.Pending || j.Status == ProcessingJobStatus.Processing || j.Status == ProcessingJobStatus.Retry))
+                        if (alreadyQueuedIds.Contains(dl.Id))
                         {
                             continue;
                         }
@@ -509,8 +497,9 @@ namespace Listenarr.Api.Services
                     AudioMetadata? namingMetadata = null;
 
                     using var scope = _serviceScopeFactory.CreateScope();
-                    var dbContext = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var download = await dbContext.Downloads.FindAsync(job.DownloadId);
+                    var scopedDownloadRepo = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                    var scopedAudiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                    var download = await scopedDownloadRepo.FindAsync(job.DownloadId);
                     if (download != null)
                     {
                         // Start with values from the download record
@@ -524,7 +513,7 @@ namespace Listenarr.Api.Services
                         {
                             try
                             {
-                                var audiobook = await dbContext.Audiobooks.FindAsync(download.AudiobookId);
+                                var audiobook = await scopedAudiobookRepo.GetByIdAsync(download.AudiobookId.Value);
                                 if (audiobook != null)
                                 {
                                     // Create a naming-only metadata object from the Audiobook. This will be
@@ -662,7 +651,7 @@ namespace Listenarr.Api.Services
                     {
                         if (download != null && download.AudiobookId != null)
                         {
-                            var audiobook = await dbContext.Audiobooks.FindAsync(download.AudiobookId);
+                            var audiobook = await scopedAudiobookRepo.GetByIdAsync(download.AudiobookId.Value);
                             if (audiobook != null && !string.IsNullOrWhiteSpace(audiobook.BasePath))
                             {
                                 basePathForFile = audiobook.BasePath;
@@ -784,8 +773,8 @@ namespace Listenarr.Api.Services
                 {
                     // Check if already moved (use download loaded from dbContext above)
                     using var scope = _serviceScopeFactory.CreateScope();
-                    var dbContext = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var download = await dbContext.Downloads.FindAsync(job.DownloadId);
+                    var scopedDlRepo = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                    var download = await scopedDlRepo.FindAsync(job.DownloadId);
                     if (download != null && download.Status == DownloadStatus.Moved)
                     {
                         job.AddLogEntry("File already moved by DownloadService. Skipping background move.");
@@ -1106,15 +1095,15 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                var dbContext = scope.ServiceProvider.GetService<ListenArrDbContext>();
+                var dlRepo = scope.ServiceProvider.GetService<IDownloadRepository>();
                 var importResolver = scope.ServiceProvider.GetService<IImportItemResolutionService>();
 
-                if (dbContext == null || importResolver == null)
+                if (dlRepo == null || importResolver == null)
                 {
                     return importableFiles;
                 }
 
-                var download = await dbContext.Downloads.FindAsync(new object[] { job.DownloadId }, cancellationToken);
+                var download = await dlRepo.FindAsync(job.DownloadId);
                 if (download == null)
                 {
                     return importableFiles;
@@ -1214,21 +1203,22 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _serviceScopeFactory.CreateScope();
-                var dbContext = scope.ServiceProvider.GetService<ListenArrDbContext>();
+                var finalizeDlRepo = scope.ServiceProvider.GetService<IDownloadRepository>();
+                var finalizeAudiobookRepo = scope.ServiceProvider.GetService<IAudiobookRepository>();
                 var scanQueue = scope.ServiceProvider.GetService<IScanQueueService>();
 
-                if (scanQueue == null || dbContext == null)
+                if (scanQueue == null || finalizeDlRepo == null || finalizeAudiobookRepo == null)
                 {
                     return;
                 }
 
-                var dl = await dbContext.Downloads.FindAsync(job.DownloadId);
+                var dl = await finalizeDlRepo.FindAsync(job.DownloadId);
                 if (dl == null || dl.AudiobookId == null)
                 {
                     return;
                 }
 
-                var audiobook = await dbContext.Audiobooks.FindAsync(dl.AudiobookId);
+                var audiobook = await finalizeAudiobookRepo.GetByIdAsync(dl.AudiobookId.Value);
                 if (audiobook == null)
                 {
                     return;

@@ -50,7 +50,7 @@ function pickBestMatch(results: SearchResult[], detectedAuthor?: string): Search
 
 function normalizeGenres(genres: unknown): string[] | undefined {
   if (!Array.isArray(genres)) return genres as string[] | undefined
-  return genres.map((g) => (typeof g === 'string' ? g : (g as any)?.name ?? '')).filter(Boolean)
+  return genres.map((g) => (typeof g === 'string' ? g : (g as { name?: string })?.name ?? '')).filter(Boolean)
 }
 
 function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
@@ -429,7 +429,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             ...match,
             genres: normalizeGenres(match.genres),
             series: Array.isArray(match.series)
-              ? ((match.series as any[])[0]?.name ?? undefined)
+              ? ((match.series as Array<{ name?: string }>)[0]?.name ?? undefined)
               : match.series,
           }
           const { audiobook } = await apiService.addToLibrary(metadata, {
@@ -438,10 +438,11 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             searchResult: sanitizedMatch,
           })
           audiobookId = audiobook.id
-        } catch (e: any) {
-          // 409 = book already in library â€” extract existing audiobook from response body
-          if (e?.status === 409 && e?.body) {
-            const body = typeof e.body === 'string' ? JSON.parse(e.body) : e.body
+        } catch (e: unknown) {
+          // 409 = book already in library — extract existing audiobook from response body
+          const err = e as { status?: number; body?: unknown }
+          if (err?.status === 409 && err?.body) {
+            const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body
             if (body?.audiobook?.id) {
               audiobookId = body.audiobook.id
               // Update BasePath to the selected destination so the file moves to the right place.

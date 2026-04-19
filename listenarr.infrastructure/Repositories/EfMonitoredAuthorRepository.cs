@@ -46,6 +46,20 @@ namespace Listenarr.Infrastructure.Repositories
             return existing;
         }
 
+        public async Task<MonitoredAuthor?> GetByNameRegionLanguageAsync(string normalizedName, string region, string language, CancellationToken ct = default)
+        {
+            return await _db.MonitoredAuthors
+                .FirstOrDefaultAsync(a => a.AuthorNameNormalized == normalizedName && a.Region == region && a.Language == language, ct);
+        }
+
+        public async Task<List<MonitoredAuthor>> GetDueForSyncAsync(DateTime cutoff, CancellationToken ct = default)
+        {
+            return await _db.MonitoredAuthors
+                .Where(a => a.LastCheckedAt == null || a.LastCheckedAt < cutoff)
+                .OrderBy(a => a.LastCheckedAt ?? DateTime.MinValue)
+                .ToListAsync(ct);
+        }
+
         public async Task<bool> DeleteAsync(int id, CancellationToken ct = default)
         {
             var author = await _db.MonitoredAuthors.FindAsync(new object[] { id }, ct);

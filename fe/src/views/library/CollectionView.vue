@@ -1211,10 +1211,6 @@ const totalAddedAudiobooks = computed(() => audiobooks.value.filter((book) => bo
 const totalNotAddedAudiobooks = computed(() => audiobooks.value.filter((book) => !book.inLibrary))
 const authorLibraryCount = computed(() => totalAddedAudiobooks.value.length)
 const authorNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
-const authorVisibleBookCount = computed(() => audiobooks.value.length)
-const authorCatalogTotalCount = computed(
-  () => authorCatalog.value?.totalBooks ?? authorVisibleBookCount.value,
-)
 const seriesLibraryCount = computed(() => totalAddedAudiobooks.value.length)
 const seriesNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
 const seriesVisibleBookCount = computed(() => audiobooks.value.length)

@@ -21,6 +21,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +32,7 @@ namespace Listenarr.Infrastructure.Repositories
     /// Repository for event-sourced download history.
     /// Provides audit trail and prevents duplicate downloads.
     /// </summary>
-    public class DownloadHistoryRepository
+    public class DownloadHistoryRepository : IDownloadHistoryRepository
     {
         private readonly ListenArrDbContext _context;
 

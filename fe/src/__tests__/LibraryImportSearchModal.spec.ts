@@ -1,6 +1,7 @@
 import { mount } from '@vue/test-utils'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { apiService } from '@/services/api'
+import type { SearchResult } from '@/types'
 import LibraryImportSearchModal from '@/components/domain/audiobook/LibraryImportSearchModal.vue'
 
 const getProtectedImageSrc = vi.fn(() => 'https://example.com/protected.jpg')
@@ -20,7 +21,7 @@ describe('LibraryImportSearchModal', () => {
         title: 'Alchemised',
         imageUrl: '/api/v1/images/B000APXZHK',
         authors: [{ name: 'SenLinYu' }],
-      } as any,
+      } as unknown as SearchResult,
     ])
   })
 

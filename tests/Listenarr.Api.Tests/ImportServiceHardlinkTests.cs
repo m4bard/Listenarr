@@ -262,10 +262,10 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IFileNamingService>(new FileNamingService(new TestConfigurationService(), new NullLogger<FileNamingService>()));
                 services.AddSingleton<IMetadataService>(new Mock<IMetadataService>().Object);
                 services.AddSingleton<IImportService>(sp => new ImportService(
-                    dbFactoryMock.Object, 
-                    sp.GetRequiredService<IServiceScopeFactory>(), 
-                    sp.GetRequiredService<IFileNamingService>(), 
-                    sp.GetService<IMetadataService>(), 
+                    new AudiobookRepository(new ListenArrDbContext(options)),
+                    sp.GetRequiredService<IServiceScopeFactory>(),
+                    sp.GetRequiredService<IFileNamingService>(),
+                    sp.GetService<IMetadataService>(),
                     new NullLogger<ImportService>()));
             });
         }

@@ -23,10 +23,10 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Caching.Memory;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Listenarr.Api.Models;
 using Listenarr.Api.Services;
-using Microsoft.EntityFrameworkCore;
+using Listenarr.Application.Repositories;
+using Listenarr.Application.Services;
 using System.Collections.Generic;
 using System.Linq;
 using System;
@@ -68,8 +68,13 @@ namespace Listenarr.Api.Controllers
         private readonly IAudiobookRepository _repo;
         private readonly IImageCacheService _imageCacheService;
         private readonly ILogger<LibraryController> _logger;
-        private readonly ListenArrDbContext _dbContext;
         private readonly IServiceScopeFactory _scopeFactory;
+        private readonly IHistoryRepository _historyRepo;
+        private readonly IAudiobookFileRepository _audioFileRepo;
+        private readonly IQualityProfileRepository _qualityProfileRepo;
+        private readonly IDownloadRepository _downloadRepo;
+        private readonly IRootFolderRepository _rootFolderRepo;
+        private readonly IDatabaseConnectionProvider _dbConnectionProvider;
         private readonly IScanQueueService? _scanQueueService;
         private readonly IMoveQueueService? _moveQueueService;
         private readonly IFileNamingService _fileNamingService;
@@ -94,8 +99,13 @@ namespace Listenarr.Api.Controllers
             IAudiobookRepository repo,
             IImageCacheService imageCacheService,
             ILogger<LibraryController> logger,
-            ListenArrDbContext dbContext,
             IServiceScopeFactory scopeFactory,
+            IHistoryRepository historyRepo,
+            IAudiobookFileRepository audioFileRepo,
+            IQualityProfileRepository qualityProfileRepo,
+            IDownloadRepository downloadRepo,
+            IRootFolderRepository rootFolderRepo,
+            IDatabaseConnectionProvider dbConnectionProvider,
             IFileNamingService fileNamingService,
             IScanQueueService? scanQueueService = null,
             IMoveQueueService? moveQueueService = null,
@@ -107,8 +117,13 @@ namespace Listenarr.Api.Controllers
             _repo = repo;
             _imageCacheService = imageCacheService;
             _logger = logger;
-            _dbContext = dbContext;
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+            _historyRepo = historyRepo;
+            _audioFileRepo = audioFileRepo;
+            _qualityProfileRepo = qualityProfileRepo;
+            _downloadRepo = downloadRepo;
+            _rootFolderRepo = rootFolderRepo;
+            _dbConnectionProvider = dbConnectionProvider;
             _fileNamingService = fileNamingService;
             _scanQueueService = scanQueueService;
             _moveQueueService = moveQueueService;
@@ -523,8 +538,7 @@ namespace Listenarr.Api.Controllers
                     // Persist any updated author ASINs
                     try
                     {
-                        _dbContext.Audiobooks.Update(audiobook);
-                        await _dbContext.SaveChangesAsync();
+                        await _repo.UpdateAsync(audiobook);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogWarning(ex, "Failed to persist author ASINs for audiobook '{Title}'", LogRedaction.SanitizeText(audiobook.Title));
@@ -574,8 +588,7 @@ namespace Listenarr.Api.Controllers
                 Timestamp = DateTime.UtcNow
             };
 
-            _dbContext.History.Add(historyEntry);
-            await _dbContext.SaveChangesAsync();
+            await _historyRepo.AddAsync(historyEntry);
 
             _logger.LogInformation("Added audiobook '{Title}' (ASIN: {Asin}) to library with Monitored={Monitored}, QualityProfileId={QualityProfileId}, AutoSearch={AutoSearch}",
                 audiobook.Title, audiobook.Asin, request.Monitored, audiobook.QualityProfileId, request.AutoSearch);
@@ -648,36 +661,10 @@ namespace Listenarr.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var audiobooks = await _dbContext.Audiobooks
-                .AsNoTracking()
+            var allAudiobooks = await _repo.GetAllAsync();
+            var audiobooks = allAudiobooks
                 .OrderBy(a => a.Title)
-                .Select(a => new
-                {
-                    a.Id,
-                    a.Title,
-                    a.Authors,
-                    a.Narrators,
-                    a.PublishYear,
-                    a.PublishedDate,
-                    a.Series,
-                    a.SeriesNumber,
-                    a.Genres,
-                    a.Asin,
-                    a.OpenLibraryId,
-                    a.Publisher,
-                    a.Language,
-                    a.Runtime,
-                    a.Edition,
-                    a.ImageUrl,
-                    a.Monitored,
-                    a.BasePath,
-                    a.FilePath,
-                    a.FileSize,
-                    a.Quality,
-                    a.QualityProfileId,
-                    a.AuthorAsins
-                })
-                .ToListAsync();
+                .ToList();
 
             if (audiobooks.Count == 0)
             {
@@ -686,18 +673,16 @@ namespace Listenarr.Api.Controllers
 
             // Because this endpoint already loads the entire audiobook table, fetch file
             // summaries directly instead of expanding a large in-memory ID list into SQL.
-            var fileSummaries = await _dbContext.AudiobookFiles
-                .AsNoTracking()
-                .Select(f => new AudiobookFileStatusInfo
-                {
-                    AudiobookId = f.AudiobookId,
-                    Path = f.Path,
-                    Format = f.Format,
-                    Container = f.Container,
-                    Codec = f.Codec,
-                    Bitrate = f.Bitrate
-                })
-                .ToListAsync();
+            var allFiles = await _audioFileRepo.GetAllAsync();
+            var fileSummaries = allFiles.Select(f => new AudiobookFileStatusInfo
+            {
+                AudiobookId = f.AudiobookId,
+                Path = f.Path,
+                Format = f.Format,
+                Container = f.Container,
+                Codec = f.Codec,
+                Bitrate = f.Bitrate
+            }).ToList();
 
             var filesByAudiobookId = fileSummaries
                 .GroupBy(f => f.AudiobookId)
@@ -709,21 +694,19 @@ namespace Listenarr.Api.Controllers
                 .Distinct()
                 .ToArray();
 
+            var allQualityProfiles = await _qualityProfileRepo.GetAllAsync();
             var qualityProfiles = qualityProfileIds.Length == 0
                 ? new List<QualityProfile>()
-                : await _dbContext.QualityProfiles
-                    .AsNoTracking()
-                    .Where(q => qualityProfileIds.Contains(q.Id))
-                    .ToListAsync();
+                : allQualityProfiles.Where(q => qualityProfileIds.Contains(q.Id)).ToList();
 
             var qualityProfilesById = qualityProfiles.ToDictionary(q => q.Id);
 
-            var activeDownloadAudiobookIds = await _dbContext.Downloads
-                .AsNoTracking()
+            var allDownloads = await _downloadRepo.GetAllAsync();
+            var activeDownloadAudiobookIds = allDownloads
                 .Where(d => d.AudiobookId.HasValue && ActiveLibraryDownloadStatuses.Contains(d.Status))
                 .Select(d => d.AudiobookId!.Value)
                 .Distinct()
-                .ToListAsync();
+                .ToList();
 
             var activeDownloadAudiobookIdSet = activeDownloadAudiobookIds.ToHashSet();
 
@@ -810,12 +793,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet("{id}")]
         public async Task<ActionResult<Audiobook>> GetAudiobook(int id)
         {
-            var updated = await _dbContext.Audiobooks
-                .AsNoTracking()
-                .Include(a => a.Files)
-                .Include(a => a.ExternalIdentifiers)
-                .Include(a => a.SeriesMemberships)
-                .FirstOrDefaultAsync(a => a.Id == id);
+            var updated = await _repo.GetByIdAsync(id);
 
             if (updated == null)
                 return NotFound(new { message = "Audiobook not found" });
@@ -895,9 +873,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet("{id}/identifiers")]
         public async Task<IActionResult> GetAudiobookIdentifiers(int id)
         {
-            var audiobook = await _dbContext.Audiobooks
-                .Include(a => a.ExternalIdentifiers)
-                .FirstOrDefaultAsync(a => a.Id == id);
+            var audiobook = await _repo.GetByIdAsync(id);
 
             if (audiobook == null)
             {
@@ -923,9 +899,7 @@ namespace Listenarr.Api.Controllers
         [HttpPut("{id}/identifiers")]
         public async Task<IActionResult> ReplaceAudiobookIdentifiers(int id, [FromBody] ReplaceAudiobookIdentifiersRequest? request)
         {
-            var audiobook = await _dbContext.Audiobooks
-                .Include(a => a.ExternalIdentifiers)
-                .FirstOrDefaultAsync(a => a.Id == id);
+            var audiobook = await _repo.GetByIdAsync(id);
 
             if (audiobook == null)
             {
@@ -1041,15 +1015,10 @@ namespace Listenarr.Api.Controllers
                 olids[0].IsPrimary = true;
             }
 
-            if (audiobook.ExternalIdentifiers != null && audiobook.ExternalIdentifiers.Count > 0)
-            {
-                _dbContext.AudiobookExternalIdentifiers.RemoveRange(audiobook.ExternalIdentifiers);
-            }
-
             audiobook.ExternalIdentifiers = normalized;
             SyncLegacyFieldsFromIdentifiers(audiobook);
 
-            await _dbContext.SaveChangesAsync();
+            await _repo.UpdateWithIdentifierReplaceAsync(audiobook, normalized);
 
             _logger.LogInformation(
                 "Replaced identifiers for audiobook {AudiobookId} ({Title}). Count={Count}",
@@ -1091,9 +1060,7 @@ namespace Listenarr.Api.Controllers
                 return StatusCode(500, new { message = "Metadata rescan services are not available." });
             }
 
-            var audiobook = await _dbContext.Audiobooks
-                .Include(a => a.ExternalIdentifiers)
-                .FirstOrDefaultAsync(a => a.Id == id);
+            var audiobook = await _repo.GetByIdAsync(id);
 
             if (audiobook == null)
             {
@@ -1325,7 +1292,7 @@ namespace Listenarr.Api.Controllers
                 SyncImportedIdentifiersFromLegacyFields(audiobook);
             }
 
-            await _dbContext.SaveChangesAsync();
+            await _repo.UpdateAsync(audiobook);
 
             _logger.LogInformation(
                 "Metadata rescan updated audiobook {AudiobookId} ({Title}) using {Source} ASIN {Asin} region {Region}",
@@ -1357,7 +1324,7 @@ namespace Listenarr.Api.Controllers
             var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "library/files-debug");
             if (gate != null) return gate;
 
-            var files = await _dbContext.AudiobookFiles.Where(f => f.AudiobookId == id).ToListAsync();
+            var files = await _audioFileRepo.GetByAudiobookIdAsync(id);
             return Ok(files);
         }
 
@@ -1395,11 +1362,9 @@ namespace Listenarr.Api.Controllers
             async Task<List<object>> ScanTableColumnsAsync(string table, string keyColumn, params string[] columns)
             {
                 var results = new List<object>();
-                var conn = _dbContext.Database.GetDbConnection();
+                var conn = await _dbConnectionProvider.GetOpenConnectionAsync();
                 try
                 {
-                    if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
-
                     using var cmd = conn.CreateCommand();
                     var cols = string.Join(", ", new[] { keyColumn }.Concat(columns).Select(c => "\"" + c + "\""));
                     cmd.CommandText = $"SELECT {cols} FROM \"{table}\"";
@@ -1489,9 +1454,7 @@ namespace Listenarr.Api.Controllers
             var expanded = new List<object>();
             try
             {
-                var conn = _dbContext.Database.GetDbConnection();
-                if (conn.State != System.Data.ConnectionState.Open) await conn.OpenAsync();
-
+                var conn = await _dbConnectionProvider.GetOpenConnectionAsync();
                 using var tblCmd = conn.CreateCommand();
                 tblCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
                 using var tblRdr = await tblCmd.ExecuteReaderAsync();
@@ -2012,11 +1975,11 @@ namespace Listenarr.Api.Controllers
                 return null;
             }
 
-            var otherFilePaths = await _dbContext.AudiobookFiles
-                .AsNoTracking()
+            var allFiles = await _audioFileRepo.GetAllAsync();
+            var otherFilePaths = allFiles
                 .Where(f => f.AudiobookId != audiobook.Id && f.Path != null)
                 .Select(f => f.Path!)
-                .ToListAsync();
+                .ToList();
 
             if (otherFilePaths
                 .Select(NormalizePath)
@@ -2026,11 +1989,11 @@ namespace Listenarr.Api.Controllers
                 return null;
             }
 
-            var otherAudiobookPaths = await _dbContext.Audiobooks
-                .AsNoTracking()
+            var allAudiobooks = await _repo.GetAllAsync();
+            var otherAudiobookPaths = allAudiobooks
                 .Where(a => a.Id != audiobook.Id)
                 .Select(a => new { a.Id, a.BasePath, a.FilePath })
-                .ToListAsync();
+                .ToList();
 
             foreach (var otherPath in otherAudiobookPaths)
             {
@@ -2107,11 +2070,11 @@ namespace Listenarr.Api.Controllers
                 return;
             }
 
-            var otherAudiobookPaths = await _dbContext.Audiobooks
-                .AsNoTracking()
+            var allAbs = await _repo.GetAllAsync();
+            var otherAudiobookPaths = allAbs
                 .Where(a => a.Id != audiobook.Id)
                 .Select(a => new { a.Id, a.BasePath, a.FilePath })
-                .ToListAsync();
+                .ToList();
 
             foreach (var otherPath in otherAudiobookPaths)
             {
@@ -2160,10 +2123,7 @@ namespace Listenarr.Api.Controllers
                 }
                 else
                 {
-                    var roots = await _dbContext.RootFolders
-                        .AsNoTracking()
-                        .Select(r => r.Path)
-                        .ToListAsync();
+                    var roots = (await _rootFolderRepo.GetAllAsync()).Select(r => r.Path).ToList();
 
                     foreach (var normalizedRoot in roots
                         .Select(root => NormalizePath(root))
@@ -2423,23 +2383,18 @@ namespace Listenarr.Api.Controllers
             var errors = new List<string>();
             var deletedIds = new List<int>();
 
-            // Use a transaction to ensure all deletions succeed or all fail
-            using (var transaction = await _dbContext.Database.BeginTransactionAsync())
+            foreach (var id in request.Ids.Distinct())
             {
                 try
                 {
-                    foreach (var id in request.Ids.Distinct())
+                    var audiobook = await _repo.GetByIdAsync(id);
+                    if (audiobook == null)
                     {
-                        try
-                        {
-                            var audiobook = await _repo.GetByIdAsync(id);
-                            if (audiobook == null)
-                            {
-                                errors.Add($"Audiobook with ID {id} not found");
-                                continue;
-                            }
+                        errors.Add($"Audiobook with ID {id} not found");
+                        continue;
+                    }
 
-                            // Delete associated image from cache if it exists
+                    // Delete associated image from cache if it exists
                             try
                             {
                                 if (!string.IsNullOrEmpty(audiobook.Asin))
@@ -2511,7 +2466,7 @@ namespace Listenarr.Api.Controllers
                                 Timestamp = DateTime.UtcNow
                             };
 
-                            _dbContext.History.Add(historyEntry);
+                            await _historyRepo.AddAsync(historyEntry);
 
                             var deleted = await _repo.DeleteByIdAsync(id);
                             if (deleted)
@@ -2524,29 +2479,16 @@ namespace Listenarr.Api.Controllers
                             {
                                 errors.Add($"Failed to delete audiobook with ID {id}");
                             }
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogError(ex, "Error deleting audiobook with ID {Id}", id);
-                            errors.Add($"Error deleting audiobook with ID {id}: {ex.Message}");
-                        }
-                    }
-
-                    // Commit the transaction if we successfully deleted at least one audiobook
-                    if (deletedCount > 0)
-                    {
-                        await transaction.CommitAsync();
-                    }
-                    else
-                    {
-                        await transaction.RollbackAsync();
-                        return BadRequest(new { message = "No audiobooks were successfully deleted", errors });
-                    }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    await transaction.RollbackAsync();
-                    _logger.LogError(ex, "Transaction failed during bulk delete operation");
-                    return StatusCode(500, new { message = "Bulk delete operation failed", error = ex.Message });
+                    _logger.LogError(ex, "Error during bulk delete for ID {Id}: {Message}", id, ex.Message);
+                    errors.Add($"Error deleting audiobook with ID {id}: {ex.Message}");
                 }
+            }
+
+            if (deletedCount == 0 && errors.Any())
+            {
+                return BadRequest(new { message = "No audiobooks were successfully deleted", errors });
             }
 
             object result = errors.Any()
@@ -2595,11 +2537,6 @@ namespace Listenarr.Api.Controllers
                 _logger.LogWarning(ex, "Failed to load application settings while performing bulk update");
             }
 
-            // Wrap all updates in a single transaction so a failure on one audiobook doesn't
-            // leave earlier ones partially committed while later ones are rolled back.
-            await using var transaction = await _dbContext.Database.BeginTransactionAsync();
-            try
-            {
             foreach (var id in request.Ids.Distinct())
             {
                 var entryErrors = new List<string>();
@@ -2632,7 +2569,7 @@ namespace Listenarr.Api.Controllers
                             _logger.LogInformation("Set Monitored={Monitored} for audiobook id={Id}", monVal, id);
 
                             // History entry
-                            _dbContext.History.Add(new History
+                            await _historyRepo.AddAsync(new History
                             {
                                 AudiobookId = audiobook.Id,
                                 AudiobookTitle = audiobook.Title ?? "Unknown",
@@ -2660,7 +2597,7 @@ namespace Listenarr.Api.Controllers
                             changed = true;
                             _logger.LogInformation("Set QualityProfileId={Profile} for audiobook id={Id}", qpVal, id);
 
-                            _dbContext.History.Add(new History
+                            await _historyRepo.AddAsync(new History
                             {
                                 AudiobookId = audiobook.Id,
                                 AudiobookTitle = audiobook.Title ?? "Unknown",
@@ -2710,7 +2647,7 @@ namespace Listenarr.Api.Controllers
                                     audiobook.BasePath = newBase;
                                     changed = true;
 
-                                    _dbContext.History.Add(new History
+                                    await _historyRepo.AddAsync(new History
                                     {
                                         AudiobookId = audiobook.Id,
                                         AudiobookTitle = audiobook.Title ?? "Unknown",
@@ -2730,10 +2667,9 @@ namespace Listenarr.Api.Controllers
                         }
                     }
 
-                    // Stage update for this audiobook (persisted in the single SaveChanges below)
                     if (changed)
                     {
-                        _dbContext.Audiobooks.Update(audiobook);
+                        await _repo.UpdateAsync(audiobook);
                         success = true;
                     }
                     else
@@ -2746,17 +2682,6 @@ namespace Listenarr.Api.Controllers
                 }
 
                 results.Add(new { id, success, errors = entryErrors });
-            }
-
-                // Persist all staged changes atomically
-                await _dbContext.SaveChangesAsync();
-                await transaction.CommitAsync();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                await transaction.RollbackAsync();
-                _logger.LogError(ex, "Bulk update failed; all changes have been rolled back");
-                return StatusCode(500, new { message = "Bulk update failed and was rolled back", error = ex.Message });
             }
 
             return Ok(new { message = "Bulk update completed", results });
@@ -2998,7 +2923,10 @@ namespace Listenarr.Api.Controllers
             using (var scope = _scopeFactory.CreateScope())
             {
                 var metadataService = scope.ServiceProvider.GetRequiredService<IMetadataService>();
-                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                var audioFileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                var historyRepo = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
+
+                var existingFilesList = await audioFileRepo.GetByAudiobookIdAsync(audiobook.Id);
 
                 foreach (var filePath in foundFiles)
                 {
@@ -3007,7 +2935,7 @@ namespace Listenarr.Api.Controllers
                         // Calculate relative path from base path
                         var relativePath = Path.GetRelativePath(basePath, filePath);
 
-                        var existing = await db.AudiobookFiles.FirstOrDefaultAsync(f => f.AudiobookId == audiobook.Id && f.Path == relativePath);
+                        var existing = existingFilesList.FirstOrDefault(f => f.Path == relativePath);
                         if (existing != null)
                         {
                             _logger.LogInformation("Skipping existing AudiobookFile for audiobook {AudiobookId}: {Path}", audiobook.Id, relativePath);
@@ -3038,7 +2966,7 @@ namespace Listenarr.Api.Controllers
                             Channels = meta?.Channels
                         };
 
-                        db.AudiobookFiles.Add(fileRecord);
+                        await audioFileRepo.AddAsync(fileRecord);
                         created.Add(fileRecord);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -3050,7 +2978,7 @@ namespace Listenarr.Api.Controllers
                 if (!string.IsNullOrEmpty(basePath))
                 {
                     audiobook.BasePath = basePath;
-                    await db.SaveChangesAsync();
+                    await _repo.UpdateAsync(audiobook);
                 }
 
                 // Add history entries for newly scanned files
@@ -3071,19 +2999,16 @@ namespace Listenarr.Api.Controllers
                              Timestamp = DateTime.UtcNow
                          }))
                 {
-                    db.History.Add(historyEntry);
+                    await historyRepo.AddAsync(historyEntry);
                 }
-                await db.SaveChangesAsync();
 
                 // Remove AudiobookFile DB rows for files that no longer exist on disk
                 try
                 {
-                    var existingFiles = await db.AudiobookFiles
-                        .Where(f => f.AudiobookId == audiobook.Id)
-                        .ToListAsync();
+                    var allExistingFiles = await audioFileRepo.GetByAudiobookIdAsync(audiobook.Id);
 
                     var foundSet = new HashSet<string>(foundFiles.Select(f => Path.GetRelativePath(basePath, f)), StringComparer.OrdinalIgnoreCase);
-                    var toRemove = existingFiles
+                    var toRemove = allExistingFiles
                         .Where(f => f.Path != null && FileUtils.IsAudioFile(f.Path) && !foundSet.Contains(f.Path))
                         .ToList();
 
@@ -3095,7 +3020,7 @@ namespace Listenarr.Api.Controllers
                             try
                             {
                                 removedFilesDto.Add(new { id = rem.Id, path = rem.Path });
-                                db.AudiobookFiles.Remove(rem);
+                                await audioFileRepo.DeleteAsync(rem.Id);
                                 _logger.LogInformation("Removing missing AudiobookFile DB row Id={Id} Path={Path}", rem.Id, rem.Path);
 
                                 // Add history entry for removed file
@@ -3115,14 +3040,12 @@ namespace Listenarr.Api.Controllers
                                     }),
                                     Timestamp = DateTime.UtcNow
                                 };
-                                db.History.Add(historyEntry);
+                                await historyRepo.AddAsync(historyEntry);
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                 _logger.LogWarning(ex, "Failed to remove AudiobookFile Id={Id} Path={Path}", rem.Id, rem.Path);
                             }
                         }
-
-                        await db.SaveChangesAsync();
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -3139,10 +3062,9 @@ namespace Listenarr.Api.Controllers
                         if (System.IO.File.Exists(audiobook.FilePath))
                         {
                             // File exists - check if we already have an AudiobookFile record for it
-                            var existingFileRecord = await db.AudiobookFiles
-                                .FirstOrDefaultAsync(f => f.AudiobookId == audiobook.Id && f.Path == audiobook.FilePath);
+                            var existingFileRecord = await audioFileRepo.ExistsAtPathAsync(audiobook.Id, audiobook.FilePath!);
 
-                            if (existingFileRecord == null)
+                            if (!existingFileRecord)
                             {
                                 // Create AudiobookFile record for the legacy filePath
                                 try
@@ -3184,13 +3106,13 @@ namespace Listenarr.Api.Controllers
                                 }),
                                 Timestamp = DateTime.UtcNow
                             };
-                            db.History.Add(historyEntry);
+                            await historyRepo.AddAsync(historyEntry);
                         }
                     }
 
                     if (needsUpdate)
                     {
-                        await db.SaveChangesAsync();
+                        await _repo.UpdateAsync(audiobook);
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -3198,7 +3120,7 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // Reload audiobook with files to return
-                var updated = await db.Audiobooks.Include(a => a.Files).FirstOrDefaultAsync(a => a.Id == audiobook.Id);
+                var updated = await _repo.GetByIdAsync(audiobook.Id);
 
                 // Send "book-available" notification if the audiobook is monitored and files were imported
                 if (_notificationService != null && audiobook.Monitored && created.Count > 0)
@@ -3287,8 +3209,7 @@ namespace Listenarr.Api.Controllers
                     try
                     {
                         audiobook.BasePath = final;
-                        _dbContext.Audiobooks.Update(audiobook);
-                        await _dbContext.SaveChangesAsync();
+                        await _repo.UpdateAsync(audiobook);
                         _logger.LogInformation("Updated BasePath for audiobook {AudiobookId} without moving files: {BasePath}", id, final);
                         return Ok(new { message = "Destination updated" });
                     }
@@ -3457,10 +3378,11 @@ namespace Listenarr.Api.Controllers
             ISearchService searchService,
             IQualityProfileService qualityProfileService,
             IDownloadService downloadService,
-            ListenArrDbContext dbContext)
+            IDownloadRepository downloadRepo,
+            IAudiobookFileRepository audioFileRepo)
         {
             // Check if quality cutoff is already met
-            if (await IsQualityCutoffMetAsync(audiobook, qualityProfileService, dbContext))
+            if (await IsQualityCutoffMetAsync(audiobook, qualityProfileService, downloadRepo, audioFileRepo))
             {
                 _logger.LogInformation("Quality cutoff already met for audiobook '{Title}', skipping search", LogRedaction.SanitizeText(audiobook.Title));
                 return 0;
@@ -3569,23 +3491,21 @@ namespace Listenarr.Api.Controllers
         private async Task<bool> IsQualityCutoffMetAsync(
             Audiobook audiobook,
             IQualityProfileService qualityProfileService,
-            ListenArrDbContext dbContext)
+            IDownloadRepository downloadRepo,
+            IAudiobookFileRepository audioFileRepo)
         {
             if (audiobook.QualityProfile == null)
                 return false;
 
             // Get existing downloads for this audiobook
-            var existingDownloads = await dbContext.Downloads
-                .Where(d => d.AudiobookId == audiobook.Id &&
-                           (d.Status == DownloadStatus.Completed ||
+            var existingDownloads = (await downloadRepo.GetByAudiobookIdAsync(audiobook.Id))
+                .Where(d => d.Status == DownloadStatus.Completed ||
                             d.Status == DownloadStatus.Downloading ||
-                            d.Status == DownloadStatus.ImportPending))
-                .ToListAsync();
+                            d.Status == DownloadStatus.ImportPending)
+                .ToList();
 
             // Get existing files for this audiobook
-            var existingFiles = await dbContext.AudiobookFiles
-                .Where(f => f.AudiobookId == audiobook.Id)
-                .ToListAsync();
+            var existingFiles = await audioFileRepo.GetByAudiobookIdAsync(audiobook.Id);
 
             if (!existingDownloads.Any() && !existingFiles.Any())
                 return false;

@@ -28,6 +28,15 @@ namespace Listenarr.Infrastructure.Repositories
             return await _db.RemotePathMappings.FindAsync(new object[] { id }, ct);
         }
 
+        public async Task<List<RemotePathMapping>> GetByClientAsync(string downloadClientId, CancellationToken ct = default)
+        {
+            return await _db.RemotePathMappings
+                .AsNoTracking()
+                .Where(m => m.DownloadClientId == downloadClientId)
+                .OrderByDescending(m => m.RemotePath.Length)
+                .ToListAsync(ct);
+        }
+
         public async Task<RemotePathMapping> SaveAsync(RemotePathMapping mapping, CancellationToken ct = default)
         {
             var existing = await _db.RemotePathMappings.FindAsync(new object[] { mapping.Id }, ct);

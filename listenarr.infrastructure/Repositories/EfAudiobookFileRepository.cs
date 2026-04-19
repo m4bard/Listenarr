@@ -60,6 +60,16 @@ namespace Listenarr.Infrastructure.Repositories
             await _db.SaveChangesAsync(ct);
         }
 
+        public async Task DeleteAsync(int id, CancellationToken ct = default)
+        {
+            var file = await _db.AudiobookFiles.FindAsync(new object[] { id }, ct);
+            if (file != null)
+            {
+                _db.AudiobookFiles.Remove(file);
+                await _db.SaveChangesAsync(ct);
+            }
+        }
+
         public async Task<bool> ExistsAtPathAsync(int audiobookId, string path, CancellationToken ct = default)
         {
             return await _db.AudiobookFiles.AnyAsync(f => f.AudiobookId == audiobookId && f.Path == path, ct);
@@ -68,6 +78,21 @@ namespace Listenarr.Infrastructure.Repositories
         public async Task<bool> IsPathUsedByOtherAsync(int audiobookId, string path, CancellationToken ct = default)
         {
             return await _db.AudiobookFiles.AnyAsync(f => f.AudiobookId != audiobookId && f.Path == path, ct);
+        }
+
+        public async Task<List<string>> GetAllFilePathsAsync(CancellationToken ct = default)
+        {
+            return await _db.AudiobookFiles
+                .Where(f => f.Path != null)
+                .Select(f => f.Path!)
+                .ToListAsync(ct);
+        }
+
+        public async Task<List<AudiobookFile>> GetAllAsync(CancellationToken ct = default)
+        {
+            return await _db.AudiobookFiles
+                .AsNoTracking()
+                .ToListAsync(ct);
         }
     }
 }

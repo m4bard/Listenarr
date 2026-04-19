@@ -23,6 +23,8 @@ namespace Listenarr.Api.Tests
             services.AddDbContext<ListenArrDbContext>(opts => opts.UseInMemoryDatabase("test_db_move_background"));
             services.AddSingleton<IMoveQueueService, MoveQueueService>();
             services.AddSingleton<MoveBackgroundService>();
+            services.AddScoped<Listenarr.Application.Repositories.IMoveJobRepository, Listenarr.Infrastructure.Repositories.EfMoveJobRepository>();
+            services.AddScoped<Listenarr.Api.Services.IAudiobookRepository, Listenarr.Api.Services.AudiobookRepository>();
 
             var provider = services.BuildServiceProvider();
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();

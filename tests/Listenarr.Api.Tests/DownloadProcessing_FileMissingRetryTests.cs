@@ -63,6 +63,7 @@ namespace Listenarr.Api.Tests
 
             // Queue service uses DbContext and logger - register real instance
             services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
+            services.AddSingleton<Listenarr.Application.Repositories.IDownloadProcessingJobRepository>(new TestDownloadProcessingJobRepository(db));
 
             // Mock IImportItemResolutionService - just returns the preliminary item unchanged
             var importResolutionMock = new Mock<IImportItemResolutionService>();
@@ -160,6 +161,7 @@ namespace Listenarr.Api.Tests
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddSingleton(db);
+            services.AddSingleton<Listenarr.Application.Repositories.IDownloadRepository>(new TestDownloadRepository(db));
 
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings
@@ -280,6 +282,7 @@ namespace Listenarr.Api.Tests
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddSingleton(db);
+            services.AddSingleton<Listenarr.Application.Repositories.IDownloadRepository>(new TestDownloadRepository(db));
 
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings

@@ -1,7 +1,7 @@
 /*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
  * by the Free Software Foundation, either version 3 of the License, or
@@ -16,8 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 using System.Security.Claims;
 using System.Security.Cryptography;
@@ -41,12 +41,12 @@ namespace Listenarr.Api.Services
         /// <summary>Extended session duration when "remember me" is checked.</summary>
         public static readonly TimeSpan RememberMeExpiration = TimeSpan.FromDays(30);
 
-        private readonly IDbContextFactory<ListenArrDbContext> _dbContextFactory;
+        private readonly IUserSessionRepository _sessions;
         private readonly ILogger<SessionService> _logger;
 
-        public SessionService(IDbContextFactory<ListenArrDbContext> dbContextFactory, ILogger<SessionService> logger)
+        public SessionService(IUserSessionRepository sessions, ILogger<SessionService> logger)
         {
-            _dbContextFactory = dbContextFactory;
+            _sessions = sessions;
             _logger = logger;
         }
 
@@ -61,8 +61,7 @@ namespace Listenarr.Api.Services
                 var sessionToken = GenerateSecureToken();
                 var tokenHash = HashToken(sessionToken);
 
-                await using var db = await _dbContextFactory.CreateDbContextAsync();
-                db.UserSessions.Add(new UserSession
+                var session = new UserSession
                 {
                     Username = username,
                     TokenHash = tokenHash,
@@ -71,11 +70,11 @@ namespace Listenarr.Api.Services
                     CreatedAt = now,
                     ExpiresAt = now.Add(expiration),
                     LastAccessed = now,
-                });
+                };
 
                 try
                 {
-                    await db.SaveChangesAsync();
+                    await _sessions.CreateAsync(session);
                     _logger.LogInformation("Created session for user {Username} (RememberMe: {RememberMe})", username, rememberMe);
                     return sessionToken;
                 }
@@ -96,26 +95,11 @@ namespace Listenarr.Api.Services
             }
 
             var tokenHash = HashToken(sessionToken);
-            var now = DateTime.UtcNow;
-
-            await using var db = await _dbContextFactory.CreateDbContextAsync();
-            var session = await db.UserSessions.SingleOrDefaultAsync(s => s.TokenHash == tokenHash);
+            var session = await _sessions.GetByTokenHashAsync(tokenHash);
             if (session == null)
             {
                 return null;
             }
-
-            if (session.ExpiresAt <= now)
-            {
-                db.UserSessions.Remove(session);
-                await db.SaveChangesAsync();
-                _logger.LogInformation("Session expired for user {Username}", session.Username);
-                return null;
-            }
-
-            // Track activity for diagnostics and possible future inactivity policies.
-            session.LastAccessed = now;
-            await db.SaveChangesAsync();
 
             var claims = new List<Claim>
             {
@@ -139,48 +123,19 @@ namespace Listenarr.Api.Services
             }
 
             var tokenHash = HashToken(sessionToken);
-            await using var db = await _dbContextFactory.CreateDbContextAsync();
-            var session = await db.UserSessions.SingleOrDefaultAsync(s => s.TokenHash == tokenHash);
-            if (session == null)
-            {
-                return false;
-            }
-
-            db.UserSessions.Remove(session);
-            await db.SaveChangesAsync();
-            _logger.LogInformation("Invalidated session for user {Username}", session.Username);
+            await _sessions.InvalidateAsync(tokenHash);
             return true;
         }
 
         public async Task InvalidateAllSessionsForUserAsync(string username)
         {
-            await using var db = await _dbContextFactory.CreateDbContextAsync();
-            var sessions = await db.UserSessions.Where(s => s.Username == username).ToListAsync();
-            if (sessions.Count == 0)
-            {
-                return;
-            }
-
-            db.UserSessions.RemoveRange(sessions);
-            await db.SaveChangesAsync();
-            _logger.LogInformation("Invalidated all sessions for user {Username} (count: {Count})", username, sessions.Count);
+            await _sessions.InvalidateAllForUserAsync(username);
+            _logger.LogInformation("Invalidated all sessions for user {Username}", username);
         }
 
         public async Task<int> GetActiveSessionCountAsync(string username)
         {
-            var now = DateTime.UtcNow;
-            await using var db = await _dbContextFactory.CreateDbContextAsync();
-
-            var expired = await db.UserSessions
-                .Where(s => s.Username == username && s.ExpiresAt <= now)
-                .ToListAsync();
-            if (expired.Count > 0)
-            {
-                db.UserSessions.RemoveRange(expired);
-                await db.SaveChangesAsync();
-            }
-
-            return await db.UserSessions.CountAsync(s => s.Username == username && s.ExpiresAt > now);
+            return await _sessions.GetActiveCountAsync(username);
         }
 
         private static string GenerateSecureToken()

@@ -17,7 +17,7 @@
  */
 
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using Microsoft.AspNetCore.SignalR;
 using Listenarr.Api.Hubs;
 using System.Text.Json;
@@ -26,7 +26,6 @@ using SixLabors.ImageSharp.PixelFormats;
 using HtmlAgilityPack;
 using System.Collections.Concurrent;
 using System.Text.RegularExpressions;
-using Microsoft.EntityFrameworkCore;
 using Listenarr.Api.Services.Search;
 using Listenarr.Api.Services.Search.Filters;
 using Listenarr.Api.Services.Search.Strategies;
@@ -44,7 +43,8 @@ namespace Listenarr.Api.Services
         private readonly IOpenLibraryService _openLibraryService;
         private readonly IHubContext<DownloadHub> _hubContext;
         private readonly IImageCacheService _imageCacheService;
-        private readonly ListenArrDbContext _dbContext;
+        private readonly IIndexerRepository _indexerRepository;
+        private readonly IApiConfigurationRepository _apiConfigRepository;
         private readonly AudibleService _audibleService;
         private readonly IAudnexusService _audnexusService;
         private readonly MetadataConverters _metadataConverters;
@@ -65,7 +65,8 @@ namespace Listenarr.Api.Services
             ILogger<SearchService> logger,
             IOpenLibraryService openLibraryService,
             IImageCacheService imageCacheService,
-            ListenArrDbContext dbContext,
+            IIndexerRepository indexerRepository,
+            IApiConfigurationRepository apiConfigRepository,
             IHubContext<DownloadHub> hubContext,
             AudibleService audibleService,
             IAudnexusService audnexusService,
@@ -86,7 +87,8 @@ namespace Listenarr.Api.Services
             _logger = logger;
             _openLibraryService = openLibraryService;
             _imageCacheService = imageCacheService;
-            _dbContext = dbContext;
+            _indexerRepository = indexerRepository;
+            _apiConfigRepository = apiConfigRepository;
             _hubContext = hubContext;
             _audibleService = audibleService;
             _audnexusService = audnexusService;
@@ -123,7 +125,7 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogInformation("No indexer results found for automatic search query: {Query}", LogRedaction.SanitizeText(query));
                 }
-                return ApplySorting(results, sortBy, sortDirection);
+                return await ApplySorting(results, sortBy, sortDirection);
             }
 
             // For manual/interactive search, use intelligent search (Audible/Audnexus/OpenLibrary) + indexers
@@ -146,15 +148,22 @@ namespace Listenarr.Api.Services
                 _logger.LogInformation("Added {Count} indexer results (including DDL downloads) for query: {Query}", indexerResults.Count, LogRedaction.SanitizeText(query));
             }
 
-            return ApplySorting(results, sortBy, sortDirection);
+            return await ApplySorting(results, sortBy, sortDirection);
         }
 
-        private List<SearchResult> ApplySorting(List<SearchResult> results, SearchSortBy sortBy, SearchSortDirection sortDirection)
+        private async Task<List<SearchResult>> ApplySorting(List<SearchResult> results, SearchSortBy sortBy, SearchSortDirection sortDirection)
         {
             if (!results.Any())
                 return results;
 
             IEnumerable<SearchResult> orderedResults;
+
+            Dictionary<int, Indexer>? indexerCache = null;
+            if (sortBy == SearchSortBy.Seeders || sortBy == SearchSortBy.Smart)
+            {
+                var allIndexers = await _indexerRepository.GetAllAsync();
+                indexerCache = allIndexers.ToDictionary(i => i.Id);
+            }
 
             // Primary sort
             switch (sortBy)
@@ -165,7 +174,7 @@ namespace Listenarr.Api.Services
                     {
                         Indexer? idx = null;
                         if (r.IndexerId.HasValue)
-                            idx = _dbContext.Indexers.FirstOrDefault(i => i.Id == r.IndexerId!.Value);
+                            indexerCache!.TryGetValue(r.IndexerId.Value, out idx);
                         var score = CalculateProwlarrStyleScore(r, idx);
                         return new { Result = r, Score = score };
                     }).ToList();
@@ -217,7 +226,7 @@ namespace Listenarr.Api.Services
                     {
                         Indexer? idx = null;
                         if (r.IndexerId.HasValue)
-                            idx = _dbContext.Indexers.FirstOrDefault(i => i.Id == r.IndexerId!.Value);
+                            indexerCache!.TryGetValue(r.IndexerId.Value, out idx);
                         var score = CalculateProwlarrStyleScore(r, idx);
                         return new { Result = r, Score = score };
                     }).ToList();
@@ -386,10 +395,7 @@ namespace Listenarr.Api.Services
         public async Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, Listenarr.Api.Models.SearchRequest? request = null)
         {
             var results = new List<IndexerSearchResult>();
-            var indexers = await _dbContext.Indexers
-                .Where(i => i.IsEnabled && (isAutomaticSearch ? i.EnableAutomaticSearch : i.EnableInteractiveSearch))
-                .OrderBy(i => i.Priority)
-                .ToListAsync();
+            var indexers = await _indexerRepository.GetEnabledAsync(isAutomaticSearch);
 
             _logger.LogInformation("Searching {Count} enabled indexers for query: {Query}", indexers.Count, query);
 
@@ -1504,10 +1510,8 @@ namespace Listenarr.Api.Services
 
                 // Try parsing apiId as numeric indexer ID first
                 indexer = int.TryParse(apiId, out var indexerId)
-                    ? await _dbContext.Indexers.FindAsync(indexerId)
-                    : await _dbContext.Indexers
-                        .Where(i => i.Name.Equals(apiId, StringComparison.OrdinalIgnoreCase))
-                        .FirstOrDefaultAsync();
+                    ? await _indexerRepository.GetByIdAsync(indexerId)
+                    : await _indexerRepository.GetByNameAsync(apiId);
 
                 if (indexer == null)
                 {
@@ -1543,10 +1547,8 @@ namespace Listenarr.Api.Services
                 Indexer? indexer = null;
 
                 indexer = int.TryParse(apiId, out var indexerId)
-                    ? await _dbContext.Indexers.FindAsync(indexerId)
-                    : await _dbContext.Indexers
-                        .Where(i => i.Name.Equals(apiId, StringComparison.OrdinalIgnoreCase))
-                        .FirstOrDefaultAsync();
+                    ? await _indexerRepository.GetByIdAsync(indexerId)
+                    : await _indexerRepository.GetByNameAsync(apiId);
 
                 if (indexer == null || !indexer.IsEnabled)
                 {
@@ -2014,14 +2016,9 @@ namespace Listenarr.Api.Services
                     if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
                     {
                         _logger.LogInformation("MyAnonamouse: received updated mam_id from response for indexer {Name}", indexer.Name);
-                        var idx = await _dbContext.Indexers.FindAsync(indexer.Id);
-                        if (idx != null)
-                        {
-                            idx.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(idx.AdditionalSettings, newMam);
-                            _dbContext.Indexers.Update(idx);
-                            await _dbContext.SaveChangesAsync();
-                            mamId = newMam;
-                        }
+                        indexer.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(indexer.AdditionalSettings, newMam);
+                        await _indexerRepository.UpdateAsync(indexer);
+                        mamId = newMam;
                     }
                 }
                 catch (Exception exMam) when (exMam is not OperationCanceledException && exMam is not OutOfMemoryException && exMam is not StackOverflowException) {
@@ -4108,10 +4105,11 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogDebug("Querying database for enabled metadata sources...");
 
-                var metadataSources = await _dbContext.ApiConfigurations
+                var allConfigs = await _apiConfigRepository.GetAllAsync();
+                var metadataSources = allConfigs
                     .Where(api => api.IsEnabled && api.Type == "metadata")
                     .OrderBy(api => api.Priority)
-                    .ToListAsync();
+                    .ToList();
 
                 if (metadataSources.Count > 0)
                 {
@@ -4125,11 +4123,6 @@ namespace Listenarr.Api.Services
                 }
 
                 return metadataSources;
-            }
-            catch (Microsoft.EntityFrameworkCore.DbUpdateException ex)
-            {
-                _logger.LogError(ex, "Database update error retrieving enabled metadata sources");
-                return new List<ApiConfiguration>();
             }
             catch (InvalidOperationException ex)
             {

@@ -2,9 +2,8 @@
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.SignalR;
 using Listenarr.Api.Hubs;
-using Microsoft.EntityFrameworkCore;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using System.IO;
 using System.Linq;
 using System.Collections.Generic;
@@ -57,8 +56,10 @@ namespace Listenarr.Api.Services
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
                             using var scope = _scopeFactory.CreateScope();
-                            var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                            var audiobook = await db.Audiobooks.FindAsync(job.AudiobookId);
+                            var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                            var fileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                            var historyRepo = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
+                            var audiobook = await audiobookRepo.GetByIdAsync(job.AudiobookId);
                             if (audiobook == null)
                             {
                                 _logger.LogWarning("Audiobook {Id} not found for scan job {JobId}", job.AudiobookId, job.Id);
@@ -99,9 +100,7 @@ namespace Listenarr.Api.Services
 
                                 try
                                 {
-                                    var existingFiles = await db.AudiobookFiles
-                                        .Where(f => f.AudiobookId == audiobook.Id)
-                                        .ToListAsync();
+                                    var existingFiles = await fileRepo.GetByAudiobookIdAsync(audiobook.Id);
 
                                     List<object> removedFilesDto = new();
                                     if (existingFiles.Count > 0)
@@ -109,7 +108,7 @@ namespace Listenarr.Api.Services
                                         foreach (var rem in existingFiles)
                                         {
                                             removedFilesDto.Add(new { id = rem.Id, path = rem.Path });
-                                            db.AudiobookFiles.Remove(rem);
+                                            await fileRepo.DeleteAsync(rem.Id);
                                             _logger.LogInformation("Removing AudiobookFile DB row Id={Id} Path={Path} due to missing BasePath", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
 
                                             var historyEntry = new History
@@ -128,12 +127,12 @@ namespace Listenarr.Api.Services
                                                 }),
                                                 Timestamp = DateTime.UtcNow
                                             };
-                                            db.History.Add(historyEntry);
+                                            await historyRepo.AddAsync(historyEntry);
                                         }
                                     }
 
                                     audiobook.BasePath = null;
-                                    await db.SaveChangesAsync();
+                                    await audiobookRepo.UpdateAsync(audiobook);
 
                                     if (removedFilesDto.Count > 0)
                                     {
@@ -148,7 +147,7 @@ namespace Listenarr.Api.Services
 
                                     try
                                     {
-                                        var audiobookDto = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(db, audiobook);
+                                        var audiobookDto = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(audiobook);
                                         await _hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDto);
                                     }
                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -297,7 +296,7 @@ namespace Listenarr.Api.Services
                                 // legitimate sibling parts to be rejected during multifile scans.
                                 if (basePathChanged)
                                 {
-                                    await db.SaveChangesAsync();
+                                    await audiobookRepo.UpdateAsync(audiobook);
                                 }
                             }
 
@@ -318,18 +317,14 @@ namespace Listenarr.Api.Services
                                 }
                             }
 
-                            await db.SaveChangesAsync();
-
                             // Remove AudiobookFile DB rows for files that no longer exist on disk
                             try
                             {
-                                var existingFiles = await db.AudiobookFiles
-                                    .Where(f => f.AudiobookId == audiobook.Id)
-                                    .ToListAsync();
+                                var existingFiles = await fileRepo.GetByAudiobookIdAsync(audiobook.Id);
 
                                 // Create set of found files (absolute paths)
                                 var foundSet = new HashSet<string>(foundFiles, StringComparer.OrdinalIgnoreCase);
-                                
+
                                 // Check which existing files still exist
                                 var toRemove = new List<AudiobookFile>();
                                 foreach (var existingFile in existingFiles
@@ -342,7 +337,7 @@ namespace Listenarr.Api.Services
                                     {
                                         fullPath = Path.GetFullPath(Path.Join(basePath, fullPath));
                                     }
-                                    
+
                                     // Check if file still exists on disk
                                     if (!foundSet.Contains(fullPath))
                                     {
@@ -358,7 +353,7 @@ namespace Listenarr.Api.Services
                                         try
                                         {
                                             removedFilesDto.Add(new { id = rem.Id, path = rem.Path });
-                                            db.AudiobookFiles.Remove(rem);
+                                            await fileRepo.DeleteAsync(rem.Id);
                                             _logger.LogInformation("Removing missing AudiobookFile DB row Id={Id} Path={Path}", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
 
                                             // Add history entry for removed file
@@ -378,14 +373,12 @@ namespace Listenarr.Api.Services
                                                 }),
                                                 Timestamp = DateTime.UtcNow
                                             };
-                                            db.History.Add(historyEntry);
+                                            await historyRepo.AddAsync(historyEntry);
                                         }
                                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogWarning(ex, "Failed to remove AudiobookFile Id={Id} Path={Path}", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
                                         }
                                     }
-
-                                    await db.SaveChangesAsync();
 
                                     // Broadcast a friendly message about removed files so UI can show a notice
                                     try
@@ -411,8 +404,8 @@ namespace Listenarr.Api.Services
                                     if (System.IO.File.Exists(audiobook.FilePath))
                                     {
                                         // File exists - check if we already have an AudiobookFile record for it
-                                        var existingFileRecord = await db.AudiobookFiles
-                                            .FirstOrDefaultAsync(f => f.AudiobookId == audiobook.Id && f.Path == audiobook.FilePath);
+                                        var alreadyExists = await fileRepo.ExistsAtPathAsync(audiobook.Id, audiobook.FilePath);
+                                        var existingFileRecord = alreadyExists ? new AudiobookFile() : null;
 
                                         if (existingFileRecord == null)
                                         {
@@ -456,13 +449,13 @@ namespace Listenarr.Api.Services
                                             }),
                                             Timestamp = DateTime.UtcNow
                                         };
-                                        db.History.Add(historyEntry);
+                                        await historyRepo.AddAsync(historyEntry);
                                     }
                                 }
 
                                 if (needsUpdate)
                                 {
-                                    await db.SaveChangesAsync();
+                                    await audiobookRepo.UpdateAsync(audiobook);
                                 }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -501,15 +494,11 @@ namespace Listenarr.Api.Services
                                 }
                             }
 
-                            // Detach the previously-tracked audiobook entity so the subsequent query fetches fresh DB state
-                            try { db.Entry(audiobook).State = EntityState.Detached; } catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { 
-                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                            }
-                            var updated = await db.Audiobooks.Include(a => a.Files).FirstOrDefaultAsync(a => a.Id == audiobook.Id);
+                            var updated = await audiobookRepo.GetByIdAsync(audiobook.Id);
                             if (updated != null)
                             {
                                 // Build an authoritative Audiobook DTO and broadcast it
-                                var audiobookDto = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(db, updated);
+                                var audiobookDto = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(updated);
                                 await _hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDto);
                                 await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Completed", found = foundFiles.Count, created = createdFiles, completedAt = DateTime.UtcNow });
                                 _logger.LogInformation("Broadcasted AudiobookUpdate for AudiobookId {AudiobookId} after scan job {JobId}", audiobook.Id, job.Id);

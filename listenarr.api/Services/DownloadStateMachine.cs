@@ -22,7 +22,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
@@ -51,7 +51,7 @@ namespace Listenarr.Api.Services
     public class DownloadStateMachine
     {
         private readonly ILogger<DownloadStateMachine> _logger;
-        private readonly DownloadHistoryRepository _historyRepo;
+        private readonly IDownloadHistoryRepository _historyRepo;
 
         // Valid state transitions
         private static readonly Dictionary<DownloadItemStatus, HashSet<DownloadItemStatus>> ValidTransitions = new()
@@ -109,7 +109,7 @@ namespace Listenarr.Api.Services
 
         public DownloadStateMachine(
             ILogger<DownloadStateMachine> logger,
-            DownloadHistoryRepository historyRepo)
+            IDownloadHistoryRepository historyRepo)
         {
             _logger = logger;
             _historyRepo = historyRepo;

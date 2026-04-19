@@ -11,5 +11,6 @@ namespace Listenarr.Application.Repositories
         Task InvalidateAsync(string sessionToken, CancellationToken ct = default);
         Task InvalidateAllForUserAsync(string username, CancellationToken ct = default);
         Task<int> CleanupExpiredAsync(CancellationToken ct = default);
+        Task<int> GetActiveCountAsync(string username, CancellationToken ct = default);
     }
 }

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createPinia, setActivePinia } from 'pinia'
+import type { SearchResult } from '@/types'
 
 const startManualImport = vi.fn()
 const addToLibrary = vi.fn()
@@ -70,13 +71,14 @@ describe('library import store', () => {
         selectedMatch: {
           title: 'Ordered Book',
           authors: [],
-        } as any,
+        } as unknown as SearchResult,
         hasSearched: true,
         isSearching: false,
         selected: true,
       },
-    } as any
+    }
 
+    store.action = 'move'
     await store.importSelected('D:\\library')
 
     expect(addToLibrary).toHaveBeenCalledTimes(1)
@@ -161,7 +163,7 @@ describe('library import store', () => {
         isSearching: false,
         selected: false,
       },
-    } as any
+    }
 
     store.startProcessing()
     await new Promise((resolve) => setTimeout(resolve, 0))

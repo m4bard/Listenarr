@@ -1,8 +1,7 @@
 using System.Globalization;
 using System.Text;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
 {
@@ -66,18 +65,21 @@ namespace Listenarr.Api.Services
             ["ru-ru"] = "russian"
         };
 
-        private readonly ListenArrDbContext _dbContext;
+        private readonly IMonitoredAuthorRepository _authors;
+        private readonly IAudiobookRepository _audiobooks;
         private readonly IAuthorCatalogService _authorCatalogService;
         private readonly ILibraryAddService _libraryAddService;
         private readonly ILogger<AuthorMonitoringService> _logger;
 
         public AuthorMonitoringService(
-            ListenArrDbContext dbContext,
+            IMonitoredAuthorRepository authors,
+            IAudiobookRepository audiobooks,
             IAuthorCatalogService authorCatalogService,
             ILibraryAddService libraryAddService,
             ILogger<AuthorMonitoringService> logger)
         {
-            _dbContext = dbContext;
+            _authors = authors;
+            _audiobooks = audiobooks;
             _authorCatalogService = authorCatalogService;
             _libraryAddService = libraryAddService;
             _logger = logger;
@@ -98,13 +100,7 @@ namespace Listenarr.Api.Services
             var normalizedRegion = NormalizeRegion(region);
             var normalizedLanguage = NormalizeLanguage(language, fallbackToEnglish: true);
 
-            return await _dbContext.MonitoredAuthors
-                .AsNoTracking()
-                .FirstOrDefaultAsync(
-                    author => author.AuthorNameNormalized == normalizedName &&
-                              author.Region == normalizedRegion &&
-                              author.Language == normalizedLanguage,
-                    cancellationToken);
+            return await _authors.GetByNameRegionLanguageAsync(normalizedName, normalizedRegion, normalizedLanguage, cancellationToken);
         }
 
         public async Task<MonitorAuthorOperationResult> MonitorAuthorAsync(
@@ -123,11 +119,7 @@ namespace Listenarr.Api.Services
             var normalizedLanguage = NormalizeLanguage(request.Language, fallbackToEnglish: true);
             var displayName = request.Name.Trim();
 
-            var monitoredAuthor = await _dbContext.MonitoredAuthors.FirstOrDefaultAsync(
-                author => author.AuthorNameNormalized == normalizedName &&
-                          author.Region == normalizedRegion &&
-                          author.Language == normalizedLanguage,
-                cancellationToken);
+            var monitoredAuthor = await _authors.GetByNameRegionLanguageAsync(normalizedName, normalizedRegion, normalizedLanguage, cancellationToken);
 
             if (monitoredAuthor == null)
             {
@@ -141,8 +133,6 @@ namespace Listenarr.Api.Services
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
-
-                _dbContext.MonitoredAuthors.Add(monitoredAuthor);
             }
             else
             {
@@ -151,7 +141,7 @@ namespace Listenarr.Api.Services
                 monitoredAuthor.UpdatedAt = DateTime.UtcNow;
             }
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            monitoredAuthor = await _authors.UpsertAsync(monitoredAuthor, cancellationToken);
 
             var syncResult = await SyncAuthorInternalAsync(monitoredAuthor, forceRefresh: false, cancellationToken);
             return new MonitorAuthorOperationResult
@@ -163,25 +153,12 @@ namespace Listenarr.Api.Services
 
         public async Task<bool> UnmonitorAuthorAsync(int id, CancellationToken cancellationToken = default)
         {
-            var monitoredAuthor = await _dbContext.MonitoredAuthors.FirstOrDefaultAsync(
-                author => author.Id == id,
-                cancellationToken);
-
-            if (monitoredAuthor == null)
-            {
-                return false;
-            }
-
-            _dbContext.MonitoredAuthors.Remove(monitoredAuthor);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            return true;
+            return await _authors.DeleteAsync(id, cancellationToken);
         }
 
         public async Task<MonitorAuthorSyncResult> SyncAuthorAsync(int id, CancellationToken cancellationToken = default)
         {
-            var monitoredAuthor = await _dbContext.MonitoredAuthors.FirstOrDefaultAsync(
-                author => author.Id == id,
-                cancellationToken);
+            var monitoredAuthor = await _authors.GetByIdAsync(id, cancellationToken);
 
             if (monitoredAuthor == null)
             {
@@ -199,10 +176,7 @@ namespace Listenarr.Api.Services
         public async Task<int> SyncDueAuthorsAsync(CancellationToken cancellationToken = default)
         {
             var cutoff = DateTime.UtcNow.AddDays(-1);
-            var dueAuthors = await _dbContext.MonitoredAuthors
-                .Where(author => author.LastCheckedAt == null || author.LastCheckedAt < cutoff)
-                .OrderBy(author => author.LastCheckedAt ?? DateTime.MinValue)
-                .ToListAsync(cancellationToken);
+            var dueAuthors = await _authors.GetDueForSyncAsync(cutoff, cancellationToken);
 
             var syncedCount = 0;
             foreach (var author in dueAuthors)
@@ -243,15 +217,13 @@ namespace Listenarr.Api.Services
                     monitoredAuthor.LastError = TruncateError(result.ErrorMessage);
                     monitoredAuthor.LastCheckedAt = DateTime.UtcNow;
                     monitoredAuthor.UpdatedAt = DateTime.UtcNow;
-                    await _dbContext.SaveChangesAsync(cancellationToken);
+                    await _authors.UpsertAsync(monitoredAuthor, cancellationToken);
                     return result;
                 }
 
                 monitoredAuthor.AuthorAsin = NormalizeOptionalIdentifier(catalog.Author.Asin) ?? monitoredAuthor.AuthorAsin;
 
-                var existingLibrary = await _dbContext.Audiobooks
-                    .AsNoTracking()
-                    .ToListAsync(cancellationToken);
+                var existingLibrary = await _audiobooks.GetAllAsync();
 
                 foreach (var book in catalog.Books)
                 {
@@ -304,7 +276,7 @@ namespace Listenarr.Api.Services
                 monitoredAuthor.LastSuccessfulSyncAt = monitoredAuthor.LastCheckedAt;
                 monitoredAuthor.LastError = null;
                 monitoredAuthor.UpdatedAt = DateTime.UtcNow;
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                await _authors.UpsertAsync(monitoredAuthor, cancellationToken);
 
                 result.Succeeded = true;
                 return result;
@@ -328,7 +300,7 @@ namespace Listenarr.Api.Services
                 monitoredAuthor.LastCheckedAt = DateTime.UtcNow;
                 monitoredAuthor.LastError = TruncateError(ex.Message);
                 monitoredAuthor.UpdatedAt = DateTime.UtcNow;
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                await _authors.UpsertAsync(monitoredAuthor, cancellationToken);
                 return result;
             }
         }

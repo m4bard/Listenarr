@@ -59,7 +59,7 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://www.myanonamouse.net") };
-            var provider = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient, db);
+            var provider = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient, new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db));
 
             _ = await provider.SearchAsync(indexer, "Test Title", null, null);
 
@@ -75,7 +75,7 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient2 = new HttpClient(handler2) { BaseAddress = new Uri("https://another-host.example") };
-            var provider2 = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient2, db);
+            var provider2 = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient2, new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db));
 
             await provider2.SearchAsync(indexer, "Test Title", null, null);
         }
@@ -138,7 +138,8 @@ namespace Listenarr.Api.Tests
                 hubContext,
                 audiobookRepo,
                 configSvc,
-                dbFactorySvc,
+                new TestDownloadRepository(),
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -233,7 +234,8 @@ namespace Listenarr.Api.Tests
                 hubContext,
                 audiobookRepo,
                 configSvc,
-                dbFactorySvc,
+                new TestDownloadRepository(),
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -335,7 +337,8 @@ namespace Listenarr.Api.Tests
                 hubContext,
                 audiobookRepo,
                 configSvc,
-                dbFactorySvc,
+                new TestDownloadRepository(),
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -428,7 +431,8 @@ namespace Listenarr.Api.Tests
                 hubContext,
                 audiobookRepo,
                 configSvc,
-                dbFactorySvc,
+                new TestDownloadRepository(),
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -512,7 +516,8 @@ namespace Listenarr.Api.Tests
                 hubContext,
                 audiobookRepo,
                 configSvc,
-                dbFactorySvc,
+                new TestDownloadRepository(),
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -545,7 +550,7 @@ namespace Listenarr.Api.Tests
             await task;
 
             // Now create a DownloadsController and request the cached torrent
-            var downloadsController = new Listenarr.Api.Controllers.DownloadsController(db, NullLogger<Listenarr.Api.Controllers.DownloadsController>.Instance, configSvc, cacheSvc);
+            var downloadsController = new Listenarr.Api.Controllers.DownloadsController(new TestDownloadRepository(db), NullLogger<Listenarr.Api.Controllers.DownloadsController>.Instance, configSvc, cacheSvc);
             var result = downloadsController.GetCachedTorrent(downloadId);
             Assert.IsType<Microsoft.AspNetCore.Mvc.FileContentResult>(result);
             var fileResult = (Microsoft.AspNetCore.Mvc.FileContentResult)result;
@@ -611,7 +616,8 @@ namespace Listenarr.Api.Tests
                 hubContext,
                 audiobookRepo,
                 configSvc,
-                dbFactorySvc,
+                new TestDownloadRepository(),
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -644,7 +650,7 @@ namespace Listenarr.Api.Tests
             await task;
 
             // Now request announces from the sync DownloadsController helper
-            var downloadsController = new DownloadsController(db, NullLogger<DownloadsController>.Instance, configSvc, cacheSvc);
+            var downloadsController = new DownloadsController(new TestDownloadRepository(db), NullLogger<DownloadsController>.Instance, configSvc, cacheSvc);
             var result = downloadsController.GetCachedAnnounces(downloadId);
             Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result);
             var ok = (Microsoft.AspNetCore.Mvc.OkObjectResult)result;
@@ -724,6 +730,11 @@ namespace Listenarr.Api.Tests
             public Task<SeriesCacheEntry?> GetCachedSeriesByAsinAsync(string asin, string region) => Task.FromResult<SeriesCacheEntry?>(null);
             public Task<SeriesCacheEntry> UpsertCachedSeriesAsync(SeriesCacheEntry seriesCacheEntry) => Task.FromResult(seriesCacheEntry);
             public Task<bool> UpdateAsync(Audiobook audiobook) { var idx = _store.FindIndex(a => a.Id == audiobook.Id); if (idx<0) return Task.FromResult(false); _store[idx]=audiobook; return Task.FromResult(true); }
+            public Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, System.Threading.CancellationToken ct = default) { var s = ids.ToHashSet(); return Task.FromResult(_store.Where(a => s.Contains(a.Id)).ToList()); }
+            public Task SaveChangesAsync(System.Threading.CancellationToken ct = default) => Task.CompletedTask;
+            public Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, System.Threading.CancellationToken ct = default) => Task.FromResult(new List<Audiobook>());
+            public Task NormalizeJsonColumnsAsync(System.Threading.CancellationToken ct = default) => Task.CompletedTask;
+            public Task<bool> UpdateWithIdentifierReplaceAsync(Audiobook audiobook, List<AudiobookExternalIdentifier> newIdentifiers, System.Threading.CancellationToken ct = default) { var idx = _store.FindIndex(a => a.Id == audiobook.Id); if (idx < 0) return Task.FromResult(false); audiobook.ExternalIdentifiers = newIdentifiers; _store[idx] = audiobook; return Task.FromResult(true); }
             public Task<string?> GetAuthorAsinByNameAsync(string name)
             {
                 if (string.IsNullOrWhiteSpace(name)) return Task.FromResult<string?>(null);

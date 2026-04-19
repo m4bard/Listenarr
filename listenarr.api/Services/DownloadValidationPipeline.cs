@@ -23,7 +23,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
@@ -53,12 +53,12 @@ namespace Listenarr.Api.Services
     {
         private readonly ILogger<DownloadValidationPipeline> _logger;
         private readonly DownloadStateMachine _stateMachine;
-        private readonly DownloadHistoryRepository _historyRepo;
+        private readonly IDownloadHistoryRepository _historyRepo;
 
         public DownloadValidationPipeline(
             ILogger<DownloadValidationPipeline> logger,
             DownloadStateMachine stateMachine,
-            DownloadHistoryRepository historyRepo)
+            IDownloadHistoryRepository historyRepo)
         {
             _logger = logger;
             _stateMachine = stateMachine;

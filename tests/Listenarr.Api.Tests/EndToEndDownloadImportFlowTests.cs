@@ -138,7 +138,7 @@ namespace Listenarr.Api.Tests
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
 
             var fileNamingService = new FileNamingService(configMock.Object, NullLogger<FileNamingService>.Instance);
-            var importService = new ImportService(dbFactoryMock.Object, scopeFactory, fileNamingService, metadataMock.Object, NullLogger<ImportService>.Instance);
+            var importService = new ImportService(new AudiobookRepository(new ListenArrDbContext(options)), scopeFactory, fileNamingService, metadataMock.Object, NullLogger<ImportService>.Instance);
 
             var downloadRepository = new EfDownloadRepository(dbFactoryMock.Object, NullLogger<EfDownloadRepository>.Instance);
             var fileFinalizer = new FileFinalizer(importService, downloadRepository, scopeFactory, NullLogger<FileFinalizer>.Instance);
@@ -181,7 +181,8 @@ namespace Listenarr.Api.Tests
                 hubContextMock.Object,
                 Mock.Of<IAudiobookRepository>(),
                 configMock.Object,
-                dbFactoryMock.Object,
+                downloadRepository,
+                new EfIndexerRepository(new ListenArrDbContext(options)),
                 NullLogger<DownloadService>.Instance,
                 httpFactoryMock.Object,
                 scopeFactory,

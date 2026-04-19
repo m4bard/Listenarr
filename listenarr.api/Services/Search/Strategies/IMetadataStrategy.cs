@@ -1,5 +1,4 @@
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Services.Search.Strategies;
 

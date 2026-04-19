@@ -44,6 +44,7 @@ namespace Listenarr.Api.Tests
 
             var services = new ServiceCollection();
             services.AddSingleton(db);
+            services.AddSingleton<Listenarr.Application.Repositories.IDownloadRepository>(new TestDownloadRepository(db));
             services.AddSingleton<IConfigurationService>(configMock.Object);
             var serviceProvider = services.BuildServiceProvider();
             var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();
@@ -119,6 +120,7 @@ namespace Listenarr.Api.Tests
 
             var services = new ServiceCollection();
             services.AddSingleton(db);
+            services.AddSingleton<Listenarr.Application.Repositories.IDownloadRepository>(new TestDownloadRepository(db));
             services.AddSingleton<IConfigurationService>(configMock.Object);
             var serviceProvider = services.BuildServiceProvider();
             var scopeFactory = serviceProvider.GetRequiredService<IServiceScopeFactory>();

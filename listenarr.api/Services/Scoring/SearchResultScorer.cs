@@ -1,5 +1,5 @@
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -10,7 +10,7 @@ namespace Listenarr.Api.Services.Scoring
 {
     public class SearchResultScorer
     {
-        private readonly ListenArrDbContext? _dbContext;
+        private readonly IIndexerRepository? _indexerRepo;
         private readonly ILogger _logger;
 
         // Configurable weights (tune as needed)
@@ -23,9 +23,9 @@ namespace Listenarr.Api.Services.Scoring
         public int QualityNotAllowedPenalty { get; set; } = -20;
         public int ForbiddenWordRejectionFlag { get; set; } = -1; // sentinel for rejection
 
-        public SearchResultScorer(ListenArrDbContext? dbContext, ILogger logger)
+        public SearchResultScorer(IIndexerRepository? indexerRepo, ILogger logger)
         {
-            _dbContext = dbContext;
+            _indexerRepo = indexerRepo;
             _logger = logger;
         }
 
@@ -107,11 +107,11 @@ namespace Listenarr.Api.Services.Scoring
             // Age checks and indexer retention
             double ageDays = 0;
             int indexerRetention = 0;
-            if (searchResult.IndexerId.HasValue && _dbContext != null)
+            if (searchResult.IndexerId.HasValue && _indexerRepo != null)
             {
                 try
                 {
-                    var idx = await _dbContext.Indexers.FindAsync(searchResult.IndexerId.Value);
+                    var idx = await _indexerRepo.GetByIdAsync(searchResult.IndexerId.Value);
                     if (idx != null)
                     {
                         indexerRetention = idx.Retention;

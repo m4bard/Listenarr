@@ -3,11 +3,10 @@ using System.Collections.Generic;
 using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Application.Services;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -21,11 +20,6 @@ namespace Listenarr.Api.Tests
         public async Task UpdateAudiobook_PersistsExpandedMetadataFields()
         {
             // Arrange
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-            var dbContext = new ListenArrDbContext(options);
-
             var existingAudiobook = new Audiobook
             {
                 Id = 1,
@@ -77,8 +71,13 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object);
 
             var updatedAudiobook = new Audiobook

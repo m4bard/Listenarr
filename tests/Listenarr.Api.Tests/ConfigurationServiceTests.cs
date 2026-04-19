@@ -8,36 +8,43 @@ using Xunit;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Infrastructure.Repositories;
 using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Tests
 {
     public class ConfigurationServiceTests
     {
+        private static ConfigurationService BuildService(ListenArrDbContext db, ILogger<ConfigurationService> logger,
+            IUserService? userService = null, IStartupConfigService? startupConfigService = null)
+        {
+            var settingsRepo = new EfApplicationSettingsRepository(db);
+            var apiConfigRepo = new EfApiConfigurationRepository(db);
+            var downloadClientRepo = new EfDownloadClientConfigurationRepository(db);
+            return new ConfigurationService(
+                settingsRepo, apiConfigRepo, downloadClientRepo, logger,
+                userService ?? new Mock<IUserService>().Object,
+                startupConfigService ?? new Mock<IStartupConfigService>().Object);
+        }
+
         [Fact]
         public async Task SaveApplicationSettings_PersistsChanges()
         {
             var testOutputPath = FileUtils.GetAbsolutePath("test-output");
             var partialUpdatePath = FileUtils.GetAbsolutePath("partial-update");
 
-            // Arrange - build service provider with in-memory DB
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddDbContext<ListenArrDbContext>(opts => opts.UseInMemoryDatabase(Guid.NewGuid().ToString()));
 
             var provider = services.BuildServiceProvider(validateScopes: true);
 
-            // Resolve scoped DB context from a scope (AddDbContext registers it as scoped)
             using var scope = provider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
             var logger = scope.ServiceProvider.GetRequiredService<ILogger<ConfigurationService>>();
 
-            var mockUser = new Mock<IUserService>();
-            var mockStartup = new Mock<IStartupConfigService>();
+            var svc = BuildService(db, logger);
 
-            var svc = new ConfigurationService(db, logger, mockUser.Object, mockStartup.Object);
-
-            // Act - save a modified settings object
             var settings = await svc.GetApplicationSettingsAsync();
             settings.OutputPath = testOutputPath;
             settings.ShowCompletedExternalDownloads = true;
@@ -49,10 +56,8 @@ namespace Listenarr.Api.Tests
 
             await svc.SaveApplicationSettingsAsync(settings);
 
-            // Read back
             var saved = await svc.GetApplicationSettingsAsync();
 
-            // Assert
             Assert.Equal(testOutputPath, saved.OutputPath);
             Assert.True(saved.ShowCompletedExternalDownloads);
             Assert.NotNull(saved.EnabledNotificationTriggers);
@@ -61,12 +66,10 @@ namespace Listenarr.Api.Tests
             Assert.Single(saved.Webhooks!);
             Assert.Equal("UnitWebhook", saved.Webhooks![0].Name);
 
-            // Now simulate a partial update where collections are omitted from the payload
             var partial = new ApplicationSettings { Id = 1, OutputPath = partialUpdatePath };
             await svc.SaveApplicationSettingsAsync(partial);
 
             var afterPartial = await svc.GetApplicationSettingsAsync();
-            // Ensure previously saved collections were not cleared by the partial update
             Assert.Equal(partialUpdatePath, afterPartial.OutputPath);
             Assert.NotNull(afterPartial.EnabledNotificationTriggers);
             Assert.Contains("book-completed", afterPartial.EnabledNotificationTriggers);
@@ -78,7 +81,6 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task InMemoryDb_Persists_Webhooks_Directly()
         {
-            // Arrange - build service provider with in-memory DB
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddDbContext<ListenArrDbContext>(opts => opts.UseInMemoryDatabase(Guid.NewGuid().ToString()));
@@ -88,7 +90,6 @@ namespace Listenarr.Api.Tests
             using var scope = provider.CreateScope();
             var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
 
-            // Act - ensure settings exist, set webhooks directly, save, read back
             var settings = await db.ApplicationSettings.FirstOrDefaultAsync(s => s.Id == 1);
             if (settings == null)
             {
@@ -106,7 +107,6 @@ namespace Listenarr.Api.Tests
 
             var reloaded = await db.ApplicationSettings.AsNoTracking().FirstOrDefaultAsync(s => s.Id == 1);
 
-            // Assert
             Assert.NotNull(reloaded);
             Assert.NotNull(reloaded!.Webhooks);
             Assert.Single(reloaded.Webhooks!);
@@ -126,10 +126,7 @@ namespace Listenarr.Api.Tests
             var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
             var logger = scope.ServiceProvider.GetRequiredService<ILogger<ConfigurationService>>();
 
-            var mockUser = new Mock<IUserService>();
-            var mockStartup = new Mock<IStartupConfigService>();
-
-            var svc = new ConfigurationService(db, logger, mockUser.Object, mockStartup.Object);
+            var svc = BuildService(db, logger);
 
             await svc.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
             {
@@ -170,11 +167,7 @@ namespace Listenarr.Api.Tests
             var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
             var logger = scope.ServiceProvider.GetRequiredService<ILogger<ConfigurationService>>();
 
-            var svc = new ConfigurationService(
-                db,
-                logger,
-                new Mock<IUserService>().Object,
-                new Mock<IStartupConfigService>().Object);
+            var svc = BuildService(db, logger);
 
             await svc.SaveProwlarrImportSettingsAsync(new ProwlarrImportConnectionSettings
             {
@@ -199,6 +192,5 @@ namespace Listenarr.Api.Tests
             var stored = await db.ApplicationSettings.AsNoTracking().FirstAsync(s => s.Id == 1);
             Assert.False(string.IsNullOrWhiteSpace(stored.ProwlarrApiKeyEncrypted));
         }
-
     }
 }

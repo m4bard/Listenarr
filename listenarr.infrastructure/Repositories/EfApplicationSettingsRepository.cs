@@ -25,7 +25,7 @@ namespace Listenarr.Infrastructure.Repositories
         {
             settings.Id = 1;
 
-            var existing = await _db.ApplicationSettings.FirstOrDefaultAsync(s => s.Id == 1, ct);
+            var existing = await _db.ApplicationSettings.FindAsync([1], ct);
 
             if (existing == null)
             {
@@ -34,40 +34,16 @@ namespace Listenarr.Infrastructure.Repositories
                 return settings;
             }
 
-            _db.Entry(existing).CurrentValues.SetValues(settings);
-            existing.AllowedFileExtensions = settings.AllowedFileExtensions;
-            existing.ImportBlacklistExtensions = settings.ImportBlacklistExtensions ?? new List<string>();
-
-            if (settings.EnabledNotificationTriggers != null)
+            // Detach the existing tracked entity to avoid identity-map conflicts when
+            // `settings` is the same object reference that was previously Add()ed.
+            if (!ReferenceEquals(existing, settings))
             {
-                existing.EnabledNotificationTriggers = settings.EnabledNotificationTriggers;
-                _db.Entry(existing).Property(e => e.EnabledNotificationTriggers).IsModified = true;
-            }
-            else
-            {
-                existing.EnabledNotificationTriggers ??= new List<string>();
+                _db.Entry(existing).State = EntityState.Detached;
             }
 
-            if (settings.Webhooks != null)
-            {
-                existing.Webhooks = settings.Webhooks.Select(w => new WebhookConfiguration
-                {
-                    Name = w.Name,
-                    Url = w.Url,
-                    Type = w.Type,
-                    Triggers = w.Triggers?.ToList() ?? new List<string>(),
-                    IsEnabled = w.IsEnabled
-                }).ToList();
-                _db.Entry(existing).Property(e => e.Webhooks).IsModified = true;
-            }
-            else
-            {
-                existing.Webhooks ??= new List<WebhookConfiguration>();
-            }
-
-            _db.Update(existing);
+            _db.ApplicationSettings.Update(settings);
             await _db.SaveChangesAsync(ct);
-            return existing;
+            return settings;
         }
     }
 }

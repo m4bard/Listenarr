@@ -59,7 +59,7 @@ namespace Listenarr.Api.Tests
                 .Include(a => a.SeriesMemberships)
                 .FirstOrDefaultAsync(a => a.Id == book.Id);
 
-            var dto = AudiobookDtoFactory.BuildFromEntity(db, updated);
+            var dto = AudiobookDtoFactory.BuildFromEntity(updated);
 
             Assert.Equal(book.Id, dto.Id);
             Assert.Equal(book.Title, dto.Title);
@@ -95,7 +95,7 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             var updated = await db.Audiobooks.Include(a => a.Files).FirstOrDefaultAsync(a => a.Id == book.Id);
-            var dto = AudiobookDtoFactory.BuildFromEntity(db, updated);
+            var dto = AudiobookDtoFactory.BuildFromEntity(updated);
 
             Assert.True(dto.Wanted == true);
         }

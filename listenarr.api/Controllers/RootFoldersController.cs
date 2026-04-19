@@ -5,8 +5,7 @@ using Listenarr.Domain.Models;
 using System.Collections.Generic;
 using System;
 using System.Linq;
-using Microsoft.EntityFrameworkCore;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 
 namespace Listenarr.Api.Controllers
 {
@@ -17,13 +16,15 @@ namespace Listenarr.Api.Controllers
     {
         private readonly IRootFolderService _service;
         private readonly IUnmatchedScanQueueService _unmatchedQueue;
-        private readonly ListenArrDbContext _db;
+        private readonly IAudiobookFileRepository _fileRepo;
+        private readonly IAudiobookRepository _audiobookRepo;
 
-        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue, ListenArrDbContext db)
+        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue, IAudiobookFileRepository fileRepo, IAudiobookRepository audiobookRepo)
         {
             _service = service;
             _unmatchedQueue = unmatchedQueue;
-            _db = db;
+            _fileRepo = fileRepo;
+            _audiobookRepo = audiobookRepo;
         }
 
         /// <summary>
@@ -174,14 +175,11 @@ namespace Listenarr.Api.Controllers
             if (_unmatchedQueue.TryGetLastJobForPath(folder.Path, out var job) && job != null)
             {
                 // Filter out items already added to the library since the scan ran
-                var trackedFromFiles = await _db.AudiobookFiles
-                    .Where(f => f.Path != null)
-                    .Select(f => f.Path!)
-                    .ToListAsync();
-                var trackedFromAudiobooks = await _db.Audiobooks
+                var trackedFromFiles = await _fileRepo.GetAllFilePathsAsync();
+                var trackedFromAudiobooks = (await _audiobookRepo.GetAllAsync())
                     .Where(a => a.FilePath != null)
                     .Select(a => a.FilePath!)
-                    .ToListAsync();
+                    .ToList();
                 var tracked = new HashSet<string>(
                     trackedFromFiles.Concat(trackedFromAudiobooks),
                     StringComparer.OrdinalIgnoreCase);

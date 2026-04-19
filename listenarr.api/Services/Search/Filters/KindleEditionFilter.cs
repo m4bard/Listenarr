@@ -1,5 +1,4 @@
 using Listenarr.Api.Services.Search;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Services.Search.Filters;
 

@@ -1,9 +1,8 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Listenarr.Domain.Models;
 using Listenarr.Api.Services;
 using System.Linq;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Caching.Memory;
 
 namespace Listenarr.Api.Controllers;
@@ -13,14 +12,14 @@ namespace Listenarr.Api.Controllers;
 [Tags("Downloads")]
 public class DownloadsController : ControllerBase
 {
-    private readonly ListenArrDbContext _dbContext;
+    private readonly IDownloadRepository _downloadRepo;
     private readonly ILogger<DownloadsController> _logger;
     private readonly IConfigurationService _configurationService;
     private readonly IMemoryCache? _cache;
 
-    public DownloadsController(ListenArrDbContext dbContext, ILogger<DownloadsController> logger, IConfigurationService configurationService, IMemoryCache? cache = null)
+    public DownloadsController(IDownloadRepository downloadRepo, ILogger<DownloadsController> logger, IConfigurationService configurationService, IMemoryCache? cache = null)
     {
-        _dbContext = dbContext;
+        _downloadRepo = downloadRepo;
         _logger = logger;
         _configurationService = configurationService;
         _cache = cache;
@@ -71,26 +70,25 @@ public class DownloadsController : ControllerBase
     {
         try
         {
-            IQueryable<Download> query = _dbContext.Downloads;
-
             var downloadClients = await _configurationService.GetDownloadClientConfigurationsAsync();
             var enabledClientIds = downloadClients
                 .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
                 .Select(c => c.Id)
                 .ToList();
 
-            query = query.Where(d =>
+            var all = await _downloadRepo.GetAllAsync();
+            var filtered = all.Where(d =>
                 d.DownloadClientId == "DDL" ||
                 (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)));
 
             if (!string.IsNullOrEmpty(status) && Enum.TryParse<DownloadStatus>(status, true, out var parsedStatus))
             {
-                query = query.Where(d => d.Status == parsedStatus);
+                filtered = filtered.Where(d => d.Status == parsedStatus);
             }
 
-            var downloads = await query
+            var downloads = filtered
                 .OrderByDescending(d => d.StartedAt)
-                .ToListAsync();
+                .ToList();
 
             var enhancedDownloads = await EnhanceDownloadsWithClientNames(downloads);
 
@@ -112,7 +110,7 @@ public class DownloadsController : ControllerBase
     {
         try
         {
-            var download = await _dbContext.Downloads.FindAsync(id);
+            var download = await _downloadRepo.FindAsync(id);
 
             if (download == null)
             {
@@ -160,7 +158,7 @@ public class DownloadsController : ControllerBase
     {
         try
         {
-            var download = await _dbContext.Downloads.FindAsync(id);
+            var download = await _downloadRepo.FindAsync(id);
             if (download == null)
             {
                 return NotFound(new { error = "Download not found", id });
@@ -181,7 +179,7 @@ public class DownloadsController : ControllerBase
             download.ImportBlockMessages = null;
             download.ImportAttempts = 0;
 
-            await _dbContext.SaveChangesAsync();
+            await _downloadRepo.UpdateAsync(download);
 
             _logger.LogInformation("Reset blocked import {DownloadId} back to ImportPending", LogRedaction.SanitizeText(id));
             return Ok(new
@@ -212,7 +210,8 @@ public class DownloadsController : ControllerBase
                 .Select(c => c.Id)
                 .ToList();
 
-            var activeDownloads = await _dbContext.Downloads
+            var allDownloads = await _downloadRepo.GetAllAsync();
+            var activeDownloads = allDownloads
                 .Where(d => d.Status == DownloadStatus.Queued ||
                            d.Status == DownloadStatus.Downloading ||
                            d.Status == DownloadStatus.Processing ||
@@ -221,7 +220,7 @@ public class DownloadsController : ControllerBase
                     d.DownloadClientId == "DDL" ||
                     (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)))
                 .OrderByDescending(d => d.StartedAt)
-                .ToListAsync();
+                .ToList();
 
             var enhancedActiveDownloads = await EnhanceDownloadsWithClientNames(activeDownloads);
 
@@ -244,15 +243,14 @@ public class DownloadsController : ControllerBase
     {
         try
         {
-            var download = await _dbContext.Downloads.FindAsync(id);
+            var download = await _downloadRepo.FindAsync(id);
 
             if (download == null)
             {
                 return NotFound(new { error = "Download not found", id });
             }
 
-            _dbContext.Downloads.Remove(download);
-            await _dbContext.SaveChangesAsync();
+            await _downloadRepo.RemoveAsync(id);
 
             _logger.LogInformation("Deleted download record {DownloadId}", LogRedaction.SanitizeText(id));
             return Ok(new { message = "Download deleted successfully", id });
@@ -271,12 +269,9 @@ public class DownloadsController : ControllerBase
     {
         try
         {
-            var completedDownloads = await _dbContext.Downloads
-                .Where(d => d.Status == DownloadStatus.Completed)
-                .ToListAsync();
-
-            _dbContext.Downloads.RemoveRange(completedDownloads);
-            await _dbContext.SaveChangesAsync();
+            var all = await _downloadRepo.GetAllAsync();
+            var completedDownloads = all.Where(d => d.Status == DownloadStatus.Completed).ToList();
+            foreach (var d in completedDownloads) await _downloadRepo.RemoveAsync(d.Id);
 
             _logger.LogInformation("Cleared {Count} completed downloads", completedDownloads.Count);
             return Ok(new { message = "Completed downloads cleared", count = completedDownloads.Count });
@@ -295,12 +290,9 @@ public class DownloadsController : ControllerBase
     {
         try
         {
-            var failedDownloads = await _dbContext.Downloads
-                .Where(d => d.Status == DownloadStatus.Failed || d.Status == DownloadStatus.ImportBlocked)
-                .ToListAsync();
-
-            _dbContext.Downloads.RemoveRange(failedDownloads);
-            await _dbContext.SaveChangesAsync();
+            var all = await _downloadRepo.GetAllAsync();
+            var failedDownloads = all.Where(d => d.Status == DownloadStatus.Failed || d.Status == DownloadStatus.ImportBlocked).ToList();
+            foreach (var d in failedDownloads) await _downloadRepo.RemoveAsync(d.Id);
 
             _logger.LogInformation("Cleared {Count} failed downloads", failedDownloads.Count);
             return Ok(new { message = "Failed downloads cleared", count = failedDownloads.Count });

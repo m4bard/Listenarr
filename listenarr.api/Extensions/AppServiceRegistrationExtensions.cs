@@ -92,11 +92,6 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<ILoginRateLimiter, LoginRateLimiter>();
             services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
 
-            // Repository for Download entity encapsulating EF operations used by application services
-            services.AddScoped<Listenarr.Application.Repositories.IDownloadRepository, Listenarr.Infrastructure.Repositories.EfDownloadRepository>();
-            // Repository for DownloadProcessingJob queries
-            services.AddScoped<Listenarr.Application.Repositories.IDownloadProcessingJobRepository, Listenarr.Infrastructure.Repositories.EfDownloadProcessingJobRepository>();
-
             // Discord bot service for managing bot process
             services.AddSingleton<IDiscordBotService, DiscordBotService>();
 

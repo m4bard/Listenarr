@@ -17,8 +17,6 @@
  */
 
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 
 namespace Listenarr.Api.Services
@@ -28,20 +26,20 @@ namespace Listenarr.Api.Services
     /// </summary>
     public class AudiobookMatchingService : IAudiobookMatchingService
     {
-        private readonly ListenArrDbContext _dbContext;
+        private readonly IAudiobookRepository _audiobooks;
         private readonly ILogger<AudiobookMatchingService> _logger;
 
         public AudiobookMatchingService(
-            ListenArrDbContext dbContext,
+            IAudiobookRepository audiobooks,
             ILogger<AudiobookMatchingService> logger)
         {
-            _dbContext = dbContext;
+            _audiobooks = audiobooks;
             _logger = logger;
         }
 
         public async Task<Audiobook?> FindBestAudiobookMatchAsync(Download download, double minimumConfidence = 0.8)
         {
-            var audiobooks = await _dbContext.Audiobooks.ToListAsync();
+            var audiobooks = await _audiobooks.GetAllAsync();
 
             var bestMatch = audiobooks
                 .Select(ab => new { Audiobook = ab, Confidence = CalculateMatchConfidence(download, ab) })
@@ -60,7 +58,7 @@ namespace Listenarr.Api.Services
 
         public async Task<Audiobook?> FindBestAudiobookMatchAsync(SearchResult searchResult, double minimumConfidence = 0.8)
         {
-            var audiobooks = await _dbContext.Audiobooks.ToListAsync();
+            var audiobooks = await _audiobooks.GetAllAsync();
 
             var bestMatch = audiobooks
                 .Select(ab => new { Audiobook = ab, Confidence = CalculateMatchConfidence(searchResult, ab) })

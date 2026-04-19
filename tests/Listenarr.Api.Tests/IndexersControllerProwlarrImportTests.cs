@@ -6,6 +6,7 @@ using System.Threading.Tasks;
 using Listenarr.Api.Models;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
+using Listenarr.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -55,12 +56,14 @@ namespace Listenarr.Api.Tests
                 _loggerFactory = new LoggerFactory();
                 _client = new HttpClient(handler);
                 _configurationService = new ConfigurationService(
-                    _db,
+                    new EfApplicationSettingsRepository(_db),
+                    new EfApiConfigurationRepository(_db),
+                    new EfDownloadClientConfigurationRepository(_db),
                     _loggerFactory.CreateLogger<ConfigurationService>(),
                     new Mock<IUserService>().Object,
                     new Mock<IStartupConfigService>().Object);
                 Controller = new Listenarr.Api.Controllers.IndexersController(
-                    _db,
+                    new EfIndexerRepository(_db),
                     _loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>(),
                     _client,
                     _configurationService);

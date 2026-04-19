@@ -18,7 +18,7 @@ namespace Listenarr.Api.Tests
     public class SearchServiceSortingTests
     {
         [Fact]
-        public void ApplySorting_SortsByLanguage_Descending()
+        public async Task ApplySorting_SortsByLanguage_Descending()
         {
             var svc = (SearchService)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(SearchService));
 
@@ -32,7 +32,7 @@ namespace Listenarr.Api.Tests
 
             // Call private ApplySorting via reflection
             var method = typeof(SearchService).GetMethod("ApplySorting", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var ordered = (List<SearchResult>)method.Invoke(svc, new object[] { results, SearchSortBy.Language, SearchSortDirection.Descending })!;
+            var ordered = await (Task<List<SearchResult>>)method.Invoke(svc, new object[] { results, SearchSortBy.Language, SearchSortDirection.Descending })!;
 
             // Expect order: 'english', 'German', 'french', null (case-insensitive, descending)
             // StringComparer.OrdinalIgnoreCase sorts lexicographically; descending should put 'french' > 'english' > 'German' > '' but to be deterministic test the comparer by actual result
@@ -42,7 +42,7 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public void ApplySorting_SortsByLanguage_Ascending()
+        public async Task ApplySorting_SortsByLanguage_Ascending()
         {
             var svc = (SearchService)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(SearchService));
 
@@ -55,7 +55,7 @@ namespace Listenarr.Api.Tests
             };
 
             var method = typeof(SearchService).GetMethod("ApplySorting", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var ordered = (List<SearchResult>)method.Invoke(svc, new object[] { results, SearchSortBy.Language, SearchSortDirection.Ascending })!;
+            var ordered = await (Task<List<SearchResult>>)method.Invoke(svc, new object[] { results, SearchSortBy.Language, SearchSortDirection.Ascending })!;
 
             // Ascending should place null/empty first
             Assert.Equal(4, ordered.Count);

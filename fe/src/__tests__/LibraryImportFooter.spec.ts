@@ -3,6 +3,7 @@ import { createPinia, setActivePinia } from 'pinia'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import LibraryImportFooter from '@/components/domain/audiobook/LibraryImportFooter.vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
+import type { SearchResult, RootFolder } from '@/types'
 
 const success = vi.fn()
 const error = vi.fn()
@@ -33,7 +34,7 @@ describe('LibraryImportFooter', () => {
         folderName: 'Book 1',
         format: 'MP3',
         fileCount: 1,
-        selectedMatch: { title: 'Book 1', authors: [] } as any,
+        selectedMatch: { title: 'Book 1', authors: [] } as unknown as SearchResult,
         hasSearched: true,
         isSearching: false,
         selected: true,
@@ -47,14 +48,14 @@ describe('LibraryImportFooter', () => {
         folderName: 'Book 2',
         format: 'MP3',
         fileCount: 1,
-        selectedMatch: { title: 'Book 2', authors: [] } as any,
+        selectedMatch: { title: 'Book 2', authors: [] } as unknown as SearchResult,
         hasSearched: true,
         isSearching: false,
         selected: true,
       },
-    } as any
+    }
 
-    ;(store as any).importSelected = vi.fn(
+    vi.spyOn(store, 'importSelected').mockImplementation(
       () =>
         new Promise<{ imported: number; errors: string[] }>((resolve) => {
           resolveImport = resolve
@@ -63,7 +64,7 @@ describe('LibraryImportFooter', () => {
 
     const wrapper = mount(LibraryImportFooter, {
       props: {
-        folders: [{ id: 1, path: 'D:\\library' }] as any,
+        folders: [{ id: 1, path: 'D:\\library' }] as unknown as RootFolder[],
       },
       global: {
         plugins: [pinia],

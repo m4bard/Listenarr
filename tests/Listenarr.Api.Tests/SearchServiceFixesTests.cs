@@ -1,6 +1,7 @@
 using System;
 using Xunit;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Api.Services.Search;
 using Listenarr.Api.Services.Search.Filters;
 using Listenarr.Api.Services.Search.Strategies;
@@ -22,7 +23,6 @@ namespace Listenarr.Api.Tests
             var logger = NullLogger<SearchService>.Instance;
             var openLibraryService = Mock.Of<IOpenLibraryService>();
             var imageCache = Mock.Of<IImageCacheService>();
-            ListenArrDbContext dbContext = null!;
             var hubContext = Mock.Of<IHubContext<DownloadHub>>();
             var audible = new AudibleService(new System.Net.Http.HttpClient(), NullLogger<AudibleService>.Instance);
             var audnexus = new AudnexusService(new System.Net.Http.HttpClient(), NullLogger<AudnexusService>.Instance);
@@ -42,7 +42,8 @@ namespace Listenarr.Api.Tests
                 logger,
                 openLibraryService,
                 imageCache,
-                dbContext,
+                Mock.Of<IIndexerRepository>(),
+                Mock.Of<IApiConfigurationRepository>(),
                 hubContext,
                 audible,
                 audnexus,

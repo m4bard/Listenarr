@@ -6,11 +6,9 @@ using System.IO;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
-using Listenarr.Infrastructure.Repositories;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
 {
@@ -41,8 +39,9 @@ namespace Listenarr.Api.Services
                         _moveQueue.UpdateJobStatus(job.Id, "Processing");
 
                     using var scope = _scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var audiobook = await db.Audiobooks.FindAsync(new object[] { job.AudiobookId }, stoppingToken);
+                    var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                    var moveJobRepo = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                    var audiobook = await audiobookRepo.GetByIdAsync(job.AudiobookId);
                     if (audiobook == null)
                     {
                         _moveQueue.UpdateJobStatus(job.Id, "Failed", "Audiobook not found");
@@ -182,12 +181,11 @@ namespace Listenarr.Api.Services
                                 // Increment attempt count for the DB job to surface retries
                                 try
                                 {
-                                    var dbJob = db.MoveJobs.FirstOrDefault(j => j.Id == job.Id);
+                                    var dbJob = await moveJobRepo.GetByIdAsync(job.Id, stoppingToken);
                                     if (dbJob != null)
                                     {
                                         dbJob.AttemptCount += 1;
-                                        db.MoveJobs.Update(dbJob);
-                                        await db.SaveChangesAsync(stoppingToken);
+                                        await moveJobRepo.UpdateAsync(dbJob, stoppingToken);
                                     }
                                 }
                                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -211,8 +209,7 @@ namespace Listenarr.Api.Services
 
                         // Update DB audiobook BasePath to new target
                         audiobook.BasePath = target;
-                        db.Audiobooks.Update(audiobook);
-                        await db.SaveChangesAsync(stoppingToken);
+                        await audiobookRepo.UpdateAsync(audiobook);
 
                         // Preserve local image path if it pointed inside the source directory
                         try
@@ -239,8 +236,7 @@ namespace Listenarr.Api.Services
                                             if (System.IO.File.Exists(newImagePath))
                                             {
                                                 audiobook.ImageUrl = newImagePath;
-                                                db.Audiobooks.Update(audiobook);
-                                                await db.SaveChangesAsync(stoppingToken);
+                                                await audiobookRepo.UpdateAsync(audiobook);
                                                 _logger.LogInformation("Updated ImageUrl for audiobook {AudiobookId} to new path after move", audiobook.Id);
                                             }
                                         }
@@ -273,8 +269,7 @@ namespace Listenarr.Api.Services
                                     if (System.IO.File.Exists(newFilePath))
                                     {
                                         audiobook.FilePath = newFilePath;
-                                        db.Audiobooks.Update(audiobook);
-                                        await db.SaveChangesAsync(stoppingToken);
+                                        await audiobookRepo.UpdateAsync(audiobook);
                                         _logger.LogInformation("Updated FilePath for audiobook {AudiobookId} to new path after move", audiobook.Id);
                                     }
                                 }
@@ -384,10 +379,10 @@ namespace Listenarr.Api.Services
                                         // Load latest audiobook state and broadcast a full DTO so clients can update instantly without fetching
                                         try
                                         {
-                                            var fresh = await db.Audiobooks.Include(a => a.Files).FirstOrDefaultAsync(a => a.Id == audiobook.Id);
+                                            var fresh = await audiobookRepo.GetByIdAsync(audiobook.Id);
                                             if (fresh != null)
                                             {
-                                                var audiobookDtoFull = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(db, fresh);
+                                                var audiobookDtoFull = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(fresh);
                                                 await hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDtoFull);
                                                 _logger.LogInformation("Broadcasted full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}", audiobook.Id, job.Id);
                                             }
@@ -419,12 +414,11 @@ namespace Listenarr.Api.Services
                         // Increment attempt count for the job on failure
                         try
                         {
-                            var dbJob = db.MoveJobs.FirstOrDefault(j => j.Id == job.Id);
+                            var dbJob = await moveJobRepo.GetByIdAsync(job.Id, stoppingToken);
                             if (dbJob != null)
                             {
                                 dbJob.AttemptCount += 1;
-                                db.MoveJobs.Update(dbJob);
-                                await db.SaveChangesAsync(stoppingToken);
+                                await moveJobRepo.UpdateAsync(dbJob, stoppingToken);
                             }
                         }
                         catch (Exception attEx) when (attEx is not OperationCanceledException && attEx is not OutOfMemoryException && attEx is not StackOverflowException) {

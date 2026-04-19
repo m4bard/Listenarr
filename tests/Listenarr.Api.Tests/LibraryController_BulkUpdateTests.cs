@@ -14,7 +14,14 @@ using Xunit;
 using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
 using Listenarr.Api.Services;
+using Listenarr.Application.Services;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Infrastructure.Repositories;
+using IHistoryRepository = Listenarr.Application.Repositories.IHistoryRepository;
+using IAudiobookFileRepository = Listenarr.Application.Repositories.IAudiobookFileRepository;
+using IQualityProfileRepository = Listenarr.Application.Repositories.IQualityProfileRepository;
+using IDownloadRepository = Listenarr.Application.Repositories.IDownloadRepository;
+using IRootFolderRepository = Listenarr.Application.Repositories.IRootFolderRepository;
 
 namespace Listenarr.Api.Tests
 {
@@ -117,8 +124,13 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory,
+                new EfHistoryRepository(dbContext),
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object);
 
             // Build request: update monitored + qualityProfileId + rootFolder (include a non-existent id)

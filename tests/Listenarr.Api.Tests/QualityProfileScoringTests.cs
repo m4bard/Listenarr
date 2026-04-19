@@ -1,8 +1,11 @@
 ﻿using System;
 using System.Threading.Tasks;
 using Xunit;
+using Moq;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Infrastructure.Repositories;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,9 +15,7 @@ namespace Listenarr.Api.Tests
     {
         private QualityProfileService CreateService()
         {
-            // We don't need a real DbContext for scoring logic in this test - pass null and a null logger.
-            // The service only uses DbContext for profile CRUD; ScoreSearchResult doesn't require it.
-            return new QualityProfileService(null!, new NullLogger<QualityProfileService>());
+            return new QualityProfileService(Mock.Of<IQualityProfileRepository>(), NullLogger<QualityProfileService>.Instance);
         }
 
         [Fact]
@@ -438,7 +439,7 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(indexer);
             db.SaveChanges();
 
-            var service = new QualityProfileService(db, new Microsoft.Extensions.Logging.Abstractions.NullLogger<QualityProfileService>());
+            var service = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance, new EfIndexerRepository(db));
             var profile = new QualityProfile { MaximumAge = 10, MinimumSeeders = 0 };
 
             var result = new SearchResult
@@ -464,7 +465,7 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(indexer);
             db.SaveChanges();
 
-            var service = new QualityProfileService(db, new Microsoft.Extensions.Logging.Abstractions.NullLogger<QualityProfileService>());
+            var service = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance, new EfIndexerRepository(db));
             var profile = new QualityProfile { MaximumAge = 0 };
 
             var result = new SearchResult
@@ -490,7 +491,7 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(idx);
             db.SaveChanges();
 
-            var svc = new QualityProfileService(db, new Microsoft.Extensions.Logging.Abstractions.NullLogger<QualityProfileService>());
+            var svc = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance, new EfIndexerRepository(db));
             var profile = new QualityProfile { MaximumAge = 10, MinimumSeeders = 0 };
 
             var result = new SearchResult

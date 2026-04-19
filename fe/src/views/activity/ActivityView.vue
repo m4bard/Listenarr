@@ -634,41 +634,11 @@ const formatStatus = (status: string): string => {
   return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-const formatSpeed = (bytesPerSecond: number): string => {
-  if (bytesPerSecond === 0) return '0 B/s'
-
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
-  let speed = bytesPerSecond
-  let unitIndex = 0
-
-  while (speed >= 1024 && unitIndex < units.length - 1) {
-    speed /= 1024
-    unitIndex++
-  }
-
-  return `${speed.toFixed(1)} ${units[unitIndex]}`
-}
-
 const formatEta = (seconds: number): string => {
   if (seconds < 60) return `${seconds}s`
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
   return `${Math.floor(seconds / 86400)}d`
-}
-
-const formatSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = bytes
-  let unitIndex = 0
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex++
-  }
-
-  return `${size.toFixed(1)} ${units[unitIndex]}`
 }
 
 // Subscribe to SignalR for real-time updates

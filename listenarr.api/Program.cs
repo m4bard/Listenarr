@@ -219,7 +219,7 @@ if (!args?.Any(arg => arg.StartsWith("--urls")) ?? true)
 
 // Add services to the container.
 // If running as an integration test host, allow the test-side partial to apply any
-// additional registrations (for example AddListenarrPersistence so IDbContextFactory<>
+// additional registrations (for example AddListenarrInfrastructure so IDbContextFactory<>
 // is available to hosted/background services during tests).
 if (builder.Environment.IsEnvironment("Test") || isLikelyTestHost)
 {
@@ -290,8 +290,7 @@ builder.Services.AddSignalR()
         options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
-// RootFolder repository + service
-builder.Services.AddScoped<Listenarr.Application.Repositories.IRootFolderRepository, Listenarr.Infrastructure.Repositories.EfRootFolderRepository>();
+// RootFolder service
 builder.Services.AddScoped<Listenarr.Api.Services.IRootFolderService, Listenarr.Api.Services.RootFolderService>();
 // Migrator for legacy single-outputPath -> RootFolder migration
 builder.Services.AddScoped<Listenarr.Api.Services.ILegacyOutputPathMigrator, Listenarr.Api.Services.LegacyOutputPathMigrator>();
@@ -657,14 +656,11 @@ if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))
 // Log the resolved SQLite DB path so developers can verify which file is used at runtime
 Log.Logger.Information("[Startup] Resolved SQLite DB path: {SqliteDbPath}", sqliteDbPath);
 
-// Register persistence (DbContextFactory + compatibility DbContext + repositories) via extension
-builder.Services.AddListenarrPersistence(builder.Configuration, sqliteDbPath);
-
 // Register adapters and related options/validators
 builder.Services.AddListenarrAdapters(builder.Configuration);
 
-// Register infrastructure implementations (repositories live in the Infrastructure project)
-builder.Services.AddListenarrInfrastructure();
+// Register infrastructure implementations (DB wiring + repositories live in the Infrastructure project)
+builder.Services.AddListenarrInfrastructure(sqliteDbPath);
 // Register application-level services (moved from Program.cs to keep startup focused)
 builder.Services.AddListenarrAppServices(builder.Configuration);
 // Register hosted/background services (moved from Program.cs). Allow tests to disable these.

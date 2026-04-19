@@ -44,7 +44,7 @@ namespace Listenarr.Api.Tests
             var logger = loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>();
             var handler = new CaptureHandler(httpResponse);
             var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
+            var controller = new Listenarr.Api.Controllers.IndexersController(new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db), logger, client, new TestConfigurationService());
 
             return (db, controller, handler);
         }

@@ -17,8 +17,7 @@
  */
 
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using System.Security.AccessControl;
 using System.Security.Principal;
 using System.Runtime.InteropServices;
@@ -38,7 +37,6 @@ namespace Listenarr.Api.Services
     public class DownloadMonitorService : BackgroundService
     {
         private readonly IServiceScopeFactory _serviceScopeFactory;
-        private readonly Microsoft.EntityFrameworkCore.IDbContextFactory<Listenarr.Infrastructure.Models.ListenArrDbContext> _dbFactory;
         private readonly IHubContext<DownloadHub> _hubContext;
         private readonly ILogger<DownloadMonitorService> _logger;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -59,9 +57,6 @@ namespace Listenarr.Api.Services
         // Simple memory cache for per-torrent properties fetched from qBittorrent
         private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache _memoryCache;
 
-        // Backward-compatible constructor to avoid breaking existing tests that instantiate
-        // DownloadMonitorService without providing an IDbContextFactory. This resolves the
-        // IDbContextFactory from the IServiceScopeFactory and delegates to the primary ctor.
         public DownloadMonitorService(
             IServiceScopeFactory serviceScopeFactory,
             IHubContext<DownloadHub> hubContext,
@@ -69,14 +64,13 @@ namespace Listenarr.Api.Services
             IHttpClientFactory httpClientFactory,
             IAppMetricsService? appMetrics = null)
         {
-            // Backward-compatible resolution of IMemoryCache for older tests/registrations
             Microsoft.Extensions.Caching.Memory.IMemoryCache? memCache = null;
             try
             {
                 using var scope = serviceScopeFactory.CreateScope();
                 memCache = scope.ServiceProvider.GetService<Microsoft.Extensions.Caching.Memory.IMemoryCache>();
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
@@ -85,84 +79,12 @@ namespace Listenarr.Api.Services
                 memCache = new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions());
             }
 
-            // Delegate to primary ctor
-            var dbFactory = CreateFallbackDbFactoryIfNeeded(serviceScopeFactory);
             _serviceScopeFactory = serviceScopeFactory;
-            _dbFactory = dbFactory;
             _hubContext = hubContext;
             _logger = logger;
             _httpClientFactory = httpClientFactory;
             _memoryCache = memCache;
             _metrics = appMetrics ?? new NoopAppMetricsService();
-        }
-
-        public DownloadMonitorService(
-            IServiceScopeFactory serviceScopeFactory,
-            Microsoft.EntityFrameworkCore.IDbContextFactory<Listenarr.Infrastructure.Models.ListenArrDbContext> dbFactory,
-            IHubContext<DownloadHub> hubContext,
-            ILogger<DownloadMonitorService> logger,
-            IHttpClientFactory httpClientFactory,
-            Microsoft.Extensions.Caching.Memory.IMemoryCache memoryCache,
-            IAppMetricsService? appMetrics = null)
-        {
-            _serviceScopeFactory = serviceScopeFactory;
-            _dbFactory = dbFactory;
-            _hubContext = hubContext;
-            _logger = logger;
-            _httpClientFactory = httpClientFactory;
-            _memoryCache = memoryCache;
-            _metrics = appMetrics ?? new NoopAppMetricsService();
-        }
-
-        // If an IDbContextFactory is registered, return it; otherwise, if a single
-        // ListenArrDbContext instance is registered in the scope, create an adapter
-        // IDbContextFactory that returns that instance. This keeps unit tests working
-        // when they register a single in-memory ListenArrDbContext instead of a factory.
-        private static Microsoft.EntityFrameworkCore.IDbContextFactory<Listenarr.Infrastructure.Models.ListenArrDbContext> CreateFallbackDbFactoryIfNeeded(IServiceScopeFactory serviceScopeFactory)
-        {
-            using var scope = serviceScopeFactory.CreateScope();
-            var sp = scope.ServiceProvider;
-            var factory = sp.GetService<Microsoft.EntityFrameworkCore.IDbContextFactory<Listenarr.Infrastructure.Models.ListenArrDbContext>>();
-            if (factory != null) return factory;
-
-            var existing = sp.GetService<Listenarr.Infrastructure.Models.ListenArrDbContext>();
-            if (existing != null)
-            {
-                return new ExistingInstanceDbContextFactory(existing);
-            }
-
-            // No factory or instance - return a factory implementation that throws when used. This preserves
-            // the previous failure mode but with clearer semantics if this path is reached.
-            return new ThrowingDbContextFactory();
-        }
-
-        private sealed class ExistingInstanceDbContextFactory : Microsoft.EntityFrameworkCore.IDbContextFactory<Listenarr.Infrastructure.Models.ListenArrDbContext>
-        {
-            private readonly Listenarr.Infrastructure.Models.ListenArrDbContext _instance;
-            public ExistingInstanceDbContextFactory(Listenarr.Infrastructure.Models.ListenArrDbContext instance) => _instance = instance;
-
-            public Listenarr.Infrastructure.Models.ListenArrDbContext CreateDbContext()
-            {
-                return _instance;
-            }
-
-            public System.Threading.Tasks.ValueTask<Listenarr.Infrastructure.Models.ListenArrDbContext> CreateDbContextAsync(System.Threading.CancellationToken cancellationToken = default)
-            {
-                return new System.Threading.Tasks.ValueTask<Listenarr.Infrastructure.Models.ListenArrDbContext>(_instance);
-            }
-        }
-
-        private sealed class ThrowingDbContextFactory : Microsoft.EntityFrameworkCore.IDbContextFactory<Listenarr.Infrastructure.Models.ListenArrDbContext>
-        {
-            public Listenarr.Infrastructure.Models.ListenArrDbContext CreateDbContext()
-            {
-                throw new InvalidOperationException("No ListenArrDbContext or IDbContextFactory<ListenArrDbContext> is registered in the current service scope.");
-            }
-
-            public System.Threading.Tasks.ValueTask<Listenarr.Infrastructure.Models.ListenArrDbContext> CreateDbContextAsync(System.Threading.CancellationToken cancellationToken = default)
-            {
-                throw new InvalidOperationException("No ListenArrDbContext or IDbContextFactory<ListenArrDbContext> is registered in the current service scope.");
-            }
         }
 
         /// <summary>
@@ -243,7 +165,7 @@ namespace Listenarr.Api.Services
         }
 
         // Schedule next poll for a client after a successful interaction
-        private void ScheduleNextClientPollOnSuccess(string clientId, int activeDownloadsForClient)
+        private async Task ScheduleNextClientPollOnSuccess(string clientId, int activeDownloadsForClient)
         {
             try
             {
@@ -252,8 +174,8 @@ namespace Listenarr.Api.Services
                 try
                 {
                     using var scope = _serviceScopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var client = db.DownloadClientConfigurations.FirstOrDefault(c => c.Id == clientId);
+                    var clientConfigRepo = scope.ServiceProvider.GetRequiredService<IDownloadClientConfigurationRepository>();
+                    var client = await clientConfigRepo.GetByIdAsync(clientId);
                     if (client != null && client.Settings != null)
                     {
                         bool hasSetting = client.Settings.TryGetValue("PollingIntervalSeconds", out var v);
@@ -512,7 +434,7 @@ namespace Listenarr.Api.Services
         private async Task MonitorDownloadsAsync(CancellationToken cancellationToken)
         {
             using var scope = _serviceScopeFactory.CreateScope();
-            var dbContext = _dbFactory.CreateDbContext();
+            var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
 
             ApplicationSettings appSettings;
@@ -549,7 +471,7 @@ namespace Listenarr.Api.Services
             // Exclude:
             // - ImportBlocked (blocked due to repeated failures, no point in retrying)
             // - Failed, Cancelled (terminal states)
-            var activeDownloadsAll = await dbContext.Downloads
+            var activeDownloadsAll = (await downloadRepository.GetAllAsync())
                 .Where(d => d.Status != DownloadStatus.ImportBlocked)
                 .Where(d => d.Status == DownloadStatus.Queued ||
                             d.Status == DownloadStatus.Downloading ||
@@ -557,7 +479,7 @@ namespace Listenarr.Api.Services
                             d.Status == DownloadStatus.Processing ||
                             ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && string.IsNullOrEmpty(d.FinalPath)) ||
                             (d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId)))
-                .ToListAsync(cancellationToken);
+                .ToList();
 
             // Skip downloads from disabled/missing external clients.
             // They stay alive so they resume automatically when the client is re-enabled.
@@ -611,7 +533,7 @@ namespace Listenarr.Api.Services
                         if (pollableClientDownloads.Any())
                         {
                             _logger.LogInformation("Calling PollDownloadClientsAsync with {Count} downloads", pollableClientDownloads.Count);
-                            await PollDownloadClientsAsync(pollableClientDownloads, configService, dbContext, appSettings, cancellationToken);
+                            await PollDownloadClientsAsync(pollableClientDownloads, configService, downloadRepository, appSettings, cancellationToken);
                         }
                         else
                         {
@@ -631,10 +553,10 @@ namespace Listenarr.Api.Services
 
             if (shouldFetchAll)
             {
-                allDownloads = await dbContext.Downloads
+                allDownloads = (await downloadRepository.GetAllAsync())
                     .OrderByDescending(d => d.StartedAt)
-                    .Take(100) // Limit to recent 100 downloads
-                    .ToListAsync(cancellationToken);
+                    .Take(100)
+                    .ToList();
 
                 allDownloads = allDownloads
                     .Where(d =>
@@ -693,7 +615,7 @@ namespace Listenarr.Api.Services
         private async Task PollDownloadClientsAsync(
             List<Download> downloads,
             IConfigurationService configService,
-            ListenArrDbContext dbContext,
+            IDownloadRepository downloadRepository,
             ApplicationSettings appSettings,
             CancellationToken cancellationToken)
         {
@@ -731,16 +653,16 @@ namespace Listenarr.Api.Services
                     switch (client.Type.ToLower())
                     {
                         case "qbittorrent":
-                            await PollQBittorrentAsync(client, clientGroup.ToList(), dbContext, appSettings, cancellationToken);
+                            await PollQBittorrentAsync(client, clientGroup.ToList(), downloadRepository, appSettings, cancellationToken);
                             break;
                         case "transmission":
-                            await PollTransmissionAsync(client, clientGroup.ToList(), dbContext, appSettings, cancellationToken);
+                            await PollTransmissionAsync(client, clientGroup.ToList(), downloadRepository, appSettings, cancellationToken);
                             break;
                         case "sabnzbd":
-                            await PollSABnzbdAsync(client, clientGroup.ToList(), dbContext, appSettings, cancellationToken);
+                            await PollSABnzbdAsync(client, clientGroup.ToList(), downloadRepository, appSettings, cancellationToken);
                             break;
                         case "nzbget":
-                            await PollNZBGetAsync(client, clientGroup.ToList(), dbContext, appSettings, cancellationToken);
+                            await PollNZBGetAsync(client, clientGroup.ToList(), downloadRepository, appSettings, cancellationToken);
                             break;
                     }
                 }
@@ -758,7 +680,7 @@ namespace Listenarr.Api.Services
         private Task PollQBittorrentAsync(
             DownloadClientConfiguration client,
             List<Download> downloads,
-            ListenArrDbContext dbContext,
+            IDownloadRepository downloadRepository,
             ApplicationSettings appSettings,
             CancellationToken cancellationToken)
         {
@@ -1059,7 +981,7 @@ namespace Listenarr.Api.Services
                             // This avoids making individual /properties API calls per download which can overwhelm qBittorrent
                             try
                             {
-                                var dbDownload = await dbContext.Downloads.FindAsync(new object[] { dl.Id }, cancellationToken);
+                                var dbDownload = await downloadRepository.FindAsync(dl.Id);
                                 if (dbDownload != null)
                                 {
                                     if (!string.IsNullOrEmpty(matched.SavePath) && dbDownload.DownloadPath != matched.SavePath)
@@ -1068,26 +990,21 @@ namespace Listenarr.Api.Services
                                     }
 
                                     if (dbDownload.Metadata == null) dbDownload.Metadata = new Dictionary<string, object>();
-                                    
-                                    // Record content path in metadata as it's often the most accurate file path
+
                                     if (!string.IsNullOrEmpty(matched.ContentPath))
                                     {
                                         dbDownload.Metadata["ClientContentPath"] = matched.ContentPath;
                                     }
 
-                                    // Store seeding_time if available (from main torrents/info call, not additional API call)
                                     if (matched.SeedingTime.HasValue)
                                     {
                                         dbDownload.Metadata["SeedingTimeSeconds"] = matched.SeedingTime.Value;
                                     }
 
-                                    // Persist CanMoveFiles/CanBeRemoved flags (Sonarr parity)
-                                    // These are evaluated downstream in import mode and cleanup decisions
                                     dbDownload.Metadata["CanMoveFiles"] = matched.CanMoveFiles;
                                     dbDownload.Metadata["CanBeRemoved"] = matched.CanBeRemoved;
 
-                                    dbContext.Downloads.Update(dbDownload);
-                                    await dbContext.SaveChangesAsync(cancellationToken);
+                                    await downloadRepository.UpdateAsync(dbDownload);
                                     _logger.LogDebug("Persisted client paths for download {DownloadId}: DownloadPath={DownloadPath}, ClientContentPath={ClientContentPath}", 
                                         dl.Id, dbDownload.DownloadPath, matched.ContentPath);
                                 }
@@ -1097,7 +1014,7 @@ namespace Listenarr.Api.Services
                             }
 
                             // Update database with real-time progress information
-                            await UpdateDownloadProgressAsync(dl.Id, matched.Progress * 100, matched.AmountLeft, matched.State, dbContext, cancellationToken);
+                            await UpdateDownloadProgressAsync(dl.Id, matched.Progress * 100, matched.AmountLeft, matched.State, downloadRepository, cancellationToken);
 
                             // Skip finalization/progress logic for downloads that are already
                             // being processed, awaiting import, or fully imported. Re-entering
@@ -1117,7 +1034,7 @@ namespace Listenarr.Api.Services
                                 await HandleFailedDownloadAsync(
                                     dl,
                                     client,
-                                    dbContext,
+                                    downloadRepository,
                                     appSettings,
                                     $"qBittorrent state: {matched.State}",
                                     cancellationToken);
@@ -1159,8 +1076,7 @@ namespace Listenarr.Api.Services
                                     try
                                     {
                                         dl.Progress = 100M;
-                                        dbContext.Downloads.Update(dl);
-                                        await dbContext.SaveChangesAsync(cancellationToken);
+                                        await downloadRepository.UpdateAsync(dl);
                                         _logger.LogDebug("Updated download {DownloadId} progress to 100%% in database (status remains {Status})", dl.Id, dl.Status);
                                     }
                                     catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
@@ -1223,7 +1139,7 @@ namespace Listenarr.Api.Services
                     }
 
                     // Schedule next poll now that this client's polling completed successfully
-                    ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
+                    _ = ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Error polling qBittorrent client {ClientName}", client.Name);
@@ -1235,7 +1151,7 @@ namespace Listenarr.Api.Services
         private Task PollTransmissionAsync(
             DownloadClientConfiguration client,
             List<Download> downloads,
-            ListenArrDbContext dbContext,
+            IDownloadRepository downloadRepository,
             ApplicationSettings appSettings,
             CancellationToken cancellationToken)
         {
@@ -1469,7 +1385,7 @@ namespace Listenarr.Api.Services
                                 };
 
                                 // Update database with real-time progress information
-                                await UpdateDownloadProgressAsync(dl.Id, percent * 100, left, status, dbContext, cancellationToken);
+                                await UpdateDownloadProgressAsync(dl.Id, percent * 100, left, status, downloadRepository, cancellationToken);
 
                                 // Compute and persist CanMoveFiles/CanBeRemoved (Sonarr parity)
                                 try
@@ -1492,14 +1408,13 @@ namespace Listenarr.Api.Services
                                     var txCanBeRemoved = txRemoveCompletedDownloads && txSeedLimitReached;
                                     var txCanMoveFiles = txCanBeRemoved && txIsStopped;
 
-                                    var txDbDownload = await dbContext.Downloads.FindAsync(new object[] { dl.Id }, cancellationToken);
+                                    var txDbDownload = await downloadRepository.FindAsync(dl.Id);
                                     if (txDbDownload != null)
                                     {
                                         if (txDbDownload.Metadata == null) txDbDownload.Metadata = new Dictionary<string, object>();
                                         txDbDownload.Metadata["CanMoveFiles"] = txCanMoveFiles;
                                         txDbDownload.Metadata["CanBeRemoved"] = txCanBeRemoved;
-                                        dbContext.Downloads.Update(txDbDownload);
-                                        await dbContext.SaveChangesAsync(cancellationToken);
+                                        await downloadRepository.UpdateAsync(txDbDownload);
                                     }
                                 }
                                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -1522,7 +1437,7 @@ namespace Listenarr.Api.Services
                                     await HandleFailedDownloadAsync(
                                         dl,
                                         client,
-                                        dbContext,
+                                        downloadRepository,
                                         appSettings,
                                         "Transmission reported failed state",
                                         cancellationToken);
@@ -1572,7 +1487,7 @@ namespace Listenarr.Api.Services
                         }
 
                         // Schedule next poll now that this client's polling completed successfully
-                        ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
+                        _ = ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
                         return; // Successfully processed
                     }
 
@@ -1617,7 +1532,7 @@ namespace Listenarr.Api.Services
                 using var scope = _serviceScopeFactory.CreateScope();
                 var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
                 var fileNaming = scope.ServiceProvider.GetService<IFileNamingService>();
-                var db = _dbFactory.CreateDbContext();
+                var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
 
                 // Check if this download is already being processed by the background service
                 var queueService = scope.ServiceProvider.GetService<IDownloadProcessingQueueService>();
@@ -1653,8 +1568,7 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("Download {DownloadId} ({Title}) was already imported - idempotency check prevented re-import from client {ClientId}",
                             download.Id, download.Title, download.DownloadClientId);
                         download.Status = DownloadStatus.Moved;
-                        db.Downloads.Update(download);
-                        await db.SaveChangesAsync();
+                        await downloadRepository.UpdateAsync(download);
                         return;
                     }
                 }
@@ -1974,7 +1888,7 @@ namespace Listenarr.Api.Services
                 // Before enqueueing, mark the download as observed complete and persist client path info
                 try
                 {
-                    var dbDownload = await db.Downloads.FindAsync(download.Id, cancellationToken);
+                    var dbDownload = await downloadRepository.FindAsync(download.Id);
                     if (dbDownload != null)
                     {
                         // Ensure DownloadPath contains the resolved source path
@@ -1983,16 +1897,9 @@ namespace Listenarr.Api.Services
                             dbDownload.DownloadPath = sourceFile;
                         }
 
-                        // Mark the download as Processing (observed complete by client,
-                        // but file-level processing/move/copy is still pending). We avoid
-                        // setting Status=Completed here to prevent premature UI notifications
-                        // that indicate the download is fully finished before post-processing
-                        // has completed. CompletedAt will be set later by the shared
-                        // ProcessCompletedDownloadAsync handler when the file is finalized.
                         dbDownload.Status = DownloadStatus.Processing;
 
-                        db.Downloads.Update(dbDownload);
-                        await db.SaveChangesAsync(cancellationToken);
+                        await downloadRepository.UpdateAsync(dbDownload);
 
                         _logger.LogInformation("Marked download {DownloadId} as Completed (observed) and persisted DownloadPath: {DownloadPath}", download.Id, dbDownload.DownloadPath);
                     }
@@ -2031,7 +1938,7 @@ namespace Listenarr.Api.Services
         private Task PollSABnzbdAsync(
             DownloadClientConfiguration client,
             List<Download> downloads,
-            ListenArrDbContext dbContext,
+            IDownloadRepository downloadRepository,
             ApplicationSettings appSettings,
             CancellationToken cancellationToken)
         {
@@ -2137,14 +2044,14 @@ namespace Listenarr.Api.Services
                                         var amountLeft = (long)(mbleft * 1024 * 1024);
 
                                         // Update progress using percent and amountLeft (UpdateDownloadProgressAsync uses percent->downloaded size calculation when TotalSize is set)
-                                        await UpdateDownloadProgressAsync(matchingDownload.Id, progressPercent, amountLeft, status, dbContext, cancellationToken);
+                                        await UpdateDownloadProgressAsync(matchingDownload.Id, progressPercent, amountLeft, status, downloadRepository, cancellationToken);
 
                                         if (status.Equals("Failed", StringComparison.OrdinalIgnoreCase))
                                         {
                                             await HandleFailedDownloadAsync(
                                                 matchingDownload,
                                                 client,
-                                                dbContext,
+                                                downloadRepository,
                                                 appSettings,
                                                 "SABnzbd reported failed state",
                                                 cancellationToken);
@@ -2247,7 +2154,7 @@ namespace Listenarr.Api.Services
                                 await HandleFailedDownloadAsync(
                                     dl,
                                     client,
-                                    dbContext,
+                                    downloadRepository,
                                     appSettings,
                                     failedMatch.Error,
                                     cancellationToken);
@@ -2320,14 +2227,13 @@ namespace Listenarr.Api.Services
                                     {
                                         dl.Status = DownloadStatus.Completed;
                                         dl.Progress = 100M;
-                                        dbContext.Downloads.Update(dl);
-                                        await dbContext.SaveChangesAsync(cancellationToken);
+                                        await downloadRepository.UpdateAsync(dl);
                                         _logger.LogDebug("Updated download {DownloadId} status to Completed in database", dl.Id);
                                     }
                                     catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
                                         _logger.LogWarning(ex2, "Failed to update download {DownloadId} status to Completed", dl.Id);
                                     }
-                                    
+
                                     // Broadcast candidate so UI can surface it immediately
                                     _ = BroadcastCandidateUpdateAsync(dl, true, cancellationToken);
                                     continue;
@@ -2360,7 +2266,7 @@ namespace Listenarr.Api.Services
                     }
 
                     // Schedule next poll now that this client's polling completed successfully
-                    ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
+                    _ = ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error polling SABnzbd client {ClientName}", client.Name);
@@ -2372,7 +2278,7 @@ namespace Listenarr.Api.Services
         private Task PollNZBGetAsync(
             DownloadClientConfiguration client,
             List<Download> downloads,
-            ListenArrDbContext dbContext,
+            IDownloadRepository downloadRepository,
             ApplicationSettings appSettings,
             CancellationToken cancellationToken)
         {
@@ -2469,7 +2375,7 @@ namespace Listenarr.Api.Services
                                                 var progress = totalMB > 0 ? (totalMB - remainingMB) / totalMB : 0.0;
                                                 var amountLeft = (long)(remainingMB * 1024 * 1024); // Convert MB to bytes
 
-                                                await UpdateDownloadProgressAsync(matchingDownload.Id, progress, amountLeft, status, dbContext, cancellationToken);
+                                                await UpdateDownloadProgressAsync(matchingDownload.Id, progress, amountLeft, status, downloadRepository, cancellationToken);
 
                                                 if (status.Equals("FAILURE", StringComparison.OrdinalIgnoreCase) ||
                                                     status.Equals("FAILED", StringComparison.OrdinalIgnoreCase))
@@ -2477,7 +2383,7 @@ namespace Listenarr.Api.Services
                                                     await HandleFailedDownloadAsync(
                                                         matchingDownload,
                                                         client,
-                                                        dbContext,
+                                                        downloadRepository,
                                                         appSettings,
                                                         $"NZBGet status: {status}",
                                                         cancellationToken);
@@ -2603,7 +2509,7 @@ namespace Listenarr.Api.Services
                                 await HandleFailedDownloadAsync(
                                     dl,
                                     client,
-                                    dbContext,
+                                    downloadRepository,
                                     appSettings,
                                     failedMatch.Error,
                                     cancellationToken);
@@ -2638,14 +2544,13 @@ namespace Listenarr.Api.Services
                                     {
                                         dl.Status = DownloadStatus.Completed;
                                         dl.Progress = 100M;
-                                        dbContext.Downloads.Update(dl);
-                                        await dbContext.SaveChangesAsync(cancellationToken);
+                                        await downloadRepository.UpdateAsync(dl);
                                         _logger.LogDebug("Updated download {DownloadId} status to Completed in database", dl.Id);
                                     }
                                     catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
                                         _logger.LogWarning(ex2, "Failed to update download {DownloadId} status to Completed", dl.Id);
                                     }
-                                    
+
                                     // Broadcast candidate so UI can surface it immediately
                                     _ = BroadcastCandidateUpdateAsync(dl, true, cancellationToken);
                                     continue;
@@ -2676,7 +2581,7 @@ namespace Listenarr.Api.Services
                     }
 
                     // Schedule next poll now that this client's polling completed successfully
-                    ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
+                    _ = ScheduleNextClientPollOnSuccess(client.Id, downloads.Count);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogError(ex, "Error polling NZBGet client {ClientName}", client.Name);
@@ -2685,11 +2590,11 @@ namespace Listenarr.Api.Services
             }, cancellationToken);
         }
 
-        private async Task UpdateDownloadProgressAsync(string downloadId, double progress, long amountLeft, string clientState, ListenArrDbContext dbContext, CancellationToken cancellationToken)
+        private async Task UpdateDownloadProgressAsync(string downloadId, double progress, long amountLeft, string clientState, IDownloadRepository downloadRepository, CancellationToken cancellationToken)
         {
             try
             {
-                var download = await dbContext.Downloads.FindAsync(new object[] { downloadId }, cancellationToken);
+                var download = await downloadRepository.FindAsync(downloadId);
                 if (download == null) return;
 
                 var normalizedState = (clientState ?? string.Empty).ToLowerInvariant();
@@ -2759,8 +2664,7 @@ namespace Listenarr.Api.Services
                             download.Metadata ??= new Dictionary<string, object>();
                             download.Metadata!["ClientState"] = clientState ?? "Unknown";
                             download.Metadata!["AmountLeft"] = amountLeft;
-                            dbContext.Downloads.Update(download);
-                            await dbContext.SaveChangesAsync(cancellationToken);
+                            await downloadRepository.UpdateAsync(download);
                             return;
                         }
 
@@ -2785,8 +2689,7 @@ namespace Listenarr.Api.Services
                 download.Metadata!["ClientState"] = clientState ?? "Unknown";
                 download.Metadata!["AmountLeft"] = amountLeft;
 
-                dbContext.Downloads.Update(download);
-                await dbContext.SaveChangesAsync(cancellationToken);
+                await downloadRepository.UpdateAsync(download);
 
                 _logger.LogDebug("Updated download {DownloadId} progress: {Progress:F1}%, Status: {Status}, Downloaded: {Downloaded:N0} bytes",
                     downloadId, progress, mappedStatus, downloadedSize);
@@ -2818,7 +2721,7 @@ namespace Listenarr.Api.Services
         private async Task HandleFailedDownloadAsync(
             Download download,
             DownloadClientConfiguration client,
-            ListenArrDbContext dbContext,
+            IDownloadRepository downloadRepository,
             ApplicationSettings settings,
             string? errorMessage,
             CancellationToken cancellationToken)
@@ -2841,8 +2744,7 @@ namespace Listenarr.Api.Services
 
             download.Metadata["ClientFailureReason"] = failureMessage;
 
-            dbContext.Downloads.Update(download);
-            await dbContext.SaveChangesAsync(cancellationToken);
+            await downloadRepository.UpdateAsync(download);
 
             try
             {
@@ -2892,7 +2794,8 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    var audiobook = await dbContext.Audiobooks.FindAsync(new object[] { download.AudiobookId.Value }, cancellationToken);
+                    var audiobookRepo = scope.ServiceProvider.GetService<IAudiobookRepository>();
+                    var audiobook = audiobookRepo != null ? await audiobookRepo.GetByIdAsync(download.AudiobookId.Value) : null;
                     if (audiobook != null && audiobook.Monitored)
                     {
                         var downloadService = scope.ServiceProvider.GetService<IDownloadService>();

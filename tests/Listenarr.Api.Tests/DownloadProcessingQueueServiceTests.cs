@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Xunit;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Utils;
 
@@ -24,6 +25,7 @@ namespace Listenarr.Api.Tests
 
             var services = new ServiceCollection();
             services.AddSingleton(db);
+            services.AddSingleton<IDownloadProcessingJobRepository>(new TestDownloadProcessingJobRepository(db));
             services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
             services.AddLogging();
 
@@ -56,6 +58,7 @@ namespace Listenarr.Api.Tests
 
             var services = new ServiceCollection();
             services.AddSingleton(db);
+            services.AddSingleton<IDownloadProcessingJobRepository>(new TestDownloadProcessingJobRepository(db));
             services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
             services.AddLogging();
 

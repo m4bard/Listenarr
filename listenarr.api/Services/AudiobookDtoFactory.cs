@@ -4,13 +4,12 @@ using System.Linq;
 using System.Threading.Tasks;
 using System.Collections.Generic;
 using Listenarr.Api.Models;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Services
 {
     public static class AudiobookDtoFactory
     {
-        public static AudiobookDto BuildFromEntity(ListenArrDbContext db, Listenarr.Domain.Models.Audiobook audiobook)
+        public static AudiobookDto BuildFromEntity(Listenarr.Domain.Models.Audiobook audiobook)
         {
             if (audiobook == null) return null!;
 

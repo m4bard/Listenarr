@@ -2,12 +2,11 @@ using System.Threading.Tasks;
 using Xunit;
 using Moq;
 using Microsoft.Extensions.Logging;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
-using Listenarr.Infrastructure.Models;
 using Listenarr.Application.Repositories;
+using Listenarr.Application.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Collections.Generic;
 
@@ -22,11 +21,6 @@ namespace Listenarr.Api.Tests
             var mockRepo = new Mock<IAudiobookRepository>();
             var mockImageCache = new Mock<IImageCacheService>();
             var mockLogger = new Mock<ILogger<LibraryController>>();
-            var options = new Microsoft.EntityFrameworkCore.DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(System.Guid.NewGuid().ToString())
-                .Options;
-
-            var dbContext = new ListenArrDbContext(options);
 
             var services = new ServiceCollection();
             var mockConfig = new Mock<IConfigurationService>();
@@ -54,8 +48,13 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IDatabaseConnectionProvider>().Object,
                 fileNaming,
                 scanQueueService: null,
                 moveQueueService: null,

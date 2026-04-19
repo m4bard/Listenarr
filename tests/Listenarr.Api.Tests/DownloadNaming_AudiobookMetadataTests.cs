@@ -122,7 +122,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<HttpClient>(httpClient);
                 services.AddSingleton<IHttpClientFactory>(httpClientFactoryMock.Object);
                 services.AddSingleton<IImportService>(sp => new ImportService(
-                    dbFactoryMock.Object,
+                    new AudiobookRepository(new ListenArrDbContext(options)),
                     sp.GetRequiredService<IServiceScopeFactory>(),
                     new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()),
                     metadataMock.Object,

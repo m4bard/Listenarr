@@ -23,6 +23,11 @@ namespace Listenarr.Infrastructure.Repositories
             return await _db.Indexers.FindAsync(new object[] { id }, ct);
         }
 
+        public async Task<Indexer?> GetByNameAsync(string name, CancellationToken ct = default)
+        {
+            return await _db.Indexers.AsNoTracking().FirstOrDefaultAsync(i => i.Name == name, ct);
+        }
+
         public async Task<List<Indexer>> GetAllAsync(CancellationToken ct = default)
         {
             return await _db.Indexers.AsNoTracking().ToListAsync(ct);

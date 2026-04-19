@@ -62,7 +62,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var controller = new DownloadsController(
-                db,
+                new TestDownloadRepository(db),
                 NullLogger<DownloadsController>.Instance,
                 configMock.Object,
                 null);
@@ -123,7 +123,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var controller = new DownloadsController(
-                db,
+                new TestDownloadRepository(db),
                 NullLogger<DownloadsController>.Instance,
                 configMock.Object,
                 null);
@@ -216,7 +216,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var controller = new DownloadsController(
-                db,
+                new TestDownloadRepository(db),
                 NullLogger<DownloadsController>.Instance,
                 configMock.Object,
                 null);
@@ -286,7 +286,7 @@ namespace Listenarr.Api.Tests
                 .ReturnsAsync(new List<DownloadClientConfiguration>());
 
             var controller = new DownloadsController(
-                db,
+                new TestDownloadRepository(db),
                 NullLogger<DownloadsController>.Instance,
                 configMock.Object,
                 null);
@@ -337,7 +337,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var controller = new DownloadsController(
-                db,
+                new TestDownloadRepository(db),
                 NullLogger<DownloadsController>.Instance,
                 configMock.Object,
                 null);
@@ -386,7 +386,7 @@ namespace Listenarr.Api.Tests
                 .ReturnsAsync(new List<DownloadClientConfiguration>());
 
             var controller = new DownloadsController(
-                db,
+                new TestDownloadRepository(db),
                 NullLogger<DownloadsController>.Instance,
                 configMock.Object,
                 null);
@@ -431,7 +431,7 @@ namespace Listenarr.Api.Tests
                 .ReturnsAsync(new List<DownloadClientConfiguration>());
 
             var controller = new DownloadsController(
-                db,
+                new TestDownloadRepository(db),
                 NullLogger<DownloadsController>.Instance,
                 configMock.Object,
                 null);

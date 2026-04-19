@@ -2,7 +2,6 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Reflection;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -10,6 +9,8 @@ using Xunit;
 using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
+using Listenarr.Application.Services;
 using System.IO;
 
 namespace Listenarr.Api.Tests
@@ -38,11 +39,6 @@ namespace Listenarr.Api.Tests
             var mockLogger = new Mock<ILogger<LibraryController>>();
             var mockScanQueue = new Mock<IScanQueueService>();
 
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-            var dbContext = new ListenArrDbContext(options);
-
             var mockFileNamingService = new Mock<IFileNamingService>();
             mockFileNamingService
                 .Setup(x => x.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
@@ -65,8 +61,13 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory.Object,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNamingService.Object,
                 mockScanQueue.Object);
 
@@ -104,11 +105,6 @@ namespace Listenarr.Api.Tests
             var mockLogger = new Mock<ILogger<LibraryController>>();
             var mockScanQueue = new Mock<IScanQueueService>();
 
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-            var dbContext = new ListenArrDbContext(options);
-
             var mockFileNamingService = new Mock<IFileNamingService>();
             mockFileNamingService
                 .Setup(x => x.ApplyNamingPattern(It.IsAny<string>(), It.IsAny<Dictionary<string, object>>(), false))
@@ -131,8 +127,13 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory.Object,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNamingService.Object,
                 mockScanQueue.Object);
 

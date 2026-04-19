@@ -8,6 +8,7 @@ namespace Listenarr.Application.Repositories
     public interface IIndexerRepository
     {
         Task<Indexer?> GetByIdAsync(int id, CancellationToken ct = default);
+        Task<Indexer?> GetByNameAsync(string name, CancellationToken ct = default);
         Task<List<Indexer>> GetAllAsync(CancellationToken ct = default);
         Task<List<Indexer>> GetEnabledAsync(bool isAutomaticSearch, CancellationToken ct = default);
         Task<Indexer> AddAsync(Indexer indexer, CancellationToken ct = default);

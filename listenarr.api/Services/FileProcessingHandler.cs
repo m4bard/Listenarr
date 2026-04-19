@@ -1,6 +1,5 @@
 using System.Runtime.InteropServices;
-using Microsoft.EntityFrameworkCore;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
@@ -91,8 +90,8 @@ namespace Listenarr.Api.Services
                     // Build minimal metadata for naming
                     var metadata = new AudioMetadata { Title = "Unknown Title" };
                     using var innerScope = _scopeFactory.CreateScope();
-                    var db = innerScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var download = await db.Downloads.FindAsync(job.DownloadId, cancellationToken);
+                    var downloadRepo = innerScope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                    var download = await downloadRepo.FindAsync(job.DownloadId);
                     if (download != null)
                     {
                         metadata.Title = download.Title ?? metadata.Title;

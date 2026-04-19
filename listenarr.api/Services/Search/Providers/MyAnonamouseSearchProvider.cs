@@ -1,3 +1,4 @@
+using Listenarr.Application.Repositories;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +9,6 @@ using System.Threading.Tasks;
 using AsyncKeyedLock;
 using Listenarr.Api.Models;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services.Search.Providers
@@ -21,18 +21,18 @@ namespace Listenarr.Api.Services.Search.Providers
     {
         private readonly ILogger<MyAnonamouseSearchProvider> _logger;
         private readonly HttpClient _httpClient;
-        private readonly ListenArrDbContext _dbContext;
+        private readonly IIndexerRepository _indexerRepo;
 
         public string IndexerType => "MyAnonamouse";
 
         public MyAnonamouseSearchProvider(
             ILogger<MyAnonamouseSearchProvider> logger,
             HttpClient httpClient,
-            ListenArrDbContext dbContext)
+            IIndexerRepository indexerRepo)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+            _indexerRepo = indexerRepo ?? throw new ArgumentNullException(nameof(indexerRepo));
         }
 
         public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
@@ -189,12 +189,11 @@ namespace Listenarr.Api.Services.Search.Providers
                         if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
                         {
                             _logger.LogInformation("MyAnonamouse: received updated mam_id from response for indexer {Name}", indexer.Name);
-                            var idx = await _dbContext.Indexers.FindAsync(indexer.Id);
+                            var idx = await _indexerRepo.GetByIdAsync(indexer.Id);
                             if (idx != null)
                             {
                                 idx.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(idx.AdditionalSettings, newMam);
-                                _dbContext.Indexers.Update(idx);
-                                await _dbContext.SaveChangesAsync();
+                                await _indexerRepo.UpdateAsync(idx);
                                 mamId = newMam;
                             }
                         }

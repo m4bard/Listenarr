@@ -444,10 +444,7 @@ namespace Listenarr.Api.Tests
             var config = new Mock<IConfigurationService>();
             config.Setup(service => service.GetApplicationSettingsAsync()).ReturnsAsync(settings);
 
-            var dbFactory = new Mock<IDbContextFactory<ListenArrDbContext>>();
-            dbFactory.Setup(factory => factory.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-                .ReturnsAsync(() => CreateContext(dbName));
-
+            var repo = new AudiobookRepository(db);
             var fileNaming = new FileNamingService(config.Object, NullLogger<FileNamingService>.Instance);
             var fileMover = new Mock<IFileMover>();
             fileMover.Setup(mover => mover.MoveFileAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -480,7 +477,7 @@ namespace Listenarr.Api.Tests
                 config.Object,
                 fileNaming,
                 fileMover.Object,
-                dbFactory.Object,
+                repo,
                 NullLogger<RenameService>.Instance);
 
             return (service, db, dbName);

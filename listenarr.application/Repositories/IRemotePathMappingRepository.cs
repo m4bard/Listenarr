@@ -9,6 +9,7 @@ namespace Listenarr.Application.Repositories
     {
         Task<List<RemotePathMapping>> GetAllAsync(CancellationToken ct = default);
         Task<RemotePathMapping?> GetByIdAsync(int id, CancellationToken ct = default);
+        Task<List<RemotePathMapping>> GetByClientAsync(string downloadClientId, CancellationToken ct = default);
         Task<RemotePathMapping> SaveAsync(RemotePathMapping mapping, CancellationToken ct = default);
         Task<bool> DeleteAsync(int id, CancellationToken ct = default);
     }

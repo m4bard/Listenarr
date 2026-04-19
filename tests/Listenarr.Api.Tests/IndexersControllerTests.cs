@@ -49,7 +49,7 @@ namespace Listenarr.Api.Tests
             var handler = new CaptureHandler(resp);
             var client = new HttpClient(handler);
 
-            var controller = new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
+            var controller = new Listenarr.Api.Controllers.IndexersController(new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db), logger, client, new TestConfigurationService());
 
             var indexer = new Indexer
             {

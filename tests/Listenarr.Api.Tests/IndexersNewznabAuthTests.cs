@@ -64,7 +64,7 @@ namespace Listenarr.Api.Tests
             var db = new ListenArrDbContext(options);
             var client = new HttpClient(handler);
             var controller = new Listenarr.Api.Controllers.IndexersController(
-                db,
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
                 client,
                 new TestConfigurationService());
@@ -421,7 +421,7 @@ namespace Listenarr.Api.Tests
 
             using var client = new HttpClient(handler);
             var controller = new Listenarr.Api.Controllers.IndexersController(
-                db,
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
                 client,
                 new TestConfigurationService());
@@ -474,7 +474,7 @@ namespace Listenarr.Api.Tests
 
             using var client = new HttpClient(handler);
             var controller = new Listenarr.Api.Controllers.IndexersController(
-                db,
+                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
                 client,
                 new TestConfigurationService());

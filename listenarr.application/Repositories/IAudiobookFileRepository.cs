@@ -13,7 +13,10 @@ namespace Listenarr.Application.Repositories
         Task<AudiobookFile> AddAsync(AudiobookFile file, CancellationToken ct = default);
         Task UpdateAsync(AudiobookFile file, CancellationToken ct = default);
         Task DeleteByAudiobookIdAsync(int audiobookId, CancellationToken ct = default);
+        Task DeleteAsync(int id, CancellationToken ct = default);
         Task<bool> ExistsAtPathAsync(int audiobookId, string path, CancellationToken ct = default);
         Task<bool> IsPathUsedByOtherAsync(int audiobookId, string path, CancellationToken ct = default);
+        Task<List<string>> GetAllFilePathsAsync(CancellationToken ct = default);
+        Task<List<AudiobookFile>> GetAllAsync(CancellationToken ct = default);
     }
 }

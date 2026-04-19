@@ -10,6 +10,8 @@ using Xunit;
 using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
+using Listenarr.Application.Services;
 using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Tests
@@ -77,8 +79,13 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object,
                 null,
                 mockMoveQueue.Object,
@@ -144,8 +151,13 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object,
                 null,
                 mockMoveQueue.Object,
@@ -209,8 +221,13 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
+                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object,
                 null,
                 mockMoveQueue.Object,

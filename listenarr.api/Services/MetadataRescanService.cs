@@ -1,7 +1,6 @@
 using AsyncKeyedLock;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Utils;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
 {
@@ -27,13 +26,8 @@ namespace Listenarr.Api.Services
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var candidates = await db.AudiobookFiles
-                        .Where(f => f.DurationSeconds == null || f.Format == null || f.SampleRate == null)
-                        // Ensure deterministic ordering when using Take() to avoid EF Core warnings
-                        .OrderBy(f => f.Id)
-                        .Take(20)
-                        .ToListAsync(stoppingToken);
+                    var fileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                    var candidates = await fileRepo.GetMissingMetadataAsync(20, stoppingToken);
 
                     if (candidates.Any())
                     {
@@ -51,10 +45,11 @@ namespace Listenarr.Api.Services
                             try
                             {
                                 using var taskScope = _scopeFactory.CreateScope();
-                                var taskDb = taskScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                                var taskFileRepo = taskScope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                                var taskAudiobookRepo = taskScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
                                 var taskMetadataService = taskScope.ServiceProvider.GetRequiredService<IMetadataService>();
 
-                                var file = await taskDb.AudiobookFiles.FirstOrDefaultAsync(f => f.Id == candidate.Id, stoppingToken);
+                                var file = await taskFileRepo.GetByIdAsync(candidate.Id, stoppingToken);
                                 if (file == null)
                                 {
                                     _logger.LogDebug("Skipping metadata rescan for missing file id={Id}", candidate.Id);
@@ -63,15 +58,15 @@ namespace Listenarr.Api.Services
 
                                 if (!FileUtils.IsAudioFile(file.Path ?? string.Empty))
                                 {
-                                    var audiobook = await taskDb.Audiobooks.FirstOrDefaultAsync(a => a.Id == file.AudiobookId, stoppingToken);
+                                    var audiobook = await taskAudiobookRepo.GetByIdAsync(file.AudiobookId);
                                     if (audiobook != null && string.Equals(audiobook.FilePath, file.Path, StringComparison.OrdinalIgnoreCase))
                                     {
                                         audiobook.FilePath = null;
                                         audiobook.FileSize = null;
+                                        await taskAudiobookRepo.UpdateAsync(audiobook);
                                     }
 
-                                    taskDb.AudiobookFiles.Remove(file);
-                                    await taskDb.SaveChangesAsync(stoppingToken);
+                                    await taskFileRepo.DeleteAsync(file.Id, stoppingToken);
                                     _logger.LogInformation("Removed non-audio AudiobookFile entry id={Id} path={Path}", file.Id, LogRedaction.SanitizeFilePath(file.Path));
                                     return;
                                 }
@@ -96,8 +91,7 @@ namespace Listenarr.Api.Services
                                     file.SampleRate = meta.SampleRate != 0 ? meta.SampleRate : file.SampleRate;
                                     file.Channels = meta.Channels != 0 ? meta.Channels : file.Channels;
 
-                                    // Save changes; respect cancellation
-                                    await taskDb.SaveChangesAsync(stoppingToken);
+                                    await taskFileRepo.UpdateAsync(file, stoppingToken);
                                     _logger.LogInformation("Updated metadata for file id={Id}", file.Id);
                                 }
                             }
@@ -139,5 +133,3 @@ namespace Listenarr.Api.Services
         }
     }
 }
-
-

@@ -1,7 +1,7 @@
 /*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2025 Robbie Davis
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
  * by the Free Software Foundation, either version 3 of the License, or
@@ -17,12 +17,10 @@
  */
 
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using System.Threading.Tasks;
-using System.Linq;
 using System.Collections.Generic;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Controllers
 {
@@ -31,12 +29,12 @@ namespace Listenarr.Api.Controllers
     [Tags("History")]
     public class HistoryController : ControllerBase
     {
-        private readonly ListenArrDbContext _dbContext;
+        private readonly Listenarr.Application.Repositories.IHistoryRepository _history;
         private readonly ILogger<HistoryController> _logger;
 
-        public HistoryController(ListenArrDbContext dbContext, ILogger<HistoryController> logger)
+        public HistoryController(Listenarr.Application.Repositories.IHistoryRepository history, ILogger<HistoryController> logger)
         {
-            _dbContext = dbContext;
+            _history = history;
             _logger = logger;
         }
 
@@ -48,28 +46,15 @@ namespace Listenarr.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll([FromQuery] int? limit = null, [FromQuery] int? offset = null)
         {
-            var query = _dbContext.History
-                .OrderByDescending(h => h.Timestamp)
-                .AsQueryable();
-
-            if (offset.HasValue)
-            {
-                query = query.Skip(offset.Value);
-            }
-
-            if (limit.HasValue)
-            {
-                query = query.Take(limit.Value);
-            }
-
-            var history = await query.ToListAsync();
-            var total = await _dbContext.History.CountAsync();
+            var total = await _history.CountAsync();
+            var pageLimit = limit ?? total;
+            var history = await _history.GetPagedAsync(pageLimit, offset ?? 0);
 
             return Ok(new
             {
                 history,
                 total,
-                limit = limit ?? total,
+                limit = pageLimit,
                 offset = offset ?? 0
             });
         }
@@ -81,10 +66,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet("audiobook/{audiobookId}")]
         public async Task<IActionResult> GetByAudiobookId(int audiobookId)
         {
-            var history = await _dbContext.History
-                .Where(h => h.AudiobookId == audiobookId)
-                .OrderByDescending(h => h.Timestamp)
-                .ToListAsync();
+            var history = await _history.GetByAudiobookIdAsync(audiobookId);
 
             _logger.LogInformation("Retrieved {Count} history entries for audiobook ID {AudiobookId}",
                 history.Count, audiobookId);
@@ -100,18 +82,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet("type/{eventType}")]
         public async Task<IActionResult> GetByEventType(string eventType, [FromQuery] int? limit = null)
         {
-            var query = _dbContext.History
-                .Where(h => h.EventType == eventType)
-                .OrderByDescending(h => h.Timestamp)
-                .AsQueryable();
-
-            if (limit.HasValue)
-            {
-                query = query.Take(limit.Value);
-            }
-
-            var history = await query.ToListAsync();
-
+            var history = await _history.GetByEventTypeAsync(eventType, limit);
             return Ok(history);
         }
 
@@ -123,18 +94,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet("source/{source}")]
         public async Task<IActionResult> GetBySource(string source, [FromQuery] int? limit = null)
         {
-            var query = _dbContext.History
-                .Where(h => h.Source == source)
-                .OrderByDescending(h => h.Timestamp)
-                .AsQueryable();
-
-            if (limit.HasValue)
-            {
-                query = query.Take(limit.Value);
-            }
-
-            var history = await query.ToListAsync();
-
+            var history = await _history.GetBySourceAsync(source, limit);
             return Ok(history);
         }
 
@@ -145,11 +105,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet("recent")]
         public async Task<IActionResult> GetRecent([FromQuery] int limit = 50)
         {
-            var history = await _dbContext.History
-                .OrderByDescending(h => h.Timestamp)
-                .Take(limit)
-                .ToListAsync();
-
+            var history = await _history.GetRecentAsync(limit);
             return Ok(history);
         }
 
@@ -160,14 +116,11 @@ namespace Listenarr.Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var historyEntry = await _dbContext.History.FindAsync(id);
-            if (historyEntry == null)
+            var deleted = await _history.DeleteAsync(id);
+            if (!deleted)
             {
                 return NotFound(new { message = "History entry not found" });
             }
-
-            _dbContext.History.Remove(historyEntry);
-            await _dbContext.SaveChangesAsync();
 
             _logger.LogInformation("Deleted history entry ID {Id}", id);
 
@@ -180,9 +133,8 @@ namespace Listenarr.Api.Controllers
         [HttpDelete("clear")]
         public async Task<IActionResult> ClearAll()
         {
-            var count = await _dbContext.History.CountAsync();
-            _dbContext.History.RemoveRange(_dbContext.History);
-            await _dbContext.SaveChangesAsync();
+            var count = await _history.CountAsync();
+            await _history.DeleteAllAsync();
 
             _logger.LogInformation("Cleared all {Count} history entries", count);
 
@@ -197,22 +149,16 @@ namespace Listenarr.Api.Controllers
         public async Task<IActionResult> CleanupOld([FromQuery] int days = 90)
         {
             var cutoffDate = DateTime.UtcNow.AddDays(-days);
-            var oldEntries = await _dbContext.History
-                .Where(h => h.Timestamp < cutoffDate)
-                .ToListAsync();
-
-            _dbContext.History.RemoveRange(oldEntries);
-            await _dbContext.SaveChangesAsync();
+            var deletedCount = await _history.DeleteOlderThanAsync(cutoffDate);
 
             _logger.LogInformation("Cleaned up {Count} history entries older than {Days} days",
-                oldEntries.Count, days);
+                deletedCount, days);
 
             return Ok(new
             {
                 message = $"Cleaned up history entries older than {days} days",
-                deletedCount = oldEntries.Count
+                deletedCount
             });
         }
     }
 }
-

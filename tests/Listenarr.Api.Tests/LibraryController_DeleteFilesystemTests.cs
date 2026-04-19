@@ -5,6 +5,8 @@ using System.Linq;
 using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
+using Listenarr.Application.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -340,6 +342,8 @@ namespace Listenarr.Api.Tests
             var repo = new Mock<IAudiobookRepository>();
             repo.Setup(r => r.GetByIdAsync(It.IsAny<int>()))
                 .ReturnsAsync((int id) => dbContext.Audiobooks.Include(a => a.Files).FirstOrDefault(a => a.Id == id));
+            repo.Setup(r => r.GetAllAsync())
+                .ReturnsAsync(() => dbContext.Audiobooks.ToList());
             repo.Setup(r => r.DeleteByIdAsync(It.IsAny<int>()))
                 .ReturnsAsync((int id) =>
                 {
@@ -371,13 +375,26 @@ namespace Listenarr.Api.Tests
                 repo.Object,
                 imageCache.Object,
                 logger.Object,
-                dbContext,
                 scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new Listenarr.Infrastructure.Repositories.EfAudiobookFileRepository(dbContext),
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                CreateRootFolderRepo(dbContext),
+                new Mock<IDatabaseConnectionProvider>().Object,
                 fileNaming.Object,
                 scanQueueService: null,
                 moveQueueService: null,
                 notificationService: null,
                 rootFolderService: null);
+        }
+
+        private static IRootFolderRepository CreateRootFolderRepo(ListenArrDbContext dbContext)
+        {
+            var mock = new Mock<IRootFolderRepository>();
+            mock.Setup(r => r.GetAllAsync())
+                .ReturnsAsync(() => dbContext.RootFolders.ToList());
+            return mock.Object;
         }
 
         private static void TryDeleteDirectory(string path)

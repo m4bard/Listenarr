@@ -1,6 +1,7 @@
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -90,8 +91,12 @@ namespace Listenarr.Api.Tests
                     }
                 });
 
+            var seriesRepo = new EfMonitoredSeriesRepository(dbContext);
+            var audiobooksRepo = new AudiobookRepository(dbContext);
+
             var service = new SeriesMonitoringService(
-                dbContext,
+                seriesRepo,
+                audiobooksRepo,
                 seriesCatalogService.Object,
                 libraryAddService.Object,
                 Mock.Of<ILogger<SeriesMonitoringService>>());

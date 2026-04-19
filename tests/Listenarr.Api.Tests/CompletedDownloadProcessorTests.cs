@@ -153,18 +153,18 @@ namespace Listenarr.Api.Tests
                 .Returns(Task.CompletedTask);
 
             Listenarr.Domain.Models.History? capturedHistory = null;
-            var historyRepoMock = new Mock<IHistoryRepository>();
+            var historyRepoMock = new Mock<Listenarr.Application.Repositories.IHistoryRepository>();
             historyRepoMock
-                .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>()))
-                .Callback<Listenarr.Domain.Models.History>(h => capturedHistory = h)
-                .ReturnsAsync((Listenarr.Domain.Models.History h) => h);
+                .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()))
+                .Callback<Listenarr.Domain.Models.History, CancellationToken>((h, _) => capturedHistory = h)
+                .ReturnsAsync((Listenarr.Domain.Models.History h, CancellationToken _) => h);
 
             var scopeFactoryMock = new Mock<IServiceScopeFactory>();
             var scopeMock = new Mock<IServiceScope>();
             var spMock = new Mock<IServiceProvider>();
             spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
             spMock.Setup(sp => sp.GetService(typeof(IToastService))).Returns(toastMock.Object);
-            spMock.Setup(sp => sp.GetService(typeof(IHistoryRepository))).Returns(historyRepoMock.Object);
+            spMock.Setup(sp => sp.GetService(typeof(Listenarr.Application.Repositories.IHistoryRepository))).Returns(historyRepoMock.Object);
             scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
             scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
 
@@ -234,7 +234,7 @@ namespace Listenarr.Api.Tests
                 It.Is<string>(msg => msg.Contains("could not be imported automatically", StringComparison.OrdinalIgnoreCase)),
                 8000), Times.Once);
 
-            historyRepoMock.Verify(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>()), Times.Once);
+            historyRepoMock.Verify(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()), Times.Once);
             Assert.NotNull(capturedHistory);
             Assert.Equal("ImportBlocked", capturedHistory!.EventType);
             Assert.Contains("still failing", capturedHistory.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
@@ -380,11 +380,11 @@ namespace Listenarr.Api.Tests
                 .Returns(Task.CompletedTask);
 
             Listenarr.Domain.Models.History? capturedHistory = null;
-            var historyRepoMock = new Mock<IHistoryRepository>();
+            var historyRepoMock = new Mock<Listenarr.Application.Repositories.IHistoryRepository>();
             historyRepoMock
-                .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>()))
-                .Callback<Listenarr.Domain.Models.History>(h => capturedHistory = h)
-                .ReturnsAsync((Listenarr.Domain.Models.History h) => h);
+                .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()))
+                .Callback<Listenarr.Domain.Models.History, CancellationToken>((h, _) => capturedHistory = h)
+                .ReturnsAsync((Listenarr.Domain.Models.History h, CancellationToken _) => h);
 
             var downloadHistoryMock = new Mock<IDownloadHistoryService>();
             downloadHistoryMock
@@ -400,7 +400,7 @@ namespace Listenarr.Api.Tests
             var spMock = new Mock<IServiceProvider>();
             spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
             spMock.Setup(sp => sp.GetService(typeof(IToastService))).Returns(toastMock.Object);
-            spMock.Setup(sp => sp.GetService(typeof(IHistoryRepository))).Returns(historyRepoMock.Object);
+            spMock.Setup(sp => sp.GetService(typeof(Listenarr.Application.Repositories.IHistoryRepository))).Returns(historyRepoMock.Object);
             scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
             scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
 
@@ -447,7 +447,7 @@ namespace Listenarr.Api.Tests
                 It.Is<string>(msg => msg.Contains("could not be imported automatically", StringComparison.OrdinalIgnoreCase)),
                 8000), Times.Once);
 
-            historyRepoMock.Verify(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>()), Times.Once);
+            historyRepoMock.Verify(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()), Times.Once);
             Assert.NotNull(capturedHistory);
             Assert.Equal("ImportBlocked", capturedHistory!.EventType);
             Assert.Contains("Manual interaction is required.", capturedHistory.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);

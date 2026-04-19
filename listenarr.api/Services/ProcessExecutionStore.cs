@@ -1,8 +1,8 @@
 using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Services
 {
@@ -13,11 +13,11 @@ namespace Listenarr.Api.Services
 
     public class ProcessExecutionStore : IProcessExecutionStore
     {
-        private readonly ListenArrDbContext _db;
+        private readonly IProcessExecutionLogRepository _logs;
 
-        public ProcessExecutionStore(ListenArrDbContext db)
+        public ProcessExecutionStore(IProcessExecutionLogRepository logs)
         {
-            _db = db;
+            _logs = logs;
         }
 
         public async Task SaveAsync(ProcessResult result, string? source = null, ProcessStartInfo? startInfo = null, CancellationToken cancellationToken = default)
@@ -37,8 +37,7 @@ namespace Listenarr.Api.Services
                     DurationMs = null
                 };
 
-                _db.ProcessExecutionLogs.Add(entity);
-                await _db.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
+                await _logs.AddAsync(entity, cancellationToken);
             }
             catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
                 // Swallow errors here - persistence is best-effort to avoid disrupting process flows.
@@ -47,4 +46,3 @@ namespace Listenarr.Api.Services
         }
     }
 }
-

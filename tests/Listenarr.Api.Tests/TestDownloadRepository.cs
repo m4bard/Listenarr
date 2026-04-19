@@ -199,6 +199,15 @@ namespace Listenarr.Api.Tests
             return Task.FromResult(list);
         }
 
+        public Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, System.Threading.CancellationToken ct = default)
+        {
+            if (_db != null)
+                return _db.Downloads.Where(d => d.AudiobookId == audiobookId).ToListAsync(ct);
+
+            var list = _mem.Values.Where(d => d.AudiobookId == audiobookId).ToList();
+            return Task.FromResult(list);
+        }
+
         private static QueueTrackedDownload ToQueueTrackedDownloadProjection(Download download)
         {
             return new QueueTrackedDownload

@@ -3,6 +3,7 @@ using System.Reflection;
 using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 using Listenarr.Api.Services;
+using Listenarr.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
 using Xunit;
@@ -19,7 +20,7 @@ namespace Listenarr.Api.Tests
                 .Options;
 
             using var db = new ListenArrDbContext(options);
-            var svc = new QualityProfileService(db, NullLogger<QualityProfileService>.Instance);
+            var svc = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance);
 
             var method = typeof(QualityProfileService).GetMethod("GetQualityScore", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.NotNull(method);
@@ -52,7 +53,7 @@ namespace Listenarr.Api.Tests
                 .Options;
 
             using var db = new ListenArrDbContext(options);
-            var svc = new QualityProfileService(db, NullLogger<QualityProfileService>.Instance);
+            var svc = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance);
 
             // Create a default profile since in-memory DB starts empty
             var profile = new QualityProfile { Name = "Default", IsDefault = true };

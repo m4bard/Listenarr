@@ -1,9 +1,7 @@
 using Listenarr.Api.Models;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Utils;
-using Listenarr.Infrastructure.Models;
-using Listenarr.Infrastructure.Repositories;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
 {
@@ -14,7 +12,7 @@ namespace Listenarr.Api.Services
         private readonly IConfigurationService _configService;
         private readonly IFileNamingService _fileNamingService;
         private readonly IFileMover _fileMover;
-        private readonly IDbContextFactory<ListenArrDbContext> _dbFactory;
+        private readonly IAudiobookRepository _audiobookRepo;
         private readonly ILogger<RenameService> _logger;
         private readonly IRootFolderService? _rootFolderService;
         private readonly IHistoryRepository? _historyRepository;
@@ -23,7 +21,7 @@ namespace Listenarr.Api.Services
             IConfigurationService configService,
             IFileNamingService fileNamingService,
             IFileMover fileMover,
-            IDbContextFactory<ListenArrDbContext> dbFactory,
+            IAudiobookRepository audiobookRepo,
             ILogger<RenameService> logger,
             IRootFolderService? rootFolderService = null,
             IHistoryRepository? historyRepository = null)
@@ -31,7 +29,7 @@ namespace Listenarr.Api.Services
             _configService = configService;
             _fileNamingService = fileNamingService;
             _fileMover = fileMover;
-            _dbFactory = dbFactory;
+            _audiobookRepo = audiobookRepo;
             _logger = logger;
             _rootFolderService = rootFolderService;
             _historyRepository = historyRepository;
@@ -45,9 +43,7 @@ namespace Listenarr.Api.Services
             var settings = await _configService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
             var rootFolders = await LoadRootFoldersAsync();
 
-            await using var db = await _dbFactory.CreateDbContextAsync(ct);
-            var audiobooks = await db.Audiobooks.AsNoTracking().Include(a => a.Files)
-                .Where(a => audiobookIds.Contains(a.Id)).ToListAsync(ct);
+            var audiobooks = await _audiobookRepo.GetByIdsWithFilesAsync(audiobookIds, ct);
 
             return audiobooks.Select(a => BuildPreview(a, settings, rootFolders)).ToList();
         }
@@ -110,8 +106,7 @@ namespace Listenarr.Api.Services
             var result = new RenameResult { AudiobookId = operation.AudiobookId };
             try
             {
-                await using var db = await _dbFactory.CreateDbContextAsync(ct);
-                var audiobook = await db.Audiobooks.Include(a => a.Files).FirstOrDefaultAsync(a => a.Id == operation.AudiobookId, ct);
+                var audiobook = await _audiobookRepo.GetByIdAsync(operation.AudiobookId);
                 if (audiobook == null)
                 {
                     result.Success = false;
@@ -159,7 +154,7 @@ namespace Listenarr.Api.Services
                     var shouldTrustRequestedBasePath = !string.IsNullOrWhiteSpace(operation.NewFolderPath)
                         && (!hasFileOperations || result.Success);
                     UpdateAudiobookPathSummary(audiobook, shouldTrustRequestedBasePath ? operation.NewFolderPath : null);
-                    await db.SaveChangesAsync(ct);
+                    await _audiobookRepo.SaveChangesAsync(ct);
                     await AddHistoryAsync(audiobook, result);
                 }
             }
@@ -340,7 +335,7 @@ namespace Listenarr.Api.Services
                     Message = parts.Count == 0 ? "Files organized" : string.Join(", ", parts),
                     Source = "Organize",
                     Timestamp = DateTime.UtcNow
-                });
+                }, default);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {

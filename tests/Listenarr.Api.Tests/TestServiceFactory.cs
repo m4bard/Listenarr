@@ -70,6 +70,21 @@ namespace Listenarr.Api.Tests
                 return new TestDownloadClientGateway(httpFactory, httpClient);
             });
 
+            // Provide a no-op IIndexerRepository so DownloadService can be resolved without explicit registration.
+            services.AddSingleton<Listenarr.Application.Repositories.IIndexerRepository>(sp =>
+            {
+                var db = sp.GetService<ListenArrDbContext>();
+                if (db != null)
+                {
+                    return new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db);
+                }
+                var mock = new Mock<Listenarr.Application.Repositories.IIndexerRepository>();
+                mock.Setup(r => r.GetAllAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>());
+                mock.Setup(r => r.GetEnabledAsync(It.IsAny<bool>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>());
+                mock.Setup(r => r.GetByIdAsync(It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync((Listenarr.Domain.Models.Indexer?)null);
+                return mock.Object;
+            });
+
             // Provide a test-friendly IDownloadRepository so tests that resolve DownloadService
             // from the root provider don't need to register it explicitly. Prefer an existing
             // ListenArrDbContext if present, otherwise fall back to an in-memory test repo.

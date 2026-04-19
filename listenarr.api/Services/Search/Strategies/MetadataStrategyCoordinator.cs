@@ -1,5 +1,4 @@
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services.Search.Strategies;

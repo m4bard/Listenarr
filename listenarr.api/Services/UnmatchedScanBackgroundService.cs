@@ -2,7 +2,7 @@ using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Listenarr.Api.Hubs;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using System.IO;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Utils;
@@ -112,7 +112,8 @@ namespace Listenarr.Api.Services
         private async Task<List<UnmatchedFileResult>> ScanAsync(string rootFolderPath, CancellationToken ct)
         {
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+            var fileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+            var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var appSettings = await configService.GetApplicationSettingsAsync();
             var concurrency = Math.Clamp(appSettings?.UnmatchedScanConcurrency ?? 2, 1, 8);
@@ -120,15 +121,13 @@ namespace Listenarr.Api.Services
             // Load all tracked file paths (normalized) from DB.
             // Check BOTH AudiobookFiles (multi-file imports) AND Audiobook.FilePath (single-file imports)
             // so that files already in the library are not reported as unmatched.
-            var trackedFromFiles = await db.AudiobookFiles
-                .Where(f => f.Path != null)
-                .Select(f => f.Path!)
-                .ToListAsync(ct);
+            var trackedFromFiles = await fileRepo.GetAllFilePathsAsync(ct);
 
-            var trackedFromAudiobooks = await db.Audiobooks
+            var allAudiobooks = await audiobookRepo.GetAllAsync();
+            var trackedFromAudiobooks = allAudiobooks
                 .Where(a => a.FilePath != null)
                 .Select(a => a.FilePath!)
-                .ToListAsync(ct);
+                .ToList();
 
             var trackedNormalized = new HashSet<string>(
                 trackedFromFiles.Concat(trackedFromAudiobooks).Select(NormalizePath),

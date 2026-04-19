@@ -46,5 +46,145 @@ namespace Listenarr.Infrastructure.Repositories
                 .Distinct()
                 .ToListAsync();
         }
+
+        public async Task<DownloadProcessingJob?> GetActiveByDownloadIdAsync(string downloadId)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.DownloadProcessingJobs
+                .Where(j => j.DownloadId == downloadId &&
+                           (j.Status == ProcessingJobStatus.Pending || j.Status == ProcessingJobStatus.Processing || j.Status == ProcessingJobStatus.Retry))
+                .OrderBy(j => j.CreatedAt)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<DownloadProcessingJob?> GetRecentCompletedByDownloadIdAsync(string downloadId, DateTime cutoff)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.DownloadProcessingJobs
+                .Where(j => j.DownloadId == downloadId && j.Status == ProcessingJobStatus.Completed && j.CompletedAt.HasValue && j.CompletedAt >= cutoff)
+                .OrderByDescending(j => j.CompletedAt)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<DownloadProcessingJob> AddAsync(DownloadProcessingJob job)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            ctx.DownloadProcessingJobs.Add(job);
+            await ctx.SaveChangesAsync();
+            return job;
+        }
+
+        public async Task<DownloadProcessingJob?> GetNextPendingAsync()
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.DownloadProcessingJobs
+                .Where(j => j.Status == ProcessingJobStatus.Pending)
+                .OrderByDescending(j => j.Priority)
+                .ThenBy(j => j.CreatedAt)
+                .FirstOrDefaultAsync();
+        }
+
+        public async Task<List<DownloadProcessingJob>> GetDueRetryJobsAsync()
+        {
+            var now = DateTime.UtcNow;
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.DownloadProcessingJobs
+                .Where(j => j.Status == ProcessingJobStatus.Retry && j.NextRetryAt.HasValue && j.NextRetryAt <= now)
+                .OrderByDescending(j => j.Priority)
+                .ThenBy(j => j.NextRetryAt)
+                .ToListAsync();
+        }
+
+        public async Task UpdateAsync(DownloadProcessingJob job)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            ctx.DownloadProcessingJobs.Update(job);
+            await ctx.SaveChangesAsync();
+        }
+
+        public async Task<DownloadProcessingJob?> GetByIdAsync(string jobId)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.DownloadProcessingJobs.FindAsync(jobId);
+        }
+
+        public async Task<List<DownloadProcessingJob>> GetByDownloadIdAsync(string downloadId)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.DownloadProcessingJobs
+                .Where(j => j.DownloadId == downloadId)
+                .OrderBy(j => j.CreatedAt)
+                .ToListAsync();
+        }
+
+        public async Task<QueueStats> GetStatsAsync()
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            var stats = await ctx.DownloadProcessingJobs
+                .GroupBy(j => j.Status)
+                .Select(g => new { Status = g.Key, Count = g.Count() })
+                .ToListAsync();
+
+            var oldestPending = await ctx.DownloadProcessingJobs
+                .Where(j => j.Status == ProcessingJobStatus.Pending)
+                .OrderBy(j => j.CreatedAt)
+                .Select(j => j.CreatedAt)
+                .FirstOrDefaultAsync();
+
+            var result = new QueueStats { OldestPendingJob = oldestPending == default ? null : oldestPending };
+            foreach (var s in stats)
+            {
+                switch (s.Status)
+                {
+                    case ProcessingJobStatus.Pending: result.PendingJobs = s.Count; break;
+                    case ProcessingJobStatus.Processing: result.ProcessingJobs = s.Count; break;
+                    case ProcessingJobStatus.Completed: result.CompletedJobs = s.Count; break;
+                    case ProcessingJobStatus.Failed: result.FailedJobs = s.Count; break;
+                    case ProcessingJobStatus.Retry: result.RetryJobs = s.Count; break;
+                }
+                result.TotalJobs += s.Count;
+            }
+            return result;
+        }
+
+        public async Task CleanupOldJobsAsync(int retentionDays)
+        {
+            var cutoffDate = DateTime.UtcNow.AddDays(-retentionDays);
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            var oldJobs = await ctx.DownloadProcessingJobs
+                .Where(j => (j.Status == ProcessingJobStatus.Completed || j.Status == ProcessingJobStatus.Failed) &&
+                           j.CompletedAt.HasValue && j.CompletedAt < cutoffDate)
+                .ToListAsync();
+
+            if (oldJobs.Any())
+            {
+                ctx.DownloadProcessingJobs.RemoveRange(oldJobs);
+                await ctx.SaveChangesAsync();
+                _logger.LogInformation("Cleaned up {Count} old processing jobs older than {Days} days", oldJobs.Count, retentionDays);
+            }
+        }
+
+        public async Task<List<DownloadProcessingJob>> GetRecentAsync(int count)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.DownloadProcessingJobs
+                .OrderByDescending(j => j.CreatedAt)
+                .Take(count)
+                .ToListAsync();
+        }
+
+        public async Task<List<DownloadProcessingJob>> GetStuckProcessingJobsAsync()
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.DownloadProcessingJobs
+                .Where(j => j.Status == ProcessingJobStatus.Processing)
+                .ToListAsync();
+        }
+
+        public async Task SaveChangesAsync()
+        {
+            // no-op for factory-based; each method uses its own context
+            await Task.CompletedTask;
+        }
     }
 }

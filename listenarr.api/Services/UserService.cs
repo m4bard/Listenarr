@@ -1,6 +1,5 @@
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
 using System.Security.Cryptography;
 
 namespace Listenarr.Api.Services
@@ -17,18 +16,18 @@ namespace Listenarr.Api.Services
 
     public class UserService : IUserService
     {
-        private readonly ListenArrDbContext _db;
+        private readonly IUserRepository _users;
         private readonly ILogger<UserService> _logger;
 
-        public UserService(ListenArrDbContext db, ILogger<UserService> logger)
+        public UserService(IUserRepository users, ILogger<UserService> logger)
         {
-            _db = db;
+            _users = users;
             _logger = logger;
         }
 
         public async Task<User?> GetByUsernameAsync(string username)
         {
-            return await _db.Users.FirstOrDefaultAsync(u => u.Username == username);
+            return await _users.GetByUsernameAsync(username);
         }
 
         public async Task<User> CreateUserAsync(string username, string password, string? email = null, bool isAdmin = false)
@@ -54,8 +53,7 @@ namespace Listenarr.Api.Services
                     CreatedAt = DateTime.UtcNow
                 };
 
-                _db.Users.Add(user);
-                await _db.SaveChangesAsync();
+                await _users.AddAsync(user);
 
                 _logger.LogInformation("User created successfully: {Username} (IsAdmin: {IsAdmin})", username, isAdmin);
                 return user;
@@ -79,7 +77,7 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogDebug("Attempting to update password for user: {Username}", username);
 
-                var user = await GetByUsernameAsync(username);
+                var user = await _users.GetByUsernameAsync(username);
                 if (user == null)
                 {
                     _logger.LogWarning("Password update failed - user not found: {Username}", username);
@@ -87,8 +85,7 @@ namespace Listenarr.Api.Services
                 }
 
                 user.PasswordHash = HashPassword(newPassword);
-                _db.Users.Update(user);
-                await _db.SaveChangesAsync();
+                await _users.UpdateAsync(user);
 
                 _logger.LogInformation("Password updated successfully for user: {Username}", username);
             }
@@ -100,12 +97,12 @@ namespace Listenarr.Api.Services
 
         public async Task<List<User>> GetAdminUsersAsync()
         {
-            return await _db.Users.Where(u => u.IsAdmin).ToListAsync();
+            return await _users.GetAdminUsersAsync();
         }
 
         public async Task<int> GetUsersCountAsync()
         {
-            return await _db.Users.CountAsync();
+            return await _users.CountAsync();
         }
 
         // PBKDF2 with HMACSHA256
@@ -138,5 +135,3 @@ namespace Listenarr.Api.Services
         }
     }
 }
-
-

@@ -2,22 +2,21 @@ using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
 {
     public class NzbUrlResolver : INzbUrlResolver
     {
-        private readonly IDbContextFactory<ListenArrDbContext> _dbContextFactory;
+        private readonly IIndexerRepository _indexers;
         private readonly ILogger<NzbUrlResolver> _logger;
 
-        public NzbUrlResolver(IDbContextFactory<ListenArrDbContext> dbContextFactory, ILogger<NzbUrlResolver> logger)
+        public NzbUrlResolver(IIndexerRepository indexers, ILogger<NzbUrlResolver> logger)
         {
-            _dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
+            _indexers = indexers ?? throw new ArgumentNullException(nameof(indexers));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -50,18 +49,13 @@ namespace Listenarr.Api.Services
                 }
 
                 Indexer? indexer = null;
-                await using var dbContext = await _dbContextFactory.CreateDbContextAsync(ct);
                 if (result.IndexerId.HasValue)
                 {
-                    indexer = await dbContext.Indexers
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(i => i.Id == result.IndexerId!.Value, ct);
+                    indexer = await _indexers.GetByIdAsync(result.IndexerId!.Value, ct);
                 }
                 else if (!string.IsNullOrWhiteSpace(result.Source))
                 {
-                    indexer = await dbContext.Indexers
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(i => i.Name == result.Source, ct);
+                    indexer = await _indexers.GetByNameAsync(result.Source, ct);
                 }
 
                 if (indexer != null && !string.IsNullOrWhiteSpace(indexer.ApiKey))
@@ -78,4 +72,3 @@ namespace Listenarr.Api.Services
         }
     }
 }
-
