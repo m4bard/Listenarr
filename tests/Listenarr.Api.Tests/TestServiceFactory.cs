@@ -71,13 +71,9 @@ namespace Listenarr.Api.Tests
             });
 
             // Provide a no-op IIndexerRepository so DownloadService can be resolved without explicit registration.
+            // Always use a mock — injecting a DbContext into a singleton factory causes lifetime violations.
             services.AddSingleton<Listenarr.Application.Repositories.IIndexerRepository>(sp =>
             {
-                var db = sp.GetService<ListenArrDbContext>();
-                if (db != null)
-                {
-                    return new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db);
-                }
                 var mock = new Mock<Listenarr.Application.Repositories.IIndexerRepository>();
                 mock.Setup(r => r.GetAllAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>());
                 mock.Setup(r => r.GetEnabledAsync(It.IsAny<bool>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>());

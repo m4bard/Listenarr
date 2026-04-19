@@ -424,14 +424,11 @@ namespace Listenarr.Api.Services
 
         public async Task NormalizeJsonColumnsAsync(System.Threading.CancellationToken ct = default)
         {
-            var columns = new[] { "Authors", "Genres", "Tags", "Narrators", "AuthorAsins", "Isbn" };
-            var allowedColumns = new HashSet<string>(columns, StringComparer.Ordinal);
+            var columns = new[] { "Authors", "Genres", "Tags", "Narrators", "AuthorAsins", "Isbn" }
+                .Where(col => System.Text.RegularExpressions.Regex.IsMatch(col, @"^[A-Za-z_][A-Za-z0-9_]*$"));
 
             foreach (var col in columns)
             {
-                if (!allowedColumns.Contains(col) || !System.Text.RegularExpressions.Regex.IsMatch(col, @"^[A-Za-z_][A-Za-z0-9_]*$"))
-                    continue;
-
                 var sql = $"UPDATE Audiobooks SET {col} = json_array(json_extract({col}, '$')) WHERE {col} IS NOT NULL AND json_valid({col})=1 AND json_type({col}) NOT IN ('array','object')";
                 await _db.Database.ExecuteSqlRawAsync(sql, ct);
             }

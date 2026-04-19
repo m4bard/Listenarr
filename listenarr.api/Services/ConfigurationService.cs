@@ -184,6 +184,28 @@ namespace Listenarr.Api.Services
             {
                 settings.Id = 1;
 
+                // Preserve fields from existing settings when the incoming payload omits them.
+                // Must run before normalization so null-checks catch truly absent fields.
+                var existing = await _settingsRepo.GetAsync();
+                if (existing != null)
+                {
+                    if (settings.ProwlarrUrl == null)
+                        settings.ProwlarrUrl = existing.ProwlarrUrl;
+                    if (settings.ProwlarrPort == null)
+                        settings.ProwlarrPort = existing.ProwlarrPort;
+                    if (settings.ProwlarrTagFilter == null)
+                        settings.ProwlarrTagFilter = existing.ProwlarrTagFilter;
+                    if (string.IsNullOrWhiteSpace(settings.ProwlarrApiKeyEncrypted)
+                        || string.Equals(settings.ProwlarrApiKeyEncrypted, ApiResponseRedactor.RedactedValue, StringComparison.Ordinal))
+                    {
+                        settings.ProwlarrApiKeyEncrypted = existing.ProwlarrApiKeyEncrypted;
+                    }
+                    if (settings.EnabledNotificationTriggers == null)
+                        settings.EnabledNotificationTriggers = existing.EnabledNotificationTriggers;
+                    if (settings.Webhooks == null)
+                        settings.Webhooks = existing.Webhooks;
+                }
+
                 try
                 {
                     settings.EnabledNotificationTriggers = NormalizeTriggerList(settings.EnabledNotificationTriggers) ?? new List<string>();
@@ -203,25 +225,6 @@ namespace Listenarr.Api.Services
                 catch (FormatException ex)
                 {
                     _logger.LogWarning(ex, "Failed to normalize notification triggers due to formatting error; saving with original values");
-                }
-
-                // Preserve fields from existing settings when the incoming payload omits them.
-                var existing = await _settingsRepo.GetAsync();
-                if (existing != null)
-                {
-                    if (settings.ProwlarrUrl == null)
-                        settings.ProwlarrUrl = existing.ProwlarrUrl;
-                    if (settings.ProwlarrPort == null)
-                        settings.ProwlarrPort = existing.ProwlarrPort;
-                    if (settings.ProwlarrTagFilter == null)
-                        settings.ProwlarrTagFilter = existing.ProwlarrTagFilter;
-                    if (string.IsNullOrWhiteSpace(settings.ProwlarrApiKeyEncrypted)
-                        || string.Equals(settings.ProwlarrApiKeyEncrypted, ApiResponseRedactor.RedactedValue, StringComparison.Ordinal))
-                    {
-                        settings.ProwlarrApiKeyEncrypted = existing.ProwlarrApiKeyEncrypted;
-                    }
-                    if (settings.Webhooks == null)
-                        settings.Webhooks = existing.Webhooks;
                 }
 
                 await _settingsRepo.SaveAsync(settings);

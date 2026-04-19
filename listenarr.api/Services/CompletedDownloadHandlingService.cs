@@ -131,8 +131,7 @@ namespace Listenarr.Api.Services
             try
             {
                 // Find all downloads that are Completed/ImportPending but not yet imported (FinalPath still empty)
-                var allDownloads = await downloadRepo.GetAllAsync();
-                var completedDownloads = allDownloads
+                var completedDownloads = (await downloadRepo.GetCompletionCandidatesAsync(500))
                     .Where(d =>
                         (d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) &&
                         string.IsNullOrEmpty(d.FinalPath))
@@ -314,8 +313,7 @@ namespace Listenarr.Api.Services
             IServiceScope scope,
             CancellationToken cancellationToken)
         {
-            var allDownloads = await downloadRepo.GetAllAsync();
-            var movedDownloads = allDownloads
+            var movedDownloads = (await downloadRepo.GetActiveForMonitoringAsync())
                 .Where(d => d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId))
                 .ToList();
 
