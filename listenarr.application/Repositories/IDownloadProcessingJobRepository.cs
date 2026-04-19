@@ -10,7 +10,7 @@ namespace Listenarr.Application.Repositories
         Task<DownloadProcessingJob?> GetRecentCompletedByDownloadIdAsync(string downloadId, DateTime cutoff);
         Task<DownloadProcessingJob> AddAsync(DownloadProcessingJob job);
         Task<DownloadProcessingJob?> GetNextPendingAsync();
-        Task<List<DownloadProcessingJob>> GetDueRetryJobsAsync();
+        Task<List<DownloadProcessingJob>> GetDueRetryJobsAsync(CancellationToken cancellationToken = default);
         Task UpdateAsync(DownloadProcessingJob job);
         Task<DownloadProcessingJob?> GetByIdAsync(string jobId);
         Task<List<DownloadProcessingJob>> GetByDownloadIdAsync(string downloadId);

@@ -73,13 +73,15 @@ namespace Listenarr.Api.Tests
                 .FirstOrDefaultAsync();
         }
 
-        public Task<List<DownloadProcessingJob>> GetDueRetryJobsAsync()
+        public Task<List<DownloadProcessingJob>> GetDueRetryJobsAsync(CancellationToken cancellationToken = default)
         {
             if (_db == null) return Task.FromResult(new List<DownloadProcessingJob>());
             var now = DateTime.UtcNow;
             return _db.DownloadProcessingJobs
                 .Where(j => j.Status == ProcessingJobStatus.Retry && j.NextRetryAt.HasValue && j.NextRetryAt <= now)
-                .ToListAsync();
+                .OrderByDescending(j => j.Priority)
+                .ThenBy(j => j.NextRetryAt)
+                .ToListAsync(cancellationToken);
         }
 
         public async Task UpdateAsync(DownloadProcessingJob job)
@@ -99,7 +101,28 @@ namespace Listenarr.Api.Tests
             return _db.DownloadProcessingJobs.Where(j => j.DownloadId == downloadId).ToListAsync();
         }
 
-        public Task<QueueStats> GetStatsAsync() => Task.FromResult(new QueueStats());
+        public async Task<QueueStats> GetStatsAsync()
+        {
+            if (_db == null) return new QueueStats();
+            var jobs = await _db.DownloadProcessingJobs.ToListAsync();
+            var result = new QueueStats();
+            foreach (var j in jobs)
+            {
+                result.TotalJobs++;
+                switch (j.Status)
+                {
+                    case ProcessingJobStatus.Pending: result.PendingJobs++; break;
+                    case ProcessingJobStatus.Processing: result.ProcessingJobs++; break;
+                    case ProcessingJobStatus.Completed: result.CompletedJobs++; break;
+                    case ProcessingJobStatus.Failed: result.FailedJobs++; break;
+                    case ProcessingJobStatus.Retry: result.RetryJobs++; break;
+                }
+            }
+            var oldest = jobs.Where(j => j.Status == ProcessingJobStatus.Pending)
+                .OrderBy(j => j.CreatedAt).Select(j => j.CreatedAt).FirstOrDefault();
+            if (oldest != default) result.OldestPendingJob = oldest;
+            return result;
+        }
 
         public Task CleanupOldJobsAsync(int retentionDays) => Task.CompletedTask;
 

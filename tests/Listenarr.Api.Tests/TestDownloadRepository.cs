@@ -288,7 +288,9 @@ namespace Listenarr.Api.Tests
                 DownloadedSize = download.DownloadedSize,
                 DownloadPath = download.DownloadPath,
                 FinalPath = download.FinalPath,
-                Metadata = download.Metadata
+                Metadata = download.Metadata,
+                AudiobookId = download.AudiobookId,
+                Language = download.Language
             };
         }
     }

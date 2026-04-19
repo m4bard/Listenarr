@@ -80,15 +80,15 @@ namespace Listenarr.Infrastructure.Repositories
                 .FirstOrDefaultAsync();
         }
 
-        public async Task<List<DownloadProcessingJob>> GetDueRetryJobsAsync()
+        public async Task<List<DownloadProcessingJob>> GetDueRetryJobsAsync(CancellationToken cancellationToken = default)
         {
             var now = DateTime.UtcNow;
-            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync(cancellationToken);
             return await ctx.DownloadProcessingJobs
                 .Where(j => j.Status == ProcessingJobStatus.Retry && j.NextRetryAt.HasValue && j.NextRetryAt <= now)
                 .OrderByDescending(j => j.Priority)
                 .ThenBy(j => j.NextRetryAt)
-                .ToListAsync();
+                .ToListAsync(cancellationToken);
         }
 
         public async Task UpdateAsync(DownloadProcessingJob job)
