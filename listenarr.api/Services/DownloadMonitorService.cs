@@ -471,15 +471,7 @@ namespace Listenarr.Api.Services
             // Exclude:
             // - ImportBlocked (blocked due to repeated failures, no point in retrying)
             // - Failed, Cancelled (terminal states)
-            var activeDownloadsAll = (await downloadRepository.GetAllAsync())
-                .Where(d => d.Status != DownloadStatus.ImportBlocked)
-                .Where(d => d.Status == DownloadStatus.Queued ||
-                            d.Status == DownloadStatus.Downloading ||
-                            d.Status == DownloadStatus.Paused ||
-                            d.Status == DownloadStatus.Processing ||
-                            ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && string.IsNullOrEmpty(d.FinalPath)) ||
-                            (d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId)))
-                .ToList();
+            var activeDownloadsAll = await downloadRepository.GetActiveForMonitoringAsync();
 
             // Skip downloads from disabled/missing external clients.
             // They stay alive so they resume automatically when the client is re-enabled.
@@ -553,10 +545,7 @@ namespace Listenarr.Api.Services
 
             if (shouldFetchAll)
             {
-                allDownloads = (await downloadRepository.GetAllAsync())
-                    .OrderByDescending(d => d.StartedAt)
-                    .Take(100)
-                    .ToList();
+                allDownloads = await downloadRepository.GetRecentAsync(100);
 
                 allDownloads = allDownloads
                     .Where(d =>

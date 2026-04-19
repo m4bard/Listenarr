@@ -1,5 +1,3 @@
-using System.Threading;
-using System.Threading.Tasks;
 using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;

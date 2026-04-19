@@ -1,5 +1,4 @@
 using System.Data.Common;
-using System.Threading.Tasks;
 using Listenarr.Application.Services;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;

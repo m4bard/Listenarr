@@ -109,12 +109,11 @@ namespace Listenarr.Api.Tests
             return _db.DownloadProcessingJobs.OrderByDescending(j => j.CreatedAt).Take(count).ToListAsync();
         }
 
-        public Task<List<DownloadProcessingJob>> GetStuckProcessingJobsAsync()
+        public Task<List<DownloadProcessingJob>> GetStuckProcessingJobsAsync(System.Threading.CancellationToken cancellationToken = default)
         {
             if (_db == null) return Task.FromResult(new List<DownloadProcessingJob>());
-            return _db.DownloadProcessingJobs.Where(j => j.Status == ProcessingJobStatus.Processing).ToListAsync();
+            return _db.DownloadProcessingJobs.Where(j => j.Status == ProcessingJobStatus.Processing).ToListAsync(cancellationToken);
         }
 
-        public Task SaveChangesAsync() => Task.CompletedTask;
     }
 }

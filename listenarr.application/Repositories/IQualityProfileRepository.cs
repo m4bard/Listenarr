@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 
 namespace Listenarr.Application.Repositories

@@ -1,6 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 
 namespace Listenarr.Application.Repositories
@@ -20,7 +17,6 @@ namespace Listenarr.Application.Repositories
         Task<QueueStats> GetStatsAsync();
         Task CleanupOldJobsAsync(int retentionDays);
         Task<List<DownloadProcessingJob>> GetRecentAsync(int count);
-        Task<List<DownloadProcessingJob>> GetStuckProcessingJobsAsync();
-        Task SaveChangesAsync();
+        Task<List<DownloadProcessingJob>> GetStuckProcessingJobsAsync(CancellationToken cancellationToken = default);
     }
 }

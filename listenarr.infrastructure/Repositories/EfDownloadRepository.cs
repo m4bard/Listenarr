@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
@@ -143,6 +139,55 @@ namespace Listenarr.Infrastructure.Repositories
                 .AsNoTracking()
                 .Where(d => d.AudiobookId == audiobookId)
                 .ToListAsync(ct);
+        }
+
+        public async Task<List<Download>> GetCompletionCandidatesAsync(int limit)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.Status == DownloadStatus.Completed
+                         || d.Status == DownloadStatus.ImportPending
+                         || d.Status == DownloadStatus.Processing)
+                .OrderByDescending(d => d.CompletedAt)
+                .Take(limit)
+                .ToListAsync();
+        }
+
+        public async Task<List<Download>> GetActiveForMonitoringAsync()
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.Status == DownloadStatus.Queued
+                         || d.Status == DownloadStatus.Downloading
+                         || d.Status == DownloadStatus.Paused
+                         || d.Status == DownloadStatus.Processing
+                         || ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && (d.FinalPath == null || d.FinalPath == ""))
+                         || (d.Status == DownloadStatus.Moved && d.DownloadClientId != null && d.DownloadClientId != ""))
+                .ToListAsync();
+        }
+
+        public async Task<List<Download>> GetRecentAsync(int count)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .OrderByDescending(d => d.StartedAt)
+                .Take(count)
+                .ToListAsync();
+        }
+
+        public async Task<List<int>> GetActiveAudiobookIdsAsync(IEnumerable<DownloadStatus> statuses)
+        {
+            var statusList = statuses.ToList();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.AudiobookId.HasValue && statusList.Contains(d.Status))
+                .Select(d => d.AudiobookId!.Value)
+                .Distinct()
+                .ToListAsync();
         }
 
         private static bool TryGetMetadataString(Dictionary<string, object>? metadata, string key, out string value)

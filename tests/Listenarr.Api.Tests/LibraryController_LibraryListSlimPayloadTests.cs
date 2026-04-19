@@ -82,6 +82,16 @@ namespace Listenarr.Api.Tests
 
             var mockDownloadRepo = new Mock<IDownloadRepository>();
             mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allDownloads);
+            mockDownloadRepo.Setup(r => r.GetActiveAudiobookIdsAsync(It.IsAny<IEnumerable<DownloadStatus>>()))
+                .Returns((IEnumerable<DownloadStatus> statuses) =>
+                {
+                    var s = statuses.ToHashSet();
+                    return Task.FromResult(allDownloads
+                        .Where(d => d.AudiobookId.HasValue && s.Contains(d.Status))
+                        .Select(d => d.AudiobookId!.Value)
+                        .Distinct()
+                        .ToList());
+                });
 
             using var provider = new ServiceCollection().BuildServiceProvider();
             var controller = new LibraryController(

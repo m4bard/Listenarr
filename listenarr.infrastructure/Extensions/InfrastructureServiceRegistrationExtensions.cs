@@ -1,5 +1,3 @@
-using System;
-using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Api.Services;
@@ -27,27 +25,17 @@ namespace Listenarr.Infrastructure.Extensions
         {
             if (sqliteDbPath != null)
             {
-                // Build DbContextOptions once and register as singleton so factories
-                // and background services can create contexts without EF needing to
-                // resolve scoped option-configurators from the root provider.
-                var dbOptionsBuilder = new DbContextOptionsBuilder<ListenArrDbContext>();
-                dbOptionsBuilder.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
-                {
-                    sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name);
-                });
-
-                services.AddSingleton<DbContextOptions<ListenArrDbContext>>(sp => dbOptionsBuilder.Options);
-
-                services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp =>
-                    new SimpleDbContextFactory(sp.GetRequiredService<DbContextOptions<ListenArrDbContext>>()));
-
-                services.AddDbContext<ListenArrDbContext>(options =>
+                // AddDbContextFactory registers IDbContextFactory<T> (singleton) and
+                // DbContextOptions<T> (singleton). It also registers a scoped ListenArrDbContext
+                // derived from the factory, which satisfies direct-injection repos like
+                // QualityProfileRepository and AudiobookRepository.
+                services.AddDbContextFactory<ListenArrDbContext>(options =>
                 {
                     options.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
                     {
                         sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name);
                     });
-                }, ServiceLifetime.Scoped, ServiceLifetime.Singleton);
+                }, ServiceLifetime.Singleton);
             }
 
             services.AddScoped<IAudiobookRepository, AudiobookRepository>();
@@ -74,26 +62,5 @@ namespace Listenarr.Infrastructure.Extensions
 
             return services;
         }
-    }
-
-    /// <summary>
-    /// Lightweight factory that creates ListenArrDbContext instances from a
-    /// pre-built DbContextOptions singleton. Avoids EF registering scoped
-    /// IDbContextOptionsConfiguration services that would be resolved from
-    /// the root provider.
-    /// </summary>
-    internal sealed class SimpleDbContextFactory : IDbContextFactory<ListenArrDbContext>
-    {
-        private readonly DbContextOptions<ListenArrDbContext> _options;
-
-        public SimpleDbContextFactory(DbContextOptions<ListenArrDbContext> options)
-        {
-            _options = options ?? throw new ArgumentNullException(nameof(options));
-        }
-
-        public ListenArrDbContext CreateDbContext() => new ListenArrDbContext(_options);
-
-        public Task<ListenArrDbContext> CreateDbContextAsync() =>
-            Task.FromResult(new ListenArrDbContext(_options));
     }
 }

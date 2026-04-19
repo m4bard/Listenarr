@@ -1,7 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
 using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
@@ -173,18 +169,12 @@ namespace Listenarr.Infrastructure.Repositories
                 .ToListAsync();
         }
 
-        public async Task<List<DownloadProcessingJob>> GetStuckProcessingJobsAsync()
+        public async Task<List<DownloadProcessingJob>> GetStuckProcessingJobsAsync(CancellationToken cancellationToken = default)
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.DownloadProcessingJobs
                 .Where(j => j.Status == ProcessingJobStatus.Processing)
-                .ToListAsync();
-        }
-
-        public async Task SaveChangesAsync()
-        {
-            // no-op for factory-based; each method uses its own context
-            await Task.CompletedTask;
+                .ToListAsync(cancellationToken);
         }
     }
 }

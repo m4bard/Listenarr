@@ -208,6 +208,72 @@ namespace Listenarr.Api.Tests
             return Task.FromResult(list);
         }
 
+        public Task<List<Download>> GetCompletionCandidatesAsync(int limit)
+        {
+            if (_db != null)
+                return _db.Downloads
+                    .Where(d => d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending || d.Status == DownloadStatus.Processing)
+                    .OrderByDescending(d => d.CompletedAt)
+                    .Take(limit)
+                    .ToListAsync();
+
+            var list = _mem.Values
+                .Where(d => d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending || d.Status == DownloadStatus.Processing)
+                .OrderByDescending(d => d.CompletedAt)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult(list);
+        }
+
+        public Task<List<Download>> GetActiveForMonitoringAsync()
+        {
+            bool IsActive(Download d) =>
+                d.Status == DownloadStatus.Queued ||
+                d.Status == DownloadStatus.Downloading ||
+                d.Status == DownloadStatus.Paused ||
+                d.Status == DownloadStatus.Processing ||
+                ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && string.IsNullOrEmpty(d.FinalPath)) ||
+                (d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId));
+
+            if (_db != null)
+                return _db.Downloads.Where(d =>
+                    d.Status == DownloadStatus.Queued ||
+                    d.Status == DownloadStatus.Downloading ||
+                    d.Status == DownloadStatus.Paused ||
+                    d.Status == DownloadStatus.Processing ||
+                    ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && (d.FinalPath == null || d.FinalPath == "")) ||
+                    (d.Status == DownloadStatus.Moved && d.DownloadClientId != null && d.DownloadClientId != ""))
+                    .ToListAsync();
+
+            return Task.FromResult(_mem.Values.Where(IsActive).ToList());
+        }
+
+        public Task<List<Download>> GetRecentAsync(int count)
+        {
+            if (_db != null)
+                return _db.Downloads.OrderByDescending(d => d.StartedAt).Take(count).ToListAsync();
+
+            return Task.FromResult(_mem.Values.OrderByDescending(d => d.StartedAt).Take(count).ToList());
+        }
+
+        public Task<List<int>> GetActiveAudiobookIdsAsync(IEnumerable<DownloadStatus> statuses)
+        {
+            var statusList = statuses.ToList();
+            if (_db != null)
+                return _db.Downloads
+                    .Where(d => d.AudiobookId.HasValue && statusList.Contains(d.Status))
+                    .Select(d => d.AudiobookId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+
+            var list = _mem.Values
+                .Where(d => d.AudiobookId.HasValue && statusList.Contains(d.Status))
+                .Select(d => d.AudiobookId!.Value)
+                .Distinct()
+                .ToList();
+            return Task.FromResult(list);
+        }
+
         private static QueueTrackedDownload ToQueueTrackedDownloadProjection(Download download)
         {
             return new QueueTrackedDownload

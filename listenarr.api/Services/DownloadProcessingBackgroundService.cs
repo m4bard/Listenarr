@@ -229,14 +229,7 @@ namespace Listenarr.Api.Services
                 // Include Processing status to recover downloads orphaned by a crash/restart
                 // that occurred after FinalizeDownloadAsync set the status but before the
                 // processing job was queued.
-                var allDownloads = await downloadRepo.GetAllAsync();
-                var candidates = allDownloads
-                    .Where(d => d.Status == DownloadStatus.Completed
-                             || d.Status == DownloadStatus.ImportPending
-                             || d.Status == DownloadStatus.Processing)
-                    .OrderByDescending(d => d.CompletedAt)
-                    .Take(200)
-                    .ToList();
+                var candidates = await downloadRepo.GetCompletionCandidatesAsync(200);
 
                 // Filter out downloads from disabled or missing clients
                 var originalCount = candidates.Count;

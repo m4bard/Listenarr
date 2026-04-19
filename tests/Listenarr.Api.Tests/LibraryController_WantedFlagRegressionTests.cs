@@ -59,6 +59,8 @@ namespace Listenarr.Api.Tests
 
             var mockDownloadRepo = new Mock<IDownloadRepository>();
             mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allDownloads);
+            mockDownloadRepo.Setup(r => r.GetActiveAudiobookIdsAsync(It.IsAny<IEnumerable<DownloadStatus>>()))
+                .ReturnsAsync(new List<int>());
 
             using var provider = new ServiceCollection().BuildServiceProvider();
             var controller = new LibraryController(
@@ -117,6 +119,8 @@ namespace Listenarr.Api.Tests
 
             var mockDownloadRepo = new Mock<IDownloadRepository>();
             mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<Download>());
+            mockDownloadRepo.Setup(r => r.GetActiveAudiobookIdsAsync(It.IsAny<IEnumerable<DownloadStatus>>()))
+                .ReturnsAsync(new List<int>());
 
             using var provider = new ServiceCollection().BuildServiceProvider();
             var controller = new LibraryController(

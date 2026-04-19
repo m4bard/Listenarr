@@ -701,12 +701,7 @@ namespace Listenarr.Api.Controllers
 
             var qualityProfilesById = qualityProfiles.ToDictionary(q => q.Id);
 
-            var allDownloads = await _downloadRepo.GetAllAsync();
-            var activeDownloadAudiobookIds = allDownloads
-                .Where(d => d.AudiobookId.HasValue && ActiveLibraryDownloadStatuses.Contains(d.Status))
-                .Select(d => d.AudiobookId!.Value)
-                .Distinct()
-                .ToList();
+            var activeDownloadAudiobookIds = await _downloadRepo.GetActiveAudiobookIdsAsync(ActiveLibraryDownloadStatuses);
 
             var activeDownloadAudiobookIdSet = activeDownloadAudiobookIds.ToHashSet();
 

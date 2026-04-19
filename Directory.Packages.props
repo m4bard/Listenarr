@@ -13,6 +13,7 @@
 		<PackageVersion Include="coverlet.collector" Version="3.2.0" />
 		<PackageVersion Include="HtmlAgilityPack" Version="1.12.4" />
 		<PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.6" />
+		<!-- Pinned to 8.x: Microsoft.AspNetCore.OpenApi does not yet publish a 10.x package on NuGet. Update when available. -->
 		<PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="8.0.24" />
 		<PackageVersion Include="Microsoft.Data.Sqlite.Core" Version="$(EFVersion)" />
 		<PackageVersion Include="Microsoft.Data.Sqlite" Version="8.0.0" />

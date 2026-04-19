@@ -1,5 +1,3 @@
-using System.Collections.Generic;
-using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 
 namespace Listenarr.Application.Repositories
@@ -18,5 +16,13 @@ namespace Listenarr.Application.Repositories
         Task<List<Download>> GetByClientAsync(string clientId);
         Task<List<Download>> GetByIdsAsync(IEnumerable<string> ids);
         Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, CancellationToken ct = default);
+        /// <summary>Returns downloads in Completed/ImportPending/Processing status ordered by CompletedAt, for processing job creation.</summary>
+        Task<List<Download>> GetCompletionCandidatesAsync(int limit);
+        /// <summary>Returns downloads that require active monitoring (non-terminal, non-ImportBlocked).</summary>
+        Task<List<Download>> GetActiveForMonitoringAsync();
+        /// <summary>Returns the most recent <paramref name="count"/> downloads ordered by StartedAt descending.</summary>
+        Task<List<Download>> GetRecentAsync(int count);
+        /// <summary>Returns distinct audiobook IDs for downloads whose status is in <paramref name="statuses"/>.</summary>
+        Task<List<int>> GetActiveAudiobookIdsAsync(IEnumerable<DownloadStatus> statuses);
     }
 }
