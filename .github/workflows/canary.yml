@@ -450,7 +450,7 @@ jobs:
       - name: Create GitHub Pre-Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.resolve-version.outputs.VERSION }}
+          tag_name: v${{ steps.resolve-version.outputs.VERSION }}-canary
           name: Canary ${{ steps.resolve-version.outputs.VERSION }}
           body: ${{ steps.sanitize_pr_body.outputs.FULL_RELEASE_BODY }}
           prerelease: true

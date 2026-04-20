@@ -1,7 +1,7 @@
-name: Nightly — build executables & Docker (develop)
+name: Beta — build executables & Docker (beta)
 
 concurrency:
-  group: nightly-build-${{ github.ref }}
+  group: beta-build-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -11,10 +11,10 @@ permissions:
 
 on:
   push:
-    branches: [ develop ]
+    branches: [ beta ]
 
 jobs:
-  nightly-build:
+  beta-build:
     if: github.actor != 'github-actions'
     runs-on: ubuntu-latest
     env:
@@ -62,19 +62,19 @@ jobs:
           echo "SOURCE_VERSION=${SOURCE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "VERSION=${TARGET_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Inspect current develop version
+      - name: Inspect current beta version
         id: inspect_target
         run: |
           set -euo pipefail
-          git fetch origin develop --depth=1
+          git fetch origin beta --depth=1
 
-          BRANCH_XML="$(git show origin/develop:${{ env.API_PROJECT }} 2>/dev/null || true)"
+          BRANCH_XML="$(git show origin/beta:${{ env.API_PROJECT }} 2>/dev/null || true)"
           BRANCH_VERSION=$(printf '%s\n' "$BRANCH_XML" | sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" | head -n1)
           if [ -z "${BRANCH_VERSION}" ]; then
             BRANCH_VERSION=$(printf '%s\n' "$BRANCH_XML" | sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" | head -n1)
           fi
 
-          echo "Current develop version: ${BRANCH_VERSION:-<unknown>}"
+          echo "Current beta version: ${BRANCH_VERSION:-<unknown>}"
           echo "BRANCH_VERSION=${BRANCH_VERSION}" >> "$GITHUB_OUTPUT"
 
           STATE=$(python3 - "${BRANCH_VERSION}" "${{ steps.resolve-version.outputs.VERSION }}" <<'PY'
@@ -106,7 +106,7 @@ jobs:
       - name: Abort obsolete run
         if: steps.inspect_target.outputs.bump_state == 'superseded'
         run: |
-          echo "::error::Current develop version (${{ steps.inspect_target.outputs.BRANCH_VERSION }}) is newer than target version (${{ steps.resolve-version.outputs.VERSION }}). This run is obsolete and will not publish stale artifacts."
+          echo "::error::Current beta version (${{ steps.inspect_target.outputs.BRANCH_VERSION }}) is newer than target version (${{ steps.resolve-version.outputs.VERSION }}). This run is obsolete and will not publish stale artifacts."
           exit 1
 
       - name: Persist bumped version to csproj
@@ -184,7 +184,7 @@ jobs:
           token: ${{ secrets.GH_PAT }}
           commit-message: "[skip ci] Bump version to ${{ steps.resolve-version.outputs.VERSION }}"
           branch: "ci/version-bump-${{ steps.resolve-version.outputs.VERSION }}"
-          base: develop
+          base: beta
           delete-branch: true
           title: "Bump version to ${{ steps.resolve-version.outputs.VERSION }}"
           body: |
@@ -252,12 +252,12 @@ jobs:
               commit_message: `[skip ci] Merge: Bump version to ${process.env.NEW_VERSION}`
             });
 
-      - name: Refresh workspace to current develop version
+      - name: Refresh workspace to current beta version
         if: steps.inspect_target.outputs.bump_state == 'applied' || steps.create_pr.outputs.pull-request-number != ''
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          ref: develop
+          ref: beta
           clean: true
 
       - name: Verify synced workspace version
@@ -303,7 +303,7 @@ jobs:
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-artifacts
+          name: beta-artifacts
           path: artifacts/*.zip
 
       - name: Show resolved version
@@ -344,7 +344,7 @@ jobs:
           PR_DATA=$(gh api graphql -f query='
             query($owner: String!, $repo: String!) {
               repository(owner: $owner, name: $repo) {
-                pullRequests(first: 20, states: MERGED, baseRefName: "develop", orderBy: {field: UPDATED_AT, direction: DESC}) {
+                pullRequests(first: 20, states: MERGED, baseRefName: "beta", orderBy: {field: UPDATED_AT, direction: DESC}) {
                   edges {
                     node {
                       number
@@ -388,9 +388,9 @@ jobs:
           else
             echo "⚠️ No non-version-bump PR found, using fallback"
             PR_NUMBER=""
-            PR_TITLE="Development changes"
-            PR_BODY_RAW="Recent development changes merged to develop branch."
-            PR_BASE_REF="develop"
+            PR_TITLE="Beta changes"
+            PR_BODY_RAW="Recent beta changes merged to beta branch."
+            PR_BASE_REF="beta"
           fi
 
           echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
@@ -431,7 +431,7 @@ jobs:
 
           ---
 
-          **Automated nightly build**
+          **Automated beta build**
 
           - Version: {os.environ.get('VERSION', 'unknown')}
           - Commit: {os.environ.get('GITHUB_SHA', 'unknown')}
@@ -450,8 +450,8 @@ jobs:
       - name: Create GitHub Pre-Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: ${{ steps.resolve-version.outputs.VERSION }}
-          name: Nightly ${{ steps.resolve-version.outputs.VERSION }}
+          tag_name: v${{ steps.resolve-version.outputs.VERSION }}-beta
+          name: Beta ${{ steps.resolve-version.outputs.VERSION }}
           body: ${{ steps.sanitize_pr_body.outputs.FULL_RELEASE_BODY }}
           prerelease: true
           files: artifacts/*.zip
@@ -504,7 +504,7 @@ jobs:
       - name: Upload publish folder (debug artifact)
         uses: actions/upload-artifact@v4
         with:
-          name: nightly-listenarr-publish-folder
+          name: beta-listenarr-publish-folder
           path: listenarr.api/publish
 
       - name: Build and push API image (nightly + sha)
@@ -515,12 +515,12 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: |
-            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:nightly
-            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:nightly-${{ steps.resolve-version.outputs.VERSION }}
-            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:nightly
-            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:nightly-${{ steps.resolve-version.outputs.VERSION }}
-            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:nightly
-            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:nightly-${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:beta
+            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:beta
+            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:beta
+            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}
 
       - name: Notify Discord
         uses: rjstone/discord-webhook-notify@v2.2.1
@@ -529,7 +529,7 @@ jobs:
           severity: info
           description: v${{ steps.resolve-version.outputs.VERSION }} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
           details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
-          text: A new nightly build has been released for docker.
+          text: A new beta build has been released for docker.
           webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
 
       # version bump was pushed via PR+auto-merge above

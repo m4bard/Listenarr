@@ -2,9 +2,9 @@ name: Run Tests
 
 on:
   push:
-    branches: [ develop, main, canary, feature/* ]
+    branches: [ beta, main, canary, feature/* ]
   pull_request:
-    branches: [ develop, main, canary ]
+    branches: [ beta, main, canary ]
     types: [ opened, synchronize, reopened ]
 
 permissions:
