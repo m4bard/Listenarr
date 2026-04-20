@@ -1,4 +1,21 @@
-﻿using Microsoft.Extensions.Hosting;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using Microsoft.Extensions.Hosting;
 using System.Threading;
 using System.Threading.Tasks;
 using System;
@@ -403,7 +420,7 @@ namespace Listenarr.Api.Services
 
                         _moveQueue.UpdateJobStatus(job.Id, "Completed");
                         _logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, LogRedaction.SanitizeFilePath(source), LogRedaction.SanitizeFilePath(target));
-                        // Completed move job â€” status updated and broadcasted where configured
+                        // Completed move job — status updated and broadcasted where configured
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         // Cleanup any temp dir
@@ -471,7 +488,7 @@ namespace Listenarr.Api.Services
 
                         _moveQueue.UpdateJobStatus(job.Id, "Failed", ex.Message);
                         _logger.LogError(ex, "Move job {JobId} failed", job.Id);
-                        // Failure during move job â€” attempt counts updated and history recorded where configured
+                        // Failure during move job — attempt counts updated and history recorded where configured
                     }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

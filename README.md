@@ -515,7 +515,7 @@ Support this project by becoming a sponsor. Your logo will show up here with a l
 ## License
 
 - [GNU Affero General Public License v3.0](LICENSE)
-- Copyright 2024-2025 Robbie Davis
+- Copyright 2024-2026 Listenarr Contributors
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 
