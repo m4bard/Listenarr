@@ -49,6 +49,7 @@ namespace Listenarr.Infrastructure.Repositories
             return await _db.AudiobookFiles
                 .AsNoTracking()
                 .Where(f => f.DurationSeconds == null || f.Format == null || f.SampleRate == null)
+                .OrderBy(f => f.Id)
                 .Take(max)
                 .ToListAsync(ct);
         }

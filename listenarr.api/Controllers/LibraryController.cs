@@ -82,13 +82,18 @@ namespace Listenarr.Api.Controllers
         private readonly IRootFolderService? _rootFolderService;
         private readonly ILibraryAddService? _libraryAddService;
         private readonly IRenameService? _renameService;
+        /// <summary>Initializes a new instance of <see cref="LibraryController"/>.</summary>
         /// <param name="repo">Repository for audiobook persistence and queries.</param>
         /// <param name="imageCacheService">Service for caching and moving cover images.</param>
         /// <param name="logger">Logger instance for diagnostic messages.</param>
-        /// <param name="dbContext">EF Core database context instance.</param>
         /// <param name="scopeFactory">Service scope factory used to create scoped services when required.</param>
+        /// <param name="historyRepo">Repository for download history records.</param>
+        /// <param name="audioFileRepo">Repository for audiobook file records.</param>
+        /// <param name="qualityProfileRepo">Repository for quality profile configuration.</param>
+        /// <param name="downloadRepo">Repository for active download records.</param>
+        /// <param name="rootFolderRepo">Repository for configured root folder paths.</param>
+        /// <param name="dbConnectionProvider">Provider for raw database connections.</param>
         /// <param name="fileNamingService">Service responsible for applying file naming patterns.</param>
-        /// <summary>Initializes a new instance of <see cref="LibraryController"/>.</summary>
         /// <param name="scanQueueService">Optional background scan queue service for asynchronous scans.</param>
         /// <param name="moveQueueService">Optional background move queue service for processing move requests.</param>
         /// <param name="notificationService">Service for sending webhook notifications.</param>
