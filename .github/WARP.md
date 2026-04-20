@@ -224,7 +224,7 @@ This produces a single deployment artifact containing both backend and frontend.
 5. Images cached in `listenarr.api/wwwroot/cache/` (gitignored)
 
 ### Production Deployment
-- Docker images available at `listenarrs/listenarr` (latest, stable, nightly tags)
+- Docker images available at `listenarrs/listenarr` (latest, stable, canary, beta tags)
 - Self-contained executables for Windows, Linux, macOS
 - Single-container deployment includes both API and frontend
 - Persistent volume at `/app/config` for database and configuration
@@ -232,8 +232,9 @@ This produces a single deployment artifact containing both backend and frontend.
 ### Version Management
 - Version controlled in `listenarr.api/Listenarr.Api.csproj`
 - CI automatically increments versions:
-  - Nightly builds: patch increment (1.2.3 → 1.2.4)
-  - Release builds: minor increment + patch reset (1.2.3 → 1.3.0)
+  - Canary builds (`canary` branch): patch increment (1.2.3 → 1.2.4), tagged `v1.2.4-canary`
+  - Beta builds (`beta` branch): minor increment + patch reset (1.2.3 → 1.3.0), tagged `v1.3.0-beta`
+  - Release builds (version tag): major increment + reset (1.2.3 → 2.0.0)
 
 ## Important Development Notes
 
