@@ -142,7 +142,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object);
 
             // Build request: update monitored + qualityProfileId + rootFolder (include a non-existent id)

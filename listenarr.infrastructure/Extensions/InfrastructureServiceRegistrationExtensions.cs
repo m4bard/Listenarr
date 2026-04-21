@@ -18,8 +18,6 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Application.Repositories;
-using Listenarr.Application.Services;
-using Listenarr.Infrastructure.Services;
 using Listenarr.Infrastructure.Models;
 using Listenarr.Infrastructure.Repositories;
 
@@ -70,7 +68,6 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IDownloadProcessingJobRepository, EfDownloadProcessingJobRepository>();
             services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();
             services.AddScoped<IDownloadHistoryRepository, DownloadHistoryRepository>();
-            services.AddScoped<IDatabaseConnectionProvider, EfDatabaseConnectionProvider>();
 
             return services;
         }

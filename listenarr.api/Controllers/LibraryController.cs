@@ -74,7 +74,6 @@ namespace Listenarr.Api.Controllers
         private readonly IQualityProfileRepository _qualityProfileRepo;
         private readonly IDownloadRepository _downloadRepo;
         private readonly IRootFolderRepository _rootFolderRepo;
-        private readonly IDatabaseConnectionProvider _dbConnectionProvider;
         private readonly IScanQueueService? _scanQueueService;
         private readonly IMoveQueueService? _moveQueueService;
         private readonly IFileNamingService _fileNamingService;
@@ -92,7 +91,6 @@ namespace Listenarr.Api.Controllers
         /// <param name="qualityProfileRepo">Repository for quality profile configuration.</param>
         /// <param name="downloadRepo">Repository for active download records.</param>
         /// <param name="rootFolderRepo">Repository for configured root folder paths.</param>
-        /// <param name="dbConnectionProvider">Provider for raw database connections.</param>
         /// <param name="fileNamingService">Service responsible for applying file naming patterns.</param>
         /// <param name="scanQueueService">Optional background scan queue service for asynchronous scans.</param>
         /// <param name="moveQueueService">Optional background move queue service for processing move requests.</param>
@@ -110,7 +108,6 @@ namespace Listenarr.Api.Controllers
             IQualityProfileRepository qualityProfileRepo,
             IDownloadRepository downloadRepo,
             IRootFolderRepository rootFolderRepo,
-            IDatabaseConnectionProvider dbConnectionProvider,
             IFileNamingService fileNamingService,
             IScanQueueService? scanQueueService = null,
             IMoveQueueService? moveQueueService = null,
@@ -128,7 +125,6 @@ namespace Listenarr.Api.Controllers
             _qualityProfileRepo = qualityProfileRepo;
             _downloadRepo = downloadRepo;
             _rootFolderRepo = rootFolderRepo;
-            _dbConnectionProvider = dbConnectionProvider;
             _fileNamingService = fileNamingService;
             _scanQueueService = scanQueueService;
             _moveQueueService = moveQueueService;
@@ -1327,221 +1323,6 @@ namespace Listenarr.Api.Controllers
             var files = await _audioFileRepo.GetByAudiobookIdAsync(id);
             return Ok(files);
         }
-
-        /// <summary>
-        /// [Debug] Scan JSON-backed columns for invalid JSON values. Restricted to local/admin callers.
-        /// </summary>
-        /// <returns>A map of column names to offending row data, useful for diagnosing deserialization errors.</returns>
-        [HttpGet("debug/json-invalid")]
-        public async Task<IActionResult> GetInvalidJsonColumns()
-        {
-            var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "library/debug/json-invalid");
-            if (gate != null) return gate;
-
-            // Helper to test first non-whitespace char
-            static bool LooksLikeJson(string? s)
-            {
-                if (string.IsNullOrWhiteSpace(s)) return true; // empty is handled elsewhere
-                var trimmed = s.TrimStart();
-                if (trimmed.Length == 0) return true;
-                var first = trimmed[0];
-                if (first == '{' || first == '[' || first == '"' || first == 't' || first == 'f' || first == 'n' || first == '-' || char.IsDigit(first))
-                    return true;
-                return false;
-            }
-
-            static string? TruncateSample(string? s)
-            {
-                if (s == null) return null;
-                return s.Length > 200 ? s.Substring(0, 200) : s;
-            }
-
-            var problems = new Dictionary<string, object?>();
-
-            // Helper to execute a raw SQL query and collect non-JSON samples for specified columns
-            async Task<List<object>> ScanTableColumnsAsync(string table, string keyColumn, params string[] columns)
-            {
-                var results = new List<object>();
-                var conn = await _dbConnectionProvider.GetOpenConnectionAsync();
-                try
-                {
-                    using var cmd = conn.CreateCommand();
-                    var cols = string.Join(", ", new[] { keyColumn }.Concat(columns).Select(c => "\"" + c + "\""));
-                    cmd.CommandText = $"SELECT {cols} FROM \"{table}\"";
-                    using var rdr = await cmd.ExecuteReaderAsync();
-                    while (await rdr.ReadAsync())
-                    {
-                        var id = rdr[keyColumn];
-                        foreach (var col in columns)
-                        {
-                            var raw = rdr[col] == DBNull.Value ? null : rdr[col]?.ToString();
-                            // If it doesn't even look like JSON, flag immediately
-                            if (!LooksLikeJson(raw))
-                            {
-                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "NotJson", Sample = TruncateSample(raw) });
-                                continue;
-                            }
-
-                            // Try parsing to get root token info for more specific diagnostics
-                            try
-                            {
-                                if (string.IsNullOrWhiteSpace(raw))
-                                {
-                                    continue;
-                                }
-
-                                using var doc = System.Text.Json.JsonDocument.Parse(raw);
-                                var root = doc.RootElement;
-
-                                // Heuristic checks for known columns
-                                if (table == "QualityProfiles" && col == "Qualities")
-                                {
-                                    // Expect an array of objects
-                                    if (root.ValueKind != System.Text.Json.JsonValueKind.Array)
-                                    {
-                                        results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedArray", Sample = TruncateSample(raw) });
-                                    }
-                                    else
-                                    {
-                                        var first = root.EnumerateArray().FirstOrDefault();
-                                        if (first.ValueKind != System.Text.Json.JsonValueKind.Object && !first.Equals(default(System.Text.Json.JsonElement)))
-                                        {
-                                            results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ArrayNotObjects", Sample = TruncateSample(raw) });
-                                        }
-                                    }
-                                }
-                                else if (table == "Downloads" && col == "Metadata" &&
-                                         root.ValueKind != System.Text.Json.JsonValueKind.Object)
-                                {
-                                    // Expect an object/map
-                                    results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ExpectedObject", Sample = TruncateSample(raw) });
-                                }
-                            }
-                            catch (System.Text.Json.JsonException)
-                            {
-                                results.Add(new { Table = $"{table}.{col}", Id = id, Issue = "ParseError", Sample = TruncateSample(raw) });
-                            }
-                        }
-                    }
-                }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                    _logger.LogWarning(ex, "Failed to scan table {Table} for JSON columns", table);
-                }
-                return results;
-            }
-
-            // QualityProfiles
-            var qpProblems = await ScanTableColumnsAsync("QualityProfiles", "Id", "Qualities", "PreferredFormats", "PreferredLanguages", "MustContain", "MustNotContain");
-            problems["QualityProfiles"] = qpProblems;
-
-            // Downloads.Metadata
-            var dlProblems = await ScanTableColumnsAsync("Downloads", "Id", "Metadata");
-            problems["Downloads"] = dlProblems;
-
-            // DownloadProcessingJobs.JobData
-            var jobProblems = await ScanTableColumnsAsync("DownloadProcessingJobs", "Id", "JobData");
-            problems["DownloadProcessingJobs"] = jobProblems;
-
-            // ApiConfigurations: HeadersJson, ParametersJson
-            var apiProblems = await ScanTableColumnsAsync("ApiConfigurations", "Id", "HeadersJson", "ParametersJson");
-            problems["ApiConfigurations"] = apiProblems;
-
-            // Audiobooks: list-of-string properties mapped via JSON TEXT
-            var abProblems = await ScanTableColumnsAsync("Audiobooks", "Id", "Authors", "Genres", "Tags", "Narrators", "AuthorAsins");
-            problems["Audiobooks"] = abProblems;
-
-            // Expanded schema scan: inspect all tables and TEXT-like columns reported by SQLite
-            var expanded = new List<object>();
-            try
-            {
-                var conn = await _dbConnectionProvider.GetOpenConnectionAsync();
-                using var tblCmd = conn.CreateCommand();
-                tblCmd.CommandText = "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'";
-                using var tblRdr = await tblCmd.ExecuteReaderAsync();
-                var tables = new List<string>();
-                while (await tblRdr.ReadAsync()) tables.Add(tblRdr.GetString(0));
-
-                foreach (var table in tables)
-                {
-                    // Get columns and their types
-                    using var colCmd = conn.CreateCommand();
-                    colCmd.CommandText = $"PRAGMA table_info(\"{table}\")";
-                    using var colRdr = await colCmd.ExecuteReaderAsync();
-                    var cols = new List<(string name, string type, int pk)>();
-                    while (await colRdr.ReadAsync())
-                    {
-                        var name = colRdr.GetString(colRdr.GetOrdinal("name"));
-                        var type = colRdr.IsDBNull(colRdr.GetOrdinal("type")) ? string.Empty : colRdr.GetString(colRdr.GetOrdinal("type"));
-                        var pk = colRdr.GetInt32(colRdr.GetOrdinal("pk"));
-                        cols.Add((name, type, pk));
-                    }
-
-                    // Identify candidate JSON columns: type contains TEXT or name ends with Json (case-insensitive)
-                    var jsonCols = cols.Where(c => (!string.IsNullOrEmpty(c.type) && c.type.IndexOf("TEXT", StringComparison.OrdinalIgnoreCase) >= 0)
-                                                   || c.name.EndsWith("Json", StringComparison.OrdinalIgnoreCase)
-                                                   || c.name.EndsWith("Metadata", StringComparison.OrdinalIgnoreCase)
-                                                   || c.name.Equals("Qualities", StringComparison.OrdinalIgnoreCase)
-                                                   || c.name.Equals("JobData", StringComparison.OrdinalIgnoreCase))
-                                        .Select(c => c.name).ToList();
-
-                    if (!jsonCols.Any()) continue;
-
-                    // Choose a key column (primary key if present, else first column)
-                    var keyCol = cols.FirstOrDefault(c => c.pk > 0).name ?? cols.First().name;
-
-                    using var scanCmd = conn.CreateCommand();
-                    var colsSql = string.Join(", ", new[] { keyCol }.Concat(jsonCols).Select(c => "\"" + c + "\""));
-                    scanCmd.CommandText = $"SELECT {colsSql} FROM \"{table}\"";
-                    try
-                    {
-                        using var scanRdr = await scanCmd.ExecuteReaderAsync();
-                        while (await scanRdr.ReadAsync())
-                        {
-                            var id = scanRdr[keyCol];
-                            foreach (var col in jsonCols)
-                            {
-                                var raw = scanRdr[col] == DBNull.Value ? null : scanRdr[col]?.ToString();
-                                if (!LooksLikeJson(raw))
-                                {
-                                    expanded.Add(new { Table = table + "." + col, Id = id, Issue = "NotJson", Sample = TruncateSample(raw) });
-                                    continue;
-                                }
-
-                                if (!string.IsNullOrWhiteSpace(raw))
-                                {
-                                    try
-                                    {
-                                        using var doc = System.Text.Json.JsonDocument.Parse(raw);
-                                        var root = doc.RootElement;
-                                        // heuristic: if root is Number, flag specifically since EF error mentioned 'Number'
-                                        if (root.ValueKind == System.Text.Json.JsonValueKind.Number)
-                                        {
-                                            expanded.Add(new { Table = table + "." + col, Id = id, Issue = "NumericRoot", Sample = raw });
-                                        }
-                                    }
-                                    catch (System.Text.Json.JsonException je)
-                                    {
-                                        expanded.Add(new { Table = table + "." + col, Id = id, Issue = "ParseError", Sample = TruncateSample(raw), Error = je.Message });
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        expanded.Add(new { Table = table, Id = "<query-failed>", Issue = "QueryError", Sample = ex.Message });
-                    }
-                }
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                _logger.LogWarning(ex, "Expanded schema scan failed");
-            }
-
-            problems["SchemaScan"] = expanded;
-
-            return Ok(problems);
-        }
-
-        // Diagnostics endpoints removed - cleanup completed
 
         /// <summary>
         /// Update an existing audiobook's metadata and settings. Supports partial updates — only non-null fields are applied.

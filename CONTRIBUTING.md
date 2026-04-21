@@ -151,16 +151,26 @@ This project follows a layered pattern: domain models in `listenarr.domain`, EF 
 
 Listenarr follows a **canary → beta → main** release flow:
 
-```
-PR ──feature──► canary (alpha)
-PR ──feature──► canary
-PR ──feature──► canary
-                canary ──code freeze──► beta (candidate)
-PR ──feature──► canary   (development continues)
-PR ──fix──────► beta     (org members stabilise the candidate)
-PR ──fix──────► beta
-                beta ──────────────────► main (stable release)
-                beta ──rebase──────────► canary (fixes synced forward)
+```mermaid
+sequenceDiagram
+    participant main as main (stable)
+    participant testing as beta (candidate)
+    participant develop as canary (alpha)
+    participant PR
+    activate develop
+    PR ->> develop: Feature
+    PR ->> develop: Feature
+    PR ->> develop: Feature
+    develop ->> testing: Code freeze 
+    activate testing
+    PR ->> develop: Feature
+    PR ->> testing: Fix
+    PR ->> testing: Fix
+    PR ->> develop: Feature
+    testing ->> main: Release
+    testing ->> develop: Rebase
+    deactivate testing
+    deactivate develop
 ```
 
 | Branch | Role | Who merges here |
@@ -181,10 +191,14 @@ PR ──fix──────► beta
 ### Pull Request Guidelines
 
 **Branch naming:**
-- Create PRs from feature branches, not from `beta` or `canary` in your fork
+- Always branch off the latest `canary` when starting new feature work
 - Use meaningful branch names that describe what is being added/fixed
+- **Strongly recommended**: include the issue number in your branch name — this encourages opening (and discussing) an issue before writing code, and makes it easy to cross-reference work
 
 Good examples:
+- `123-audible-integration`
+- `456-download-queue`
+- `789-fix-search-results`
 - `feature/audible-integration`
 - `feature/download-queue`
 - `bugfix/search-results`
@@ -201,6 +215,7 @@ Bad examples:
    - **Feature branches** → `canary` (all contributors)
    - **Hotfixes** → `beta` (org members only)
    - PRs to `main` will be commented on and closed
+   - Never open a PR directly from `beta` or `canary` in your fork — always use a dedicated feature branch
 2. **Description**: Provide a clear description of what your PR does
    - Reference related issues (e.g., "Fixes #123")
    - Include screenshots for UI changes

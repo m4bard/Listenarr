@@ -398,7 +398,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 CreateRootFolderRepo(dbContext),
-                new Mock<IDatabaseConnectionProvider>().Object,
                 fileNaming.Object,
                 scanQueueService: null,
                 moveQueueService: null,

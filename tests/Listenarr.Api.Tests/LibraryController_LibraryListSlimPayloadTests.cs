@@ -121,7 +121,6 @@ namespace Listenarr.Api.Tests
                 Mock.Of<IQualityProfileRepository>(),
                 mockDownloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
-                Mock.Of<IDatabaseConnectionProvider>(),
                 Mock.Of<IFileNamingService>());
 
             var actionResult = await controller.GetAll();

@@ -84,7 +84,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNamingService.Object,
                 mockScanQueue.Object);
 
@@ -150,7 +149,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNamingService.Object,
                 mockScanQueue.Object);
 

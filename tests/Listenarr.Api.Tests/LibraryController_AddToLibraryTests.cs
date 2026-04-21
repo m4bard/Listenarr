@@ -117,7 +117,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object);
 
             var request = new LibraryController.AddToLibraryRequest
@@ -200,7 +199,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object);
 
             var request = new LibraryController.AddToLibraryRequest
@@ -319,7 +317,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object);
 
             var request = new LibraryController.AddToLibraryRequest
@@ -405,7 +402,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object);
 
             var request = new LibraryController.AddToLibraryRequest
@@ -479,7 +475,6 @@ namespace Listenarr.Api.Tests
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                new Mock<IDatabaseConnectionProvider>().Object,
                 mockFileNaming.Object);
 
             var customPath = "/custom/audiobooks/Author/Series/Title";
