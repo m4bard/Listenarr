@@ -217,7 +217,7 @@ namespace Listenarr.Api.Services
                 }).ToList();
 
                 using var scope = _serviceScopeFactory.CreateScope();
-                var hub = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                 // Send structured payload with type and audiobookId so the UI can ignore automatic messages by default
                 await hub.Clients.All.SendCoreAsync("SearchProgress", new object[] { new { message = $"Automatic search query: {searchQuery}", details = new { rawCount = searchResults.Count, rawSamples = rawSummaries }, type = "automatic", audiobookId = audiobook.Id } });
             }
@@ -254,7 +254,7 @@ namespace Listenarr.Api.Services
                 }).ToList();
 
                 using var scope2 = _serviceScopeFactory.CreateScope();
-                var hub2 = scope2.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                var hub2 = scope2.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                 await hub2.Clients.All.SendCoreAsync("SearchProgress", new object[] { new { message = $"Scored results for '{audiobook.Title}'", details = new { scoredCount = scoredResults.Count, scoredSamples = scoredSummaries }, type = "automatic", audiobookId = audiobook.Id } });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

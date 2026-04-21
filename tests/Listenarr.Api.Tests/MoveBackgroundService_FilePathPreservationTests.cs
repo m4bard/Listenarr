@@ -45,12 +45,12 @@ namespace Listenarr.Api.Tests
             services.AddSingleton<IMoveQueueService, MoveQueueService>();
             services.AddSingleton<IScanQueueService, ScanQueueService>();
             services.AddSingleton<MoveBackgroundService>();
-            services.AddScoped<Listenarr.Application.Repositories.IMoveJobRepository, Listenarr.Infrastructure.Repositories.EfMoveJobRepository>();
-            services.AddScoped<Listenarr.Api.Services.IAudiobookRepository, Listenarr.Api.Services.AudiobookRepository>();
+            services.AddScoped<IMoveJobRepository, EfMoveJobRepository>();
+            services.AddScoped<IAudiobookRepository, AudiobookRepository>();
             // Register real history repo so move path will add history entries
-            services.AddScoped<Listenarr.Application.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.EfHistoryRepository>();
+            services.AddScoped<IHistoryRepository, EfHistoryRepository>();
             // Register AudiobookFile repository so AudioFileService can associate moved files
-            services.AddScoped<Listenarr.Application.Repositories.IAudiobookFileRepository, Listenarr.Infrastructure.Repositories.EfAudiobookFileRepository>();
+            services.AddScoped<IAudiobookFileRepository, EfAudiobookFileRepository>();
 
             // Minimal services needed for AudioFileService later
             services.AddSingleton<MetadataExtractionLimiter>();

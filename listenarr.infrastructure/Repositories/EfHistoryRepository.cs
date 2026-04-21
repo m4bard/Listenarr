@@ -22,7 +22,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Repositories
 {
-    public class EfHistoryRepository : Listenarr.Application.Repositories.IHistoryRepository
+    public class EfHistoryRepository : IHistoryRepository
     {
         private readonly ListenArrDbContext _db;
 

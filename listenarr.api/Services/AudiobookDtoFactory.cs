@@ -26,7 +26,7 @@ namespace Listenarr.Api.Services
 {
     public static class AudiobookDtoFactory
     {
-        public static AudiobookDto BuildFromEntity(Listenarr.Domain.Models.Audiobook audiobook)
+        public static AudiobookDto BuildFromEntity(Audiobook audiobook)
         {
             if (audiobook == null) return null!;
 

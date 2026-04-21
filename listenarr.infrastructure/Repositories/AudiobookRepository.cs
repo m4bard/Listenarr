@@ -15,19 +15,14 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-// csharp
 using System.Threading;
 using Microsoft.EntityFrameworkCore;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 
-namespace Listenarr.Api.Services
+namespace Listenarr.Infrastructure.Repositories
 {
-    /// <summary>
-    /// Moved AudiobookRepository implementation into the Infrastructure project.
-    /// Keeps the original namespace Listenarr.Api.Services so existing code and DI registrations
-    /// don't need to change.
-    /// </summary>
     public class AudiobookRepository : IAudiobookRepository
     {
         private readonly ListenArrDbContext _db;

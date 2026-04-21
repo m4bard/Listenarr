@@ -564,7 +564,7 @@ namespace Listenarr.Api.Controllers
                     else
                     {
                         // Not found: create new indexer entry from parsed payload (upsert behavior)
-                        indexer = new Listenarr.Domain.Models.Indexer
+                        indexer = new Indexer
                         {
                             Name = string.IsNullOrEmpty(nameFromPayload) ? (string.IsNullOrEmpty(baseUrlFromPayload) ? "Prowlarr Indexer" : baseUrlFromPayload) : nameFromPayload,
                             Implementation = string.IsNullOrEmpty(implementationFromPayload) ? "Custom" : implementationFromPayload,
@@ -856,7 +856,7 @@ namespace Listenarr.Api.Controllers
 
             var created = 0;
             var skipped = 0;
-            var createdIndexers = new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>();
+            var createdIndexers = new List<Indexer>();
             var existingIndexers = await _indexerRepo.GetAllAsync();
 
             foreach (var item in payload.EnumerateArray().Where(item => item.ValueKind == System.Text.Json.JsonValueKind.Object))
@@ -976,7 +976,7 @@ namespace Listenarr.Api.Controllers
                     continue;
                 }
 
-                var indexer = new Listenarr.Domain.Models.Indexer
+                var indexer = new Indexer
                 {
                     Name = name,
                     Implementation = implementation,
@@ -1165,7 +1165,7 @@ namespace Listenarr.Api.Controllers
 
             try
             {
-                var clients = Listenarr.Api.Hubs.SettingsHub.ConnectedClientIds.ToArray();
+                var clients = SettingsHub.ConnectedClientIds.ToArray();
                 return Ok(new { connected = clients.Length, clients });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

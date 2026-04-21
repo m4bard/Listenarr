@@ -27,28 +27,28 @@ namespace Listenarr.Api.Services
 {
     public class CompletedDownloadProcessor : ICompletedDownloadProcessor
     {
-        private readonly Listenarr.Application.Repositories.IDownloadRepository _downloadRepository;
+        private readonly IDownloadRepository _downloadRepository;
         private readonly IFileFinalizer _fileFinalizer;
         private readonly IConfigurationService _configurationService;
         private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly IImportService _importService;
         private readonly IArchiveExtractor _archiveExtractor;
         private readonly IHubBroadcaster? _hubBroadcaster;
-        private readonly IHubContext<Listenarr.Api.Hubs.DownloadHub> _hubContext;
+        private readonly IHubContext<DownloadHub> _hubContext;
         private readonly IDownloadQueueService _downloadQueueService;
         private readonly IDownloadHistoryService? _downloadHistoryService;
         private readonly ILogger<CompletedDownloadProcessor> _logger;
         private readonly IAppMetricsService _metrics;
 
         public CompletedDownloadProcessor(
-            Listenarr.Application.Repositories.IDownloadRepository downloadRepository,
+            IDownloadRepository downloadRepository,
             IFileFinalizer fileFinalizer,
             IConfigurationService configurationService,
             IServiceScopeFactory serviceScopeFactory,
             IImportService importService,
             IArchiveExtractor archiveExtractor,
             IDownloadQueueService downloadQueueService,
-            IHubContext<Listenarr.Api.Hubs.DownloadHub> hubContext,
+            IHubContext<DownloadHub> hubContext,
             ILogger<CompletedDownloadProcessor> logger,
             IHubBroadcaster? hubBroadcaster = null,
             IAppMetricsService? metrics = null,
@@ -556,7 +556,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
                             
-                            var historyEntry = new Listenarr.Domain.Models.History
+                            var historyEntry = new History
                             {
                                 AudiobookId = downloadForHistory.AudiobookId,
                                 AudiobookTitle = downloadForHistory.Title,
@@ -778,7 +778,7 @@ namespace Listenarr.Api.Services
                                     var historyRepo = cleanupScope.ServiceProvider.GetService<IHistoryRepository>();
                                     if (historyRepo != null)
                                     {
-                                        var historyEntry = new Listenarr.Domain.Models.History
+                                        var historyEntry = new History
                                         {
                                             AudiobookId = downloadForCleanup.AudiobookId,
                                             AudiobookTitle = downloadForCleanup.Title,
@@ -1248,7 +1248,7 @@ namespace Listenarr.Api.Services
                     var historyRepo = scope.ServiceProvider.GetService<IHistoryRepository>();
                     if (historyRepo != null)
                     {
-                        await historyRepo.AddAsync(new Listenarr.Domain.Models.History
+                        await historyRepo.AddAsync(new History
                         {
                             AudiobookId = download.AudiobookId,
                             AudiobookTitle = download.Title,

@@ -82,14 +82,14 @@ namespace Listenarr.Api.Tests
             services.AddDbContext<ListenArrDbContext>(opts => opts.UseInMemoryDatabase(dbName, dbRoot));
             services.AddSingleton<IMoveQueueService, MoveQueueService>();
             services.AddSingleton<MoveBackgroundService>();
-            services.AddScoped<Listenarr.Application.Repositories.IMoveJobRepository, Listenarr.Infrastructure.Repositories.EfMoveJobRepository>();
-            services.AddScoped<Listenarr.Api.Services.IAudiobookRepository, Listenarr.Api.Services.AudiobookRepository>();
+            services.AddScoped<IMoveJobRepository, EfMoveJobRepository>();
+            services.AddScoped<IAudiobookRepository, AudiobookRepository>();
 
             // Add capturing hub context so we can assert sends
             var capturingHub = new CapturingHubContext();
             services.AddSingleton<IHubContext<Listenarr.Api.Hubs.DownloadHub>>(capturingHub);
             // Register history repository so the move handler will add history and broadcast an AudiobookUpdate
-            services.AddScoped<Listenarr.Application.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.EfHistoryRepository>();
+            services.AddScoped<IHistoryRepository, EfHistoryRepository>();
 
             var provider = services.BuildServiceProvider();
             using var rootScope = provider.CreateScope();

@@ -46,7 +46,7 @@ namespace Listenarr.Api.Tests
             }
         }
 
-        private (ListenArrDbContext db, Listenarr.Api.Controllers.IndexersController controller, CaptureHandler handler) CreateControllerWithPersistedIndexer(HttpResponseMessage httpResponse, Indexer persisted)
+        private (ListenArrDbContext db, IndexersController controller, CaptureHandler handler) CreateControllerWithPersistedIndexer(HttpResponseMessage httpResponse, Indexer persisted)
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
@@ -58,10 +58,10 @@ namespace Listenarr.Api.Tests
             db.SaveChanges();
 
             using var loggerFactory = new LoggerFactory();
-            var logger = loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>();
+            var logger = loggerFactory.CreateLogger<IndexersController>();
             var handler = new CaptureHandler(httpResponse);
             var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db), logger, client, new TestConfigurationService());
+            var controller = new IndexersController(new EfIndexerRepository(db), logger, client, new TestConfigurationService());
 
             return (db, controller, handler);
         }

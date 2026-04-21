@@ -17,8 +17,9 @@
  */
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
-using Listenarr.Api.Services;
 using Listenarr.Application.Repositories;
+using Listenarr.Application.Services;
+using Listenarr.Infrastructure.Services;
 using Listenarr.Infrastructure.Models;
 using Listenarr.Infrastructure.Repositories;
 
@@ -31,28 +32,22 @@ namespace Listenarr.Infrastructure.Extensions
     public static class InfrastructureServiceRegistrationExtensions
     {
         /// <summary>
-        /// Registers all infrastructure services. When <paramref name="sqliteDbPath"/> is provided
-        /// the DbContext, DbContextOptions, and IDbContextFactory are also registered (production
-        /// and integration-test paths). Omit the parameter only when the caller has already
-        /// registered a DbContext (e.g. unit tests using UseInMemoryDatabase).
+        /// Registers all infrastructure services. When <paramref name="configureDb"/> is provided
+        /// the DbContext, DbContextOptions, and IDbContextFactory are also registered using the
+        /// supplied options (e.g. SQLite for production, InMemory for tests). Omit the parameter
+        /// only when the caller has already registered a DbContext independently.
         /// </summary>
         public static IServiceCollection AddListenarrInfrastructure(
             this IServiceCollection services,
-            string? sqliteDbPath = null)
+            Action<DbContextOptionsBuilder>? configureDb = null)
         {
-            if (sqliteDbPath != null)
+            if (configureDb != null)
             {
                 // AddDbContextFactory registers IDbContextFactory<T> (singleton) and
                 // DbContextOptions<T> (singleton). It also registers a scoped ListenArrDbContext
                 // derived from the factory, which satisfies direct-injection repos like
                 // QualityProfileRepository and AudiobookRepository.
-                services.AddDbContextFactory<ListenArrDbContext>(options =>
-                {
-                    options.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
-                    {
-                        sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name);
-                    });
-                }, ServiceLifetime.Singleton);
+                services.AddDbContextFactory<ListenArrDbContext>(configureDb, ServiceLifetime.Singleton);
             }
 
             services.AddScoped<IAudiobookRepository, AudiobookRepository>();
@@ -61,7 +56,7 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IIndexerRepository, EfIndexerRepository>();
             services.AddScoped<IUserRepository, EfUserRepository>();
             services.AddScoped<IUserSessionRepository, EfUserSessionRepository>();
-            services.AddScoped<Listenarr.Application.Repositories.IHistoryRepository, EfHistoryRepository>();
+            services.AddScoped<IHistoryRepository, EfHistoryRepository>();
             services.AddScoped<IApplicationSettingsRepository, EfApplicationSettingsRepository>();
             services.AddScoped<IApiConfigurationRepository, EfApiConfigurationRepository>();
             services.AddScoped<IDownloadClientConfigurationRepository, EfDownloadClientConfigurationRepository>();
@@ -75,7 +70,7 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IDownloadProcessingJobRepository, EfDownloadProcessingJobRepository>();
             services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();
             services.AddScoped<IDownloadHistoryRepository, DownloadHistoryRepository>();
-            services.AddScoped<Listenarr.Application.Services.IDatabaseConnectionProvider, Listenarr.Infrastructure.Services.EfDatabaseConnectionProvider>();
+            services.AddScoped<IDatabaseConnectionProvider, EfDatabaseConnectionProvider>();
 
             return services;
         }

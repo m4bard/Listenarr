@@ -48,17 +48,17 @@ namespace Listenarr.Api.Tests
             }
         }
 
-        private Listenarr.Api.Controllers.IndexersController CreateController(HttpMessageHandler handler)
+        private IndexersController CreateController(HttpMessageHandler handler)
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
 
             var db = new ListenArrDbContext(options);
-            var logger = NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance;
+            var logger = NullLogger<IndexersController>.Instance;
             var client = new HttpClient(handler);
 
-            return new Listenarr.Api.Controllers.IndexersController(new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db), logger, client, new TestConfigurationService());
+            return new IndexersController(new EfIndexerRepository(db), logger, client, new TestConfigurationService());
         }
 
         [Fact]

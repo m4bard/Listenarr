@@ -56,7 +56,7 @@ namespace Listenarr.Api.Tests
 
             using var db = new ListenArrDbContext(options);
             using var loggerFactory = new LoggerFactory();
-            var logger = loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>();
+            var logger = loggerFactory.CreateLogger<IndexersController>();
 
             // Prepare a handler that captures outgoing requests and returns OK
             var resp = new HttpResponseMessage(HttpStatusCode.OK)
@@ -66,7 +66,7 @@ namespace Listenarr.Api.Tests
             var handler = new CaptureHandler(resp);
             var client = new HttpClient(handler);
 
-            var controller = new Listenarr.Api.Controllers.IndexersController(new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db), logger, client, new TestConfigurationService());
+            var controller = new IndexersController(new EfIndexerRepository(db), logger, client, new TestConfigurationService());
 
             var indexer = new Indexer
             {

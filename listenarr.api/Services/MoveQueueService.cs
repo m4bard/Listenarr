@@ -129,7 +129,7 @@ namespace Listenarr.Api.Services
                 // Broadcast status update to SignalR clients so UI can react to Processing/Failed/Completed
                 try
                 {
-                    var hub = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                    var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                     var payload = new {
                         jobId = id.ToString(),
                         audiobookId = dbJob?.AudiobookId ?? (job != null ? job.AudiobookId : (int?)null),

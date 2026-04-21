@@ -53,7 +53,7 @@ namespace Listenarr.Api.Services
 
         // INotificationService interface stubs — webhook dispatch goes through SendNotificationAsync;
         // these typed convenience methods delegate to the main webhook loop or no-op.
-        public async Task SendDownloadCompletedNotificationAsync(Listenarr.Domain.Models.Download download)
+        public async Task SendDownloadCompletedNotificationAsync(Download download)
         {
             try
             {
@@ -67,7 +67,7 @@ namespace Listenarr.Api.Services
             }
         }
 
-        public async Task SendDownloadFailedNotificationAsync(Listenarr.Domain.Models.Download download, string error)
+        public async Task SendDownloadFailedNotificationAsync(Download download, string error)
         {
             try
             {

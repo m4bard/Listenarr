@@ -30,10 +30,10 @@ namespace Listenarr.Api.Services
     public class FfmpegInstallBackgroundService : BackgroundService
     {
         private readonly IFfmpegService _ffmpegService;
-        private readonly IHubContext<Listenarr.Api.Hubs.DownloadHub> _hubContext;
+        private readonly IHubContext<DownloadHub> _hubContext;
         private readonly ILogger<FfmpegInstallBackgroundService> _logger;
 
-        public FfmpegInstallBackgroundService(IFfmpegService ffmpegService, IHubContext<Listenarr.Api.Hubs.DownloadHub> hubContext, ILogger<FfmpegInstallBackgroundService> logger)
+        public FfmpegInstallBackgroundService(IFfmpegService ffmpegService, IHubContext<DownloadHub> hubContext, ILogger<FfmpegInstallBackgroundService> logger)
         {
             _ffmpegService = ffmpegService;
             _hubContext = hubContext;

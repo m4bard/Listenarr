@@ -29,10 +29,10 @@ namespace Listenarr.Api.Controllers
     [Tags("History")]
     public class HistoryController : ControllerBase
     {
-        private readonly Listenarr.Application.Repositories.IHistoryRepository _history;
+        private readonly IHistoryRepository _history;
         private readonly ILogger<HistoryController> _logger;
 
-        public HistoryController(Listenarr.Application.Repositories.IHistoryRepository history, ILogger<HistoryController> logger)
+        public HistoryController(IHistoryRepository history, ILogger<HistoryController> logger)
         {
             _history = history;
             _logger = logger;

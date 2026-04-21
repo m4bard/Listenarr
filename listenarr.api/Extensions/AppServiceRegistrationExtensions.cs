@@ -37,9 +37,9 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<IStartupConfigService, StartupConfigService>();
             
             // Register indexer search providers
-            services.AddScoped<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider, Listenarr.Api.Services.Search.Providers.InternetArchiveSearchProvider>();
-            services.AddScoped<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider, Listenarr.Api.Services.Search.Providers.TorznabNewznabSearchProvider>();
-            services.AddScoped<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider, Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>();
+            services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
+            services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
+            services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
             
             services.AddScoped<ISearchService, SearchService>();
             services.AddScoped<IMetadataService, MetadataService>();
@@ -95,7 +95,7 @@ namespace Listenarr.Api.Extensions
             // Completed download processor: handles imports and registration when a download completes
             services.AddScoped<ICompletedDownloadProcessor, CompletedDownloadProcessor>();
             // Bind FileMover options from configuration (optional)
-            services.Configure<Listenarr.Api.Services.FileMoverOptions>(config.GetSection("FileMover"));
+            services.Configure<FileMoverOptions>(config.GetSection("FileMover"));
             // Gateway that wraps adapters for higher-level orchestration
             services.AddScoped<IDownloadClientGateway, DownloadClientGateway>();
             // Process runner for external process execution (robocopy, ffprobe, playwright installer)

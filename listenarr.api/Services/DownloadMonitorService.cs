@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  * 
@@ -131,7 +131,7 @@ namespace Listenarr.Api.Services
             if (string.Equals(norm1, norm2, StringComparison.OrdinalIgnoreCase))
                 return true;
 
-            // Bidirectional contains â€“ require the contained string to be
+            // Bidirectional contains – require the contained string to be
             // "substantial" (at least 15 chars after normalization) to prevent
             // short common words from producing false positives.
             if (norm1.Length >= 15 && norm2.Contains(norm1, StringComparison.OrdinalIgnoreCase))
@@ -2808,11 +2808,11 @@ namespace Listenarr.Api.Services
 
             // Try to get DownloadPushService from DI so we can avoid re-broadcasting
             // downloads that were recently pushed by clients.
-            Listenarr.Api.Services.DownloadPushService? pushService = null;
+            DownloadPushService? pushService = null;
             try
             {
                 using var scope = _serviceScopeFactory.CreateScope();
-                pushService = scope.ServiceProvider.GetService<Listenarr.Api.Services.DownloadPushService>();
+                pushService = scope.ServiceProvider.GetService<DownloadPushService>();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Unable to resolve DownloadPushService (non-fatal)");

@@ -20,6 +20,7 @@ using System.IO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Design;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Infrastructure.Repositories;
 
 namespace Listenarr.Infrastructure
 {
@@ -57,7 +58,7 @@ namespace Listenarr.Infrastructure
                 }
             }
 
-            var migrationsAssembly = typeof(Listenarr.Infrastructure.Repositories.QualityProfileRepository).Assembly.GetName().Name;
+            var migrationsAssembly = typeof(QualityProfileRepository).Assembly.GetName().Name;
 
             optionsBuilder.UseSqlite($"Data Source={dbPath}", sqliteOptions =>
             {

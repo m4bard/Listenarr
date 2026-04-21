@@ -123,7 +123,7 @@ namespace Listenarr.Api.Services
                 return false;
             }
 
-            var segments = new System.Collections.Generic.List<string>();
+            var segments = new List<string>();
             var segmentStart = 0;
 
             for (var i = 0; i <= value.Length; i++)

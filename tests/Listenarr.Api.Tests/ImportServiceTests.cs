@@ -220,9 +220,9 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<MetadataExtractionLimiter>();
                 services.AddSingleton<IMetadataService>(metadataMock.Object);
                 // AudioFileService needs these from scoped provider to persist AudiobookFile records
-                services.AddScoped<Listenarr.Application.Repositories.IAudiobookFileRepository, Listenarr.Infrastructure.Repositories.EfAudiobookFileRepository>();
-                services.AddScoped<Listenarr.Application.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.EfHistoryRepository>();
-                services.AddScoped<Listenarr.Api.Services.IAudiobookRepository, Listenarr.Api.Services.AudiobookRepository>();
+                services.AddScoped<IAudiobookFileRepository, EfAudiobookFileRepository>();
+                services.AddScoped<IHistoryRepository, EfHistoryRepository>();
+                services.AddScoped<IAudiobookRepository, AudiobookRepository>();
             });
 
             // Use a mock repository that creates a fresh DbContext per operation to avoid EF InMemory

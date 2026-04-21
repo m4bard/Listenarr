@@ -17,6 +17,7 @@
  */
 using Microsoft.AspNetCore.Mvc;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using System.Text.Json.Serialization;
 using System.ComponentModel.DataAnnotations;
 using Listenarr.Domain.Utils;

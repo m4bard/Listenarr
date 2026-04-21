@@ -76,7 +76,7 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient = new HttpClient(handler) { BaseAddress = new Uri("https://www.myanonamouse.net") };
-            var provider = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient, new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db));
+            var provider = new MyAnonamouseSearchProvider(NullLogger<MyAnonamouseSearchProvider>.Instance, httpClient, new EfIndexerRepository(db));
 
             _ = await provider.SearchAsync(indexer, "Test Title", null, null);
 
@@ -92,7 +92,7 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient2 = new HttpClient(handler2) { BaseAddress = new Uri("https://another-host.example") };
-            var provider2 = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient2, new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db));
+            var provider2 = new MyAnonamouseSearchProvider(NullLogger<MyAnonamouseSearchProvider>.Instance, httpClient2, new EfIndexerRepository(db));
 
             await provider2.SearchAsync(indexer, "Test Title", null, null);
         }
@@ -130,7 +130,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
                 services.AddMemoryCache();
                 // Minimal audiobook repository for DownloadService
-                services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(new TestAudiobookRepository());
+                services.AddSingleton<IAudiobookRepository>(new TestAudiobookRepository());
             });
 
             // Resolve dependencies with fallbacks to minimal test implementations when not registered
@@ -149,14 +149,14 @@ namespace Listenarr.Api.Tests
             var completedProc = provider.GetService<ICompletedDownloadProcessor>() ?? new TestCompletedDownloadProcessor();
             var metricsSvc = provider.GetService<IAppMetricsService>() ?? new TestAppMetricsService();
             var notificationSvc = provider.GetService<NotificationService>()!;
-            var hubBroadcaster = provider.GetService<Listenarr.Application.Services.IHubBroadcaster>();
+            var hubBroadcaster = provider.GetService<IHubBroadcaster>();
 
             var downloadService = new Listenarr.Api.Services.DownloadService(
                 hubContext,
                 audiobookRepo,
                 configSvc,
                 new TestDownloadRepository(),
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
+                new EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -227,7 +227,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
                 services.AddMemoryCache();
-                services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(new TestAudiobookRepository());
+                services.AddSingleton<IAudiobookRepository>(new TestAudiobookRepository());
             });
 
             var hubContext = provider.GetService<IHubContext<DownloadHub>>()!;
@@ -245,14 +245,14 @@ namespace Listenarr.Api.Tests
             var completedProc = provider.GetService<ICompletedDownloadProcessor>() ?? new TestCompletedDownloadProcessor();
             var metricsSvc = provider.GetService<IAppMetricsService>() ?? new TestAppMetricsService();
             var notificationSvc = provider.GetService<NotificationService>()!;
-            var hubBroadcaster = provider.GetService<Listenarr.Application.Services.IHubBroadcaster>();
+            var hubBroadcaster = provider.GetService<IHubBroadcaster>();
 
             var downloadService = new Listenarr.Api.Services.DownloadService(
                 hubContext,
                 audiobookRepo,
                 configSvc,
                 new TestDownloadRepository(),
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
+                new EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -330,7 +330,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
                 services.AddMemoryCache();
-                services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(new TestAudiobookRepository());
+                services.AddSingleton<IAudiobookRepository>(new TestAudiobookRepository());
             });
 
             var hubContext = provider.GetService<IHubContext<DownloadHub>>()!;
@@ -348,14 +348,14 @@ namespace Listenarr.Api.Tests
             var completedProc = provider.GetService<ICompletedDownloadProcessor>() ?? new TestCompletedDownloadProcessor();
             var metricsSvc = provider.GetService<IAppMetricsService>() ?? new TestAppMetricsService();
             var notificationSvc = provider.GetService<NotificationService>()!;
-            var hubBroadcaster = provider.GetService<Listenarr.Application.Services.IHubBroadcaster>();
+            var hubBroadcaster = provider.GetService<IHubBroadcaster>();
 
             var downloadService = new Listenarr.Api.Services.DownloadService(
                 hubContext,
                 audiobookRepo,
                 configSvc,
                 new TestDownloadRepository(),
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
+                new EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -424,7 +424,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
                 services.AddMemoryCache();
-                services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(new TestAudiobookRepository());
+                services.AddSingleton<IAudiobookRepository>(new TestAudiobookRepository());
             });
 
             var hubContext = provider.GetService<IHubContext<DownloadHub>>()!;
@@ -442,14 +442,14 @@ namespace Listenarr.Api.Tests
             var completedProc = provider.GetService<ICompletedDownloadProcessor>() ?? new TestCompletedDownloadProcessor();
             var metricsSvc = provider.GetService<IAppMetricsService>() ?? new TestAppMetricsService();
             var notificationSvc = provider.GetService<NotificationService>()!;
-            var hubBroadcaster = provider.GetService<Listenarr.Application.Services.IHubBroadcaster>();
+            var hubBroadcaster = provider.GetService<IHubBroadcaster>();
 
             var downloadService = new Listenarr.Api.Services.DownloadService(
                 hubContext,
                 audiobookRepo,
                 configSvc,
                 new TestDownloadRepository(),
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
+                new EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -509,7 +509,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
                 services.AddMemoryCache();
-                services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(new TestAudiobookRepository());
+                services.AddSingleton<IAudiobookRepository>(new TestAudiobookRepository());
             });
 
             var hubContext = provider.GetService<IHubContext<DownloadHub>>()!;
@@ -527,14 +527,14 @@ namespace Listenarr.Api.Tests
             var completedProc = provider.GetService<ICompletedDownloadProcessor>() ?? new TestCompletedDownloadProcessor();
             var metricsSvc = provider.GetService<IAppMetricsService>() ?? new TestAppMetricsService();
             var notificationSvc = provider.GetService<NotificationService>()!;
-            var hubBroadcaster = provider.GetService<Listenarr.Application.Services.IHubBroadcaster>();
+            var hubBroadcaster = provider.GetService<IHubBroadcaster>();
 
             var downloadService = new Listenarr.Api.Services.DownloadService(
                 hubContext,
                 audiobookRepo,
                 configSvc,
                 new TestDownloadRepository(),
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
+                new EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -567,7 +567,7 @@ namespace Listenarr.Api.Tests
             await task;
 
             // Now create a DownloadsController and request the cached torrent
-            var downloadsController = new Listenarr.Api.Controllers.DownloadsController(new TestDownloadRepository(db), NullLogger<Listenarr.Api.Controllers.DownloadsController>.Instance, configSvc, cacheSvc);
+            var downloadsController = new DownloadsController(new TestDownloadRepository(db), NullLogger<DownloadsController>.Instance, configSvc, cacheSvc);
             var result = downloadsController.GetCachedTorrent(downloadId);
             Assert.IsType<Microsoft.AspNetCore.Mvc.FileContentResult>(result);
             var fileResult = (Microsoft.AspNetCore.Mvc.FileContentResult)result;
@@ -609,7 +609,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
                 services.AddMemoryCache();
-                services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(new TestAudiobookRepository());
+                services.AddSingleton<IAudiobookRepository>(new TestAudiobookRepository());
             });
 
             var hubContext = provider.GetService<IHubContext<DownloadHub>>()!;
@@ -627,14 +627,14 @@ namespace Listenarr.Api.Tests
             var completedProc = provider.GetService<ICompletedDownloadProcessor>() ?? new TestCompletedDownloadProcessor();
             var metricsSvc = provider.GetService<IAppMetricsService>() ?? new TestAppMetricsService();
             var notificationSvc = provider.GetService<NotificationService>()!;
-            var hubBroadcaster = provider.GetService<Listenarr.Application.Services.IHubBroadcaster>();
+            var hubBroadcaster = provider.GetService<IHubBroadcaster>();
 
             var downloadService = new Listenarr.Api.Services.DownloadService(
                 hubContext,
                 audiobookRepo,
                 configSvc,
                 new TestDownloadRepository(),
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
+                new EfIndexerRepository(db),
                 NullLogger<Listenarr.Api.Services.DownloadService>.Instance,
                 httpFactorySvc,
                 scopeFactorySvc,
@@ -729,7 +729,7 @@ namespace Listenarr.Api.Tests
         }
 
         // Minimal in-memory IAudiobookRepository
-        private class TestAudiobookRepository : Listenarr.Api.Services.IAudiobookRepository
+        private class TestAudiobookRepository : IAudiobookRepository
         {
             private readonly List<Audiobook> _store = new List<Audiobook>();
             public Task AddAsync(Audiobook audiobook) { _store.Add(audiobook); return Task.CompletedTask; }

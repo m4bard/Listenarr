@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  * 
@@ -1049,7 +1049,7 @@ namespace Listenarr.Api.Controllers
         {
             using var rescanScope = _scopeFactory.CreateScope();
             var metadataService = rescanScope.ServiceProvider.GetService<IAudiobookMetadataService>();
-            var metadataConverters = rescanScope.ServiceProvider.GetService<Listenarr.Api.Services.Search.MetadataConverters>();
+            var metadataConverters = rescanScope.ServiceProvider.GetService<MetadataConverters>();
 
             if (metadataService == null || metadataConverters == null)
             {
@@ -1544,7 +1544,7 @@ namespace Listenarr.Api.Controllers
         // Diagnostics endpoints removed - cleanup completed
 
         /// <summary>
-        /// Update an existing audiobook's metadata and settings. Supports partial updates â€” only non-null fields are applied.
+        /// Update an existing audiobook's metadata and settings. Supports partial updates — only non-null fields are applied.
         /// </summary>
         /// <param name="id">Audiobook ID.</param>
         /// <param name="updatedAudiobook">Fields to update (null fields are left unchanged).</param>
@@ -2709,7 +2709,7 @@ namespace Listenarr.Api.Controllers
                     try
                     {
                         using var scope = _scopeFactory.CreateScope();
-                        var hub = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                        var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                         var job = new { jobId = jobId.ToString(), audiobookId = id, status = "Queued", enqueuedAt = DateTime.UtcNow };
                         await hub.Clients.All.SendAsync("ScanJobUpdate", job);
                     }
@@ -3278,7 +3278,7 @@ namespace Listenarr.Api.Controllers
                 try
                 {
                     using var hubScope = _scopeFactory.CreateScope();
-                    var hub = hubScope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                    var hub = hubScope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                     var job = new { jobId = jobId.ToString(), audiobookId = id, status = "Queued", enqueuedAt = DateTime.UtcNow };
                     await hub.Clients.All.SendAsync("MoveJobUpdate", job);
                 }
@@ -3331,7 +3331,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var hub = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                 var job = new { jobId = newJobId.ToString(), status = "Queued", enqueuedAt = DateTime.UtcNow };
                 await hub.Clients.All.SendAsync("MoveJobUpdate", job);
             }
@@ -3362,7 +3362,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var hub = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                 var job = new { jobId = newJobId.ToString(), status = "Queued", enqueuedAt = DateTime.UtcNow };
                 await hub.Clients.All.SendAsync("ScanJobUpdate", job);
             }
@@ -3411,7 +3411,7 @@ namespace Listenarr.Api.Controllers
                 }).ToList();
 
                 using var scope = _scopeFactory.CreateScope();
-                var hub = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                 // Include a structured payload so clients can distinguish manual vs automatic searches
                 await hub.Clients.All.SendCoreAsync("SearchProgress", new object[] { new { message = $"Manual search query: {searchQuery}", details = new { rawCount = searchResults.Count, rawSamples = rawSummaries }, type = "interactive", audiobookId = audiobook.Id } });
             }

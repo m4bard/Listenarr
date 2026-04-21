@@ -57,7 +57,7 @@ namespace Listenarr.Api.Services
         private readonly SearchResultScorer _searchResultScorer;
         private readonly AsinSearchHandler _asinSearchHandler;
         private readonly Microsoft.Extensions.Caching.Memory.IMemoryCache? _cache;
-        private readonly IEnumerable<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider> _searchProviders;
+        private readonly IEnumerable<IIndexerSearchProvider> _searchProviders;
 
         public SearchService(
             HttpClient httpClient,
@@ -79,7 +79,7 @@ namespace Listenarr.Api.Services
             AsinEnricher asinEnricher,
             SearchResultScorer searchResultScorer,
             AsinSearchHandler asinSearchHandler,
-            IEnumerable<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider>? searchProviders = null,
+            IEnumerable<IIndexerSearchProvider>? searchProviders = null,
             Microsoft.Extensions.Caching.Memory.IMemoryCache? cache = null)
         {
             _httpClient = httpClient;
@@ -99,7 +99,7 @@ namespace Listenarr.Api.Services
             _metadataStrategyCoordinator = metadataStrategyCoordinator;
             _asinCandidateCollector = asinCandidateCollector;
             _asinEnricher = asinEnricher;
-            _searchProviders = searchProviders ?? Enumerable.Empty<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider>();
+            _searchProviders = searchProviders ?? Enumerable.Empty<IIndexerSearchProvider>();
             _searchResultScorer = searchResultScorer;
             _asinSearchHandler = asinSearchHandler;
             _cache = cache;
@@ -392,7 +392,7 @@ namespace Listenarr.Api.Services
             return 50.0;
         }
 
-        public async Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, Listenarr.Api.Models.SearchRequest? request = null)
+        public async Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null)
         {
             var results = new List<IndexerSearchResult>();
             var indexers = await _indexerRepository.GetEnabledAsync(isAutomaticSearch);
@@ -419,7 +419,7 @@ namespace Listenarr.Api.Services
                         var mam = ParseMamOptionsFromAdditionalSettings(indexer.AdditionalSettings);
                         if (mam != null)
                         {
-                            perIndexerRequest ??= new Listenarr.Api.Models.SearchRequest();
+                            perIndexerRequest ??= new SearchRequest();
                             perIndexerRequest.MyAnonamouse = mam;
                         }
                     }
@@ -1526,7 +1526,7 @@ namespace Listenarr.Api.Services
                 }
 
                 // By default, reuse existing SearchIndexerAsync for a SearchResult response
-                var req = new Listenarr.Api.Models.SearchRequest();
+                var req = new SearchRequest();
                 // If this indexer has MyAnonamouse options encoded in AdditionalSettings, apply them
                 var mamOpts = ParseMamOptionsFromAdditionalSettings(indexer.AdditionalSettings);
                 if (mamOpts != null) req.MyAnonamouse = mamOpts;
@@ -1540,7 +1540,7 @@ namespace Listenarr.Api.Services
             }
         }
 
-        public async Task<List<Listenarr.Domain.Models.IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, Listenarr.Api.Models.SearchRequest? request = null)
+        public async Task<List<IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, SearchRequest? request = null)
         {
             try
             {
@@ -1553,7 +1553,7 @@ namespace Listenarr.Api.Services
                 if (indexer == null || !indexer.IsEnabled)
                 {
                     _logger.LogWarning("Indexer not found or disabled for apiId: {ApiId}", apiId);
-                    return new List<Listenarr.Domain.Models.IndexerSearchResult>();
+                    return new List<IndexerSearchResult>();
                 }
 
                 // Apply MyAnonamouse options from indexer if not provided explicitly
@@ -1562,7 +1562,7 @@ namespace Listenarr.Api.Services
                     var mam = ParseMamOptionsFromAdditionalSettings(indexer.AdditionalSettings);
                     if (mam != null)
                     {
-                        request ??= new Listenarr.Api.Models.SearchRequest();
+                        request ??= new SearchRequest();
                         request.MyAnonamouse = mam;
                     }
                 }
@@ -1572,11 +1572,11 @@ namespace Listenarr.Api.Services
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, $"Error searching indexer {apiId} for query: {query}");
-                return new List<Listenarr.Domain.Models.IndexerSearchResult>();
+                return new List<IndexerSearchResult>();
             }
         }
 
-        private Listenarr.Api.Models.MyAnonamouseOptions? ParseMamOptionsFromAdditionalSettings(string? additional)
+        private MyAnonamouseOptions? ParseMamOptionsFromAdditionalSettings(string? additional)
         {
             if (string.IsNullOrWhiteSpace(additional)) return null;
             try
@@ -1586,7 +1586,7 @@ namespace Listenarr.Api.Services
                 // Expect either { mam_id: '...', mam_options: { ... } } or { mam_id: '...', ...flat options... }
                 if (root.ValueKind != JsonValueKind.Object) return null;
 
-                var opts = new Listenarr.Api.Models.MyAnonamouseOptions();
+                var opts = new MyAnonamouseOptions();
                 if (root.TryGetProperty("mam_options", out var mo) && mo.ValueKind == JsonValueKind.Object)
                 {
                     if (mo.TryGetProperty("searchInDescription", out var sid) && (sid.ValueKind == JsonValueKind.True || sid.ValueKind == JsonValueKind.False))
@@ -1599,11 +1599,11 @@ namespace Listenarr.Api.Services
                         opts.SearchLanguage = lang.GetString();
                     if (mo.TryGetProperty("filter", out var filter) &&
                         filter.ValueKind == JsonValueKind.String &&
-                        Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(filter.GetString() ?? string.Empty, true, out var f))
+                        Enum.TryParse<MamTorrentFilter>(filter.GetString() ?? string.Empty, true, out var f))
                         opts.Filter = f;
                     if (mo.TryGetProperty("freeleechWedge", out var wedge) &&
                         wedge.ValueKind == JsonValueKind.String &&
-                        Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(wedge.GetString() ?? string.Empty, true, out var w))
+                        Enum.TryParse<MamFreeleechWedge>(wedge.GetString() ?? string.Empty, true, out var w))
                         opts.FreeleechWedge = w;
                     if (mo.TryGetProperty("enrichResults", out var enrich) && (enrich.ValueKind == JsonValueKind.True || enrich.ValueKind == JsonValueKind.False))
                         opts.EnrichResults = enrich.GetBoolean();
@@ -1626,11 +1626,11 @@ namespace Listenarr.Api.Services
                     opts.SearchLanguage = lang2.GetString();
                 if (root.TryGetProperty("filter", out var filter2) &&
                     filter2.ValueKind == JsonValueKind.String &&
-                    Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(filter2.GetString() ?? string.Empty, true, out var f2))
+                    Enum.TryParse<MamTorrentFilter>(filter2.GetString() ?? string.Empty, true, out var f2))
                     opts.Filter = f2;
                 if (root.TryGetProperty("freeleechWedge", out var wedge2) &&
                     wedge2.ValueKind == JsonValueKind.String &&
-                    Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(wedge2.GetString() ?? string.Empty, true, out var w2))
+                    Enum.TryParse<MamFreeleechWedge>(wedge2.GetString() ?? string.Empty, true, out var w2))
                     opts.FreeleechWedge = w2;
                 if (root.TryGetProperty("enrichResults", out var enrich2) && (enrich2.ValueKind == JsonValueKind.True || enrich2.ValueKind == JsonValueKind.False))
                     opts.EnrichResults = enrich2.GetBoolean();
@@ -1670,7 +1670,7 @@ namespace Listenarr.Api.Services
             }
         }
 
-        private async Task<List<IndexerSearchResult>> SearchIndexerAsync(Indexer indexer, string query, string? category = null, Listenarr.Api.Models.SearchRequest? request = null)
+        private async Task<List<IndexerSearchResult>> SearchIndexerAsync(Indexer indexer, string query, string? category = null, SearchRequest? request = null)
         {
             try
             {
@@ -1766,7 +1766,7 @@ namespace Listenarr.Api.Services
             }
         }
 
-        private async Task<List<IndexerSearchResult>> SearchMyAnonamouseAsync(Indexer indexer, string query, string? category, Listenarr.Api.Models.SearchRequest? request = null)
+        private async Task<List<IndexerSearchResult>> SearchMyAnonamouseAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
         {
             try
             {
@@ -1950,19 +1950,19 @@ namespace Listenarr.Api.Services
                 {
                     switch (request.MyAnonamouse.Filter)
                     {
-                        case Listenarr.Api.Models.MamTorrentFilter.Active:
+                        case MamTorrentFilter.Active:
                             queryParams.Add(new KeyValuePair<string, string>("tor[onlyActive]", "1"));
                             break;
-                        case Listenarr.Api.Models.MamTorrentFilter.Freeleech:
+                        case MamTorrentFilter.Freeleech:
                             queryParams.Add(new KeyValuePair<string, string>("tor[onlyFreeleech]", "1"));
                             break;
-                        case Listenarr.Api.Models.MamTorrentFilter.FreeleechOrVip:
+                        case MamTorrentFilter.FreeleechOrVip:
                             queryParams.Add(new KeyValuePair<string, string>("tor[freeleechOrVip]", "1"));
                             break;
-                        case Listenarr.Api.Models.MamTorrentFilter.Vip:
+                        case MamTorrentFilter.Vip:
                             queryParams.Add(new KeyValuePair<string, string>("tor[onlyVip]", "1"));
                             break;
-                        case Listenarr.Api.Models.MamTorrentFilter.NotVip:
+                        case MamTorrentFilter.NotVip:
                             queryParams.Add(new KeyValuePair<string, string>("tor[notVip]", "1"));
                             break;
                     }

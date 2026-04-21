@@ -164,7 +164,7 @@ namespace Listenarr.Api.Services
 
                                     try
                                     {
-                                        var audiobookDto = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(audiobook);
+                                        var audiobookDto = AudiobookDtoFactory.BuildFromEntity(audiobook);
                                         await _hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDto);
                                     }
                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -515,7 +515,7 @@ namespace Listenarr.Api.Services
                             if (updated != null)
                             {
                                 // Build an authoritative Audiobook DTO and broadcast it
-                                var audiobookDto = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(updated);
+                                var audiobookDto = AudiobookDtoFactory.BuildFromEntity(updated);
                                 await _hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDto);
                                 await _hubContext.Clients.All.SendAsync("ScanJobUpdate", new { jobId = job.Id.ToString(), audiobookId = job.AudiobookId, status = "Completed", found = foundFiles.Count, created = createdFiles, completedAt = DateTime.UtcNow });
                                 _logger.LogInformation("Broadcasted AudiobookUpdate for AudiobookId {AudiobookId} after scan job {JobId}", audiobook.Id, job.Id);

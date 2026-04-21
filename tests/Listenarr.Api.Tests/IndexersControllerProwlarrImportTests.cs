@@ -79,9 +79,9 @@ namespace Listenarr.Api.Tests
                     _loggerFactory.CreateLogger<ConfigurationService>(),
                     new Mock<IUserService>().Object,
                     new Mock<IStartupConfigService>().Object);
-                Controller = new Listenarr.Api.Controllers.IndexersController(
+                Controller = new IndexersController(
                     new EfIndexerRepository(_db),
-                    _loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>(),
+                    _loggerFactory.CreateLogger<IndexersController>(),
                     _client,
                     _configurationService);
             }
@@ -89,7 +89,7 @@ namespace Listenarr.Api.Tests
             public CaptureHandler Handler { get; }
             public ListenArrDbContext Db => _db;
             public ConfigurationService ConfigurationService => _configurationService;
-            public Listenarr.Api.Controllers.IndexersController Controller { get; }
+            public IndexersController Controller { get; }
 
             public void Dispose()
             {

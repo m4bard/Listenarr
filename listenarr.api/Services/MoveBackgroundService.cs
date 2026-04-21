@@ -305,7 +305,7 @@ namespace Listenarr.Api.Services
 
                             if (historyRepo != null)
                             {
-                                var historyEntry = new Listenarr.Domain.Models.History
+                                var historyEntry = new History
                                 {
                                     AudiobookId = audiobook.Id,
                                     AudiobookTitle = audiobook.Title,
@@ -390,7 +390,7 @@ namespace Listenarr.Api.Services
                                         _logger.LogInformation("Enqueued scan job {ScanJobId} for audiobook {AudiobookId} after move", scanJobId, audiobook.Id);
                                     }
 
-                                    var hubContext = historyScope.ServiceProvider.GetService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                                    var hubContext = historyScope.ServiceProvider.GetService<IHubContext<DownloadHub>>();
                                     if (hubContext != null)
                                     {
                                         // Load latest audiobook state and broadcast a full DTO so clients can update instantly without fetching
@@ -399,7 +399,7 @@ namespace Listenarr.Api.Services
                                             var fresh = await audiobookRepo.GetByIdAsync(audiobook.Id);
                                             if (fresh != null)
                                             {
-                                                var audiobookDtoFull = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(fresh);
+                                                var audiobookDtoFull = AudiobookDtoFactory.BuildFromEntity(fresh);
                                                 await hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDtoFull);
                                                 _logger.LogInformation("Broadcasted full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}", audiobook.Id, job.Id);
                                             }
@@ -449,7 +449,7 @@ namespace Listenarr.Api.Services
                             var historyRepo = historyScope.ServiceProvider.GetService<IHistoryRepository>();
                             if (historyRepo != null)
                             {
-                                var historyEntry = new Listenarr.Domain.Models.History
+                                var historyEntry = new History
                                 {
                                     AudiobookId = audiobook.Id,
                                     AudiobookTitle = audiobook.Title,

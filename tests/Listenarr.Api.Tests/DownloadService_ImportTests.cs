@@ -885,7 +885,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IAudiobookRepository>(repoMock.Object);
                 services.AddSingleton<IConfigurationService>(configMock.Object);
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(dbFactoryMock.Object);
-                services.AddSingleton<Listenarr.Application.Repositories.IIndexerRepository>(new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db));
+                services.AddSingleton<IIndexerRepository>(new EfIndexerRepository(db));
                 services.AddSingleton<Microsoft.Extensions.Logging.ILogger<DownloadService>>(new Microsoft.Extensions.Logging.Abstractions.NullLogger<DownloadService>());
                 services.AddSingleton<HttpClient>(httpClient);
                 services.AddSingleton<IHttpClientFactory>(httpFactoryMock.Object);

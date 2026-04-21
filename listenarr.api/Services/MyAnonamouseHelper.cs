@@ -407,9 +407,9 @@ namespace Listenarr.Api.Services
 
         // Extract announce/trackers from bencoded torrent content.
         // Returns a list of strings including http(s) and udp trackers and any explicit announce-list entries.
-        public static System.Collections.Generic.List<string> ExtractAnnounceUrls(byte[] torrentBytes)
+        public static List<string> ExtractAnnounceUrls(byte[] torrentBytes)
         {
-            var resultSet = new System.Collections.Generic.HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var resultSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             try
             {
                 using var inStream = new System.IO.MemoryStream(torrentBytes);
@@ -611,7 +611,7 @@ namespace Listenarr.Api.Services
                 }
             }
 
-            return new System.Collections.Generic.List<string>(resultSet);
+            return new List<string>(resultSet);
         }
     }
 }

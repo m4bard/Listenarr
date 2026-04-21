@@ -53,9 +53,9 @@ namespace Listenarr.Api.Tests
             var services = new ServiceCollection();
             services.AddSingleton<IMetadataService>(metadataMock.Object);
             services.AddSingleton(db);
-            services.AddSingleton<Listenarr.Application.Repositories.IAudiobookFileRepository>(_ => new Listenarr.Infrastructure.Repositories.EfAudiobookFileRepository(db));
-            services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(_ => new Listenarr.Api.Services.AudiobookRepository(db));
-            services.AddSingleton<Listenarr.Application.Repositories.IHistoryRepository>(_ => new Listenarr.Infrastructure.Repositories.EfHistoryRepository(db));
+            services.AddSingleton<IAudiobookFileRepository>(_ => new EfAudiobookFileRepository(db));
+            services.AddSingleton<IAudiobookRepository>(_ => new AudiobookRepository(db));
+            services.AddSingleton<IHistoryRepository>(_ => new EfHistoryRepository(db));
             services.AddSingleton<MetadataExtractionLimiter>();
             services.AddMemoryCache();
 
@@ -133,9 +133,9 @@ namespace Listenarr.Api.Tests
             var services = new ServiceCollection();
             services.AddSingleton<IMetadataService>(metadataMock.Object);
             services.AddSingleton<ListenArrDbContext>(db);
-            services.AddSingleton<Listenarr.Application.Repositories.IAudiobookFileRepository>(_ => new Listenarr.Infrastructure.Repositories.EfAudiobookFileRepository(db));
-            services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(_ => new Listenarr.Api.Services.AudiobookRepository(db));
-            services.AddSingleton<Listenarr.Application.Repositories.IHistoryRepository>(_ => new Listenarr.Infrastructure.Repositories.EfHistoryRepository(db));
+            services.AddSingleton<IAudiobookFileRepository>(_ => new EfAudiobookFileRepository(db));
+            services.AddSingleton<IAudiobookRepository>(_ => new AudiobookRepository(db));
+            services.AddSingleton<IHistoryRepository>(_ => new EfHistoryRepository(db));
             services.AddSingleton<MetadataExtractionLimiter>();
             services.AddMemoryCache();
 
@@ -189,9 +189,9 @@ namespace Listenarr.Api.Tests
             var services = new ServiceCollection();
             services.AddSingleton<IMetadataService>(metadataMock.Object);
             services.AddSingleton(db);
-            services.AddSingleton<Listenarr.Application.Repositories.IAudiobookFileRepository>(_ => new Listenarr.Infrastructure.Repositories.EfAudiobookFileRepository(db));
-            services.AddSingleton<Listenarr.Api.Services.IAudiobookRepository>(_ => new Listenarr.Api.Services.AudiobookRepository(db));
-            services.AddSingleton<Listenarr.Application.Repositories.IHistoryRepository>(_ => new Listenarr.Infrastructure.Repositories.EfHistoryRepository(db));
+            services.AddSingleton<IAudiobookFileRepository>(_ => new EfAudiobookFileRepository(db));
+            services.AddSingleton<IAudiobookRepository>(_ => new AudiobookRepository(db));
+            services.AddSingleton<IHistoryRepository>(_ => new EfHistoryRepository(db));
             services.AddSingleton<MetadataExtractionLimiter>();
             services.AddMemoryCache();
 

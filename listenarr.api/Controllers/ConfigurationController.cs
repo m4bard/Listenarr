@@ -252,7 +252,7 @@ namespace Listenarr.Api.Controllers
                                         if (!string.IsNullOrWhiteSpace(existingApiKey))
                                         {
                                             if (config.Settings == null)
-                                                config.Settings = new System.Collections.Generic.Dictionary<string, object>();
+                                                config.Settings = new Dictionary<string, object>();
                                             config.Settings["apiKey"] = existingApiKey;
                                         }
                                     }
@@ -345,7 +345,7 @@ namespace Listenarr.Api.Controllers
                         {
                             if (existing.Settings != null)
                             {
-                                config.Settings ??= new System.Collections.Generic.Dictionary<string, object>();
+                                config.Settings ??= new Dictionary<string, object>();
 
                                 foreach (var kvp in existing.Settings.Where(kvp => !config.Settings.ContainsKey(kvp.Key)))
                                 {

@@ -43,6 +43,6 @@ namespace Listenarr.Api.Services.Search.Providers
             Indexer indexer, 
             string query, 
             string? category = null, 
-            Listenarr.Api.Models.SearchRequest? request = null);
+            SearchRequest? request = null);
     }
 }

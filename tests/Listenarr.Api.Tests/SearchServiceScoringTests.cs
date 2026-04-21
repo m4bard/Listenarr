@@ -73,7 +73,7 @@ namespace Listenarr.Api.Tests
                 enricher,
                 scorer,
                 handler,
-                Enumerable.Empty<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider>());
+                Enumerable.Empty<IIndexerSearchProvider>());
         }
 
         [Fact]

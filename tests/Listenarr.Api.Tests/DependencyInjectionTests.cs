@@ -21,7 +21,7 @@ using Microsoft.EntityFrameworkCore;
 using Xunit;
 using Listenarr.Api.Services;
 using Listenarr.Infrastructure.Models;
-using Listenarr.Infrastructure.Extensions; // extension lives in Infrastructure project
+using Listenarr.Infrastructure.Extensions;
 
 namespace Listenarr.Api.Tests
 {
@@ -32,12 +32,10 @@ namespace Listenarr.Api.Tests
         {
             var services = new ServiceCollection();
 
-            // Register an in-memory DbContext so repository dependencies are satisfied.
-            services.AddDbContext<ListenArrDbContext>(options =>
+            // Register infrastructure implementations (the extension lives in Infrastructure project).
+            // Pass the InMemory provider so the extension wires up IDbContextFactory<ListenArrDbContext>.
+            services.AddListenarrInfrastructure(options =>
                 options.UseInMemoryDatabase("di-test-db"));
-
-            // Register infrastructure implementations (the extension lives in Infrastructure project)
-            services.AddListenarrInfrastructure();
 
             using var sp = services.BuildServiceProvider(validateScopes: true);
 

@@ -80,7 +80,7 @@ namespace Listenarr.Api.Tests
 
             var services = new ServiceCollection();
             services.AddSingleton(db);
-            services.AddSingleton<Listenarr.Application.Repositories.IDownloadRepository>(new TestDownloadRepository(db));
+            services.AddSingleton<IDownloadRepository>(new TestDownloadRepository(db));
 
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(settings);

@@ -27,8 +27,8 @@ namespace Listenarr.Api.Hubs
     public class DownloadHub : Hub
     {
         private readonly ILogger<DownloadHub> _logger;
-        private readonly Listenarr.Api.Services.DownloadPushService _pushService;
-        public DownloadHub(ILogger<DownloadHub> logger, Listenarr.Api.Services.DownloadPushService pushService)
+        private readonly DownloadPushService _pushService;
+        public DownloadHub(ILogger<DownloadHub> logger, DownloadPushService pushService)
         {
             _logger = logger;
             _pushService = pushService;

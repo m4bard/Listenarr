@@ -394,7 +394,7 @@ namespace Listenarr.Api.Tests
                 logger.Object,
                 scopeFactory,
                 new Mock<IHistoryRepository>().Object,
-                new Listenarr.Infrastructure.Repositories.EfAudiobookFileRepository(dbContext),
+                new EfAudiobookFileRepository(dbContext),
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 CreateRootFolderRepo(dbContext),

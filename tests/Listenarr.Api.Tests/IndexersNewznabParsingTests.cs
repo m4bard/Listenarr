@@ -79,7 +79,7 @@ namespace Listenarr.Api.Tests
           enricher,
           scorer,
           handler,
-          Enumerable.Empty<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider>());
+          Enumerable.Empty<IIndexerSearchProvider>());
       }
 
         [Fact]
@@ -257,8 +257,8 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient(handler) { BaseAddress = new System.Uri("https://api.althub.co.za") };
 
             // Call the provider's URL builder directly (private) to assert it includes extended=1
-            var provider = new Listenarr.Api.Services.Search.Providers.TorznabNewznabSearchProvider(httpClient, NullLogger<Listenarr.Api.Services.Search.Providers.TorznabNewznabSearchProvider>.Instance);
-            var mi = typeof(Listenarr.Api.Services.Search.Providers.TorznabNewznabSearchProvider).GetMethod("BuildTorznabUrl", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var provider = new TorznabNewznabSearchProvider(httpClient, NullLogger<TorznabNewznabSearchProvider>.Instance);
+            var mi = typeof(TorznabNewznabSearchProvider).GetMethod("BuildTorznabUrl", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             Assert.NotNull(mi);
             var idx1 = db.Indexers.First(i => i.Implementation == "newznab");
             var idx2 = db.Indexers.First(i => i.Implementation == "torznab");
@@ -288,7 +288,7 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient = new HttpClient(handler) { BaseAddress = new System.Uri("https://www.myanonamouse.net") };
-            var provider = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient, new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db));
+            var provider = new MyAnonamouseSearchProvider(NullLogger<MyAnonamouseSearchProvider>.Instance, httpClient, new EfIndexerRepository(db));
 
             // Call provider directly to ensure the AdditionalSettings are applied to the generated request -
             // The provider no longer parses indexer.AdditionalSettings for options automatically, callers should pass a SearchRequest.
@@ -377,9 +377,9 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient = new HttpClient(handler);
-            var provider = new Listenarr.Api.Services.Search.Providers.InternetArchiveSearchProvider(
+            var provider = new InternetArchiveSearchProvider(
                 httpClient,
-                NullLogger<Listenarr.Api.Services.Search.Providers.InternetArchiveSearchProvider>.Instance);
+                NullLogger<InternetArchiveSearchProvider>.Instance);
 
             var results = await provider.SearchAsync(indexer, "Artemis");
 

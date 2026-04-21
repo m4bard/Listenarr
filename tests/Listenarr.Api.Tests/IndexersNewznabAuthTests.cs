@@ -35,7 +35,7 @@ namespace Listenarr.Api.Tests
     {
         private sealed class ControllerContext : IDisposable
         {
-            public ControllerContext(ListenArrDbContext db, HttpClient client, Listenarr.Api.Controllers.IndexersController controller)
+            public ControllerContext(ListenArrDbContext db, HttpClient client, IndexersController controller)
             {
                 Db = db;
                 Client = client;
@@ -46,7 +46,7 @@ namespace Listenarr.Api.Tests
 
             public HttpClient Client { get; }
 
-            public Listenarr.Api.Controllers.IndexersController Controller { get; }
+            public IndexersController Controller { get; }
 
             public void Dispose()
             {
@@ -80,9 +80,9 @@ namespace Listenarr.Api.Tests
 
             var db = new ListenArrDbContext(options);
             var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
-                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+            var controller = new IndexersController(
+                new EfIndexerRepository(db),
+                NullLogger<IndexersController>.Instance,
                 client,
                 new TestConfigurationService());
 
@@ -437,9 +437,9 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             using var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
-                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+            var controller = new IndexersController(
+                new EfIndexerRepository(db),
+                NullLogger<IndexersController>.Instance,
                 client,
                 new TestConfigurationService());
 
@@ -490,9 +490,9 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             using var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(
-                new Listenarr.Infrastructure.Repositories.EfIndexerRepository(db),
-                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+            var controller = new IndexersController(
+                new EfIndexerRepository(db),
+                NullLogger<IndexersController>.Instance,
                 client,
                 new TestConfigurationService());
 

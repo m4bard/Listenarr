@@ -156,11 +156,11 @@ namespace Listenarr.Api.Extensions
 
             // Typed clients used by metadata services. Add consistent handlers + policies.
 
-            services.AddHttpClient<Listenarr.Api.Services.AudibleService>()
+            services.AddHttpClient<AudibleService>()
                 .ConfigurePrimaryHttpMessageHandler(() => CreateExternalHandler(config))
                 .AddPolicyHandler(retryPolicy);
 
-            services.AddHttpClient<Listenarr.Api.Services.AudnexusService>()
+            services.AddHttpClient<AudnexusService>()
                 .ConfigurePrimaryHttpMessageHandler(() => CreateExternalHandler(config))
                 .AddPolicyHandler(retryPolicy);
 
@@ -193,20 +193,20 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<IValidateOptions<DownloadClientsOptions>, DownloadClientsOptionsValidator>();
 
             // Title matching service extracted from DownloadService for easier testing
-            services.AddScoped<ITitleMatchingService, Listenarr.Api.Services.Adapters.TitleMatchingService>();
+            services.AddScoped<ITitleMatchingService, TitleMatchingService>();
 
             // Shared helpers
             services.AddScoped<INzbUrlResolver, NzbUrlResolver>();
-            services.AddScoped<ITorrentFileDownloader, Listenarr.Api.Services.Adapters.TorrentFileDownloader>();
+            services.AddScoped<ITorrentFileDownloader, TorrentFileDownloader>();
 
             // Register available adapter implementations. Keep adapters scoped because they may depend on scoped services.
-            services.AddScoped<IDownloadClientAdapter, Listenarr.Api.Services.Adapters.QbittorrentAdapter>();
-            services.AddScoped<IDownloadClientAdapter, Listenarr.Api.Services.Adapters.TransmissionAdapter>();
-            services.AddScoped<IDownloadClientAdapter, Listenarr.Api.Services.Adapters.SabnzbdAdapter>();
-            services.AddScoped<IDownloadClientAdapter, Listenarr.Api.Services.Adapters.NzbgetAdapter>();
+            services.AddScoped<IDownloadClientAdapter, QbittorrentAdapter>();
+            services.AddScoped<IDownloadClientAdapter, TransmissionAdapter>();
+            services.AddScoped<IDownloadClientAdapter, SabnzbdAdapter>();
+            services.AddScoped<IDownloadClientAdapter, NzbgetAdapter>();
 
             // Register the concrete factory as scoped so it can safely resolve scoped adapters via DI.
-            services.AddScoped<IDownloadClientAdapterFactory, Listenarr.Api.Services.Adapters.DownloadClientAdapterFactory>();
+            services.AddScoped<IDownloadClientAdapterFactory, DownloadClientAdapterFactory>();
 
             // Register import item resolution service (ProvideImportItemService pattern)
             services.AddScoped<IImportItemResolutionService, ImportItemResolutionService>();
@@ -215,10 +215,10 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<INotificationPayloadBuilder, NotificationPayloadBuilderAdapter>();
 
             // File storage abstraction used throughout services to isolate System.IO for testing
-            services.AddSingleton<IFileStorage, Listenarr.Api.Services.FileStorage>();
+            services.AddSingleton<IFileStorage, FileStorage>();
 
             // SignalR broadcaster abstraction used to centralize broadcast logic and simplify testing
-            services.AddSingleton<Listenarr.Application.Services.IHubBroadcaster, Listenarr.Api.Services.SignalRHubBroadcaster>();
+            services.AddSingleton<IHubBroadcaster, SignalRHubBroadcaster>();
 
             return services;
         }

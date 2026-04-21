@@ -15,16 +15,13 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-// csharp
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 
-namespace Listenarr.Api.Services
+namespace Listenarr.Application.Repositories
 {
-    // IAudiobookRepository moved into the Application project (physical location changed).
-    // Kept the original namespace to minimise churn across the codebase.
     public interface IAudiobookRepository
     {
         Task<List<Audiobook>> GetAllAsync();

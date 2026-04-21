@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using System.Text.RegularExpressions;
 

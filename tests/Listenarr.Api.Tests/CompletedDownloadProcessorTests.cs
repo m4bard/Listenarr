@@ -170,7 +170,7 @@ namespace Listenarr.Api.Tests
                 .Returns(Task.CompletedTask);
 
             Listenarr.Domain.Models.History? capturedHistory = null;
-            var historyRepoMock = new Mock<Listenarr.Application.Repositories.IHistoryRepository>();
+            var historyRepoMock = new Mock<IHistoryRepository>();
             historyRepoMock
                 .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()))
                 .Callback<Listenarr.Domain.Models.History, CancellationToken>((h, _) => capturedHistory = h)
@@ -181,7 +181,7 @@ namespace Listenarr.Api.Tests
             var spMock = new Mock<IServiceProvider>();
             spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
             spMock.Setup(sp => sp.GetService(typeof(IToastService))).Returns(toastMock.Object);
-            spMock.Setup(sp => sp.GetService(typeof(Listenarr.Application.Repositories.IHistoryRepository))).Returns(historyRepoMock.Object);
+            spMock.Setup(sp => sp.GetService(typeof(IHistoryRepository))).Returns(historyRepoMock.Object);
             scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
             scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
 
@@ -397,7 +397,7 @@ namespace Listenarr.Api.Tests
                 .Returns(Task.CompletedTask);
 
             Listenarr.Domain.Models.History? capturedHistory = null;
-            var historyRepoMock = new Mock<Listenarr.Application.Repositories.IHistoryRepository>();
+            var historyRepoMock = new Mock<IHistoryRepository>();
             historyRepoMock
                 .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()))
                 .Callback<Listenarr.Domain.Models.History, CancellationToken>((h, _) => capturedHistory = h)
@@ -417,7 +417,7 @@ namespace Listenarr.Api.Tests
             var spMock = new Mock<IServiceProvider>();
             spMock.Setup(sp => sp.GetService(typeof(ListenArrDbContext))).Returns(null);
             spMock.Setup(sp => sp.GetService(typeof(IToastService))).Returns(toastMock.Object);
-            spMock.Setup(sp => sp.GetService(typeof(Listenarr.Application.Repositories.IHistoryRepository))).Returns(historyRepoMock.Object);
+            spMock.Setup(sp => sp.GetService(typeof(IHistoryRepository))).Returns(historyRepoMock.Object);
             scopeMock.Setup(s => s.ServiceProvider).Returns(spMock.Object);
             scopeFactoryMock.Setup(f => f.CreateScope()).Returns(scopeMock.Object);
 

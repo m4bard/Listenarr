@@ -44,7 +44,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         string query,
         string? category = null,
-        Listenarr.Api.Models.SearchRequest? request = null)
+        SearchRequest? request = null)
     {
         try
         {

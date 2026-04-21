@@ -51,7 +51,7 @@ namespace Listenarr.Api.Services
         }
 
         private readonly IHubContext<DownloadHub> _hubContext;
-        private readonly Listenarr.Application.Services.IHubBroadcaster _hubBroadcaster;
+        private readonly IHubBroadcaster _hubBroadcaster;
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly IConfigurationService _configurationService;
         private readonly IDownloadRepository _downloadRepository;
@@ -96,7 +96,7 @@ namespace Listenarr.Api.Services
             ICompletedDownloadProcessor completedDownloadProcessor,
             IAppMetricsService metrics,
             NotificationService notificationService,
-            Listenarr.Application.Services.IHubBroadcaster? hubBroadcaster = null,
+            IHubBroadcaster? hubBroadcaster = null,
             IDownloadHistoryService? downloadHistoryService = null)
         {
             _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
@@ -157,16 +157,16 @@ namespace Listenarr.Api.Services
         /// <summary>
         /// Retrieve cached announce URLs for a given download id if available
         /// </summary>
-        public Task<System.Collections.Generic.List<string>?> GetCachedAnnouncesAsync(string downloadId)
+        public Task<List<string>?> GetCachedAnnouncesAsync(string downloadId)
         {
             try
             {
-                if (string.IsNullOrEmpty(downloadId)) return Task.FromResult<System.Collections.Generic.List<string>?>(null);
+                if (string.IsNullOrEmpty(downloadId)) return Task.FromResult<List<string>?>(null);
                 var cacheKey = $"mam:cachedtorrent:{downloadId}:announces";
-                var announces = _cache.Get<System.Collections.Generic.List<string>>(cacheKey);
+                var announces = _cache.Get<List<string>>(cacheKey);
                 if (announces != null && announces.Count > 0)
                 {
-                    return Task.FromResult<System.Collections.Generic.List<string>?>(announces);
+                    return Task.FromResult<List<string>?>(announces);
                 }
 
                 // Fallback: if announces not cached, try to extract from cached bytes
@@ -178,15 +178,15 @@ namespace Listenarr.Api.Services
                     {
                         // cache for future retrievals
                         _cache.Set($"mam:cachedtorrent:{downloadId}:announces", extracted, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromMinutes(30) });
-                        return Task.FromResult<System.Collections.Generic.List<string>?>(extracted);
+                        return Task.FromResult<List<string>?>(extracted);
                     }
                 }
 
-                return Task.FromResult<System.Collections.Generic.List<string>?>(null);
+                return Task.FromResult<List<string>?>(null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to retrieve cached announces for download {DownloadId} (non-fatal)", downloadId);
-                return Task.FromResult<System.Collections.Generic.List<string>?>(null);
+                return Task.FromResult<List<string>?>(null);
             }
         }
 
@@ -611,7 +611,7 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    var protocol = isTorrent ? Listenarr.Domain.Models.DownloadProtocol.Torrent : Listenarr.Domain.Models.DownloadProtocol.Usenet;
+                    var protocol = isTorrent ? DownloadProtocol.Torrent : DownloadProtocol.Usenet;
                     await _downloadHistoryService.RecordGrabbedAsync(
                         downloadId,
                         downloadClientIdForModel,
@@ -738,7 +738,7 @@ namespace Listenarr.Api.Services
                     // Fallback for older registrations
                     using (var scope = _serviceScopeFactory.CreateScope())
                     {
-                        var hubContext = scope.ServiceProvider.GetService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                        var hubContext = scope.ServiceProvider.GetService<IHubContext<DownloadHub>>();
                         if (hubContext != null)
                         {
                             await hubContext.Clients.All.SendAsync("QueueUpdate", currentQueueSnapshot);
@@ -1079,10 +1079,10 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("MyAnonamouse: normalizing mam_id from '{Raw}' to '{Normalized}' for '{Title}'", LogRedaction.RedactText(mamId, LogRedaction.GetSensitiveValuesFromEnvironment()), LogRedaction.RedactText(normalizedMamId, LogRedaction.GetSensitiveValuesFromEnvironment()), searchResult.Title);
 
                         var currentAnnounces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentBytes);
-                        var updatedAnnounces = new System.Collections.Generic.List<string>();
+                        var updatedAnnounces = new List<string>();
                         var modified = false;
 
-                        foreach (var ann in (currentAnnounces ?? new System.Collections.Generic.List<string>())
+                        foreach (var ann in (currentAnnounces ?? new List<string>())
                             .Where(ann => !string.IsNullOrWhiteSpace(ann))
                             .Distinct())
                         {

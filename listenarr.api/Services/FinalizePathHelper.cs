@@ -97,7 +97,7 @@ namespace Listenarr.Api.Services
                 }
             }
 
-            var parts = new System.Collections.Generic.List<string>();
+            var parts = new List<string>();
             parts.Add(outRoot);
 
             // Author folder

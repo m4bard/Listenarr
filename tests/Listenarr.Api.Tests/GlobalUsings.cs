@@ -15,8 +15,13 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
+global using Listenarr.Application.Repositories;
+global using Listenarr.Application.Services;
+global using Listenarr.Infrastructure.Repositories;
 global using Listenarr.Domain.Models;
 global using Listenarr.Infrastructure.Models;
+global using Listenarr.Api.Controllers;
+global using Listenarr.Api.Services.Search.Providers;
 global using Listenarr.Api.Extensions;
 
 global using System;

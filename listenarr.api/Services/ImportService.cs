@@ -1124,7 +1124,7 @@ namespace Listenarr.Api.Services
 }
 
 // Simple no-op/fallback file mover used for compatibility in tests when DI IFileMover isn't provided.
-internal class NullFileMover : global::Listenarr.Api.Services.IFileMover
+internal class NullFileMover : IFileMover
 {
     [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode, SetLastError = true)]
     private static extern bool CreateHardLinkWin(string lpFileName, string lpExistingFileName, IntPtr lpSecurityAttributes);

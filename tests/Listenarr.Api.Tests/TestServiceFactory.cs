@@ -89,9 +89,9 @@ namespace Listenarr.Api.Tests
 
             // Provide a no-op IIndexerRepository so DownloadService can be resolved without explicit registration.
             // Always use a mock — injecting a DbContext into a singleton factory causes lifetime violations.
-            services.AddSingleton<Listenarr.Application.Repositories.IIndexerRepository>(sp =>
+            services.AddSingleton<IIndexerRepository>(sp =>
             {
-                var mock = new Mock<Listenarr.Application.Repositories.IIndexerRepository>();
+                var mock = new Mock<IIndexerRepository>();
                 mock.Setup(r => r.GetAllAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>());
                 mock.Setup(r => r.GetEnabledAsync(It.IsAny<bool>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>());
                 mock.Setup(r => r.GetByIdAsync(It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync((Listenarr.Domain.Models.Indexer?)null);
@@ -101,13 +101,13 @@ namespace Listenarr.Api.Tests
             // Provide a test-friendly IDownloadRepository so tests that resolve DownloadService
             // from the root provider don't need to register it explicitly. Prefer an existing
             // ListenArrDbContext if present, otherwise fall back to an in-memory test repo.
-            services.AddSingleton<Listenarr.Application.Repositories.IDownloadRepository>(sp =>
+            services.AddSingleton<IDownloadRepository>(sp =>
             {
                 var dbFactory = sp.GetService<IDbContextFactory<ListenArrDbContext>>();
                 if (dbFactory != null)
                 {
-                    var logger = sp.GetRequiredService<ILogger<Listenarr.Infrastructure.Repositories.EfDownloadRepository>>();
-                    return new Listenarr.Infrastructure.Repositories.EfDownloadRepository(dbFactory, logger);
+                    var logger = sp.GetRequiredService<ILogger<EfDownloadRepository>>();
+                    return new EfDownloadRepository(dbFactory, logger);
                 }
 
                 var db = sp.GetService<ListenArrDbContext>();
@@ -115,13 +115,13 @@ namespace Listenarr.Api.Tests
             });
 
             // Provide a test-friendly IDownloadProcessingJobRepository for tests.
-            services.AddSingleton<Listenarr.Application.Repositories.IDownloadProcessingJobRepository>(sp =>
+            services.AddSingleton<IDownloadProcessingJobRepository>(sp =>
             {
                 var dbFactory = sp.GetService<IDbContextFactory<ListenArrDbContext>>();
                 if (dbFactory != null)
                 {
-                    var logger = sp.GetRequiredService<ILogger<Listenarr.Infrastructure.Repositories.EfDownloadProcessingJobRepository>>();
-                    return new Listenarr.Infrastructure.Repositories.EfDownloadProcessingJobRepository(dbFactory, logger);
+                    var logger = sp.GetRequiredService<ILogger<EfDownloadProcessingJobRepository>>();
+                    return new EfDownloadProcessingJobRepository(dbFactory, logger);
                 }
 
                 var db = sp.GetService<ListenArrDbContext>();
@@ -135,7 +135,7 @@ namespace Listenarr.Api.Tests
                 var import = sp.GetService<Listenarr.Api.Services.IImportService>();
                 if (import != null)
                 {
-                    var downloadRepo = sp.GetRequiredService<Listenarr.Application.Repositories.IDownloadRepository>();
+                    var downloadRepo = sp.GetRequiredService<IDownloadRepository>();
                     var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                     var logger = sp.GetRequiredService<ILogger<Listenarr.Api.Services.FileFinalizer>>();
                     return new Listenarr.Api.Services.FileFinalizer(import, downloadRepo, scopeFactory, logger);
@@ -161,7 +161,7 @@ namespace Listenarr.Api.Tests
             // Provide a test-friendly IDownloadQueueService so DownloadService can be resolved
             services.AddSingleton<Listenarr.Api.Services.IDownloadQueueService>(sp =>
             {
-                var downloadRepo = sp.GetService<Listenarr.Application.Repositories.IDownloadRepository>();
+                var downloadRepo = sp.GetService<IDownloadRepository>();
                 var clientGateway = sp.GetService<IDownloadClientGateway>();
                 var config = sp.GetService<IConfigurationService>();
                 var logger = sp.GetService<ILogger<TestDownloadQueueService>>();
@@ -180,7 +180,7 @@ namespace Listenarr.Api.Tests
             // Provide a test-friendly ICompletedDownloadProcessor so DownloadService can be resolved in tests.
             services.AddSingleton<Listenarr.Api.Services.ICompletedDownloadProcessor>(sp =>
             {
-                var downloadRepo = sp.GetService<Listenarr.Application.Repositories.IDownloadRepository>();
+                var downloadRepo = sp.GetService<IDownloadRepository>();
                 var fileFinalizer = sp.GetService<Listenarr.Api.Services.IFileFinalizer>();
                 var config = sp.GetService<IConfigurationService>();
                 var scopeFactory = sp.GetService<IServiceScopeFactory>();

@@ -64,7 +64,7 @@ namespace Listenarr.Api.Tests
 
             var services = new ServiceCollection();
             services.AddSingleton(db);
-            services.AddSingleton<Listenarr.Application.Repositories.IDownloadProcessingJobRepository>(new TestDownloadProcessingJobRepository(db));
+            services.AddSingleton<IDownloadProcessingJobRepository>(new TestDownloadProcessingJobRepository(db));
             services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
             services.AddLogging();
 
@@ -141,8 +141,8 @@ namespace Listenarr.Api.Tests
 
                 var services = new ServiceCollection();
                 services.AddSingleton(db);
-                services.AddSingleton<Listenarr.Application.Repositories.IDownloadRepository>(new TestDownloadRepository(db));
-                services.AddSingleton<Listenarr.Application.Repositories.IDownloadProcessingJobRepository>(new TestDownloadProcessingJobRepository(db));
+                services.AddSingleton<IDownloadRepository>(new TestDownloadRepository(db));
+                services.AddSingleton<IDownloadProcessingJobRepository>(new TestDownloadProcessingJobRepository(db));
                 services.AddSingleton(queueServiceMock.Object);
                 services.AddSingleton(importItemResolutionMock.Object);
                 services.AddSingleton(configMock.Object);
