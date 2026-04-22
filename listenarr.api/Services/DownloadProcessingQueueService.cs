@@ -26,16 +26,16 @@ namespace Listenarr.Api.Services
     /// </summary>
     public class DownloadProcessingQueueService : IDownloadProcessingQueueService
     {
-        private readonly IDownloadProcessingJobRepository _jobRepo;
+        private readonly IDownloadProcessingJobRepository _jobRepository;
         private readonly ILogger<DownloadProcessingQueueService> _logger;
         private readonly DownloadProcessingChannel? _channel;
 
         public DownloadProcessingQueueService(
-            IDownloadProcessingJobRepository jobRepo,
+            IDownloadProcessingJobRepository jobRepository,
             ILogger<DownloadProcessingQueueService> logger,
             DownloadProcessingChannel? channel = null)
         {
-            _jobRepo = jobRepo;
+            _jobRepository = jobRepository;
             _logger = logger;
             _channel = channel;
         }
@@ -45,14 +45,14 @@ namespace Listenarr.Api.Services
             var now = DateTime.UtcNow;
             var recentCompletedCutoff = now.AddSeconds(-300);
 
-            var existingActive = await _jobRepo.GetActiveByDownloadIdAsync(downloadId);
+            var existingActive = await _jobRepository.GetActiveByDownloadIdAsync(downloadId);
             if (existingActive != null)
             {
                 _logger.LogInformation("Duplicate enqueue prevented - returning existing active job {JobId} for download {DownloadId}", existingActive.Id, downloadId);
                 return existingActive.Id;
             }
 
-            var recentCompleted = await _jobRepo.GetRecentCompletedByDownloadIdAsync(downloadId, recentCompletedCutoff);
+            var recentCompleted = await _jobRepository.GetRecentCompletedByDownloadIdAsync(downloadId, recentCompletedCutoff);
             if (recentCompleted != null)
             {
                 _logger.LogInformation("Download {DownloadId} has a recent completed job {JobId} (within cooldown), not queuing new job", downloadId, recentCompleted.Id);
@@ -69,7 +69,7 @@ namespace Listenarr.Api.Services
                 Status = ProcessingJobStatus.Pending
             };
 
-            job = await _jobRepo.AddAsync(job);
+            job = await _jobRepository.AddAsync(job);
             _logger.LogInformation("Queued download {DownloadId} for post-processing: {JobId}", downloadId, job.Id);
 
             try
@@ -89,27 +89,27 @@ namespace Listenarr.Api.Services
         }
 
         public async Task<DownloadProcessingJob?> GetNextJobAsync()
-            => await _jobRepo.GetNextPendingAsync();
+            => await _jobRepository.GetNextPendingAsync();
 
         public async Task<List<DownloadProcessingJob>> GetRetryJobsAsync()
-            => await _jobRepo.GetDueRetryJobsAsync();
+            => await _jobRepository.GetDueRetryJobsAsync();
 
         public async Task UpdateJobAsync(DownloadProcessingJob job)
-            => await _jobRepo.UpdateAsync(job);
+            => await _jobRepository.UpdateAsync(job);
 
         public async Task<DownloadProcessingJob?> GetJobAsync(string jobId)
-            => await _jobRepo.GetByIdAsync(jobId);
+            => await _jobRepository.GetByIdAsync(jobId);
 
         public async Task<List<DownloadProcessingJob>> GetJobsForDownloadAsync(string downloadId)
-            => await _jobRepo.GetByDownloadIdAsync(downloadId);
+            => await _jobRepository.GetByDownloadIdAsync(downloadId);
 
         public async Task<QueueStats> GetStatsAsync()
-            => await _jobRepo.GetStatsAsync();
+            => await _jobRepository.GetStatsAsync();
 
         public async Task CleanupOldJobsAsync(int retentionDays = 7)
-            => await _jobRepo.CleanupOldJobsAsync(retentionDays);
+            => await _jobRepository.CleanupOldJobsAsync(retentionDays);
 
         public async Task<List<DownloadProcessingJob>> GetRecentActivityAsync(int count = 50)
-            => await _jobRepo.GetRecentAsync(count);
+            => await _jobRepository.GetRecentAsync(count);
     }
 }

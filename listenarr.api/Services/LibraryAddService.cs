@@ -27,7 +27,7 @@ namespace Listenarr.Api.Services
     public class LibraryAddService : ILibraryAddService
     {
         private readonly IAudiobookRepository _repo;
-        private readonly IHistoryRepository _historyRepo;
+        private readonly IHistoryRepository _historyRepository;
         private readonly IImageCacheService _imageCacheService;
         private readonly ILogger<LibraryAddService> _logger;
         private readonly IQualityProfileService _qualityProfileService;
@@ -37,7 +37,7 @@ namespace Listenarr.Api.Services
 
         public LibraryAddService(
             IAudiobookRepository repo,
-            IHistoryRepository historyRepo,
+            IHistoryRepository historyRepository,
             IImageCacheService imageCacheService,
             ILogger<LibraryAddService> logger,
             IQualityProfileService qualityProfileService,
@@ -46,7 +46,7 @@ namespace Listenarr.Api.Services
             INotificationService? notificationService = null)
         {
             _repo = repo;
-            _historyRepo = historyRepo;
+            _historyRepository = historyRepository;
             _imageCacheService = imageCacheService;
             _logger = logger;
             _qualityProfileService = qualityProfileService;
@@ -367,7 +367,7 @@ namespace Listenarr.Api.Services
                 Timestamp = DateTime.UtcNow
             };
 
-            await _historyRepo.AddAsync(historyEntry, cancellationToken);
+            await _historyRepository.AddAsync(historyEntry, cancellationToken);
         }
 
         private static string? ToStringOrFirst(object? value)

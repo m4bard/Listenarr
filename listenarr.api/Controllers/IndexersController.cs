@@ -34,15 +34,15 @@ namespace Listenarr.Api.Controllers
     [Tags("Indexers")]
     public class IndexersController : ControllerBase
     {
-        private readonly IIndexerRepository _indexerRepo;
+        private readonly IIndexerRepository _indexerRepository;
         private readonly ILogger<IndexersController> _logger;
         private readonly HttpClient _httpClient;
         private readonly HttpClient _httpClientNoRedirect;
         private readonly IConfigurationService _configurationService;
 
-        public IndexersController(IIndexerRepository indexerRepo, ILogger<IndexersController> logger, HttpClient httpClient, IConfigurationService configurationService)
+        public IndexersController(IIndexerRepository indexerRepository, ILogger<IndexersController> logger, HttpClient httpClient, IConfigurationService configurationService)
         {
-            _indexerRepo = indexerRepo;
+            _indexerRepository = indexerRepository;
             _logger = logger;
             _httpClient = httpClient;
             _httpClientNoRedirect = httpClient;
@@ -106,14 +106,14 @@ namespace Listenarr.Api.Controllers
             if (persist && indexer.Id != 0)
             {
                 // Persist test result back to the database for the stored indexer
-                var existing = await _indexerRepo.GetByIdAsync(indexer.Id);
+                var existing = await _indexerRepository.GetByIdAsync(indexer.Id);
                 if (existing != null)
                 {
                     existing.LastTestedAt = indexer.LastTestedAt;
                     existing.LastTestSuccessful = success;
                     existing.LastTestError = error;
                     existing.UpdatedAt = DateTime.UtcNow;
-                    await _indexerRepo.UpdateAsync(existing);
+                    await _indexerRepository.UpdateAsync(existing);
                 }
             }
         }
@@ -344,7 +344,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var indexers = (await _indexerRepo.GetAllAsync())
+            var indexers = (await _indexerRepository.GetAllAsync())
                 .OrderBy(i => i.Priority)
                 .ThenBy(i => i.Name)
                 .ToList();
@@ -359,7 +359,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet("{id}")]
         public async Task<IActionResult> GetById(int id)
         {
-            var indexer = await _indexerRepo.GetByIdAsync(id);
+            var indexer = await _indexerRepository.GetByIdAsync(id);
             if (indexer == null)
             {
                 return NotFound(new { message = "Indexer not found" });
@@ -378,7 +378,7 @@ namespace Listenarr.Api.Controllers
             indexer.CreatedAt = DateTime.UtcNow;
             indexer.UpdatedAt = DateTime.UtcNow;
 
-            indexer = await _indexerRepo.AddAsync(indexer);
+            indexer = await _indexerRepository.AddAsync(indexer);
 
             _logger.LogInformation("Created indexer '{Name}' (ID: {Id}, Type: {Type})",
                 indexer.Name, indexer.Id, indexer.Type);
@@ -474,7 +474,7 @@ namespace Listenarr.Api.Controllers
                 TagFilter = effectiveTagFilter,
             });
 
-            var existingIndexers = await _indexerRepo.GetAllAsync();
+            var existingIndexers = await _indexerRepository.GetAllAsync();
             var createdIndexers = new List<Indexer>();
             var skipped = 0;
             Dictionary<string, string>? tagMap = null;
@@ -569,7 +569,7 @@ namespace Listenarr.Api.Controllers
                     UpdatedAt = DateTime.UtcNow
                 };
 
-                createdIndexers.Add(await _indexerRepo.AddAsync(indexer));
+                createdIndexers.Add(await _indexerRepository.AddAsync(indexer));
             }
 
             return Ok(new
@@ -589,7 +589,7 @@ namespace Listenarr.Api.Controllers
         [HttpPut("{id}")]
         public async Task<IActionResult> Update(int id, [FromBody] Indexer indexer)
         {
-            var existing = await _indexerRepo.GetByIdAsync(id);
+            var existing = await _indexerRepository.GetByIdAsync(id);
             if (existing == null)
             {
                 return NotFound(new { message = "Indexer not found" });
@@ -616,7 +616,7 @@ namespace Listenarr.Api.Controllers
             existing.AdditionalSettings = ApiResponseRedactor.MergeAdditionalSettings(existing.AdditionalSettings, indexer.AdditionalSettings);
             existing.UpdatedAt = DateTime.UtcNow;
 
-            await _indexerRepo.UpdateAsync(existing);
+            await _indexerRepository.UpdateAsync(existing);
 
             _logger.LogInformation("Updated indexer '{Name}' (ID: {Id})", existing.Name, existing.Id);
 
@@ -630,13 +630,13 @@ namespace Listenarr.Api.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(int id)
         {
-            var indexer = await _indexerRepo.GetByIdAsync(id);
+            var indexer = await _indexerRepository.GetByIdAsync(id);
             if (indexer == null)
             {
                 return NotFound(new { message = "Indexer not found" });
             }
 
-            await _indexerRepo.DeleteAsync(id);
+            await _indexerRepository.DeleteAsync(id);
 
             _logger.LogInformation("Deleted indexer '{Name}' (ID: {Id})", indexer.Name, indexer.Id);
 
@@ -650,7 +650,7 @@ namespace Listenarr.Api.Controllers
         [HttpPost("{id}/test")]
         public async Task<IActionResult> Test(int id)
         {
-            var indexer = await _indexerRepo.GetByIdAsync(id);
+            var indexer = await _indexerRepository.GetByIdAsync(id);
             if (indexer == null)
             {
                 return NotFound(new { message = "Indexer not found" });
@@ -950,7 +950,7 @@ namespace Listenarr.Api.Controllers
             var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "indexers/debug-search");
             if (gate != null) return gate;
 
-            var indexer = await _indexerRepo.GetByIdAsync(id);
+            var indexer = await _indexerRepository.GetByIdAsync(id);
             if (indexer == null) return NotFound(new { message = "Indexer not found" });
 
             try
@@ -1118,7 +1118,7 @@ namespace Listenarr.Api.Controllers
         [HttpPut("{id}/toggle")]
         public async Task<IActionResult> Toggle(int id)
         {
-            var indexer = await _indexerRepo.GetByIdAsync(id);
+            var indexer = await _indexerRepository.GetByIdAsync(id);
             if (indexer == null)
             {
                 return NotFound(new { message = "Indexer not found" });
@@ -1126,7 +1126,7 @@ namespace Listenarr.Api.Controllers
 
             indexer.IsEnabled = !indexer.IsEnabled;
             indexer.UpdatedAt = DateTime.UtcNow;
-            await _indexerRepo.UpdateAsync(indexer);
+            await _indexerRepository.UpdateAsync(indexer);
 
             _logger.LogInformation("Toggled indexer '{Name}' to {State}",
                 indexer.Name, indexer.IsEnabled ? "enabled" : "disabled");
@@ -1140,7 +1140,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet("enabled")]
         public async Task<IActionResult> GetEnabled()
         {
-            var indexers = (await _indexerRepo.GetAllAsync())
+            var indexers = (await _indexerRepository.GetAllAsync())
                 .Where(i => i.IsEnabled)
                 .OrderBy(i => i.Priority)
                 .ThenBy(i => i.Name)

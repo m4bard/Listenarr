@@ -89,16 +89,16 @@ namespace Listenarr.Api.Services
             _logger.LogInformation("Starting automatic search cycle for monitored audiobooks");
 
             using var scope = _serviceScopeFactory.CreateScope();
-            var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-            var downloadRepo = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
-            var fileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+            var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+            var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+            var fileRepository = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
             var searchService = scope.ServiceProvider.GetRequiredService<ISearchService>();
             var qualityProfileService = scope.ServiceProvider.GetRequiredService<IQualityProfileService>();
             var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
 
             // Get all monitored audiobooks that haven't been searched in the last 6 hours
             var cutoffTime = DateTime.UtcNow.AddHours(-6);
-            var monitoredAudiobooks = await audiobookRepo.GetMonitoredAudiobooksForSearchAsync(cutoffTime, stoppingToken);
+            var monitoredAudiobooks = await audiobookRepository.GetMonitoredAudiobooksForSearchAsync(cutoffTime, stoppingToken);
 
             _logger.LogInformation("Found {Count} monitored audiobooks eligible for automatic search", monitoredAudiobooks.Count);
 
@@ -119,14 +119,14 @@ namespace Listenarr.Api.Services
                 try
                 {
                     var downloadsQueuedForBook = await ProcessAudiobookAsync(
-                        audiobook, searchService, qualityProfileService, downloadService, audiobookRepo, downloadRepo, fileRepo, stoppingToken);
+                        audiobook, searchService, qualityProfileService, downloadService, audiobookRepository, downloadRepository, fileRepository, stoppingToken);
 
                     downloadsQueued += downloadsQueuedForBook;
                     processedCount++;
 
                     // Update last search time
                     audiobook.LastSearchTime = DateTime.UtcNow;
-                    await audiobookRepo.UpdateAsync(audiobook);
+                    await audiobookRepository.UpdateAsync(audiobook);
 
                     _logger.LogInformation("Processed audiobook '{Title}' - queued {QueuedCount} downloads",
                         audiobook.Title, downloadsQueuedForBook);
@@ -153,9 +153,9 @@ namespace Listenarr.Api.Services
             ISearchService searchService,
             IQualityProfileService qualityProfileService,
             IDownloadService downloadService,
-            IAudiobookRepository audiobookRepo,
-            IDownloadRepository downloadRepo,
-            IAudiobookFileRepository fileRepo,
+            IAudiobookRepository audiobookRepository,
+            IDownloadRepository downloadRepository,
+            IAudiobookFileRepository fileRepository,
             CancellationToken stoppingToken)
         {
             if (audiobook.QualityProfile == null)
@@ -165,7 +165,7 @@ namespace Listenarr.Api.Services
             }
 
             // Check if there's already an active download for this audiobook
-            var allDownloads = await downloadRepo.GetByAudiobookIdAsync(audiobook.Id, stoppingToken);
+            var allDownloads = await downloadRepository.GetByAudiobookIdAsync(audiobook.Id, stoppingToken);
             var activeDownload = allDownloads.FirstOrDefault(d =>
                 d.Status == DownloadStatus.Queued ||
                 d.Status == DownloadStatus.Downloading ||
@@ -182,7 +182,7 @@ namespace Listenarr.Api.Services
             }
 
             // Check existing quality and decide whether to search
-            var (cutoffMet, bestExistingQuality) = await GetExistingQualityAsync(audiobook, qualityProfileService, downloadRepo, fileRepo, stoppingToken);
+            var (cutoffMet, bestExistingQuality) = await GetExistingQualityAsync(audiobook, qualityProfileService, downloadRepository, fileRepository, stoppingToken);
             _logger.LogInformation("Audiobook '{Title}': cutoff met={CutoffMet}, best existing quality={BestQuality}",
                 audiobook.Title, cutoffMet, bestExistingQuality ?? "none");
 
@@ -339,22 +339,22 @@ namespace Listenarr.Api.Services
         private async Task<bool> IsQualityCutoffMetAsync(
             Audiobook audiobook,
             IQualityProfileService qualityProfileService,
-            IDownloadRepository downloadRepo,
-            IAudiobookFileRepository fileRepo,
+            IDownloadRepository downloadRepository,
+            IAudiobookFileRepository fileRepository,
             CancellationToken ct = default)
         {
             if (audiobook.QualityProfile == null)
                 return false;
 
             // Get existing downloads for this audiobook
-            var allDownloads = await downloadRepo.GetByAudiobookIdAsync(audiobook.Id, ct);
+            var allDownloads = await downloadRepository.GetByAudiobookIdAsync(audiobook.Id, ct);
             var existingDownloads = allDownloads.Where(d =>
                 d.Status == DownloadStatus.Completed ||
                 d.Status == DownloadStatus.Downloading ||
                 d.Status == DownloadStatus.ImportPending).ToList();
 
             // Get existing files for this audiobook
-            var existingFiles = await fileRepo.GetByAudiobookIdAsync(audiobook.Id, ct);
+            var existingFiles = await fileRepository.GetByAudiobookIdAsync(audiobook.Id, ct);
 
             if (!existingDownloads.Any() && !existingFiles.Any())
                 return false;
@@ -548,17 +548,17 @@ namespace Listenarr.Api.Services
         private async Task<(bool cutoffMet, string? bestExistingQuality)> GetExistingQualityAsync(
             Audiobook audiobook,
             IQualityProfileService qualityProfileService,
-            IDownloadRepository downloadRepo,
-            IAudiobookFileRepository fileRepo,
+            IDownloadRepository downloadRepository,
+            IAudiobookFileRepository fileRepository,
             CancellationToken ct = default)
         {
             // Reuse existing cutoff logic
-            var cutoffMet = await IsQualityCutoffMetAsync(audiobook, qualityProfileService, downloadRepo, fileRepo, ct);
+            var cutoffMet = await IsQualityCutoffMetAsync(audiobook, qualityProfileService, downloadRepository, fileRepository, ct);
 
             // Find the best quality among existing files and completed downloads (if any)
             string? bestQuality = null;
 
-            var allDownloads = await downloadRepo.GetByAudiobookIdAsync(audiobook.Id, ct);
+            var allDownloads = await downloadRepository.GetByAudiobookIdAsync(audiobook.Id, ct);
             var existingDownloads = allDownloads.Where(d => d.Status == DownloadStatus.Completed).ToList();
 
             foreach (var dl in existingDownloads.Where(dl => dl.Metadata != null))
@@ -574,7 +574,7 @@ namespace Listenarr.Api.Services
                 }
             }
 
-            var existingFiles = await fileRepo.GetByAudiobookIdAsync(audiobook.Id, ct);
+            var existingFiles = await fileRepository.GetByAudiobookIdAsync(audiobook.Id, ct);
 
             foreach (var fq in existingFiles.Select(DetermineFileQuality).Where(fq => !string.IsNullOrEmpty(fq)))
             {

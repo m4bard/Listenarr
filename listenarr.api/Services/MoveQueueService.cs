@@ -50,10 +50,10 @@ namespace Listenarr.Api.Services
             {
                 // Check DB for existing active job
                 using var scope = _scopeFactory.CreateScope();
-                var moveJobRepo = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
 
                 var requestedLower = (requestedPath ?? string.Empty).ToLower();
-                var activeJobs = await moveJobRepo.GetByStatusAsync(new[] { "Queued", "Processing" });
+                var activeJobs = await moveJobRepository.GetByStatusAsync(new[] { "Queued", "Processing" });
                 var existingDb = activeJobs.FirstOrDefault(j => j.AudiobookId == audiobookId &&
                     ((j.RequestedPath ?? string.Empty).ToLower() == requestedLower));
 
@@ -73,8 +73,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var moveJobRepo = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
-                await moveJobRepo.AddAsync(job);
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                await moveJobRepository.AddAsync(job);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to persist move job to database; proceeding with in-memory job");
@@ -92,8 +92,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var moveJobRepo = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
-                job = moveJobRepo.GetByIdAsync(id).GetAwaiter().GetResult();
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                job = moveJobRepository.GetByIdAsync(id).GetAwaiter().GetResult();
                 if (job != null) _jobs[id] = job;
                 return job != null;
             }
@@ -116,14 +116,14 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var moveJobRepo = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
-                var dbJob = moveJobRepo.GetByIdAsync(id).GetAwaiter().GetResult();
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                var dbJob = moveJobRepository.GetByIdAsync(id).GetAwaiter().GetResult();
                 if (dbJob != null)
                 {
                     dbJob.Status = status;
                     dbJob.Error = error;
                     dbJob.UpdatedAt = DateTime.UtcNow;
-                    moveJobRepo.UpdateAsync(dbJob).GetAwaiter().GetResult();
+                    moveJobRepository.UpdateAsync(dbJob).GetAwaiter().GetResult();
                 }
 
                 // Broadcast status update to SignalR clients so UI can react to Processing/Failed/Completed
@@ -168,8 +168,8 @@ namespace Listenarr.Api.Services
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
-                    var moveJobRepo = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
-                    job = await moveJobRepo.GetByIdAsync(jobId);
+                    var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                    job = await moveJobRepository.GetByIdAsync(jobId);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to read move job from DB while requeueing {JobId}", jobId);
@@ -192,8 +192,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var moveJobRepo = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
-                await moveJobRepo.AddAsync(newJob);
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                await moveJobRepository.AddAsync(newJob);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to persist requeued move job to database; proceeding with in-memory job");

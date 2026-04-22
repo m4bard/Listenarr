@@ -124,14 +124,14 @@ namespace Listenarr.Api.Services
         private async Task ProcessCompletedDownloadsAsync(CancellationToken cancellationToken)
         {
             using var scope = _serviceScopeFactory.CreateScope();
-            var downloadRepo = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+            var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
 
             try
             {
                 // Find all downloads that are Completed/ImportPending but not yet imported (FinalPath still empty)
-                var completedDownloads = (await downloadRepo.GetCompletionCandidatesAsync(500))
+                var completedDownloads = (await downloadRepository.GetCompletionCandidatesAsync(500))
                     .Where(d =>
                         (d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) &&
                         string.IsNullOrEmpty(d.FinalPath))
@@ -289,7 +289,7 @@ namespace Listenarr.Api.Services
             // so eventually the torrent will reach its seed limit and become removable.
             try
             {
-                await ProcessDeferredRemovalsAsync(downloadRepo, scope, cancellationToken);
+                await ProcessDeferredRemovalsAsync(downloadRepository, scope, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -309,11 +309,11 @@ namespace Listenarr.Api.Services
         /// - All removal attempts fail (stale DB record cleanup after grace period)
         /// </summary>
         private async Task ProcessDeferredRemovalsAsync(
-            IDownloadRepository downloadRepo,
+            IDownloadRepository downloadRepository,
             IServiceScope scope,
             CancellationToken cancellationToken)
         {
-            var movedDownloads = (await downloadRepo.GetActiveForMonitoringAsync())
+            var movedDownloads = (await downloadRepository.GetActiveForMonitoringAsync())
                 .Where(d => d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId))
                 .ToList();
 
@@ -387,7 +387,7 @@ namespace Listenarr.Api.Services
                         if (anyRemovalClient == null)
                         {
                             // Removal not configured on any client, just delete the DB record
-                            await downloadRepo.RemoveAsync(download.Id);
+                            await downloadRepository.RemoveAsync(download.Id);
                             _logger.LogInformation("Deferred removal: Cleaned up DB record for {DownloadId} (removal not configured)", download.Id);
                             continue;
                         }
@@ -465,7 +465,7 @@ namespace Listenarr.Api.Services
                     {
                         _logger.LogInformation("Deferred removal: Successfully removed {DownloadId} (deleteFiles={DeleteFiles})",
                             download.Id, deleteFiles);
-                        await downloadRepo.RemoveAsync(download.Id);
+                        await downloadRepository.RemoveAsync(download.Id);
                     }
                     else if (timeSinceCompleted.HasValue && timeSinceCompleted.Value > TimeSpan.FromHours(24))
                     {
@@ -477,7 +477,7 @@ namespace Listenarr.Api.Services
                             "Deferred removal: All removal attempts failed for {DownloadId} after {Hours:F1}h — " +
                             "cleaning up stale DB record (import already completed)",
                             download.Id, timeSinceCompleted.Value.TotalHours);
-                        await downloadRepo.RemoveAsync(download.Id);
+                        await downloadRepository.RemoveAsync(download.Id);
                     }
                     else
                     {

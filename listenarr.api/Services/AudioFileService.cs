@@ -52,13 +52,13 @@ namespace Listenarr.Api.Services
                 }
 
                 using var scope = _scopeFactory.CreateScope();
-                var fileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
-                var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-                var historyRepo = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
+                var fileRepository = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                var historyRepository = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
                 var metadataService = scope.ServiceProvider.GetRequiredService<IMetadataService>();
 
                 // Check for existing
-                var exists = await fileRepo.ExistsAtPathAsync(audiobookId, filePath);
+                var exists = await fileRepository.ExistsAtPathAsync(audiobookId, filePath);
                 if (exists)
                 {
                     _logger.LogDebug("AudiobookFile already exists for audiobook {AudiobookId} at path {Path}", audiobookId, LogRedaction.SanitizeFilePath(filePath));
@@ -66,7 +66,7 @@ namespace Listenarr.Api.Services
                 }
 
                 // Skip if already registered to a different audiobook
-                var registeredElsewhere = await fileRepo.IsPathUsedByOtherAsync(audiobookId, filePath);
+                var registeredElsewhere = await fileRepository.IsPathUsedByOtherAsync(audiobookId, filePath);
                 if (registeredElsewhere)
                 {
                     _logger.LogInformation("Skipping file {Path} for audiobook {AudiobookId} — already registered to another audiobook", LogRedaction.SanitizeFilePath(filePath), audiobookId);
@@ -77,7 +77,7 @@ namespace Listenarr.Api.Services
                 // to only associate files in the same containing directory or BasePath.
                 try
                 {
-                    var audiobook = await audiobookRepo.GetByIdAsync(audiobookId);
+                    var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
                     if (audiobook != null && !string.IsNullOrWhiteSpace(audiobook.FilePath))
                     {
                         var existingDir = NormalizePath(Path.GetDirectoryName(audiobook.FilePath));
@@ -111,7 +111,7 @@ namespace Listenarr.Api.Services
                                         Data = JsonSerializer.Serialize(new { FilePath = filePath, AudiobookDir = existingDir, BasePath = audiobook.BasePath }),
                                         Timestamp = DateTime.UtcNow
                                     };
-                                    await historyRepo.AddAsync(historyEntry);
+                                    await historyRepository.AddAsync(historyEntry);
 
                                     try
                                     {
@@ -224,13 +224,13 @@ namespace Listenarr.Api.Services
                 {
                     try
                     {
-                        await fileRepo.AddAsync(fileRecord);
+                        await fileRepository.AddAsync(fileRecord);
                         _logger.LogInformation("Created AudiobookFile for audiobook {AudiobookId}: {Path} Id={Id}", audiobookId, LogRedaction.SanitizeFilePath(filePath), fileRecord.Id);
 
                         // Add history entry and update audiobook backward-compat fields
                         try
                         {
-                            var audiobook = await audiobookRepo.GetByIdAsync(audiobookId);
+                            var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
                             var historyEntry = new History
                             {
                                 AudiobookId = audiobookId,
@@ -247,16 +247,16 @@ namespace Listenarr.Api.Services
                                 }),
                                 Timestamp = DateTime.UtcNow
                             };
-                            await historyRepo.AddAsync(historyEntry);
+                            await historyRepository.AddAsync(historyEntry);
 
                             try
                             {
-                                var audiobookToUpdate = await audiobookRepo.GetByIdAsync(audiobookId);
+                                var audiobookToUpdate = await audiobookRepository.GetByIdAsync(audiobookId);
                                 if (audiobookToUpdate != null)
                                 {
                                     audiobookToUpdate.FilePath = fileRecord.Path;
                                     audiobookToUpdate.FileSize = fileRecord.Size;
-                                    await audiobookRepo.UpdateAsync(audiobookToUpdate);
+                                    await audiobookRepository.UpdateAsync(audiobookToUpdate);
                                 }
                             }
                             catch (Exception aubEx) when (aubEx is not OperationCanceledException && aubEx is not OutOfMemoryException && aubEx is not StackOverflowException)

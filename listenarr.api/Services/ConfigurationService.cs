@@ -25,26 +25,26 @@ namespace Listenarr.Api.Services
 {
     public class ConfigurationService : IConfigurationService
     {
-        private readonly IApplicationSettingsRepository _settingsRepo;
-        private readonly IApiConfigurationRepository _apiConfigRepo;
-        private readonly IDownloadClientConfigurationRepository _downloadClientRepo;
+        private readonly IApplicationSettingsRepository _settingsRepository;
+        private readonly IApiConfigurationRepository _apiConfigRepository;
+        private readonly IDownloadClientConfigurationRepository _downloadClientRepository;
         private readonly ILogger<ConfigurationService> _logger;
         private readonly IUserService _userService;
         private readonly IStartupConfigService _startupConfigService;
         private readonly IDataProtector _prowlarrImportProtector;
 
         public ConfigurationService(
-            IApplicationSettingsRepository settingsRepo,
-            IApiConfigurationRepository apiConfigRepo,
-            IDownloadClientConfigurationRepository downloadClientRepo,
+            IApplicationSettingsRepository settingsRepository,
+            IApiConfigurationRepository apiConfigRepository,
+            IDownloadClientConfigurationRepository downloadClientRepository,
             ILogger<ConfigurationService> logger,
             IUserService userService,
             IStartupConfigService startupConfigService,
             IDataProtectionProvider? dataProtectionProvider = null)
         {
-            _settingsRepo = settingsRepo;
-            _apiConfigRepo = apiConfigRepo;
-            _downloadClientRepo = downloadClientRepo;
+            _settingsRepository = settingsRepository;
+            _apiConfigRepository = apiConfigRepository;
+            _downloadClientRepository = downloadClientRepository;
             _logger = logger;
             _userService = userService;
             _startupConfigService = startupConfigService;
@@ -58,7 +58,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                return await _apiConfigRepo.GetAllAsync();
+                return await _apiConfigRepository.GetAllAsync();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error loading API configurations from database");
@@ -70,7 +70,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                return await _apiConfigRepo.GetByIdAsync(id);
+                return await _apiConfigRepository.GetByIdAsync(id);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error loading API configuration {Id} from database", id);
@@ -82,7 +82,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                var saved = await _apiConfigRepo.SaveAsync(config);
+                var saved = await _apiConfigRepository.SaveAsync(config);
                 return saved.Id;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -95,7 +95,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                return await _apiConfigRepo.DeleteAsync(id);
+                return await _apiConfigRepository.DeleteAsync(id);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error deleting API configuration from database");
@@ -108,7 +108,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                return await _downloadClientRepo.GetAllAsync();
+                return await _downloadClientRepository.GetAllAsync();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error loading download client configurations from database");
@@ -120,7 +120,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                return await _downloadClientRepo.GetByIdAsync(id);
+                return await _downloadClientRepository.GetByIdAsync(id);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error loading download client configuration {Id} from database", id);
@@ -132,7 +132,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                var saved = await _downloadClientRepo.SaveAsync(config);
+                var saved = await _downloadClientRepository.SaveAsync(config);
                 return saved.Id;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -145,7 +145,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                return await _downloadClientRepo.DeleteAsync(id);
+                return await _downloadClientRepository.DeleteAsync(id);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogError(ex, "Error deleting download client configuration from database");
@@ -158,12 +158,12 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                var settings = await _settingsRepo.GetAsync();
+                var settings = await _settingsRepository.GetAsync();
 
                 if (settings == null)
                 {
                     settings = new ApplicationSettings();
-                    await _settingsRepo.SaveAsync(settings);
+                    await _settingsRepository.SaveAsync(settings);
                 }
 
                 settings.ImportBlacklistExtensions ??= new List<string>();
@@ -186,7 +186,7 @@ namespace Listenarr.Api.Services
 
                 // Preserve fields from existing settings when the incoming payload omits them.
                 // Must run before normalization so null-checks catch truly absent fields.
-                var existing = await _settingsRepo.GetAsync();
+                var existing = await _settingsRepository.GetAsync();
                 if (existing != null)
                 {
                     if (settings.ProwlarrUrl == null)
@@ -227,7 +227,7 @@ namespace Listenarr.Api.Services
                     _logger.LogWarning(ex, "Failed to normalize notification triggers due to formatting error; saving with original values");
                 }
 
-                await _settingsRepo.SaveAsync(settings);
+                await _settingsRepository.SaveAsync(settings);
 
                 try
                 {
@@ -268,7 +268,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                var settings = await _settingsRepo.GetAsync();
+                var settings = await _settingsRepository.GetAsync();
 
                 if (settings == null)
                 {
@@ -305,7 +305,7 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                var existing = await _settingsRepo.GetAsync() ?? new ApplicationSettings { Id = 1 };
+                var existing = await _settingsRepository.GetAsync() ?? new ApplicationSettings { Id = 1 };
 
                 existing.ProwlarrUrl = string.IsNullOrWhiteSpace(settings.Url) ? string.Empty : settings.Url.Trim();
                 existing.ProwlarrPort = settings.Port;
@@ -317,7 +317,7 @@ namespace Listenarr.Api.Services
                     existing.ProwlarrApiKeyEncrypted = _prowlarrImportProtector.Protect(settings.ApiKey.Trim());
                 }
 
-                await _settingsRepo.SaveAsync(existing);
+                await _settingsRepository.SaveAsync(existing);
                 return await GetProwlarrImportSettingsAsync();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

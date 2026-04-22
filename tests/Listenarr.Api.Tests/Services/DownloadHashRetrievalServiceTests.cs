@@ -39,7 +39,7 @@ namespace Listenarr.Api.Tests.Services
     public class DownloadHashRetrievalServiceTests : IDisposable
     {
         private readonly ListenArrDbContext _context;
-        private readonly DownloadHistoryRepository _historyRepo;
+        private readonly DownloadHistoryRepository _historyRepository;
         private readonly Mock<ILogger<DownloadHashRetrievalService>> _mockLogger;
         private readonly Mock<IDownloadClientAdapter> _mockAdapter;
         private readonly DownloadHashRetrievalService _service;
@@ -51,7 +51,7 @@ namespace Listenarr.Api.Tests.Services
                 .Options;
 
             _context = new ListenArrDbContext(options);
-            _historyRepo = new DownloadHistoryRepository(_context);
+            _historyRepository = new DownloadHistoryRepository(_context);
             _mockLogger = new Mock<ILogger<DownloadHashRetrievalService>>();
 
             // Mock a single adapter for qBittorrent
@@ -60,7 +60,7 @@ namespace Listenarr.Api.Tests.Services
 
             _service = new DownloadHashRetrievalService(
                 _mockLogger.Object,
-                _historyRepo,
+                _historyRepository,
                 _mockAdapter.Object,
                 _mockAdapter.Object,
                 _mockAdapter.Object,
@@ -205,7 +205,7 @@ namespace Listenarr.Api.Tests.Services
             Assert.Equal(expectedHash, result);
 
             // Verify history was recorded
-            var history = await _historyRepo.GetByDownloadIdAsync(expectedHash);
+            var history = await _historyRepository.GetByDownloadIdAsync(expectedHash);
             Assert.Single(history);
             Assert.Equal(DownloadHistoryEventType.Grabbed, history[0].EventType);
         }
@@ -259,7 +259,7 @@ namespace Listenarr.Api.Tests.Services
         {
             // Arrange
             // Add history with temp DownloadId (needs hash retrieval)
-            await _historyRepo.AddAsync(new DownloadHistory
+            await _historyRepository.AddAsync(new DownloadHistory
             {
                 DownloadId = "temp-123",
                 EventType = DownloadHistoryEventType.Grabbed,
@@ -274,7 +274,7 @@ namespace Listenarr.Api.Tests.Services
             });
 
             // Add history with valid DownloadId (skip)
-            await _historyRepo.AddAsync(new DownloadHistory
+            await _historyRepository.AddAsync(new DownloadHistory
             {
                 DownloadId = "ABC123DEF456789",
                 EventType = DownloadHistoryEventType.Grabbed,

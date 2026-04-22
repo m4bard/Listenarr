@@ -47,8 +47,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _provider.CreateScope();
-                var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-                await audiobookRepo.NormalizeJsonColumnsAsync(cancellationToken);
+                var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                await audiobookRepository.NormalizeJsonColumnsAsync(cancellationToken);
                 _logger.LogInformation("StartupDbNormalizer: normalization pass complete.");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)

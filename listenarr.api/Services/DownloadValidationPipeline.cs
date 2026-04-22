@@ -53,16 +53,16 @@ namespace Listenarr.Api.Services
     {
         private readonly ILogger<DownloadValidationPipeline> _logger;
         private readonly DownloadStateMachine _stateMachine;
-        private readonly IDownloadHistoryRepository _historyRepo;
+        private readonly IDownloadHistoryRepository _historyRepository;
 
         public DownloadValidationPipeline(
             ILogger<DownloadValidationPipeline> logger,
             DownloadStateMachine stateMachine,
-            IDownloadHistoryRepository historyRepo)
+            IDownloadHistoryRepository historyRepository)
         {
             _logger = logger;
             _stateMachine = stateMachine;
-            _historyRepo = historyRepo;
+            _historyRepository = historyRepository;
         }
 
         /// <summary>
@@ -125,7 +125,7 @@ namespace Listenarr.Api.Services
                         download.DownloadId, (result.CompletedAt.Value - result.StartedAt).TotalSeconds);
 
                     // Mark as imported in history
-                    await _historyRepo.MarkAsImportedAsync(download.DownloadId, ct);
+                    await _historyRepository.MarkAsImportedAsync(download.DownloadId, ct);
                 }
 
                 return result;

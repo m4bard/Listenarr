@@ -129,8 +129,8 @@ namespace Listenarr.Api.Services
         private async Task<List<UnmatchedFileResult>> ScanAsync(string rootFolderPath, CancellationToken ct)
         {
             using var scope = _scopeFactory.CreateScope();
-            var fileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
-            var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+            var fileRepository = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+            var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var appSettings = await configService.GetApplicationSettingsAsync();
             var concurrency = Math.Clamp(appSettings?.UnmatchedScanConcurrency ?? 2, 1, 8);
@@ -138,9 +138,9 @@ namespace Listenarr.Api.Services
             // Load all tracked file paths (normalized) from DB.
             // Check BOTH AudiobookFiles (multi-file imports) AND Audiobook.FilePath (single-file imports)
             // so that files already in the library are not reported as unmatched.
-            var trackedFromFiles = await fileRepo.GetAllFilePathsAsync(ct);
+            var trackedFromFiles = await fileRepository.GetAllFilePathsAsync(ct);
 
-            var allAudiobooks = await audiobookRepo.GetAllAsync();
+            var allAudiobooks = await audiobookRepository.GetAllAsync();
             var trackedFromAudiobooks = allAudiobooks
                 .Where(a => a.FilePath != null)
                 .Select(a => a.FilePath!)

@@ -140,10 +140,10 @@ namespace Listenarr.Api.Services
                         depth = 0;
                         while (dirInfo != null && depth++ < maxDepth)
                         {
-                            var candidateRepo = Path.Join(dirInfo.FullName, "listenarr.api", "config", "config.json");
-                            if (File.Exists(candidateRepo))
+                            var candidateConfigPath = Path.Join(dirInfo.FullName, "listenarr.api", "config", "config.json");
+                            if (File.Exists(candidateConfigPath))
                             {
-                                _configPath = candidateRepo;
+                                _configPath = candidateConfigPath;
                                 break;
                             }
 

@@ -107,8 +107,8 @@ namespace Listenarr.Api.Services
                     // Build minimal metadata for naming
                     var metadata = new AudioMetadata { Title = "Unknown Title" };
                     using var innerScope = _scopeFactory.CreateScope();
-                    var downloadRepo = innerScope.ServiceProvider.GetRequiredService<IDownloadRepository>();
-                    var download = await downloadRepo.FindAsync(job.DownloadId);
+                    var downloadRepository = innerScope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                    var download = await downloadRepository.FindAsync(job.DownloadId);
                     if (download != null)
                     {
                         metadata.Title = download.Title ?? metadata.Title;

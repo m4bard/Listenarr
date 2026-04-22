@@ -29,7 +29,7 @@ namespace Listenarr.Api.Services
         private readonly IConfigurationService _configService;
         private readonly IFileNamingService _fileNamingService;
         private readonly IFileMover _fileMover;
-        private readonly IAudiobookRepository _audiobookRepo;
+        private readonly IAudiobookRepository _audiobookRepository;
         private readonly ILogger<RenameService> _logger;
         private readonly IRootFolderService? _rootFolderService;
         private readonly IHistoryRepository? _historyRepository;
@@ -38,7 +38,7 @@ namespace Listenarr.Api.Services
             IConfigurationService configService,
             IFileNamingService fileNamingService,
             IFileMover fileMover,
-            IAudiobookRepository audiobookRepo,
+            IAudiobookRepository audiobookRepository,
             ILogger<RenameService> logger,
             IRootFolderService? rootFolderService = null,
             IHistoryRepository? historyRepository = null)
@@ -46,7 +46,7 @@ namespace Listenarr.Api.Services
             _configService = configService;
             _fileNamingService = fileNamingService;
             _fileMover = fileMover;
-            _audiobookRepo = audiobookRepo;
+            _audiobookRepository = audiobookRepository;
             _logger = logger;
             _rootFolderService = rootFolderService;
             _historyRepository = historyRepository;
@@ -60,7 +60,7 @@ namespace Listenarr.Api.Services
             var settings = await _configService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
             var rootFolders = await LoadRootFoldersAsync();
 
-            var audiobooks = await _audiobookRepo.GetByIdsWithFilesAsync(audiobookIds, ct);
+            var audiobooks = await _audiobookRepository.GetByIdsWithFilesAsync(audiobookIds, ct);
 
             return audiobooks.Select(a => BuildPreview(a, settings, rootFolders)).ToList();
         }
@@ -123,7 +123,7 @@ namespace Listenarr.Api.Services
             var result = new RenameResult { AudiobookId = operation.AudiobookId };
             try
             {
-                var audiobook = await _audiobookRepo.GetByIdAsync(operation.AudiobookId);
+                var audiobook = await _audiobookRepository.GetByIdAsync(operation.AudiobookId);
                 if (audiobook == null)
                 {
                     result.Success = false;
@@ -171,7 +171,7 @@ namespace Listenarr.Api.Services
                     var shouldTrustRequestedBasePath = !string.IsNullOrWhiteSpace(operation.NewFolderPath)
                         && (!hasFileOperations || result.Success);
                     UpdateAudiobookPathSummary(audiobook, shouldTrustRequestedBasePath ? operation.NewFolderPath : null);
-                    await _audiobookRepo.SaveChangesAsync(ct);
+                    await _audiobookRepository.SaveChangesAsync(ct);
                     await AddHistoryAsync(audiobook, result);
                 }
             }

@@ -38,18 +38,18 @@ namespace Listenarr.Api.Services.Search.Providers
     {
         private readonly ILogger<MyAnonamouseSearchProvider> _logger;
         private readonly HttpClient _httpClient;
-        private readonly IIndexerRepository _indexerRepo;
+        private readonly IIndexerRepository _indexerRepository;
 
         public string IndexerType => "MyAnonamouse";
 
         public MyAnonamouseSearchProvider(
             ILogger<MyAnonamouseSearchProvider> logger,
             HttpClient httpClient,
-            IIndexerRepository indexerRepo)
+            IIndexerRepository indexerRepository)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-            _indexerRepo = indexerRepo ?? throw new ArgumentNullException(nameof(indexerRepo));
+            _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
         public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
@@ -206,11 +206,11 @@ namespace Listenarr.Api.Services.Search.Providers
                         if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
                         {
                             _logger.LogInformation("MyAnonamouse: received updated mam_id from response for indexer {Name}", indexer.Name);
-                            var idx = await _indexerRepo.GetByIdAsync(indexer.Id);
+                            var idx = await _indexerRepository.GetByIdAsync(indexer.Id);
                             if (idx != null)
                             {
                                 idx.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(idx.AdditionalSettings, newMam);
-                                await _indexerRepo.UpdateAsync(idx);
+                                await _indexerRepository.UpdateAsync(idx);
                                 mamId = newMam;
                             }
                         }

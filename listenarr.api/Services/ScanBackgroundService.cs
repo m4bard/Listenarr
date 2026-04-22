@@ -73,10 +73,10 @@ namespace Listenarr.Api.Services
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
                             using var scope = _scopeFactory.CreateScope();
-                            var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-                            var fileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
-                            var historyRepo = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
-                            var audiobook = await audiobookRepo.GetByIdAsync(job.AudiobookId);
+                            var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                            var fileRepository = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                            var historyRepository = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
+                            var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
                             if (audiobook == null)
                             {
                                 _logger.LogWarning("Audiobook {Id} not found for scan job {JobId}", job.AudiobookId, job.Id);
@@ -117,7 +117,7 @@ namespace Listenarr.Api.Services
 
                                 try
                                 {
-                                    var existingFiles = await fileRepo.GetByAudiobookIdAsync(audiobook.Id);
+                                    var existingFiles = await fileRepository.GetByAudiobookIdAsync(audiobook.Id);
 
                                     List<object> removedFilesDto = new();
                                     if (existingFiles.Count > 0)
@@ -125,7 +125,7 @@ namespace Listenarr.Api.Services
                                         foreach (var rem in existingFiles)
                                         {
                                             removedFilesDto.Add(new { id = rem.Id, path = rem.Path });
-                                            await fileRepo.DeleteAsync(rem.Id);
+                                            await fileRepository.DeleteAsync(rem.Id);
                                             _logger.LogInformation("Removing AudiobookFile DB row Id={Id} Path={Path} due to missing BasePath", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
 
                                             var historyEntry = new History
@@ -144,12 +144,12 @@ namespace Listenarr.Api.Services
                                                 }),
                                                 Timestamp = DateTime.UtcNow
                                             };
-                                            await historyRepo.AddAsync(historyEntry);
+                                            await historyRepository.AddAsync(historyEntry);
                                         }
                                     }
 
                                     audiobook.BasePath = null;
-                                    await audiobookRepo.UpdateAsync(audiobook);
+                                    await audiobookRepository.UpdateAsync(audiobook);
 
                                     if (removedFilesDto.Count > 0)
                                     {
@@ -313,7 +313,7 @@ namespace Listenarr.Api.Services
                                 // legitimate sibling parts to be rejected during multifile scans.
                                 if (basePathChanged)
                                 {
-                                    await audiobookRepo.UpdateAsync(audiobook);
+                                    await audiobookRepository.UpdateAsync(audiobook);
                                 }
                             }
 
@@ -337,7 +337,7 @@ namespace Listenarr.Api.Services
                             // Remove AudiobookFile DB rows for files that no longer exist on disk
                             try
                             {
-                                var existingFiles = await fileRepo.GetByAudiobookIdAsync(audiobook.Id);
+                                var existingFiles = await fileRepository.GetByAudiobookIdAsync(audiobook.Id);
 
                                 // Create set of found files (absolute paths)
                                 var foundSet = new HashSet<string>(foundFiles, StringComparer.OrdinalIgnoreCase);
@@ -370,7 +370,7 @@ namespace Listenarr.Api.Services
                                         try
                                         {
                                             removedFilesDto.Add(new { id = rem.Id, path = rem.Path });
-                                            await fileRepo.DeleteAsync(rem.Id);
+                                            await fileRepository.DeleteAsync(rem.Id);
                                             _logger.LogInformation("Removing missing AudiobookFile DB row Id={Id} Path={Path}", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
 
                                             // Add history entry for removed file
@@ -390,7 +390,7 @@ namespace Listenarr.Api.Services
                                                 }),
                                                 Timestamp = DateTime.UtcNow
                                             };
-                                            await historyRepo.AddAsync(historyEntry);
+                                            await historyRepository.AddAsync(historyEntry);
                                         }
                                         catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                             _logger.LogWarning(ex, "Failed to remove AudiobookFile Id={Id} Path={Path}", rem.Id, LogRedaction.SanitizeFilePath(rem.Path));
@@ -421,7 +421,7 @@ namespace Listenarr.Api.Services
                                     if (System.IO.File.Exists(audiobook.FilePath))
                                     {
                                         // File exists - check if we already have an AudiobookFile record for it
-                                        var alreadyExists = await fileRepo.ExistsAtPathAsync(audiobook.Id, audiobook.FilePath);
+                                        var alreadyExists = await fileRepository.ExistsAtPathAsync(audiobook.Id, audiobook.FilePath);
                                         var existingFileRecord = alreadyExists ? new AudiobookFile() : null;
 
                                         if (existingFileRecord == null)
@@ -466,13 +466,13 @@ namespace Listenarr.Api.Services
                                             }),
                                             Timestamp = DateTime.UtcNow
                                         };
-                                        await historyRepo.AddAsync(historyEntry);
+                                        await historyRepository.AddAsync(historyEntry);
                                     }
                                 }
 
                                 if (needsUpdate)
                                 {
-                                    await audiobookRepo.UpdateAsync(audiobook);
+                                    await audiobookRepository.UpdateAsync(audiobook);
                                 }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -511,7 +511,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
 
-                            var updated = await audiobookRepo.GetByIdAsync(audiobook.Id);
+                            var updated = await audiobookRepository.GetByIdAsync(audiobook.Id);
                             if (updated != null)
                             {
                                 // Build an authoritative Audiobook DTO and broadcast it

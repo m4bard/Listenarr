@@ -74,7 +74,7 @@ namespace Listenarr.Api.Controllers
         }
 
         private readonly ILogger<ProwlarrCompatController> _logger;
-        private readonly IIndexerRepository _indexerRepo;
+        private readonly IIndexerRepository _indexerRepository;
         private readonly IHubContext<SettingsHub> _settingsHub;
         private readonly IToastService _toastService;
         private readonly IStartupConfigService _startupConfigService;
@@ -127,10 +127,10 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        public ProwlarrCompatController(ILogger<ProwlarrCompatController> logger, IIndexerRepository indexerRepo, IHubContext<SettingsHub> settingsHub, IToastService toastService, IStartupConfigService startupConfigService)
+        public ProwlarrCompatController(ILogger<ProwlarrCompatController> logger, IIndexerRepository indexerRepository, IHubContext<SettingsHub> settingsHub, IToastService toastService, IStartupConfigService startupConfigService)
         {
             _logger = logger;
-            _indexerRepo = indexerRepo;
+            _indexerRepository = indexerRepository;
             _settingsHub = settingsHub;
             _toastService = toastService;
             _startupConfigService = startupConfigService;
@@ -249,7 +249,7 @@ namespace Listenarr.Api.Controllers
             var cfg = GetStartupConfig();
             var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
             if (HttpContext?.Response != null) HttpContext.Response.ContentType = "application/json";
-            var indexers = (await _indexerRepo.GetAllAsync())
+            var indexers = (await _indexerRepository.GetAllAsync())
                 .OrderBy(i => i.Priority)
                 .ThenBy(i => i.Name)
                 .Select(i => new
@@ -294,7 +294,7 @@ namespace Listenarr.Api.Controllers
             var cfg = GetStartupConfig();
             var authEnabled = cfg.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
             Response.ContentType = "application/json";
-            var i = await _indexerRepo.GetByIdAsync(id);
+            var i = await _indexerRepository.GetByIdAsync(id);
             if (i == null)
             {
                 var fallback = new
@@ -385,7 +385,7 @@ namespace Listenarr.Api.Controllers
             // Frontend and compatibility clients both call this endpoint. Return persisted
             // indexers in the standard shape used by the UI so versioned routing does not
             // accidentally break first-party indexer listing.
-            var indexers = (await _indexerRepo.GetAllAsync())
+            var indexers = (await _indexerRepository.GetAllAsync())
                 .OrderBy(i => i.Priority)
                 .ThenBy(i => i.Name)
                 .ToList();
@@ -421,10 +421,10 @@ namespace Listenarr.Api.Controllers
                     _logger?.LogWarning("Prowlarr: Delete requested with invalid id {Id} from {RemoteIp}", id, remoteIp);
                     return Ok(new { });
                 }
-                var i = await _indexerRepo.GetByIdAsync(id);
+                var i = await _indexerRepository.GetByIdAsync(id);
                 if (i != null)
                 {
-                    await _indexerRepo.DeleteAsync(id);
+                    await _indexerRepository.DeleteAsync(id);
                     _logger?.LogInformation("Prowlarr: Deleted indexer {Id} (name={Name})", i.Id, i.Name);
                     try
                     {
@@ -484,7 +484,7 @@ namespace Listenarr.Api.Controllers
                     System.Diagnostics.Debug.WriteLine($"ProwlarrCompatController payload logging failed (PUT indexer): {ex.Message}");
                 }
 
-                var indexer = await _indexerRepo.GetByIdAsync(id);
+                var indexer = await _indexerRepository.GetByIdAsync(id);
                 var created = false;
                 if (indexer == null)
                 {
@@ -555,11 +555,11 @@ namespace Listenarr.Api.Controllers
                     }
 
                     var normalized = NormalizeIndexerUrl(urlFromPayload);
-                    var allIndexers = await _indexerRepo.GetAllAsync();
+                    var allIndexers = await _indexerRepository.GetAllAsync();
                     var existing = allIndexers.FirstOrDefault(i => NormalizeIndexerUrl(i.Url) == normalized && (i.ApiKey ?? string.Empty) == (apiKeyFromPayload ?? string.Empty));
                     if (existing != null)
                     {
-                        indexer = await _indexerRepo.GetByIdAsync(existing.Id);
+                        indexer = await _indexerRepository.GetByIdAsync(existing.Id);
                     }
                     else
                     {
@@ -581,7 +581,7 @@ namespace Listenarr.Api.Controllers
                         var implLower = (indexer.Implementation ?? string.Empty).ToLowerInvariant();
                         indexer.Type = implLower.Contains("newznab") ? "Usenet" : (implLower.Contains("torznab") ? "Torrent" : "Custom");
 
-                        indexer = await _indexerRepo.AddAsync(indexer);
+                        indexer = await _indexerRepository.AddAsync(indexer);
                         created = true;
 
                         _logger?.LogInformation("Prowlarr: Created indexer (upsert from PUT) (name={Name}, url={Url}, apiKeyPresent={HasApiKey})", indexer.Name, indexer.Url, !string.IsNullOrEmpty(indexer.ApiKey));
@@ -679,7 +679,7 @@ namespace Listenarr.Api.Controllers
                 indexer.Categories = categories ?? indexer.Categories;
                 indexer.UpdatedAt = DateTime.UtcNow;
 
-                await _indexerRepo.UpdateAsync(indexer);
+                await _indexerRepository.UpdateAsync(indexer);
 
                 // After saving, ensure we dedupe any other entries with same normalized URL + ApiKey (concurrent upsert safety)
                 try
@@ -695,7 +695,7 @@ namespace Listenarr.Api.Controllers
                 // Notify clients (compute whether the created indexer still exists after dedupe to avoid duplicate notifications)
                 try
                 {
-                    var stillExists = (await _indexerRepo.GetByIdAsync(indexer.Id)) != null;
+                    var stillExists = (await _indexerRepository.GetByIdAsync(indexer.Id)) != null;
                     var createdForBroadcast = (created && stillExists) ? 1 : 0;
                     await _settingsHub.Clients.All.SendAsync("IndexersUpdated", new { created = createdForBroadcast, skipped = 0, indexers = new[] { new { id = indexer.Id, name = indexer.Name, baseUrl = indexer.Url } } });
 
@@ -794,7 +794,7 @@ namespace Listenarr.Api.Controllers
         {
             try
             {
-                var all = await _indexerRepo.GetAllAsync();
+                var all = await _indexerRepository.GetAllAsync();
                 var duplicates = all
                     .Where(i => NormalizeIndexerUrl(i.Url) == normalizedUrl && (i.ApiKey ?? string.Empty) == apiKey)
                     .OrderBy(i => i.Id)
@@ -808,7 +808,7 @@ namespace Listenarr.Api.Controllers
                 _logger?.LogInformation("Dedupe: Removing {Count} duplicate indexer(s) for url={Url}", remove.Count, normalizedUrl);
 
                 foreach (var r in remove)
-                    await _indexerRepo.DeleteAsync(r.Id);
+                    await _indexerRepository.DeleteAsync(r.Id);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger?.LogWarning(ex, "Failed to cleanup duplicate indexers for {Url}", normalizedUrl);
@@ -857,7 +857,7 @@ namespace Listenarr.Api.Controllers
             var created = 0;
             var skipped = 0;
             var createdIndexers = new List<Indexer>();
-            var existingIndexers = await _indexerRepo.GetAllAsync();
+            var existingIndexers = await _indexerRepository.GetAllAsync();
 
             foreach (var item in payload.EnumerateArray().Where(item => item.ValueKind == System.Text.Json.JsonValueKind.Object))
             {
@@ -994,7 +994,7 @@ namespace Listenarr.Api.Controllers
                 var implLower = (implementation ?? string.Empty).ToLowerInvariant();
                 indexer.Type = implLower.Contains("newznab") ? "Usenet" : (implLower.Contains("torznab") ? "Torrent" : "Custom");
 
-                indexer = await _indexerRepo.AddAsync(indexer);
+                indexer = await _indexerRepository.AddAsync(indexer);
                 existingIndexers.Add(indexer);
                 created++;
                 createdIndexers.Add(indexer);

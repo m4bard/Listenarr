@@ -56,9 +56,9 @@ namespace Listenarr.Api.Services
                         _moveQueue.UpdateJobStatus(job.Id, "Processing");
 
                     using var scope = _scopeFactory.CreateScope();
-                    var audiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-                    var moveJobRepo = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
-                    var audiobook = await audiobookRepo.GetByIdAsync(job.AudiobookId);
+                    var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                    var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                    var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
                     if (audiobook == null)
                     {
                         _moveQueue.UpdateJobStatus(job.Id, "Failed", "Audiobook not found");
@@ -198,11 +198,11 @@ namespace Listenarr.Api.Services
                                 // Increment attempt count for the DB job to surface retries
                                 try
                                 {
-                                    var dbJob = await moveJobRepo.GetByIdAsync(job.Id, stoppingToken);
+                                    var dbJob = await moveJobRepository.GetByIdAsync(job.Id, stoppingToken);
                                     if (dbJob != null)
                                     {
                                         dbJob.AttemptCount += 1;
-                                        await moveJobRepo.UpdateAsync(dbJob, stoppingToken);
+                                        await moveJobRepository.UpdateAsync(dbJob, stoppingToken);
                                     }
                                 }
                                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -226,7 +226,7 @@ namespace Listenarr.Api.Services
 
                         // Update DB audiobook BasePath to new target
                         audiobook.BasePath = target;
-                        await audiobookRepo.UpdateAsync(audiobook);
+                        await audiobookRepository.UpdateAsync(audiobook);
 
                         // Preserve local image path if it pointed inside the source directory
                         try
@@ -253,7 +253,7 @@ namespace Listenarr.Api.Services
                                             if (System.IO.File.Exists(newImagePath))
                                             {
                                                 audiobook.ImageUrl = newImagePath;
-                                                await audiobookRepo.UpdateAsync(audiobook);
+                                                await audiobookRepository.UpdateAsync(audiobook);
                                                 _logger.LogInformation("Updated ImageUrl for audiobook {AudiobookId} to new path after move", audiobook.Id);
                                             }
                                         }
@@ -286,7 +286,7 @@ namespace Listenarr.Api.Services
                                     if (System.IO.File.Exists(newFilePath))
                                     {
                                         audiobook.FilePath = newFilePath;
-                                        await audiobookRepo.UpdateAsync(audiobook);
+                                        await audiobookRepository.UpdateAsync(audiobook);
                                         _logger.LogInformation("Updated FilePath for audiobook {AudiobookId} to new path after move", audiobook.Id);
                                     }
                                 }
@@ -300,10 +300,10 @@ namespace Listenarr.Api.Services
                         try
                         {
                             using var historyScope = _scopeFactory.CreateScope();
-                            var historyRepo = historyScope.ServiceProvider.GetService<IHistoryRepository>();
+                            var historyRepository = historyScope.ServiceProvider.GetService<IHistoryRepository>();
                             var configService = historyScope.ServiceProvider.GetService<IConfigurationService>();
 
-                            if (historyRepo != null)
+                            if (historyRepository != null)
                             {
                                 var historyEntry = new History
                                 {
@@ -322,7 +322,7 @@ namespace Listenarr.Api.Services
                                     })
                                 };
 
-                                await historyRepo.AddAsync(historyEntry);
+                                await historyRepository.AddAsync(historyEntry);
                                 _logger.LogInformation("Added history entry for move job {JobId}", job.Id);
 
                                 // Send webhook notifications if configured
@@ -350,7 +350,7 @@ namespace Listenarr.Api.Services
 
                                         // Mark notification as sent
                                         historyEntry.NotificationSent = true;
-                                        await historyRepo.UpdateAsync(historyEntry);
+                                        await historyRepository.UpdateAsync(historyEntry);
                                     }
                                 }
                                 catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException) {
@@ -396,7 +396,7 @@ namespace Listenarr.Api.Services
                                         // Load latest audiobook state and broadcast a full DTO so clients can update instantly without fetching
                                         try
                                         {
-                                            var fresh = await audiobookRepo.GetByIdAsync(audiobook.Id);
+                                            var fresh = await audiobookRepository.GetByIdAsync(audiobook.Id);
                                             if (fresh != null)
                                             {
                                                 var audiobookDtoFull = AudiobookDtoFactory.BuildFromEntity(fresh);
@@ -431,11 +431,11 @@ namespace Listenarr.Api.Services
                         // Increment attempt count for the job on failure
                         try
                         {
-                            var dbJob = await moveJobRepo.GetByIdAsync(job.Id, stoppingToken);
+                            var dbJob = await moveJobRepository.GetByIdAsync(job.Id, stoppingToken);
                             if (dbJob != null)
                             {
                                 dbJob.AttemptCount += 1;
-                                await moveJobRepo.UpdateAsync(dbJob, stoppingToken);
+                                await moveJobRepository.UpdateAsync(dbJob, stoppingToken);
                             }
                         }
                         catch (Exception attEx) when (attEx is not OperationCanceledException && attEx is not OutOfMemoryException && attEx is not StackOverflowException) {
@@ -446,8 +446,8 @@ namespace Listenarr.Api.Services
                         try
                         {
                             using var historyScope = _scopeFactory.CreateScope();
-                            var historyRepo = historyScope.ServiceProvider.GetService<IHistoryRepository>();
-                            if (historyRepo != null)
+                            var historyRepository = historyScope.ServiceProvider.GetService<IHistoryRepository>();
+                            if (historyRepository != null)
                             {
                                 var historyEntry = new History
                                 {
@@ -461,7 +461,7 @@ namespace Listenarr.Api.Services
                                     Data = System.Text.Json.JsonSerializer.Serialize(new { JobId = job.Id, Error = ex.Message })
                                 };
 
-                                await historyRepo.AddAsync(historyEntry);
+                                await historyRepository.AddAsync(historyEntry);
                                 _logger.LogInformation("Added history entry for failed move job {JobId}", job.Id);
 
                                 try

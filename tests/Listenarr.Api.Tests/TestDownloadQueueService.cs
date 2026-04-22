@@ -30,7 +30,7 @@ namespace Listenarr.Api.Tests
 {
     internal class TestDownloadQueueService : IDownloadQueueService
     {
-        private readonly IDownloadRepository _downloadRepo;
+        private readonly IDownloadRepository _downloadRepository;
         private readonly IDownloadClientGateway _clientGateway;
         private readonly IConfigurationService _config;
         private readonly ILogger<TestDownloadQueueService>? _logger;
@@ -39,7 +39,7 @@ namespace Listenarr.Api.Tests
 
         public TestDownloadQueueService(IDownloadRepository downloadRepo, IDownloadClientGateway clientGateway, IConfigurationService config, ILogger<TestDownloadQueueService>? logger, IAppMetricsService? metrics = null, HttpClient? httpClient = null)
         {
-            _downloadRepo = downloadRepo;
+            _downloadRepository = downloadRepo;
             _clientGateway = clientGateway;
             _config = config;
             _logger = logger;
@@ -52,7 +52,7 @@ namespace Listenarr.Api.Tests
             var clients = await _config.GetDownloadClientConfigurationsAsync();
             var enabled = clients.Where(c => c.IsEnabled).ToList();
 
-            var allDownloads = await _downloadRepo.GetAllAsync();
+            var allDownloads = await _downloadRepository.GetAllAsync();
             var listenarrDownloads = allDownloads.Where(d => d.Status != DownloadStatus.Completed && d.Status != DownloadStatus.Moved).ToList();
 
             var results = new List<QueueItem>();

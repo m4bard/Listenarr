@@ -43,8 +43,8 @@ namespace Listenarr.Api.Services
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
-                    var fileRepo = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
-                    var candidates = await fileRepo.GetMissingMetadataAsync(20, stoppingToken);
+                    var fileRepository = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                    var candidates = await fileRepository.GetMissingMetadataAsync(20, stoppingToken);
 
                     if (candidates.Any())
                     {
@@ -62,11 +62,11 @@ namespace Listenarr.Api.Services
                             try
                             {
                                 using var taskScope = _scopeFactory.CreateScope();
-                                var taskFileRepo = taskScope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
-                                var taskAudiobookRepo = taskScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                                var taskFileRepository = taskScope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                                var taskAudiobookRepository = taskScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
                                 var taskMetadataService = taskScope.ServiceProvider.GetRequiredService<IMetadataService>();
 
-                                var file = await taskFileRepo.GetByIdAsync(candidate.Id, stoppingToken);
+                                var file = await taskFileRepository.GetByIdAsync(candidate.Id, stoppingToken);
                                 if (file == null)
                                 {
                                     _logger.LogDebug("Skipping metadata rescan for missing file id={Id}", candidate.Id);
@@ -75,15 +75,15 @@ namespace Listenarr.Api.Services
 
                                 if (!FileUtils.IsAudioFile(file.Path ?? string.Empty))
                                 {
-                                    var audiobook = await taskAudiobookRepo.GetByIdAsync(file.AudiobookId);
+                                    var audiobook = await taskAudiobookRepository.GetByIdAsync(file.AudiobookId);
                                     if (audiobook != null && string.Equals(audiobook.FilePath, file.Path, StringComparison.OrdinalIgnoreCase))
                                     {
                                         audiobook.FilePath = null;
                                         audiobook.FileSize = null;
-                                        await taskAudiobookRepo.UpdateAsync(audiobook);
+                                        await taskAudiobookRepository.UpdateAsync(audiobook);
                                     }
 
-                                    await taskFileRepo.DeleteAsync(file.Id, stoppingToken);
+                                    await taskFileRepository.DeleteAsync(file.Id, stoppingToken);
                                     _logger.LogInformation("Removed non-audio AudiobookFile entry id={Id} path={Path}", file.Id, LogRedaction.SanitizeFilePath(file.Path));
                                     return;
                                 }
@@ -108,7 +108,7 @@ namespace Listenarr.Api.Services
                                     file.SampleRate = meta.SampleRate != 0 ? meta.SampleRate : file.SampleRate;
                                     file.Channels = meta.Channels != 0 ? meta.Channels : file.Channels;
 
-                                    await taskFileRepo.UpdateAsync(file, stoppingToken);
+                                    await taskFileRepository.UpdateAsync(file, stoppingToken);
                                     _logger.LogInformation("Updated metadata for file id={Id}", file.Id);
                                 }
                             }

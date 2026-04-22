@@ -23,23 +23,23 @@ namespace Listenarr.Api.Tests
 {
     internal class TestCompletedDownloadProcessor : Listenarr.Api.Services.ICompletedDownloadProcessor
     {
-        private readonly IDownloadRepository? _downloadRepo;
+        private readonly IDownloadRepository? _downloadRepository;
 
         public TestCompletedDownloadProcessor(IDownloadRepository? downloadRepo)
         {
-            _downloadRepo = downloadRepo;
+            _downloadRepository = downloadRepo;
         }
 
         public async Task ProcessCompletedDownloadAsync(string downloadId, string finalPath)
         {
-            if (_downloadRepo != null)
+            if (_downloadRepository != null)
             {
-                var d = await _downloadRepo.FindAsync(downloadId);
+                var d = await _downloadRepository.FindAsync(downloadId);
                 if (d != null)
                 {
                     d.Status = DownloadStatus.Completed;
                     d.FinalPath = finalPath;
-                    await _downloadRepo.UpdateAsync(d);
+                    await _downloadRepository.UpdateAsync(d);
                 }
             }
         }

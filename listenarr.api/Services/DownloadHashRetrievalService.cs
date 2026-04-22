@@ -45,7 +45,7 @@ namespace Listenarr.Api.Services
     public class DownloadHashRetrievalService
     {
         private readonly ILogger<DownloadHashRetrievalService> _logger;
-        private readonly IDownloadHistoryRepository _historyRepo;
+        private readonly IDownloadHistoryRepository _historyRepository;
         private readonly Dictionary<string, IDownloadClientAdapter> _adapters;
 
         // Retry configuration with exponential backoff
@@ -55,14 +55,14 @@ namespace Listenarr.Api.Services
 
         public DownloadHashRetrievalService(
             ILogger<DownloadHashRetrievalService> logger,
-            IDownloadHistoryRepository historyRepo,
+            IDownloadHistoryRepository historyRepository,
             IDownloadClientAdapter qbittorrentAdapter,
             IDownloadClientAdapter transmissionAdapter,
             IDownloadClientAdapter sabnzbdAdapter,
             IDownloadClientAdapter nzbgetAdapter)
         {
             _logger = logger;
-            _historyRepo = historyRepo;
+            _historyRepository = historyRepository;
 
             // Map adapters by protocol type
             _adapters = new Dictionary<string, IDownloadClientAdapter>(StringComparer.OrdinalIgnoreCase)
@@ -160,7 +160,7 @@ namespace Listenarr.Api.Services
                         query.RetryCount + 1, match.DownloadId, query.Title, match.Title);
 
                     // Record successful retrieval in history
-                    await _historyRepo.AddAsync(new DownloadHistory
+                    await _historyRepository.AddAsync(new DownloadHistory
                     {
                         DownloadId = match.DownloadId,
                         EventType = DownloadHistoryEventType.Grabbed,
@@ -269,7 +269,7 @@ namespace Listenarr.Api.Services
         public async Task<List<DownloadClientItemQuery>> GetPendingHashRetrievalsAsync(CancellationToken ct = default)
         {
             // Get all pending imports (grabbed but not imported)
-            var pendingImports = await _historyRepo.GetPendingImportsAsync(ct);
+            var pendingImports = await _historyRepository.GetPendingImportsAsync(ct);
 
             var queries = new List<DownloadClientItemQuery>();
 
@@ -281,7 +281,7 @@ namespace Listenarr.Api.Services
                 h.DownloadId.Length < 10))
             {
                 // Calculate retry count from history events
-                var allEvents = await _historyRepo.GetByDownloadIdAsync(history.DownloadId, ct);
+                var allEvents = await _historyRepository.GetByDownloadIdAsync(history.DownloadId, ct);
                 var retryCount = allEvents.Count(e =>
                     e.EventType == DownloadHistoryEventType.Grabbed &&
                     e.Data != null &&

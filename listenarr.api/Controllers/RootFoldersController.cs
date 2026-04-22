@@ -33,15 +33,15 @@ namespace Listenarr.Api.Controllers
     {
         private readonly IRootFolderService _service;
         private readonly IUnmatchedScanQueueService _unmatchedQueue;
-        private readonly IAudiobookFileRepository _fileRepo;
-        private readonly IAudiobookRepository _audiobookRepo;
+        private readonly IAudiobookFileRepository _fileRepository;
+        private readonly IAudiobookRepository _audiobookRepository;
 
-        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue, IAudiobookFileRepository fileRepo, IAudiobookRepository audiobookRepo)
+        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue, IAudiobookFileRepository fileRepository, IAudiobookRepository audiobookRepository)
         {
             _service = service;
             _unmatchedQueue = unmatchedQueue;
-            _fileRepo = fileRepo;
-            _audiobookRepo = audiobookRepo;
+            _fileRepository = fileRepository;
+            _audiobookRepository = audiobookRepository;
         }
 
         /// <summary>
@@ -192,8 +192,8 @@ namespace Listenarr.Api.Controllers
             if (_unmatchedQueue.TryGetLastJobForPath(folder.Path, out var job) && job != null)
             {
                 // Filter out items already added to the library since the scan ran
-                var trackedFromFiles = await _fileRepo.GetAllFilePathsAsync();
-                var trackedFromAudiobooks = (await _audiobookRepo.GetAllAsync())
+                var trackedFromFiles = await _fileRepository.GetAllFilePathsAsync();
+                var trackedFromAudiobooks = (await _audiobookRepository.GetAllAsync())
                     .Where(a => a.FilePath != null)
                     .Select(a => a.FilePath!)
                     .ToList();

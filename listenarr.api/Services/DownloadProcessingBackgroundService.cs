@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  * 
@@ -154,9 +154,9 @@ namespace Listenarr.Api.Services
         private async Task ResetStuckJobsAsync(CancellationToken cancellationToken)
         {
             using var scope = _serviceScopeFactory.CreateScope();
-            var jobRepo = scope.ServiceProvider.GetRequiredService<IDownloadProcessingJobRepository>();
+            var jobRepository = scope.ServiceProvider.GetRequiredService<IDownloadProcessingJobRepository>();
 
-            var stuckJobs = await jobRepo.GetStuckProcessingJobsAsync();
+            var stuckJobs = await jobRepository.GetStuckProcessingJobsAsync();
 
             if (stuckJobs.Any())
             {
@@ -166,7 +166,7 @@ namespace Listenarr.Api.Services
                     job.Status = ProcessingJobStatus.Pending;
                     job.AddLogEntry("Reset from stuck Processing state after service restart");
                     _logger.LogInformation("Reset stuck job {JobId} for download {DownloadId}", job.Id, job.DownloadId);
-                    await jobRepo.UpdateAsync(job);
+                    await jobRepository.UpdateAsync(job);
                 }
             }
         }
@@ -201,8 +201,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _serviceScopeFactory.CreateScope();
-                var downloadRepo = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
-                var jobRepo = scope.ServiceProvider.GetRequiredService<IDownloadProcessingJobRepository>();
+                var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                var jobRepository = scope.ServiceProvider.GetRequiredService<IDownloadProcessingJobRepository>();
                 var queueService = scope.ServiceProvider.GetRequiredService<IDownloadProcessingQueueService>();
                 var pathMapping = scope.ServiceProvider.GetService<IRemotePathMappingService>();
                 var importItemResolution = scope.ServiceProvider.GetRequiredService<IImportItemResolutionService>();
@@ -229,7 +229,7 @@ namespace Listenarr.Api.Services
                 // Include Processing status to recover downloads orphaned by a crash/restart
                 // that occurred after FinalizeDownloadAsync set the status but before the
                 // processing job was queued.
-                var candidates = await downloadRepo.GetCompletionCandidatesAsync(200);
+                var candidates = await downloadRepository.GetCompletionCandidatesAsync(200);
 
                 // Filter out downloads from disabled or missing clients
                 var originalCount = candidates.Count;
@@ -246,7 +246,7 @@ namespace Listenarr.Api.Services
                 // Get download IDs that already have active jobs to avoid N+1 queries
                 var candidateIds = candidates.Select(d => d.Id).ToList();
                 var alreadyQueuedIds = new HashSet<string>(
-                    await jobRepo.GetPendingDownloadIdsAsync(candidateIds),
+                    await jobRepository.GetPendingDownloadIdsAsync(candidateIds),
                     StringComparer.OrdinalIgnoreCase);
 
                 foreach (var dl in candidates)
@@ -490,9 +490,9 @@ namespace Listenarr.Api.Services
                     AudioMetadata? namingMetadata = null;
 
                     using var scope = _serviceScopeFactory.CreateScope();
-                    var scopedDownloadRepo = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
-                    var scopedAudiobookRepo = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-                    var download = await scopedDownloadRepo.FindAsync(job.DownloadId);
+                    var scopedDownloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                    var scopedAudiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                    var download = await scopedDownloadRepository.FindAsync(job.DownloadId);
                     if (download != null)
                     {
                         // Start with values from the download record
@@ -506,7 +506,7 @@ namespace Listenarr.Api.Services
                         {
                             try
                             {
-                                var audiobook = await scopedAudiobookRepo.GetByIdAsync(download.AudiobookId.Value);
+                                var audiobook = await scopedAudiobookRepository.GetByIdAsync(download.AudiobookId.Value);
                                 if (audiobook != null)
                                 {
                                     // Create a naming-only metadata object from the Audiobook. This will be
@@ -554,7 +554,7 @@ namespace Listenarr.Api.Services
 
                     // Only extract file metadata for naming when we do NOT have audiobook naming metadata.
                     // If the download is linked to an audiobook (namingMetadata != null) we must not use
-                    // file-embedded tags for naming Ã¢â‚¬â€ the audiobook DB entry is authoritative.
+                    // file-embedded tags for naming â€” the audiobook DB entry is authoritative.
                     if (namingMetadata == null && metadataService != null)
                     {
                         try
@@ -644,7 +644,7 @@ namespace Listenarr.Api.Services
                     {
                         if (download != null && download.AudiobookId != null)
                         {
-                            var audiobook = await scopedAudiobookRepo.GetByIdAsync(download.AudiobookId.Value);
+                            var audiobook = await scopedAudiobookRepository.GetByIdAsync(download.AudiobookId.Value);
                             if (audiobook != null && !string.IsNullOrWhiteSpace(audiobook.BasePath))
                             {
                                 basePathForFile = audiobook.BasePath;
@@ -766,8 +766,8 @@ namespace Listenarr.Api.Services
                 {
                     // Check if already moved (use download loaded from dbContext above)
                     using var scope = _serviceScopeFactory.CreateScope();
-                    var scopedDlRepo = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
-                    var download = await scopedDlRepo.FindAsync(job.DownloadId);
+                    var scopedDlRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                    var download = await scopedDlRepository.FindAsync(job.DownloadId);
                     if (download != null && download.Status == DownloadStatus.Moved)
                     {
                         job.AddLogEntry("File already moved by DownloadService. Skipping background move.");
@@ -1088,15 +1088,15 @@ namespace Listenarr.Api.Services
         {
             try
             {
-                var dlRepo = scope.ServiceProvider.GetService<IDownloadRepository>();
+                var dlRepository = scope.ServiceProvider.GetService<IDownloadRepository>();
                 var importResolver = scope.ServiceProvider.GetService<IImportItemResolutionService>();
 
-                if (dlRepo == null || importResolver == null)
+                if (dlRepository == null || importResolver == null)
                 {
                     return importableFiles;
                 }
 
-                var download = await dlRepo.FindAsync(job.DownloadId);
+                var download = await dlRepository.FindAsync(job.DownloadId);
                 if (download == null)
                 {
                     return importableFiles;
@@ -1196,22 +1196,22 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _serviceScopeFactory.CreateScope();
-                var finalizeDlRepo = scope.ServiceProvider.GetService<IDownloadRepository>();
-                var finalizeAudiobookRepo = scope.ServiceProvider.GetService<IAudiobookRepository>();
+                var finalizeDlRepository = scope.ServiceProvider.GetService<IDownloadRepository>();
+                var finalizeAudiobookRepository = scope.ServiceProvider.GetService<IAudiobookRepository>();
                 var scanQueue = scope.ServiceProvider.GetService<IScanQueueService>();
 
-                if (scanQueue == null || finalizeDlRepo == null || finalizeAudiobookRepo == null)
+                if (scanQueue == null || finalizeDlRepository == null || finalizeAudiobookRepository == null)
                 {
                     return;
                 }
 
-                var dl = await finalizeDlRepo.FindAsync(job.DownloadId);
+                var dl = await finalizeDlRepository.FindAsync(job.DownloadId);
                 if (dl == null || dl.AudiobookId == null)
                 {
                     return;
                 }
 
-                var audiobook = await finalizeAudiobookRepo.GetByIdAsync(dl.AudiobookId.Value);
+                var audiobook = await finalizeAudiobookRepository.GetByIdAsync(dl.AudiobookId.Value);
                 if (audiobook == null)
                 {
                     return;

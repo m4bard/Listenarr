@@ -37,13 +37,13 @@ namespace Listenarr.Api.Services
     {
         private readonly ILogger<QualityProfileService> _logger;
         private readonly IQualityProfileRepository _repository;
-        private readonly IIndexerRepository? _indexerRepo;
+        private readonly IIndexerRepository? _indexerRepository;
 
-        public QualityProfileService(IQualityProfileRepository repository, ILogger<QualityProfileService> logger, IIndexerRepository? indexerRepo = null)
+        public QualityProfileService(IQualityProfileRepository repository, ILogger<QualityProfileService> logger, IIndexerRepository? indexerRepository = null)
         {
             _logger = logger;
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
-            _indexerRepo = indexerRepo;
+            _indexerRepository = indexerRepository;
         }
 
         public async Task<List<QualityProfile>> GetAllAsync()
@@ -205,7 +205,7 @@ namespace Listenarr.Api.Services
 
         public async Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile)
         {
-            var scorer = new Scoring.SearchResultScorer(_indexerRepo, _logger);
+            var scorer = new Scoring.SearchResultScorer(_indexerRepository, _logger);
             var score = await scorer.Score(searchResult, profile);
 
             // Also calculate the Prowlarr-style composite (Smart) score so the UI

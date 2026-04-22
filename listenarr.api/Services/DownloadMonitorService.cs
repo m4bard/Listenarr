@@ -174,8 +174,8 @@ namespace Listenarr.Api.Services
                 try
                 {
                     using var scope = _serviceScopeFactory.CreateScope();
-                    var clientConfigRepo = scope.ServiceProvider.GetRequiredService<IDownloadClientConfigurationRepository>();
-                    var client = await clientConfigRepo.GetByIdAsync(clientId);
+                    var clientConfigRepository = scope.ServiceProvider.GetRequiredService<IDownloadClientConfigurationRepository>();
+                    var client = await clientConfigRepository.GetByIdAsync(clientId);
                     if (client != null && client.Settings != null)
                     {
                         bool hasSetting = client.Settings.TryGetValue("PollingIntervalSeconds", out var v);
@@ -2783,8 +2783,8 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    var audiobookRepo = scope.ServiceProvider.GetService<IAudiobookRepository>();
-                    var audiobook = audiobookRepo != null ? await audiobookRepo.GetByIdAsync(download.AudiobookId.Value) : null;
+                    var audiobookRepository = scope.ServiceProvider.GetService<IAudiobookRepository>();
+                    var audiobook = audiobookRepository != null ? await audiobookRepository.GetByIdAsync(download.AudiobookId.Value) : null;
                     if (audiobook != null && audiobook.Monitored)
                     {
                         var downloadService = scope.ServiceProvider.GetService<IDownloadService>();
