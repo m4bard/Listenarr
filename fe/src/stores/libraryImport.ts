@@ -456,7 +456,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
           })
           audiobookId = audiobook.id
         } catch (e: unknown) {
-          // 409 = book already in library — extract existing audiobook from response body
+          // 409 = book already in library, extract existing audiobook from response body
           const err = e as { status?: number; body?: unknown }
           if (err?.status === 409 && err?.body) {
             const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body
