@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -21,6 +21,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
@@ -31,7 +32,7 @@ namespace Listenarr.Infrastructure.Repositories
     /// Repository for event-sourced download history.
     /// Provides audit trail and prevents duplicate downloads.
     /// </summary>
-    public class DownloadHistoryRepository
+    public class DownloadHistoryRepository : IDownloadHistoryRepository
     {
         private readonly ListenArrDbContext _context;
 

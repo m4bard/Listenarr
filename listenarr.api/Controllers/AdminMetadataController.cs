@@ -1,9 +1,25 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Controllers
 {
@@ -12,17 +28,16 @@ namespace Listenarr.Api.Controllers
     [Tags("System")]
     public class AdminMetadataController : ControllerBase
     {
-        private readonly ListenArrDbContext _db;
+        private readonly IAudiobookFileRepository _audioFiles;
         private readonly IAudioFileService _audioFileService;
         private readonly IServiceScopeFactory _scopeFactory;
-
         private readonly IStartupConfigService _startupConfigService;
         private readonly Microsoft.AspNetCore.Antiforgery.IAntiforgery _antiforgery;
         private readonly IMetadataService _metadataService;
 
-        public AdminMetadataController(ListenArrDbContext db, IAudioFileService audioFileService, IServiceScopeFactory scopeFactory, IStartupConfigService startupConfigService, Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery, IMetadataService metadataService)
+        public AdminMetadataController(IAudiobookFileRepository audioFiles, IAudioFileService audioFileService, IServiceScopeFactory scopeFactory, IStartupConfigService startupConfigService, Microsoft.AspNetCore.Antiforgery.IAntiforgery antiforgery, IMetadataService metadataService)
         {
-            _db = db;
+            _audioFiles = audioFiles;
             _audioFileService = audioFileService;
             _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
             _startupConfigService = startupConfigService;
@@ -41,7 +56,6 @@ namespace Listenarr.Api.Controllers
         [HttpPost("reextract-file/{audiobookFileId}")]
         public async Task<IActionResult> ReextractFile(int audiobookFileId)
         {
-            // Validate antiforgery token; middleware also enforces CSRF but validate here for clearer message
             try
             {
                 await _antiforgery.ValidateRequestAsync(HttpContext);
@@ -49,19 +63,15 @@ namespace Listenarr.Api.Controllers
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 return BadRequest(new { message = "Invalid or missing CSRF token", detail = ex.Message });
             }
-            // Load the tracked entity so we can update it
-            var file = await _db.AudiobookFiles
-                .FirstOrDefaultAsync(f => f.Id == audiobookFileId);
 
+            var file = await _audioFiles.GetByIdAsync(audiobookFileId);
             if (file == null)
                 return NotFound(new { message = "AudiobookFile not found" });
 
-            // Ensure path is non-null
             var path = file.Path ?? string.Empty;
             if (string.IsNullOrWhiteSpace(path))
                 return BadRequest(new { message = "AudiobookFile has no path" });
 
-            // Extract metadata using the metadata service
             AudioMetadata? meta = null;
             try
             {
@@ -71,7 +81,6 @@ namespace Listenarr.Api.Controllers
                 return StatusCode(500, new { message = "Metadata extraction failed", detail = ex.Message });
             }
 
-            // Update the existing AudiobookFile row with extracted metadata
             var fi = new System.IO.FileInfo(path);
             file.Size = fi.Exists ? fi.Length : file.Size;
             file.DurationSeconds = meta?.Duration.TotalSeconds ?? file.DurationSeconds;
@@ -80,7 +89,7 @@ namespace Listenarr.Api.Controllers
             file.SampleRate = meta?.SampleRate ?? file.SampleRate;
             file.Channels = meta?.Channels ?? file.Channels;
 
-            await _db.SaveChangesAsync();
+            await _audioFiles.UpdateAsync(file);
 
             return Ok(new { message = "Re-extraction completed", audiobookFileId = audiobookFileId });
         }
@@ -101,21 +110,14 @@ namespace Listenarr.Api.Controllers
                 return BadRequest(new { message = "Invalid or missing CSRF token", detail = ex.Message });
             }
 
-            using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-            var metadataService = scope.ServiceProvider.GetRequiredService<IMetadataService>();
-
-            var candidates = await db.AudiobookFiles
-                .Where(f => f.DurationSeconds == null || f.Format == null || f.SampleRate == null)
-                .Take(max)
-                .ToListAsync();
+            var candidates = await _audioFiles.GetMissingMetadataAsync(max);
 
             var updated = 0;
             foreach (var f in candidates)
             {
                 try
                 {
-                    var meta = await metadataService.ExtractFileMetadataAsync(f.Path ?? string.Empty);
+                    var meta = await _metadataService.ExtractFileMetadataAsync(f.Path ?? string.Empty);
                     if (meta != null)
                     {
                         var fi = new System.IO.FileInfo(f.Path ?? string.Empty);
@@ -125,20 +127,18 @@ namespace Listenarr.Api.Controllers
                         f.Bitrate = meta.Bitrate != 0 ? meta.Bitrate : f.Bitrate;
                         f.SampleRate = meta.SampleRate != 0 ? meta.SampleRate : f.SampleRate;
                         f.Channels = meta.Channels != 0 ? meta.Channels : f.Channels;
+                        await _audioFiles.UpdateAsync(f);
                         updated++;
                     }
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     // log and continue
-                    var logger = scope.ServiceProvider.GetRequiredService<Microsoft.Extensions.Logging.ILogger<AdminMetadataController>>();
-                    logger.LogWarning(ex, "Failed to re-extract for file id={Id} path={Path}", f.Id, f.Path);
+                    HttpContext.RequestServices.GetRequiredService<ILogger<AdminMetadataController>>()
+                        .LogWarning(ex, "Failed to re-extract for file id={Id} path={Path}", f.Id, f.Path);
                 }
             }
 
-            await db.SaveChangesAsync();
             return Ok(new { message = "Triggered rescan", examined = candidates.Count, updated });
         }
     }
 }
-
-

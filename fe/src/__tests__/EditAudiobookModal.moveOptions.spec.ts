@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 import { mount } from '@vue/test-utils'
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 
@@ -241,8 +258,8 @@ describe('EditAudiobookModal move options', () => {
 
   it('hydrates current metadata immediately and renders person fields as tags', async () => {
     const { apiService } = await import('@/services/api')
-    ;(apiService.getQualityProfiles as any).mockImplementation(() => new Promise(() => {}))
-    ;(apiService.getAudiobook as any).mockResolvedValue({
+    vi.mocked(apiService.getQualityProfiles).mockImplementation(() => new Promise(() => {}))
+    vi.mocked(apiService.getAudiobook).mockResolvedValue({
       ...audiobook,
       subtitle: 'Existing Subtitle',
       narrators: ['Narrator One', 'Narrator Two'],
@@ -313,7 +330,7 @@ describe('EditAudiobookModal move options', () => {
 
   it('rehydrates unchanged metadata when the same audiobook receives fuller data', async () => {
     const { apiService } = await import('@/services/api')
-    ;(apiService.getAudiobook as any).mockResolvedValue({
+    vi.mocked(apiService.getAudiobook).mockResolvedValue({
       ...audiobook,
       description: 'Loaded from refreshed detail payload',
       publishedDate: '2024-03-01',

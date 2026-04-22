@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,7 +35,7 @@ namespace Listenarr.Api.Tests
     public class SearchServiceSortingTests
     {
         [Fact]
-        public void ApplySorting_SortsByLanguage_Descending()
+        public async Task ApplySorting_SortsByLanguage_Descending()
         {
             var svc = (SearchService)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(SearchService));
 
@@ -32,7 +49,7 @@ namespace Listenarr.Api.Tests
 
             // Call private ApplySorting via reflection
             var method = typeof(SearchService).GetMethod("ApplySorting", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var ordered = (List<SearchResult>)method.Invoke(svc, new object[] { results, SearchSortBy.Language, SearchSortDirection.Descending })!;
+            var ordered = await (Task<List<SearchResult>>)method.Invoke(svc, new object[] { results, SearchSortBy.Language, SearchSortDirection.Descending })!;
 
             // Expect order: 'english', 'German', 'french', null (case-insensitive, descending)
             // StringComparer.OrdinalIgnoreCase sorts lexicographically; descending should put 'french' > 'english' > 'German' > '' but to be deterministic test the comparer by actual result
@@ -42,7 +59,7 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public void ApplySorting_SortsByLanguage_Ascending()
+        public async Task ApplySorting_SortsByLanguage_Ascending()
         {
             var svc = (SearchService)System.Runtime.Serialization.FormatterServices.GetUninitializedObject(typeof(SearchService));
 
@@ -55,7 +72,7 @@ namespace Listenarr.Api.Tests
             };
 
             var method = typeof(SearchService).GetMethod("ApplySorting", BindingFlags.Instance | BindingFlags.NonPublic)!;
-            var ordered = (List<SearchResult>)method.Invoke(svc, new object[] { results, SearchSortBy.Language, SearchSortDirection.Ascending })!;
+            var ordered = await (Task<List<SearchResult>>)method.Invoke(svc, new object[] { results, SearchSortBy.Language, SearchSortDirection.Ascending })!;
 
             // Ascending should place null/empty first
             Assert.Equal(4, ordered.Count);

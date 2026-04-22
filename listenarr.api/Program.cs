@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -193,8 +193,6 @@ Log.Logger = new Serilog.LoggerConfiguration()
     // EF Core: keep DB command messages higher than app logs; changeable via configuration when needed
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
-    // Enable debug logging for Transmission adapter to troubleshoot RPC issues
-    .MinimumLevel.Override("Listenarr.Api.Services.Adapters.TransmissionAdapter", LogEventLevel.Debug)
     // Console sink for developer-friendly output (includes SourceContext for quick tracing)
     .WriteTo.Console(outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")
     // Primary file sink with daily rolling and structured JSON compatible output template
@@ -219,7 +217,7 @@ if (!args?.Any(arg => arg.StartsWith("--urls")) ?? true)
 
 // Add services to the container.
 // If running as an integration test host, allow the test-side partial to apply any
-// additional registrations (for example AddListenarrPersistence so IDbContextFactory<>
+// additional registrations (for example AddListenarrInfrastructure so IDbContextFactory<>
 // is available to hosted/background services during tests).
 if (builder.Environment.IsEnvironment("Test") || isLikelyTestHost)
 {
@@ -275,11 +273,11 @@ builder.Services.Configure<ForwardedHeadersOptions>(options =>
         ForwardedHeaders.XForwardedProto |
         ForwardedHeaders.XForwardedHost;
 
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("fc00::"), 7));
-    options.KnownNetworks.Add(new Microsoft.AspNetCore.HttpOverrides.IPNetwork(IPAddress.Parse("fe80::"), 10));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("10.0.0.0"), 8));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("172.16.0.0"), 12));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("192.168.0.0"), 16));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("fc00::"), 7));
+    options.KnownIPNetworks.Add(new System.Net.IPNetwork(IPAddress.Parse("fe80::"), 10));
 });
 
 // Add SignalR for real-time updates
@@ -290,17 +288,13 @@ builder.Services.AddSignalR()
         options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
     });
 
-// RootFolder repository + service
-builder.Services.AddScoped<Listenarr.Api.Repositories.IRootFolderRepository, Listenarr.Api.Repositories.EfRootFolderRepository>();
-builder.Services.AddScoped<Listenarr.Api.Services.IRootFolderService, Listenarr.Api.Services.RootFolderService>();
+// RootFolder service
+builder.Services.AddScoped<IRootFolderService, RootFolderService>();
 // Migrator for legacy single-outputPath -> RootFolder migration
-builder.Services.AddScoped<Listenarr.Api.Services.ILegacyOutputPathMigrator, Listenarr.Api.Services.LegacyOutputPathMigrator>();
-
-// History repository for tracking events
-builder.Services.AddScoped<Listenarr.Infrastructure.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.HistoryRepository>();
+builder.Services.AddScoped<ILegacyOutputPathMigrator, LegacyOutputPathMigrator>();
 
 // Download history service for idempotency and audit trail
-builder.Services.AddScoped<Listenarr.Application.Services.IDownloadHistoryService, Listenarr.Infrastructure.Services.DownloadHistoryService>();
+builder.Services.AddScoped<IDownloadHistoryService, DownloadHistoryService>();
 
 // Add in-memory cache for metadata prefetch / reuse
 builder.Services.AddMemoryCache();
@@ -394,10 +388,10 @@ builder.Services.AddHttpClient("DownloadClient")
         ));
 
 // Bind download client definitions from configuration and expose via IOptions
-builder.Services.Configure<Listenarr.Api.Services.Adapters.DownloadClientsOptions>(builder.Configuration.GetSection("DownloadClients"));
+builder.Services.Configure<DownloadClientsOptions>(builder.Configuration.GetSection("DownloadClients"));
 
 // Validate download client configuration at startup, surface errors early
-builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<Listenarr.Api.Services.Adapters.DownloadClientsOptions>, Listenarr.Api.Services.Adapters.DownloadClientsOptionsValidator>();
+builder.Services.AddSingleton<Microsoft.Extensions.Options.IValidateOptions<DownloadClientsOptions>, DownloadClientsOptionsValidator>();
 
 // Register named HttpClients for each adapter type so adapter implementations can request the appropriately-configured client.
 // qbittorrent
@@ -490,7 +484,7 @@ builder.Services.AddHttpClient("nzbget")
 // Adapter factory resolution is provided by `IDownloadClientAdapterFactory`.
 
 // Register import item resolution service for V2 path resolution
-builder.Services.AddScoped<Listenarr.Api.Services.IImportItemResolutionService, Listenarr.Api.Services.ImportItemResolutionService>();
+builder.Services.AddScoped<IImportItemResolutionService, ImportItemResolutionService>();
 
 // Add named HttpClient for direct downloads (DDL)
 builder.Services.AddHttpClient("DirectDownload")
@@ -657,14 +651,13 @@ if (!string.IsNullOrEmpty(sqliteDbDir) && !Directory.Exists(sqliteDbDir))
 // Log the resolved SQLite DB path so developers can verify which file is used at runtime
 Log.Logger.Information("[Startup] Resolved SQLite DB path: {SqliteDbPath}", sqliteDbPath);
 
-// Register persistence (DbContextFactory + compatibility DbContext + repositories) via extension
-builder.Services.AddListenarrPersistence(builder.Configuration, sqliteDbPath);
-
 // Register adapters and related options/validators
 builder.Services.AddListenarrAdapters(builder.Configuration);
 
-// Register infrastructure implementations (repositories live in the Infrastructure project)
-builder.Services.AddListenarrInfrastructure();
+// Register infrastructure implementations (DB wiring + repositories live in the Infrastructure project)
+builder.Services.AddListenarrInfrastructure(options =>
+    options.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
+        sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name)));
 // Register application-level services (moved from Program.cs to keep startup focused)
 builder.Services.AddListenarrAppServices(builder.Configuration);
 // Register hosted/background services (moved from Program.cs). Allow tests to disable these.
@@ -685,16 +678,16 @@ else
 }
 // Register the queue singleton outside the hosted-services guard so controllers
 // (e.g. RootFoldersController) can resolve it even when hosted services are disabled (tests).
-builder.Services.AddSingleton<Listenarr.Api.Services.IUnmatchedScanQueueService, Listenarr.Api.Services.UnmatchedScanQueueService>();
+builder.Services.AddSingleton<IUnmatchedScanQueueService, UnmatchedScanQueueService>();
 if (!disableHostedServices)
 {
     builder.Services.AddListenarrHostedServices(builder.Configuration);
 }
 
 // Startup DB normalizer: run once at startup to idempotently normalize legacy JSON columns
-builder.Services.AddHostedService<Listenarr.Api.Services.StartupDbNormalizer>();
+builder.Services.AddHostedService<StartupDbNormalizer>();
 // External request options (Prefer US domain / optional US proxy)
-builder.Services.Configure<Listenarr.Api.Services.ExternalRequestOptions>(builder.Configuration.GetSection("ExternalRequests"));
+builder.Services.Configure<ExternalRequestOptions>(builder.Configuration.GetSection("ExternalRequests"));
 
 // Named HttpClient for US-origin requests (can be configured to use a proxy)
 builder.Services.AddHttpClient("us").ConfigurePrimaryHttpMessageHandler(() =>
@@ -1038,7 +1031,7 @@ if (Directory.Exists(cacheImagesPath))
 app.UseRouting();
 
 // Log incoming request bodies for POST/PUT/PATCH to aid debugging of client integrations
-app.UseMiddleware<Listenarr.Api.Middleware.RequestBodyLoggingMiddleware>();
+app.UseMiddleware<RequestBodyLoggingMiddleware>();
 
 // Enable CORS only in development (production should use reverse proxy for CORS)
 if (app.Environment.IsDevelopment())
@@ -1046,13 +1039,13 @@ if (app.Environment.IsDevelopment())
     app.UseCors("DevOnly");
 }
 // Session-based authentication middleware
-app.UseMiddleware<Listenarr.Api.Middleware.SessionAuthenticationMiddleware>();
+app.UseMiddleware<SessionAuthenticationMiddleware>();
 // API key middleware: allows requests with a valid X-Api-Key or Authorization: ApiKey <key>
-app.UseMiddleware<Listenarr.Api.Middleware.ApiKeyMiddleware>();
+app.UseMiddleware<ApiKeyMiddleware>();
 // Enforce authentication based on startup config
 app.UseMiddleware<AuthenticationEnforcerMiddleware>();
 // Validate antiforgery tokens for unsafe methods
-app.UseMiddleware<Listenarr.Api.Middleware.AntiforgeryValidationMiddleware>();
+app.UseMiddleware<AntiforgeryValidationMiddleware>();
 app.UseAuthorization();
 
 app.MapControllers();

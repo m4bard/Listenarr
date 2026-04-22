@@ -1,0 +1,143 @@
+name: Beta — build executables & Docker (beta)
+
+concurrency:
+  group: beta-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+on:
+  push:
+    branches: [ beta ]
+
+jobs:
+  beta-build:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve-version.outputs.VERSION }}
+      short_sha: ${{ steps.short-sha.outputs.SHORT_SHA }}
+      pr_number: ${{ steps.find_triggering_pr.outputs.PR_NUMBER }}
+      pr_title: ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
+      pr_body_raw: ${{ steps.find_triggering_pr.outputs.PR_BODY_RAW }}
+    env:
+      API_PROJECT: listenarr.api/Listenarr.Api.csproj
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Resolve target version
+        id: resolve-version
+        run: |
+          set -euo pipefail
+          # Beta is a stabilisation snapshot — version is whatever canary last set.
+          VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "${{ env.API_PROJECT }}" 2>/dev/null | head -n1)
+          if [ -z "${VERSION}" ]; then
+            VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
+          fi
+          echo "Beta version (from canary): ${VERSION}"
+          echo "VERSION=${VERSION}" >> "$GITHUB_OUTPUT"
+
+      - name: Compute short SHA
+        id: short-sha
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - name: Find triggering Pull Request
+        id: find_triggering_pr
+        run: |
+          PR_DATA=$(gh api graphql -f query='
+            query($owner: String!, $repo: String!) {
+              repository(owner: $owner, name: $repo) {
+                pullRequests(first: 20, states: MERGED, baseRefName: "beta", orderBy: {field: UPDATED_AT, direction: DESC}) {
+                  edges {
+                    node {
+                      number
+                      title
+                      body
+                      baseRefName
+                      mergeCommit { oid }
+                      labels(first: 10) { nodes { name } }
+                    }
+                  }
+                }
+              }
+            }' -f owner='${{ github.repository_owner }}' -f repo='${{ github.event.repository.name }}')
+
+          FILTERED_PR=$(echo "$PR_DATA" | jq -r '
+            [.data.repository.pullRequests.edges[] |
+            select(
+              (.node.title | test("[Bb]ump version|[Vv]ersion bump|\\[skip ci\\]"; "i") | not) and
+              (.node.labels.nodes | map(.name) | any(. == "version-bump" or . == "automated") | not)
+            ) |
+            .node |
+            {number, title, body, baseRefName}][0] // null
+          ')
+
+          echo "Recent PRs found:"
+          echo "$PR_DATA" | jq -r '.data.repository.pullRequests.edges[:5][] | "PR #\(.node.number): \(.node.title)"'
+
+          if [ "$FILTERED_PR" != "" ] && [ "$FILTERED_PR" != "null" ]; then
+            PR_NUMBER=$(echo "$FILTERED_PR" | jq -r '.number // ""')
+            PR_TITLE=$(echo "$FILTERED_PR" | jq -r '.title // ""')
+            PR_BODY_RAW=$(echo "$FILTERED_PR" | jq -r '.body // ""')
+            echo "✅ Found non-version-bump PR #$PR_NUMBER: $PR_TITLE"
+          else
+            echo "⚠️ No non-version-bump PR found, using fallback"
+            PR_NUMBER=""
+            PR_TITLE="Beta changes"
+            PR_BODY_RAW="Recent beta changes merged to beta branch."
+          fi
+
+          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
+          echo "PR_TITLE=$PR_TITLE" >> $GITHUB_OUTPUT
+          echo "PR_BODY_RAW<<EOF_PR_BODY" >> $GITHUB_OUTPUT
+          echo "$PR_BODY_RAW" >> $GITHUB_OUTPUT
+          echo "EOF_PR_BODY" >> $GITHUB_OUTPUT
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  beta-publish:
+    needs: beta-build
+    uses: ./.github/workflows/build-and-publish.yml
+    with:
+      version: ${{ needs.beta-build.outputs.version }}
+      short_sha: ${{ needs.beta-build.outputs.short_sha }}
+      channel: beta
+      artifact_prefix: beta-artifacts
+      include_osx: false
+      release_tag: v${{ needs.beta-build.outputs.version }}-beta-${{ needs.beta-build.outputs.short_sha }}
+      release_name: Beta ${{ needs.beta-build.outputs.version }} (${{ needs.beta-build.outputs.short_sha }})
+      prerelease: true
+      pr_number: ${{ needs.beta-build.outputs.pr_number }}
+      pr_title: ${{ needs.beta-build.outputs.pr_title }}
+      pr_body_raw: ${{ needs.beta-build.outputs.pr_body_raw }}
+      discord_text: A new beta build has been released for docker.
+      docker_tags: |
+        docker.io/therobbiedavis/listenarr:beta
+        docker.io/therobbiedavis/listenarr:beta-${{ needs.beta-build.outputs.version }}
+        docker.io/therobbiedavis/listenarr:beta-${{ needs.beta-build.outputs.version }}-${{ needs.beta-build.outputs.short_sha }}
+        ghcr.io/listenarrs/listenarr:beta
+        ghcr.io/listenarrs/listenarr:beta-${{ needs.beta-build.outputs.version }}
+        ghcr.io/listenarrs/listenarr:beta-${{ needs.beta-build.outputs.version }}-${{ needs.beta-build.outputs.short_sha }}
+        atcr.io/therobbiedavis.com/listenarr:beta
+        atcr.io/therobbiedavis.com/listenarr:beta-${{ needs.beta-build.outputs.version }}
+        atcr.io/therobbiedavis.com/listenarr:beta-${{ needs.beta-build.outputs.version }}-${{ needs.beta-build.outputs.short_sha }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      ATCR_USERNAME: ${{ secrets.ATCR_USERNAME }}
+      ATCR_TOKEN: ${{ secrets.ATCR_TOKEN }}
+      LISTENARR_DISCORD_WEBHOOK_URL: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
+
+    # Skipped: separate Web image. The API image contains the frontend in wwwroot.

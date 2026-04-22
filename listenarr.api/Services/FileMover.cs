@@ -1,4 +1,21 @@
-ï»¿using System;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -302,7 +319,7 @@ namespace Listenarr.Api.Services
                         }
                     }
 
-                    // Hardlink succeeded â€” atomically replace destination
+                    // Hardlink succeeded — atomically replace destination
                     File.Move(tempDest, destFile, overwrite: true);
                     _logger.LogInformation("Hardlinked file: {Source} -> {Dest}", sourceFile, destFile);
                     return Task.FromResult(true);
@@ -327,7 +344,7 @@ namespace Listenarr.Api.Services
                     else
                         _logger.LogWarning(linkEx, "Hardlink failed, falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
 
-                    // Fallback to copy â€” copy to a temp file first, then atomically rename onto destination
+                    // Fallback to copy — copy to a temp file first, then atomically rename onto destination
                     // so the existing file is never overwritten until a complete replacement is confirmed.
                     // Use Path.GetFileName to strip any separators from GetRandomFileName (satisfies static analysis).
                     // Use Path.Join (not Path.Combine) to prevent rooted second arg from silently discarding destDir.

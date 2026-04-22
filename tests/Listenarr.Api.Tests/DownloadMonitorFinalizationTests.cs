@@ -1,4 +1,21 @@
-﻿using System;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System;
 using System.IO;
 using System.Linq;
 using System.Reflection;
@@ -156,7 +173,7 @@ namespace Listenarr.Api.Tests
             var downloads = new List<Download> { download };
             var appSettings = new ApplicationSettings();
 
-            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, db, appSettings, CancellationToken.None });
+            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, new TestDownloadRepository(db), appSettings, CancellationToken.None });
             if (task != null) await task;
 
             // Verify the DB download was updated with progress ~50.5 (progress is stored as decimal)
@@ -268,7 +285,7 @@ namespace Listenarr.Api.Tests
             var appSettings = new ApplicationSettings();
 
             // If FinalizeDownloadAsync throws due to unguarded Replace calls when DownloadPath is empty, this will blow up.
-            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, db, appSettings, CancellationToken.None });
+            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, new TestDownloadRepository(db), appSettings, CancellationToken.None });
             if (task != null) await task;
 
             // Finalization should have completed gracefully and candidate should be removed
@@ -414,7 +431,7 @@ namespace Listenarr.Api.Tests
             var downloads = new List<Download> { download };
             var appSettings = new ApplicationSettings();
 
-            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, db, appSettings, CancellationToken.None });
+            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, new TestDownloadRepository(db), appSettings, CancellationToken.None });
             if (task != null) await task;
 
             // After finalization, the completion candidate should be removed and the ProcessCompletedDownloadAsync should have been invoked
@@ -596,7 +613,7 @@ namespace Listenarr.Api.Tests
             var downloads = new List<Download> { download };
             var appSettings = new ApplicationSettings();
 
-            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, db, appSettings, CancellationToken.None });
+            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, new TestDownloadRepository(db), appSettings, CancellationToken.None });
             if (task != null) await task;
 
             // Wait a short time then create the file so the scheduled retry will find it
@@ -932,7 +949,7 @@ namespace Listenarr.Api.Tests
             var downloads = new List<Download> { download };
             var appSettings = new ApplicationSettings();
 
-            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, db, appSettings, CancellationToken.None });
+            var task = (Task?)method.Invoke(monitor, new object[] { clientConfig, downloads, new TestDownloadRepository(db), appSettings, CancellationToken.None });
             if (task != null) await task;
 
             // We expect the completion candidate to be removed (finalization attempted)

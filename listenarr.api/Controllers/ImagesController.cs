@@ -1,6 +1,6 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -18,6 +18,7 @@
 
 using Microsoft.AspNetCore.Mvc;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -101,7 +102,7 @@ namespace Listenarr.Api.Controllers
             }
 
             // Validate identifier to prevent path traversal or overly long values.
-            // Identifiers should be simple ASINs, numeric IDs or author namesâ€”disallow path separators.
+            // Identifiers should be simple ASINs, numeric IDs or author names—disallow path separators.
             if (identifier.IndexOfAny(new char[] { '\\', '/', '\0' }) >= 0 || identifier.Length > 256)
             {
                 _logger.LogWarning("Rejected invalid identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
@@ -589,7 +590,7 @@ namespace Listenarr.Api.Controllers
                                     try
                                     {
                                         // If the service returned an AudibleBookResponse directly
-                                        if (metadataEnvelope is global::Listenarr.Api.Services.AudibleBookResponse directMeta)
+                                        if (metadataEnvelope is AudibleBookResponse directMeta)
                                         {
                                             AddCandidateUrl(directMeta.ImageUrl, "MetadataEnvelopeDirect");
                                         }
@@ -600,7 +601,7 @@ namespace Listenarr.Api.Controllers
                                             object? mdObj = env.metadata;
 
                                             // If it's already the Audible type, use it
-                                            if (mdObj is global::Listenarr.Api.Services.AudibleBookResponse mdMeta)
+                                            if (mdObj is AudibleBookResponse mdMeta)
                                             {
                                                 AddCandidateUrl(mdMeta.ImageUrl, "MetadataEnvelopeAudible");
                                             }

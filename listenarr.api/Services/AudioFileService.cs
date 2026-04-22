@@ -1,7 +1,24 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
 using System.IO;
@@ -35,35 +52,32 @@ namespace Listenarr.Api.Services
                 }
 
                 using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                var fileRepository = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                var historyRepository = scope.ServiceProvider.GetRequiredService<IHistoryRepository>();
                 var metadataService = scope.ServiceProvider.GetRequiredService<IMetadataService>();
 
                 // Check for existing
-                var exists = await db.AudiobookFiles.AnyAsync(x => x.AudiobookId == audiobookId && x.Path == filePath);
+                var exists = await fileRepository.ExistsAtPathAsync(audiobookId, filePath);
                 if (exists)
                 {
                     _logger.LogDebug("AudiobookFile already exists for audiobook {AudiobookId} at path {Path}", audiobookId, LogRedaction.SanitizeFilePath(filePath));
                     return false;
                 }
 
-                // Skip if already registered to a different audiobook — prevents flat series folders
-                // (e.g. Author/Series/*.m4b) from having sibling files attributed to the wrong audiobook
-                // when multiple focused scans run concurrently after a batch import.
-                var registeredElsewhere = await db.AudiobookFiles.AnyAsync(x => x.AudiobookId != audiobookId && x.Path == filePath);
+                // Skip if already registered to a different audiobook
+                var registeredElsewhere = await fileRepository.IsPathUsedByOtherAsync(audiobookId, filePath);
                 if (registeredElsewhere)
                 {
                     _logger.LogInformation("Skipping file {Path} for audiobook {AudiobookId} — already registered to another audiobook", LogRedaction.SanitizeFilePath(filePath), audiobookId);
                     return false;
                 }
 
-                // Conservative safety: if the audiobook already has a stored FilePath (legacy
-                // single-file representation) prefer to only associate files that live in the
-                // same containing directory. This prevents accidental associations when a
-                // completed download move erroneously places a file in a sibling folder.
-                // However, allow files in the audiobook's BasePath (multi-file import scenario).
+                // Conservative safety: if the audiobook already has a stored FilePath prefer
+                // to only associate files in the same containing directory or BasePath.
                 try
                 {
-                    var audiobook = await db.Audiobooks.FindAsync(audiobookId);
+                    var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
                     if (audiobook != null && !string.IsNullOrWhiteSpace(audiobook.FilePath))
                     {
                         var existingDir = NormalizePath(Path.GetDirectoryName(audiobook.FilePath));
@@ -75,11 +89,8 @@ namespace Listenarr.Api.Services
                             && !string.IsNullOrEmpty(candidateDir)
                             && !string.IsNullOrEmpty(candidateFull))
                         {
-                            // Ensure candidate is the same directory or a subdirectory of the existing dir
                             var isInExistingDir = candidateDir.Equals(existingDir, StringComparison.OrdinalIgnoreCase) ||
                                                   FileUtils.IsPathInsideOf(candidateDir, existingDir);
-
-                            // Also allow if file is within the audiobook's BasePath (multi-file migration)
                             var isInBasePath = !string.IsNullOrWhiteSpace(normalizedBasePath) &&
                                                (candidateDir.Equals(normalizedBasePath, StringComparison.OrdinalIgnoreCase)
                                                 || FileUtils.IsPathInsideOf(candidateFull, normalizedBasePath));
@@ -88,7 +99,6 @@ namespace Listenarr.Api.Services
                             {
                                 var audiobookTitle = audiobook.Title ?? "Unknown";
                                 _logger.LogWarning("Refusing to associate file outside audiobook folder. AudiobookId={AudiobookId}, AudiobookDir={AudiobookDir}, BasePath={BasePath}, File={File}", audiobookId, LogRedaction.SanitizeFilePath(existingDir), LogRedaction.SanitizeFilePath(audiobook.BasePath), LogRedaction.SanitizeFilePath(filePath));
-                                // Create a history entry so the UI can show that an attempted association was refused
                                 try
                                 {
                                     var historyEntry = new History
@@ -101,11 +111,8 @@ namespace Listenarr.Api.Services
                                         Data = JsonSerializer.Serialize(new { FilePath = filePath, AudiobookDir = existingDir, BasePath = audiobook.BasePath }),
                                         Timestamp = DateTime.UtcNow
                                     };
+                                    await historyRepository.AddAsync(historyEntry);
 
-                                    db.History.Add(historyEntry);
-                                    await db.SaveChangesAsync();
-
-                                    // Broadcast a UI toast message so clients see immediate feedback
                                     try
                                     {
                                         var toastSvc = scope.ServiceProvider.GetService<IToastService>();
@@ -137,7 +144,6 @@ namespace Listenarr.Api.Services
                 AudioMetadata? meta = null;
                 try
                 {
-                    // Use file last write time as part of cache key so updates invalidate
                     var fileInfoForCache = new FileInfo(filePath);
                     var ticks = fileInfoForCache.Exists ? fileInfoForCache.LastWriteTimeUtc.Ticks : 0L;
                     var cacheKey = $"meta::{filePath}::{ticks}";
@@ -145,7 +151,6 @@ namespace Listenarr.Api.Services
                     {
                         using var _ = await _limiter.Sem.LockAsync();
                         meta = await metadataService.ExtractFileMetadataAsync(filePath);
-                        // Cache for 5 minutes
                         _memoryCache.Set(cacheKey, meta, TimeSpan.FromMinutes(5));
                     }
                     else
@@ -157,9 +162,7 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogInformation(mEx, "Metadata extraction failed for {Path}", LogRedaction.SanitizeFilePath(filePath));
                 }
-                // If metadata extraction produced minimal results, attempt to ensure ffprobe is installed
-                // and retry extraction once. This helps scans capture technical metadata even when ffprobe
-                // wasn't available at startup. We keep the retry short to avoid blocking scans for too long.
+
                 try
                 {
                     var needRetry = meta == null || (meta.Duration == TimeSpan.Zero && string.IsNullOrEmpty(meta.Format));
@@ -169,20 +172,17 @@ namespace Listenarr.Api.Services
                         var ffmpegSvc = scope2.ServiceProvider.GetService<IFfmpegService>();
                         if (ffmpegSvc != null)
                         {
-                            // Try to ensure ffprobe is installed, but don't wait indefinitely. Use a short timeout.
                             var installTask = ffmpegSvc.EnsureFfprobeInstalledAsync();
                             var completed = await Task.WhenAny(installTask, Task.Delay(TimeSpan.FromSeconds(10)));
                             if (completed == installTask)
                             {
                                 try
                                 {
-                                    var ffpath = await installTask; // may be null
+                                    var ffpath = await installTask;
                                     if (!string.IsNullOrEmpty(ffpath))
                                     {
-                                        // Retry metadata extraction once under limiter
                                         using var _ = await _limiter.Sem.LockAsync();
                                         meta = await metadataService.ExtractFileMetadataAsync(filePath);
-                                        // Update cache
                                         var fileInfoForCache2 = new FileInfo(filePath);
                                         var ticks2 = fileInfoForCache2.Exists ? fileInfoForCache2.LastWriteTimeUtc.Ticks : 0L;
                                         var cacheKey2 = $"meta::{filePath}::{ticks2}";
@@ -201,6 +201,7 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogDebug(exRetry, "Non-fatal error while attempting ffprobe install/retry for {Path}", LogRedaction.SanitizeFilePath(filePath));
                 }
+
                 var fi = new FileInfo(filePath);
                 var fileRecord = new AudiobookFile
                 {
@@ -218,30 +219,18 @@ namespace Listenarr.Api.Services
                     Channels = meta?.Channels
                 };
 
-                db.AudiobookFiles.Add(fileRecord);
-                // Retry on unique constraint violation to avoid race conditions
                 var attempts = 0;
                 while (true)
                 {
                     try
                     {
-                        await db.SaveChangesAsync();
-                        try
-                        {
-                            var conn = db.Database.GetDbConnection();
-                            _logger.LogInformation("Created AudiobookFile for audiobook {AudiobookId}: {Path} (Db: {Db}) Id={Id}", audiobookId, LogRedaction.SanitizeFilePath(filePath), conn?.ConnectionString, fileRecord.Id);
-                        }
-                        catch (Exception logEx) when (logEx is not OperationCanceledException && logEx is not OutOfMemoryException && logEx is not StackOverflowException)
-                        {
-                            _logger.LogInformation("Created AudiobookFile for audiobook {AudiobookId}: {Path} (Db: unknown) Id={Id}", audiobookId, LogRedaction.SanitizeFilePath(filePath), fileRecord.Id);
-                            _logger.LogDebug(logEx, "Failed to log DB connection string for AudiobookFile creation");
-                        }
+                        await fileRepository.AddAsync(fileRecord);
+                        _logger.LogInformation("Created AudiobookFile for audiobook {AudiobookId}: {Path} Id={Id}", audiobookId, LogRedaction.SanitizeFilePath(filePath), fileRecord.Id);
 
-                        // Add history entry for file creation so scans/downloads show in the UI
+                        // Add history entry and update audiobook backward-compat fields
                         try
                         {
-                            // Retrieve audiobook title for denormalized display
-                            var audiobook = await db.Audiobooks.FindAsync(audiobookId);
+                            var audiobook = await audiobookRepository.GetByIdAsync(audiobookId);
                             var historyEntry = new History
                             {
                                 AudiobookId = audiobookId,
@@ -258,31 +247,16 @@ namespace Listenarr.Api.Services
                                 }),
                                 Timestamp = DateTime.UtcNow
                             };
-                            db.History.Add(historyEntry);
-                            await db.SaveChangesAsync();
+                            await historyRepository.AddAsync(historyEntry);
 
-                            // Update audiobook single-file fields so the frontend recognizes the
-                            // audiobook as having a file (the UI currently checks `filePath`).
-                            //
-                            // NOTE: `FilePath`/`FileSize` are kept for backward compatibility with
-                            // the existing frontend and older DTOs. The canonical representation
-                            // is the `Files` collection (multi-file support). We populate the
-                            // single-file fields here to avoid regressions in the Wanted view
-                            // and other UI consumers which still rely on `filePath`. When the
-                            // frontend is updated to prefer `Files` this compatibility layer can
-                            // be removed.
                             try
                             {
-                                var audiobookToUpdate = await db.Audiobooks.FindAsync(audiobookId);
+                                var audiobookToUpdate = await audiobookRepository.GetByIdAsync(audiobookId);
                                 if (audiobookToUpdate != null)
                                 {
-                                    // Prefer to populate FilePath/FileSize for backward compatibility
                                     audiobookToUpdate.FilePath = fileRecord.Path;
                                     audiobookToUpdate.FileSize = fileRecord.Size;
-
-                                    // Persist change; keep it quiet on errors
-                                    db.Audiobooks.Update(audiobookToUpdate);
-                                    await db.SaveChangesAsync();
+                                    await audiobookRepository.UpdateAsync(audiobookToUpdate);
                                 }
                             }
                             catch (Exception aubEx) when (aubEx is not OperationCanceledException && aubEx is not OutOfMemoryException && aubEx is not StackOverflowException)
@@ -300,7 +274,6 @@ namespace Listenarr.Api.Services
                     catch (DbUpdateException dbEx)
                     {
                         attempts++;
-                        // If the exception is due to unique constraint (another worker inserted it), treat as already created
                         var inner = dbEx.InnerException?.Message ?? dbEx.Message;
                         if (inner != null && inner.IndexOf("UNIQUE", StringComparison.OrdinalIgnoreCase) >= 0)
                         {
@@ -312,7 +285,6 @@ namespace Listenarr.Api.Services
                             _logger.LogWarning(dbEx, "Failed to save AudiobookFile after {Attempts} attempts: {Path}", attempts, LogRedaction.SanitizeFilePath(filePath));
                             return false;
                         }
-                        // small backoff
                         await Task.Delay(100 * attempts);
                     }
                 }
@@ -343,5 +315,3 @@ namespace Listenarr.Api.Services
         }
     }
 }
-
-

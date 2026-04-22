@@ -91,7 +91,8 @@ docker run -d \
 - ~~`latest` / `stable`~~ - Latest stable release (available soon)
 - `canary` - Latest canary build (pre-release)
 - `canary-X.Y.Z` - Specific canary version
-- `nightly-X.Y.Z` - Specific nightly version
+- `beta` - Latest beta build (pre-release)
+- `beta-X.Y.Z` - Specific beta version
 - `X.Y.Z` - Specific release version
 
 **Docker Compose (Recommended):**
@@ -290,16 +291,24 @@ This means you can run the helper once and enter your public domain (for example
 
 Listenarr uses GitHub Actions for automated building and deployment:
 
-- **Canary Builds** (on `canary` pushes): Builds self-contained executables (Linux x64, Windows x64) and publishes container images tagged `canary` / `canary-X.Y.Z` to GHCR & Docker Hub.
-- **Nightly Builds** (on `develop` pushes): Builds self-contained executables (Linux x64, Windows x64) and publishes container images tagged `nightly` / `nightly-X.Y.Z` to GHCR & Docker Hub.
+- **Canary Builds** (on `canary` pushes): Builds self-contained executables (Linux x64, Windows x64), creates a GitHub prerelease tagged `v{VERSION}-canary`, and publishes container images tagged `canary` / `canary-X.Y.Z` to GHCR & Docker Hub.
+- **Beta Builds** (on `beta` pushes): Builds self-contained executables (Linux x64, Windows x64), creates a GitHub prerelease tagged `v{VERSION}-beta`, and publishes container images tagged `beta` / `beta-X.Y.Z` to GHCR & Docker Hub.
 - **Release Builds** (on version tags): Builds executables for Linux x64, Windows x64, and macOS x64. Creates GitHub releases and publishes container images tagged `stable`, `latest`, and `X.Y.Z` to GHCR & Docker Hub.
 
 All workflows push to `ghcr.io/listenarrs/listenarr` and `docker.io/therobbiedavis/listenarr`.
 
+**Contribution branching model:**
+- Feature PRs (all contributors) always target `canary`.
+- When ready for a release candidate, `canary` is code-frozen and merged into `beta` by an org member.
+- Feature development continues into `canary` during the beta window.
+- Org members open fix PRs against `beta` to stabilise the release candidate.
+- `beta` is merged into `main` for the stable release, then rebased back into `canary` to carry fixes forward.
+- PRs directly to `main` will be closed without review.
+
 Version numbers are automatically incremented:
-- Canary: Patch version +1
-- Nightly: Minor version +1, patch reset to 0
-- Release: Major version +1, minor and patch reset to 0
+- Canary: Bumped by PR label — `patch`, `minor`, or `major` (e.g., `patch`: 1.2.3 → 1.2.4)
+- Beta: No version bump — carries the canary version as-is (stabilisation snapshot)
+- Release: Version comes from the pushed tag (e.g., `git tag v1.2.4`); no automatic bump
 
 All builds are CI-first: `dotnet publish` automatically builds the frontend and includes it in the API's `wwwroot`.
 
@@ -465,8 +474,9 @@ docker build -f listenarr.api/Dockerfile.runtime -t <your-image> listenarr.api/p
 ### Version Management
 
 Application versions are managed in `listenarr.api/Listenarr.Api.csproj` with a `<Version>` element. CI automatically bumps versions on builds:
-- Nightly: Increments patch (e.g., 1.2.3 → 1.2.4)
-- Release: Increments minor and resets patch (e.g., 1.2.3 → 1.3.0)
+- Canary: Bumped by PR label — `patch`/`minor`/`major`; GitHub prerelease tagged `v1.2.4-canary`
+- Beta: No version bump — carries the canary version as-is; GitHub prerelease tagged `v1.2.4-beta-<sha>`
+- Release: Version from the pushed tag (e.g., `git tag v1.2.4`); tagged `vX.Y.Z`
 
 Bumped versions are persisted via PR to maintain branch protection.
 
@@ -505,7 +515,7 @@ Support this project by becoming a sponsor. Your logo will show up here with a l
 ## License
 
 - [GNU Affero General Public License v3.0](LICENSE)
-- Copyright 2024-2025 Robbie Davis
+- Copyright 2024-2026 Listenarr Contributors
 
 This program is free software: you can redistribute it and/or modify it under the terms of the GNU Affero General Public License as published by the Free Software Foundation, either version 3 of the License, or (at your option) any later version.
 

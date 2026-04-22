@@ -1,9 +1,26 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Infrastructure.Models;
@@ -199,6 +216,81 @@ namespace Listenarr.Api.Tests
             return Task.FromResult(list);
         }
 
+        public Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, System.Threading.CancellationToken ct = default)
+        {
+            if (_db != null)
+                return _db.Downloads.Where(d => d.AudiobookId == audiobookId).ToListAsync(ct);
+
+            var list = _mem.Values.Where(d => d.AudiobookId == audiobookId).ToList();
+            return Task.FromResult(list);
+        }
+
+        public Task<List<Download>> GetCompletionCandidatesAsync(int limit)
+        {
+            if (_db != null)
+                return _db.Downloads
+                    .Where(d => d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending || d.Status == DownloadStatus.Processing)
+                    .OrderByDescending(d => d.CompletedAt)
+                    .Take(limit)
+                    .ToListAsync();
+
+            var list = _mem.Values
+                .Where(d => d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending || d.Status == DownloadStatus.Processing)
+                .OrderByDescending(d => d.CompletedAt)
+                .Take(limit)
+                .ToList();
+            return Task.FromResult(list);
+        }
+
+        public Task<List<Download>> GetActiveForMonitoringAsync()
+        {
+            bool IsActive(Download d) =>
+                d.Status == DownloadStatus.Queued ||
+                d.Status == DownloadStatus.Downloading ||
+                d.Status == DownloadStatus.Paused ||
+                d.Status == DownloadStatus.Processing ||
+                ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && string.IsNullOrEmpty(d.FinalPath)) ||
+                (d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId));
+
+            if (_db != null)
+                return _db.Downloads.Where(d =>
+                    d.Status == DownloadStatus.Queued ||
+                    d.Status == DownloadStatus.Downloading ||
+                    d.Status == DownloadStatus.Paused ||
+                    d.Status == DownloadStatus.Processing ||
+                    ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && (d.FinalPath == null || d.FinalPath == "")) ||
+                    (d.Status == DownloadStatus.Moved && d.DownloadClientId != null && d.DownloadClientId != ""))
+                    .ToListAsync();
+
+            return Task.FromResult(_mem.Values.Where(IsActive).ToList());
+        }
+
+        public Task<List<Download>> GetRecentAsync(int count)
+        {
+            if (_db != null)
+                return _db.Downloads.OrderByDescending(d => d.StartedAt).Take(count).ToListAsync();
+
+            return Task.FromResult(_mem.Values.OrderByDescending(d => d.StartedAt).Take(count).ToList());
+        }
+
+        public Task<List<int>> GetActiveAudiobookIdsAsync(IEnumerable<DownloadStatus> statuses)
+        {
+            var statusList = statuses.ToList();
+            if (_db != null)
+                return _db.Downloads
+                    .Where(d => d.AudiobookId.HasValue && statusList.Contains(d.Status))
+                    .Select(d => d.AudiobookId!.Value)
+                    .Distinct()
+                    .ToListAsync();
+
+            var list = _mem.Values
+                .Where(d => d.AudiobookId.HasValue && statusList.Contains(d.Status))
+                .Select(d => d.AudiobookId!.Value)
+                .Distinct()
+                .ToList();
+            return Task.FromResult(list);
+        }
+
         private static QueueTrackedDownload ToQueueTrackedDownloadProjection(Download download)
         {
             return new QueueTrackedDownload
@@ -213,7 +305,9 @@ namespace Listenarr.Api.Tests
                 DownloadedSize = download.DownloadedSize,
                 DownloadPath = download.DownloadPath,
                 FinalPath = download.FinalPath,
-                Metadata = download.Metadata
+                Metadata = download.Metadata,
+                AudiobookId = download.AudiobookId,
+                Language = download.Language
             };
         }
     }

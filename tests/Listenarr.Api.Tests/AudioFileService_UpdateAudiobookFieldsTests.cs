@@ -1,4 +1,21 @@
-﻿using System;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System;
 using System.Threading.Tasks;
 using Xunit;
 using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +45,9 @@ namespace Listenarr.Api.Tests
             // Build service provider with required services (including a mock metadata service)
             var services = new ServiceCollection();
             services.AddSingleton<ListenArrDbContext>(db);
+            services.AddSingleton<IAudiobookFileRepository>(_ => new EfAudiobookFileRepository(db));
+            services.AddSingleton<IAudiobookRepository>(_ => new AudiobookRepository(db));
+            services.AddSingleton<IHistoryRepository>(_ => new EfHistoryRepository(db));
             services.AddSingleton<MetadataExtractionLimiter>();
             services.AddMemoryCache();
             // Minimal metadata service mock so File metadata lookup doesn't throw

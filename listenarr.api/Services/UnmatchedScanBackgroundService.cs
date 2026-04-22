@@ -1,8 +1,25 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Hosting;
 using Listenarr.Api.Hubs;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using System.IO;
 using System.Text.RegularExpressions;
 using Listenarr.Domain.Utils;
@@ -112,7 +129,8 @@ namespace Listenarr.Api.Services
         private async Task<List<UnmatchedFileResult>> ScanAsync(string rootFolderPath, CancellationToken ct)
         {
             using var scope = _scopeFactory.CreateScope();
-            var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+            var fileRepository = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+            var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var appSettings = await configService.GetApplicationSettingsAsync();
             var concurrency = Math.Clamp(appSettings?.UnmatchedScanConcurrency ?? 2, 1, 8);
@@ -120,15 +138,13 @@ namespace Listenarr.Api.Services
             // Load all tracked file paths (normalized) from DB.
             // Check BOTH AudiobookFiles (multi-file imports) AND Audiobook.FilePath (single-file imports)
             // so that files already in the library are not reported as unmatched.
-            var trackedFromFiles = await db.AudiobookFiles
-                .Where(f => f.Path != null)
-                .Select(f => f.Path!)
-                .ToListAsync(ct);
+            var trackedFromFiles = await fileRepository.GetAllFilePathsAsync(ct);
 
-            var trackedFromAudiobooks = await db.Audiobooks
+            var allAudiobooks = await audiobookRepository.GetAllAsync();
+            var trackedFromAudiobooks = allAudiobooks
                 .Where(a => a.FilePath != null)
                 .Select(a => a.FilePath!)
-                .ToListAsync(ct);
+                .ToList();
 
             var trackedNormalized = new HashSet<string>(
                 trackedFromFiles.Concat(trackedFromAudiobooks).Select(NormalizePath),

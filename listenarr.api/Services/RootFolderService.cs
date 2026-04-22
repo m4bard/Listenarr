@@ -1,27 +1,40 @@
-using Listenarr.Api.Repositories;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using Listenarr.Application.Repositories;
+using Listenarr.Domain.Models;
 
 namespace Listenarr.Api.Services
 {
     public class RootFolderService : IRootFolderService
     {
         private readonly IRootFolderRepository _repo;
-        private readonly IDbContextFactory<ListenArrDbContext> _dbFactory;
         private readonly ILogger<RootFolderService>? _logger;
         private readonly IMoveQueueService? _moveQueue;
 
-        public RootFolderService(IRootFolderRepository repo, IDbContextFactory<ListenArrDbContext> dbFactory, ILogger<RootFolderService>? logger, IMoveQueueService? moveQueue = null)
+        public RootFolderService(IRootFolderRepository repo, ILogger<RootFolderService>? logger, IMoveQueueService? moveQueue = null)
         {
             _repo = repo;
-            _dbFactory = dbFactory;
             _logger = logger;
             _moveQueue = moveQueue;
         }
 
         public async Task<RootFolder> CreateAsync(RootFolder root)
         {
-            // Normalize path
             root.Path = root.Path?.Trim() ?? string.Empty;
             root.Name = root.Name?.Trim() ?? string.Empty;
 
@@ -31,17 +44,9 @@ namespace Listenarr.Api.Services
             var existingByPath = await _repo.GetByPathAsync(root.Path);
             if (existingByPath != null) throw new InvalidOperationException("A root folder with that path already exists.");
 
-            // If this is set as default, clear other defaults
             if (root.IsDefault)
             {
-                using var ctx = await _dbFactory.CreateDbContextAsync();
-                var others = ctx.RootFolders.Where(r => r.IsDefault).ToList();
-                foreach (var o in others)
-                {
-                    o.IsDefault = false;
-                }
-                ctx.RootFolders.UpdateRange(others);
-                await ctx.SaveChangesAsync();
+                await _repo.ClearDefaultExceptAsync(excludeId: null);
             }
 
             await _repo.AddAsync(root);
@@ -50,34 +55,20 @@ namespace Listenarr.Api.Services
 
         public async Task DeleteAsync(int id, int? reassignRootId = null)
         {
-            using var ctx = await _dbFactory.CreateDbContextAsync();
-            var root = await ctx.RootFolders.FindAsync(id);
+            var root = await _repo.GetByIdAsync(id);
             if (root == null) throw new KeyNotFoundException("Root folder not found");
 
-            // Check for referenced audiobooks
-            var referenced = ctx.Audiobooks.Any(a => a.BasePath != null && (a.BasePath == root.Path || a.BasePath.StartsWith(root.Path + System.IO.Path.DirectorySeparatorChar)));
-            if (referenced && !reassignRootId.HasValue)
+            var hasReferenced = await _repo.HasAudiobooksUnderPathAsync(root.Path);
+            if (hasReferenced && !reassignRootId.HasValue)
             {
                 throw new InvalidOperationException("Root folder is in use by audiobooks; reassign before deletion or provide reassignRootId.");
             }
 
-            if (referenced)
+            if (hasReferenced)
             {
-                var newRoot = await ctx.RootFolders.FindAsync(reassignRootId!.Value);
+                var newRoot = await _repo.GetByIdAsync(reassignRootId!.Value);
                 if (newRoot == null) throw new KeyNotFoundException("Reassign root not found");
-                // Reassign audiobooks that start with old path to new root path
-                var affected = ctx.Audiobooks.Where(a => a.BasePath != null && (a.BasePath == root.Path || a.BasePath.StartsWith(root.Path + System.IO.Path.DirectorySeparatorChar))).ToList();
-                foreach (var a in affected)
-                {
-                    // Replace prefix
-                    if (a.BasePath == root.Path) a.BasePath = newRoot.Path;
-                    else if (a.BasePath!.StartsWith(root.Path + System.IO.Path.DirectorySeparatorChar))
-                    {
-                        a.BasePath = newRoot.Path + a.BasePath.Substring(root.Path.Length);
-                    }
-                }
-                ctx.Audiobooks.UpdateRange(affected);
-                await ctx.SaveChangesAsync();
+                await _repo.MigrateAudiobookPathsAsync(root.Path, newRoot.Path);
             }
 
             await _repo.RemoveAsync(id);
@@ -99,121 +90,56 @@ namespace Listenarr.Api.Services
             if (!string.Equals(existing.Path, root.Path, StringComparison.OrdinalIgnoreCase))
             {
                 var duplicate = await _repo.GetByPathAsync(root.Path);
-                if (duplicate != null && duplicate.Id != root.Id) throw new InvalidOperationException("Another root folder with that path already exists.");
+                if (duplicate != null && duplicate.Id != root.Id)
+                    throw new InvalidOperationException("Another root folder with that path already exists.");
             }
 
-            // Update default handling
             if (root.IsDefault)
             {
-                using var ctx = await _dbFactory.CreateDbContextAsync();
-                var others = ctx.RootFolders.Where(r => r.IsDefault && r.Id != root.Id).ToList();
-                foreach (var o in others)
-                {
-                    o.IsDefault = false;
-                }
-                ctx.RootFolders.UpdateRange(others);
-                await ctx.SaveChangesAsync();
+                await _repo.ClearDefaultExceptAsync(excludeId: root.Id);
             }
 
-            // Store values from the existing entity before opening a new context
             var oldPath = existing.Path;
             var newPath = root.Path;
 
-            // Update root folder and audiobooks in the same context to ensure transaction consistency
-            using (var ctx = await _dbFactory.CreateDbContextAsync())
+            List<(int audiobookId, string original, string target)> moves = new();
+            if (!string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
             {
-                // Re-load the entity in this context so it's properly tracked
-                var trackedRoot = await ctx.RootFolders.FindAsync(root.Id);
-                if (trackedRoot == null) throw new KeyNotFoundException("Root folder not found");
+                moves = await _repo.MigrateAudiobookPathsAsync(oldPath, newPath);
 
-                // Apply updates to the tracked entity
-                trackedRoot.Name = root.Name;
-                trackedRoot.Path = root.Path;
-                trackedRoot.IsDefault = root.IsDefault;
-                trackedRoot.UpdatedAt = DateTime.UtcNow;
-
-                if (!string.Equals(oldPath, newPath, StringComparison.OrdinalIgnoreCase))
+                try
                 {
-                    // Load candidate audiobooks into memory and perform robust, OS-agnostic path comparisons
-                    var all = ctx.Audiobooks.Where(a => a.BasePath != null).ToList();
-
-                    // Normalize oldPath for comparison: unify separators to backslash and lower-case
-                    char backslash = '\\';
-                    char slash = '/';
-                    string NormalizeForCompare(string s) => (s ?? string.Empty).Replace(slash, backslash).Replace('\\', backslash).TrimEnd(backslash).ToLowerInvariant();
-                    var oldNorm = NormalizeForCompare(oldPath);
-
-                    var affected = all.Where(a =>
+                    _logger?.LogInformation("Root rename from {OldPath} to {NewPath}: {Count} audiobooks affected", oldPath, newPath, moves.Count);
+                    foreach (var m in moves)
                     {
-                        var bp = a.BasePath!;
-                        var bpNorm = NormalizeForCompare(bp);
-                        return bpNorm == oldNorm || bpNorm.StartsWith(oldNorm + backslash);
-                    }).ToList();
-
-                    // Record original and new paths before updating DB so we can enqueue moves if requested
-                    var moves = new List<(int audiobookId, string original, string target)>();
-
-                    foreach (var a in affected)
-                    {
-                        var original = a.BasePath!;
-
-                        // Determine which separator the original path uses so we preserve it in the target
-                        char sepToUse = original.Contains(backslash) ? backslash : slash;
-
-                        // Compute suffix after the old root (trim any leading separators)
-                        var suffix = original.Length > oldPath.Length ? original.Substring(oldPath.Length).TrimStart(backslash, slash) : string.Empty;
-
-                        // Build the target by concatenation to preserve Windows-style backslashes expected by tests
-                        string target = string.IsNullOrEmpty(suffix) ? newPath : (newPath + sepToUse + suffix.Replace(backslash, sepToUse).Replace(slash, sepToUse));
-
-                        moves.Add((a.Id, original, target));
-                        a.BasePath = target;
+                        _logger?.LogInformation("Root rename move prep: AudiobookId={AudiobookId} Original={Original} Target={Target}", m.audiobookId, m.original, m.target);
                     }
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
+                    _logger?.LogDebug(ex, "Failed to emit diagnostics for root rename");
+                }
+            }
 
-                    ctx.Audiobooks.UpdateRange(affected);
-                    
-                    // Diagnostics: log affected audiobooks and prepared moves to help debugging in CI
+            existing.Name = root.Name;
+            existing.Path = root.Path;
+            existing.IsDefault = root.IsDefault;
+            existing.UpdatedAt = DateTime.UtcNow;
+            await _repo.UpdateAsync(existing);
+
+            if (moveFiles && _moveQueue != null)
+            {
+                foreach (var m in moves)
+                {
                     try
                     {
-                        _logger?.LogInformation("Root rename from {OldPath} to {NewPath}: {Count} audiobooks affected", oldPath, newPath, affected.Count);
-                        foreach (var m in moves)
-                        {
-                            _logger?.LogInformation("Root rename move prep: AudiobookId={AudiobookId} Original={Original} Target={Target}", m.audiobookId, m.original, m.target);
-                        }
+                        _ = _moveQueue.EnqueueMoveAsync(m.audiobookId, m.target, m.original);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        // Never fail the operation due to logging
-                        _logger?.LogDebug(ex, "Failed to emit diagnostics for root rename");
-                    }
-
-                    // Save both root folder and audiobook updates in one transaction
-                    await ctx.SaveChangesAsync();
-
-                    if (moveFiles && _moveQueue != null)
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
-                        foreach (var m in moves)
-                        {
-                            try
-                            {
-                                _ = _moveQueue.EnqueueMoveAsync(m.audiobookId, m.target, m.original);
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger?.LogWarning(ex, "Failed to enqueue move for audiobook {AudiobookId} during root rename", m.audiobookId);
-                            }
-                        }
+                        _logger?.LogWarning(ex, "Failed to enqueue move for audiobook {AudiobookId} during root rename", m.audiobookId);
                     }
                 }
-                else
-                {
-                    // Just update the root folder if path hasn't changed
-                    await ctx.SaveChangesAsync();
-                }
-
-                // Return the tracked entity (or re-load existing with updated values)
-                existing.Name = trackedRoot.Name;
-                existing.Path = trackedRoot.Path;
-                existing.IsDefault = trackedRoot.IsDefault;
-                existing.UpdatedAt = trackedRoot.UpdatedAt;
             }
 
             return existing;

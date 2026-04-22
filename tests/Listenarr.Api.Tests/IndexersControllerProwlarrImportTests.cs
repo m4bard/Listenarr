@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -6,6 +23,7 @@ using System.Threading.Tasks;
 using Listenarr.Api.Models;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
+using Listenarr.Infrastructure.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
@@ -55,13 +73,15 @@ namespace Listenarr.Api.Tests
                 _loggerFactory = new LoggerFactory();
                 _client = new HttpClient(handler);
                 _configurationService = new ConfigurationService(
-                    _db,
+                    new EfApplicationSettingsRepository(_db),
+                    new EfApiConfigurationRepository(_db),
+                    new EfDownloadClientConfigurationRepository(_db),
                     _loggerFactory.CreateLogger<ConfigurationService>(),
                     new Mock<IUserService>().Object,
                     new Mock<IStartupConfigService>().Object);
-                Controller = new Listenarr.Api.Controllers.IndexersController(
-                    _db,
-                    _loggerFactory.CreateLogger<Listenarr.Api.Controllers.IndexersController>(),
+                Controller = new IndexersController(
+                    new EfIndexerRepository(_db),
+                    _loggerFactory.CreateLogger<IndexersController>(),
                     _client,
                     _configurationService);
             }
@@ -69,7 +89,7 @@ namespace Listenarr.Api.Tests
             public CaptureHandler Handler { get; }
             public ListenArrDbContext Db => _db;
             public ConfigurationService ConfigurationService => _configurationService;
-            public Listenarr.Api.Controllers.IndexersController Controller { get; }
+            public IndexersController Controller { get; }
 
             public void Dispose()
             {

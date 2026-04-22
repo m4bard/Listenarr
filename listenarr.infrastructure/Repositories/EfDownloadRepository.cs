@@ -1,13 +1,27 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Listenarr.Infrastructure.Models;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Infrastructure.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
-namespace Listenarr.Api.Repositories
+namespace Listenarr.Infrastructure.Repositories
 {
     public class EfDownloadRepository : IDownloadRepository
     {
@@ -22,30 +36,30 @@ namespace Listenarr.Api.Repositories
 
         public async Task AddAsync(Download download)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             ctx.Downloads.Add(download);
             await ctx.SaveChangesAsync();
         }
 
         public async Task<Download?> FindAsync(string id)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads.FindAsync(id);
         }
 
         public async Task UpdateAsync(Download download)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             ctx.Downloads.Update(download);
             await ctx.SaveChangesAsync();
         }
 
         public async Task UpdateMetadataAsync(string id, string key, object? value)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             var d = await ctx.Downloads.FindAsync(id);
             if (d == null) return;
-            if (d.Metadata == null) d.Metadata = new System.Collections.Generic.Dictionary<string, object>();
+            if (d.Metadata == null) d.Metadata = new Dictionary<string, object>();
             d.Metadata[key] = value ?? string.Empty;
             ctx.Downloads.Update(d);
             await ctx.SaveChangesAsync();
@@ -53,7 +67,7 @@ namespace Listenarr.Api.Repositories
 
         public async Task RemoveAsync(string id)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             var d = await ctx.Downloads.FindAsync(id);
             if (d == null) return;
             ctx.Downloads.Remove(d);
@@ -62,13 +76,13 @@ namespace Listenarr.Api.Repositories
 
         public async Task<List<Download>> GetAllAsync()
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads.AsNoTracking().ToListAsync();
         }
 
         public async Task<List<QueueTrackedDownload>> GetQueueDisplayCandidatesAsync()
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             var ddl = await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved)
@@ -86,7 +100,7 @@ namespace Listenarr.Api.Repositories
 
         public async Task<List<QueueTrackedDownload>> GetQueueMatchingCandidatesAsync()
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId != "DDL" && d.Status != DownloadStatus.Failed)
@@ -96,7 +110,7 @@ namespace Listenarr.Api.Repositories
 
         public async Task<List<string>> GetKnownClientItemIdsAsync()
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             var metadataEntries = await ctx.Downloads
                 .AsNoTracking()
                 .Select(d => d.Metadata)
@@ -105,20 +119,11 @@ namespace Listenarr.Api.Repositories
             var ids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (var metadata in metadataEntries)
             {
-                if (metadata == null)
-                {
-                    continue;
-                }
-
+                if (metadata == null) continue;
                 if (TryGetMetadataString(metadata, "ClientDownloadId", out var clientDownloadId))
-                {
                     ids.Add(clientDownloadId);
-                }
-
                 if (TryGetMetadataString(metadata, "TorrentHash", out var torrentHash))
-                {
                     ids.Add(torrentHash);
-                }
             }
 
             return ids.ToList();
@@ -126,7 +131,7 @@ namespace Listenarr.Api.Repositories
 
         public async Task<List<Download>> GetByClientAsync(string clientId)
         {
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId == clientId)
@@ -137,22 +142,76 @@ namespace Listenarr.Api.Repositories
         {
             var idSet = ids?.ToList() ?? new List<string>();
             if (!idSet.Any()) return new List<Download>();
-            var ctx = await _dbFactory.CreateDbContextAsync();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => idSet.Contains(d.Id))
                 .ToListAsync();
         }
 
+        public async Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, System.Threading.CancellationToken ct = default)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.AudiobookId == audiobookId)
+                .ToListAsync(ct);
+        }
+
+        public async Task<List<Download>> GetCompletionCandidatesAsync(int limit)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.Status == DownloadStatus.Completed
+                         || d.Status == DownloadStatus.ImportPending
+                         || d.Status == DownloadStatus.Processing)
+                .OrderByDescending(d => d.CompletedAt)
+                .Take(limit)
+                .ToListAsync();
+        }
+
+        public async Task<List<Download>> GetActiveForMonitoringAsync()
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.Status == DownloadStatus.Queued
+                         || d.Status == DownloadStatus.Downloading
+                         || d.Status == DownloadStatus.Paused
+                         || d.Status == DownloadStatus.Processing
+                         || ((d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) && (d.FinalPath == null || d.FinalPath == ""))
+                         || (d.Status == DownloadStatus.Moved && d.DownloadClientId != null && d.DownloadClientId != ""))
+                .ToListAsync();
+        }
+
+        public async Task<List<Download>> GetRecentAsync(int count)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .OrderByDescending(d => d.StartedAt)
+                .Take(count)
+                .ToListAsync();
+        }
+
+        public async Task<List<int>> GetActiveAudiobookIdsAsync(IEnumerable<DownloadStatus> statuses)
+        {
+            var statusList = statuses.ToList();
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .Where(d => d.AudiobookId.HasValue && statusList.Contains(d.Status))
+                .Select(d => d.AudiobookId!.Value)
+                .Distinct()
+                .ToListAsync();
+        }
+
         private static bool TryGetMetadataString(Dictionary<string, object>? metadata, string key, out string value)
         {
             value = string.Empty;
-
             if (metadata == null || !metadata.TryGetValue(key, out var raw) || raw == null)
-            {
                 return false;
-            }
-
             value = raw.ToString() ?? string.Empty;
             return !string.IsNullOrWhiteSpace(value);
         }

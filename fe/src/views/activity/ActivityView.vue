@@ -1,3 +1,20 @@
+<!--
+  Listenarr - Audiobook Management System
+  Copyright (C) 2024-2026 Listenarr Contributors
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published
+  by the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program. If not, see <https://www.gnu.org/licenses/>.
+-->
 <template>
   <div class="activity-view">
     <div class="page-header">
@@ -634,41 +651,11 @@ const formatStatus = (status: string): string => {
   return labels[status] ?? status.charAt(0).toUpperCase() + status.slice(1)
 }
 
-const formatSpeed = (bytesPerSecond: number): string => {
-  if (bytesPerSecond === 0) return '0 B/s'
-
-  const units = ['B/s', 'KB/s', 'MB/s', 'GB/s']
-  let speed = bytesPerSecond
-  let unitIndex = 0
-
-  while (speed >= 1024 && unitIndex < units.length - 1) {
-    speed /= 1024
-    unitIndex++
-  }
-
-  return `${speed.toFixed(1)} ${units[unitIndex]}`
-}
-
 const formatEta = (seconds: number): string => {
   if (seconds < 60) return `${seconds}s`
   if (seconds < 3600) return `${Math.floor(seconds / 60)}m`
   if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
   return `${Math.floor(seconds / 86400)}d`
-}
-
-const formatSize = (bytes: number): string => {
-  if (!bytes || bytes === 0) return '0 B'
-
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = bytes
-  let unitIndex = 0
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex++
-  }
-
-  return `${size.toFixed(1)} ${units[unitIndex]}`
 }
 
 // Subscribe to SignalR for real-time updates

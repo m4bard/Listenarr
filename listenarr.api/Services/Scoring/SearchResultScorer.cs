@@ -1,5 +1,22 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.Extensions.Logging;
 using System;
 using System.Collections.Generic;
@@ -10,7 +27,7 @@ namespace Listenarr.Api.Services.Scoring
 {
     public class SearchResultScorer
     {
-        private readonly ListenArrDbContext? _dbContext;
+        private readonly IIndexerRepository? _indexerRepository;
         private readonly ILogger _logger;
 
         // Configurable weights (tune as needed)
@@ -23,9 +40,9 @@ namespace Listenarr.Api.Services.Scoring
         public int QualityNotAllowedPenalty { get; set; } = -20;
         public int ForbiddenWordRejectionFlag { get; set; } = -1; // sentinel for rejection
 
-        public SearchResultScorer(ListenArrDbContext? dbContext, ILogger logger)
+        public SearchResultScorer(IIndexerRepository? indexerRepository, ILogger logger)
         {
-            _dbContext = dbContext;
+            _indexerRepository = indexerRepository;
             _logger = logger;
         }
 
@@ -107,11 +124,11 @@ namespace Listenarr.Api.Services.Scoring
             // Age checks and indexer retention
             double ageDays = 0;
             int indexerRetention = 0;
-            if (searchResult.IndexerId.HasValue && _dbContext != null)
+            if (searchResult.IndexerId.HasValue && _indexerRepository != null)
             {
                 try
                 {
-                    var idx = await _dbContext.Indexers.FindAsync(searchResult.IndexerId.Value);
+                    var idx = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
                     if (idx != null)
                     {
                         indexerRetention = idx.Retention;

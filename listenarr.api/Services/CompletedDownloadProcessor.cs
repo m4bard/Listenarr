@@ -1,6 +1,22 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Text.Json;
-using Listenarr.Infrastructure.Models;
-using Listenarr.Infrastructure.Repositories;
+using Listenarr.Application.Repositories;
 using Listenarr.Application.Services;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
@@ -11,28 +27,28 @@ namespace Listenarr.Api.Services
 {
     public class CompletedDownloadProcessor : ICompletedDownloadProcessor
     {
-        private readonly Listenarr.Api.Repositories.IDownloadRepository _downloadRepository;
+        private readonly IDownloadRepository _downloadRepository;
         private readonly IFileFinalizer _fileFinalizer;
         private readonly IConfigurationService _configurationService;
         private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly IImportService _importService;
         private readonly IArchiveExtractor _archiveExtractor;
         private readonly IHubBroadcaster? _hubBroadcaster;
-        private readonly IHubContext<Listenarr.Api.Hubs.DownloadHub> _hubContext;
+        private readonly IHubContext<DownloadHub> _hubContext;
         private readonly IDownloadQueueService _downloadQueueService;
         private readonly IDownloadHistoryService? _downloadHistoryService;
         private readonly ILogger<CompletedDownloadProcessor> _logger;
         private readonly IAppMetricsService _metrics;
 
         public CompletedDownloadProcessor(
-            Listenarr.Api.Repositories.IDownloadRepository downloadRepository,
+            IDownloadRepository downloadRepository,
             IFileFinalizer fileFinalizer,
             IConfigurationService configurationService,
             IServiceScopeFactory serviceScopeFactory,
             IImportService importService,
             IArchiveExtractor archiveExtractor,
             IDownloadQueueService downloadQueueService,
-            IHubContext<Listenarr.Api.Hubs.DownloadHub> hubContext,
+            IHubContext<DownloadHub> hubContext,
             ILogger<CompletedDownloadProcessor> logger,
             IHubBroadcaster? hubBroadcaster = null,
             IAppMetricsService? metrics = null,
@@ -87,24 +103,6 @@ namespace Listenarr.Api.Services
                         _logger.LogDebug(broadcastEx, "Failed to broadcast after marking as Completed");
                     }
 
-                    try
-                    {
-                        var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                        using var scopeSync = scopeFactoryToUse.CreateScope();
-                        var scopedDb = scopeSync.ServiceProvider.GetService<ListenArrDbContext>();
-                        if (scopedDb != null)
-                        {
-                            var local = await scopedDb.Downloads.FindAsync(downloadId);
-                            if (local != null)
-                            {
-                                local.Status = DownloadStatus.ImportPending;
-                                _logger.LogDebug("Synchronized ImportPending status into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                            }
-                        }
-                    }
-                    catch (Exception syncEx) when (syncEx is not OperationCanceledException && syncEx is not OutOfMemoryException && syncEx is not StackOverflowException) {
-                        _logger.LogDebug(syncEx, "Failed to synchronize status into scoped ListenArrDbContext (non-fatal)");
-                    }
                 }
 
                 var importToastSent = false;
@@ -185,25 +183,6 @@ namespace Listenarr.Api.Services
                                         }
                                     }
 
-                                    try
-                                    {
-                                        var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                                        using var afScope = scopeFactoryToUse.CreateScope();
-                                        var scopedDb2 = afScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                        if (scopedDb2 != null)
-                                        {
-                                            var local2 = await scopedDb2.Downloads.FindAsync(downloadId);
-                                            if (local2 != null)
-                                            {
-                                                local2.FinalPath = finalFromDirectory;
-                                                local2.Status = DownloadStatus.Moved;
-                                                _logger.LogDebug("Synchronized FinalPath into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                                            }
-                                        }
-                                    }
-                                    catch (Exception sync2Ex) when (sync2Ex is not OperationCanceledException && sync2Ex is not OutOfMemoryException && sync2Ex is not StackOverflowException) {
-                                        _logger.LogDebug(sync2Ex, "Failed to synchronize FinalPath into scoped ListenArrDbContext (non-fatal)");
-                                    }
                                 }
                             }
                             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -250,14 +229,14 @@ namespace Listenarr.Api.Services
                                         {
                                             var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
                                             using var bpScope = scopeFactoryToUse.CreateScope();
-                                            var bpDb = bpScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                            if (bpDb != null)
+                                            var bpAudiobookRepository = bpScope.ServiceProvider.GetService<IAudiobookRepository>();
+                                            if (bpAudiobookRepository != null)
                                             {
-                                                var audiobook = await bpDb.Audiobooks.FindAsync(download.AudiobookId.Value);
+                                                var audiobook = await bpAudiobookRepository.GetByIdAsync(download.AudiobookId.Value);
                                                 if (audiobook != null && !commonDir.Equals(audiobook.BasePath, StringComparison.OrdinalIgnoreCase))
                                                 {
                                                     audiobook.BasePath = commonDir;
-                                                    await bpDb.SaveChangesAsync();
+                                                    await bpAudiobookRepository.UpdateAsync(audiobook);
                                                     _logger.LogInformation("Updated audiobook {AudiobookId} BasePath after directory import: {BasePath}", download.AudiobookId, commonDir);
                                                 }
                                             }
@@ -317,25 +296,6 @@ namespace Listenarr.Api.Services
                                                         }
                                                     }
 
-                                                    try
-                                                    {
-                                                        var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                                                        using var afScope = scopeFactoryToUse.CreateScope();
-                                                        var scopedDb2 = afScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                                        if (scopedDb2 != null)
-                                                        {
-                                                            var local2 = await scopedDb2.Downloads.FindAsync(downloadId);
-                                                            if (local2 != null)
-                                                            {
-                                                                local2.FinalPath = finalFromExtracted;
-                                                                local2.Status = DownloadStatus.Moved;
-                                                                _logger.LogDebug("Synchronized FinalPath into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                                                            }
-                                                        }
-                                                    }
-                                                    catch (Exception sync2Ex) when (sync2Ex is not OperationCanceledException && sync2Ex is not OutOfMemoryException && sync2Ex is not StackOverflowException) {
-                                                        _logger.LogDebug(sync2Ex, "Failed to synchronize FinalPath into scoped ListenArrDbContext (non-fatal)");
-                                                    }
                                                 }
                                             }
                                         }
@@ -413,25 +373,6 @@ namespace Listenarr.Api.Services
                                                     }
                                                 }
 
-                                                try
-                                                {
-                                                    var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                                                    using var afScope = scopeFactoryToUse.CreateScope();
-                                                    var scopedDb2 = afScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                                    if (scopedDb2 != null)
-                                                    {
-                                                        var local2 = await scopedDb2.Downloads.FindAsync(downloadId);
-                                                        if (local2 != null)
-                                                        {
-                                                            local2.FinalPath = finalFromExtracted;
-                                                            local2.Status = DownloadStatus.Moved;
-                                                            _logger.LogDebug("Synchronized FinalPath into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                                                        }
-                                                    }
-                                                }
-                                                catch (Exception sync2Ex) when (sync2Ex is not OperationCanceledException && sync2Ex is not OutOfMemoryException && sync2Ex is not StackOverflowException) {
-                                                    _logger.LogDebug(sync2Ex, "Failed to synchronize FinalPath into scoped ListenArrDbContext (non-fatal)");
-                                                }
                                             }
                                         }
                                     }
@@ -484,25 +425,6 @@ namespace Listenarr.Api.Services
                                             }
                                         }
 
-                                        try
-                                        {
-                                            var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                                            using var scopeSync2 = scopeFactoryToUse.CreateScope();
-                                            var scopedDb2 = scopeSync2.ServiceProvider.GetService<ListenArrDbContext>();
-                                            if (scopedDb2 != null)
-                                            {
-                                                var local2 = await scopedDb2.Downloads.FindAsync(downloadId);
-                                                if (local2 != null)
-                                                {
-                                                    local2.FinalPath = importResult.FinalPath;
-                                                    local2.Status = DownloadStatus.Moved;
-                                                    _logger.LogDebug("Synchronized FinalPath into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                                                }
-                                            }
-                                        }
-                                        catch (Exception sync2Ex) when (sync2Ex is not OperationCanceledException && sync2Ex is not OutOfMemoryException && sync2Ex is not StackOverflowException) {
-                                            _logger.LogDebug(sync2Ex, "Failed to synchronize FinalPath into scoped ListenArrDbContext (non-fatal)");
-                                        }
                                     }
                                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                                         _logger.LogWarning(ex, "Failed to update Download.FinalPath after import for {DownloadId}", downloadId);
@@ -533,13 +455,13 @@ namespace Listenarr.Api.Services
                                         int? maxExistingBitrate = null;
                                         try
                                         {
-                                            var scopedDb = afScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                            if (scopedDb != null && download != null && download.AudiobookId != null)
+                                            var fileRepository = afScope.ServiceProvider.GetService<IAudiobookFileRepository>();
+                                            if (fileRepository != null && download != null && download.AudiobookId != null)
                                             {
-                                                var existing = await scopedDb.AudiobookFiles
-                                                    .Where(f => f.AudiobookId == download.AudiobookId && f.Bitrate.HasValue)
+                                                var existing = (await fileRepository.GetByAudiobookIdAsync(download.AudiobookId.Value))
+                                                    .Where(f => f.Bitrate.HasValue)
                                                     .Select(f => f.Bitrate!.Value)
-                                                    .ToListAsync();
+                                                    .ToList();
                                                 if (existing.Any()) maxExistingBitrate = existing.Max();
                                             }
                                         }
@@ -618,10 +540,10 @@ namespace Listenarr.Api.Services
                     {
                         var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
                         using var historyScope = scopeFactoryToUse.CreateScope();
-                        var historyRepo = historyScope.ServiceProvider.GetService<IHistoryRepository>();
+                        var historyRepository = historyScope.ServiceProvider.GetService<IHistoryRepository>();
                         var configService = historyScope.ServiceProvider.GetService<IConfigurationService>();
                         
-                        if (historyRepo != null)
+                        if (historyRepository != null)
                         {
                             // Determine client name if available
                             string clientName = "Unknown";
@@ -634,7 +556,7 @@ namespace Listenarr.Api.Services
                                 }
                             }
                             
-                            var historyEntry = new Listenarr.Domain.Models.History
+                            var historyEntry = new History
                             {
                                 AudiobookId = downloadForHistory.AudiobookId,
                                 AudiobookTitle = downloadForHistory.Title,
@@ -649,7 +571,7 @@ namespace Listenarr.Api.Services
                                     FinalPath = downloadForHistory.FinalPath
                                 })
                             };
-                            await historyRepo.AddAsync(historyEntry);
+                            await historyRepository.AddAsync(historyEntry);
                             _logger.LogInformation("Added history entry for automatic import of {DownloadId}", downloadId);
                             
                             // Send notification
@@ -676,7 +598,7 @@ namespace Listenarr.Api.Services
                                     
                                     // Mark notification as sent
                                     historyEntry.NotificationSent = true;
-                                    await historyRepo.UpdateAsync(historyEntry);
+                                    await historyRepository.UpdateAsync(historyEntry);
                                 }
                             }
                             catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException) {
@@ -695,10 +617,10 @@ namespace Listenarr.Api.Services
                                     {
                                         try
                                         {
-                                            var audiobookRepo = historyScope.ServiceProvider.GetService<IAudiobookRepository>();
-                                            if (audiobookRepo != null)
+                                            var audiobookRepository = historyScope.ServiceProvider.GetService<IAudiobookRepository>();
+                                            if (audiobookRepository != null)
                                             {
-                                                var audiobook = await audiobookRepo.GetByIdAsync(downloadForHistory.AudiobookId.Value);
+                                                var audiobook = await audiobookRepository.GetByIdAsync(downloadForHistory.AudiobookId.Value);
                                                 if (audiobook != null && !string.IsNullOrEmpty(audiobook.Title))
                                                 {
                                                     audiobookName = audiobook.Title;
@@ -853,10 +775,10 @@ namespace Listenarr.Api.Services
                                         downloadForCleanup.Id, clientConfig.Name, deleteFiles);
                                     
                                     // Log to history
-                                    var historyRepo = cleanupScope.ServiceProvider.GetService<IHistoryRepository>();
-                                    if (historyRepo != null)
+                                    var historyRepository = cleanupScope.ServiceProvider.GetService<IHistoryRepository>();
+                                    if (historyRepository != null)
                                     {
-                                        var historyEntry = new Listenarr.Domain.Models.History
+                                        var historyEntry = new History
                                         {
                                             AudiobookId = downloadForCleanup.AudiobookId,
                                             AudiobookTitle = downloadForCleanup.Title,
@@ -873,7 +795,7 @@ namespace Listenarr.Api.Services
                                                 FinalPath = downloadForCleanup.FinalPath
                                             })
                                         };
-                                        await historyRepo.AddAsync(historyEntry);
+                                        await historyRepository.AddAsync(historyEntry);
                                         _logger.LogInformation("Added history entry for automatic import of {DownloadId}", downloadId);
                                         
                                         // Send notification
@@ -902,7 +824,7 @@ namespace Listenarr.Api.Services
                                                 
                                                 // Mark notification as sent
                                                 historyEntry.NotificationSent = true;
-                                                await historyRepo.UpdateAsync(historyEntry);
+                                                await historyRepository.UpdateAsync(historyEntry);
                                             }
                                         }
                                         catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException) {
@@ -922,10 +844,10 @@ namespace Listenarr.Api.Services
                                             {
                                                 try
                                                 {
-                                                    var audiobookRepo = cleanupScope.ServiceProvider.GetService<IAudiobookRepository>();
-                                                    if (audiobookRepo != null)
+                                                    var audiobookRepository = cleanupScope.ServiceProvider.GetService<IAudiobookRepository>();
+                                                    if (audiobookRepository != null)
                                                     {
-                                                        var audiobook = await audiobookRepo.GetByIdAsync(downloadForCleanup.AudiobookId.Value);
+                                                        var audiobook = await audiobookRepository.GetByIdAsync(downloadForCleanup.AudiobookId.Value);
                                                         if (audiobook != null && !string.IsNullOrEmpty(audiobook.Title))
                                                         {
                                                             audiobookName = audiobook.Title;
@@ -960,14 +882,13 @@ namespace Listenarr.Api.Services
                                     // Delete the download record from database after successful cleanup
                                     try
                                     {
-                                        var dbContext = cleanupScope.ServiceProvider.GetService<ListenArrDbContext>();
-                                        if (dbContext != null)
+                                        var downloadRepository = cleanupScope.ServiceProvider.GetService<IDownloadRepository>();
+                                        if (downloadRepository != null)
                                         {
-                                            var downloadToDelete = await dbContext.Downloads.FindAsync(downloadId);
+                                            var downloadToDelete = await downloadRepository.FindAsync(downloadId);
                                             if (downloadToDelete != null)
                                             {
-                                                dbContext.Downloads.Remove(downloadToDelete);
-                                                await dbContext.SaveChangesAsync();
+                                                await downloadRepository.RemoveAsync(downloadId);
                                                 _logger.LogInformation("Deleted download {DownloadId} from database after successful cleanup", downloadId);
                                                 
                                                 // Small delay to ensure database changes are visible to other contexts
@@ -1064,12 +985,12 @@ namespace Listenarr.Api.Services
             {
                 using var scope = _serviceScopeFactory.CreateScope();
                 var metadataService = scope.ServiceProvider.GetService<IMetadataService>();
-                var db = scope.ServiceProvider.GetService<ListenArrDbContext>();
+                var audiobookRepository = scope.ServiceProvider.GetService<IAudiobookRepository>();
 
                 Audiobook? audiobook = null;
-                if (download?.AudiobookId != null && db != null)
+                if (download?.AudiobookId != null && audiobookRepository != null)
                 {
-                    audiobook = await db.Audiobooks.FindAsync(download.AudiobookId.Value);
+                    audiobook = await audiobookRepository.GetByIdAsync(download.AudiobookId.Value);
                 }
 
                 var targetTitle = FileUtils.NormalizeComparisonValue(audiobook?.Title ?? download?.Title);
@@ -1324,10 +1245,10 @@ namespace Listenarr.Api.Services
                             timeoutMs: 8000);
                     }
 
-                    var historyRepo = scope.ServiceProvider.GetService<IHistoryRepository>();
-                    if (historyRepo != null)
+                    var historyRepository = scope.ServiceProvider.GetService<IHistoryRepository>();
+                    if (historyRepository != null)
                     {
-                        await historyRepo.AddAsync(new Listenarr.Domain.Models.History
+                        await historyRepository.AddAsync(new History
                         {
                             AudiobookId = download.AudiobookId,
                             AudiobookTitle = download.Title,

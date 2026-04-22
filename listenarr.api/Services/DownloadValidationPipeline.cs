@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -23,7 +23,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
@@ -53,16 +53,16 @@ namespace Listenarr.Api.Services
     {
         private readonly ILogger<DownloadValidationPipeline> _logger;
         private readonly DownloadStateMachine _stateMachine;
-        private readonly DownloadHistoryRepository _historyRepo;
+        private readonly IDownloadHistoryRepository _historyRepository;
 
         public DownloadValidationPipeline(
             ILogger<DownloadValidationPipeline> logger,
             DownloadStateMachine stateMachine,
-            DownloadHistoryRepository historyRepo)
+            IDownloadHistoryRepository historyRepository)
         {
             _logger = logger;
             _stateMachine = stateMachine;
-            _historyRepo = historyRepo;
+            _historyRepository = historyRepository;
         }
 
         /// <summary>
@@ -125,7 +125,7 @@ namespace Listenarr.Api.Services
                         download.DownloadId, (result.CompletedAt.Value - result.StartedAt).TotalSeconds);
 
                     // Mark as imported in history
-                    await _historyRepo.MarkAsImportedAsync(download.DownloadId, ct);
+                    await _historyRepository.MarkAsImportedAsync(download.DownloadId, ct);
                 }
 
                 return result;

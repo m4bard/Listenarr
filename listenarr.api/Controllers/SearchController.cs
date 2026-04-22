@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -54,7 +54,7 @@ namespace Listenarr.Api.Controllers
             _audibleService = audibleService;
             _metadataService = metadataService;
             _imageCacheService = imageCacheService;
-            _metadataConverters = metadataConverters ?? new MetadataConverters(imageCacheService, Microsoft.Extensions.Logging.Abstractions.NullLogger<Listenarr.Api.Services.Search.MetadataConverters>.Instance);
+            _metadataConverters = metadataConverters ?? new MetadataConverters(imageCacheService, Microsoft.Extensions.Logging.Abstractions.NullLogger<MetadataConverters>.Instance);
         }
 
         private string BuildApiImagePath(string identifier, string? sourceUrl = null)
@@ -167,14 +167,14 @@ namespace Listenarr.Api.Controllers
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 options.Converters.Add(new JsonStringEnumConverter(JsonNamingPolicy.CamelCase));
 
-                var req = JsonSerializer.Deserialize<Listenarr.Api.Models.SearchRequest>(reqJson.GetRawText(), options);
+                var req = JsonSerializer.Deserialize<SearchRequest>(reqJson.GetRawText(), options);
                 if (req == null) return BadRequest("SearchRequest body is required");
                 _logger.LogDebug("[DBG] Search received mode={Mode}, query='{Query}'", req.Mode, LogRedaction.SanitizeText(req.Query ?? "<null>"));
 
                 // Default to simplified=true for both modes (user only needs metadata for Add New feature)
                 var useSimplified = simplified ?? true;
 
-                if (req.Mode == Listenarr.Api.Models.SearchMode.Simple)
+                if (req.Mode == SearchMode.Simple)
                 {
                     var q = req.Query ?? string.Empty;
                     var region = string.IsNullOrWhiteSpace(req.Region) ? "us" : req.Region;
@@ -363,7 +363,7 @@ namespace Listenarr.Api.Controllers
                                 var seriesSearch = await _audibleService.SearchSeriesByNameAsync(seriesInput, region);
                                 _logger.LogInformation("SearchSeriesByNameAsync returned type={Type}, isNull={IsNull}",
                                     seriesSearch?.GetType().Name ?? "null", seriesSearch == null);
-                                if (seriesSearch is IEnumerable<Listenarr.Api.Services.SeriesLookupItem> seriesList)
+                                if (seriesSearch is IEnumerable<SeriesLookupItem> seriesList)
                                 {
                                     var seriesListMaterialized = seriesList.ToList();
                                     _logger.LogInformation("Series lookup for '{SeriesName}' returned {Count} items", LogRedaction.SanitizeText(seriesInput), seriesListMaterialized.Count);
@@ -390,7 +390,7 @@ namespace Listenarr.Api.Controllers
                                 var booksObj = await _audibleService.GetBooksBySeriesAsinAsync(seriesAsin, region);
 
                                 // Direct cast — GetBooksBySeriesAsinAsync returns List<AudibleSearchResult>
-                                var books = booksObj as List<Listenarr.Api.Services.AudibleSearchResult>;
+                                var books = booksObj as List<AudibleSearchResult>;
 
                                 if (books != null && books.Any())
                                 {
@@ -553,7 +553,7 @@ namespace Listenarr.Api.Controllers
         }
 
         // Map an AudibleSearchResult (from series/direct endpoints) to the Audible-shaped output object
-        private async Task<object> MapAudibleSearchResultToOutputAsync(Listenarr.Api.Services.AudibleSearchResult book, string region)
+        private async Task<object> MapAudibleSearchResultToOutputAsync(AudibleSearchResult book, string region)
         {
             string? imageUrl = book.ImageUrl;
             if (!string.IsNullOrWhiteSpace(book.Asin) && _imageCacheService != null)
@@ -580,17 +580,17 @@ namespace Listenarr.Api.Controllers
                 }
             }
 
-            var authors = (book.Authors ?? new List<Listenarr.Api.Services.AudibleAuthor>()).Where(a => a != null).Select(a => new
+            var authors = (book.Authors ?? new List<AudibleAuthor>()).Where(a => a != null).Select(a => new
             {
                 asin = a!.Asin, name = a!.Name, region = a!.Region ?? region,
                 regions = new[] { a!.Region ?? region }, updatedAt = DateTime.UtcNow.ToString("o")
             }).ToList();
-            var narrators = (book.Narrators ?? new List<Listenarr.Api.Services.AudibleNarrator>()).Where(n => n != null).Select(n => new { name = n!.Name, updatedAt = DateTime.UtcNow.ToString("o") }).ToList();
-            var genres = (book.Genres ?? new List<Listenarr.Api.Services.AudibleGenre>()).Where(g => g != null).Select(g => new
+            var narrators = (book.Narrators ?? new List<AudibleNarrator>()).Where(n => n != null).Select(n => new { name = n!.Name, updatedAt = DateTime.UtcNow.ToString("o") }).ToList();
+            var genres = (book.Genres ?? new List<AudibleGenre>()).Where(g => g != null).Select(g => new
             {
                 asin = g!.Asin, name = g!.Name, type = g!.Type, updatedAt = DateTime.UtcNow.ToString("o")
             }).ToList();
-            var series = (book.Series ?? new List<Listenarr.Api.Services.AudibleSeries>()).Where(s => s != null).Select(s => new
+            var series = (book.Series ?? new List<AudibleSeries>()).Where(s => s != null).Select(s => new
             {
                 asin = s!.Asin, name = s!.Name, region = region, position = s!.Position, updatedAt = DateTime.UtcNow.ToString("o")
             }).ToList();
@@ -622,7 +622,7 @@ namespace Listenarr.Api.Controllers
         private async Task<object> MapMetadataResultToAudibleAsync(MetadataSearchResult md, string region)
         {
             // If we have an ASIN and the metadata was enriched, try to fetch the canonical Audible payload
-            Listenarr.Api.Services.AudibleBookResponse? aud = null;
+            AudibleBookResponse? aud = null;
             try
             {
                 if (!string.IsNullOrWhiteSpace(md?.Asin))
@@ -664,7 +664,7 @@ namespace Listenarr.Api.Controllers
                     _logger.LogWarning(ex, "Failed to normalize Audible image for {Asin}", aud.Asin);
                 }
 
-                var authors = (aud.Authors ?? new List<Listenarr.Api.Services.AudibleAuthor>()).Where(a => a != null).Select(a => new
+                var authors = (aud.Authors ?? new List<AudibleAuthor>()).Where(a => a != null).Select(a => new
                 {
                     asin = a!.Asin,
                     name = a!.Name,
@@ -674,9 +674,9 @@ namespace Listenarr.Api.Controllers
                     updatedAt = DateTime.UtcNow.ToString("o")
                 }).ToList();
 
-                var narrators = (aud.Narrators ?? new List<Listenarr.Api.Services.AudibleNarrator>()).Where(n => n != null).Select(n => new { name = n!.Name, updatedAt = DateTime.UtcNow.ToString("o") }).ToList();
+                var narrators = (aud.Narrators ?? new List<AudibleNarrator>()).Where(n => n != null).Select(n => new { name = n!.Name, updatedAt = DateTime.UtcNow.ToString("o") }).ToList();
 
-                var genres = (aud.Genres ?? new List<Listenarr.Api.Services.AudibleGenre>()).Where(g => g != null).Select(g => new
+                var genres = (aud.Genres ?? new List<AudibleGenre>()).Where(g => g != null).Select(g => new
                 {
                     asin = g!.Asin,
                     name = g!.Name,
@@ -685,7 +685,7 @@ namespace Listenarr.Api.Controllers
                     updatedAt = DateTime.UtcNow.ToString("o")
                 }).ToList();
 
-                var series = (aud.Series ?? new List<Listenarr.Api.Services.AudibleSeries>()).Where(s => s != null).Select(s => new
+                var series = (aud.Series ?? new List<AudibleSeries>()).Where(s => s != null).Select(s => new
                 {
                     asin = s!.Asin,
                     name = s!.Name,
@@ -1093,16 +1093,16 @@ namespace Listenarr.Api.Controllers
                 _logger.LogInformation("IndexersSearch called for query: {Query}, isAutomaticSearch={IsAutomatic}", LogRedaction.SanitizeText(query), isAutomaticSearch);
 
                 // Support MyAnonamouse query string toggles (mamFilter, mamSearchInDescription, mamSearchInSeries, mamSearchInFilenames, mamLanguage, mamFreeleechWedge)
-                var mamOptions = new Listenarr.Api.Models.MyAnonamouseOptions();
-                if (Request.Query.TryGetValue("mamFilter", out var queryMamFilter) && Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(queryMamFilter.ToString() ?? string.Empty, true, out var mamFilter))
+                var mamOptions = new MyAnonamouseOptions();
+                if (Request.Query.TryGetValue("mamFilter", out var queryMamFilter) && Enum.TryParse<MamTorrentFilter>(queryMamFilter.ToString() ?? string.Empty, true, out var mamFilter))
                     mamOptions.Filter = mamFilter;
                 if (Request.Query.TryGetValue("mamSearchInDescription", out var queryMamSearchInDescription) && bool.TryParse(queryMamSearchInDescription, out var sd)) mamOptions.SearchInDescription = sd;
                 if (Request.Query.TryGetValue("mamSearchInSeries", out var queryMamSearchInSeries) && bool.TryParse(queryMamSearchInSeries, out var ss)) mamOptions.SearchInSeries = ss;
                 if (Request.Query.TryGetValue("mamSearchInFilenames", out var queryMamSearchInFilenames) && bool.TryParse(queryMamSearchInFilenames, out var sf)) mamOptions.SearchInFilenames = sf;
                 if (Request.Query.TryGetValue("mamLanguage", out var queryMamLanguage)) mamOptions.SearchLanguage = queryMamLanguage.ToString();
-                if (Request.Query.TryGetValue("mamFreeleechWedge", out var queryMamFreeleechWedge) && Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(queryMamFreeleechWedge.ToString() ?? string.Empty, true, out var mw)) mamOptions.FreeleechWedge = mw;
+                if (Request.Query.TryGetValue("mamFreeleechWedge", out var queryMamFreeleechWedge) && Enum.TryParse<MamFreeleechWedge>(queryMamFreeleechWedge.ToString() ?? string.Empty, true, out var mw)) mamOptions.FreeleechWedge = mw;
 
-                var req = new Listenarr.Api.Models.SearchRequest { MyAnonamouse = mamOptions };
+                var req = new SearchRequest { MyAnonamouse = mamOptions };
                 var results = await _searchService.SearchIndexersAsync(query, category, sortBy, sortDirection, isAutomaticSearch, req);
                 _logger.LogInformation("IndexersSearch returning {Count} results for query: {Query}", results.Count, LogRedaction.SanitizeText(query));
                 return Ok(results);
@@ -1349,21 +1349,21 @@ namespace Listenarr.Api.Controllers
                 }
 
                 // If the caller provided explicit MyAnonamouse query params, construct a SearchRequest that will be passed to the service.
-                Listenarr.Api.Models.SearchRequest? request = null;
+                SearchRequest? request = null;
                 if (mamFilter != null || mamSearchInDescription.HasValue || mamSearchInSeries.HasValue || mamSearchInFilenames.HasValue || mamLanguage != null || mamFreeleechWedge != null || mamEnrichResults.HasValue || mamEnrichTopResults.HasValue)
                 {
-                    request = new Listenarr.Api.Models.SearchRequest();
-                    request.MyAnonamouse = new Listenarr.Api.Models.MyAnonamouseOptions();
+                    request = new SearchRequest();
+                    request.MyAnonamouse = new MyAnonamouseOptions();
 
                     if (mamSearchInDescription.HasValue) request.MyAnonamouse.SearchInDescription = mamSearchInDescription.Value;
                     if (mamSearchInSeries.HasValue) request.MyAnonamouse.SearchInSeries = mamSearchInSeries.Value;
                     if (mamSearchInFilenames.HasValue) request.MyAnonamouse.SearchInFilenames = mamSearchInFilenames.Value;
                     if (!string.IsNullOrWhiteSpace(mamLanguage)) request.MyAnonamouse.SearchLanguage = mamLanguage;
 
-                    if (!string.IsNullOrWhiteSpace(mamFilter) && Enum.TryParse<Listenarr.Api.Models.MamTorrentFilter>(mamFilter, true, out var mf))
+                    if (!string.IsNullOrWhiteSpace(mamFilter) && Enum.TryParse<MamTorrentFilter>(mamFilter, true, out var mf))
                         request.MyAnonamouse.Filter = mf;
 
-                    if (!string.IsNullOrWhiteSpace(mamFreeleechWedge) && Enum.TryParse<Listenarr.Api.Models.MamFreeleechWedge>(mamFreeleechWedge, true, out var fw))
+                    if (!string.IsNullOrWhiteSpace(mamFreeleechWedge) && Enum.TryParse<MamFreeleechWedge>(mamFreeleechWedge, true, out var fw))
                         request.MyAnonamouse.FreeleechWedge = fw;
                     if (mamEnrichResults.HasValue) request.MyAnonamouse.EnrichResults = mamEnrichResults.Value;
                     if (mamEnrichTopResults.HasValue) request.MyAnonamouse.EnrichTopResults = mamEnrichTopResults.Value;
@@ -1376,12 +1376,12 @@ namespace Listenarr.Api.Controllers
                 // If the underlying indexer implementation indicates MyAnonamouse (set on results by SearchIndexerAsync), return Prowlarr-like DTO shape
                 if (idxResults.Count > 0 && !string.IsNullOrWhiteSpace(idxResults[0].IndexerImplementation) && string.Equals(idxResults[0].IndexerImplementation, "MyAnonamouse", StringComparison.OrdinalIgnoreCase))
                 {
-                    var dtos = idxResults.Select(r => Listenarr.Domain.Models.SearchResultConverters.ToIndexerResultDto(r)).ToList();
+                    var dtos = idxResults.Select(r => SearchResultConverters.ToIndexerResultDto(r)).ToList();
                     return Ok(dtos);
                 }
 
                 // Otherwise, return the legacy SearchResult shape
-                var results = idxResults.Select(r => Listenarr.Domain.Models.SearchResultConverters.ToSearchResult(r)).ToList();
+                var results = idxResults.Select(r => SearchResultConverters.ToSearchResult(r)).ToList();
                 _logger.LogInformation("SearchByApi returning {Count} results for apiId: {ApiId}", results.Count, apiId);
                 return Ok(results);
             }

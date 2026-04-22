@@ -1,4 +1,21 @@
-﻿using System;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System;
 using System.IO;
 using System.Linq;
 using System.Threading;
@@ -65,12 +82,14 @@ namespace Listenarr.Api.Tests
             services.AddDbContext<ListenArrDbContext>(opts => opts.UseInMemoryDatabase(dbName, dbRoot));
             services.AddSingleton<IMoveQueueService, MoveQueueService>();
             services.AddSingleton<MoveBackgroundService>();
+            services.AddScoped<IMoveJobRepository, EfMoveJobRepository>();
+            services.AddScoped<IAudiobookRepository, AudiobookRepository>();
 
             // Add capturing hub context so we can assert sends
             var capturingHub = new CapturingHubContext();
             services.AddSingleton<IHubContext<Listenarr.Api.Hubs.DownloadHub>>(capturingHub);
             // Register history repository so the move handler will add history and broadcast an AudiobookUpdate
-            services.AddScoped<Listenarr.Infrastructure.Repositories.IHistoryRepository, Listenarr.Infrastructure.Repositories.HistoryRepository>();
+            services.AddScoped<IHistoryRepository, EfHistoryRepository>();
 
             var provider = services.BuildServiceProvider();
             using var rootScope = provider.CreateScope();

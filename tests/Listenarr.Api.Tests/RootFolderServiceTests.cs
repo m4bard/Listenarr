@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
@@ -5,9 +22,8 @@ using Xunit;
 using Xunit.Abstractions;
 using Microsoft.Extensions.Logging;
 using Moq;
-using Xunit.Sdk;
 using Listenarr.Infrastructure.Models;
-using Listenarr.Api.Repositories;
+using Listenarr.Infrastructure.Repositories;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Utils;
@@ -24,10 +40,10 @@ namespace Listenarr.Api.Tests
 
         private readonly ITestOutputHelper _output;
         public RootFolderServiceTests(ITestOutputHelper output) { _output = output; }
+
         [Fact]
         public async Task Create_Throws_WhenPathDuplicate()
         {
-            
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
@@ -37,8 +53,8 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             var dbFactory = new TestDbFactory(options);
-            var repo = new EfRootFolderRepository(dbFactory, null!);
-            var svc = new RootFolderService(repo, dbFactory, null!);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => svc.CreateAsync(new RootFolder { Name = "B", Path = booksPath }));
         }
@@ -57,13 +73,12 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             var dbFactory = new TestDbFactory(options);
-            var repo = new EfRootFolderRepository(dbFactory, null!);
-            var svc = new RootFolderService(repo, dbFactory, null!);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
+            var svc = new RootFolderService(repo, null!);
 
             await Assert.ThrowsAsync<InvalidOperationException>(() => svc.DeleteAsync(root.Id));
         }
 
-        // Rename behavior tests
         [Fact]
         public async Task Update_RenameWithoutMove_UpdatesAudiobookBasePaths()
         {
@@ -79,11 +94,10 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             var dbFactory = new TestDbFactory(options);
-            var repo = new EfRootFolderRepository(dbFactory, null!);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
             var logger = new TestLogger<RootFolderService>(_output);
-            var svc = new RootFolderService(repo, dbFactory, logger);
+            var svc = new RootFolderService(repo, logger);
 
-            // Dump DB state before update
             using (var pre = new ListenArrDbContext(options))
             {
                 var dumpPre = string.Join("; ", pre.Audiobooks.Select(a => $"{a.Title} => {a.BasePath}"));
@@ -92,7 +106,6 @@ namespace Listenarr.Api.Tests
 
             await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath }, moveFiles: false);
 
-            // Verify audiobooks' basepaths updated (use a fresh context)
             using (var verifyDb = new ListenArrDbContext(options))
             {
                 var dumpAfter = string.Join("; ", verifyDb.Audiobooks.Select(a => $"{a.Title} => {a.BasePath}"));
@@ -126,16 +139,15 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             var dbFactory = new TestDbFactory(options);
-            var repo = new EfRootFolderRepository(dbFactory, null!);
+            var repo = new EfRootFolderRepository(dbFactory, Mock.Of<ILogger<EfRootFolderRepository>>());
 
             var mockMove = new Moq.Mock<IMoveQueueService>();
             mockMove.Setup(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()))
                 .ReturnsAsync(Guid.NewGuid());
 
             var logger = new TestLogger<RootFolderService>(_output);
-            var svc = new RootFolderService(repo, dbFactory, logger, mockMove.Object);
+            var svc = new RootFolderService(repo, logger, mockMove.Object);
 
-            // Dump DB state before update
             using (var pre = new ListenArrDbContext(options))
             {
                 var dumpPre = string.Join("; ", pre.Audiobooks.Select(a => $"{a.Title} => {a.BasePath}"));
@@ -144,7 +156,6 @@ namespace Listenarr.Api.Tests
 
             await svc.UpdateAsync(new RootFolder { Id = root.Id, Name = "R2", Path = newRootPath }, moveFiles: true);
 
-            // Verify DB changed (use fresh context)
             using (var verifyDb = new ListenArrDbContext(options))
             {
                 var dumpAfter = string.Join("; ", verifyDb.Audiobooks.Select(a => $"{a.Title} => {a.BasePath}"));
@@ -161,12 +172,10 @@ namespace Listenarr.Api.Tests
                 Assert.Equal(newRootPath, a2);
             }
 
-            // Ensure moves enqueued for both audiobooks
             mockMove.Verify(m => m.EnqueueMoveAsync(1, newRootAuthorTitlePath, rootAuthorTitlePath), Times.Once);
             mockMove.Verify(m => m.EnqueueMoveAsync(2, newRootPath, rootPath), Times.Once);
         }
 
-        // Minimal test db factory to satisfy IDbContextFactory<T>
         private class TestDbFactory : IDbContextFactory<ListenArrDbContext>
         {
             private readonly DbContextOptions<ListenArrDbContext> _options;
@@ -175,7 +184,6 @@ namespace Listenarr.Api.Tests
             public ListenArrDbContext CreateDbContext() => new ListenArrDbContext(_options);
         }
 
-        // Simple logger that writes to the xUnit test output so CI captures service diagnostics
         private class TestLogger<T> : ILogger<T>
         {
             private readonly ITestOutputHelper _out;

@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Net;
 using System.Net.Http;
@@ -31,17 +48,17 @@ namespace Listenarr.Api.Tests
             }
         }
 
-        private Listenarr.Api.Controllers.IndexersController CreateController(HttpMessageHandler handler)
+        private IndexersController CreateController(HttpMessageHandler handler)
         {
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
 
             var db = new ListenArrDbContext(options);
-            var logger = NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance;
+            var logger = NullLogger<IndexersController>.Instance;
             var client = new HttpClient(handler);
 
-            return new Listenarr.Api.Controllers.IndexersController(db, logger, client, new TestConfigurationService());
+            return new IndexersController(new EfIndexerRepository(db), logger, client, new TestConfigurationService());
         }
 
         [Fact]

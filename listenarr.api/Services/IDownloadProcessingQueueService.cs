@@ -1,6 +1,6 @@
 ﻿/*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -71,18 +71,4 @@ namespace Listenarr.Api.Services
         Task<List<DownloadProcessingJob>> GetRecentActivityAsync(int count = 50);
     }
 
-    /// <summary>
-    /// Queue statistics
-    /// </summary>
-    public class QueueStats
-    {
-        public int PendingJobs { get; set; }
-        public int ProcessingJobs { get; set; }
-        public int CompletedJobs { get; set; }
-        public int FailedJobs { get; set; }
-        public int RetryJobs { get; set; }
-        public int TotalJobs { get; set; }
-        public DateTime? OldestPendingJob { get; set; }
-        public DateTime LastUpdated { get; set; } = DateTime.UtcNow;
-    }
 }

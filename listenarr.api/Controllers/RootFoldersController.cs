@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using Microsoft.AspNetCore.Mvc;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
@@ -5,8 +22,7 @@ using Listenarr.Domain.Models;
 using System.Collections.Generic;
 using System;
 using System.Linq;
-using Microsoft.EntityFrameworkCore;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 
 namespace Listenarr.Api.Controllers
 {
@@ -17,13 +33,15 @@ namespace Listenarr.Api.Controllers
     {
         private readonly IRootFolderService _service;
         private readonly IUnmatchedScanQueueService _unmatchedQueue;
-        private readonly ListenArrDbContext _db;
+        private readonly IAudiobookFileRepository _fileRepository;
+        private readonly IAudiobookRepository _audiobookRepository;
 
-        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue, ListenArrDbContext db)
+        public RootFoldersController(IRootFolderService service, IUnmatchedScanQueueService unmatchedQueue, IAudiobookFileRepository fileRepository, IAudiobookRepository audiobookRepository)
         {
             _service = service;
             _unmatchedQueue = unmatchedQueue;
-            _db = db;
+            _fileRepository = fileRepository;
+            _audiobookRepository = audiobookRepository;
         }
 
         /// <summary>
@@ -174,14 +192,11 @@ namespace Listenarr.Api.Controllers
             if (_unmatchedQueue.TryGetLastJobForPath(folder.Path, out var job) && job != null)
             {
                 // Filter out items already added to the library since the scan ran
-                var trackedFromFiles = await _db.AudiobookFiles
-                    .Where(f => f.Path != null)
-                    .Select(f => f.Path!)
-                    .ToListAsync();
-                var trackedFromAudiobooks = await _db.Audiobooks
+                var trackedFromFiles = await _fileRepository.GetAllFilePathsAsync();
+                var trackedFromAudiobooks = (await _audiobookRepository.GetAllAsync())
                     .Where(a => a.FilePath != null)
                     .Select(a => a.FilePath!)
-                    .ToListAsync();
+                    .ToList();
                 var tracked = new HashSet<string>(
                     trackedFromFiles.Concat(trackedFromAudiobooks),
                     StringComparer.OrdinalIgnoreCase);

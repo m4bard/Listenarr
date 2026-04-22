@@ -1,3 +1,20 @@
+<!--
+  Listenarr - Audiobook Management System
+  Copyright (C) 2024-2026 Listenarr Contributors
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published
+  by the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program. If not, see <https://www.gnu.org/licenses/>.
+-->
 <template>
     <div class="collection-view">
       <!-- Top Navigation Bar -->
@@ -1211,10 +1228,6 @@ const totalAddedAudiobooks = computed(() => audiobooks.value.filter((book) => bo
 const totalNotAddedAudiobooks = computed(() => audiobooks.value.filter((book) => !book.inLibrary))
 const authorLibraryCount = computed(() => totalAddedAudiobooks.value.length)
 const authorNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
-const authorVisibleBookCount = computed(() => audiobooks.value.length)
-const authorCatalogTotalCount = computed(
-  () => authorCatalog.value?.totalBooks ?? authorVisibleBookCount.value,
-)
 const seriesLibraryCount = computed(() => totalAddedAudiobooks.value.length)
 const seriesNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
 const seriesVisibleBookCount = computed(() => audiobooks.value.length)

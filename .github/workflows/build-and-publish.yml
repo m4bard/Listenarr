@@ -1,0 +1,313 @@
+name: Build and Publish (reusable)
+
+# Reusable workflow called by canary.yml, beta.yml, and release.yml.
+# It handles everything from .NET restore through Docker push and notifications.
+# Callers are responsible for version resolution and PR discovery.
+
+permissions:
+  contents: write
+  pull-requests: write
+  packages: write
+
+on:
+  workflow_call:
+    inputs:
+      # ── Version / channel ───────────────────────────────────────────────────
+      version:
+        description: Semver string (e.g. "1.2.3")
+        type: string
+        required: true
+      short_sha:
+        description: 7-character git SHA (e.g. "abc1234")
+        type: string
+        required: true
+      channel:
+        description: One of canary | beta | release
+        type: string
+        required: true
+
+      # ── Artifact naming ─────────────────────────────────────────────────────
+      artifact_prefix:
+        description: Prefix for uploaded zip artifacts (e.g. "canary-artifacts")
+        type: string
+        required: true
+      include_osx:
+        description: Whether to build and zip the osx-x64 artifact
+        type: boolean
+        default: false
+
+      # ── Docker ──────────────────────────────────────────────────────────────
+      docker_tags:
+        description: Newline-separated list of full docker image:tag strings to push
+        type: string
+        required: true
+
+      # ── GitHub Release ───────────────────────────────────────────────────────
+      release_tag:
+        description: Git tag for the GitHub Release (e.g. "v1.2.3-canary")
+        type: string
+        required: true
+      release_name:
+        description: Display name of the GitHub Release
+        type: string
+        required: true
+      prerelease:
+        description: Whether to mark the GitHub Release as a pre-release
+        type: boolean
+        default: true
+
+      # ── Release notes ────────────────────────────────────────────────────────
+      pr_number:
+        description: PR number used in release notes footer
+        type: string
+        default: ""
+      pr_title:
+        description: PR title used in Discord notification
+        type: string
+        default: ""
+      pr_body_raw:
+        description: Raw PR body to sanitize and use as release notes
+        type: string
+        default: ""
+
+      # ── Discord ──────────────────────────────────────────────────────────────
+      discord_text:
+        description: The main notification text sent to Discord
+        type: string
+        default: "A new build has been released for docker."
+      checkout_ref:
+        description: Git ref to check out (branch, tag, or SHA). Defaults to the triggering SHA when empty.
+        type: string
+        default: ""
+
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: true
+      DOCKERHUB_TOKEN:
+        required: true
+      ATCR_USERNAME:
+        required: true
+      ATCR_TOKEN:
+        required: true
+      LISTENARR_DISCORD_WEBHOOK_URL:
+        required: false
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    env:
+      API_PROJECT: listenarr.api/Listenarr.Api.csproj
+      API_OUTPUT: listenarr.api/publish
+
+    steps:
+      # ── Checkout ─────────────────────────────────────────────────────────────
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ inputs.checkout_ref || github.sha }}
+
+      # ── .NET build ───────────────────────────────────────────────────────────
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v3
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore .NET
+        run: dotnet restore listenarr.slnx
+
+      - name: Build solution
+        run: dotnet build listenarr.slnx -c Release --no-restore
+
+      # ── Publish portable binaries ────────────────────────────────────────────
+
+      - name: Publish API (linux-x64)
+        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r linux-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/linux-x64
+
+      - name: Publish API (win-x64)
+        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/win-x64
+
+      - name: Publish API (osx-x64)
+        if: inputs.include_osx
+        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r osx-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/osx-x64
+
+      # ── Zip and upload artifacts ─────────────────────────────────────────────
+
+      - name: Zip Linux artifact
+        run: |
+          mkdir -p artifacts
+          cd listenarr.api/publish/linux-x64
+          zip -r ../../../artifacts/listenarr-${{ inputs.version }}-${{ inputs.short_sha }}-linux-x64.zip .
+
+      - name: Zip Windows artifact
+        run: |
+          mkdir -p artifacts
+          cd listenarr.api/publish/win-x64
+          zip -r ../../../artifacts/listenarr-${{ inputs.version }}-${{ inputs.short_sha }}-win-x64.zip .
+
+      - name: Zip macOS artifact
+        if: inputs.include_osx
+        run: |
+          mkdir -p artifacts
+          cd listenarr.api/publish/osx-x64
+          zip -r ../../../artifacts/listenarr-${{ inputs.version }}-${{ inputs.short_sha }}-osx-x64.zip .
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact_prefix }}-${{ inputs.version }}-${{ inputs.short_sha }}
+          path: artifacts/*.zip
+
+      # ── Sanitize PR body → release notes ─────────────────────────────────────
+
+      - name: Sanitize PR body and build release notes
+        id: sanitize_pr_body
+        run: |
+          python3 << 'PYTHON_SCRIPT'
+          import os
+          import re
+          import html
+
+          channel   = os.environ.get('CHANNEL', 'unknown')
+          version   = os.environ.get('VERSION', 'unknown')
+          sha       = os.environ.get('GITHUB_SHA', 'unknown')
+          pr_number = os.environ.get('PR_NUMBER', 'unknown')
+          pr_body   = os.environ.get('PR_BODY_RAW', '')
+
+          sanitized = html.escape(pr_body)
+          sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
+          sanitized = re.sub(r'<iframe[^>]*>.*?</iframe>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
+          sanitized = re.sub(r'javascript:', '', sanitized, flags=re.IGNORECASE)
+          if len(sanitized) > 2000:
+              sanitized = sanitized[:1997] + '...'
+          sanitized = re.sub(r'\n\s*\n\s*\n', '\n\n', sanitized)
+          sanitized = sanitized.strip()
+          if not sanitized:
+              sanitized = "No description provided."
+
+          channel_label = channel.capitalize()
+          full_body = f"""{sanitized}
+
+          ---
+
+          **Automated {channel_label} build**
+
+          - Version: {version}
+          - Commit: {sha}
+          - Original PR: #{pr_number}"""
+
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"SANITIZED_PR_BODY<<EOF_SANITIZED\n{sanitized}\nEOF_SANITIZED\n")
+              f.write(f"FULL_RELEASE_BODY<<EOF_FULL\n{full_body}\nEOF_FULL\n")
+          PYTHON_SCRIPT
+        env:
+          CHANNEL: ${{ inputs.channel }}
+          VERSION: ${{ inputs.version }}
+          GITHUB_SHA: ${{ github.sha }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          PR_BODY_RAW: ${{ inputs.pr_body_raw }}
+
+      # ── GitHub Release ────────────────────────────────────────────────────────
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ inputs.release_tag }}
+          name: ${{ inputs.release_name }}
+          body: ${{ steps.sanitize_pr_body.outputs.FULL_RELEASE_BODY }}
+          prerelease: ${{ inputs.prerelease }}
+          files: artifacts/*.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Docker build + push ───────────────────────────────────────────────────
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v2
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to ATCR
+        uses: docker/login-action@v2
+        with:
+          registry: atcr.io
+          username: ${{ secrets.ATCR_USERNAME }}
+          password: ${{ secrets.ATCR_TOKEN }}
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+
+      - name: Publish API for runtime image
+        run: dotnet publish ${{ env.API_PROJECT }} -c Release -o ${{ env.API_OUTPUT }}
+
+      - name: Show publish contents (sanity check)
+        run: |
+          echo "Listing publish folder contents"
+          ls -la listenarr.api/publish || true
+          echo "Listing publish/tools contents"
+          ls -la listenarr.api/publish/tools || echo "publish/tools missing"
+
+      - name: Copy tools into publish and verify
+        run: |
+          echo "Ensuring tools are present in listenarr.api/publish"
+          if [ ! -d "listenarr.api/publish/tools" ]; then
+            echo "publish/tools missing — copying from listenarr.api/tools"
+            cp -r listenarr.api/tools listenarr.api/publish/ || true
+          else
+            echo "publish/tools already present"
+          fi
+          if [ ! -d "listenarr.api/publish/tools" ]; then
+            echo "ERROR: publish/tools missing after copy"
+            ls -la listenarr.api/publish || true
+            exit 1
+          fi
+          ls -la listenarr.api/publish/tools
+
+      - name: Fail if tools missing (quick fail)
+        run: |
+          if [ ! -d "listenarr.api/publish/tools" ]; then
+            echo "ERROR: listenarr.api/publish/tools is missing. Aborting to avoid pushing a broken image."
+            exit 1
+          fi
+          echo "publish/tools present"
+
+      - name: Upload publish folder (debug artifact)
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.channel }}-listenarr-publish-folder
+          path: listenarr.api/publish
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: listenarr.api/Dockerfile.runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ inputs.docker_tags }}
+
+      # ── Discord notification ──────────────────────────────────────────────────
+
+      - name: Notify Discord
+        uses: rjstone/discord-webhook-notify@v2.2.1
+        if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
+        with:
+          severity: info
+          description: v${{ inputs.version }} - ${{ inputs.pr_title }}
+          details: "${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}"
+          text: ${{ inputs.discord_text }}
+          webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}

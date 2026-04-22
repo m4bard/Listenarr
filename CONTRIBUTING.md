@@ -96,7 +96,7 @@ Note: there is also a `watch` task available in the workspace tasks that runs `d
 - Reach out on [Discussions](https://github.com/Listenarrs/Listenarr/discussions) if you have questions
 
  - Run frontend tests: `cd fe && npm test` (the frontend uses Vitest/Vite; check `fe/package.json` for exact scripts)
-- Rebase from Listenarr's `develop` branch, don't merge
+- Rebase from Listenarr's `canary` branch (contributors) or `beta` branch (org hotfixes), don't merge
 - Make meaningful commits, or squash them before submitting PR
 - Feel free to make a pull request before work is complete (mark as draft) - this lets us see progress and provide feedback
 - Add tests where applicable (unit/integration)
@@ -147,13 +147,58 @@ This project follows a layered pattern: domain models in `listenarr.domain`, EF 
 - Run frontend type checks: `cd fe && npm run type-check`
 - Ensure all tests pass before submitting PR
 
+### Branching Model
+
+Listenarr follows a **canary → beta → main** release flow:
+
+```mermaid
+sequenceDiagram
+    participant main as main (stable)
+    participant testing as beta (candidate)
+    participant develop as canary (alpha)
+    participant PR
+    activate develop
+    PR ->> develop: Feature
+    PR ->> develop: Feature
+    PR ->> develop: Feature
+    develop ->> testing: Code freeze 
+    activate testing
+    PR ->> develop: Feature
+    PR ->> testing: Fix
+    PR ->> testing: Fix
+    PR ->> develop: Feature
+    testing ->> main: Release
+    testing ->> develop: Rebase
+    deactivate testing
+    deactivate develop
+```
+
+| Branch | Role | Who merges here |
+|---|---|---|
+| `canary` | Alpha — all new feature work | **All contributors** via PR |
+| `beta` | Release candidate — stabilisation only | **Org members only** via PR (fixes) |
+| `main` | Stable release | CI release workflow only |
+
+**Lifecycle in detail:**
+1. Feature PRs from contributors (and org members) are always opened against `canary`.
+2. When enough features have accumulated, an org member performs a **code freeze**: `canary` is merged into `beta` to create a release candidate.
+3. Feature work continues into `canary` uninterrupted during the beta window.
+4. Org members open **fix PRs** targeting `beta` to stabilise the release candidate.
+5. Once stable, `beta` is merged into `main` and a release tag is created.
+6. After the release, `beta` is **rebased back into `canary`** so all fixes are carried forward.
+7. PRs to `main` will be closed without review.
+
 ### Pull Request Guidelines
 
 **Branch naming:**
-- Create PRs from feature branches, not from `develop` in your fork
+- Always branch off the latest `canary` when starting new feature work
 - Use meaningful branch names that describe what is being added/fixed
+- **Strongly recommended**: include the issue number in your branch name — this encourages opening (and discussing) an issue before writing code, and makes it easy to cross-reference work
 
 Good examples:
+- `123-audible-integration`
+- `456-download-queue`
+- `789-fix-search-results`
 - `feature/audible-integration`
 - `feature/download-queue`
 - `bugfix/search-results`
@@ -163,11 +208,15 @@ Bad examples:
 - `new-feature`
 - `fix-bug`
 - `patch`
-- `develop`
+- `beta`
 
 **PR process:**
-1. **Target branch**: Only make pull requests to `canary`, never `main` or `develop`
-   - PRs to `main` and `develop` will be commented on and closed
+1. **Target branch**:
+   - **Feature branches** → `canary` (all contributors)
+   - **Hotfixes** → `beta` (org members only)
+   - PRs to `main` will be commented on and closed
+   - Never open a PR directly from `beta` or `canary` in your fork — always use a dedicated feature branch
+   > **Note for maintainers:** The `Validate PR version label` check only blocks merges if it is registered as a required status check under **Settings → Branches → canary branch protection rule**. Without that, a PR without a version label can still be merged (the build will then fail at the canary workflow step instead).
 2. **Description**: Provide a clear description of what your PR does
    - Reference related issues (e.g., "Fixes #123")
    - Include screenshots for UI changes
@@ -187,7 +236,7 @@ Bad examples:
 - [ ] All tests pass
 - [ ] No console errors or warnings
 - [ ] Documentation updated (if needed)
-- [ ] Rebased on latest `canary` branch
+- [ ] Rebased on latest `canary` branch (or `beta` for org hotfixes)
 
 ### API Documentation
 

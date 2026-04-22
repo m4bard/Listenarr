@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Collections.Generic;
 using System.Net;
@@ -7,6 +24,7 @@ using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Utils;
 using Listenarr.Infrastructure.Models;
+using Listenarr.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Xunit;
@@ -90,7 +108,8 @@ namespace Listenarr.Api.Tests
                 new RootFolder { Id = 2, Name = "Root2", Path = FileUtils.GetAbsolutePath("root2") }
             });
 
-            var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
+            var _db = CreateDb();
+            var controller = new RootFoldersController(svc, _fakeQueue, new EfAudiobookFileRepository(_db), new AudiobookRepository(_db));
 
             var res = await controller.GetAll();
             var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(res);
@@ -102,7 +121,8 @@ namespace Listenarr.Api.Tests
         public async Task Get_NotFound_Returns404()
         {
             var svc = new FakeService();
-            var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
+            var _db = CreateDb();
+            var controller = new RootFoldersController(svc, _fakeQueue, new EfAudiobookFileRepository(_db), new AudiobookRepository(_db));
 
             var res = await controller.Get(123);
             var notFound = Assert.IsType<Microsoft.AspNetCore.Mvc.NotFoundObjectResult>(res);
@@ -114,7 +134,8 @@ namespace Listenarr.Api.Tests
         {
             var svc = new FakeService();
             svc.Store.Add(new RootFolder { Id = 1, Name = "R1", Path = FileUtils.GetAbsolutePath("dup") });
-            var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
+            var _db = CreateDb();
+            var controller = new RootFoldersController(svc, _fakeQueue, new EfAudiobookFileRepository(_db), new AudiobookRepository(_db));
 
             var req = new RootFolder { Name = "New", Path = FileUtils.GetAbsolutePath("dup") };
             var res = await controller.Create(req);
@@ -127,7 +148,8 @@ namespace Listenarr.Api.Tests
         public async Task Update_IdMismatch_ReturnsBadRequest()
         {
             var svc = new FakeService();
-            var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
+            var _db = CreateDb();
+            var controller = new RootFoldersController(svc, _fakeQueue, new EfAudiobookFileRepository(_db), new AudiobookRepository(_db));
 
             var req = new RootFolder { Id = 2, Name = "R", Path = FileUtils.GetAbsolutePath("p") };
             var res = await controller.Update(1, req);
@@ -140,7 +162,8 @@ namespace Listenarr.Api.Tests
         public async Task Update_NotFound_ReturnsNotFound()
         {
             var svc = new FakeService();
-            var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
+            var _db = CreateDb();
+            var controller = new RootFoldersController(svc, _fakeQueue, new EfAudiobookFileRepository(_db), new AudiobookRepository(_db));
 
             var req = new RootFolder { Id = 99, Name = "R", Path = FileUtils.GetAbsolutePath("p") };
             var res = await controller.Update(99, req);
@@ -154,7 +177,8 @@ namespace Listenarr.Api.Tests
         {
             var svc = new FakeService();
             svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = FileUtils.GetAbsolutePath("inuse") });
-            var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
+            var _db = CreateDb();
+            var controller = new RootFoldersController(svc, _fakeQueue, new EfAudiobookFileRepository(_db), new AudiobookRepository(_db));
 
             var res = await controller.Delete(1, null);
             var bad = Assert.IsType<Microsoft.AspNetCore.Mvc.BadRequestObjectResult>(res);
@@ -167,7 +191,8 @@ namespace Listenarr.Api.Tests
             var svc = new FakeService();
             svc.Store.Add(new RootFolder { Id = 1, Name = "R", Path = FileUtils.GetAbsolutePath("inuse") });
             svc.Store.Add(new RootFolder { Id = 2, Name = "R2", Path = FileUtils.GetAbsolutePath("r") });
-            var controller = new RootFoldersController(svc, _fakeQueue, CreateDb());
+            var _db = CreateDb();
+            var controller = new RootFoldersController(svc, _fakeQueue, new EfAudiobookFileRepository(_db), new AudiobookRepository(_db));
 
             var res = await controller.Delete(1, 2);
             var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(res);

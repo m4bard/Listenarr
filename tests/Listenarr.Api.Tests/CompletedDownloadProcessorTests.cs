@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
@@ -155,9 +172,9 @@ namespace Listenarr.Api.Tests
             Listenarr.Domain.Models.History? capturedHistory = null;
             var historyRepoMock = new Mock<IHistoryRepository>();
             historyRepoMock
-                .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>()))
-                .Callback<Listenarr.Domain.Models.History>(h => capturedHistory = h)
-                .ReturnsAsync((Listenarr.Domain.Models.History h) => h);
+                .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()))
+                .Callback<Listenarr.Domain.Models.History, CancellationToken>((h, _) => capturedHistory = h)
+                .ReturnsAsync((Listenarr.Domain.Models.History h, CancellationToken _) => h);
 
             var scopeFactoryMock = new Mock<IServiceScopeFactory>();
             var scopeMock = new Mock<IServiceScope>();
@@ -234,7 +251,7 @@ namespace Listenarr.Api.Tests
                 It.Is<string>(msg => msg.Contains("could not be imported automatically", StringComparison.OrdinalIgnoreCase)),
                 8000), Times.Once);
 
-            historyRepoMock.Verify(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>()), Times.Once);
+            historyRepoMock.Verify(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()), Times.Once);
             Assert.NotNull(capturedHistory);
             Assert.Equal("ImportBlocked", capturedHistory!.EventType);
             Assert.Contains("still failing", capturedHistory.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);
@@ -382,9 +399,9 @@ namespace Listenarr.Api.Tests
             Listenarr.Domain.Models.History? capturedHistory = null;
             var historyRepoMock = new Mock<IHistoryRepository>();
             historyRepoMock
-                .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>()))
-                .Callback<Listenarr.Domain.Models.History>(h => capturedHistory = h)
-                .ReturnsAsync((Listenarr.Domain.Models.History h) => h);
+                .Setup(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()))
+                .Callback<Listenarr.Domain.Models.History, CancellationToken>((h, _) => capturedHistory = h)
+                .ReturnsAsync((Listenarr.Domain.Models.History h, CancellationToken _) => h);
 
             var downloadHistoryMock = new Mock<IDownloadHistoryService>();
             downloadHistoryMock
@@ -447,7 +464,7 @@ namespace Listenarr.Api.Tests
                 It.Is<string>(msg => msg.Contains("could not be imported automatically", StringComparison.OrdinalIgnoreCase)),
                 8000), Times.Once);
 
-            historyRepoMock.Verify(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>()), Times.Once);
+            historyRepoMock.Verify(h => h.AddAsync(It.IsAny<Listenarr.Domain.Models.History>(), It.IsAny<CancellationToken>()), Times.Once);
             Assert.NotNull(capturedHistory);
             Assert.Equal("ImportBlocked", capturedHistory!.EventType);
             Assert.Contains("Manual interaction is required.", capturedHistory.Message ?? string.Empty, StringComparison.OrdinalIgnoreCase);

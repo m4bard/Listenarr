@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -37,7 +37,7 @@ namespace Listenarr.Api.Tests.Services
     public class DownloadStateMachineTests : IDisposable
     {
         private readonly ListenArrDbContext _context;
-        private readonly DownloadHistoryRepository _historyRepo;
+        private readonly DownloadHistoryRepository _historyRepository;
         private readonly Mock<ILogger<DownloadStateMachine>> _mockLogger;
         private readonly DownloadStateMachine _stateMachine;
 
@@ -48,10 +48,10 @@ namespace Listenarr.Api.Tests.Services
                 .Options;
 
             _context = new ListenArrDbContext(options);
-            _historyRepo = new DownloadHistoryRepository(_context);
+            _historyRepository = new DownloadHistoryRepository(_context);
             _mockLogger = new Mock<ILogger<DownloadStateMachine>>();
 
-            _stateMachine = new DownloadStateMachine(_mockLogger.Object, _historyRepo);
+            _stateMachine = new DownloadStateMachine(_mockLogger.Object, _historyRepository);
         }
 
         [Theory]
@@ -101,7 +101,7 @@ namespace Listenarr.Api.Tests.Services
             // Assert
             Assert.True(result);
 
-            var history = await _historyRepo.GetByDownloadIdAsync(downloadId);
+            var history = await _historyRepository.GetByDownloadIdAsync(downloadId);
             Assert.Single(history);
             Assert.Equal(DownloadItemStatus.Downloading, history[0].Status);
             Assert.Equal(DownloadHistoryEventType.Downloading, history[0].EventType);
@@ -126,7 +126,7 @@ namespace Listenarr.Api.Tests.Services
             Assert.False(result);
 
             // Verify no history was recorded
-            var history = await _historyRepo.GetByDownloadIdAsync(downloadId);
+            var history = await _historyRepository.GetByDownloadIdAsync(downloadId);
             Assert.Empty(history);
         }
 
@@ -135,7 +135,7 @@ namespace Listenarr.Api.Tests.Services
         {
             // Arrange
             var downloadId = "STATE123";
-            await _historyRepo.AddAsync(new DownloadHistory
+            await _historyRepository.AddAsync(new DownloadHistory
             {
                 DownloadId = downloadId,
                 EventType = DownloadHistoryEventType.Grabbed,
@@ -147,7 +147,7 @@ namespace Listenarr.Api.Tests.Services
                 Title = "Test"
             });
 
-            await _historyRepo.AddAsync(new DownloadHistory
+            await _historyRepository.AddAsync(new DownloadHistory
             {
                 DownloadId = downloadId,
                 EventType = DownloadHistoryEventType.Downloading,
@@ -191,7 +191,7 @@ namespace Listenarr.Api.Tests.Services
             var downloadId = "HISTORY123";
 
             // Create a sequence of state transitions
-            await _historyRepo.AddAsync(new DownloadHistory
+            await _historyRepository.AddAsync(new DownloadHistory
             {
                 DownloadId = downloadId,
                 EventType = DownloadHistoryEventType.Grabbed,
@@ -203,7 +203,7 @@ namespace Listenarr.Api.Tests.Services
                 Title = "Test"
             });
 
-            await _historyRepo.AddAsync(new DownloadHistory
+            await _historyRepository.AddAsync(new DownloadHistory
             {
                 DownloadId = downloadId,
                 EventType = DownloadHistoryEventType.Downloading,
@@ -215,7 +215,7 @@ namespace Listenarr.Api.Tests.Services
                 Title = "Test"
             });
 
-            await _historyRepo.AddAsync(new DownloadHistory
+            await _historyRepository.AddAsync(new DownloadHistory
             {
                 DownloadId = downloadId,
                 EventType = DownloadHistoryEventType.DownloadCompleted,
@@ -284,7 +284,7 @@ namespace Listenarr.Api.Tests.Services
                 metadata: metadata);
 
             // Assert
-            var history = await _historyRepo.GetByDownloadIdAsync(downloadId);
+            var history = await _historyRepository.GetByDownloadIdAsync(downloadId);
             Assert.Single(history);
             Assert.NotNull(history[0].Data);
             Assert.Equal(3, history[0].Data["RetryCount"]);

@@ -1,8 +1,28 @@
-﻿using System;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System;
 using System.Threading.Tasks;
 using Xunit;
+using Moq;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Infrastructure.Repositories;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
@@ -12,9 +32,7 @@ namespace Listenarr.Api.Tests
     {
         private QualityProfileService CreateService()
         {
-            // We don't need a real DbContext for scoring logic in this test - pass null and a null logger.
-            // The service only uses DbContext for profile CRUD; ScoreSearchResult doesn't require it.
-            return new QualityProfileService(null!, new NullLogger<QualityProfileService>());
+            return new QualityProfileService(Mock.Of<IQualityProfileRepository>(), NullLogger<QualityProfileService>.Instance);
         }
 
         [Fact]
@@ -438,7 +456,7 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(indexer);
             db.SaveChanges();
 
-            var service = new QualityProfileService(db, new Microsoft.Extensions.Logging.Abstractions.NullLogger<QualityProfileService>());
+            var service = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance, new EfIndexerRepository(db));
             var profile = new QualityProfile { MaximumAge = 10, MinimumSeeders = 0 };
 
             var result = new SearchResult
@@ -464,7 +482,7 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(indexer);
             db.SaveChanges();
 
-            var service = new QualityProfileService(db, new Microsoft.Extensions.Logging.Abstractions.NullLogger<QualityProfileService>());
+            var service = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance, new EfIndexerRepository(db));
             var profile = new QualityProfile { MaximumAge = 0 };
 
             var result = new SearchResult
@@ -490,7 +508,7 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(idx);
             db.SaveChanges();
 
-            var svc = new QualityProfileService(db, new Microsoft.Extensions.Logging.Abstractions.NullLogger<QualityProfileService>());
+            var svc = new QualityProfileService(new QualityProfileRepository(db), NullLogger<QualityProfileService>.Instance, new EfIndexerRepository(db));
             var profile = new QualityProfile { MaximumAge = 10, MinimumSeeders = 0 };
 
             var result = new SearchResult

@@ -1,6 +1,6 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -36,7 +36,7 @@ namespace Listenarr.Api.Tests.Services
     public class DownloadValidationPipelineTests : IDisposable
     {
         private readonly ListenArrDbContext _context;
-        private readonly DownloadHistoryRepository _historyRepo;
+        private readonly DownloadHistoryRepository _historyRepository;
         private readonly DownloadStateMachine _stateMachine;
         private readonly Mock<ILogger<DownloadValidationPipeline>> _mockLogger;
         private readonly Mock<ILogger<DownloadStateMachine>> _mockStateMachineLogger;
@@ -50,12 +50,12 @@ namespace Listenarr.Api.Tests.Services
                 .Options;
 
             _context = new ListenArrDbContext(options);
-            _historyRepo = new DownloadHistoryRepository(_context);
+            _historyRepository = new DownloadHistoryRepository(_context);
             _mockStateMachineLogger = new Mock<ILogger<DownloadStateMachine>>();
-            _stateMachine = new DownloadStateMachine(_mockStateMachineLogger.Object, _historyRepo);
+            _stateMachine = new DownloadStateMachine(_mockStateMachineLogger.Object, _historyRepository);
             _mockLogger = new Mock<ILogger<DownloadValidationPipeline>>();
 
-            _pipeline = new DownloadValidationPipeline(_mockLogger.Object, _stateMachine, _historyRepo);
+            _pipeline = new DownloadValidationPipeline(_mockLogger.Object, _stateMachine, _historyRepository);
 
             // Create test directory
             _testDirectory = Path.Join(Path.GetTempPath(), "listenarr_pipeline_test_" + Guid.NewGuid().ToString("N"));
@@ -99,11 +99,11 @@ namespace Listenarr.Api.Tests.Services
             Assert.NotNull(result.CompletedAt);
 
             // Verify history was recorded
-            var history = await _historyRepo.GetByDownloadIdAsync("VALID123");
+            var history = await _historyRepository.GetByDownloadIdAsync("VALID123");
             Assert.NotEmpty(history);
 
             // Verify marked as imported
-            var wasImported = await _historyRepo.WasImportedAsync("VALID123");
+            var wasImported = await _historyRepository.WasImportedAsync("VALID123");
             Assert.True(wasImported);
         }
 
@@ -289,7 +289,7 @@ namespace Listenarr.Api.Tests.Services
             await _pipeline.ExecutePipelineAsync(download);
 
             // Assert - Verify all phases were recorded in history
-            var history = await _historyRepo.GetByDownloadIdAsync("PHASES123");
+            var history = await _historyRepository.GetByDownloadIdAsync("PHASES123");
             Assert.True(history.Count >= 3); // At least 3 phase records
 
             // Check for phase metadata
@@ -334,7 +334,7 @@ namespace Listenarr.Api.Tests.Services
             await _pipeline.ExecutePipelineAsync(download, audiobookId);
 
             // Assert
-            var history = await _historyRepo.GetByAudiobookIdAsync(audiobookId);
+            var history = await _historyRepository.GetByAudiobookIdAsync(audiobookId);
             Assert.NotEmpty(history);
         }
 

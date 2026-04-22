@@ -1,4 +1,21 @@
-ï»¿using System;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System;
 using System.IO;
 using Microsoft.Extensions.Configuration;
 using System.Net.Http;
@@ -70,16 +87,27 @@ namespace Listenarr.Api.Tests
                 return new TestDownloadClientGateway(httpFactory, httpClient);
             });
 
+            // Provide a no-op IIndexerRepository so DownloadService can be resolved without explicit registration.
+            // Always use a mock — injecting a DbContext into a singleton factory causes lifetime violations.
+            services.AddSingleton<IIndexerRepository>(sp =>
+            {
+                var mock = new Mock<IIndexerRepository>();
+                mock.Setup(r => r.GetAllAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>());
+                mock.Setup(r => r.GetEnabledAsync(It.IsAny<bool>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(new System.Collections.Generic.List<Listenarr.Domain.Models.Indexer>());
+                mock.Setup(r => r.GetByIdAsync(It.IsAny<int>(), It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync((Listenarr.Domain.Models.Indexer?)null);
+                return mock.Object;
+            });
+
             // Provide a test-friendly IDownloadRepository so tests that resolve DownloadService
             // from the root provider don't need to register it explicitly. Prefer an existing
             // ListenArrDbContext if present, otherwise fall back to an in-memory test repo.
-            services.AddSingleton<Listenarr.Api.Repositories.IDownloadRepository>(sp =>
+            services.AddSingleton<IDownloadRepository>(sp =>
             {
                 var dbFactory = sp.GetService<IDbContextFactory<ListenArrDbContext>>();
                 if (dbFactory != null)
                 {
-                    var logger = sp.GetRequiredService<ILogger<Listenarr.Api.Repositories.EfDownloadRepository>>();
-                    return new Listenarr.Api.Repositories.EfDownloadRepository(dbFactory, logger);
+                    var logger = sp.GetRequiredService<ILogger<EfDownloadRepository>>();
+                    return new EfDownloadRepository(dbFactory, logger);
                 }
 
                 var db = sp.GetService<ListenArrDbContext>();
@@ -87,13 +115,13 @@ namespace Listenarr.Api.Tests
             });
 
             // Provide a test-friendly IDownloadProcessingJobRepository for tests.
-            services.AddSingleton<Listenarr.Api.Repositories.IDownloadProcessingJobRepository>(sp =>
+            services.AddSingleton<IDownloadProcessingJobRepository>(sp =>
             {
                 var dbFactory = sp.GetService<IDbContextFactory<ListenArrDbContext>>();
                 if (dbFactory != null)
                 {
-                    var logger = sp.GetRequiredService<ILogger<Listenarr.Api.Repositories.EfDownloadProcessingJobRepository>>();
-                    return new Listenarr.Api.Repositories.EfDownloadProcessingJobRepository(dbFactory, logger);
+                    var logger = sp.GetRequiredService<ILogger<EfDownloadProcessingJobRepository>>();
+                    return new EfDownloadProcessingJobRepository(dbFactory, logger);
                 }
 
                 var db = sp.GetService<ListenArrDbContext>();
@@ -107,7 +135,7 @@ namespace Listenarr.Api.Tests
                 var import = sp.GetService<Listenarr.Api.Services.IImportService>();
                 if (import != null)
                 {
-                    var downloadRepo = sp.GetRequiredService<Listenarr.Api.Repositories.IDownloadRepository>();
+                    var downloadRepo = sp.GetRequiredService<IDownloadRepository>();
                     var scopeFactory = sp.GetRequiredService<IServiceScopeFactory>();
                     var logger = sp.GetRequiredService<ILogger<Listenarr.Api.Services.FileFinalizer>>();
                     return new Listenarr.Api.Services.FileFinalizer(import, downloadRepo, scopeFactory, logger);
@@ -133,7 +161,7 @@ namespace Listenarr.Api.Tests
             // Provide a test-friendly IDownloadQueueService so DownloadService can be resolved
             services.AddSingleton<Listenarr.Api.Services.IDownloadQueueService>(sp =>
             {
-                var downloadRepo = sp.GetService<Listenarr.Api.Repositories.IDownloadRepository>();
+                var downloadRepo = sp.GetService<IDownloadRepository>();
                 var clientGateway = sp.GetService<IDownloadClientGateway>();
                 var config = sp.GetService<IConfigurationService>();
                 var logger = sp.GetService<ILogger<TestDownloadQueueService>>();
@@ -152,7 +180,7 @@ namespace Listenarr.Api.Tests
             // Provide a test-friendly ICompletedDownloadProcessor so DownloadService can be resolved in tests.
             services.AddSingleton<Listenarr.Api.Services.ICompletedDownloadProcessor>(sp =>
             {
-                var downloadRepo = sp.GetService<Listenarr.Api.Repositories.IDownloadRepository>();
+                var downloadRepo = sp.GetService<IDownloadRepository>();
                 var fileFinalizer = sp.GetService<Listenarr.Api.Services.IFileFinalizer>();
                 var config = sp.GetService<IConfigurationService>();
                 var scopeFactory = sp.GetService<IServiceScopeFactory>();

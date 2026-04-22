@@ -8,7 +8,7 @@
     "predev": "npm run version:sync",
     "prebuild": "npm run version:sync",
     "pretest": "npm run version:sync",
-    "dev": "concurrently \"npm run dev:api\" \"npm run dev:web\" --names \"API,WEB\" --prefix-colors \"blue,green\"",
+    "dev": "concurrently \"npm run dev:api\" \"wait-on http-get://localhost:4545/api/v1/system/health -t 120000 -i 1000 --httpTimeout 3000 && cd fe && npm run dev\" --names \"API,WEB\" --prefix-colors \"blue,green\"",
     "dev:api": "cd listenarr.api && dotnet run",
     "dev:web": "cd fe && npm run dev",
     "build": "npm run build:api && npm run build:web",
@@ -19,6 +19,7 @@
     "test": "cd fe && npm run test:unit"
   },
   "dependencies": {
-    "concurrently": "^9.2.1"
+    "concurrently": "^9.2.1",
+    "wait-on": "^8.0.3"
   }
 }

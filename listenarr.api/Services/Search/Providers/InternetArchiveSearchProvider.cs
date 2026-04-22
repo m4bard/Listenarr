@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -17,7 +17,6 @@
  */
 
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using System.Text.Json;
 
 namespace Listenarr.Api.Services.Search.Providers;
@@ -45,7 +44,7 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
         Indexer indexer,
         string query,
         string? category = null,
-        Listenarr.Api.Models.SearchRequest? request = null)
+        SearchRequest? request = null)
     {
         try
         {

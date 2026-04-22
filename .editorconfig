@@ -1,0 +1,45 @@
+root = true
+
+# ─── Defaults ────────────────────────────────────────────────────────────────
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+indent_size = 4
+
+# ─── C# ───────────────────────────────────────────────────────────────────────
+[*.cs]
+indent_style = space
+indent_size = 4
+
+# ─── XML / project files ──────────────────────────────────────────────────────
+[*.{csproj,props,targets,slnx,xml,config,resx}]
+indent_style = space
+indent_size = 2
+
+# ─── Web / frontend (deferred to fe/.editorconfig) ────────────────────────────
+# fe/.editorconfig is root = true and owns all JS/TS/Vue/CSS files under fe/
+
+# ─── YAML ─────────────────────────────────────────────────────────────────────
+[*.{yml,yaml}]
+indent_style = space
+indent_size = 2
+
+# ─── JSON ─────────────────────────────────────────────────────────────────────
+[*.json]
+indent_style = space
+indent_size = 2
+
+# ─── Markdown ─────────────────────────────────────────────────────────────────
+[*.md]
+trim_trailing_whitespace = true
+
+# ─── Shell scripts ────────────────────────────────────────────────────────────
+[*.sh]
+end_of_line = lf
+
+# ─── Windows batch / PowerShell ───────────────────────────────────────────────
+[*.{bat,cmd,ps1}]
+end_of_line = crlf

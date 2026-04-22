@@ -1,3 +1,21 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using Listenarr.Application.Repositories;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -8,7 +26,6 @@ using System.Threading.Tasks;
 using AsyncKeyedLock;
 using Listenarr.Api.Models;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services.Search.Providers
@@ -21,18 +38,18 @@ namespace Listenarr.Api.Services.Search.Providers
     {
         private readonly ILogger<MyAnonamouseSearchProvider> _logger;
         private readonly HttpClient _httpClient;
-        private readonly ListenArrDbContext _dbContext;
+        private readonly IIndexerRepository _indexerRepository;
 
         public string IndexerType => "MyAnonamouse";
 
         public MyAnonamouseSearchProvider(
             ILogger<MyAnonamouseSearchProvider> logger,
             HttpClient httpClient,
-            ListenArrDbContext dbContext)
+            IIndexerRepository indexerRepository)
         {
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _httpClient = httpClient ?? throw new ArgumentNullException(nameof(httpClient));
-            _dbContext = dbContext ?? throw new ArgumentNullException(nameof(dbContext));
+            _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
         }
 
         public async Task<List<IndexerSearchResult>> SearchAsync(Indexer indexer, string query, string? category, SearchRequest? request = null)
@@ -189,12 +206,11 @@ namespace Listenarr.Api.Services.Search.Providers
                         if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
                         {
                             _logger.LogInformation("MyAnonamouse: received updated mam_id from response for indexer {Name}", indexer.Name);
-                            var idx = await _dbContext.Indexers.FindAsync(indexer.Id);
+                            var idx = await _indexerRepository.GetByIdAsync(indexer.Id);
                             if (idx != null)
                             {
                                 idx.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(idx.AdditionalSettings, newMam);
-                                _dbContext.Indexers.Update(idx);
-                                await _dbContext.SaveChangesAsync();
+                                await _indexerRepository.UpdateAsync(idx);
                                 mamId = newMam;
                             }
                         }

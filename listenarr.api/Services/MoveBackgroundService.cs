@@ -1,4 +1,21 @@
-﻿using Microsoft.Extensions.Hosting;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using Microsoft.Extensions.Hosting;
 using System.Threading;
 using System.Threading.Tasks;
 using System;
@@ -6,11 +23,9 @@ using System.IO;
 using System.Linq;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
-using Listenarr.Infrastructure.Repositories;
 using Microsoft.AspNetCore.SignalR;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
 {
@@ -41,8 +56,9 @@ namespace Listenarr.Api.Services
                         _moveQueue.UpdateJobStatus(job.Id, "Processing");
 
                     using var scope = _scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var audiobook = await db.Audiobooks.FindAsync(new object[] { job.AudiobookId }, stoppingToken);
+                    var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                    var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                    var audiobook = await audiobookRepository.GetByIdAsync(job.AudiobookId);
                     if (audiobook == null)
                     {
                         _moveQueue.UpdateJobStatus(job.Id, "Failed", "Audiobook not found");
@@ -182,12 +198,11 @@ namespace Listenarr.Api.Services
                                 // Increment attempt count for the DB job to surface retries
                                 try
                                 {
-                                    var dbJob = db.MoveJobs.FirstOrDefault(j => j.Id == job.Id);
+                                    var dbJob = await moveJobRepository.GetByIdAsync(job.Id, stoppingToken);
                                     if (dbJob != null)
                                     {
                                         dbJob.AttemptCount += 1;
-                                        db.MoveJobs.Update(dbJob);
-                                        await db.SaveChangesAsync(stoppingToken);
+                                        await moveJobRepository.UpdateAsync(dbJob, stoppingToken);
                                     }
                                 }
                                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
@@ -211,8 +226,7 @@ namespace Listenarr.Api.Services
 
                         // Update DB audiobook BasePath to new target
                         audiobook.BasePath = target;
-                        db.Audiobooks.Update(audiobook);
-                        await db.SaveChangesAsync(stoppingToken);
+                        await audiobookRepository.UpdateAsync(audiobook);
 
                         // Preserve local image path if it pointed inside the source directory
                         try
@@ -239,8 +253,7 @@ namespace Listenarr.Api.Services
                                             if (System.IO.File.Exists(newImagePath))
                                             {
                                                 audiobook.ImageUrl = newImagePath;
-                                                db.Audiobooks.Update(audiobook);
-                                                await db.SaveChangesAsync(stoppingToken);
+                                                await audiobookRepository.UpdateAsync(audiobook);
                                                 _logger.LogInformation("Updated ImageUrl for audiobook {AudiobookId} to new path after move", audiobook.Id);
                                             }
                                         }
@@ -273,8 +286,7 @@ namespace Listenarr.Api.Services
                                     if (System.IO.File.Exists(newFilePath))
                                     {
                                         audiobook.FilePath = newFilePath;
-                                        db.Audiobooks.Update(audiobook);
-                                        await db.SaveChangesAsync(stoppingToken);
+                                        await audiobookRepository.UpdateAsync(audiobook);
                                         _logger.LogInformation("Updated FilePath for audiobook {AudiobookId} to new path after move", audiobook.Id);
                                     }
                                 }
@@ -288,12 +300,12 @@ namespace Listenarr.Api.Services
                         try
                         {
                             using var historyScope = _scopeFactory.CreateScope();
-                            var historyRepo = historyScope.ServiceProvider.GetService<IHistoryRepository>();
+                            var historyRepository = historyScope.ServiceProvider.GetService<IHistoryRepository>();
                             var configService = historyScope.ServiceProvider.GetService<IConfigurationService>();
 
-                            if (historyRepo != null)
+                            if (historyRepository != null)
                             {
-                                var historyEntry = new Listenarr.Domain.Models.History
+                                var historyEntry = new History
                                 {
                                     AudiobookId = audiobook.Id,
                                     AudiobookTitle = audiobook.Title,
@@ -310,7 +322,7 @@ namespace Listenarr.Api.Services
                                     })
                                 };
 
-                                await historyRepo.AddAsync(historyEntry);
+                                await historyRepository.AddAsync(historyEntry);
                                 _logger.LogInformation("Added history entry for move job {JobId}", job.Id);
 
                                 // Send webhook notifications if configured
@@ -338,7 +350,7 @@ namespace Listenarr.Api.Services
 
                                         // Mark notification as sent
                                         historyEntry.NotificationSent = true;
-                                        await historyRepo.UpdateAsync(historyEntry);
+                                        await historyRepository.UpdateAsync(historyEntry);
                                     }
                                 }
                                 catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException) {
@@ -378,16 +390,16 @@ namespace Listenarr.Api.Services
                                         _logger.LogInformation("Enqueued scan job {ScanJobId} for audiobook {AudiobookId} after move", scanJobId, audiobook.Id);
                                     }
 
-                                    var hubContext = historyScope.ServiceProvider.GetService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                                    var hubContext = historyScope.ServiceProvider.GetService<IHubContext<DownloadHub>>();
                                     if (hubContext != null)
                                     {
                                         // Load latest audiobook state and broadcast a full DTO so clients can update instantly without fetching
                                         try
                                         {
-                                            var fresh = await db.Audiobooks.Include(a => a.Files).FirstOrDefaultAsync(a => a.Id == audiobook.Id);
+                                            var fresh = await audiobookRepository.GetByIdAsync(audiobook.Id);
                                             if (fresh != null)
                                             {
-                                                var audiobookDtoFull = Listenarr.Api.Services.AudiobookDtoFactory.BuildFromEntity(db, fresh);
+                                                var audiobookDtoFull = AudiobookDtoFactory.BuildFromEntity(fresh);
                                                 await hubContext.Clients.All.SendAsync("AudiobookUpdate", audiobookDtoFull);
                                                 _logger.LogInformation("Broadcasted full AudiobookUpdate for AudiobookId {AudiobookId} after move job {JobId}", audiobook.Id, job.Id);
                                             }
@@ -408,7 +420,7 @@ namespace Listenarr.Api.Services
 
                         _moveQueue.UpdateJobStatus(job.Id, "Completed");
                         _logger.LogInformation("Move job {JobId} completed: {Source} -> {Target}", job.Id, LogRedaction.SanitizeFilePath(source), LogRedaction.SanitizeFilePath(target));
-                        // Completed move job â€” status updated and broadcasted where configured
+                        // Completed move job — status updated and broadcasted where configured
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         // Cleanup any temp dir
@@ -419,12 +431,11 @@ namespace Listenarr.Api.Services
                         // Increment attempt count for the job on failure
                         try
                         {
-                            var dbJob = db.MoveJobs.FirstOrDefault(j => j.Id == job.Id);
+                            var dbJob = await moveJobRepository.GetByIdAsync(job.Id, stoppingToken);
                             if (dbJob != null)
                             {
                                 dbJob.AttemptCount += 1;
-                                db.MoveJobs.Update(dbJob);
-                                await db.SaveChangesAsync(stoppingToken);
+                                await moveJobRepository.UpdateAsync(dbJob, stoppingToken);
                             }
                         }
                         catch (Exception attEx) when (attEx is not OperationCanceledException && attEx is not OutOfMemoryException && attEx is not StackOverflowException) {
@@ -435,10 +446,10 @@ namespace Listenarr.Api.Services
                         try
                         {
                             using var historyScope = _scopeFactory.CreateScope();
-                            var historyRepo = historyScope.ServiceProvider.GetService<IHistoryRepository>();
-                            if (historyRepo != null)
+                            var historyRepository = historyScope.ServiceProvider.GetService<IHistoryRepository>();
+                            if (historyRepository != null)
                             {
-                                var historyEntry = new Listenarr.Domain.Models.History
+                                var historyEntry = new History
                                 {
                                     AudiobookId = audiobook.Id,
                                     AudiobookTitle = audiobook.Title,
@@ -450,7 +461,7 @@ namespace Listenarr.Api.Services
                                     Data = System.Text.Json.JsonSerializer.Serialize(new { JobId = job.Id, Error = ex.Message })
                                 };
 
-                                await historyRepo.AddAsync(historyEntry);
+                                await historyRepository.AddAsync(historyEntry);
                                 _logger.LogInformation("Added history entry for failed move job {JobId}", job.Id);
 
                                 try
@@ -477,7 +488,7 @@ namespace Listenarr.Api.Services
 
                         _moveQueue.UpdateJobStatus(job.Id, "Failed", ex.Message);
                         _logger.LogError(ex, "Move job {JobId} failed", job.Id);
-                        // Failure during move job â€” attempt counts updated and history recorded where configured
+                        // Failure during move job — attempt counts updated and history recorded where configured
                     }
                     }
                     catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)

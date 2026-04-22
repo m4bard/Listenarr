@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 // csharp
 using System;
 using Microsoft.Extensions.Configuration;
@@ -20,9 +37,9 @@ namespace Listenarr.Api.Extensions
             services.AddSingleton<IStartupConfigService, StartupConfigService>();
             
             // Register indexer search providers
-            services.AddScoped<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider, Listenarr.Api.Services.Search.Providers.InternetArchiveSearchProvider>();
-            services.AddScoped<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider, Listenarr.Api.Services.Search.Providers.TorznabNewznabSearchProvider>();
-            services.AddScoped<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider, Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>();
+            services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
+            services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
+            services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
             
             services.AddScoped<ISearchService, SearchService>();
             services.AddScoped<IMetadataService, MetadataService>();
@@ -78,7 +95,7 @@ namespace Listenarr.Api.Extensions
             // Completed download processor: handles imports and registration when a download completes
             services.AddScoped<ICompletedDownloadProcessor, CompletedDownloadProcessor>();
             // Bind FileMover options from configuration (optional)
-            services.Configure<Listenarr.Api.Services.FileMoverOptions>(config.GetSection("FileMover"));
+            services.Configure<FileMoverOptions>(config.GetSection("FileMover"));
             // Gateway that wraps adapters for higher-level orchestration
             services.AddScoped<IDownloadClientGateway, DownloadClientGateway>();
             // Process runner for external process execution (robocopy, ffprobe, playwright installer)
@@ -91,11 +108,6 @@ namespace Listenarr.Api.Extensions
             services.AddScoped<IUserService, UserService>();
             services.AddSingleton<ILoginRateLimiter, LoginRateLimiter>();
             services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
-
-            // Repository for Download entity encapsulating EF operations used by application services
-            services.AddScoped<Listenarr.Api.Repositories.IDownloadRepository, Listenarr.Api.Repositories.EfDownloadRepository>();
-            // Repository for DownloadProcessingJob queries
-            services.AddScoped<Listenarr.Api.Repositories.IDownloadProcessingJobRepository, Listenarr.Api.Repositories.EfDownloadProcessingJobRepository>();
 
             // Discord bot service for managing bot process
             services.AddSingleton<IDiscordBotService, DiscordBotService>();

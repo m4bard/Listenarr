@@ -1,5 +1,23 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Xml.Linq;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Api.Services.Search;
 using Listenarr.Api.Services.Search.Filters;
 using Listenarr.Api.Services.Search.Strategies;
@@ -28,7 +46,6 @@ namespace Listenarr.Api.Tests
         var logger = NullLogger<SearchService>.Instance;
         var openLibraryService = Mock.Of<IOpenLibraryService>();
         var imageCache = Mock.Of<IImageCacheService>();
-        ListenArrDbContext dbContext = null!;
         var hubContext = Mock.Of<IHubContext<DownloadHub>>();
         var audible = new AudibleService(new HttpClient(), NullLogger<AudibleService>.Instance);
         var audnexus = new AudnexusService(new HttpClient(), NullLogger<AudnexusService>.Instance);
@@ -48,7 +65,8 @@ namespace Listenarr.Api.Tests
           logger,
           openLibraryService,
           imageCache,
-          dbContext,
+          Mock.Of<IIndexerRepository>(),
+          Mock.Of<IApiConfigurationRepository>(),
           hubContext,
           audible,
           audnexus,
@@ -61,7 +79,7 @@ namespace Listenarr.Api.Tests
           enricher,
           scorer,
           handler,
-          Enumerable.Empty<Listenarr.Api.Services.Search.Providers.IIndexerSearchProvider>());
+          Enumerable.Empty<IIndexerSearchProvider>());
       }
 
         [Fact]
@@ -239,8 +257,8 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient(handler) { BaseAddress = new System.Uri("https://api.althub.co.za") };
 
             // Call the provider's URL builder directly (private) to assert it includes extended=1
-            var provider = new Listenarr.Api.Services.Search.Providers.TorznabNewznabSearchProvider(httpClient, NullLogger<Listenarr.Api.Services.Search.Providers.TorznabNewznabSearchProvider>.Instance);
-            var mi = typeof(Listenarr.Api.Services.Search.Providers.TorznabNewznabSearchProvider).GetMethod("BuildTorznabUrl", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+            var provider = new TorznabNewznabSearchProvider(httpClient, NullLogger<TorznabNewznabSearchProvider>.Instance);
+            var mi = typeof(TorznabNewznabSearchProvider).GetMethod("BuildTorznabUrl", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
             Assert.NotNull(mi);
             var idx1 = db.Indexers.First(i => i.Implementation == "newznab");
             var idx2 = db.Indexers.First(i => i.Implementation == "torznab");
@@ -270,7 +288,7 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient = new HttpClient(handler) { BaseAddress = new System.Uri("https://www.myanonamouse.net") };
-            var provider = new Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider(NullLogger<Listenarr.Api.Services.Search.Providers.MyAnonamouseSearchProvider>.Instance, httpClient, db);
+            var provider = new MyAnonamouseSearchProvider(NullLogger<MyAnonamouseSearchProvider>.Instance, httpClient, new EfIndexerRepository(db));
 
             // Call provider directly to ensure the AdditionalSettings are applied to the generated request -
             // The provider no longer parses indexer.AdditionalSettings for options automatically, callers should pass a SearchRequest.
@@ -359,9 +377,9 @@ namespace Listenarr.Api.Tests
             });
 
             using var httpClient = new HttpClient(handler);
-            var provider = new Listenarr.Api.Services.Search.Providers.InternetArchiveSearchProvider(
+            var provider = new InternetArchiveSearchProvider(
                 httpClient,
-                NullLogger<Listenarr.Api.Services.Search.Providers.InternetArchiveSearchProvider>.Instance);
+                NullLogger<InternetArchiveSearchProvider>.Instance);
 
             var results = await provider.SearchAsync(indexer, "Artemis");
 

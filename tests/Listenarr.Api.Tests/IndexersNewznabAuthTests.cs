@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Net;
 using System.Net.Http;
@@ -18,7 +35,7 @@ namespace Listenarr.Api.Tests
     {
         private sealed class ControllerContext : IDisposable
         {
-            public ControllerContext(ListenArrDbContext db, HttpClient client, Listenarr.Api.Controllers.IndexersController controller)
+            public ControllerContext(ListenArrDbContext db, HttpClient client, IndexersController controller)
             {
                 Db = db;
                 Client = client;
@@ -29,7 +46,7 @@ namespace Listenarr.Api.Tests
 
             public HttpClient Client { get; }
 
-            public Listenarr.Api.Controllers.IndexersController Controller { get; }
+            public IndexersController Controller { get; }
 
             public void Dispose()
             {
@@ -63,9 +80,9 @@ namespace Listenarr.Api.Tests
 
             var db = new ListenArrDbContext(options);
             var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(
-                db,
-                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+            var controller = new IndexersController(
+                new EfIndexerRepository(db),
+                NullLogger<IndexersController>.Instance,
                 client,
                 new TestConfigurationService());
 
@@ -420,9 +437,9 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             using var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(
-                db,
-                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+            var controller = new IndexersController(
+                new EfIndexerRepository(db),
+                NullLogger<IndexersController>.Instance,
                 client,
                 new TestConfigurationService());
 
@@ -473,9 +490,9 @@ namespace Listenarr.Api.Tests
             await db.SaveChangesAsync();
 
             using var client = new HttpClient(handler);
-            var controller = new Listenarr.Api.Controllers.IndexersController(
-                db,
-                NullLogger<Listenarr.Api.Controllers.IndexersController>.Instance,
+            var controller = new IndexersController(
+                new EfIndexerRepository(db),
+                NullLogger<IndexersController>.Instance,
                 client,
                 new TestConfigurationService());
 

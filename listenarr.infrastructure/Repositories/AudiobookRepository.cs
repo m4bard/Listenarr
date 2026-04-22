@@ -1,18 +1,28 @@
-// csharp
-using System.Threading.Tasks;
-using System.Collections.Generic;
-using System.Linq;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System.Threading;
 using Microsoft.EntityFrameworkCore;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 
-namespace Listenarr.Api.Services
+namespace Listenarr.Infrastructure.Repositories
 {
-    /// <summary>
-    /// Moved AudiobookRepository implementation into the Infrastructure project.
-    /// Keeps the original namespace Listenarr.Api.Services so existing code and DI registrations
-    /// don't need to change.
-    /// </summary>
     public class AudiobookRepository : IAudiobookRepository
     {
         private readonly ListenArrDbContext _db;
@@ -71,6 +81,15 @@ namespace Listenarr.Api.Services
                 .FirstOrDefaultAsync(a => a.Id == id);
         }
 
+        public async Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, System.Threading.CancellationToken ct = default)
+        {
+            var idSet = ids.ToHashSet();
+            return await _db.Audiobooks
+                .Include(a => a.Files)
+                .Where(a => idSet.Contains(a.Id))
+                .ToListAsync(ct);
+        }
+
         public async Task AddAsync(Audiobook audiobook)
         {
             _db.Audiobooks.Add(audiobook);
@@ -112,6 +131,20 @@ namespace Listenarr.Api.Services
                 return false;
 
             return await DeleteAsync(audiobook);
+        }
+
+        public async Task<bool> UpdateWithIdentifierReplaceAsync(Audiobook audiobook, List<AudiobookExternalIdentifier> newIdentifiers, CancellationToken ct = default)
+        {
+            var existing = await _db.AudiobookExternalIdentifiers
+                .Where(i => i.AudiobookId == audiobook.Id)
+                .ToListAsync(ct);
+            if (existing.Count > 0)
+                _db.AudiobookExternalIdentifiers.RemoveRange(existing);
+
+            audiobook.ExternalIdentifiers = newIdentifiers;
+            _db.Audiobooks.Update(audiobook);
+            await _db.SaveChangesAsync(ct);
+            return true;
         }
 
         public async Task<int> DeleteBulkAsync(List<int> ids)
@@ -384,6 +417,33 @@ namespace Listenarr.Api.Services
                 StringSplitOptions.RemoveEmptyEntries);
 
             return string.Join(' ', parts).ToLowerInvariant();
+        }
+
+        public async Task SaveChangesAsync(System.Threading.CancellationToken ct = default)
+        {
+            await _db.SaveChangesAsync(ct);
+        }
+
+        public async Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, System.Threading.CancellationToken ct = default)
+        {
+            return await _db.Audiobooks
+                .Include(a => a.QualityProfile)
+                .Where(a => a.Monitored &&
+                            a.QualityProfileId != null &&
+                            (a.LastSearchTime == null || a.LastSearchTime < cutoff))
+                .ToListAsync(ct);
+        }
+
+        public async Task NormalizeJsonColumnsAsync(System.Threading.CancellationToken ct = default)
+        {
+            var columns = new[] { "Authors", "Genres", "Tags", "Narrators", "AuthorAsins", "Isbn" }
+                .Where(col => System.Text.RegularExpressions.Regex.IsMatch(col, @"^[A-Za-z_][A-Za-z0-9_]*$"));
+
+            foreach (var col in columns)
+            {
+                var sql = $"UPDATE Audiobooks SET {col} = json_array(json_extract({col}, '$')) WHERE {col} IS NOT NULL AND json_valid({col})=1 AND json_type({col}) NOT IN ('array','object')";
+                await _db.Database.ExecuteSqlRawAsync(sql, ct);
+            }
         }
 
         private static string NormalizeSeriesName(string? value)

@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using Listenarr.Api.Models;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
@@ -444,10 +461,7 @@ namespace Listenarr.Api.Tests
             var config = new Mock<IConfigurationService>();
             config.Setup(service => service.GetApplicationSettingsAsync()).ReturnsAsync(settings);
 
-            var dbFactory = new Mock<IDbContextFactory<ListenArrDbContext>>();
-            dbFactory.Setup(factory => factory.CreateDbContextAsync(It.IsAny<CancellationToken>()))
-                .ReturnsAsync(() => CreateContext(dbName));
-
+            var repo = new AudiobookRepository(db);
             var fileNaming = new FileNamingService(config.Object, NullLogger<FileNamingService>.Instance);
             var fileMover = new Mock<IFileMover>();
             fileMover.Setup(mover => mover.MoveFileAsync(It.IsAny<string>(), It.IsAny<string>()))
@@ -480,7 +494,7 @@ namespace Listenarr.Api.Tests
                 config.Object,
                 fileNaming,
                 fileMover.Object,
-                dbFactory.Object,
+                repo,
                 NullLogger<RenameService>.Instance);
 
             return (service, db, dbName);

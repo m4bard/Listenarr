@@ -1,0 +1,40 @@
+# All PRs require review from a maintainer.
+# Maintainers are org members of the listenarrs/maintainers team.
+*                                           @listenarrs/maintainers
+
+# CI/CD workflows — any change requires maintainer sign-off
+.github/workflows/                          @listenarrs/maintainers
+.github/CODEOWNERS                          @listenarrs/maintainers
+.github/dependabot.yml                      @listenarrs/maintainers
+
+# Security and legal
+SECURITY.md                                 @listenarrs/maintainers
+LICENSE                                     @listenarrs/maintainers
+
+# Docker and deployment
+Dockerfile                                  @listenarrs/maintainers
+docker-entrypoint.sh                        @listenarrs/maintainers
+docker-compose.yml                          @listenarrs/maintainers
+listenarr.api/Dockerfile.runtime            @listenarrs/maintainers
+
+# .NET project and build configuration — controls SDK, versions, global deps
+global.json                                 @listenarrs/maintainers
+Directory.Build.props                       @listenarrs/maintainers
+Directory.Packages.props                    @listenarrs/maintainers
+listenarr.api/Listenarr.Api.csproj          @listenarrs/maintainers
+
+# Database migrations — schema changes are hard to reverse
+listenarr.infrastructure/Migrations/        @listenarrs/maintainers
+
+# Application entry point and DI wiring
+listenarr.api/Program.cs                    @listenarrs/maintainers
+
+# Default configuration shipped with the app
+listenarr.api/config/appsettings/           @listenarrs/maintainers
+
+# Dependency manifests — watch for supply-chain changes
+package.json                                        @listenarrs/maintainers
+package-lock.json                                   @listenarrs/maintainers
+fe/package.json                                     @listenarrs/maintainers
+fe/package-lock.json                                @listenarrs/maintainers
+listenarr.api/tools/discord-bot/package.json        @listenarrs/maintainers

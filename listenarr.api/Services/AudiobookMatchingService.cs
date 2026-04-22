@@ -1,6 +1,6 @@
 ﻿/*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -16,9 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
 using System.Text.RegularExpressions;
 
 namespace Listenarr.Api.Services
@@ -28,20 +27,20 @@ namespace Listenarr.Api.Services
     /// </summary>
     public class AudiobookMatchingService : IAudiobookMatchingService
     {
-        private readonly ListenArrDbContext _dbContext;
+        private readonly IAudiobookRepository _audiobooks;
         private readonly ILogger<AudiobookMatchingService> _logger;
 
         public AudiobookMatchingService(
-            ListenArrDbContext dbContext,
+            IAudiobookRepository audiobooks,
             ILogger<AudiobookMatchingService> logger)
         {
-            _dbContext = dbContext;
+            _audiobooks = audiobooks;
             _logger = logger;
         }
 
         public async Task<Audiobook?> FindBestAudiobookMatchAsync(Download download, double minimumConfidence = 0.8)
         {
-            var audiobooks = await _dbContext.Audiobooks.ToListAsync();
+            var audiobooks = await _audiobooks.GetAllAsync();
 
             var bestMatch = audiobooks
                 .Select(ab => new { Audiobook = ab, Confidence = CalculateMatchConfidence(download, ab) })
@@ -60,7 +59,7 @@ namespace Listenarr.Api.Services
 
         public async Task<Audiobook?> FindBestAudiobookMatchAsync(SearchResult searchResult, double minimumConfidence = 0.8)
         {
-            var audiobooks = await _dbContext.Audiobooks.ToListAsync();
+            var audiobooks = await _audiobooks.GetAllAsync();
 
             var bestMatch = audiobooks
                 .Select(ab => new { Audiobook = ab, Confidence = CalculateMatchConfidence(searchResult, ab) })

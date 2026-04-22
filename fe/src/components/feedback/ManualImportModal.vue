@@ -1,3 +1,20 @@
+<!--
+  Listenarr - Audiobook Management System
+  Copyright (C) 2024-2026 Listenarr Contributors
+
+  This program is free software: you can redistribute it and/or modify
+  it under the terms of the GNU Affero General Public License as published
+  by the Free Software Foundation, either version 3 of the License, or
+  (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful,
+  but WITHOUT ANY WARRANTY; without even the implied warranty of
+  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+  GNU Affero General Public License for more details.
+
+  You should have received a copy of the GNU Affero General Public License
+  along with this program. If not, see <https://www.gnu.org/licenses/>.
+-->
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
@@ -69,14 +86,14 @@
                 <div class="col col-check">
                   <Checkbox :modelValue="allSelected" @update:modelValue="setAllSelected" />
                 </div>
-                <div v-for="(field, _) in importFields" :class="`col ${ field.class }`">{{ field.label }}</div>
+                <div v-for="field in importFields" :key="field.key" :class="`col ${ field.class }`">{{ field.label }}</div>
                 <div class="col col-action"></div>
               </div>
 
               <div class="preview-body">
                 <div v-for="(it, idx) in previewItems" :key="idx" class="preview-row">
                   <div class="col col-check"><Checkbox v-model="it.selected" /></div>
-                  <div v-for="(field, _) in importFields" :class="`col ${ field.class }`">
+                  <div v-for="field in importFields" :key="field.key" :class="`col ${ field.class }`">
                     <div v-if="field.editable" class="clickable-cell" @click="openCellEditor(it, field.key)">
                       <span v-if="field.get(it)">{{
                         field.display(it)
@@ -122,7 +139,7 @@
             :disabled="selectedCount === 0 || loading"
           >
             <option value="">Select...</option>
-            <option v-for="(field, _) in importFields.filter((field: ImportField) => field.editable)" :value="field.key">{{ field.label }}</option>
+            <option v-for="field in importFields.filter((field: ImportField) => field.editable)" :key="field.key" :value="field.key">{{ field.label }}</option>
           </select>
 
           <select v-if="showPreview" class="extra-select" v-model="action">
@@ -323,8 +340,8 @@ interface ImportField {
   label: string;
   class: string;
   editable: boolean;
-  set: (item: PreviewItem, value: any) => void;
-  get: (item: PreviewItem) => any;
+  set: (item: PreviewItem, value: string | number | null) => void;
+  get: (item: PreviewItem) => string | number | null;
   display: (item: PreviewItem) => string;
 }
 const importFields = [

@@ -1,8 +1,24 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Globalization;
 using System.Text;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
 {
@@ -66,18 +82,21 @@ namespace Listenarr.Api.Services
             ["ru-ru"] = "russian"
         };
 
-        private readonly ListenArrDbContext _dbContext;
+        private readonly IMonitoredSeriesRepository _series;
+        private readonly IAudiobookRepository _audiobooks;
         private readonly ISeriesCatalogService _seriesCatalogService;
         private readonly ILibraryAddService _libraryAddService;
         private readonly ILogger<SeriesMonitoringService> _logger;
 
         public SeriesMonitoringService(
-            ListenArrDbContext dbContext,
+            IMonitoredSeriesRepository series,
+            IAudiobookRepository audiobooks,
             ISeriesCatalogService seriesCatalogService,
             ILibraryAddService libraryAddService,
             ILogger<SeriesMonitoringService> logger)
         {
-            _dbContext = dbContext;
+            _series = series;
+            _audiobooks = audiobooks;
             _seriesCatalogService = seriesCatalogService;
             _libraryAddService = libraryAddService;
             _logger = logger;
@@ -98,13 +117,7 @@ namespace Listenarr.Api.Services
             var normalizedRegion = NormalizeRegion(region);
             var normalizedLanguage = NormalizeLanguage(language, fallbackToEnglish: true);
 
-            return await _dbContext.MonitoredSeries
-                .AsNoTracking()
-                .FirstOrDefaultAsync(
-                    series => series.SeriesNameNormalized == normalizedName &&
-                              series.Region == normalizedRegion &&
-                              series.Language == normalizedLanguage,
-                    cancellationToken);
+            return await _series.GetByNameRegionLanguageAsync(normalizedName, normalizedRegion, normalizedLanguage, cancellationToken);
         }
 
         public async Task<MonitorSeriesOperationResult> MonitorSeriesAsync(
@@ -123,11 +136,7 @@ namespace Listenarr.Api.Services
             var normalizedLanguage = NormalizeLanguage(request.Language, fallbackToEnglish: true);
             var displayName = request.Name.Trim();
 
-            var monitoredSeries = await _dbContext.MonitoredSeries.FirstOrDefaultAsync(
-                series => series.SeriesNameNormalized == normalizedName &&
-                          series.Region == normalizedRegion &&
-                          series.Language == normalizedLanguage,
-                cancellationToken);
+            var monitoredSeries = await _series.GetByNameRegionLanguageAsync(normalizedName, normalizedRegion, normalizedLanguage, cancellationToken);
 
             if (monitoredSeries == null)
             {
@@ -141,8 +150,6 @@ namespace Listenarr.Api.Services
                     CreatedAt = DateTime.UtcNow,
                     UpdatedAt = DateTime.UtcNow
                 };
-
-                _dbContext.MonitoredSeries.Add(monitoredSeries);
             }
             else
             {
@@ -151,7 +158,7 @@ namespace Listenarr.Api.Services
                 monitoredSeries.UpdatedAt = DateTime.UtcNow;
             }
 
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            monitoredSeries = await _series.UpsertAsync(monitoredSeries, cancellationToken);
 
             var syncResult = await SyncSeriesInternalAsync(monitoredSeries, cancellationToken);
             return new MonitorSeriesOperationResult
@@ -163,25 +170,12 @@ namespace Listenarr.Api.Services
 
         public async Task<bool> UnmonitorSeriesAsync(int id, CancellationToken cancellationToken = default)
         {
-            var monitoredSeries = await _dbContext.MonitoredSeries.FirstOrDefaultAsync(
-                series => series.Id == id,
-                cancellationToken);
-
-            if (monitoredSeries == null)
-            {
-                return false;
-            }
-
-            _dbContext.MonitoredSeries.Remove(monitoredSeries);
-            await _dbContext.SaveChangesAsync(cancellationToken);
-            return true;
+            return await _series.DeleteAsync(id, cancellationToken);
         }
 
         public async Task<MonitorSeriesSyncResult> SyncSeriesAsync(int id, CancellationToken cancellationToken = default)
         {
-            var monitoredSeries = await _dbContext.MonitoredSeries.FirstOrDefaultAsync(
-                series => series.Id == id,
-                cancellationToken);
+            var monitoredSeries = await _series.GetByIdAsync(id, cancellationToken);
 
             if (monitoredSeries == null)
             {
@@ -199,10 +193,7 @@ namespace Listenarr.Api.Services
         public async Task<int> SyncDueSeriesAsync(CancellationToken cancellationToken = default)
         {
             var cutoff = DateTime.UtcNow.AddDays(-1);
-            var dueSeries = await _dbContext.MonitoredSeries
-                .Where(series => series.LastCheckedAt == null || series.LastCheckedAt < cutoff)
-                .OrderBy(series => series.LastCheckedAt ?? DateTime.MinValue)
-                .ToListAsync(cancellationToken);
+            var dueSeries = await _series.GetDueForSyncAsync(cutoff, cancellationToken);
 
             var syncedCount = 0;
             foreach (var monitoredSeries in dueSeries)
@@ -242,15 +233,13 @@ namespace Listenarr.Api.Services
                     monitoredSeries.LastError = TruncateError(result.ErrorMessage);
                     monitoredSeries.LastCheckedAt = DateTime.UtcNow;
                     monitoredSeries.UpdatedAt = DateTime.UtcNow;
-                    await _dbContext.SaveChangesAsync(cancellationToken);
+                    await _series.UpsertAsync(monitoredSeries, cancellationToken);
                     return result;
                 }
 
                 monitoredSeries.SeriesAsin = NormalizeOptionalIdentifier(catalog.Series.Asin) ?? monitoredSeries.SeriesAsin;
 
-                var existingLibrary = await _dbContext.Audiobooks
-                    .AsNoTracking()
-                    .ToListAsync(cancellationToken);
+                var existingLibrary = await _audiobooks.GetAllAsync();
 
                 foreach (var book in catalog.Books)
                 {
@@ -303,7 +292,7 @@ namespace Listenarr.Api.Services
                 monitoredSeries.LastSuccessfulSyncAt = monitoredSeries.LastCheckedAt;
                 monitoredSeries.LastError = null;
                 monitoredSeries.UpdatedAt = DateTime.UtcNow;
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                await _series.UpsertAsync(monitoredSeries, cancellationToken);
 
                 result.Succeeded = true;
                 return result;
@@ -327,7 +316,7 @@ namespace Listenarr.Api.Services
                 monitoredSeries.LastCheckedAt = DateTime.UtcNow;
                 monitoredSeries.LastError = TruncateError(ex.Message);
                 monitoredSeries.UpdatedAt = DateTime.UtcNow;
-                await _dbContext.SaveChangesAsync(cancellationToken);
+                await _series.UpsertAsync(monitoredSeries, cancellationToken);
                 return result;
             }
         }

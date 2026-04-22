@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -22,7 +22,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
@@ -51,7 +51,7 @@ namespace Listenarr.Api.Services
     public class DownloadStateMachine
     {
         private readonly ILogger<DownloadStateMachine> _logger;
-        private readonly DownloadHistoryRepository _historyRepo;
+        private readonly IDownloadHistoryRepository _historyRepository;
 
         // Valid state transitions
         private static readonly Dictionary<DownloadItemStatus, HashSet<DownloadItemStatus>> ValidTransitions = new()
@@ -109,10 +109,10 @@ namespace Listenarr.Api.Services
 
         public DownloadStateMachine(
             ILogger<DownloadStateMachine> logger,
-            DownloadHistoryRepository historyRepo)
+            IDownloadHistoryRepository historyRepository)
         {
             _logger = logger;
-            _historyRepo = historyRepo;
+            _historyRepository = historyRepository;
         }
 
         /// <summary>
@@ -151,7 +151,7 @@ namespace Listenarr.Api.Services
             // Record in history
             try
             {
-                await _historyRepo.AddAsync(new DownloadHistory
+                await _historyRepository.AddAsync(new DownloadHistory
                 {
                     DownloadId = downloadId,
                     EventType = eventType,
@@ -206,7 +206,7 @@ namespace Listenarr.Api.Services
         /// </summary>
         public async Task<DownloadItemStatus?> GetCurrentStateAsync(string downloadId, CancellationToken ct = default)
         {
-            var latestEvent = await _historyRepo.GetLatestEventAsync(downloadId, ct);
+            var latestEvent = await _historyRepository.GetLatestEventAsync(downloadId, ct);
             return latestEvent?.Status;
         }
 
@@ -243,7 +243,7 @@ namespace Listenarr.Api.Services
         public async Task<List<(DateTime EventDate, DownloadItemStatus FromState, DownloadItemStatus ToState, DownloadHistoryEventType EventType)>>
             GetTransitionHistoryAsync(string downloadId, CancellationToken ct = default)
         {
-            var events = await _historyRepo.GetByDownloadIdAsync(downloadId, ct);
+            var events = await _historyRepository.GetByDownloadIdAsync(downloadId, ct);
             var transitions = new List<(DateTime, DownloadItemStatus, DownloadItemStatus, DownloadHistoryEventType)>();
 
             DownloadItemStatus? previousState = null;

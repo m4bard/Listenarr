@@ -1,23 +1,39 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.WebUtilities;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services
 {
     public class NzbUrlResolver : INzbUrlResolver
     {
-        private readonly IDbContextFactory<ListenArrDbContext> _dbContextFactory;
+        private readonly IIndexerRepository _indexers;
         private readonly ILogger<NzbUrlResolver> _logger;
 
-        public NzbUrlResolver(IDbContextFactory<ListenArrDbContext> dbContextFactory, ILogger<NzbUrlResolver> logger)
+        public NzbUrlResolver(IIndexerRepository indexers, ILogger<NzbUrlResolver> logger)
         {
-            _dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
+            _indexers = indexers ?? throw new ArgumentNullException(nameof(indexers));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
         }
 
@@ -50,18 +66,13 @@ namespace Listenarr.Api.Services
                 }
 
                 Indexer? indexer = null;
-                await using var dbContext = await _dbContextFactory.CreateDbContextAsync(ct);
                 if (result.IndexerId.HasValue)
                 {
-                    indexer = await dbContext.Indexers
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(i => i.Id == result.IndexerId!.Value, ct);
+                    indexer = await _indexers.GetByIdAsync(result.IndexerId!.Value, ct);
                 }
                 else if (!string.IsNullOrWhiteSpace(result.Source))
                 {
-                    indexer = await dbContext.Indexers
-                        .AsNoTracking()
-                        .FirstOrDefaultAsync(i => i.Name == result.Source, ct);
+                    indexer = await _indexers.GetByNameAsync(result.Source, ct);
                 }
 
                 if (indexer != null && !string.IsNullOrWhiteSpace(indexer.ApiKey))
@@ -78,4 +89,3 @@ namespace Listenarr.Api.Services
         }
     }
 }
-

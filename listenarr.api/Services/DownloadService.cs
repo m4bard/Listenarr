@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -17,7 +17,7 @@
  */
 
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using Listenarr.Application.Services;
 using Microsoft.AspNetCore.SignalR;
 using Listenarr.Api.Hubs;
@@ -51,10 +51,11 @@ namespace Listenarr.Api.Services
         }
 
         private readonly IHubContext<DownloadHub> _hubContext;
-        private readonly Listenarr.Application.Services.IHubBroadcaster _hubBroadcaster;
+        private readonly IHubBroadcaster _hubBroadcaster;
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly IConfigurationService _configurationService;
-        private readonly IDbContextFactory<ListenArrDbContext> _dbContextFactory;
+        private readonly IDownloadRepository _downloadRepository;
+        private readonly IIndexerRepository _indexerRepository;
         private readonly ILogger<DownloadService> _logger;
         private readonly HttpClient _httpClient;
         private readonly IHttpClientFactory _httpClientFactory;
@@ -81,7 +82,8 @@ namespace Listenarr.Api.Services
             IHubContext<DownloadHub> hubContext,
             IAudiobookRepository audiobookRepository,
             IConfigurationService configurationService,
-            IDbContextFactory<ListenArrDbContext> dbContextFactory,
+            IDownloadRepository downloadRepository,
+            IIndexerRepository indexerRepository,
             ILogger<DownloadService> logger,
             IHttpClientFactory httpClientFactory,
             IServiceScopeFactory serviceScopeFactory,
@@ -94,14 +96,15 @@ namespace Listenarr.Api.Services
             ICompletedDownloadProcessor completedDownloadProcessor,
             IAppMetricsService metrics,
             NotificationService notificationService,
-            Listenarr.Application.Services.IHubBroadcaster? hubBroadcaster = null,
+            IHubBroadcaster? hubBroadcaster = null,
             IDownloadHistoryService? downloadHistoryService = null)
         {
             _hubContext = hubContext ?? throw new ArgumentNullException(nameof(hubContext));
             _hubBroadcaster = hubBroadcaster ?? new NoopHubBroadcaster();
             _audiobookRepository = audiobookRepository ?? throw new ArgumentNullException(nameof(audiobookRepository));
             _configurationService = configurationService ?? throw new ArgumentNullException(nameof(configurationService));
-            _dbContextFactory = dbContextFactory ?? throw new ArgumentNullException(nameof(dbContextFactory));
+            _downloadRepository = downloadRepository ?? throw new ArgumentNullException(nameof(downloadRepository));
+            _indexerRepository = indexerRepository ?? throw new ArgumentNullException(nameof(indexerRepository));
             _logger = logger ?? throw new ArgumentNullException(nameof(logger));
             _httpClientFactory = httpClientFactory ?? throw new ArgumentNullException(nameof(httpClientFactory));
             // Create a default HttpClient from factory for general use
@@ -154,16 +157,16 @@ namespace Listenarr.Api.Services
         /// <summary>
         /// Retrieve cached announce URLs for a given download id if available
         /// </summary>
-        public Task<System.Collections.Generic.List<string>?> GetCachedAnnouncesAsync(string downloadId)
+        public Task<List<string>?> GetCachedAnnouncesAsync(string downloadId)
         {
             try
             {
-                if (string.IsNullOrEmpty(downloadId)) return Task.FromResult<System.Collections.Generic.List<string>?>(null);
+                if (string.IsNullOrEmpty(downloadId)) return Task.FromResult<List<string>?>(null);
                 var cacheKey = $"mam:cachedtorrent:{downloadId}:announces";
-                var announces = _cache.Get<System.Collections.Generic.List<string>>(cacheKey);
+                var announces = _cache.Get<List<string>>(cacheKey);
                 if (announces != null && announces.Count > 0)
                 {
-                    return Task.FromResult<System.Collections.Generic.List<string>?>(announces);
+                    return Task.FromResult<List<string>?>(announces);
                 }
 
                 // Fallback: if announces not cached, try to extract from cached bytes
@@ -175,15 +178,15 @@ namespace Listenarr.Api.Services
                     {
                         // cache for future retrievals
                         _cache.Set($"mam:cachedtorrent:{downloadId}:announces", extracted, new MemoryCacheEntryOptions { SlidingExpiration = TimeSpan.FromMinutes(30) });
-                        return Task.FromResult<System.Collections.Generic.List<string>?>(extracted);
+                        return Task.FromResult<List<string>?>(extracted);
                     }
                 }
 
-                return Task.FromResult<System.Collections.Generic.List<string>?>(null);
+                return Task.FromResult<List<string>?>(null);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogDebug(ex, "Failed to retrieve cached announces for download {DownloadId} (non-fatal)", downloadId);
-                return Task.FromResult<System.Collections.Generic.List<string>?>(null);
+                return Task.FromResult<List<string>?>(null);
             }
         }
 
@@ -226,43 +229,16 @@ namespace Listenarr.Api.Services
 
             try
             {
-                // Prefer factory-created DbContext for persistence so background workers don't rely on scoped ambient contexts.
-                // We also attempt to update any scoped ListenArrDbContext instances (used in tests) so in-memory tracked
-                // entities reflect the persisted changes.
-                var dbContext = await _dbContextFactory.CreateDbContextAsync();
-                var download = await dbContext.Downloads.FindAsync(downloadId);
+                var download = await _downloadRepository.FindAsync(downloadId);
                 if (download == null)
                 {
                     _logger.LogWarning("ProcessCompletedDownloadAsync: download record not found: {DownloadId}", downloadId);
                 }
                 else
                 {
-                    // Update status to Completed now; FinalPath will be updated after import completes.
                     download.Status = DownloadStatus.Completed;
-                    dbContext.Downloads.Update(download);
-                    await dbContext.SaveChangesAsync();
+                    await _downloadRepository.UpdateAsync(download);
                     _logger.LogInformation("Marked download {DownloadId} as Completed (pre-import)", downloadId);
-
-                    // Sync status into any scoped ListenArrDbContext registered in DI so tests that are holding
-                    // a tracked DbContext instance observe the state change.
-                    try
-                    {
-                        var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
-                        using var scopeSync = scopeFactoryToUse.CreateScope();
-                        var scopedDb = scopeSync.ServiceProvider.GetService<ListenArrDbContext>();
-                        if (scopedDb != null)
-                        {
-                            var local = await scopedDb.Downloads.FindAsync(downloadId);
-                            if (local != null)
-                            {
-                                local.Status = DownloadStatus.Completed;
-                                _logger.LogDebug("Synchronized Completed status into scoped ListenArrDbContext for {DownloadId}", downloadId);
-                            }
-                        }
-                    }
-                    catch (Exception syncEx) when (syncEx is not OperationCanceledException && syncEx is not OutOfMemoryException && syncEx is not StackOverflowException) {
-                        _logger.LogDebug(syncEx, "Failed to synchronize status into scoped ListenArrDbContext (non-fatal)");
-                    }
                 }
 
                 // CompletedDownloadProcessor handles the entire import workflow
@@ -570,22 +546,20 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    var checkContext = await _dbContextFactory.CreateDbContextAsync();
-
                     var downloadClients = await _configurationService.GetDownloadClientConfigurationsAsync();
                     var enabledClientIds = downloadClients
                         .Where(c => c.IsEnabled && !string.IsNullOrWhiteSpace(c.Id))
                         .Select(c => c.Id)
                         .ToHashSet();
 
-                    var existingActive = await checkContext.Downloads
-                        .Where(d => d.AudiobookId == audiobookIdValue)
-                        .Where(d => d.Status == DownloadStatus.Queued ||
-                                    d.Status == DownloadStatus.Downloading ||
-                                    d.Status == DownloadStatus.ImportPending)
-                        .Where(d => d.DownloadClientId == "DDL" ||
-                                    (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId)))
-                        .AnyAsync();
+                    var allDownloads = await _downloadRepository.GetAllAsync();
+                    var existingActive = allDownloads
+                        .Any(d => d.AudiobookId == audiobookIdValue &&
+                                  (d.Status == DownloadStatus.Queued ||
+                                   d.Status == DownloadStatus.Downloading ||
+                                   d.Status == DownloadStatus.ImportPending) &&
+                                  (d.DownloadClientId == "DDL" ||
+                                   (!string.IsNullOrEmpty(d.DownloadClientId) && enabledClientIds.Contains(d.DownloadClientId))));
 
                     if (existingActive)
                     {
@@ -629,9 +603,7 @@ namespace Listenarr.Api.Services
                 }
             };
 
-            var dbContext = await _dbContextFactory.CreateDbContextAsync();
-            dbContext.Downloads.Add(download);
-            await dbContext.SaveChangesAsync();
+            await _downloadRepository.AddAsync(download);
             _logger.LogInformation("Created download record in database: {DownloadId} for '{Title}'", downloadId, searchResult.Title);
             
             // Record in download history for idempotency tracking
@@ -639,7 +611,7 @@ namespace Listenarr.Api.Services
             {
                 try
                 {
-                    var protocol = isTorrent ? Listenarr.Domain.Models.DownloadProtocol.Torrent : Listenarr.Domain.Models.DownloadProtocol.Usenet;
+                    var protocol = isTorrent ? DownloadProtocol.Torrent : DownloadProtocol.Usenet;
                     await _downloadHistoryService.RecordGrabbedAsync(
                         downloadId,
                         downloadClientIdForModel,
@@ -667,25 +639,21 @@ namespace Listenarr.Api.Services
             // Update download record with client-specific ID if available
             if (!string.IsNullOrEmpty(clientSpecificId))
             {
-                var updateContext = await _dbContextFactory.CreateDbContextAsync();
-                var downloadToUpdate = await updateContext.Downloads.FindAsync(downloadId);
+                var downloadToUpdate = await _downloadRepository.FindAsync(downloadId);
                 if (downloadToUpdate != null)
                 {
                     if (downloadToUpdate.Metadata == null)
                         downloadToUpdate.Metadata = new Dictionary<string, object>();
 
-                    // Persist client-specific ID for all clients (NZBGet/SABnzbd/etc.)
                     downloadToUpdate.Metadata["ClientDownloadId"] = clientSpecificId;
 
-                    // Store TorrentHash for all torrent clients (qBittorrent, Transmission)
                     if (downloadClient.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase) ||
                         downloadClient.Type.Equals("transmission", StringComparison.OrdinalIgnoreCase))
                     {
                         downloadToUpdate.Metadata["TorrentHash"] = clientSpecificId;
                     }
 
-                    updateContext.Downloads.Update(downloadToUpdate);
-                    await updateContext.SaveChangesAsync();
+                    await _downloadRepository.UpdateAsync(downloadToUpdate);
                     _logger.LogInformation("Updated download {DownloadId} with client-specific ID: {ClientId}", downloadId, clientSpecificId);
                 }
             }
@@ -702,8 +670,7 @@ namespace Listenarr.Api.Services
                     object notificationData;
                     if (audiobookId.HasValue)
                     {
-                        var notifContext = await _dbContextFactory.CreateDbContextAsync();
-                        var audiobook = await notifContext.Audiobooks.FindAsync(audiobookId.Value);
+                        var audiobook = await _audiobookRepository.GetByIdAsync(audiobookId.Value);
                         notificationData = audiobook != null
                             ? new
                             {
@@ -771,7 +738,7 @@ namespace Listenarr.Api.Services
                     // Fallback for older registrations
                     using (var scope = _serviceScopeFactory.CreateScope())
                     {
-                        var hubContext = scope.ServiceProvider.GetService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                        var hubContext = scope.ServiceProvider.GetService<IHubContext<DownloadHub>>();
                         if (hubContext != null)
                         {
                             await hubContext.Clients.All.SendAsync("QueueUpdate", currentQueueSnapshot);
@@ -819,11 +786,9 @@ namespace Listenarr.Api.Services
 
             try
             {
-                var dbContext = await _dbContextFactory.CreateDbContextAsync();
-                
                 // Security: Fetch indexer from database using the validated ID
                 // Only trusted, administrator-configured indexers can trigger authenticated requests
-                var indexer = await dbContext.Indexers.FindAsync(searchResult.IndexerId.Value);
+                var indexer = await _indexerRepository.GetByIdAsync(searchResult.IndexerId.Value);
 
                 // Security: Indexer must exist in database - reject if not found
                 if (indexer == null)
@@ -899,13 +864,8 @@ namespace Listenarr.Api.Services
                         if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
                         {
                             _logger.LogInformation("MyAnonamouse: received updated mam_id from download redirect response for indexer {Name}", indexer.Name);
-                            // Persist to database by re-loading the tracked indexer entity and updating it
-                            var persistedIndexer = await dbContext.Indexers.FindAsync(indexer.Id);
-                            if (persistedIndexer != null)
-                            {
-                                persistedIndexer.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(persistedIndexer.AdditionalSettings, newMam);
-                                await dbContext.SaveChangesAsync();
-                            }
+                            indexer.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(indexer.AdditionalSettings, newMam);
+                            await _indexerRepository.UpdateAsync(indexer);
 
                             // Keep local copy in sync
                             indexer.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(indexer.AdditionalSettings, newMam);
@@ -1119,10 +1079,10 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("MyAnonamouse: normalizing mam_id from '{Raw}' to '{Normalized}' for '{Title}'", LogRedaction.RedactText(mamId, LogRedaction.GetSensitiveValuesFromEnvironment()), LogRedaction.RedactText(normalizedMamId, LogRedaction.GetSensitiveValuesFromEnvironment()), searchResult.Title);
 
                         var currentAnnounces = MyAnonamouseHelper.ExtractAnnounceUrls(torrentBytes);
-                        var updatedAnnounces = new System.Collections.Generic.List<string>();
+                        var updatedAnnounces = new List<string>();
                         var modified = false;
 
-                        foreach (var ann in (currentAnnounces ?? new System.Collections.Generic.List<string>())
+                        foreach (var ann in (currentAnnounces ?? new List<string>())
                             .Where(ann => !string.IsNullOrWhiteSpace(ann))
                             .Distinct())
                         {
@@ -1307,10 +1267,7 @@ namespace Listenarr.Api.Services
 
             try
             {
-                var dbContext = await _dbContextFactory.CreateDbContextAsync();
-                var indexer = await dbContext.Indexers
-                    .AsNoTracking()
-                    .FirstOrDefaultAsync(i => i.Id == indexerId);
+                var indexer = await _indexerRepository.GetByIdAsync(indexerId);
 
                 if (indexer == null || !indexer.IsEnabled)
                 {
@@ -1468,18 +1425,14 @@ namespace Listenarr.Api.Services
                 bool removedFromClient = false;
                 Download? downloadRecord = null;
 
-                // Find the database record first
-                var dbContext = await _dbContextFactory.CreateDbContextAsync();
-
                 // Try to find by direct ID match first
-                downloadRecord = await dbContext.Downloads.FindAsync(downloadId);
+                downloadRecord = await _downloadRepository.FindAsync(downloadId);
 
                 // If not found, try to find by client-specific ID (e.g., torrent hash)
-                // Note: Metadata is JSON, so we need to load and filter in memory
                 if (downloadRecord == null)
                 {
-                    var allDownloads = await dbContext.Downloads.ToListAsync();
-                    downloadRecord = allDownloads.FirstOrDefault(d => 
+                    var allDownloads = await _downloadRepository.GetAllAsync();
+                    downloadRecord = allDownloads.FirstOrDefault(d =>
                         d.Metadata != null &&
                         ((d.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj) &&
                           string.Equals(clientIdObj?.ToString(), downloadId, StringComparison.OrdinalIgnoreCase)) ||
@@ -1493,17 +1446,13 @@ namespace Listenarr.Api.Services
                     var client = await _configurationService.GetDownloadClientConfigurationAsync(downloadClientId);
                     if (client != null)
                     {
-                        // Get queue item to find title
                         var queue = await GetQueueAsync();
                         var queueItem = queue.FirstOrDefault(q => q.Id == downloadId && q.DownloadClientId == downloadClientId);
 
                         if (queueItem != null)
                         {
-                            downloadRecord = await dbContext.Downloads
-                                .Where(d => d.DownloadClientId == downloadClientId)
-                                .ToListAsync()
-                                .ContinueWith(task => task.Result.FirstOrDefault(d =>
-                                    IsMatchingTitle(d.Title, queueItem.Title)));
+                            var clientDownloads = await _downloadRepository.GetByClientAsync(downloadClientId);
+                            downloadRecord = clientDownloads.FirstOrDefault(d => IsMatchingTitle(d.Title, queueItem.Title));
                         }
                     }
                 }
@@ -1617,19 +1566,9 @@ namespace Listenarr.Api.Services
                 // If successfully removed from client (or force=true), also remove from database
                 if (removedFromClient && downloadRecord != null)
                 {
-                    // Use a factory-created DbContext instead of resolving a scoped instance from a new scope.
-                    var scopedDbContext = await _dbContextFactory.CreateDbContextAsync();
-
-                    // Re-attach the entity if needed
-                    var trackedDownload = await scopedDbContext.Downloads.FindAsync(downloadRecord.Id);
-                    if (trackedDownload != null)
-                    {
-                        scopedDbContext.Downloads.Remove(trackedDownload);
-                        await scopedDbContext.SaveChangesAsync();
-
-                        _logger.LogInformation("Removed download record from database: {DownloadId} (Title: {Title})",
-                            trackedDownload.Id, trackedDownload.Title);
-                    }
+                    await _downloadRepository.RemoveAsync(downloadRecord.Id);
+                    _logger.LogInformation("Removed download record from database: {DownloadId} (Title: {Title})",
+                        downloadRecord.Id, downloadRecord.Title);
                 }
 
                 return removedFromClient;
@@ -1907,9 +1846,7 @@ namespace Listenarr.Api.Services
                     }
                 };
 
-                var ctx = await _dbContextFactory.CreateDbContextAsync();
-                ctx.Downloads.Add(download);
-                await ctx.SaveChangesAsync();
+                await _downloadRepository.AddAsync(download);
                 return id;
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {

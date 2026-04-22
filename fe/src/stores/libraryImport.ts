@@ -1,4 +1,21 @@
-﻿import { defineStore } from 'pinia'
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { apiService } from '@/services/api'
 import { signalRService } from '@/services/signalr'
@@ -50,7 +67,7 @@ function pickBestMatch(results: SearchResult[], detectedAuthor?: string): Search
 
 function normalizeGenres(genres: unknown): string[] | undefined {
   if (!Array.isArray(genres)) return genres as string[] | undefined
-  return genres.map((g) => (typeof g === 'string' ? g : (g as any)?.name ?? '')).filter(Boolean)
+  return genres.map((g) => (typeof g === 'string' ? g : (g as { name?: string })?.name ?? '')).filter(Boolean)
 }
 
 function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
@@ -124,7 +141,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   const metadataFetchCount = ref(0)
   const importErrors = ref<string[]>([])
 
-  // â”€â”€â”€ Computed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Computed ────────────────────────────────────────────────────────────────
 
   const itemList = computed(() => Object.values(items.value))
   const selectedCount = computed(() => itemList.value.filter((i) => i.selected).length)
@@ -132,7 +149,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
   const processedCount = computed(() => itemList.value.filter((i) => i.hasSearched).length)
   const matchedCount = computed(() => itemList.value.filter((i) => i.selectedMatch).length)
 
-  // â”€â”€â”€ Scan â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Scan ─────────────────────────────────────────────────────────────────
 
   async function initFromRootFolder(id: number) {
     rootFolderId.value = id
@@ -200,8 +217,8 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       scanError.value = error ?? 'Scan failed'
     }
 
-    // Register before POST â€” if scan is fast, SignalR may fire before scanUnmatchedFiles() returns.
-    // Allow the event if jobId is not yet assigned (jobId === '') â€” it must be ours.
+    // Register before POST — if scan is fast, SignalR may fire before scanUnmatchedFiles() returns.
+    // Allow the event if jobId is not yet assigned (jobId === '') — it must be ours.
     offSignalR = signalRService.onUnmatchedScanComplete(async (payload) => {
       if (!jobId || payload.jobId !== jobId) return
       if (payload.error) { onFailed(payload.error); return }
@@ -212,14 +229,14 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       const result = await apiService.scanUnmatchedFiles(id)
       jobId = result.jobId
       if (settled) return  // SignalR already handled it before this line
-      // Poll once immediately â€” handles fast scans
+      // Poll once immediately — handles fast scans
       const check = await apiService.getUnmatchedResults(jobId)
       if (check.status === 'Completed') {
         await onComplete(jobId)
       } else if (check.status === 'Failed') {
         onFailed(check.error)
       } else {
-        // Polling fallback â€” keeps checking every 2.5s if SignalR is unavailable or slow
+        // Polling fallback — keeps checking every 2.5s if SignalR is unavailable or slow
         pollInterval = setInterval(async () => {
           if (settled || !jobId) return
           try {
@@ -246,7 +263,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     items.value = newItems
   }
 
-  // â”€â”€â”€ localStorage persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── localStorage persistence ──────────────────────────────────────────────
 
   type PersistedEntry = { selectedMatch: SearchResult | null; hasSearched: boolean; selected: boolean }
 
@@ -275,7 +292,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     }
   }
 
-  // â”€â”€â”€ Queue Processing â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Queue Processing ─────────────────────────────────────────────────────
 
   function startProcessing() {
     const unsearched = itemList.value.filter((i) => !i.hasSearched).map((i) => i.id)
@@ -313,7 +330,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         const byAsin = !!searchParams.asin
         const results = await apiService.advancedSearch(searchParams)
         metadataFetchCount.value++
-        // ASIN results are authoritative â€” take the first result directly without author comparison
+        // ASIN results are authoritative — take the first result directly without author comparison
         const first = byAsin ? (results[0] ?? null) : pickBestMatch(results, item.detectedAuthor)
         const current = items.value[id]!
         items.value = {
@@ -329,7 +346,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     isProcessing.value = false
   }
 
-  // â”€â”€â”€ Per-row manual search â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Per-row manual search ────────────────────────────────────────────────
 
   async function searchItem(id: string, query: string) {
     const item = items.value[id]
@@ -349,7 +366,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     }
   }
 
-  // â”€â”€â”€ Match management â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Match management ─────────────────────────────────────────────────────
 
   function selectMatch(id: string, match: SearchResult) {
     const item = items.value[id]
@@ -365,7 +382,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     _persistMatches()
   }
 
-  // â”€â”€â”€ Selection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Selection ────────────────────────────────────────────────────────────
 
   function toggleSelect(id: string) {
     const item = items.value[id]
@@ -384,10 +401,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     _persistMatches()
   }
 
-  // â”€â”€â”€ Import â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ─── Import ───────────────────────────────────────────────────────────────
 
   // Enrich metadata with full Audible data before adding to library.
-  // Search results often have authors: [{ asin, name: undefined }] â€” the full
+  // Search results often have authors: [{ asin, name: undefined }] — the full
   // metadata fetch is the only way to get real author/narrator names.
   async function _enrichMetadata(match: SearchResult): Promise<AudibleBookMetadata> {
     const base = matchToMetadata(match)
@@ -429,7 +446,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             ...match,
             genres: normalizeGenres(match.genres),
             series: Array.isArray(match.series)
-              ? ((match.series as any[])[0]?.name ?? undefined)
+              ? ((match.series as Array<{ name?: string }>)[0]?.name ?? undefined)
               : match.series,
           }
           const { audiobook } = await apiService.addToLibrary(metadata, {
@@ -438,10 +455,11 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             searchResult: sanitizedMatch,
           })
           audiobookId = audiobook.id
-        } catch (e: any) {
-          // 409 = book already in library â€” extract existing audiobook from response body
-          if (e?.status === 409 && e?.body) {
-            const body = typeof e.body === 'string' ? JSON.parse(e.body) : e.body
+        } catch (e: unknown) {
+          // 409 = book already in library, extract existing audiobook from response body
+          const err = e as { status?: number; body?: unknown }
+          if (err?.status === 409 && err?.body) {
+            const body = typeof err.body === 'string' ? JSON.parse(err.body) : err.body
             if (body?.audiobook?.id) {
               audiobookId = body.audiobook.id
               // Update BasePath to the selected destination so the file moves to the right place.
@@ -450,7 +468,7 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
                 try {
                   await apiService.updateAudiobook(audiobookId, { basePath: rootFolderPath })
                 } catch {
-                  // Non-critical â€” import continues, file may go to OutputPath fallback
+                  // Non-critical — import continues, file may go to OutputPath fallback
                 }
               }
             } else {

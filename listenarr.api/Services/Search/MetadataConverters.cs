@@ -1,7 +1,6 @@
 using System.Text.RegularExpressions;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.Extensions.Logging;
 using Microsoft.AspNetCore.Http;
 

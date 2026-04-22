@@ -1,18 +1,35 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Utils;
-using Listenarr.Infrastructure.Models;
 
 namespace Listenarr.Api.Services
 {
     public class LibraryAddService : ILibraryAddService
     {
         private readonly IAudiobookRepository _repo;
+        private readonly IHistoryRepository _historyRepository;
         private readonly IImageCacheService _imageCacheService;
         private readonly ILogger<LibraryAddService> _logger;
-        private readonly ListenArrDbContext _dbContext;
         private readonly IQualityProfileService _qualityProfileService;
         private readonly AudibleService _audibleService;
         private readonly IConfigurationService _configurationService;
@@ -20,18 +37,18 @@ namespace Listenarr.Api.Services
 
         public LibraryAddService(
             IAudiobookRepository repo,
+            IHistoryRepository historyRepository,
             IImageCacheService imageCacheService,
             ILogger<LibraryAddService> logger,
-            ListenArrDbContext dbContext,
             IQualityProfileService qualityProfileService,
             AudibleService audibleService,
             IConfigurationService configurationService,
             INotificationService? notificationService = null)
         {
             _repo = repo;
+            _historyRepository = historyRepository;
             _imageCacheService = imageCacheService;
             _logger = logger;
-            _dbContext = dbContext;
             _qualityProfileService = qualityProfileService;
             _audibleService = audibleService;
             _configurationService = configurationService;
@@ -298,8 +315,7 @@ namespace Listenarr.Api.Services
                     }
                 }
 
-                _dbContext.Audiobooks.Update(audiobook);
-                await _dbContext.SaveChangesAsync();
+                await _repo.UpdateAsync(audiobook);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
@@ -351,8 +367,7 @@ namespace Listenarr.Api.Services
                 Timestamp = DateTime.UtcNow
             };
 
-            _dbContext.History.Add(historyEntry);
-            await _dbContext.SaveChangesAsync(cancellationToken);
+            await _historyRepository.AddAsync(historyEntry, cancellationToken);
         }
 
         private static string? ToStringOrFirst(object? value)
@@ -372,9 +387,8 @@ namespace Listenarr.Api.Services
                 return Guid.NewGuid().ToString("N").Substring(0, 12);
             }
 
-            using var sha1 = SHA1.Create();
             var bytes = Encoding.UTF8.GetBytes(input);
-            var hash = sha1.ComputeHash(bytes);
+            var hash = SHA1.HashData(bytes);
             return BitConverter.ToString(hash).Replace("-", "").Substring(0, 16).ToLowerInvariant();
         }
 

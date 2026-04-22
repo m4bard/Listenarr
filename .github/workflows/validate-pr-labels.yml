@@ -1,0 +1,42 @@
+# IMPORTANT: For this workflow to actually block merges, the check
+# "check-version-label" must be added as a required status check in
+# GitHub → Settings → Branches → canary branch protection rule.
+# Without that, this workflow will report a failure but the PR can
+# still be merged.
+name: Validate PR version label
+
+on:
+  pull_request:
+    types: [ labeled, unlabeled, opened, synchronize, reopened ]
+    branches: [ canary ]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  check-version-label:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require patch, minor, or major label
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const labels = context.payload.pull_request.labels.map(l => l.name);
+            const valid = ['patch', 'minor', 'major'];
+            const found = valid.filter(l => labels.includes(l));
+
+            if (found.length === 0) {
+              core.setFailed(
+                `PR #${context.payload.pull_request.number} must have exactly one version label: ${valid.join(', ')}. ` +
+                `Current labels: ${labels.length ? labels.join(', ') : '(none)'}`
+              );
+            } else if (found.length > 1) {
+              core.setFailed(
+                `PR #${context.payload.pull_request.number} has multiple version labels (${found.join(', ')}). ` +
+                `Only one of ${valid.join(', ')} is allowed.`
+              );
+            } else {
+              core.info(`✅ Version label '${found[0]}' found on PR #${context.payload.pull_request.number}.`);
+            }

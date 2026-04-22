@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -17,8 +17,6 @@
  */
 
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
 using Listenarr.Application.Repositories;
 
 namespace Listenarr.Api.Services
@@ -37,26 +35,15 @@ namespace Listenarr.Api.Services
 
     public class QualityProfileService : IQualityProfileService
     {
-        private readonly ListenArrDbContext _dbContext;
         private readonly ILogger<QualityProfileService> _logger;
         private readonly IQualityProfileRepository _repository;
+        private readonly IIndexerRepository? _indexerRepository;
 
-        public QualityProfileService(ListenArrDbContext dbContext, IQualityProfileRepository repository, ILogger<QualityProfileService> logger)
+        public QualityProfileService(IQualityProfileRepository repository, ILogger<QualityProfileService> logger, IIndexerRepository? indexerRepository = null)
         {
-            _dbContext = dbContext;
             _logger = logger;
             _repository = repository ?? throw new ArgumentNullException(nameof(repository));
-        }
-
-        // Backwards-compatible constructor used by unit tests that previously
-        // constructed the service with (ListenArrDbContext, ILogger). Tests create
-        // the service with a null DbContext for scoring-only scenarios; provide a
-        // lightweight repository implementation that proxies to the DbContext when available.
-        public QualityProfileService(ListenArrDbContext dbContext, ILogger<QualityProfileService> logger)
-        {
-            _dbContext = dbContext;
-            _logger = logger;
-            _repository = new ApiLocalQualityProfileRepository(dbContext);
+            _indexerRepository = indexerRepository;
         }
 
         public async Task<List<QualityProfile>> GetAllAsync()
@@ -75,10 +62,9 @@ namespace Listenarr.Api.Services
 
         public async Task<QualityProfile?> GetByIdAsync(int id)
         {
-            var profile = await _dbContext.QualityProfiles.FindAsync(id);
+            var profile = await _repository.FindByIdAsync(id);
             if (profile != null && profile.IsDefault)
             {
-                // Ensure default profiles have all required qualities
                 await EnsureProfileHasRequiredQualitiesAsync(profile);
             }
             return profile;
@@ -86,12 +72,10 @@ namespace Listenarr.Api.Services
 
         public async Task<QualityProfile?> GetDefaultAsync()
         {
-            var profile = await _dbContext.QualityProfiles
-                .FirstOrDefaultAsync(p => p.IsDefault);
+            var profile = await _repository.GetDefaultAsync();
 
             if (profile != null)
             {
-                // Ensure existing profiles have all required qualities
                 await EnsureProfileHasRequiredQualitiesAsync(profile);
             }
             return profile;
@@ -221,7 +205,7 @@ namespace Listenarr.Api.Services
 
         public async Task<QualityScore> ScoreSearchResult(SearchResult searchResult, QualityProfile profile)
         {
-            var scorer = new Scoring.SearchResultScorer(_dbContext, _logger);
+            var scorer = new Scoring.SearchResultScorer(_indexerRepository, _logger);
             var score = await scorer.Score(searchResult, profile);
 
             // Also calculate the Prowlarr-style composite (Smart) score so the UI
@@ -416,71 +400,4 @@ namespace Listenarr.Api.Services
         }
     }
 
-    // NOTE: defensive JSON deserialization helpers live in Listenarr.Infrastructure.Persistence.Converters.JsonConverterHelpers
 }
-
-// Internal lightweight implementation of IQualityProfileRepository used
-// only for backwards compatibility in tests or hosts that construct the
-// service directly without DI. This avoids adding a hard dependency on
-// the infrastructure project from the API assembly.
-internal class ApiLocalQualityProfileRepository : Listenarr.Application.Repositories.IQualityProfileRepository
-{
-    private readonly Listenarr.Infrastructure.Models.ListenArrDbContext? _db;
-
-    public ApiLocalQualityProfileRepository(Listenarr.Infrastructure.Models.ListenArrDbContext? db)
-    {
-        _db = db;
-    }
-
-    public async Task<List<QualityProfile>> GetAllAsync()
-    {
-        if (_db == null) return new List<QualityProfile>();
-        return await _db.QualityProfiles.ToListAsync();
-    }
-
-    public async Task<QualityProfile?> FindByIdAsync(int id)
-    {
-        if (_db == null) return null;
-        return await _db.QualityProfiles.FindAsync(id);
-    }
-
-    public async Task<QualityProfile?> GetDefaultAsync()
-    {
-        if (_db == null) return null;
-        return await _db.QualityProfiles.FirstOrDefaultAsync(p => p.IsDefault);
-    }
-
-    public async Task<QualityProfile> AddAsync(QualityProfile profile)
-    {
-        if (_db == null) throw new InvalidOperationException("No DbContext available");
-        _db.QualityProfiles.Add(profile);
-        await _db.SaveChangesAsync();
-        return profile;
-    }
-
-    public async Task<QualityProfile> UpdateAsync(QualityProfile profile)
-    {
-        if (_db == null) throw new InvalidOperationException("No DbContext available");
-        _db.QualityProfiles.Update(profile);
-        await _db.SaveChangesAsync();
-        return profile;
-    }
-
-    public async Task<bool> DeleteAsync(int id)
-    {
-        if (_db == null) return false;
-        var existing = await _db.QualityProfiles.FindAsync(id);
-        if (existing == null) return false;
-        _db.QualityProfiles.Remove(existing);
-        await _db.SaveChangesAsync();
-        return true;
-    }
-
-    public async Task<int> CountAudiobooksUsingProfileAsync(int profileId)
-    {
-        if (_db == null) return 0;
-        return await _db.Audiobooks.CountAsync(a => a.QualityProfileId == profileId);
-    }
-}
-
-

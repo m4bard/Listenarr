@@ -1,13 +1,29 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 using Listenarr.Application.Services;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -21,11 +37,6 @@ namespace Listenarr.Api.Tests
         public async Task UpdateAudiobook_PersistsExpandedMetadataFields()
         {
             // Arrange
-            var options = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
-            var dbContext = new ListenArrDbContext(options);
-
             var existingAudiobook = new Audiobook
             {
                 Id = 1,
@@ -77,8 +88,12 @@ namespace Listenarr.Api.Tests
                 mockRepo.Object,
                 mockImageCache.Object,
                 mockLogger.Object,
-                dbContext,
                 scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new Mock<IAudiobookFileRepository>().Object,
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object);
 
             var updatedAudiobook = new Audiobook

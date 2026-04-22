@@ -1,12 +1,28 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
-using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
-using Microsoft.EntityFrameworkCore;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
 
 namespace Listenarr.Api.Services
 {
@@ -31,42 +47,13 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _provider.CreateScope();
-                var factory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<ListenArrDbContext>>();
-                await using var ctx = await factory.CreateDbContextAsync(cancellationToken);
-
-                // IMPORTANT: column names are interpolated directly into raw SQL.
-                // This whitelist MUST be kept up-to-date if new columns are added.
-                // Never replace this with a caller-supplied or user-supplied list.
-                var columns = new[] { "Authors", "Genres", "Tags", "Narrators", "AuthorAsins", "Isbn" };
-                var allowedColumns = new HashSet<string>(columns, StringComparer.Ordinal);
-
-                foreach (var col in columns)
-                {
-                    // Defensive check: reject any column name that was not explicitly whitelisted
-                    // or that contains characters invalid for an unquoted SQL identifier.
-                    if (!allowedColumns.Contains(col) || !System.Text.RegularExpressions.Regex.IsMatch(col, @"^[A-Za-z_][A-Za-z0-9_]*$"))
-                    {
-                        _logger.LogError("StartupDbNormalizer: refusing to process unexpected column name '{Column}'", col);
-                        continue;
-                    }
-
-                    try
-                    {
-                        var update = $@"UPDATE Audiobooks SET {col} = json_array(json_extract({col}, '$')) WHERE {col} IS NOT NULL AND json_valid({col})=1 AND json_type({col}) NOT IN ('array','object')";
-                        var changed = await ctx.Database.ExecuteSqlRawAsync(update, cancellationToken);
-                        _logger.LogInformation("StartupDbNormalizer: normalized column {Column}, rows changed: {Changes}", col, changed);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "StartupDbNormalizer: failed to normalize column {Column}", col);
-                    }
-                }
-
+                var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                await audiobookRepository.NormalizeJsonColumnsAsync(cancellationToken);
                 _logger.LogInformation("StartupDbNormalizer: normalization pass complete.");
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                // shutdown requested - ignore
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
             catch (OperationCanceledException ex)
             {
@@ -80,4 +67,3 @@ namespace Listenarr.Api.Services
         public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;
     }
 }
-

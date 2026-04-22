@@ -2,34 +2,120 @@ name: Run Tests
 
 on:
   push:
-    branches: [ develop, main, canary, feature/* ]
+    branches: [ beta, main, canary, feature/* ]
   pull_request:
-    branches: [ develop, main, canary ]
+    branches: [ beta, main, canary ]
+    types: [ opened, synchronize, reopened ]
 
 permissions:
   contents: read
 
+concurrency:
+  group: run-tests-${{ github.head_ref || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit-tests:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        dotnet: [8.0]
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      API_PROJECT: listenarr.api/Listenarr.Api.csproj
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v3
+        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: ${{ matrix.dotnet }}
+          dotnet-version: 10.0.x
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: 'npm'
 
       - name: Restore
         run: dotnet restore listenarr.slnx
+
+      - name: Enforce layering rules
+        run: |
+          set -e
+          VIOLATIONS=0
+
+          echo "Checking for layering violations (api -> infrastructure)..."
+          if git grep -n --no-color "listenarr.infrastructure" -- "listenarr.api/**/*.cs" ":(exclude)listenarr.api/Program.cs" || git grep -n --no-color "Listenarr.Infrastructure" -- "listenarr.api/**/*.cs" ":(exclude)listenarr.api/Program.cs"; then
+            echo "Layering violation: listenarr.api references listenarr.infrastructure." >&2
+            VIOLATIONS=$((VIOLATIONS + 1))
+          fi
+
+          echo "Checking for layering violations (application -> infrastructure)..."
+          if git grep -n --no-color "listenarr.infrastructure" -- "listenarr.application/**/*.cs" || git grep -n --no-color "Listenarr.Infrastructure" -- "listenarr.application/**/*.cs"; then
+            echo "Layering violation: listenarr.application references listenarr.infrastructure." >&2
+            echo "Define contracts in listenarr.application and implement them in listenarr.infrastructure." >&2
+            VIOLATIONS=$((VIOLATIONS + 1))
+          fi
+
+          echo "Checking for async void in production code..."
+          if git grep -n --no-color "async void" -- "listenarr.api/**/*.cs" "listenarr.application/**/*.cs" "listenarr.infrastructure/**/*.cs" "listenarr.domain/**/*.cs"; then
+            echo "async void found in production code — use async Task instead to avoid swallowed exceptions." >&2
+            VIOLATIONS=$((VIOLATIONS + 1))
+          fi
+
+          if [ "$VIOLATIONS" -gt 0 ]; then
+            echo "$VIOLATIONS enforcement check(s) failed." >&2
+            exit 1
+          fi
+          echo "All enforcement checks passed."
+
+      - name: Install frontend deps
+        working-directory: fe
+        run: npm ci
+
+      - name: Build frontend
+        working-directory: fe
+        run: npm run build --if-present
+
+      - name: Frontend lint
+        working-directory: fe
+        run: |
+          if npm run lint --silent --if-present; then
+            echo "Frontend lint passed (or no lint script present)."
+          else
+            echo "Frontend lint failed." >&2
+            exit 1
+          fi
+
+      - name: Frontend type check
+        working-directory: fe
+        run: |
+          if npm run type-check --silent --if-present; then
+            echo "Frontend type check passed (or no type-check script present)."
+          else
+            echo "Frontend type check failed." >&2
+            exit 1
+          fi
+
+      - name: Build solution
+        run: dotnet build listenarr.slnx --no-restore --configuration Release
 
       - name: Run unit tests (with Test environment / disable Playwright)
         env:
           ASPNETCORE_ENVIRONMENT: Test
           Playwright__Enabled: 'false'
         run: |
-          dotnet test listenarr.slnx -c Release --no-restore --logger "console;verbosity=normal"
+          dotnet test listenarr.slnx -c Release --no-build --logger "console;verbosity=normal"
+
+      - name: Run frontend tests
+        working-directory: fe
+        run: |
+          if npm run test --silent --if-present; then
+            echo "Frontend tests ran successfully."
+          else
+            echo "Frontend tests failed." >&2
+            exit 1
+          fi
+
+      - name: Publish API (linux-x64)
+        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r linux-x64 --self-contained true /p:PublishSingleFile=true -o listenarr.api/publish/linux-x64

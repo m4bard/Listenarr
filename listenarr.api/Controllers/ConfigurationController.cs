@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -252,7 +252,7 @@ namespace Listenarr.Api.Controllers
                                         if (!string.IsNullOrWhiteSpace(existingApiKey))
                                         {
                                             if (config.Settings == null)
-                                                config.Settings = new System.Collections.Generic.Dictionary<string, object>();
+                                                config.Settings = new Dictionary<string, object>();
                                             config.Settings["apiKey"] = existingApiKey;
                                         }
                                     }
@@ -345,7 +345,7 @@ namespace Listenarr.Api.Controllers
                         {
                             if (existing.Settings != null)
                             {
-                                config.Settings ??= new System.Collections.Generic.Dictionary<string, object>();
+                                config.Settings ??= new Dictionary<string, object>();
 
                                 foreach (var kvp in existing.Settings.Where(kvp => !config.Settings.ContainsKey(kvp.Key)))
                                 {

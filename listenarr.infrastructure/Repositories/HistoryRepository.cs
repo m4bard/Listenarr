@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -22,17 +22,7 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Infrastructure.Repositories
 {
-    public interface IHistoryRepository
-    {
-        Task<History> AddAsync(History history);
-        Task<History?> GetByIdAsync(int id);
-        Task<List<History>> GetAllAsync();
-        Task<List<History>> GetByAudiobookIdAsync(int audiobookId);
-        Task UpdateAsync(History history);
-        Task DeleteAsync(int id);
-    }
-
-    public class HistoryRepository : IHistoryRepository
+    public class HistoryRepository
     {
         private readonly ListenArrDbContext _context;
 

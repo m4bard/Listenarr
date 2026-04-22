@@ -1,6 +1,6 @@
 /*
  * Listenarr - Audiobook Management System
- * Copyright (C) 2024-2025 Robbie Davis
+ * Copyright (C) 2024-2026 Listenarr Contributors
  * 
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU Affero General Public License as published
@@ -16,8 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
+using Listenarr.Application.Repositories;
+using Listenarr.Domain.Models;
 
 namespace Listenarr.Api.Services
 {
@@ -34,7 +34,6 @@ namespace Listenarr.Api.Services
     public class CompletedDownloadHandlingService : BackgroundService
     {
         private readonly IServiceScopeFactory _serviceScopeFactory;
-        private readonly Microsoft.EntityFrameworkCore.IDbContextFactory<ListenArrDbContext> _dbFactory;
         private readonly ILogger<CompletedDownloadHandlingService> _logger;
         private TimeSpan _pollingInterval = TimeSpan.FromSeconds(10);
         
@@ -44,11 +43,9 @@ namespace Listenarr.Api.Services
 
         public CompletedDownloadHandlingService(
             IServiceScopeFactory serviceScopeFactory,
-            Microsoft.EntityFrameworkCore.IDbContextFactory<ListenArrDbContext> dbFactory,
             ILogger<CompletedDownloadHandlingService> logger)
         {
             _serviceScopeFactory = serviceScopeFactory;
-            _dbFactory = dbFactory;
             _logger = logger;
         }
 
@@ -127,18 +124,18 @@ namespace Listenarr.Api.Services
         private async Task ProcessCompletedDownloadsAsync(CancellationToken cancellationToken)
         {
             using var scope = _serviceScopeFactory.CreateScope();
-            var dbContext = _dbFactory.CreateDbContext();
+            var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var downloadService = scope.ServiceProvider.GetRequiredService<IDownloadService>();
 
             try
             {
                 // Find all downloads that are Completed/ImportPending but not yet imported (FinalPath still empty)
-                var completedDownloads = await dbContext.Downloads
+                var completedDownloads = (await downloadRepository.GetCompletionCandidatesAsync(500))
                     .Where(d =>
                         (d.Status == DownloadStatus.Completed || d.Status == DownloadStatus.ImportPending) &&
                         string.IsNullOrEmpty(d.FinalPath))
-                    .ToListAsync(cancellationToken);
+                    .ToList();
 
                 // Skip completed downloads for disabled/missing external clients.
                 // They stay alive so they resume automatically when the client is re-enabled.
@@ -292,7 +289,7 @@ namespace Listenarr.Api.Services
             // so eventually the torrent will reach its seed limit and become removable.
             try
             {
-                await ProcessDeferredRemovalsAsync(dbContext, scope, cancellationToken);
+                await ProcessDeferredRemovalsAsync(downloadRepository, scope, cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -312,13 +309,13 @@ namespace Listenarr.Api.Services
         /// - All removal attempts fail (stale DB record cleanup after grace period)
         /// </summary>
         private async Task ProcessDeferredRemovalsAsync(
-            ListenArrDbContext dbContext,
+            IDownloadRepository downloadRepository,
             IServiceScope scope,
             CancellationToken cancellationToken)
         {
-            var movedDownloads = await dbContext.Downloads
+            var movedDownloads = (await downloadRepository.GetActiveForMonitoringAsync())
                 .Where(d => d.Status == DownloadStatus.Moved && !string.IsNullOrEmpty(d.DownloadClientId))
-                .ToListAsync(cancellationToken);
+                .ToList();
 
             if (movedDownloads.Count == 0) return;
 
@@ -390,8 +387,7 @@ namespace Listenarr.Api.Services
                         if (anyRemovalClient == null)
                         {
                             // Removal not configured on any client, just delete the DB record
-                            dbContext.Downloads.Remove(download);
-                            await dbContext.SaveChangesAsync(cancellationToken);
+                            await downloadRepository.RemoveAsync(download.Id);
                             _logger.LogInformation("Deferred removal: Cleaned up DB record for {DownloadId} (removal not configured)", download.Id);
                             continue;
                         }
@@ -469,8 +465,7 @@ namespace Listenarr.Api.Services
                     {
                         _logger.LogInformation("Deferred removal: Successfully removed {DownloadId} (deleteFiles={DeleteFiles})",
                             download.Id, deleteFiles);
-                        dbContext.Downloads.Remove(download);
-                        await dbContext.SaveChangesAsync(cancellationToken);
+                        await downloadRepository.RemoveAsync(download.Id);
                     }
                     else if (timeSinceCompleted.HasValue && timeSinceCompleted.Value > TimeSpan.FromHours(24))
                     {
@@ -482,8 +477,7 @@ namespace Listenarr.Api.Services
                             "Deferred removal: All removal attempts failed for {DownloadId} after {Hours:F1}h — " +
                             "cleaning up stale DB record (import already completed)",
                             download.Id, timeSinceCompleted.Value.TotalHours);
-                        dbContext.Downloads.Remove(download);
-                        await dbContext.SaveChangesAsync(cancellationToken);
+                        await downloadRepository.RemoveAsync(download.Id);
                     }
                     else
                     {

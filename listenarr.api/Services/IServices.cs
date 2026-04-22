@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using Listenarr.Domain.Models;
 
 namespace Listenarr.Api.Services
@@ -45,7 +62,7 @@ namespace Listenarr.Api.Services
         /// <summary>
         /// Search a specific indexer and return raw indexer search results (IndexerSearchResult) for indexer-specific consumers.
         /// </summary>
-        Task<List<Listenarr.Domain.Models.IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, Listenarr.Api.Models.SearchRequest? request = null);
+        Task<List<IndexerSearchResult>> SearchIndexerResultsAsync(string apiId, string query, string? category = null, SearchRequest? request = null);
 
         /// <summary>
         /// Tests connectivity and authentication for a specific API
@@ -64,7 +81,7 @@ namespace Listenarr.Api.Services
         /// <param name="isAutomaticSearch">Whether this is an automatic search</param>
         /// <param name="request">Optional request object to pass indexer-specific parameters</param>
         /// <returns>List of search results from indexers only</returns>
-        Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, Listenarr.Api.Models.SearchRequest? request = null);
+        Task<List<IndexerSearchResult>> SearchIndexersAsync(string query, string? category = null, SearchSortBy sortBy = SearchSortBy.Seeders, SearchSortDirection sortDirection = SearchSortDirection.Descending, bool isAutomaticSearch = false, SearchRequest? request = null);
 
         /// <summary>
         /// Gets all enabled metadata sources (Audible, Audnexus, OpenLibrary, etc.)
@@ -213,7 +230,7 @@ namespace Listenarr.Api.Services
         /// Retrieve cached announce URLs for a given download id if available
         /// </summary>
         /// <param name="downloadId">The download ID to look up</param>
-        Task<System.Collections.Generic.List<string>?> GetCachedAnnouncesAsync(string downloadId);
+        Task<List<string>?> GetCachedAnnouncesAsync(string downloadId);
     }
 
     /// <summary>

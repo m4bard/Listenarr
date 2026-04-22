@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Collections.Concurrent;
 using System.Threading.Channels;
 using System.Threading.Tasks;
@@ -5,8 +22,8 @@ using System;
 using System.Linq;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.DependencyInjection;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.SignalR;
 
 
@@ -33,12 +50,12 @@ namespace Listenarr.Api.Services
             {
                 // Check DB for existing active job
                 using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
 
                 var requestedLower = (requestedPath ?? string.Empty).ToLower();
-                var existingDb = db.MoveJobs.FirstOrDefault(j => j.AudiobookId == audiobookId &&
-                    ((j.RequestedPath ?? string.Empty).ToLower() == requestedLower) &&
-                    (j.Status == "Queued" || j.Status == "Processing"));
+                var activeJobs = await moveJobRepository.GetByStatusAsync(new[] { "Queued", "Processing" });
+                var existingDb = activeJobs.FirstOrDefault(j => j.AudiobookId == audiobookId &&
+                    ((j.RequestedPath ?? string.Empty).ToLower() == requestedLower));
 
                 if (existingDb != null)
                 {
@@ -56,9 +73,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                db.MoveJobs.Add(job);
-                await db.SaveChangesAsync();
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                await moveJobRepository.AddAsync(job);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to persist move job to database; proceeding with in-memory job");
@@ -76,8 +92,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                job = db.MoveJobs.FirstOrDefault(j => j.Id == id);
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                job = moveJobRepository.GetByIdAsync(id).GetAwaiter().GetResult();
                 if (job != null) _jobs[id] = job;
                 return job != null;
             }
@@ -100,21 +116,20 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                var dbJob = db.MoveJobs.FirstOrDefault(j => j.Id == id);
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                var dbJob = moveJobRepository.GetByIdAsync(id).GetAwaiter().GetResult();
                 if (dbJob != null)
                 {
                     dbJob.Status = status;
                     dbJob.Error = error;
                     dbJob.UpdatedAt = DateTime.UtcNow;
-                    db.MoveJobs.Update(dbJob);
-                    db.SaveChanges();
+                    moveJobRepository.UpdateAsync(dbJob).GetAwaiter().GetResult();
                 }
 
                 // Broadcast status update to SignalR clients so UI can react to Processing/Failed/Completed
                 try
                 {
-                    var hub = scope.ServiceProvider.GetRequiredService<Microsoft.AspNetCore.SignalR.IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
+                    var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
                     var payload = new {
                         jobId = id.ToString(),
                         audiobookId = dbJob?.AudiobookId ?? (job != null ? job.AudiobookId : (int?)null),
@@ -153,8 +168,8 @@ namespace Listenarr.Api.Services
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    job = db.MoveJobs.FirstOrDefault(j => j.Id == jobId);
+                    var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                    job = await moveJobRepository.GetByIdAsync(jobId);
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogWarning(ex, "Failed to read move job from DB while requeueing {JobId}", jobId);
@@ -177,9 +192,8 @@ namespace Listenarr.Api.Services
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                db.MoveJobs.Add(newJob);
-                await db.SaveChangesAsync();
+                var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
+                await moveJobRepository.AddAsync(newJob);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                 _logger.LogWarning(ex, "Failed to persist requeued move job to database; proceeding with in-memory job");

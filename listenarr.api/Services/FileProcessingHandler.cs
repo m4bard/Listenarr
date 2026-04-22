@@ -1,6 +1,22 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Runtime.InteropServices;
-using Microsoft.EntityFrameworkCore;
-using Listenarr.Infrastructure.Models;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
@@ -91,8 +107,8 @@ namespace Listenarr.Api.Services
                     // Build minimal metadata for naming
                     var metadata = new AudioMetadata { Title = "Unknown Title" };
                     using var innerScope = _scopeFactory.CreateScope();
-                    var db = innerScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var download = await db.Downloads.FindAsync(job.DownloadId, cancellationToken);
+                    var downloadRepository = innerScope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                    var download = await downloadRepository.FindAsync(job.DownloadId);
                     if (download != null)
                     {
                         metadata.Title = download.Title ?? metadata.Title;

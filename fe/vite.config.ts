@@ -1,4 +1,5 @@
 import { fileURLToPath, URL } from 'node:url'
+import type { ServerResponse } from 'node:http'
 
 import { defineConfig } from 'vite'
 import type { PluginOption } from 'vite'
@@ -51,6 +52,21 @@ export default defineConfig(({ mode }) => ({
         // default; adding this configure hook forces the header through.
         configure: (proxy) => {
           if (proxy && typeof proxy.on === 'function') {
+            proxy.on('error', (err, _req, res) => {
+              if ((err as NodeJS.ErrnoException).code === 'ECONNREFUSED') {
+                // API not ready yet — return 503 silently instead of logging to console
+                try {
+                  if (res && typeof (res as ServerResponse).writeHead === 'function') {
+                    const httpRes = res as ServerResponse
+                    if (!httpRes.headersSent) {
+                      httpRes.writeHead(503, { 'Content-Type': 'application/json' })
+                      httpRes.end(JSON.stringify({ message: 'API is starting, please retry.' }))
+                    }
+                  }
+                } catch { /* ignore */ }
+                return
+              }
+            })
             proxy.on('proxyReq', (proxyReq, req) => {
               try {
                 const origCookie = req && req.headers && (req.headers['cookie'] || req.headers.cookie)
@@ -66,6 +82,16 @@ export default defineConfig(({ mode }) => ({
         target: 'http://localhost:4545',
         changeOrigin: true,
         ws: true,
+        configure: (proxy) => {
+          if (proxy && typeof proxy.on === 'function') {
+            proxy.on('error', (err) => {
+              if ((err as NodeJS.ErrnoException).code !== 'ECONNREFUSED') {
+                console.error('[vite proxy /hubs]', err)
+              }
+              // ECONNREFUSED during startup — ignore silently
+            })
+          }
+        }
       }
     }
   }

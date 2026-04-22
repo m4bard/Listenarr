@@ -1,7 +1,23 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using AsyncKeyedLock;
+using Listenarr.Application.Repositories;
 using Listenarr.Domain.Utils;
-using Listenarr.Infrastructure.Models;
-using Microsoft.EntityFrameworkCore;
 
 namespace Listenarr.Api.Services
 {
@@ -27,13 +43,8 @@ namespace Listenarr.Api.Services
                 try
                 {
                     using var scope = _scopeFactory.CreateScope();
-                    var db = scope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
-                    var candidates = await db.AudiobookFiles
-                        .Where(f => f.DurationSeconds == null || f.Format == null || f.SampleRate == null)
-                        // Ensure deterministic ordering when using Take() to avoid EF Core warnings
-                        .OrderBy(f => f.Id)
-                        .Take(20)
-                        .ToListAsync(stoppingToken);
+                    var fileRepository = scope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                    var candidates = await fileRepository.GetMissingMetadataAsync(20, stoppingToken);
 
                     if (candidates.Any())
                     {
@@ -51,10 +62,11 @@ namespace Listenarr.Api.Services
                             try
                             {
                                 using var taskScope = _scopeFactory.CreateScope();
-                                var taskDb = taskScope.ServiceProvider.GetRequiredService<ListenArrDbContext>();
+                                var taskFileRepository = taskScope.ServiceProvider.GetRequiredService<IAudiobookFileRepository>();
+                                var taskAudiobookRepository = taskScope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
                                 var taskMetadataService = taskScope.ServiceProvider.GetRequiredService<IMetadataService>();
 
-                                var file = await taskDb.AudiobookFiles.FirstOrDefaultAsync(f => f.Id == candidate.Id, stoppingToken);
+                                var file = await taskFileRepository.GetByIdAsync(candidate.Id, stoppingToken);
                                 if (file == null)
                                 {
                                     _logger.LogDebug("Skipping metadata rescan for missing file id={Id}", candidate.Id);
@@ -63,15 +75,15 @@ namespace Listenarr.Api.Services
 
                                 if (!FileUtils.IsAudioFile(file.Path ?? string.Empty))
                                 {
-                                    var audiobook = await taskDb.Audiobooks.FirstOrDefaultAsync(a => a.Id == file.AudiobookId, stoppingToken);
+                                    var audiobook = await taskAudiobookRepository.GetByIdAsync(file.AudiobookId);
                                     if (audiobook != null && string.Equals(audiobook.FilePath, file.Path, StringComparison.OrdinalIgnoreCase))
                                     {
                                         audiobook.FilePath = null;
                                         audiobook.FileSize = null;
+                                        await taskAudiobookRepository.UpdateAsync(audiobook);
                                     }
 
-                                    taskDb.AudiobookFiles.Remove(file);
-                                    await taskDb.SaveChangesAsync(stoppingToken);
+                                    await taskFileRepository.DeleteAsync(file.Id, stoppingToken);
                                     _logger.LogInformation("Removed non-audio AudiobookFile entry id={Id} path={Path}", file.Id, LogRedaction.SanitizeFilePath(file.Path));
                                     return;
                                 }
@@ -96,8 +108,7 @@ namespace Listenarr.Api.Services
                                     file.SampleRate = meta.SampleRate != 0 ? meta.SampleRate : file.SampleRate;
                                     file.Channels = meta.Channels != 0 ? meta.Channels : file.Channels;
 
-                                    // Save changes; respect cancellation
-                                    await taskDb.SaveChangesAsync(stoppingToken);
+                                    await taskFileRepository.UpdateAsync(file, stoppingToken);
                                     _logger.LogInformation("Updated metadata for file id={Id}", file.Id);
                                 }
                             }
@@ -139,5 +150,3 @@ namespace Listenarr.Api.Services
         }
     }
 }
-
-

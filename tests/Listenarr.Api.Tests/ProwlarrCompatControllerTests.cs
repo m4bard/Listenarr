@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Logging;
@@ -38,7 +55,7 @@ namespace Listenarr.Api.Tests
             var mockToastService = new Mock<IToastService>();
             var mockStartupConfigService = new Mock<IStartupConfigService>();
             mockStartupConfigService.Setup(s => s.GetConfig()).Returns(new StartupConfig { AuthenticationRequired = "false" });
-            var controller = new ProwlarrCompatController(mockLogger.Object, db, mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
+            var controller = new ProwlarrCompatController(mockLogger.Object, new EfIndexerRepository(db), mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
 
             var newIndexer = new { name = "Unit Test Indexer", implementation = "Newznab", baseUrl = "http://localhost", apiPath = "api", apiKey = "KEY" };
             var arr = JsonSerializer.Serialize(new[] { newIndexer });
@@ -86,7 +103,7 @@ namespace Listenarr.Api.Tests
             var mockToastService = new Mock<IToastService>();
             var mockStartupConfigService = new Mock<IStartupConfigService>();
             mockStartupConfigService.Setup(s => s.GetConfig()).Returns(new StartupConfig { AuthenticationRequired = "false" });
-            var controller = new ProwlarrCompatController(mockLogger.Object, db, mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
+            var controller = new ProwlarrCompatController(mockLogger.Object, new EfIndexerRepository(db), mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
 
             var newIndexer = new { name = "Unit Test Indexer", implementation = "Newznab", baseUrl = "http://localhost", apiPath = "api", apiKey = "KEY" };
             // Clear static toast maps to avoid test interdependence
@@ -216,7 +233,7 @@ namespace Listenarr.Api.Tests
             var mockToastService = new Mock<IToastService>();
             var mockStartupConfigService = new Mock<IStartupConfigService>();
             mockStartupConfigService.Setup(s => s.GetConfig()).Returns(new StartupConfig { AuthenticationRequired = "false" });
-            var controller = new ProwlarrCompatController(mockLogger.Object, db, mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
+            var controller = new ProwlarrCompatController(mockLogger.Object, new EfIndexerRepository(db), mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
 
             // Create indexer via POST (this publishes one notification)
             var newIndexer = new { name = "Recent Import", implementation = "Newznab", baseUrl = "http://localhost:9090", apiPath = "api", apiKey = "KEY" };
@@ -259,7 +276,7 @@ namespace Listenarr.Api.Tests
             var mockToastService = new Mock<IToastService>();
             var mockStartupConfigService = new Mock<IStartupConfigService>();
             mockStartupConfigService.Setup(s => s.GetConfig()).Returns(new StartupConfig { AuthenticationRequired = "false" });
-            var controller = new ProwlarrCompatController(mockLogger.Object, db, mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
+            var controller = new ProwlarrCompatController(mockLogger.Object, new EfIndexerRepository(db), mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
 
             // Seed an existing indexer (older CreatedAt so created-based suppression doesn't interfere)
             var idx = new Indexer { Name = "Rapid Update", Url = "http://rapid", ApiKey = "K", Categories = "", CreatedAt = DateTime.UtcNow.AddMinutes(-10), UpdatedAt = DateTime.UtcNow.AddMinutes(-10), IsEnabled = true };
@@ -300,7 +317,7 @@ namespace Listenarr.Api.Tests
         }
 
         [Fact]
-        public void GetIndexers_IncludesFieldsAndTags()
+        public async Task GetIndexers_IncludesFieldsAndTags()
         {
             var db = CreateInMemoryDb();
             // Seed an indexer
@@ -316,9 +333,9 @@ namespace Listenarr.Api.Tests
             var mockToastService = new Mock<IToastService>();
             var mockStartupConfigService = new Mock<IStartupConfigService>();
             mockStartupConfigService.Setup(s => s.GetConfig()).Returns(new StartupConfig { AuthenticationRequired = "false" });
-            var controller = new ProwlarrCompatController(mockLogger.Object, db, mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
+            var controller = new ProwlarrCompatController(mockLogger.Object, new EfIndexerRepository(db), mockHubContext.Object, mockToastService.Object, mockStartupConfigService.Object);
 
-            var result = controller.GetIndexers();
+            var result = await controller.GetIndexers();
             var ok = Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result);
             var arr = Assert.IsAssignableFrom<System.Array>(ok.Value);
             Assert.True(arr.Length > 0);

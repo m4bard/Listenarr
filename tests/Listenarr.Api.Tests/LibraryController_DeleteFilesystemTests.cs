@@ -1,10 +1,29 @@
-﻿using System;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 using Listenarr.Api.Controllers;
 using Listenarr.Api.Services;
+using Listenarr.Application.Repositories;
+using Listenarr.Application.Services;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Models;
 using Microsoft.AspNetCore.Mvc;
@@ -340,6 +359,8 @@ namespace Listenarr.Api.Tests
             var repo = new Mock<IAudiobookRepository>();
             repo.Setup(r => r.GetByIdAsync(It.IsAny<int>()))
                 .ReturnsAsync((int id) => dbContext.Audiobooks.Include(a => a.Files).FirstOrDefault(a => a.Id == id));
+            repo.Setup(r => r.GetAllAsync())
+                .ReturnsAsync(() => dbContext.Audiobooks.ToList());
             repo.Setup(r => r.DeleteByIdAsync(It.IsAny<int>()))
                 .ReturnsAsync((int id) =>
                 {
@@ -371,13 +392,25 @@ namespace Listenarr.Api.Tests
                 repo.Object,
                 imageCache.Object,
                 logger.Object,
-                dbContext,
                 scopeFactory,
+                new Mock<IHistoryRepository>().Object,
+                new EfAudiobookFileRepository(dbContext),
+                new Mock<IQualityProfileRepository>().Object,
+                new Mock<IDownloadRepository>().Object,
+                CreateRootFolderRepo(dbContext),
                 fileNaming.Object,
                 scanQueueService: null,
                 moveQueueService: null,
                 notificationService: null,
                 rootFolderService: null);
+        }
+
+        private static IRootFolderRepository CreateRootFolderRepo(ListenArrDbContext dbContext)
+        {
+            var mock = new Mock<IRootFolderRepository>();
+            mock.Setup(r => r.GetAllAsync())
+                .ReturnsAsync(() => dbContext.RootFolders.ToList());
+            return mock.Object;
         }
 
         private static void TryDeleteDirectory(string path)

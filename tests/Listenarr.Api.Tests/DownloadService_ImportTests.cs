@@ -1,4 +1,21 @@
-﻿using System;
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
+using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using Listenarr.Api.Controllers;
@@ -25,6 +42,13 @@ namespace Listenarr.Api.Tests
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
             return new ListenArrDbContext(options);
+        }
+
+        private DbContextOptions<ListenArrDbContext> CreateInMemoryDbOptions()
+        {
+            return new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
         }
 
         [Fact]
@@ -110,7 +134,7 @@ namespace Listenarr.Api.Tests
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
 
-            var importService = new ImportService(dbFactoryMock.Object, scopeFactory, new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()), metadataMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<ImportService>());
+            var importService = new ImportService(new AudiobookRepository(new ListenArrDbContext(options)), scopeFactory, new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()), metadataMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<ImportService>());
 
             // one importService instance for this test
             using var provider2 = TestServiceFactory.BuildServiceProvider(services =>
@@ -221,7 +245,7 @@ namespace Listenarr.Api.Tests
             var pathMappingMock = new Mock<IRemotePathMappingService>();
             var searchMock = new Mock<ISearchService>();
 
-            var importService = new ImportService(dbFactoryMock.Object, scopeFactory, new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()), metadataMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<ImportService>());
+            var importService = new ImportService(new AudiobookRepository(new ListenArrDbContext(options)), scopeFactory, new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()), metadataMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<ImportService>());
 
             using var provider2 = TestServiceFactory.BuildServiceProvider(services =>
             {
@@ -309,7 +333,7 @@ namespace Listenarr.Api.Tests
             using var provider = services.BuildServiceProvider();
 
             var importService = new ImportService(
-                dbFactoryMock.Object,
+                Mock.Of<IAudiobookRepository>(),
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 new FileNamingService(configMock.Object, new Microsoft.Extensions.Logging.Abstractions.NullLogger<FileNamingService>()),
                 metadataMock.Object,
@@ -339,9 +363,12 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task GetQueue_DoesNotPurge_WhenSabnzbdHistoryContainsMatch()
         {
-            await using var db = CreateInMemoryDb();
+            var dbOptions = new DbContextOptionsBuilder<ListenArrDbContext>()
+                .UseInMemoryDatabase(Guid.NewGuid().ToString())
+                .Options;
+            await using var db = new ListenArrDbContext(dbOptions);
 
-            // Seed download that would be considered orphaned: 
+            // Seed download that would be considered orphaned:
             // - Status is Queued (not Downloading/Processing, not terminal states)
             // - Started >5 minutes ago (meets orphan age threshold)
             // - Not in client queue (will be detected as orphaned)
@@ -418,8 +445,8 @@ namespace Listenarr.Api.Tests
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
 
             var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
-            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(db);
-            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(db);
+            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(() => new ListenArrDbContext(dbOptions));
+            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(() => new ListenArrDbContext(dbOptions));
 
             // Metrics mock to assert telemetry
             var metricsMock = new Mock<IAppMetricsService>();
@@ -450,12 +477,9 @@ namespace Listenarr.Api.Tests
             await downloadService.GetQueueAsync();
 
             // Assert: the DB download should still exist (not purged) because SABnzbd history contained the matching entry
-            using (var scope = provider.CreateScope())
-            {
-                await using var dbCtx = await scope.ServiceProvider.GetListenArrDbContextAsync();
-                var stillExists = await dbCtx.Downloads.FindAsync(download.Id);
-                Assert.NotNull(stillExists);
-            }
+            await using var verifyDb = new ListenArrDbContext(dbOptions);
+            var stillExists = await verifyDb.Downloads.FindAsync(download.Id);
+            Assert.NotNull(stillExists);
 
         }
 
@@ -594,7 +618,8 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task SendToDownloadClientAsync_StoresMagnetHashFallback_WhenClientReturnsNoId()
         {
-            await using var db = CreateInMemoryDb();
+            var dbOptions = CreateInMemoryDbOptions();
+            await using var db = new ListenArrDbContext(dbOptions);
 
             var clientConfig = new DownloadClientConfiguration
             {
@@ -627,8 +652,8 @@ namespace Listenarr.Api.Tests
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
 
             var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
-            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(db);
-            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(db);
+            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(() => new ListenArrDbContext(dbOptions));
+            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(() => new ListenArrDbContext(dbOptions));
 
             var metricsMock = new Mock<IAppMetricsService>();
             var importServiceMock = new Mock<IImportService>();
@@ -698,7 +723,8 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task SendToDownloadClientAsync_DerivesTorrent_WhenRequestSpoofsDdl()
         {
-            await using var db = CreateInMemoryDb();
+            var dbOptions = CreateInMemoryDbOptions();
+            await using var db = new ListenArrDbContext(dbOptions);
 
             var clientConfig = new DownloadClientConfiguration
             {
@@ -731,8 +757,8 @@ namespace Listenarr.Api.Tests
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
 
             var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
-            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(db);
-            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(db);
+            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(() => new ListenArrDbContext(dbOptions));
+            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(() => new ListenArrDbContext(dbOptions));
 
             var metricsMock = new Mock<IAppMetricsService>();
             var importServiceMock = new Mock<IImportService>();
@@ -796,7 +822,8 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task SendToDownloadClientAsync_DerivesTrustedInternetArchiveAsDdl()
         {
-            await using var db = CreateInMemoryDb();
+            var dbOptions = CreateInMemoryDbOptions();
+            await using var db = new ListenArrDbContext(dbOptions);
 
             db.Indexers.Add(new Indexer
             {
@@ -837,8 +864,8 @@ namespace Listenarr.Api.Tests
             var hubContextMock = new Mock<IHubContext<DownloadHub>>();
 
             var dbFactoryMock = new Mock<IDbContextFactory<ListenArrDbContext>>();
-            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(db);
-            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(db);
+            dbFactoryMock.Setup(f => f.CreateDbContext()).Returns(() => new ListenArrDbContext(dbOptions));
+            dbFactoryMock.Setup(f => f.CreateDbContextAsync(It.IsAny<System.Threading.CancellationToken>())).ReturnsAsync(() => new ListenArrDbContext(dbOptions));
 
             var metricsMock = new Mock<IAppMetricsService>();
             var importServiceMock = new Mock<IImportService>();
@@ -858,6 +885,7 @@ namespace Listenarr.Api.Tests
                 services.AddSingleton<IAudiobookRepository>(repoMock.Object);
                 services.AddSingleton<IConfigurationService>(configMock.Object);
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(dbFactoryMock.Object);
+                services.AddSingleton<IIndexerRepository>(new EfIndexerRepository(db));
                 services.AddSingleton<Microsoft.Extensions.Logging.ILogger<DownloadService>>(new Microsoft.Extensions.Logging.Abstractions.NullLogger<DownloadService>());
                 services.AddSingleton<HttpClient>(httpClient);
                 services.AddSingleton<IHttpClientFactory>(httpFactoryMock.Object);

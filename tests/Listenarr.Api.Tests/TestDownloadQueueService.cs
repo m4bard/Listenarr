@@ -1,3 +1,20 @@
+/*
+ * Listenarr - Audiobook Management System
+ * Copyright (C) 2024-2026 Listenarr Contributors
+ *
+ * This program is free software: you can redistribute it and/or modify
+ * it under the terms of the GNU Affero General Public License as published
+ * by the Free Software Foundation, either version 3 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+ * GNU Affero General Public License for more details.
+ *
+ * You should have received a copy of the GNU Affero General Public License
+ * along with this program. If not, see <https://www.gnu.org/licenses/>.
+ */
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -6,14 +23,14 @@ using System.Text.Json;
 using System.Threading.Tasks;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
-using Listenarr.Api.Repositories;
+using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Tests
 {
     internal class TestDownloadQueueService : IDownloadQueueService
     {
-        private readonly IDownloadRepository _downloadRepo;
+        private readonly IDownloadRepository _downloadRepository;
         private readonly IDownloadClientGateway _clientGateway;
         private readonly IConfigurationService _config;
         private readonly ILogger<TestDownloadQueueService>? _logger;
@@ -22,7 +39,7 @@ namespace Listenarr.Api.Tests
 
         public TestDownloadQueueService(IDownloadRepository downloadRepo, IDownloadClientGateway clientGateway, IConfigurationService config, ILogger<TestDownloadQueueService>? logger, IAppMetricsService? metrics = null, HttpClient? httpClient = null)
         {
-            _downloadRepo = downloadRepo;
+            _downloadRepository = downloadRepo;
             _clientGateway = clientGateway;
             _config = config;
             _logger = logger;
@@ -35,7 +52,7 @@ namespace Listenarr.Api.Tests
             var clients = await _config.GetDownloadClientConfigurationsAsync();
             var enabled = clients.Where(c => c.IsEnabled).ToList();
 
-            var allDownloads = await _downloadRepo.GetAllAsync();
+            var allDownloads = await _downloadRepository.GetAllAsync();
             var listenarrDownloads = allDownloads.Where(d => d.Status != DownloadStatus.Completed && d.Status != DownloadStatus.Moved).ToList();
 
             var results = new List<QueueItem>();
