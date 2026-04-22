@@ -21,12 +21,16 @@ on:
 
 jobs:
   release-build:
-    if: github.actor != 'github-actions'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve-version.outputs.VERSION }}
+      short_sha: ${{ steps.short-sha.outputs.SHORT_SHA }}
+      pr_number: ${{ steps.find_triggering_pr.outputs.PR_NUMBER }}
+      pr_title: ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
+      pr_body_raw: ${{ steps.find_triggering_pr.outputs.PR_BODY_RAW }}
     env:
       API_PROJECT: listenarr.api/Listenarr.Api.csproj
-      FRONTEND_DIR: fe
-      API_OUTPUT: listenarr.api/publish
 
     steps:
       - name: Checkout tagged release
@@ -34,11 +38,6 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.sha }}
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v3
-        with:
-          dotnet-version: 10.0.x
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -51,9 +50,7 @@ jobs:
           set -euo pipefail
           TAG_NAME="${{ github.event.inputs.tag || github.ref_name }}"
           RELEASE_VERSION="${TAG_NAME#v}"
-
           echo "Release tag version: ${RELEASE_VERSION}"
-
           echo "RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "VERSION=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -79,15 +76,13 @@ jobs:
           [ "${FE_VERSION}" = "${RELEASE_VERSION}" ]
           [ "${ROOT_VERSION}" = "${RELEASE_VERSION}" ]
 
-      - name: Restore .NET
-        run: dotnet restore listenarr.slnx
+      - name: Compute short SHA
+        id: short-sha
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
 
       - name: Find triggering Pull Request
         id: find_triggering_pr
         run: |
-          TAG_COMMIT=$(git rev-list -n 1 ${{ github.ref }})
-          echo "Tag ${{ github.ref }} points to commit: $TAG_COMMIT"
-
           PR_DATA=$(gh api graphql -f query='
             query($owner: String!, $repo: String!) {
               repository(owner: $owner, name: $repo) {
@@ -97,16 +92,9 @@ jobs:
                       number
                       title
                       body
-                      mergeCommit {
-                        oid
-                      }
                       baseRefName
-                      updatedAt
-                      labels(first: 10) {
-                        nodes {
-                          name
-                        }
-                      }
+                      mergeCommit { oid }
+                      labels(first: 10) { nodes { name } }
                     }
                   }
                 }
@@ -130,209 +118,70 @@ jobs:
             PR_NUMBER=$(echo "$FILTERED_PR" | jq -r '.number // ""')
             PR_TITLE=$(echo "$FILTERED_PR" | jq -r '.title // ""')
             PR_BODY_RAW=$(echo "$FILTERED_PR" | jq -r '.body // ""')
-            PR_BASE_REF=$(echo "$FILTERED_PR" | jq -r '.baseRefName // ""')
-
-            echo "✅ Found non-version-bump PR #$PR_NUMBER: $PR_TITLE (merged to $PR_BASE_REF)"
+            echo "✅ Found non-version-bump PR #$PR_NUMBER: $PR_TITLE"
           else
             echo "⚠️ No non-version-bump PR found, using fallback"
             PR_NUMBER=""
             PR_TITLE="Release changes"
             PR_BODY_RAW="Changes included in this release."
-            PR_BASE_REF="main"
           fi
 
           echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
           echo "PR_TITLE=$PR_TITLE" >> $GITHUB_OUTPUT
-          echo "PR_BASE_REF=$PR_BASE_REF" >> $GITHUB_OUTPUT
-
           echo "PR_BODY_RAW<<EOF_PR_BODY" >> $GITHUB_OUTPUT
           echo "$PR_BODY_RAW" >> $GITHUB_OUTPUT
           echo "EOF_PR_BODY" >> $GITHUB_OUTPUT
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Sanitize PR body and create release notes
-        id: sanitize_pr_body
-        run: |
-          python3 << 'PYTHON_SCRIPT'
-          import os
-          import re
-          import html
+  release-publish:
+    needs: release-build
+    uses: ./.github/workflows/build-and-publish.yml
+    with:
+      version: ${{ needs.release-build.outputs.version }}
+      short_sha: ${{ needs.release-build.outputs.short_sha }}
+      channel: release
+      artifact_prefix: release-artifacts
+      include_osx: true
+      release_tag: v${{ needs.release-build.outputs.version }}
+      release_name: Release ${{ needs.release-build.outputs.version }}
+      prerelease: false
+      pr_number: ${{ needs.release-build.outputs.pr_number }}
+      pr_title: ${{ needs.release-build.outputs.pr_title }}
+      pr_body_raw: ${{ needs.release-build.outputs.pr_body_raw }}
+      discord_text: A new stable build has been released for docker.
+      docker_tags: |
+        docker.io/therobbiedavis/listenarr:stable
+        docker.io/therobbiedavis/listenarr:latest
+        docker.io/therobbiedavis/listenarr:${{ needs.release-build.outputs.version }}
+        ghcr.io/listenarrs/listenarr:stable
+        ghcr.io/listenarrs/listenarr:latest
+        ghcr.io/listenarrs/listenarr:${{ needs.release-build.outputs.version }}
+        atcr.io/therobbiedavis.com/listenarr:stable
+        atcr.io/therobbiedavis.com/listenarr:latest
+        atcr.io/therobbiedavis.com/listenarr:${{ needs.release-build.outputs.version }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      ATCR_USERNAME: ${{ secrets.ATCR_USERNAME }}
+      ATCR_TOKEN: ${{ secrets.ATCR_TOKEN }}
+      LISTENARR_DISCORD_WEBHOOK_URL: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
 
-          pr_body_raw = os.environ.get('PR_BODY_RAW', '')
+  # ─── Post-release branch sync ─────────────────────────────────────────────
+  # By this point beta has already been merged into main (that merge is what
+  # triggers or precedes the release tag). The only remaining sync is to open
+  # a PR forwarding main back onto canary so any hotfixes from the beta
+  # stabilisation window are not lost. The PR is not auto-merged — version
+  # file conflicts must be resolved manually (keep canary's version number).
+  release-post:
+    needs: [ release-build, release-publish ]
+    runs-on: ubuntu-latest
 
-          sanitized = html.escape(pr_body_raw)
-          sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
-          sanitized = re.sub(r'<iframe[^>]*>.*?</iframe>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
-          sanitized = re.sub(r'javascript:', '', sanitized, flags=re.IGNORECASE)
-
-          if len(sanitized) > 2000:
-              sanitized = sanitized[:1997] + '...'
-
-          sanitized = re.sub(r'\n\s*\n\s*\n', '\n\n', sanitized)
-          sanitized = sanitized.strip()
-
-          if not sanitized:
-              sanitized = "No description provided."
-
-          release_version = os.environ.get('RELEASE_VERSION', 'unknown')
-          tag = os.environ.get('GITHUB_REF', '').replace('refs/tags/', '')
-          full_body = f"""{sanitized}
-
-          ---
-
-          **Release {tag}**
-
-          - Version: {release_version}
-          - Commit: {os.environ.get('GITHUB_SHA', 'unknown')}
-          - Original PR: #{os.environ.get('PR_NUMBER', 'unknown')}"""
-
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"SANITIZED_PR_BODY<<EOF_SANITIZED\n{sanitized}\nEOF_SANITIZED\n")
-              f.write(f"FULL_RELEASE_BODY<<EOF_FULL\n{full_body}\nEOF_FULL\n")
-          PYTHON_SCRIPT
-        env:
-          PR_BODY_RAW: ${{ steps.find_triggering_pr.outputs.PR_BODY_RAW }}
-          RELEASE_VERSION: ${{ steps.resolve-version.outputs.RELEASE_VERSION }}
-          GITHUB_SHA: ${{ github.sha }}
-          GITHUB_REF: ${{ github.ref }}
-          PR_NUMBER: ${{ steps.find_triggering_pr.outputs.PR_NUMBER }}
-
-      - name: Build solution
-        run: dotnet build listenarr.slnx -c Release --no-restore
-
-      - name: Publish linux-x64
-        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r linux-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/linux-x64
-
-      - name: Publish win-x64
-        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/win-x64
-
-      - name: Publish osx-x64
-        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r osx-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/osx-x64
-
-      - name: Zip artifacts
-        run: |
-          mkdir -p artifacts
-          cd listenarr.api/publish/linux-x64
-          zip -r ../../../artifacts/listenarr-linux-x64.zip .
-          cd ../win-x64
-          zip -r ../../../artifacts/listenarr-win-x64.zip .
-          cd ../osx-x64
-          zip -r ../../../artifacts/listenarr-osx-x64.zip .
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
         with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to ATCR
-        uses: docker/login-action@v2
-        with:
-          registry: atcr.io
-          username: ${{ secrets.ATCR_USERNAME }}
-          password: ${{ secrets.ATCR_TOKEN }}
-
-      - name: Set image name
-        id: set-tags
-        run: |
-          echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
-          echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
-          echo "ATCR_IMAGE=atcr.io/therobbiedavis.com/listenarr" >> $GITHUB_OUTPUT
-          echo "TAG=${GITHUB_REF_NAME}" >> $GITHUB_OUTPUT
-
-      - name: Upload release artifacts
-        uses: softprops/action-gh-release@v1
-        with:
-          body: ${{ steps.sanitize_pr_body.outputs.FULL_RELEASE_BODY }}
-          files: artifacts/*.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Publish API for runtime image
-        run: |
-          dotnet publish listenarr.api/Listenarr.Api.csproj -c Release -o listenarr.api/publish
-
-      - name: Show publish contents (sanity check)
-        run: |
-          echo "Listing publish folder contents"
-          ls -la listenarr.api/publish || true
-          echo "Listing publish/tools contents"
-          ls -la listenarr.api/publish/tools || echo "publish/tools missing"
-
-      - name: Copy tools into publish and verify
-        run: |
-          echo "Ensuring tools are present in listenarr.api/publish"
-          if [ ! -d "listenarr.api/publish/tools" ]; then
-            echo "publish/tools missing — copying from listenarr.api/tools"
-            cp -r listenarr.api/tools listenarr.api/publish/ || true
-          else
-            echo "publish/tools already present"
-          fi
-          echo "Verifying publish/tools exists"
-          if [ ! -d "listenarr.api/publish/tools" ]; then
-            echo "ERROR: publish/tools missing after copy"
-            ls -la listenarr.api/publish || true
-            exit 1
-          fi
-          ls -la listenarr.api/publish/tools
-
-      - name: Fail if tools missing in publish (quick fail)
-        run: |
-          if [ ! -d "listenarr.api/publish/tools" ]; then
-            echo "ERROR: listenarr.api/publish/tools is missing after publish. Aborting build to avoid pushing a broken image."
-            ls -la listenarr.api/publish || true
-            exit 1
-          fi
-          echo "publish/tools present"
-
-      - name: Upload publish folder (debug artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: release-listenarr-publish-folder
-          path: listenarr.api/publish
-
-      - name: Build and push API image (release)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: listenarr.api/Dockerfile.runtime
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:stable
-            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:latest
-            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:${{ steps.resolve-version.outputs.RELEASE_VERSION }}
-            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:stable
-            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:latest
-            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:${{ steps.resolve-version.outputs.RELEASE_VERSION }}
-            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:stable
-            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:latest
-            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:${{ steps.resolve-version.outputs.RELEASE_VERSION }}
-
-      - name: Notify Discord
-        uses: rjstone/discord-webhook-notify@v2.2.1
-        if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
-        with:
-          severity: info
-          description: v${{ steps.resolve-version.outputs.RELEASE_VERSION }} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
-          details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
-          text: A new stable build has been released for docker.
-          webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
+          fetch-depth: 0
 
       - name: Trigger docs rebuild
         if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
@@ -342,21 +191,12 @@ jobs:
           repository: Listenarrs/listenarrs.github.io
           event-type: listenarr_release
           client-payload: >-
-            {"ref":"${{ github.ref_name }}","version":"${{ steps.resolve-version.outputs.RELEASE_VERSION }}"}
-
-      # Skipped: separate Web image. The API image contains the frontend in wwwroot.
-
-      # ─── Post-release branch sync ────────────────────────────────────────────
-      # By this point beta has already been merged into main (that merge is what
-      # triggers or precedes the release tag). The only remaining sync is to open
-      # a PR forwarding main back onto canary so any hotfixes from the beta
-      # stabilisation window are not lost. The PR is not auto-merged — version
-      # file conflicts must be resolved manually (keep canary's version number).
+            {"ref":"${{ github.ref_name }}","version":"${{ needs.release-build.outputs.version }}"}
 
       - name: Open PR — forward release hotfixes to canary
         run: |
           set -euo pipefail
-          VERSION="${{ steps.resolve-version.outputs.RELEASE_VERSION }}"
+          VERSION="${{ needs.release-build.outputs.version }}"
 
           EXISTING=$(gh pr list --base canary --head main --state open --json number --jq '.[0].number // ""')
           if [ -n "$EXISTING" ]; then
@@ -377,3 +217,6 @@ jobs:
           }
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Skipped: separate Web image. The API image contains the frontend in wwwroot.
+

@@ -25,10 +25,14 @@ jobs:
         !contains(toJson(github.event.pull_request.labels.*.name), 'automated')
       )
     runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve-version.outputs.VERSION }}
+      short_sha: ${{ steps.short-sha.outputs.SHORT_SHA }}
+      pr_number: ${{ steps.find_triggering_pr.outputs.PR_NUMBER }}
+      pr_title: ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
+      pr_body_raw: ${{ steps.find_triggering_pr.outputs.PR_BODY_RAW }}
     env:
       API_PROJECT: listenarr.api/Listenarr.Api.csproj
-      FRONTEND_DIR: fe
-      API_OUTPUT: listenarr.api/publish
 
     steps:
       - name: Checkout repository
@@ -316,71 +320,9 @@ jobs:
           [ "${FE_VERSION}" = "${NEW_VERSION}" ]
           [ "${ROOT_VERSION}" = "${NEW_VERSION}" ]
 
-      - name: Restore .NET
-        run: dotnet restore listenarr.slnx
-
-      - name: Build solution
-        run: dotnet build listenarr.slnx -c Release --no-restore
-
       - name: Compute short SHA
         id: short-sha
         run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
-      - name: Publish API (linux-x64)
-        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r linux-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/linux-x64
-
-      - name: Publish API (win-x64)
-        run: dotnet publish ${{ env.API_PROJECT }} -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/win-x64
-
-      - name: Zip Linux artifact
-        run: |
-          mkdir -p artifacts
-          cd listenarr.api/publish/linux-x64
-          zip -r ../../../artifacts/listenarr-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}-linux-x64.zip .
-
-      - name: Zip Windows artifact
-        run: |
-          mkdir -p artifacts
-          cd listenarr.api/publish/win-x64
-          zip -r ../../../artifacts/listenarr-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}-win-x64.zip .
-
-      - name: Upload artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: canary-artifacts-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}
-          path: artifacts/*.zip
-
-      - name: Show resolved version
-        run: |
-          echo "Resolved version: ${{ steps.resolve-version.outputs.VERSION }}"
-
-      - name: Login to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          registry: docker.io
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v2
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Login to ATCR
-        uses: docker/login-action@v2
-        with:
-          registry: atcr.io
-          username: ${{ secrets.ATCR_USERNAME }}
-          password: ${{ secrets.ATCR_TOKEN }}
-
-      - name: Set image name
-        id: set-tags
-        run: |
-          echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
-          echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
-          echo "ATCR_IMAGE=atcr.io/therobbiedavis.com/listenarr" >> $GITHUB_OUTPUT
 
       - name: Extract Pull Request info
         id: find_triggering_pr
@@ -389,142 +331,40 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
             const pr = context.payload.pull_request;
-            core.setOutput('PR_NUMBER', pr.number.toString());
-            core.setOutput('PR_TITLE', pr.title);
-            core.setOutput('PR_BASE_REF', pr.base.ref);
-            core.setOutput('PR_BODY_RAW', pr.body || '');
+            core.setOutput('PR_NUMBER', pr ? pr.number.toString() : '');
+            core.setOutput('PR_TITLE', pr ? pr.title : '');
+            core.setOutput('PR_BODY_RAW', pr ? (pr.body || '') : '');
 
-      - name: Sanitize PR body and create release notes
-        id: sanitize_pr_body
-        run: |
-          python3 << 'PYTHON_SCRIPT'
-          import os
-          import re
-          import html
-
-          pr_body_raw = os.environ.get('PR_BODY_RAW', '')
-
-          sanitized = html.escape(pr_body_raw)
-          sanitized = re.sub(r'<script[^>]*>.*?</script>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
-          sanitized = re.sub(r'<iframe[^>]*>.*?</iframe>', '', sanitized, flags=re.IGNORECASE | re.DOTALL)
-          sanitized = re.sub(r'javascript:', '', sanitized, flags=re.IGNORECASE)
-
-          if len(sanitized) > 2000:
-              sanitized = sanitized[:1997] + '...'
-
-          sanitized = re.sub(r'\n\s*\n\s*\n', '\n\n', sanitized)
-          sanitized = sanitized.strip()
-
-          if not sanitized:
-              sanitized = "No description provided."
-
-          full_body = f"""{sanitized}
-
-          ---
-
-          **Automated canary build**
-
-          - Version: {os.environ.get('VERSION', 'unknown')}
-          - Commit: {os.environ.get('GITHUB_SHA', 'unknown')}
-          - Original PR: #{os.environ.get('PR_NUMBER', 'unknown')}"""
-
-          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
-              f.write(f"SANITIZED_PR_BODY<<EOF_SANITIZED\n{sanitized}\nEOF_SANITIZED\n")
-              f.write(f"FULL_RELEASE_BODY<<EOF_FULL\n{full_body}\nEOF_FULL\n")
-          PYTHON_SCRIPT
-        env:
-          PR_BODY_RAW: ${{ steps.find_triggering_pr.outputs.PR_BODY_RAW }}
-          VERSION: ${{ steps.resolve-version.outputs.VERSION }}
-          GITHUB_SHA: ${{ github.sha }}
-          PR_NUMBER: ${{ steps.find_triggering_pr.outputs.PR_NUMBER }}
-
-      - name: Create GitHub Pre-Release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ steps.resolve-version.outputs.VERSION }}-canary
-          name: Canary ${{ steps.resolve-version.outputs.VERSION }}
-          body: ${{ steps.sanitize_pr_body.outputs.FULL_RELEASE_BODY }}
-          prerelease: true
-          files: artifacts/*.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v2
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Publish API for runtime image
-        run: |
-          dotnet publish listenarr.api/Listenarr.Api.csproj -c Release -o listenarr.api/publish
-
-      - name: Show publish contents (sanity check)
-        run: |
-          echo "Listing publish folder contents"
-          ls -la listenarr.api/publish || true
-          echo "Listing publish/tools contents"
-          ls -la listenarr.api/publish/tools || echo "publish/tools missing"
-
-      - name: Copy tools into publish and verify
-        run: |
-          echo "Ensuring tools are present in listenarr.api/publish"
-          if [ ! -d "listenarr.api/publish/tools" ]; then
-            echo "publish/tools missing — copying from listenarr.api/tools"
-            cp -r listenarr.api/tools listenarr.api/publish/ || true
-          else
-            echo "publish/tools already present"
-          fi
-          echo "Verifying publish/tools exists"
-          if [ ! -d "listenarr.api/publish/tools" ]; then
-            echo "ERROR: publish/tools missing after copy"
-            ls -la listenarr.api/publish || true
-            exit 1
-          fi
-          ls -la listenarr.api/publish/tools
-
-      - name: Fail if tools missing in publish (quick fail)
-        run: |
-          if [ ! -d "listenarr.api/publish/tools" ]; then
-            echo "ERROR: listenarr.api/publish/tools is missing after publish. Aborting build to avoid pushing a broken image."
-            ls -la listenarr.api/publish || true
-            exit 1
-          fi
-          echo "publish/tools present"
-
-      - name: Upload publish folder (debug artifact)
-        uses: actions/upload-artifact@v4
-        with:
-          name: listenarr-publish-folder
-          path: listenarr.api/publish
-
-      - name: Build and push API image (canary + sha)
-        uses: docker/build-push-action@v4
-        with:
-          context: .
-          file: listenarr.api/Dockerfile.runtime
-          build-args: |
-            PUBLISH_DIR=listenarr.api/publish
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: |
-            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:canary
-            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:canary-${{ steps.resolve-version.outputs.VERSION }}
-            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:canary
-            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:canary-${{ steps.resolve-version.outputs.VERSION }}
-            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:canary
-            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:canary-${{ steps.resolve-version.outputs.VERSION }}
-
-      - name: Notify Discord
-        uses: rjstone/discord-webhook-notify@v2.2.1
-        if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
-        with:
-          severity: info
-          description: v${{ steps.resolve-version.outputs.VERSION }} - ${{ steps.find_triggering_pr.outputs.PR_TITLE }}
-          details: '${{ steps.sanitize_pr_body.outputs.SANITIZED_PR_BODY }}'
-          text: A new canary build has been released for docker.
-          webhookUrl: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
+  canary-publish:
+    needs: canary-build
+    uses: ./.github/workflows/build-and-publish.yml
+    with:
+      version: ${{ needs.canary-build.outputs.version }}
+      short_sha: ${{ needs.canary-build.outputs.short_sha }}
+      channel: canary
+      artifact_prefix: canary-artifacts
+      include_osx: false
+      release_tag: v${{ needs.canary-build.outputs.version }}-canary
+      release_name: Canary ${{ needs.canary-build.outputs.version }}
+      prerelease: true
+      pr_number: ${{ needs.canary-build.outputs.pr_number }}
+      pr_title: ${{ needs.canary-build.outputs.pr_title }}
+      pr_body_raw: ${{ needs.canary-build.outputs.pr_body_raw }}
+      discord_text: A new canary build has been released for docker.
+      checkout_ref: canary
+      docker_tags: |
+        docker.io/therobbiedavis/listenarr:canary
+        docker.io/therobbiedavis/listenarr:canary-${{ needs.canary-build.outputs.version }}
+        ghcr.io/listenarrs/listenarr:canary
+        ghcr.io/listenarrs/listenarr:canary-${{ needs.canary-build.outputs.version }}
+        atcr.io/therobbiedavis.com/listenarr:canary
+        atcr.io/therobbiedavis.com/listenarr:canary-${{ needs.canary-build.outputs.version }}
+    secrets:
+      DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+      DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+      ATCR_USERNAME: ${{ secrets.ATCR_USERNAME }}
+      ATCR_TOKEN: ${{ secrets.ATCR_TOKEN }}
+      LISTENARR_DISCORD_WEBHOOK_URL: ${{ secrets.LISTENARR_DISCORD_WEBHOOK_URL }}
 
       # version bump was pushed via PR+auto-merge above
-
       # Skipped: separate Web image. The API image contains the frontend in wwwroot.
