@@ -193,8 +193,6 @@ Log.Logger = new Serilog.LoggerConfiguration()
     // EF Core: keep DB command messages higher than app logs; changeable via configuration when needed
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
     .MinimumLevel.Override("Microsoft.EntityFrameworkCore.Database.Command", LogEventLevel.Warning)
-    // Enable debug logging for Transmission adapter to troubleshoot RPC issues
-    .MinimumLevel.Override("TransmissionAdapter", LogEventLevel.Debug)
     // Console sink for developer-friendly output (includes SourceContext for quick tracing)
     .WriteTo.Console(outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] [{SourceContext}] {Message:lj}{NewLine}{Exception}")
     // Primary file sink with daily rolling and structured JSON compatible output template
