@@ -345,3 +345,35 @@ jobs:
             {"ref":"${{ github.ref_name }}","version":"${{ steps.resolve-version.outputs.RELEASE_VERSION }}"}
 
       # Skipped: separate Web image. The API image contains the frontend in wwwroot.
+
+      # ─── Post-release branch sync ────────────────────────────────────────────
+      # By this point beta has already been merged into main (that merge is what
+      # triggers or precedes the release tag). The only remaining sync is to open
+      # a PR forwarding main back onto canary so any hotfixes from the beta
+      # stabilisation window are not lost. The PR is not auto-merged — version
+      # file conflicts must be resolved manually (keep canary's version number).
+
+      - name: Open PR — forward release hotfixes to canary
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.resolve-version.outputs.RELEASE_VERSION }}"
+
+          EXISTING=$(gh pr list --base canary --head main --state open --json number --jq '.[0].number // ""')
+          if [ -n "$EXISTING" ]; then
+            echo "Main → canary PR already open: #${EXISTING}"
+            exit 0
+          fi
+
+          gh pr create \
+            --base canary \
+            --head main \
+            --title "chore: forward release v${VERSION} hotfixes from main to canary" \
+            --body "Post-release sync after tagging v${VERSION}.
+
+          Brings any hotfixes that landed on \`beta\` during the ${VERSION} stabilisation window forward onto \`canary\` via \`main\`.
+
+          ⚠️ **Version files will conflict** — keep \`canary\`'s version number and take the code changes from \`main\`." || {
+            echo "PR creation skipped — no differences between main and canary, or error creating PR."
+          }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
