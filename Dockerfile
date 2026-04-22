@@ -46,11 +46,11 @@ RUN apt-get update \
 	&& curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 	&& apt-get install -y --no-install-recommends nodejs \
 	&& npm install -g npm@11.12.1 --prefix /usr/local \
+	&& /usr/local/bin/npm install --prefix /usr/local/lib/node_modules/npm --no-save --no-package-lock picomatch@4.0.4 \
 	&& rm -rf /usr/lib/node_modules/npm \
 	&& rm -f /usr/bin/npm /usr/bin/npx \
-	&& npm install --prefix /usr/local/lib/node_modules/npm --no-save --no-package-lock picomatch@4.0.4 \
 	&& node --version \
-	&& npm --version \
+	&& /usr/local/bin/npm --version \
 	&& rm -rf /var/lib/apt/lists/*
 
 # Use the gosu binary built above instead of the apt package.
