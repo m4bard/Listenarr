@@ -4,7 +4,7 @@
 # Build gosu with a modern Go toolchain to avoid golang/stdlib CVEs present in
 # the Debian-packaged version (compiled with Go 1.19.x). Use Go 1.26 (current
 # stable) to pick up all 2026 stdlib security patches.
-FROM golang:1.26-alpine AS gosu-builder
+FROM golang:1.26.2-alpine AS gosu-builder
 ARG GOSU_VERSION=1.19
 RUN CGO_ENABLED=0 go install github.com/tianon/gosu@${GOSU_VERSION}
 
@@ -35,20 +35,26 @@ RUN dotnet build "Listenarr.Api.csproj" -c Release -o /app/build \
 FROM base AS final
 WORKDIR /app
 # Install Node.js in the runtime image for Discord bot support.
-# After installing Node.js, upgrade npm to its latest release and remove the
-# apt-installed npm tree — scanners flag tar/minimatch/cross-spawn inside
-# /usr/lib/node_modules/npm/node_modules which belong to the bundled npm that
-# ships with the NodeSource package.  The upgraded npm lives in /usr/local and
-# is the only copy left after the cleanup.  After upgrading npm, overwrite its
-# bundled picomatch (4.0.3, CVE-2026-33671/33672) with the patched 4.0.4.
+# Upgrade npm, remove the apt-installed npm tree, then patch vulnerable
+# transitive deps bundled inside npm 11: node-gyp → tinyglobby → picomatch@4.0.3
+# (CVE-2026-33671) and any brace-expansion 2.x (CVE-2026-33750).
+# npm pack downloads the fixed tarball; we extract it over each vulnerable copy
+# in npm's node_modules tree and clean the download cache afterwards.
 RUN apt-get update \
 	&& apt-get install -y --no-install-recommends curl ca-certificates gnupg \
 	&& curl -fsSL https://deb.nodesource.com/setup_24.x | bash - \
 	&& apt-get install -y --no-install-recommends nodejs \
 	&& npm install -g npm@11.12.1 --prefix /usr/local \
-	&& /usr/local/bin/npm install --prefix /usr/local/lib/node_modules/npm --no-save --no-package-lock picomatch@4.0.4 \
 	&& rm -rf /usr/lib/node_modules/npm \
 	&& rm -f /usr/bin/npm /usr/bin/npx \
+	&& /usr/local/bin/npm pack picomatch@4.0.4 --pack-destination /tmp \
+	&& find /usr/local/lib/node_modules/npm/node_modules -type d -name "picomatch" \
+	       -exec sh -c 'tar xzf /tmp/picomatch-4.0.4.tgz -C "$1" --strip-components=1' _ {} \; \
+	&& /usr/local/bin/npm pack brace-expansion@2.0.3 --pack-destination /tmp \
+	&& find /usr/local/lib/node_modules/npm/node_modules -type d -name "brace-expansion" \
+	       -exec sh -c 'ver=$(node -e "process.stdout.write(require('"'"'$1/package.json'"'"').version)" 2>/dev/null); [ "${ver%%.*}" = "2" ] && tar xzf /tmp/brace-expansion-2.0.3.tgz -C "$1" --strip-components=1 || true' _ {} \; \
+	&& rm -f /tmp/picomatch-4.0.4.tgz /tmp/brace-expansion-2.0.3.tgz \
+	&& rm -rf /root/.npm \
 	&& node --version \
 	&& /usr/local/bin/npm --version \
 	&& rm -rf /var/lib/apt/lists/*
