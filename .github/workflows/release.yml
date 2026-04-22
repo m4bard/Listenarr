@@ -13,6 +13,11 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release (e.g. v1.2.3)'
+        required: true
 
 jobs:
   release-build:
@@ -40,228 +45,24 @@ jobs:
         with:
           node-version: 24
 
-      - name: Resolve release and next versions
+      - name: Resolve release version from tag
         id: resolve-version
         run: |
           set -euo pipefail
-          CSProj=${{ env.API_PROJECT }}
-
-          SOURCE_VERSION=$(sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" "$CSProj" 2>/dev/null || true)
-          if [ -z "${SOURCE_VERSION}" ]; then
-            SOURCE_VERSION=$(sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" "$CSProj" 2>/dev/null || true)
-          fi
-          if [ -z "${SOURCE_VERSION}" ]; then
-            SOURCE_VERSION=$(node -p "require('./fe/package.json').version" 2>/dev/null || echo "0.0.0")
-          fi
-
-          TAG_NAME="${GITHUB_REF_NAME}"
+          TAG_NAME="${{ github.event.inputs.tag || github.ref_name }}"
           RELEASE_VERSION="${TAG_NAME#v}"
 
-          echo "Found source version from tagged commit: ${SOURCE_VERSION}"
           echo "Release tag version: ${RELEASE_VERSION}"
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${RELEASE_VERSION}"
-          MAJOR=${MAJOR:-0}
-          NEXT_VERSION="$((MAJOR + 1)).0.0"
-
-          echo "Next release version target for main: ${NEXT_VERSION}"
-
-          echo "SOURCE_VERSION=${SOURCE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "RELEASE_VERSION=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "VERSION=${RELEASE_VERSION}" >> "$GITHUB_OUTPUT"
-          echo "NEXT_VERSION=${NEXT_VERSION}" >> "$GITHUB_OUTPUT"
 
-      - name: Inspect current main version for post-release bump
-        id: inspect_target
+      - name: Verify tag is on beta
         run: |
           set -euo pipefail
-          git fetch origin main --depth=1
-
-          MAIN_XML="$(git show origin/main:${{ env.API_PROJECT }} 2>/dev/null || true)"
-          MAIN_VERSION=$(printf '%s\n' "$MAIN_XML" | sed -n "s:.*<Version>\(.*\)</Version>.*:\1:p" | head -n1)
-          if [ -z "${MAIN_VERSION}" ]; then
-            MAIN_VERSION=$(printf '%s\n' "$MAIN_XML" | sed -n "s:.*<AssemblyVersion>\(.*\)</AssemblyVersion>.*:\1:p" | head -n1)
-          fi
-
-          echo "Current main version: ${MAIN_VERSION:-<unknown>}"
-          echo "MAIN_VERSION=${MAIN_VERSION}" >> "$GITHUB_OUTPUT"
-
-          STATE=$(python3 - "${MAIN_VERSION}" "${{ steps.resolve-version.outputs.NEXT_VERSION }}" <<'PY'
-          import sys
-
-          current = sys.argv[1].strip()
-          target = sys.argv[2].strip()
-
-          def parse(v: str):
-              return tuple(int(x) for x in v.split("."))
-
-          if not current:
-              print("pending")
-          else:
-              c = parse(current)
-              t = parse(target)
-              if c == t:
-                  print("applied")
-              elif c > t:
-                  print("superseded")
-              else:
-                  print("pending")
-          PY
-          )
-
-          echo "bump_state=${STATE}" >> "$GITHUB_OUTPUT"
-          echo "Computed post-release bump state: ${STATE}"
-
-      - name: Persist next version to csproj for post-release bump
-        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.NEXT_VERSION != ''
-        env:
-          NEW_VERSION: ${{ steps.resolve-version.outputs.NEXT_VERSION }}
-        run: |
-          set -euo pipefail
-          echo "Updating csproj to next version $NEW_VERSION"
-          cat > update_version.py <<'PY'
-          import os
-          import xml.etree.ElementTree as ET
-
-          path = 'listenarr.api/Listenarr.Api.csproj'
-          new = os.environ['NEW_VERSION']
-          tree = ET.parse(path)
-          root = tree.getroot()
-
-          found_version = False
-          for elem in root.findall('.//Version'):
-              elem.text = new
-              found_version = True
-              break
-          if not found_version:
-              pg = root.find('PropertyGroup')
-              if pg is None:
-                  pg = ET.SubElement(root, 'PropertyGroup')
-              ET.SubElement(pg, 'Version').text = new
-
-          found_assembly = False
-          for elem in root.findall('.//AssemblyVersion'):
-              elem.text = new
-              found_assembly = True
-              break
-          if not found_assembly:
-              pg = root.find('PropertyGroup')
-              if pg is None:
-                  pg = ET.SubElement(root, 'PropertyGroup')
-              ET.SubElement(pg, 'AssemblyVersion').text = new
-
-          tree.write(path, encoding='utf-8', xml_declaration=True)
-          print('Wrote new version and assembly version to csproj')
-          PY
-          python3 update_version.py
-
-      - name: Sync frontend and package metadata to next version
-        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.resolve-version.outputs.NEXT_VERSION != ''
-        env:
-          NEW_VERSION: ${{ steps.resolve-version.outputs.NEXT_VERSION }}
-        run: node scripts/sync-fe-version-from-csproj.mjs
-
-      - name: Check for tracked post-release version changes
-        id: version_changes
-        if: steps.inspect_target.outputs.bump_state == 'pending'
-        run: |
-          set -euo pipefail
-          if git diff --quiet -- \
-            listenarr.api/Listenarr.Api.csproj \
-            package.json \
-            package-lock.json \
-            fe/package.json \
-            fe/package-lock.json; then
-            echo "has_changes=false" >> "$GITHUB_OUTPUT"
-            echo "No tracked version changes detected."
-          else
-            echo "has_changes=true" >> "$GITHUB_OUTPUT"
-            echo "Tracked version changes detected."
-          fi
-
-      - name: Create Pull Request for version bump (release)
-        id: create_pr
-        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.version_changes.outputs.has_changes == 'true'
-        uses: peter-evans/create-pull-request@v8
-        with:
-          token: ${{ secrets.GH_PAT }}
-          commit-message: "[skip ci] Bump version to ${{ steps.resolve-version.outputs.NEXT_VERSION }}"
-          branch: "ci/release-version-bump-${{ steps.resolve-version.outputs.NEXT_VERSION }}"
-          base: main
-          delete-branch: true
-          title: "Bump version to ${{ steps.resolve-version.outputs.NEXT_VERSION }}"
-          body: |
-            This PR bumps the application version to ${{ steps.resolve-version.outputs.NEXT_VERSION }}.
-            The change was produced automatically by the CI release workflow.
-
-      - name: Ensure post-release bump PR exists when required
-        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number == ''
-        run: |
-          echo "::error::A post-release version bump was required, but no pull request was created or found."
-          exit 1
-
-      - name: Label version bump PR
-        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number != ''
-        continue-on-error: true
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          script: |
-            const pr = Number('${{ steps.create_pr.outputs.pull-request-number }}');
-            if (!pr) {
-              core.info('No PR number returned; skipping labels.');
-              return;
-            }
-
-            for (let attempt = 1; attempt <= 5; attempt++) {
-              try {
-                await github.rest.issues.addLabels({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
-                  issue_number: pr,
-                  labels: ['automated', 'version-bump']
-                });
-                core.info(`Applied labels to PR #${pr} on attempt ${attempt}.`);
-                return;
-              } catch (error) {
-                if (attempt === 5) {
-                  core.warning(`Failed to label PR #${pr}: ${error.message}`);
-                  return;
-                }
-
-                const delayMs = attempt * 2000;
-                core.warning(`Label attempt ${attempt} failed for PR #${pr}: ${error.message}. Retrying in ${delayMs}ms.`);
-                await new Promise(resolve => setTimeout(resolve, delayMs));
-              }
-            }
-
-      - name: Merge release version bump PR (skip CI)
-        if: steps.inspect_target.outputs.bump_state == 'pending' && steps.create_pr.outputs.pull-request-number != ''
-        uses: actions/github-script@v6
-        env:
-          PR_NUMBER: ${{ steps.create_pr.outputs['pull-request-number'] }}
-          NEW_VERSION: ${{ steps.resolve-version.outputs.NEXT_VERSION }}
-        with:
-          github-token: ${{ secrets.GH_PAT }}
-          script: |
-            const pr = parseInt(process.env.PR_NUMBER, 10);
-            if (!pr) throw new Error('PR number missing');
-            await github.rest.pulls.merge({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: pr,
-              merge_method: 'merge',
-              commit_title: `[skip ci] Merge pull request ${pr} - Bump version to ${process.env.NEW_VERSION}`,
-              commit_message: `[skip ci] Merge: Bump version to ${process.env.NEW_VERSION}`
-            });
-
-      - name: Restore tagged workspace for release build
-        if: steps.inspect_target.outputs.bump_state == 'pending'
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.sha }}
-          clean: true
+          git fetch origin beta --depth=1
+          git merge-base --is-ancestor "${{ github.sha }}" origin/beta || \
+            { echo "::error::Tag must point to a commit reachable from beta. Refusing release."; exit 1; }
 
       - name: Verify tagged workspace version
         env:

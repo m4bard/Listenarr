@@ -10,12 +10,20 @@ permissions:
   packages: write
 
 on:
-  push:
+  pull_request:
+    types: [ closed ]
     branches: [ canary ]
+  workflow_dispatch:
 
 jobs:
   canary-build:
-    if: github.actor != 'github-actions'
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.merged == true &&
+        github.actor != 'github-actions[bot]' &&
+        !contains(toJson(github.event.pull_request.labels.*.name), 'automated')
+      )
     runs-on: ubuntu-latest
     env:
       API_PROJECT: listenarr.api/Listenarr.Api.csproj
@@ -38,6 +46,31 @@ jobs:
         with:
           node-version: 24
 
+      - name: Determine version bump type from PR labels
+        id: bump-type
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "bump=none" >> "$GITHUB_OUTPUT"
+            echo "Manual dispatch — no version bump, rebuilding at current version."
+            exit 0
+          fi
+          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+          echo "PR labels: $LABELS"
+          if echo "$LABELS" | jq -e 'contains(["major"])' > /dev/null; then
+            echo "bump=major" >> "$GITHUB_OUTPUT"
+            echo "Bump type: major"
+          elif echo "$LABELS" | jq -e 'contains(["minor"])' > /dev/null; then
+            echo "bump=minor" >> "$GITHUB_OUTPUT"
+            echo "Bump type: minor"
+          elif echo "$LABELS" | jq -e 'contains(["patch"])' > /dev/null; then
+            echo "bump=patch" >> "$GITHUB_OUTPUT"
+            echo "Bump type: patch"
+          else
+            echo "::error::PR #${{ github.event.pull_request.number }} has no version bump label. Add 'patch', 'minor', or 'major'."
+            exit 1
+          fi
+
       - name: Resolve target version
         id: resolve-version
         run: |
@@ -54,11 +87,18 @@ jobs:
 
           echo "Found source version from triggering commit: ${SOURCE_VERSION}"
 
+          BUMP="${{ steps.bump-type.outputs.bump }}"
           IFS='.' read -r MAJOR MINOR PATCH <<< "${SOURCE_VERSION}"
-          PATCH=${PATCH:-0}
-          TARGET_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))"
+          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
+          case "$BUMP" in
+            major) TARGET_VERSION="$((MAJOR + 1)).0.0" ;;
+            minor) TARGET_VERSION="${MAJOR}.$((MINOR + 1)).0" ;;
+            patch) TARGET_VERSION="${MAJOR}.${MINOR}.$((PATCH + 1))" ;;
+            none)  TARGET_VERSION="${SOURCE_VERSION}" ;; # manual dispatch — no bump
+            *)     echo "::error::Unknown bump type: $BUMP"; exit 1 ;;
+          esac
 
-          echo "Target canary version: ${TARGET_VERSION}"
+          echo "Bump type: ${BUMP} → Target canary version: ${TARGET_VERSION}"
           echo "SOURCE_VERSION=${SOURCE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "VERSION=${TARGET_VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -282,6 +322,10 @@ jobs:
       - name: Build solution
         run: dotnet build listenarr.slnx -c Release --no-restore
 
+      - name: Compute short SHA
+        id: short-sha
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Publish API (linux-x64)
         run: dotnet publish ${{ env.API_PROJECT }} -c Release -r linux-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/linux-x64
 
@@ -292,18 +336,18 @@ jobs:
         run: |
           mkdir -p artifacts
           cd listenarr.api/publish/linux-x64
-          zip -r ../../../artifacts/listenarr-linux-x64.zip .
+          zip -r ../../../artifacts/listenarr-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}-linux-x64.zip .
 
       - name: Zip Windows artifact
         run: |
           mkdir -p artifacts
           cd listenarr.api/publish/win-x64
-          zip -r ../../../artifacts/listenarr-win-x64.zip .
+          zip -r ../../../artifacts/listenarr-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}-win-x64.zip .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: canary-artifacts
+          name: canary-artifacts-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}
           path: artifacts/*.zip
 
       - name: Show resolved version
@@ -338,70 +382,17 @@ jobs:
           echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
           echo "ATCR_IMAGE=atcr.io/therobbiedavis.com/listenarr" >> $GITHUB_OUTPUT
 
-      - name: Find triggering Pull Request
+      - name: Extract Pull Request info
         id: find_triggering_pr
-        run: |
-          PR_DATA=$(gh api graphql -f query='
-            query($owner: String!, $repo: String!) {
-              repository(owner: $owner, name: $repo) {
-                pullRequests(first: 20, states: MERGED, baseRefName: "canary", orderBy: {field: UPDATED_AT, direction: DESC}) {
-                  edges {
-                    node {
-                      number
-                      title
-                      body
-                      baseRefName
-                      mergeCommit {
-                        oid
-                      }
-                      labels(first: 10) {
-                        nodes {
-                          name
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }' -f owner='${{ github.repository_owner }}' -f repo='${{ github.event.repository.name }}')
-
-          FILTERED_PR=$(echo "$PR_DATA" | jq -r '
-            [.data.repository.pullRequests.edges[] |
-            select(
-              (.node.title | test("[Bb]ump version|[Vv]ersion bump|\\[skip ci\\]"; "i") | not) and
-              (.node.labels.nodes | map(.name) | any(. == "version-bump" or . == "automated") | not)
-            ) |
-            .node |
-            {number, title, body, baseRefName}][0] // null
-          ')
-
-          echo "Recent PRs found:"
-          echo "$PR_DATA" | jq -r '.data.repository.pullRequests.edges[:5][] | "PR #\(.node.number): \(.node.title)"'
-
-          if [ "$FILTERED_PR" != "" ] && [ "$FILTERED_PR" != "null" ]; then
-            PR_NUMBER=$(echo "$FILTERED_PR" | jq -r '.number // ""')
-            PR_TITLE=$(echo "$FILTERED_PR" | jq -r '.title // ""')
-            PR_BODY_RAW=$(echo "$FILTERED_PR" | jq -r '.body // ""')
-            PR_BASE_REF=$(echo "$FILTERED_PR" | jq -r '.baseRefName // ""')
-
-            echo "✅ Found non-version-bump PR #$PR_NUMBER: $PR_TITLE (merged to $PR_BASE_REF)"
-          else
-            echo "⚠️ No non-version-bump PR found, using fallback"
-            PR_NUMBER=""
-            PR_TITLE="Canary changes"
-            PR_BODY_RAW="Recent canary changes merged to canary branch."
-            PR_BASE_REF="canary"
-          fi
-
-          echo "PR_NUMBER=$PR_NUMBER" >> $GITHUB_OUTPUT
-          echo "PR_TITLE=$PR_TITLE" >> $GITHUB_OUTPUT
-          echo "PR_BASE_REF=$PR_BASE_REF" >> $GITHUB_OUTPUT
-
-          echo "PR_BODY_RAW<<EOF_PR_BODY" >> $GITHUB_OUTPUT
-          echo "$PR_BODY_RAW" >> $GITHUB_OUTPUT
-          echo "EOF_PR_BODY" >> $GITHUB_OUTPUT
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const pr = context.payload.pull_request;
+            core.setOutput('PR_NUMBER', pr.number.toString());
+            core.setOutput('PR_TITLE', pr.title);
+            core.setOutput('PR_BASE_REF', pr.base.ref);
+            core.setOutput('PR_BODY_RAW', pr.body || '');
 
       - name: Sanitize PR body and create release notes
         id: sanitize_pr_body

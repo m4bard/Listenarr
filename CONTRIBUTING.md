@@ -216,6 +216,7 @@ Bad examples:
    - **Hotfixes** → `beta` (org members only)
    - PRs to `main` will be commented on and closed
    - Never open a PR directly from `beta` or `canary` in your fork — always use a dedicated feature branch
+   > **Note for maintainers:** The `Validate PR version label` check only blocks merges if it is registered as a required status check under **Settings → Branches → canary branch protection rule**. Without that, a PR without a version label can still be merged (the build will then fail at the canary workflow step instead).
 2. **Description**: Provide a clear description of what your PR does
    - Reference related issues (e.g., "Fixes #123")
    - Include screenshots for UI changes

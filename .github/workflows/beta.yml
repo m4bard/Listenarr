@@ -15,7 +15,7 @@ on:
 
 jobs:
   beta-build:
-    if: github.actor != 'github-actions'
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     env:
       API_PROJECT: listenarr.api/Listenarr.Api.csproj
@@ -54,11 +54,11 @@ jobs:
 
           echo "Found source version from triggering commit: ${SOURCE_VERSION}"
 
-          IFS='.' read -r MAJOR MINOR PATCH <<< "${SOURCE_VERSION}"
-          MINOR=${MINOR:-0}
-          TARGET_VERSION="${MAJOR}.$((MINOR + 1)).0"
+          # Beta is a stabilisation snapshot of canary — no version bump.
+          # The version carried over from canary is used as-is.
+          TARGET_VERSION="${SOURCE_VERSION}"
 
-          echo "Target nightly version: ${TARGET_VERSION}"
+          echo "Target beta version: ${TARGET_VERSION}"
           echo "SOURCE_VERSION=${SOURCE_VERSION}" >> "$GITHUB_OUTPUT"
           echo "VERSION=${TARGET_VERSION}" >> "$GITHUB_OUTPUT"
 
@@ -288,22 +288,26 @@ jobs:
       - name: Publish API (win-x64)
         run: dotnet publish ${{ env.API_PROJECT }} -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true -o ${{ env.API_OUTPUT }}/win-x64
 
+      - name: Compute short SHA
+        id: short-sha
+        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
       - name: Zip Linux artifact
         run: |
           mkdir -p artifacts
           cd listenarr.api/publish/linux-x64
-          zip -r ../../../artifacts/listenarr-linux-x64.zip .
+          zip -r ../../../artifacts/listenarr-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}-linux-x64.zip .
 
       - name: Zip Windows artifact
         run: |
           mkdir -p artifacts
           cd listenarr.api/publish/win-x64
-          zip -r ../../../artifacts/listenarr-win-x64.zip .
+          zip -r ../../../artifacts/listenarr-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}-win-x64.zip .
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: beta-artifacts
+          name: beta-artifacts-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.short-sha.outputs.SHORT_SHA }}
           path: artifacts/*.zip
 
       - name: Show resolved version
@@ -337,6 +341,7 @@ jobs:
           echo "DOCKER_IMAGE=docker.io/therobbiedavis/listenarr" >> $GITHUB_OUTPUT
           echo "GHCR_IMAGE=ghcr.io/listenarrs/listenarr" >> $GITHUB_OUTPUT
           echo "ATCR_IMAGE=atcr.io/therobbiedavis.com/listenarr" >> $GITHUB_OUTPUT
+          echo "SHORT_SHA=${{ steps.short-sha.outputs.SHORT_SHA }}" >> $GITHUB_OUTPUT
 
       - name: Find triggering Pull Request
         id: find_triggering_pr
@@ -450,8 +455,8 @@ jobs:
       - name: Create GitHub Pre-Release
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.resolve-version.outputs.VERSION }}-beta
-          name: Beta ${{ steps.resolve-version.outputs.VERSION }}
+          tag_name: v${{ steps.resolve-version.outputs.VERSION }}-beta-${{ steps.short-sha.outputs.SHORT_SHA }}
+          name: Beta ${{ steps.resolve-version.outputs.VERSION }} (${{ steps.short-sha.outputs.SHORT_SHA }})
           body: ${{ steps.sanitize_pr_body.outputs.FULL_RELEASE_BODY }}
           prerelease: true
           files: artifacts/*.zip
@@ -517,10 +522,13 @@ jobs:
           tags: |
             ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:beta
             ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.DOCKER_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.set-tags.outputs.SHORT_SHA }}
             ${{ steps.set-tags.outputs.GHCR_IMAGE }}:beta
             ${{ steps.set-tags.outputs.GHCR_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.GHCR_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.set-tags.outputs.SHORT_SHA }}
             ${{ steps.set-tags.outputs.ATCR_IMAGE }}:beta
             ${{ steps.set-tags.outputs.ATCR_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}
+            ${{ steps.set-tags.outputs.ATCR_IMAGE }}:beta-${{ steps.resolve-version.outputs.VERSION }}-${{ steps.set-tags.outputs.SHORT_SHA }}
 
       - name: Notify Discord
         uses: rjstone/discord-webhook-notify@v2.2.1

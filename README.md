@@ -306,9 +306,9 @@ All workflows push to `ghcr.io/listenarrs/listenarr` and `docker.io/therobbiedav
 - PRs directly to `main` will be closed without review.
 
 Version numbers are automatically incremented:
-- Canary: Patch version +1 (e.g., 1.2.3 → 1.2.4)
-- Beta: Minor version +1, patch reset to 0 (e.g., 1.2.3 → 1.3.0)
-- Release: Major version +1, minor and patch reset to 0 (e.g., 1.2.3 → 2.0.0)
+- Canary: Bumped by PR label — `patch`, `minor`, or `major` (e.g., `patch`: 1.2.3 → 1.2.4)
+- Beta: No version bump — carries the canary version as-is (stabilisation snapshot)
+- Release: Version comes from the pushed tag (e.g., `git tag v1.2.4`); no automatic bump
 
 All builds are CI-first: `dotnet publish` automatically builds the frontend and includes it in the API's `wwwroot`.
 
@@ -474,9 +474,9 @@ docker build -f listenarr.api/Dockerfile.runtime -t <your-image> listenarr.api/p
 ### Version Management
 
 Application versions are managed in `listenarr.api/Listenarr.Api.csproj` with a `<Version>` element. CI automatically bumps versions on builds:
-- Canary: Increments patch (e.g., 1.2.3 → 1.2.4); GitHub prerelease tagged `v1.2.4-canary`
-- Beta: Increments minor and resets patch (e.g., 1.2.3 → 1.3.0); GitHub prerelease tagged `v1.3.0-beta`
-- Release: Increments major and resets minor/patch (e.g., 1.2.3 → 2.0.0); tagged `vX.Y.Z`
+- Canary: Bumped by PR label — `patch`/`minor`/`major`; GitHub prerelease tagged `v1.2.4-canary`
+- Beta: No version bump — carries the canary version as-is; GitHub prerelease tagged `v1.2.4-beta-<sha>`
+- Release: Version from the pushed tag (e.g., `git tag v1.2.4`); tagged `vX.Y.Z`
 
 Bumped versions are persisted via PR to maintain branch protection.
 
