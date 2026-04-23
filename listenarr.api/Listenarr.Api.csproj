@@ -115,6 +115,15 @@
   <ItemGroup>
     <Content Remove="config\config.json" />
     <None Remove="config\config.json" />
+    <!-- Keep local development config anchored in listenarr.api/config rather than copying it into bin/. -->
+    <Content Update="config\appsettings\**\*">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </Content>
+    <None Update="config\appsettings\**\*">
+      <CopyToOutputDirectory>Never</CopyToOutputDirectory>
+      <CopyToPublishDirectory>Never</CopyToPublishDirectory>
+    </None>
   </ItemGroup>
 
   

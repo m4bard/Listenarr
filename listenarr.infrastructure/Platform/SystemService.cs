@@ -30,13 +30,18 @@ namespace Listenarr.Infrastructure.Platform
     {
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SystemService> _logger;
+        private readonly IAppPathService _appPathService;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
-        public SystemService(IConfigurationService configurationService, ILogger<SystemService> logger)
+        public SystemService(
+            IConfigurationService configurationService,
+            ILogger<SystemService> logger,
+            IAppPathService appPathService)
         {
             _configurationService = configurationService;
             _logger = logger;
+            _appPathService = appPathService;
             _startTime = DateTime.UtcNow;
         }
 
@@ -89,7 +94,7 @@ namespace Listenarr.Infrastructure.Platform
             try
             {
                 // Get the drive where the application is running
-                var appPath = AppDomain.CurrentDomain.BaseDirectory;
+                var appPath = _appPathService.ContentRootPath;
                 var driveInfo = new DriveInfo(Path.GetPathRoot(appPath) ?? "C:\\");
 
                 if (!driveInfo.IsReady)
@@ -494,8 +499,9 @@ namespace Listenarr.Infrastructure.Platform
 
         public string GetLogFilePath()
         {
-            // Get the logs directory from the application base path
-            var logsDir = Path.Join(Directory.GetCurrentDirectory(), "config", "logs");
+            // Use the host content root so local development lands in
+            // listenarr.api/config/logs and production stays under the deployed root.
+            var logsDir = _appPathService.LogsRootPath;
 
             // Ensure the directory exists
             if (!Directory.Exists(logsDir))

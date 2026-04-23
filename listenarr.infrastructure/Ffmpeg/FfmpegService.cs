@@ -41,7 +41,11 @@ namespace Listenarr.Infrastructure.Ffmpeg
         // Allow disabling auto-download via environment variable
         private readonly bool _autoInstall;
 
-        public FfmpegService(ILogger<FfmpegService> logger, IStartupConfigService startupConfigService, IProcessRunner? processRunner = null)
+        public FfmpegService(
+            ILogger<FfmpegService> logger,
+            IStartupConfigService startupConfigService,
+            IProcessRunner? processRunner = null,
+            IAppPathService? appPathService = null)
         {
             _logger = logger;
             _httpClient = new HttpClient();
@@ -60,7 +64,7 @@ namespace Listenarr.Infrastructure.Ffmpeg
             _startupConfigService = startupConfigService;
             _processRunner = processRunner;
 
-            _baseDir = Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
+            _baseDir = appPathService?.FfmpegRootPath ?? Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
             _ffprobeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe";
             _ffprobePath = Path.Join(_baseDir, _ffprobeName);
         }
@@ -902,5 +906,4 @@ namespace Listenarr.Infrastructure.Ffmpeg
         }
     }
 }
-
 

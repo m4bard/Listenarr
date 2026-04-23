@@ -92,7 +92,7 @@ namespace Listenarr.Api.Controllers
         /// <param name="rootFolderService">Optional root folder service for managing and enumerating configured root folders used for validating explicit scan paths.</param>
         /// <param name="libraryAddService">Optional shared add-to-library service used by runtime requests and background syncs.</param>
         /// <param name="renameService">Optional organize/rename service used for previewing and executing library file organization.</param>
-        /// <param name="appPathService">Optional host environment used to resolve content-root-relative cache files.</param>
+        /// <param name="appPathService">Optional app path service used to resolve content-root-relative cache files.</param>
         public LibraryController(
             IAudiobookRepository repo,
             IImageCacheService imageCacheService,
@@ -110,7 +110,7 @@ namespace Listenarr.Api.Controllers
             IRootFolderService? rootFolderService = null,
             ILibraryAddService? libraryAddService = null,
             IRenameService? renameService = null,
-            IWebHostEnvironment? appPathService = null)
+            IAppPathService? appPathService = null)
         {
             _repo = repo;
             _imageCacheService = imageCacheService;
