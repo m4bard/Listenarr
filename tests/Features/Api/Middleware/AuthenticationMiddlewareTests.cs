@@ -57,7 +57,7 @@ namespace Listenarr.Tests.Features.Api.Middleware
         }
 
         [Fact]
-        public async Task StartupConfig_Returns401_WhenUnauthenticated_AndAuthRequired()
+        public async Task FullStartupConfig_Returns401_WhenUnauthenticated_AndAuthRequired()
         {
             using var factory = _factory.WithWebHostBuilder(builder =>
             {
@@ -77,7 +77,27 @@ namespace Listenarr.Tests.Features.Api.Middleware
         }
 
         [Fact]
-        public async Task GenerateInitialApiKey_Returns401_WhenUnauthenticated_AndAuthRequired()
+        public async Task Bootstrap_Returns200_WhenUnauthenticated_AndAuthRequired()
+        {
+            using var factory = _factory.WithWebHostBuilder(builder =>
+            {
+                builder.ConfigureServices(services =>
+                {
+                    services.AddSingleton<Listenarr.Api.Services.IStartupConfigService>(sp =>
+                    {
+                        return new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "Enabled" });
+                    });
+                });
+            });
+            var apiBasePath = ResolveApiBasePath(factory.Services);
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions { AllowAutoRedirect = false });
+
+            var resp = await client.GetAsync($"{apiBasePath}/configuration/bootstrap");
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        }
+
+        [Fact]
+        public async Task GenerateInitialApiKey_Returns403_WhenUnauthenticated_AndAuthRequired()
         {
             using var factory = _factory.WithWebHostBuilder(builder =>
             {
@@ -94,7 +114,7 @@ namespace Listenarr.Tests.Features.Api.Middleware
 
             using var content = new StringContent("{}", Encoding.UTF8, "application/json");
             var resp = await client.PostAsync($"{apiBasePath}/configuration/apikey/generate-initial", content);
-            Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+            Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
         }
 
         [Fact]

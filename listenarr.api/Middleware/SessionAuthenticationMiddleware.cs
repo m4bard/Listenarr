@@ -33,8 +33,7 @@ namespace Listenarr.Api.Middleware
 
         public async Task InvokeAsync(
             HttpContext context,
-            ISessionService sessionService,
-            IImageAccessTokenService imageAccessTokenService)
+            ISessionService sessionService)
         {
             // Only process session authentication if no user is already authenticated
             var isAlreadyAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
@@ -59,36 +58,11 @@ namespace Listenarr.Api.Middleware
                             _logger.LogDebug("[SessionAuth] Session token invalid or expired for {Path} ({TokenHash})", path, tokenHash);
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                    {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                         _logger.LogError(ex, "[SessionAuth] Error during session authentication for {Path}", path);
                     }
                 }
-                if (!(context.User.Identity?.IsAuthenticated ?? false))
-                {
-                    var imageAccessToken = ExtractImageAccessToken(context);
-                    if (!string.IsNullOrEmpty(imageAccessToken))
-                    {
-                        try
-                        {
-                            var principal = imageAccessTokenService.ValidateToken(imageAccessToken);
-                            if (principal != null)
-                            {
-                                context.User = principal;
-                                _logger.LogDebug("[SessionAuth] Image token authentication successful for {Path}", path);
-                            }
-                            else
-                            {
-                                _logger.LogDebug("[SessionAuth] Image token invalid or expired for {Path}", path);
-                            }
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-                        {
-                            _logger.LogError(ex, "[SessionAuth] Error during image token authentication for {Path}", path);
-                        }
-                    }
-                }
-                else if (path.Contains("startupconfig"))
+                if (!(context.User.Identity?.IsAuthenticated ?? false) && path.Contains("startupconfig"))
                 {
                     _logger.LogDebug("[SessionAuth] No session token found for {Path}. HeaderCount={HeaderCount}", path, context.Request.Headers.Count);
                 }
@@ -103,41 +77,6 @@ namespace Listenarr.Api.Middleware
 
         private static string? ExtractSessionToken(HttpContext context)
         {
-            // Try Authorization header first (Bearer token)
-            var authHeader = context.Request.Headers.Authorization.FirstOrDefault();
-            if (!string.IsNullOrEmpty(authHeader) && authHeader.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase))
-            {
-                return authHeader[7..]; // Remove "Bearer " prefix
-            }
-
-            // Try X-Session-Token header
-            var sessionHeader = context.Request.Headers["X-Session-Token"].FirstOrDefault();
-            if (!string.IsNullOrEmpty(sessionHeader))
-            {
-                return sessionHeader;
-            }
-
-            // For WebSocket (SignalR) connections browsers can't send custom headers on the
-            // initial upgrade request. Accept query token only for hub endpoints.
-            try
-            {
-                var path = context.Request.Path.Value ?? string.Empty;
-                if (path.StartsWith("/hubs/", StringComparison.OrdinalIgnoreCase))
-                {
-                    var qs = context.Request.Query;
-                    if (qs.TryGetValue("access_token", out var accessTokenValues))
-                    {
-                        var provided = accessTokenValues.FirstOrDefault();
-                        if (!string.IsNullOrEmpty(provided)) return provided;
-                    }
-                }
-            }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
-            {
-                // ignore any query-parsing issues and fall through to null
-                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-            }
-
             // Fall back to session cookie for browser-initiated resource requests
             // (images, stylesheets, etc.) that cannot attach custom headers.
             var cookieToken = context.Request.Cookies["listenarr_session"];
@@ -149,34 +88,5 @@ namespace Listenarr.Api.Middleware
             return null;
         }
 
-        private static string? ExtractImageAccessToken(HttpContext context)
-        {
-            var path = NormalizeApiVersionedPath(context.Request.Path.Value ?? string.Empty);
-            if (!path.StartsWith("/api/images/", StringComparison.OrdinalIgnoreCase))
-            {
-                return null;
-            }
-
-            var token = context.Request.Query["t"].FirstOrDefault();
-            return string.IsNullOrWhiteSpace(token) ? null : token;
-        }
-
-        private static string NormalizeApiVersionedPath(string path)
-        {
-            if (!path.StartsWith("/api/v", StringComparison.OrdinalIgnoreCase))
-            {
-                return path;
-            }
-
-            var versionStart = "/api/v".Length;
-            var slashAfterVersion = path.IndexOf('/', versionStart);
-            if (slashAfterVersion <= 0)
-            {
-                return path;
-            }
-
-            return "/api" + path[slashAfterVersion..];
-        }
     }
 }
-

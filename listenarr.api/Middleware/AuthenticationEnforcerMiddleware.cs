@@ -94,13 +94,6 @@ namespace Listenarr.Api.Middleware
                 return;
             }
 
-            // The startup config endpoint should only be public when authentication is not required
-            if (normalizedApiPath.StartsWith("/api/configuration/startupconfig", StringComparison.OrdinalIgnoreCase) && !authRequired)
-            {
-                await _next(context);
-                return;
-            }
-
             // Serve SPA assets and client-side routes anonymously: if the request is not for an API or SignalR hub,
             // let the static file middleware or SPA fallback handle it. This avoids returning 401 for '/'.
             // Keep API and hub routes protected.

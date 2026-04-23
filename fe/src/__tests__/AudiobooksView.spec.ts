@@ -27,6 +27,7 @@ vi.mock('@/services/api', () => ({
   apiService: {
     getQualityProfiles: vi.fn(async () => []),
     getImageUrl: vi.fn((url: string) => url || 'https://via.placeholder.com/300x450?text=No+Image'),
+    getBootstrapConfig: vi.fn(async () => ({})),
     getStartupConfig: vi.fn(async () => ({})),
     getApplicationSettings: vi.fn(async () => ({})),
   },

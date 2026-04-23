@@ -28,8 +28,7 @@ describe('AuthenticationSection', () => {
   })
 
   it('emits update:authEnabled when checkbox toggled', async () => {
-    const { default: AuthenticationSection } =
-      await import('@/components/settings/AuthenticationSection.vue')
+    const { default: AuthenticationSection } = await import('@/components/settings/AuthenticationSection.vue')
     const wrapper = mount(AuthenticationSection, {
       props: { settings: { adminUsername: 'admin', adminPassword: '' }, authEnabled: false },
       global: { components: { PasswordInput, Checkbox } },
@@ -44,8 +43,7 @@ describe('AuthenticationSection', () => {
   })
 
   it('emits update:settings when username or password changes', async () => {
-    const { default: AuthenticationSection } =
-      await import('@/components/settings/AuthenticationSection.vue')
+    const { default: AuthenticationSection } = await import('@/components/settings/AuthenticationSection.vue')
     const wrapper = mount(AuthenticationSection, {
       props: { settings: { adminUsername: 'admin', adminPassword: '' }, authEnabled: true },
       global: { components: { PasswordInput } },
@@ -68,24 +66,19 @@ describe('AuthenticationSection', () => {
     expect(settingsEvents2![settingsEvents2.length - 1][0].adminPassword).toBe('s3cret')
   })
 
-  it('emits update:startupConfig when ApiKeyControl emits update:apiKey', async () => {
-    const { default: AuthenticationSection } =
-      await import('@/components/settings/AuthenticationSection.vue')
+  it('emits update:apiKey when ApiKeyControl emits update:apiKey', async () => {
+    const { default: AuthenticationSection } = await import('@/components/settings/AuthenticationSection.vue')
     const { default: ApiKeyControl } = await import('@/components/ui/ApiKeyControl.vue')
 
     const wrapper = mount(AuthenticationSection, {
-      props: {
-        settings: { adminUsername: 'admin', adminPassword: '' },
-        authEnabled: true,
-        startupConfig: { apiKey: 'OLD' },
-      },
+      props: { settings: { adminUsername: 'admin', adminPassword: '' }, authEnabled: true, apiKey: 'OLD' },
       global: { components: { ApiKeyControl } },
     })
 
     const api = wrapper.findComponent(ApiKeyControl)
     await (api.vm as ComponentPublicInstance).$emit('update:apiKey', 'NEW')
 
-    expect(wrapper.emitted()['update:startupConfig']).toBeTruthy()
-    expect(wrapper.emitted()['update:startupConfig']![0][0].apiKey).toBe('NEW')
+    expect(wrapper.emitted()['update:apiKey']).toBeTruthy()
+    expect(wrapper.emitted()['update:apiKey']![0]).toEqual(['NEW'])
   })
 })

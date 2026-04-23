@@ -623,14 +623,14 @@ builder.Services.AddSwaggerGen(options =>
         "",
         "Authentication quick start:",
         "1. Click `Authorize` and enter one credential (you do not need all schemes).",
-        "2. Session token flow:",
+        "2. Browser session flow:",
         "   - Call `POST /api/v{version}/account/login` with `{ \"username\": \"...\", \"password\": \"...\", \"rememberMe\": false }`.",
-        "   - Copy `sessionToken` from the 200 response when `authType` is `session`.",
-        "   - Use `SessionBearer` (`Bearer <sessionToken>`) or `SessionTokenHeader` (`<sessionToken>`).",
+        "   - The browser stores the `listenarr_session` HttpOnly cookie automatically when `authType` is `session`.",
+        "   - Subsequent browser requests authenticate with that cookie.",
         "3. API key flow:",
-        "   - Listenarr auto-generates an API key on first run.",
-        "   - Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required).",
+        "   - API keys are intended for non-browser clients such as scripts, bots, and integrations.",
+        "   - Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
+        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled).",
         "   - `POST /api/v{version}/configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
         "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
     });
@@ -642,30 +642,6 @@ builder.Services.AddSwaggerGen(options =>
         Description = swaggerDescription
     });
 
-    options.AddSecurityDefinition("SessionBearer", new OpenApiSecurityScheme
-    {
-        Type = SecuritySchemeType.Http,
-        Scheme = "bearer",
-        BearerFormat = "SessionToken",
-        Description = string.Join(Environment.NewLine, new[]
-        {
-            "Use `Authorization: Bearer <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v{version}/account/login` using username/password credentials."
-        })
-    });
-
-    options.AddSecurityDefinition("SessionTokenHeader", new OpenApiSecurityScheme
-    {
-        Type = SecuritySchemeType.ApiKey,
-        In = ParameterLocation.Header,
-        Name = "X-Session-Token",
-        Description = string.Join(Environment.NewLine, new[]
-        {
-            "Use `X-Session-Token: <sessionToken>`.",
-            "Get `sessionToken` from `POST /api/v{version}/account/login` using username/password credentials."
-        })
-    });
-
     options.AddSecurityDefinition("ApiKeyHeader", new OpenApiSecurityScheme
     {
         Type = SecuritySchemeType.ApiKey,
@@ -675,8 +651,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `X-Api-Key: <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled)."
         })
     });
 
@@ -689,8 +665,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `Authorization: ApiKey <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/startupconfig` (trusted-network/auth redaction rules apply).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator required)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled)."
         })
     });
 

@@ -18,7 +18,9 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
+using Listenarr.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace Listenarr.Application.Security;
 
@@ -76,11 +78,48 @@ public static class SecurityRequestUtils
         return false;
     }
 
+    public static bool IsApiKeyAuthenticated(HttpContext? context)
+    {
+        var user = context?.User;
+        if (user?.Identity?.IsAuthenticated != true)
+        {
+            return false;
+        }
+
+        var authMethod = user.FindFirst("AuthMethod")?.Value;
+        return !string.IsNullOrWhiteSpace(authMethod) &&
+               string.Equals(authMethod, "ApiKey", StringComparison.Ordinal);
+    }
+
+    public static bool IsAuthenticationRequired(HttpContext? context)
+    {
+        try
+        {
+            var startupConfigService = context?.RequestServices.GetService<IStartupConfigService>();
+            var rawValue = startupConfigService?.GetConfig()?.AuthenticationRequired;
+            if (string.IsNullOrWhiteSpace(rawValue))
+            {
+                return false;
+            }
+
+            if (bool.TryParse(rawValue, out var parsed))
+            {
+                return parsed;
+            }
+
+            return rawValue.Trim().ToLowerInvariant() is "enabled" or "true" or "yes" or "1";
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    public static bool IsAdminOrApiKeyOrAuthenticationDisabled(HttpContext? context)
+        => !IsAuthenticationRequired(context) || IsAuthenticatedAdminOrApiKey(context);
+
     public static bool ShouldRedactSecretsForCaller(HttpContext? context)
-        // *Arr standard trust model:
-        // - trusted local/private-network callers may receive non-redacted config payloads
-        // - public-network callers must authenticate as admin/API-key to receive secrets
-        => !IsLocalOrPrivateRequest(context) && !IsAuthenticatedAdminOrApiKey(context);
+        => IsAuthenticationRequired(context) && !IsAuthenticatedAdminOrApiKey(context);
 
     public static string HashSecretForLog(string? secret, string prefix = "sha256")
     {

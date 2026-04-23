@@ -16,11 +16,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Api.Filters;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Models.Configurations;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using System.Text.Json;
@@ -29,6 +31,7 @@ namespace Listenarr.Api.Controllers
 {
     [ApiController]
     [Route("api/v{version:apiVersion}/configuration")]
+    [RequireAdminOrApiKeyWhenAuthenticationEnabled]
     public class ConfigurationController : ControllerBase
     {
         private readonly IConfigurationService _configurationService;
@@ -488,14 +491,41 @@ namespace Listenarr.Api.Controllers
 
         // Startup Configuration endpoints
         /// <summary>
-        /// Get the Listenarr startup configuration (API key, authentication, etc).
-        /// API key is redacted if authentication is enabled and user is not authenticated.
+        /// Get the public bootstrap configuration used by the SPA.
+        /// </summary>
+        /// <returns>Safe startup fields needed before authentication, such as auth mode and API version.</returns>
+        [Tags("Settings")]
+        [HttpGet("bootstrap")]
+        [AllowAnonymous]
+        [ProducesResponseType(typeof(StartupBootstrapConfig), 200)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<StartupBootstrapConfig>> GetBootstrapConfig()
+        {
+            try
+            {
+                var config = await _configurationService.GetStartupConfigAsync() ?? new StartupConfig();
+                return Ok(new StartupBootstrapConfig
+                {
+                    AuthenticationRequired = ParseAuthenticationRequired(config.AuthenticationRequired),
+                    ApiVersion = NormalizeApiVersionString(config.ApiVersion) ?? NormalizeApiVersionString(GetRequestedApiVersion()) ?? "1",
+                });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error retrieving bootstrap configuration");
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+        /// <summary>
+        /// Get the full Listenarr startup configuration (API key, authentication, etc).
         /// </summary>
         /// <returns>StartupConfig object</returns>
         [Tags("Settings")]
         [HttpGet("startupconfig")]
         [ProducesResponseType(typeof(StartupConfig), 200)]
         [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
         [ProducesResponseType(500)]
         public async Task<ActionResult<StartupConfig>> GetStartupConfig()
         {
@@ -503,22 +533,11 @@ namespace Listenarr.Api.Controllers
             {
                 var config = await _configurationService.GetStartupConfigAsync() ?? new StartupConfig();
                 config.ApiVersion = NormalizeApiVersionString(config.ApiVersion) ?? NormalizeApiVersionString(GetRequestedApiVersion()) ?? "1";
-                var rawAuth = config.AuthenticationRequired;
-                var authEnabled = rawAuth?.ToLowerInvariant() is "true" or "yes" or "1";
-                var isAuthenticated = User?.Identity?.IsAuthenticated ?? false;
-                _logger.LogInformation("[ConfigurationController] AuthenticationRequired config value: '{AuthRequired}', authEnabled: {AuthEnabled}, user authenticated: {IsAuthenticated}", LogRedaction.SanitizeText(rawAuth), authEnabled, isAuthenticated);
-                if (authEnabled && !isAuthenticated)
-                {
-                    _logger.LogWarning("[ConfigurationController] Authentication is enabled and user is not authenticated. Returning 401.");
-                    return Unauthorized();
-                }
-                // *Arr standard trust model: public remote unauthenticated callers get redacted
-                // values, while trusted local/private-network callers can read full config.
                 if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
                 {
                     config = ApiResponseRedactor.RedactStartupConfig(config);
                 }
-                _logger.LogInformation("[ConfigurationController] Returning startup config.");
+
                 return Ok(config);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
@@ -536,6 +555,8 @@ namespace Listenarr.Api.Controllers
         [Tags("Settings")]
         [HttpPost("startupconfig")]
         [ProducesResponseType(typeof(StartupConfig), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
         [ProducesResponseType(500)]
         public async Task<ActionResult<StartupConfig>> SaveStartupConfig([FromBody] StartupConfig config)
         {
@@ -595,6 +616,21 @@ namespace Listenarr.Api.Controllers
             return TryNormalizeNumericApiVersion(trimmed, out var normalized) ? normalized : null;
         }
 
+        private static bool ParseAuthenticationRequired(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            if (bool.TryParse(value, out var parsed))
+            {
+                return parsed;
+            }
+
+            return value.Trim().ToLowerInvariant() is "enabled" or "true" or "yes" or "1";
+        }
+
         private static bool TryNormalizeNumericApiVersion(string value, out string normalized)
         {
             normalized = string.Empty;
@@ -648,12 +684,35 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
-        /// Regenerate the API key. Requires Administrator role.
+        /// Get the current server API key.
+        /// </summary>
+        /// <returns>The configured API key.</returns>
+        [Tags("Security")]
+        [HttpGet("apikey")]
+        [ProducesResponseType(typeof(object), 200)]
+        [ProducesResponseType(401)]
+        [ProducesResponseType(403)]
+        [ProducesResponseType(500)]
+        public async Task<ActionResult<object>> GetApiKey()
+        {
+            try
+            {
+                var cfg = await _configurationService.GetStartupConfigAsync() ?? new StartupConfig();
+                return Ok(new { apiKey = cfg.ApiKey ?? string.Empty });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error retrieving API key");
+                return StatusCode(500, "Internal server error");
+            }
+        }
+
+        /// <summary>
+        /// Regenerate the API key.
         /// </summary>
         /// <returns>The newly generated API key.</returns>
         [Tags("Security")]
         [HttpPost("apikey/regenerate")]
-        [Microsoft.AspNetCore.Authorization.Authorize(Roles = "Administrator")]
         public async Task<ActionResult<object>> RegenerateApiKey()
         {
             try
@@ -687,6 +746,7 @@ namespace Listenarr.Api.Controllers
         /// <response code="409">Users or an API key already exist.</response>
         [Tags("Security")]
         [HttpPost("apikey/generate-initial")]
+        [AllowAnonymous]
         public async Task<ActionResult<object>> GenerateInitialApiKey()
         {
             try
@@ -779,5 +839,3 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
-
-

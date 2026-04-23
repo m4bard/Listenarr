@@ -119,11 +119,7 @@
             <PhPlus />
             Add Root Folder
           </button>
-          <button
-            v-if="activeTab === 'clients'"
-            @click="openAddClient()"
-            class="add-button btn btn-primary"
-          >
+          <button v-if="activeTab === 'clients'" @click="openAddClient()" class="add-button btn btn-primary">
             <PhPlus />
             Add Download Client
           </button>
@@ -195,11 +191,7 @@
             :aria-disabled="!canTestDiscord"
             :class="{ 'is-disabled': testingDiscord || !canTestDiscord }"
             class="add-button btn btn-primary"
-            :title="
-              canTestDiscord
-                ? 'Test Discord integration'
-                : `Bot status: ${discordBotStatus}. Fill Application ID and Bot Token, and start the bot to enable`
-            "
+            :title="canTestDiscord ? 'Test Discord integration' : `Bot status: ${discordBotStatus}. Fill Application ID and Bot Token, and start the bot to enable`"
           >
             <template v-if="testingDiscord">
               <PhSpinner class="ph-spin" />
@@ -229,26 +221,19 @@
         ref="generalSettingsRef"
         :settings="settings"
         :startupConfig="startupConfig"
+        :apiKey="apiKey"
         :authEnabled="authEnabled"
         @update:authEnabled="authEnabled = $event"
         @update:startupConfig="startupConfig = $event"
-        @update:settings="
-          (v) => {
-            settings = v
-            configStore.applicationSettings = v
-          }
-        "
+        @update:apiKey="apiKey = $event"
+        @update:settings="(v) => { settings = v; configStore.applicationSettings = v }"
       />
 
       <!-- Root Folders Tab -->
       <RootFoldersTab v-if="activeTab === 'rootfolders'" ref="rootFoldersRef" />
 
       <!-- Discord Bot Tab -->
-      <DiscordBotTab
-        v-if="activeTab === 'bot' && settings"
-        :settings="settings"
-        @bot-action-completed="checkDiscordBotRunning"
-      />
+      <DiscordBotTab v-if="activeTab === 'bot' && settings" :settings="settings" @bot-action-completed="checkDiscordBotRunning" />
 
       <NotificationsTab
         v-if="activeTab === 'notifications' && settings"
@@ -258,116 +243,94 @@
     </div>
 
     <!-- Metadata Source Configuration Modal -->
-    <Modal
-      :visible="showApiForm"
-      size="lg"
-      :title="editingApi ? 'Edit Metadata Source' : 'Add Metadata Source'"
-      @close="closeApiForm"
-    >
+    <Modal :visible="showApiForm" size="lg" :title="editingApi ? 'Edit Metadata Source' : 'Add Metadata Source'" @close="closeApiForm">
       <template #header>
-        <ModalHeader
-          :title="editingApi ? 'Edit Metadata Source' : 'Add Metadata Source'"
-          :icon="PhGlobe"
-          @close="closeApiForm"
-        />
+        <ModalHeader :title="editingApi ? 'Edit Metadata Source' : 'Add Metadata Source'" :icon="PhGlobe" @close="closeApiForm" />
       </template>
-      <form @submit.prevent="saveApiConfig" class="config-form">
-        <div class="form-group">
-          <label for="api-name">Name *</label>
-          <input
-            id="api-name"
-            v-model="apiForm.name"
-            type="text"
-            placeholder="e.g., Audible"
-            required
-          />
-        </div>
+          <form @submit.prevent="saveApiConfig" class="config-form">
+            <div class="form-group">
+              <label for="api-name">Name *</label>
+              <input
+                id="api-name"
+                v-model="apiForm.name"
+                type="text"
+                placeholder="e.g., Audible"
+                required
+              />
+            </div>
 
-        <div class="form-group">
-          <label for="api-url">Base URL *</label>
-          <input
-            id="api-url"
-            v-model="apiForm.baseUrl"
-            type="url"
-            placeholder="https://api.example.com"
-            required
-          />
-        </div>
+            <div class="form-group">
+              <label for="api-url">Base URL *</label>
+              <input
+                id="api-url"
+                v-model="apiForm.baseUrl"
+                type="url"
+                placeholder="https://api.example.com"
+                required
+              />
+            </div>
 
-        <div class="form-group">
-          <label for="api-key">API Key</label>
-          <PasswordInput
-            id="api-key"
-            v-model="apiForm.apiKey"
-            autocomplete="off"
-            placeholder="Optional API key"
-          />
-          <small>Leave empty if not required</small>
-        </div>
+            <div class="form-group">
+              <label for="api-key">API Key</label>
+              <PasswordInput
+                id="api-key"
+                v-model="apiForm.apiKey"
+                autocomplete="off"
+                placeholder="Optional API key"
+              />
+              <small>Leave empty if not required</small>
+            </div>
 
-        <div class="form-row">
-          <div class="form-group">
-            <label for="api-priority">Priority</label>
-            <input
-              id="api-priority"
-              v-model.number="apiForm.priority"
-              type="number"
-              min="1"
-              max="100"
-            />
-            <small>Lower numbers = higher priority</small>
-          </div>
+            <div class="form-row">
+              <div class="form-group">
+                <label for="api-priority">Priority</label>
+                <input
+                  id="api-priority"
+                  v-model.number="apiForm.priority"
+                  type="number"
+                  min="1"
+                  max="100"
+                />
+                <small>Lower numbers = higher priority</small>
+              </div>
 
-          <div class="form-group">
-            <label for="api-rate-limit">Rate Limit (per minute)</label>
-            <input
-              id="api-rate-limit"
-              v-model="apiForm.rateLimitPerMinute"
-              type="number"
-              min="0"
-              placeholder="0 = unlimited"
-            />
-          </div>
-        </div>
+              <div class="form-group">
+                <label for="api-rate-limit">Rate Limit (per minute)</label>
+                <input
+                  id="api-rate-limit"
+                  v-model="apiForm.rateLimitPerMinute"
+                  type="number"
+                  min="0"
+                  placeholder="0 = unlimited"
+                />
+              </div>
+            </div>
 
-        <div class="form-group checkbox-group">
-          <label>
-            <input v-model="apiForm.isEnabled" type="checkbox" />
-            <span>Enable this metadata source</span>
-          </label>
-        </div>
-      </form>
-      <template #footer>
-        <ModalFooter :showCancel="false">
-          <template #left>
-            <button class="cancel-button btn" @click="closeApiForm" type="button">
-              <PhX /> Cancel
-            </button>
-          </template>
-          <template #default>
-            <button @click="saveApiConfig" class="btn btn-primary" type="button">
-              <PhCheck /> Save
-            </button>
-          </template>
-        </ModalFooter>
-      </template>
+            <div class="form-group checkbox-group">
+              <label>
+                <input v-model="apiForm.isEnabled" type="checkbox" />
+                <span>Enable this metadata source</span>
+              </label>
+            </div>
+          </form>
+        <template #footer>
+          <ModalFooter :showCancel="false">
+            <template #left>
+              <button class="cancel-button btn" @click="closeApiForm" type="button"><PhX /> Cancel</button>
+            </template>
+            <template #default>
+              <button @click="saveApiConfig" class="btn btn-primary" type="button"><PhCheck /> Save</button>
+            </template>
+          </ModalFooter>
+        </template>
     </Modal>
 
     <!-- Webhook Configuration Modal -->
 
     <!-- Delete Metadata Source Confirmation Modal (shared) -->
-    <DeleteConfirmationModal
-      :visible="!!apiToDelete"
-      title="Delete Metadata Source"
-      @close="apiToDelete = null"
-      @confirm="executeDeleteApi"
-    >
+    <DeleteConfirmationModal :visible="!!apiToDelete" title="Delete Metadata Source" @close="apiToDelete = null" @confirm="executeDeleteApi">
       <template v-slot>
-        <p>
-          Are you sure you want to delete the metadata source
-          <strong>{{ apiToDelete?.name }}</strong
-          >?
-        </p>
+        <p>Are you sure you want to delete the metadata source <strong>{{ apiToDelete?.name }}</strong>?</p>
         <p>This action cannot be undone.</p>
       </template>
     </DeleteConfirmationModal>
@@ -376,16 +339,7 @@
 </template>
 
 <script setup lang="ts">
-import {
-  ref,
-  reactive,
-  onMounted,
-  onBeforeUnmount,
-  onUnmounted,
-  watch,
-  computed,
-  nextTick,
-} from 'vue'
+import { ref, reactive, onMounted, onBeforeUnmount, onUnmounted, watch, computed, nextTick } from 'vue'
 import { apiService } from '@/services/api'
 import { useRoute, useRouter } from 'vue-router'
 import { logger } from '@/utils/logger'
@@ -393,7 +347,11 @@ import { errorTracking } from '@/services/errorTracking'
 import { useConfigurationStore } from '@/stores/configuration'
 import { useAuthStore } from '@/stores/auth'
 import { sessionTokenManager } from '@/utils/sessionToken'
-import type { ApiConfiguration, DownloadClientConfiguration, ApplicationSettings } from '@/types'
+import type {
+  ApiConfiguration,
+  DownloadClientConfiguration,
+  ApplicationSettings,
+} from '@/types'
 import RootFoldersTab from '@/views/settings/RootFoldersTab.vue'
 import DownloadClientsTab from '@/views/settings/DownloadClientsTab.vue'
 import QualityProfilesTab from '@/views/settings/QualityProfilesTab.vue'
@@ -546,6 +504,7 @@ function openAddClient() {
   }
 }
 
+
 // Audible integration removed
 
 const showPassword = ref(false)
@@ -554,29 +513,22 @@ const toggleShowPassword = () => {
   showPassword.value = !showPassword.value
   if (
     generalSettingsRef.value &&
-    typeof (generalSettingsRef.value as unknown as { toggleShowPassword?: () => void })
-      .toggleShowPassword === 'function'
+    typeof ((generalSettingsRef.value as unknown) as { toggleShowPassword?: () => void }).toggleShowPassword === 'function'
   ) {
-    ;(
-      generalSettingsRef.value as unknown as { toggleShowPassword?: () => void }
-    ).toggleShowPassword?.()
+    ;((generalSettingsRef.value as unknown) as { toggleShowPassword?: () => void }).toggleShowPassword?.()
   }
 }
 
 const toggleDownloadClientFunc = async (client: DownloadClientConfiguration) => {
   if (
     downloadClientsRef.value &&
-    typeof (
-      downloadClientsRef.value as unknown as {
-        toggleDownloadClientFunc?: (c: DownloadClientConfiguration) => Promise<void>
-      }
-    ).toggleDownloadClientFunc === 'function'
+    typeof ((downloadClientsRef.value as unknown) as {
+      toggleDownloadClientFunc?: (c: DownloadClientConfiguration) => Promise<void>
+    }).toggleDownloadClientFunc === 'function'
   ) {
-    return await (
-      downloadClientsRef.value as unknown as {
-        toggleDownloadClientFunc?: (c: DownloadClientConfiguration) => Promise<void>
-      }
-    ).toggleDownloadClientFunc!(client)
+    return await ((downloadClientsRef.value as unknown) as {
+      toggleDownloadClientFunc?: (c: DownloadClientConfiguration) => Promise<void>
+    }).toggleDownloadClientFunc!(client)
   }
 
   // Fallback: perform the toggle using the configuration store directly when
@@ -629,6 +581,7 @@ const apiForm = reactive({
 })
 const settings = ref<ApplicationSettings | null>(null)
 const startupConfig = ref<import('@/types').StartupConfig | null>(null)
+const apiKey = ref('')
 const authEnabled = ref(false)
 
 const adminUsers = ref<
@@ -1069,12 +1022,7 @@ watch(activeTab, (tab) => {
 
 // Watch for changes that affect the button state and log for debugging
 watch(
-  [
-    () => settings.value?.discordApplicationId,
-    () => settings.value?.discordBotToken,
-    () => discordBotStatus.value,
-    () => discordTokenValid.value,
-  ],
+  [() => settings.value?.discordApplicationId, () => settings.value?.discordBotToken, () => discordBotStatus.value, () => discordTokenValid.value],
   () => {
     console.debug('Discord test button state check:', {
       appId: settings.value?.discordApplicationId,
@@ -1369,6 +1317,13 @@ onMounted(async () => {
     authEnabled.value = false
   }
 
+  try {
+    const apiKeyResponse = await apiService.getApiKey()
+    apiKey.value = apiKeyResponse.apiKey ?? ''
+  } catch {
+    apiKey.value = ''
+  }
+
   // Watch for tab changes and fetch content on-demand
   watch(activeTab, (t) => {
     void loadTabContents(t)
@@ -1463,23 +1418,10 @@ onMounted(async () => {
 }
 
 /* Ensure consistent ordering for settings card actions: edit -> secondary -> delete */
-.settings-content .action-edit {
-  order: 1;
-}
-.settings-content .action-secondary {
-  order: 2;
-}
-.settings-content .action-delete {
-  order: 3;
-}
-.settings-content .folder-actions,
-.settings-content .mapping-actions,
-.settings-content .indexer-actions,
-.settings-content .config-actions {
-  display: flex;
-  gap: 0.5rem;
-  align-items: center;
-}
+.settings-content .action-edit { order: 1 }
+.settings-content .action-secondary { order: 2 }
+.settings-content .action-delete { order: 3 }
+.settings-content .folder-actions, .settings-content .mapping-actions, .settings-content .indexer-actions, .settings-content .config-actions { display:flex; gap:0.5rem; align-items:center }
 
 /* Desktop tabs carousel styles */
 .settings-tabs-desktop-wrapper {
@@ -1838,6 +1780,8 @@ onMounted(async () => {
   font-weight: 500;
   letter-spacing: 0.5px;
 }
+
+
 
 .expand-toggle {
   display: flex;
@@ -2203,6 +2147,7 @@ onMounted(async () => {
   outline-offset: 2px;
 }
 
+
 /* Base checkbox-group styles are provided globally via `src/styles/global.css`.
    Per-view overrides below customize layout/colours where needed. */
 
@@ -2222,7 +2167,7 @@ onMounted(async () => {
   gap: 0.5rem;
   flex-wrap: wrap;
   margin-bottom: 0.5rem;
-} /* Use centralized `.invite-button` / `.btn-primary` styles from `src/assets/buttons.css` */
+}/* Use centralized `.invite-button` / `.btn-primary` styles from `src/assets/buttons.css` */
 .invite-link-preview small a {
   color: #74c0fc;
   text-decoration: underline;
@@ -2564,6 +2509,7 @@ onMounted(async () => {
   opacity: 0.5;
   cursor: not-allowed;
 }
+
 
 /* Indexer Styles */
 .indexers-grid {
@@ -3205,6 +3151,7 @@ onMounted(async () => {
 /* Webhook Modal Specific Styles */
 
 /* modal-footer styles are centralized in src/assets/modals.css; webhook modal uses `.webhook-modal .modal-footer` for special padding */
+
 
 /* Button color variants centralized in `src/assets/modals.css` */
 /* Only add webhook-modal scoped overrides when absolutely needed */

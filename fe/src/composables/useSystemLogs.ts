@@ -18,8 +18,6 @@
 import { ref, onMounted, onUnmounted } from 'vue'
 import * as signalR from '@microsoft/signalr'
 import type { LogEntry } from '@/types'
-import { sessionTokenManager } from '@/utils/sessionToken'
-import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { logger } from '@/utils/logger'
 import { API_BASE_PATH, API_ORIGIN } from '@/services/apiBase'
 
@@ -43,42 +41,17 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
     isConnecting.value = true
 
     try {
-      // Get authentication token
-      let accessToken = sessionTokenManager.getToken()
-
-      // If no session token, try to get API key (for non-authenticated mode)
-      if (!accessToken) {
-        try {
-          const sc = await getStartupConfigCached(2000)
-          const apiKey = sc?.apiKey
-          const rawAuth =
-            sc?.authenticationRequired ??
-            (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-          const authEnabled =
-            typeof rawAuth === 'boolean'
-              ? rawAuth
-              : typeof rawAuth === 'string'
-                ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-                : false
-
-          if (apiKey && !authEnabled) {
-            accessToken = apiKey
-          }
-        } catch (e) {
-          logger.debug('[LogHub] Failed to get API key', e)
-        }
-      }
-
       const hubUrl = `${API_ORIGIN}/hubs/logs`
+      const signalrOptions: signalR.IHttpConnectionOptions = {
+        transport:
+          signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents,
+        skipNegotiation: false,
+        withCredentials: true,
+      }
 
       // Create SignalR connection
       connection.value = new signalR.HubConnectionBuilder()
-        .withUrl(hubUrl, {
-          transport:
-            signalR.HttpTransportType.WebSockets | signalR.HttpTransportType.ServerSentEvents,
-          skipNegotiation: false,
-          accessTokenFactory: () => accessToken || '',
-        })
+        .withUrl(hubUrl, signalrOptions)
         .withAutomaticReconnect([0, 2000, 5000, 10000, 30000]) // Retry delays in ms
         .configureLogging(signalR.LogLevel.Information)
         .build()
@@ -140,7 +113,9 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
 
   const loadInitialLogs = async () => {
     try {
-      const response = await fetch(`${API_ORIGIN}${API_BASE_PATH}/system/logs?limit=100`)
+      const response = await fetch(`${API_ORIGIN}${API_BASE_PATH}/system/logs?limit=100`, {
+        credentials: 'include',
+      })
       if (response.ok) {
         const initialLogs = (await response.json()) as LogEntry[]
         // Sort by timestamp descending (newest first)

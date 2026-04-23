@@ -43,6 +43,12 @@ namespace Listenarr.Api.Middleware
         {
             try
             {
+                if (context.User?.Identity?.IsAuthenticated == true)
+                {
+                    await _next(context);
+                    return;
+                }
+
                 var cfg = _startupConfigService.GetConfig();
                 var configuredKey = cfg?.ApiKey;
                 if (!string.IsNullOrWhiteSpace(configuredKey))

@@ -17,7 +17,6 @@
  */
 import { onUnmounted, reactive } from 'vue'
 import { apiService } from '@/services/api'
-import { getCachedStartupConfig } from '@/services/startupConfigCache'
 import { isApiImagesUrl } from '@/services/apiBase'
 
 export function isLikelyBackendImageUrl(url: string): boolean {
@@ -31,7 +30,6 @@ export function isLikelyBackendImageUrl(url: string): boolean {
 export function useProtectedImages() {
   const BACKEND_RETRY_COOLDOWN_MS = 30000
   const protectedImageSrcMap = reactive<Record<string, string>>({})
-  const protectedImageLoading = reactive<Record<string, boolean>>({})
   const protectedImageError = reactive<Record<string, boolean>>({})
   const protectedImageErrorAt = reactive<Record<string, number>>({})
   const protectedImageSourceMap = reactive<Record<string, string>>({})
@@ -52,7 +50,6 @@ export function useProtectedImages() {
     const previous = protectedImageSrcMap[cacheKey]
     if (previous) revokeProtectedImageUrl(previous)
     delete protectedImageSrcMap[cacheKey]
-    delete protectedImageLoading[cacheKey]
     delete protectedImageError[cacheKey]
     delete protectedImageErrorAt[cacheKey]
   }
@@ -63,9 +60,6 @@ export function useProtectedImages() {
     }
     for (const key of Object.keys(protectedImageSrcMap)) {
       delete protectedImageSrcMap[key]
-    }
-    for (const key of Object.keys(protectedImageLoading)) {
-      delete protectedImageLoading[key]
     }
     for (const key of Object.keys(protectedImageError)) {
       delete protectedImageError[key]
@@ -78,11 +72,7 @@ export function useProtectedImages() {
     }
   }
 
-  function getProtectedImageSrc(
-    rawImageUrl: string | undefined,
-    cacheKey: string,
-    fallback = '',
-  ): string {
+  function getProtectedImageSrc(rawImageUrl: string | undefined, cacheKey: string, fallback = ''): string {
     if (!rawImageUrl) return fallback
     const safeKey = (cacheKey || 'default').replace(/[^A-Za-z0-9._-]/g, '_')
 
@@ -108,77 +98,10 @@ export function useProtectedImages() {
 
     const resolvedImmediate = apiService.getImageUrl(rawImageUrl)
     if (resolvedImmediate) {
-      const isBackendImage = isLikelyBackendImageUrl(resolvedImmediate)
-      if (!isBackendImage || !isAuthRequiredByConfig()) {
-        protectedImageSrcMap[safeKey] = resolvedImmediate
-        return resolvedImmediate
-      }
-    }
-
-    if (!protectedImageLoading[safeKey]) {
-      protectedImageLoading[safeKey] = true
-      void (async () => {
-        try {
-          const resolved = apiService.getImageUrl(rawImageUrl)
-          if (!resolved) {
-            protectedImageError[safeKey] = true
-            return
-          }
-
-          if (!isLikelyBackendImageUrl(resolved)) {
-            protectedImageSrcMap[safeKey] = resolved
-            return
-          }
-
-          if (!isAuthRequiredByConfig()) {
-            // Preserve existing UX for non-auth deployments while still upgrading
-            // to an authenticated blob URL when available.
-            protectedImageSrcMap[safeKey] = resolved
-          }
-
-          if (typeof apiService.fetchImageObjectUrl !== 'function') {
-            protectedImageSrcMap[safeKey] = resolved
-            return
-          }
-
-          const objectUrl = await apiService.fetchImageObjectUrl(rawImageUrl)
-          if (!objectUrl) {
-            if (!isLikelyBackendImageUrl(resolved) || !isAuthRequiredByConfig()) {
-              protectedImageSrcMap[safeKey] = resolved
-              delete protectedImageError[safeKey]
-              delete protectedImageErrorAt[safeKey]
-            } else {
-              protectedImageError[safeKey] = true
-              protectedImageErrorAt[safeKey] = Date.now()
-            }
-            return
-          }
-
-          const previous = protectedImageSrcMap[safeKey]
-          if (previous && previous !== objectUrl) {
-            revokeProtectedImageUrl(previous)
-          }
-
-          protectedImageSrcMap[safeKey] = objectUrl
-          delete protectedImageError[safeKey]
-          delete protectedImageErrorAt[safeKey]
-          if (objectUrl.startsWith('blob:')) {
-            protectedImageObjectUrls.add(objectUrl)
-          }
-        } catch {
-          const resolved = apiService.getImageUrl(rawImageUrl)
-          if (resolved && isLikelyBackendImageUrl(resolved) && !isAuthRequiredByConfig()) {
-            protectedImageSrcMap[safeKey] = resolved
-            delete protectedImageError[safeKey]
-            delete protectedImageErrorAt[safeKey]
-          } else {
-            protectedImageError[safeKey] = true
-            protectedImageErrorAt[safeKey] = Date.now()
-          }
-        } finally {
-          protectedImageLoading[safeKey] = false
-        }
-      })()
+      protectedImageSrcMap[safeKey] = resolvedImmediate
+      delete protectedImageError[safeKey]
+      delete protectedImageErrorAt[safeKey]
+      return resolvedImmediate
     }
 
     return fallback
@@ -192,23 +115,5 @@ export function useProtectedImages() {
     clearProtectedImages,
     getProtectedImageSrc,
     revokeProtectedImageUrl,
-  }
-}
-function isAuthRequiredByConfig(): boolean {
-  try {
-    const cfg = getCachedStartupConfig() as Record<string, unknown> | null
-    // If config is not loaded yet, default to protected mode to avoid
-    // issuing unauthenticated <img src="/api/..."> requests that can fail
-    // and get stuck on placeholders.
-    if (!cfg) return true
-    const raw = cfg.authenticationRequired ?? cfg.AuthenticationRequired
-    if (typeof raw === 'boolean') return raw
-    if (typeof raw === 'string') {
-      const normalized = raw.trim().toLowerCase()
-      return normalized === 'true' || normalized === 'enabled'
-    }
-    return true
-  } catch {
-    return true
   }
 }

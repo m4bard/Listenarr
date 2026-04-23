@@ -261,7 +261,7 @@ namespace Listenarr.Application.Common
                 BindAddress = "*",
                 ApiKey = apiKey, // Auto-generated on first run
                 // Authentication: Set to "true" to require login, "false" for open access
-                // When enabled, uses secure session-based authentication with Bearer tokens
+                // When enabled, browser clients authenticate via secure session cookies
                 AuthenticationRequired = "false",
                 UpdateMechanism = "BuiltIn",
                 LaunchBrowser = true,

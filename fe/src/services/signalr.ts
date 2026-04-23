@@ -18,7 +18,6 @@
 import type { Download, QueueSnapshot, QueueUpdatePayload, Audiobook } from '@/types'
 import { sessionTokenManager } from '@/utils/sessionToken'
 import { setConnected, setLastError, setReconnectAttempts } from './signalrEvents'
-import { getStartupConfigCached } from '@/services/startupConfigCache'
 import { logger } from '@/utils/logger'
 import { API_BASE_URL } from '@/services/apiBase'
 import { normalizeQueueSnapshot } from '@/utils/queueSnapshot'
@@ -152,13 +151,15 @@ type ScanJobCallback = (job: {
 
 class SignalRService {
   constructor() {
-    // Reconnect when the session token changes so the WebSocket upgrade can
-    // include the new token as an access_token query param. This ensures the
-    // hub connection is always authenticated as the current SPA principal.
+    // Reconnect when browser auth state changes so the hub handshake can pick
+    // up the latest session cookie or anonymous/API-key mode.
     try {
-      sessionTokenManager.onTokenChange((token) => {
+      sessionTokenManager.onTokenChange((token, context) => {
+        if (context?.source === 'initial') {
+          return
+        }
         try {
-          logger.debug('[SignalR] session token changed, reconnecting', { hasToken: !!token })
+          logger.debug('[SignalR] auth state changed, reconnecting', { authenticated: !!token })
         } catch {}
         // If a connection exists, close it and reconnect after a short delay
         // to avoid racing with other connection lifecycle events.
@@ -223,9 +224,7 @@ class SignalRService {
       dismissed?: boolean
     }) => void
   > = new Set()
-  private indexersUpdatedCallbacks: Set<
-    (payload?: { created?: number; skipped?: number }) => void
-  > = new Set()
+  private indexersUpdatedCallbacks: Set<(payload?: { created?: number; skipped?: number }) => void> = new Set()
   private unmatchedScanCompleteCallbacks: Set<
     (payload: { jobId: string; count: number; error?: string }) => void
   > = new Set()
@@ -243,43 +242,7 @@ class SignalRService {
     this.isConnecting = true
     try {
       // Using SignalR protocol over WebSocket
-      let hubUrl = buildHubWebSocketUrl('/hubs/downloads')
-      try {
-        // Prefer using the current session token (if present) for SignalR
-        // WebSocket connections. Browsers can't send custom headers on the
-        // WebSocket upgrade handshake, so the client should include the token
-        // as an "access_token" query parameter. The backend accepts that
-        // parameter for hub endpoints.
-        try {
-          const sess = sessionTokenManager.getToken()
-          if (sess) {
-            const sep = hubUrl.includes('?') ? '&' : '?'
-            hubUrl = `${hubUrl}${sep}access_token=${encodeURIComponent(sess)}`
-          } else {
-            // Fallback: if authentication is disabled, include the server API key
-            const sc = await getStartupConfigCached(2000)
-            const apiKey = sc?.apiKey
-            const rawAuth =
-              sc?.authenticationRequired ??
-              (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-            const authEnabled =
-              typeof rawAuth === 'boolean'
-                ? rawAuth
-                : typeof rawAuth === 'string'
-                  ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-                  : false
-
-            if (apiKey && !authEnabled) {
-              const sep = hubUrl.includes('?') ? '&' : '?'
-              hubUrl = `${hubUrl}${sep}access_token=${encodeURIComponent(apiKey)}`
-            }
-          }
-        } catch (e) {
-          logger.debug('[SignalR] startupConfig or session read failed', e)
-        }
-      } catch {
-        // swallow outer errors
-      }
+      const hubUrl = buildHubWebSocketUrl('/hubs/downloads')
 
       if (import.meta.env.DEV) {
         console.log('[SignalR] Connecting to:', sanitizeWebSocketUrlForLog(hubUrl))
@@ -526,11 +489,7 @@ class SignalRService {
 
       case 'IndexersUpdated':
         if (args && args[0]) {
-          const payload = args[0] as {
-            created?: number
-            skipped?: number
-            indexers?: Array<{ id: number; name: string; baseUrl: string }>
-          }
+          const payload = args[0] as { created?: number; skipped?: number; indexers?: Array<{ id: number; name: string; baseUrl: string }> }
           if (import.meta.env.DEV) console.info('[SignalR] IndexersUpdated payload:', payload)
           this.indexersUpdatedCallbacks.forEach((cb) => cb(payload))
         } else {
@@ -649,33 +608,7 @@ class SignalRService {
 
     this.isSettingsConnecting = true
 
-    let hubUrl = buildHubWebSocketUrl('/hubs/settings')
-
-    try {
-      const sess = sessionTokenManager.getToken()
-      if (sess) {
-        const sep = hubUrl.includes('?') ? '&' : '?'
-        hubUrl = `${hubUrl}${sep}access_token=${encodeURIComponent(sess)}`
-      } else {
-        const sc = await getStartupConfigCached(2000)
-        const apiKey = sc?.apiKey
-        const rawAuth =
-          sc?.authenticationRequired ??
-          (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-        const authEnabled =
-          typeof rawAuth === 'boolean'
-            ? rawAuth
-            : typeof rawAuth === 'string'
-              ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
-              : false
-        if (apiKey && !authEnabled) {
-          const sep = hubUrl.includes('?') ? '&' : '?'
-          hubUrl = `${hubUrl}${sep}access_token=${encodeURIComponent(apiKey)}`
-        }
-      }
-    } catch (e) {
-      logger.debug('[SignalR] settings startupConfig or session read failed', e)
-    }
+    const hubUrl = buildHubWebSocketUrl('/hubs/settings')
 
     try {
       if (import.meta.env.DEV) {
@@ -857,13 +790,7 @@ class SignalRService {
   }
 
   // Subscribe to indexer updates (triggered when indexers are added/modified externally)
-  onIndexersUpdated(
-    callback: (payload?: {
-      created?: number
-      skipped?: number
-      indexers?: Array<{ id: number; name: string; baseUrl: string }>
-    }) => void,
-  ): () => void {
+  onIndexersUpdated(callback: (payload?: { created?: number; skipped?: number; indexers?: Array<{ id: number; name: string; baseUrl: string }>; }) => void): () => void {
     this.indexersUpdatedCallbacks.add(callback)
     return () => {
       this.indexersUpdatedCallbacks.delete(callback)

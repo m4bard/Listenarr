@@ -695,6 +695,13 @@ useEventListener(document, 'click', (e: MouseEvent) => {
 // Version from API
 const version = ref('')
 
+function updateSidebarVersion(health: { version?: string } | null | undefined) {
+  const nextVersion = typeof health?.version === 'string' ? health.version.trim() : ''
+  if (nextVersion.length > 0) {
+    version.value = nextVersion
+  }
+}
+
 // Global confirm service (app-level modal)
 const confirm = useConfirmService()
 // Template-safe computed wrappers (unpack refs so Vue/TS typechecks correctly)
@@ -1068,14 +1075,9 @@ const refreshAuthPresentationFromStartupConfig = async (force: boolean = false) 
     // so we don't pin authEnabled=false for the whole session.
     if (!cfg) {
       try {
-        cfg = await apiService.getStartupConfig()
+        cfg = await apiService.getBootstrapConfig()
       } catch (err) {
-        const status = (err as { status?: number } | null)?.status
-        if (status === 401) {
-          cfg = { authenticationRequired: true } as Record<string, unknown>
-        } else {
-          throw err
-        }
+        throw err
       }
     }
     const obj = cfg as Record<string, unknown> | null
@@ -1114,6 +1116,7 @@ onMounted(async () => {
   try {
     // Check if we have valid session/authentication
     const sessionCheck = await apiService.getServiceHealth()
+    updateSidebarVersion(sessionCheck)
     logger.debug('Session verification successful:', sessionCheck)
   } catch (sessionError) {
     logger.warn('Session verification failed:', String(sessionError))
@@ -1286,12 +1289,15 @@ onMounted(async () => {
   logger.info('✅ Real-time updates enabled - Activity badge updates automatically via SignalR!')
   await refreshAuthPresentationFromStartupConfig(true)
 
-  // Fetch version from API
-  try {
-    const health = await apiService.getServiceHealth()
-    version.value = health.version
-  } catch (err) {
-    logger.warn('Failed to fetch version from API:', err)
+  // If the initial health check did not provide a version, fall back to one
+  // late fetch instead of making the sidebar wait on the entire bootstrap path.
+  if (!version.value) {
+    try {
+      const health = await apiService.getServiceHealth()
+      updateSidebarVersion(health)
+    } catch (err) {
+      logger.warn('Failed to fetch version from API:', err)
+    }
   }
 
   // Schedule idle-time prefetch for non-critical routes (low-priority)
