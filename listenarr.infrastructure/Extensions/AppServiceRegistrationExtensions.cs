@@ -54,7 +54,6 @@ namespace Listenarr.Infrastructure.Extensions
             // Startup config: read config.json (optional) and expose via IStartupConfigService
             services.AddSingleton<IStartupConfigService, StartupConfigService>();
             services.AddSingleton<IAppPathService, AppPathService>();
-
             // Register indexer search providers
             services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
             services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
@@ -138,7 +137,7 @@ namespace Listenarr.Infrastructure.Extensions
             // Always register session service, but it will check config internally
             services.AddScoped<SessionService>();
             services.AddScoped<ISessionService, ConditionalSessionService>();
-            services.AddScoped<IImageAccessTokenService, ImageAccessTokenService>();
+            services.AddSingleton<IImageAccessTokenService, ImageAccessTokenService>();
 
             // Scan queue & background workers registrations are left in Program.cs (hosted services)
             // but any other application service registrations belong here.
