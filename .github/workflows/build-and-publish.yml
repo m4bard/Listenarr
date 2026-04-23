@@ -364,9 +364,25 @@ jobs:
 
       # ── Discord notification ──────────────────────────────────────────────────
 
+      - name: Check if a prior attempt already succeeded
+        id: prior_success
+        if: github.run_attempt > 1 && github.repository_owner == 'listenarrs'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          already_notified=false
+          for attempt in $(seq 1 $(( ${{ github.run_attempt }} - 1 ))); do
+            conclusion=$(gh api "repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${attempt}" --jq '.conclusion' 2>/dev/null || echo "")
+            if [ "$conclusion" = "success" ]; then
+              already_notified=true
+              break
+            fi
+          done
+          echo "already_notified=${already_notified}" >> "$GITHUB_OUTPUT"
+
       - name: Notify Discord
         uses: rjstone/discord-webhook-notify@v2.2.1
-        if: github.run_attempt == 1 && github.repository_owner == 'listenarrs'
+        if: github.repository_owner == 'listenarrs' && (github.run_attempt == 1 || steps.prior_success.outputs.already_notified == 'false')
         with:
           severity: info
           description: v${{ inputs.version }} - ${{ inputs.pr_title }}
