@@ -21,83 +21,33 @@ vi.unmock('../services/api')
 
 import { apiService as svc } from '../services/api'
 import { API_BASE_PATH } from '@/services/apiBase'
-import { resetCache as resetStartupConfigCache } from '../services/startupConfigCache'
-import { sessionTokenManager } from '../utils/sessionToken'
 
-type ApiServiceInternals = typeof svc & {
-  clearImageAccessToken?: () => void
-}
-
-describe('ApiService image access token flow', () => {
+describe('ApiService backend image URLs', () => {
   beforeEach(() => {
     vi.restoreAllMocks()
-    sessionTokenManager.clearToken()
-    resetStartupConfigCache()
-    ;(svc as ApiServiceInternals).clearImageAccessToken?.()
   })
 
   afterEach(() => {
     vi.resetAllMocks()
-    sessionTokenManager.clearToken()
-    resetStartupConfigCache()
-    ;(svc as ApiServiceInternals).clearImageAccessToken?.()
+    vi.unstubAllGlobals()
   })
 
-  it('appends the cached image token to backend image URLs', async () => {
-    sessionTokenManager.setToken('session-token-123')
-
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async (input: RequestInfo | URL) => {
-        const url = String(input)
-        if (url.endsWith(`${API_BASE_PATH}/account/image-token`)) {
-          return {
-            ok: true,
-            status: 200,
-            json: async () => ({
-              token: 'image-token-123',
-              expiresAt: '2099-01-01T00:00:00Z',
-            }),
-          }
-        }
-
-        throw new Error(`Unexpected fetch: ${url}`)
-      }),
-    )
-
-    const token = await svc.ensureImageAccessTokenForCurrentAuth()
-
-    expect(token).toBe('image-token-123')
+  it('returns backend image URLs without appending a query token', () => {
     expect(svc.getImageUrl(`${API_BASE_PATH}/images/ASIN000001`)).toBe(
-      `${API_BASE_PATH}/images/ASIN000001?t=image-token-123`,
+      `${API_BASE_PATH}/images/ASIN000001`,
     )
   })
 
-  it('returns a signed backend image URL without fetching the image as a blob', async () => {
-    sessionTokenManager.setToken('session-token-456')
-
+  it('returns backend image URLs directly without fetching an image auth token', async () => {
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.endsWith(`${API_BASE_PATH}/account/image-token`)) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => ({
-            token: 'image-token-456',
-            expiresAt: '2099-01-01T00:00:00Z',
-          }),
-        }
-      }
-
-      throw new Error(`Unexpected fetch: ${url}`)
+      throw new Error(`Unexpected fetch: ${String(input)}`)
     })
 
     vi.stubGlobal('fetch', fetchMock)
 
     const url = await svc.fetchImageObjectUrl(`${API_BASE_PATH}/images/ASIN000002`)
 
-    expect(url).toBe(`${API_BASE_PATH}/images/ASIN000002?t=image-token-456`)
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(String(fetchMock.mock.calls[0][0])).toContain('/account/image-token')
+    expect(url).toBe(`${API_BASE_PATH}/images/ASIN000002`)
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

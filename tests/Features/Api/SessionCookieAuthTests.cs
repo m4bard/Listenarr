@@ -17,19 +17,15 @@
  */
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
-using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging.Abstractions;
-using Moq;
 using Xunit;
 
 namespace Listenarr.Tests.Features.Api
@@ -190,61 +186,46 @@ namespace Listenarr.Tests.Features.Api
         [Fact]
         public async Task Login_SetsSessionCookie_Without_ReturningReadableSessionSecrets()
         {
+            using var factory = CreateAuthEnabledFactory();
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
             var username = $"cookie-user-{Guid.NewGuid():N}";
-            const string sessionToken = "server-session-cookie-value";
+            const string password = "TestPassword!123";
 
-            var userService = new Mock<IUserService>(MockBehavior.Strict);
-            userService
-                .Setup(x => x.ValidateCredentialsAsync(username, It.IsAny<string>()))
-                .ReturnsAsync(true);
-            userService
-                .Setup(x => x.GetByUsernameAsync(username))
-                .ReturnsAsync(new User { Username = username, IsAdmin = true });
-
-            var rateLimiter = new Mock<ILoginRateLimiter>(MockBehavior.Strict);
-            rateLimiter.Setup(x => x.IsBlocked(It.IsAny<string>())).Returns(false);
-            rateLimiter.Setup(x => x.RecordSuccess(It.IsAny<string>()));
-
-            var sessionService = new Mock<ISessionService>(MockBehavior.Strict);
-            sessionService
-                .Setup(x => x.CreateSessionAsync(username, true, false))
-                .ReturnsAsync(sessionToken);
-
-            var controller = new AccountController(
-                Mock.Of<IStartupConfigService>(),
-                NullLogger<AccountController>.Instance,
-                userService.Object,
-                rateLimiter.Object,
-                sessionService.Object,
-                Mock.Of<IImageAccessTokenService>())
+            using (var scope = factory.Services.CreateScope())
             {
-                ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
-            };
+                var userService = scope.ServiceProvider.GetRequiredService<IUserService>();
+                await userService.CreateUserAsync(username, password, isAdmin: true);
+            }
 
-            var result = await controller.Login(new LoginRequest
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
             {
-                Username = username,
-                Password = "TestPassword!123",
-                RememberMe = false,
+                AllowAutoRedirect = false,
+                HandleCookies = false,
             });
 
-            var ok = Assert.IsType<OkObjectResult>(result);
-            Assert.Contains(controller.Response.Headers.SetCookie.ToArray(),
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{apiBase}/account/login")
+            {
+                Content = new StringContent(
+                    $$"""{"username":"{{username}}","password":"{{password}}","rememberMe":false}""",
+                    Encoding.UTF8,
+                    "application/json")
+            };
+
+            var resp = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            Assert.Contains(resp.Headers.TryGetValues("Set-Cookie", out var setCookieValues) ? setCookieValues : Array.Empty<string>(),
                 header => header.Contains("listenarr_session=", StringComparison.Ordinal));
 
-            var payload = JsonSerializer.SerializeToElement(ok.Value);
-            Assert.Equal("session", payload.GetProperty("authType").GetString());
-            Assert.False(payload.TryGetProperty("sessionToken", out _));
-            Assert.False(payload.TryGetProperty("imageToken", out _));
-            Assert.False(payload.TryGetProperty("imageTokenExpiresAt", out _));
-
-            userService.VerifyAll();
-            rateLimiter.VerifyAll();
-            sessionService.VerifyAll();
+            var payload = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            Assert.Equal("session", payload.RootElement.GetProperty("authType").GetString());
+            Assert.False(payload.RootElement.TryGetProperty("sessionToken", out _));
+            Assert.False(payload.RootElement.TryGetProperty("imageToken", out _));
+            Assert.False(payload.RootElement.TryGetProperty("imageTokenExpiresAt", out _));
         }
 
         [Fact]
-        public async Task ImageTokenEndpoint_ReturnsToken_ForAuthenticatedSessionCookie()
+        public async Task RemovedImageTokenEndpoint_ReturnsNotFound()
         {
             using var factory = CreateAuthEnabledFactory();
             var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
@@ -266,26 +247,14 @@ namespace Listenarr.Tests.Features.Api
             request.Headers.Add("Cookie", $"listenarr_session={sessionToken}");
             var resp = await client.SendAsync(request);
 
-            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-
-            var payload = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-            Assert.True(payload.RootElement.TryGetProperty("token", out var tokenElement));
-            Assert.False(string.IsNullOrWhiteSpace(tokenElement.GetString()));
-            Assert.True(payload.RootElement.TryGetProperty("expiresAt", out _));
+            Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
         }
 
         [Fact]
-        public async Task ImageToken_Allows_ImageEndpoint_WithoutCookieOrBearer()
+        public async Task QueryToken_DoesNot_Authenticate_ImageEndpoint()
         {
             using var factory = CreateAuthEnabledFactory();
             var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
-
-            string imageToken;
-            using (var scope = factory.Services.CreateScope())
-            {
-                var tokenService = scope.ServiceProvider.GetRequiredService<IImageAccessTokenService>();
-                imageToken = tokenService.CreateToken("testuser").Token;
-            }
 
             using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
             {
@@ -293,31 +262,7 @@ namespace Listenarr.Tests.Features.Api
                 HandleCookies = false,
             });
 
-            var resp = await client.GetAsync($"{apiBase}/images/B00TOKEN01?t={Uri.EscapeDataString(imageToken)}");
-
-            Assert.NotEqual(HttpStatusCode.Unauthorized, resp.StatusCode);
-        }
-
-        [Fact]
-        public async Task ImageToken_DoesNot_Authenticate_NonImageEndpoints()
-        {
-            using var factory = CreateAuthEnabledFactory();
-            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
-
-            string imageToken;
-            using (var scope = factory.Services.CreateScope())
-            {
-                var tokenService = scope.ServiceProvider.GetRequiredService<IImageAccessTokenService>();
-                imageToken = tokenService.CreateToken("testuser").Token;
-            }
-
-            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-            {
-                AllowAutoRedirect = false,
-                HandleCookies = false,
-            });
-
-            var resp = await client.GetAsync($"{apiBase}/library?t={Uri.EscapeDataString(imageToken)}");
+            var resp = await client.GetAsync($"{apiBase}/images/B00TOKEN01?t=stale-or-invalid-token");
 
             Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
         }
@@ -466,79 +411,6 @@ namespace Listenarr.Tests.Features.Api
         }
 
         [Fact]
-        public async Task ApiKeyEndpoint_RejectsApiKey_WhenAuthenticationEnabled()
-        {
-            const string apiKey = "server-api-key";
-            using var factory = CreateAuthEnabledFactory("true", apiKey);
-            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
-
-            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-            {
-                AllowAutoRedirect = false,
-                HandleCookies = false,
-            });
-
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"{apiBase}/configuration/apikey");
-            request.Headers.Add("X-Api-Key", apiKey);
-            var resp = await client.SendAsync(request);
-
-            Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
-        }
-
-        [Fact]
-        public async Task RegenerateApiKey_RejectsApiKey_WhenAuthenticationEnabled()
-        {
-            const string apiKey = "server-api-key";
-            using var factory = CreateAuthEnabledFactory("true", apiKey);
-            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
-
-            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-            {
-                AllowAutoRedirect = false,
-                HandleCookies = false,
-            });
-
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{apiBase}/configuration/apikey/regenerate");
-            request.Headers.Add("X-Api-Key", apiKey);
-            var resp = await client.SendAsync(request);
-
-            Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
-        }
-
-        [Fact]
-        public async Task RegenerateApiKey_AllowsAdminSession_WhenAuthenticationEnabled()
-        {
-            const string apiKey = "server-api-key";
-            using var factory = CreateAuthEnabledFactory("true", apiKey);
-            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
-
-            string sessionToken;
-            using (var scope = factory.Services.CreateScope())
-            {
-                var sessionService = scope.ServiceProvider.GetRequiredService<ISessionService>();
-                sessionToken = await sessionService.CreateSessionAsync("admin-user", true, false);
-            }
-
-            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-            {
-                AllowAutoRedirect = false,
-                HandleCookies = false,
-            });
-
-            var (csrfToken, antiforgeryCookie) = await GetAntiforgeryTokenAsync(client, apiBase, sessionToken);
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{apiBase}/configuration/apikey/regenerate");
-            request.Headers.Add("Cookie", $"listenarr_session={sessionToken}; {antiforgeryCookie}");
-            request.Headers.Add("X-XSRF-TOKEN", csrfToken);
-            var resp = await client.SendAsync(request);
-
-            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-            using var payload = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-            var regeneratedApiKey = payload.RootElement.GetProperty("apiKey").GetString();
-            Assert.False(string.IsNullOrWhiteSpace(regeneratedApiKey));
-            Assert.NotEqual(apiKey, regeneratedApiKey);
-        }
-
-        [Fact]
         public async Task ProwlarrCompatibility_RequiresApiKey_WhenAuthenticationEnabled()
         {
             const string apiKey = "prowlarr-api-key";
@@ -618,29 +490,6 @@ namespace Listenarr.Tests.Features.Api
                     });
                 });
             });
-        }
-
-        private static async Task<(string Token, string Cookie)> GetAntiforgeryTokenAsync(
-            HttpClient client,
-            string apiBase,
-            string sessionToken)
-        {
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"{apiBase}/antiforgery/token");
-            request.Headers.Add("Cookie", $"listenarr_session={sessionToken}");
-            var response = await client.SendAsync(request);
-            response.EnsureSuccessStatusCode();
-
-            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-            var token = json.RootElement.GetProperty("token").GetString();
-            Assert.False(string.IsNullOrWhiteSpace(token));
-
-            Assert.True(response.Headers.TryGetValues("Set-Cookie", out var setCookieValues));
-            var antiforgeryCookie = setCookieValues
-                .Select(value => value.Split(';', 2)[0])
-                .FirstOrDefault(value => value.StartsWith(".AspNetCore.Antiforgery.", StringComparison.Ordinal));
-
-            Assert.False(string.IsNullOrWhiteSpace(antiforgeryCookie));
-            return (token!, antiforgeryCookie!);
         }
     }
 }

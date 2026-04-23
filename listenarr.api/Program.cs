@@ -123,14 +123,14 @@ try
     var dir = Path.GetDirectoryName(externalConfigAbsolute) ?? string.Empty;
     if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-    if (!File.Exists(externalConfigAbsolute))
-    {
-        // Minimal, safe default configuration (non-sensitive)
-        var defaultJson = "{\n  \"Serilog\": {\n    \"MinimumLevel\": {\n      \"Default\": \"Information\",\n      \"Override\": {\n        \"Microsoft\": \"Warning\",\n        \"System\": \"Warning\"\n      }\n    }\n  }\n}";
-        File.WriteAllText(externalConfigAbsolute, defaultJson);
-        // Log the absolute path so it's clear where the file was created
-        Console.WriteLine($"[Listenarr] Created default configuration at '{externalConfigAbsolute}'. Edit this file to customize app settings.");
-    }
+        if (!File.Exists(externalConfigAbsolute))
+        {
+            // Minimal, safe default configuration (non-sensitive)
+            var defaultJson = "{\n  \"Serilog\": {\n    \"MinimumLevel\": {\n      \"Default\": \"Information\",\n      \"Override\": {\n        \"Microsoft\": \"Warning\",\n        \"System\": \"Warning\"\n      }\n    }\n  }\n}";
+            File.WriteAllText(externalConfigAbsolute, defaultJson);
+            // Log the absolute path so it's clear where the file was created
+            Console.WriteLine($"[Listenarr] Created default configuration at '{externalConfigAbsolute}'. Edit this file to customize app settings.");
+        }
 }
 catch (Exception ex) when (
     ex is IOException
@@ -629,8 +629,8 @@ builder.Services.AddSwaggerGen(options =>
         "   - Subsequent browser requests authenticate with that cookie.",
         "3. API key flow:",
         "   - API keys are intended for non-browser clients such as scripts, bots, and integrations.",
-        "   - Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
-        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+        "   - Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
+        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled).",
         "   - `POST /api/v{version}/configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
         "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
     });
@@ -651,8 +651,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `X-Api-Key: <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled)."
         })
     });
 
@@ -665,8 +665,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `Authorization: ApiKey <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled)."
         })
     });
 

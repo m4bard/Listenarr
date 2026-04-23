@@ -79,15 +79,6 @@ import {
 
 const getApiImageOrigin = (): string => (import.meta.env.DEV ? '' : API_ORIGIN)
 const getApiImagesBaseUrl = (): string => `${getApiImageOrigin()}${API_BASE_PATH}/images`
-const buildApiImageUrl = (identifier: string, sourceUrl?: string): string => {
-  let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
-  if (sourceUrl) {
-    const params = new URLSearchParams()
-    params.append('url', sourceUrl)
-    url += `?${params.toString()}`
-  }
-  return url
-}
 const ABSOLUTE_URL_REGEX = /^https?:\/\//i
 
 const buildApiRequestUrl = (endpoint: string): string => {
@@ -104,11 +95,8 @@ class ApiService {
   private antiforgeryToken: string | null = null;
   private antiforgeryTokenSession: string | null = null;
   private tokenReadyPromise: Promise<void> | null = null;
-  private imageAccessToken: string | null = null;
-  private imageAccessTokenExpiresAt = 0;
-  private imageAccessTokenPromise: Promise<string | null> | null = null;
   private imageBlobFetchInFlight = new Map<string, Promise<Blob>>();
-  private imageBlobCache = new Map<string, string>();
+  private imageBlobCache = new Map<string, string>(); // resolved url -> blob: URL
   private readonly IMAGE_BLOB_CACHE_MAX = 300;
   private imageFetchActive = 0;
   private readonly IMAGE_FETCH_CONCURRENCY = 6;
@@ -134,6 +122,7 @@ class ApiService {
   private getCachedBlobUrl(resolvedUrl: string): string | undefined {
     const cached = this.imageBlobCache.get(resolvedUrl)
     if (!cached) return undefined
+    // Move to end to mark as recently used
     this.imageBlobCache.delete(resolvedUrl)
     this.imageBlobCache.set(resolvedUrl, cached)
     return cached
@@ -151,40 +140,6 @@ class ApiService {
     this.imageBlobCache.set(resolvedUrl, blobUrl)
   }
 
-  public clearImageAccessToken() {
-    this.imageAccessToken = null
-    this.imageAccessTokenExpiresAt = 0
-    this.imageAccessTokenPromise = null
-  }
-
-  private setImageAccessToken(token: string | null, expiresAt: string | number | Date | null | undefined) {
-    if (!token) {
-      this.clearImageAccessToken()
-      return
-    }
-
-    const parsedExpiresAt =
-      expiresAt instanceof Date
-        ? expiresAt.getTime()
-        : typeof expiresAt === 'number'
-          ? expiresAt
-          : typeof expiresAt === 'string'
-            ? Date.parse(expiresAt)
-            : Number.NaN
-
-    this.imageAccessToken = token
-    this.imageAccessTokenExpiresAt = Number.isFinite(parsedExpiresAt) ? parsedExpiresAt : 0
-  }
-
-  private getValidImageAccessToken(skewMs = 30000): string | null {
-    if (!this.imageAccessToken) return null
-    if (this.imageAccessTokenExpiresAt > 0 && Date.now() + skewMs >= this.imageAccessTokenExpiresAt) {
-      this.clearImageAccessToken()
-      return null
-    }
-    return this.imageAccessToken
-  }
-
   private isBackendImageUrl(url: string): boolean {
     if (!url) return false
     if (isApiImagesUrl(url)) return true
@@ -197,24 +152,6 @@ class ApiService {
       return false
     }
   }
-
-  private withImageAccessToken(url: string): string {
-    if (!this.isBackendImageUrl(url)) return url
-
-    const token = this.getValidImageAccessToken()
-    if (!token) return url
-
-    try {
-      const base = typeof window !== 'undefined' ? window.location.origin : 'http://localhost'
-      const parsed = new URL(url, base)
-      parsed.searchParams.set('t', token)
-      return ABSOLUTE_URL_REGEX.test(url) ? parsed.toString() : `${parsed.pathname}${parsed.search}${parsed.hash}`
-    } catch {
-      const separator = url.includes('?') ? '&' : '?'
-      return `${url}${separator}t=${encodeURIComponent(token)}`
-    }
-  }
-
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
 
   private buildAuthHeaders(): Record<string, string> {
@@ -272,7 +209,6 @@ class ApiService {
       this.antiforgeryToken = null;
       this.antiforgeryTokenSession = null;
       this.tokenReadyPromise = null;
-      this.clearImageAccessToken();
       // Optionally, trigger a global logout or redirect
       throw Object.assign(new Error('Unauthorized'), { status: 401 });
     }
@@ -323,7 +259,6 @@ class ApiService {
             this.antiforgeryToken = null;
             this.antiforgeryTokenSession = null;
             this.tokenReadyPromise = null;
-            this.clearImageAccessToken();
             throw Object.assign(new Error('Unauthorized'), { status: 401 });
           }
 
@@ -1106,55 +1041,6 @@ class ApiService {
     return config
   }
 
-  async ensureImageAccessTokenForCurrentAuth(force = false): Promise<string | null> {
-    if (!sessionTokenManager.getToken()) {
-      this.clearImageAccessToken()
-      return null
-    }
-
-    if (!force) {
-      const cached = this.getValidImageAccessToken()
-      if (cached) return cached
-      if (this.imageAccessTokenPromise) return this.imageAccessTokenPromise
-    }
-
-    const inflight = (async () => {
-      try {
-        const resp = await fetch(`${API_BASE_URL}/account/image-token`, {
-          method: 'GET',
-          credentials: 'include',
-        })
-
-        if (resp.status === 401) {
-          this.clearImageAccessToken()
-          return null
-        }
-
-        if (!resp.ok) {
-          throw new Error(`Failed to fetch image token: ${resp.status}`)
-        }
-
-        const payload = (await resp.json().catch(() => ({}))) as {
-          token?: string
-          expiresAt?: string
-        }
-
-        this.setImageAccessToken(payload.token ?? null, payload.expiresAt)
-        return this.getValidImageAccessToken(0)
-      } catch (error) {
-        logger.debug('[ApiService] Failed to fetch image token', error)
-        return this.getValidImageAccessToken(0)
-      } finally {
-        if (this.imageAccessTokenPromise === inflight) {
-          this.imageAccessTokenPromise = null
-        }
-      }
-    })()
-
-    this.imageAccessTokenPromise = inflight
-    return inflight
-  }
-
   async getApiKey(): Promise<{ apiKey: string }> {
     return this.request<{ apiKey: string }>('/configuration/apikey')
   }
@@ -1545,7 +1431,13 @@ class ApiService {
             }
           }
           if (asinMatch && asinMatch[1]) {
-            return this.withImageAccessToken(buildApiImageUrl(asinMatch[1], imageUrl))
+            const identifier = asinMatch[1]
+            let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
+            const params = new URLSearchParams()
+            params.append('url', imageUrl)
+            const query = params.toString()
+            if (query) url += `?${query}`
+            return url
           }
 
           // If we couldn't extract ASIN, try to parse filename from path and
@@ -1555,7 +1447,13 @@ class ApiService {
             const fname = pathname.split('/').pop() || ''
             const base = fname.replace(/\.[^.]+$/, '')
             if (base && base.length >= 10 && base.length <= 12) {
-              return this.withImageAccessToken(buildApiImageUrl(base, imageUrl))
+              const identifier = base
+              let url = `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
+              const params = new URLSearchParams()
+              params.append('url', imageUrl)
+              const query = params.toString()
+              if (query) url += `?${query}`
+              return url
             }
           } catch {}
         }
@@ -1563,7 +1461,7 @@ class ApiService {
         logger.debug('[ApiService] amazon-image-detect error', e)
       }
 
-      return this.withImageAccessToken(imageUrl)
+      return imageUrl
     }
     // If the stored path is the library cache path, convert to our images API endpoint
     // Example stored path: /config/cache/images/library/B0DD5FX7QG.jpg
@@ -1573,7 +1471,7 @@ class ApiService {
         // Extract filename (with extension) and strip extension to use as identifier
         const filename = libMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        return this.withImageAccessToken(buildApiImageUrl(identifier))
+        return `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
       }
     } catch (e) {
       // fall back to default behavior below on any error
@@ -1587,40 +1485,34 @@ class ApiService {
       if (authorMatch && authorMatch[1]) {
         const filename = authorMatch[1]
         const identifier = filename.replace(/\.[^.]+$/, '')
-        return this.withImageAccessToken(buildApiImageUrl(identifier))
+        return `${getApiImagesBaseUrl()}/${encodeURIComponent(identifier)}`
       }
     } catch (e) {
       logger.debug('[ApiService] getImageUrl authors-detect error', e)
     }
 
-    return this.withImageAccessToken(`${getApiImageOrigin()}${imageUrl}`)
+    // Convert other relative URLs to absolute (no query-string auth tokens).
+    return `${getApiImageOrigin()}${imageUrl}`
   }
 
   async fetchImageObjectUrl(imageUrl: string | undefined): Promise<string> {
     if (!imageUrl) return ''
-    let resolved = this.getImageUrl(imageUrl)
+    const resolved = this.getImageUrl(imageUrl)
     if (!resolved) return ''
 
-    try {
-      if (this.isBackendImageUrl(resolved)) {
-        if (!this.getValidImageAccessToken() && sessionTokenManager.getToken()) {
-          await this.ensureImageAccessTokenForCurrentAuth()
-          resolved = this.getImageUrl(imageUrl)
-        }
-        return resolved
-      }
-    } catch {
-      return resolved
-    }
+    // Backend image endpoints can now be used directly with the browser session
+    // cookie, so avoid the old blob/object URL path for normal image rendering.
+    if (this.isBackendImageUrl(resolved)) return resolved
 
+    // Keep external URLs as-is; auth headers/cors may not be accepted cross-origin.
     if (resolved.startsWith('http://') || resolved.startsWith('https://')) {
       try {
-        const url = new URL(resolved)
-        if (typeof window !== 'undefined' && url.origin !== window.location.origin) {
+        const u = new URL(resolved)
+        if (typeof window !== 'undefined' && u.origin !== window.location.origin) {
           return resolved
         }
       } catch {
-        // Fall through and try fetching same-origin-looking URLs.
+        // If URL parsing fails, fall through and try fetch anyway.
       }
     }
 
@@ -1629,12 +1521,16 @@ class ApiService {
 
     let blobPromise = this.imageBlobFetchInFlight.get(resolved)
     if (!blobPromise) {
+      const headers: Record<string, string> = {
+        ...this.buildAuthHeaders(),
+      }
+
       blobPromise = (async () => {
         await this.acquireImageSlot()
         try {
           const resp = await fetch(resolved, {
             method: 'GET',
-            headers: this.buildAuthHeaders(),
+            headers,
             credentials: 'include',
           })
 
@@ -1665,18 +1561,33 @@ class ApiService {
     return blobUrl
   }
 
+  // Expose a lightweight cache for image metadata candidates (tests and UI may seed/read this)
+  // Keys: ASIN-like identifier => { urls: string[]; fetchedAt: number }
+  public metadataUrlCache = new Map<string, { urls: string[]; fetchedAt: number }>()
+
   /**
    * Ensure the backend image cache has a cached copy for the given image endpoint.
-   * Fetches the provided endpoint first so `/images/{id}?url=...` can populate
-   * the cache, then falls back to the base `/images/{id}` endpoint.
+   * Attempts to resolve candidate image URLs from Audible and Audnexus metadata,
+   * caches discovered candidate URLs, and triggers a backend fetch for each candidate URL.
+   * Returns true if any candidate (or the base image endpoint) returned a successful response.
    */
   async ensureImageCached(path: string): Promise<boolean> {
     try {
       // Expect path like '/api/vX/images/{id}' optionally with query string
-      const input = String(path)
-      const m = input.match(/\/api(?:\/v\d+(?:\.\d+)?)?\/images\/([^\?\/]+)/)
+      const m = String(path).match(/\/api(?:\/v\d+(?:\.\d+)?)?\/images\/([^\?\/]+)/)
       if (!m || !m[1]) return false
       const id = decodeURIComponent(m[1])
+
+      // Check seeded cache first
+      const cached = this.metadataUrlCache.get(id)
+      let candidates: string[] = []
+      if (cached && Array.isArray(cached.urls) && cached.urls.length > 0) {
+        candidates = cached.urls.slice()
+      } else {
+        // Deprecated metadata endpoints removed; skip dynamic candidate discovery
+        // Cache empty candidates for future calls
+        this.metadataUrlCache.set(id, { urls: candidates, fetchedAt: Date.now() })
+      }
 
       const requestConfig: RequestInit = {
         method: 'GET',
@@ -1686,16 +1597,22 @@ class ApiService {
         credentials: 'include',
       }
 
-      const endpoints = new Set<string>()
-      endpoints.add(input)
-      endpoints.add(`${API_BASE_URL}/images/${encodeURIComponent(id)}`)
-
-      for (const endpoint of endpoints) {
+      // Try each candidate by asking backend to fetch and cache it via /api/vX/images/{id}?url=...
+      for (const url of candidates) {
         try {
-          const resp = await fetch(endpoint, requestConfig)
+          const resp = await fetch(
+            `${API_BASE_URL}/images/${encodeURIComponent(id)}?url=${encodeURIComponent(url)}`,
+            requestConfig,
+          )
           if (resp.ok) return true
         } catch {}
       }
+
+      // As a fallback, check the base image endpoint (maybe already cached)
+      try {
+        const baseResp = await fetch(`${API_BASE_URL}/images/${encodeURIComponent(id)}`, requestConfig)
+        if (baseResp.ok) return true
+      } catch {}
 
       return false
     } catch {
@@ -1922,7 +1839,6 @@ class ApiService {
       this.antiforgeryToken = null
       this.antiforgeryTokenSession = null
       this.tokenReadyPromise = null
-      this.clearImageAccessToken()
       throw Object.assign(new Error('Unauthorized'), { status: 401 })
     }
 
@@ -2097,7 +2013,6 @@ class ApiService {
       // Clear antiforgery token cache before storing the browser auth marker.
       this.antiforgeryToken = null;
       this.antiforgeryTokenSession = null;
-      this.clearImageAccessToken();
       sessionTokenManager.setAuthenticated({ persistent: rememberMe });
       logger.debug('[ApiService] Session cookie received; auth marker stored');
       if (typeof window !== 'undefined') {
@@ -2123,7 +2038,6 @@ class ApiService {
       this.antiforgeryToken = null;
       this.antiforgeryTokenSession = null;
       this.tokenReadyPromise = null;
-      this.clearImageAccessToken();
       logger.debug('[ApiService] Authentication not required - no session token needed');
       this.tokenReadyPromise = (async () => {
         try {
@@ -2178,7 +2092,6 @@ class ApiService {
       this.antiforgeryToken = null;
       this.antiforgeryTokenSession = null;
       this.tokenReadyPromise = null;
-      this.clearImageAccessToken()
       logger.debug('[ApiService] Browser auth marker cleared')
       await this.refreshStartupConfigCache()
       // Prefetch antiforgery token for anonymous principal after logout
