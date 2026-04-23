@@ -215,7 +215,8 @@ namespace Listenarr.Tests.Features.Api
                 NullLogger<AccountController>.Instance,
                 userService.Object,
                 rateLimiter.Object,
-                sessionService.Object)
+                sessionService.Object,
+                Mock.Of<IImageAccessTokenService>())
             {
                 ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
             };
@@ -243,7 +244,7 @@ namespace Listenarr.Tests.Features.Api
         }
 
         [Fact]
-        public async Task RemovedImageTokenEndpoint_ReturnsNotFound()
+        public async Task ImageTokenEndpoint_ReturnsToken_ForAuthenticatedSessionCookie()
         {
             using var factory = CreateAuthEnabledFactory();
             var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
@@ -265,14 +266,26 @@ namespace Listenarr.Tests.Features.Api
             request.Headers.Add("Cookie", $"listenarr_session={sessionToken}");
             var resp = await client.SendAsync(request);
 
-            Assert.Equal(HttpStatusCode.NotFound, resp.StatusCode);
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var payload = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            Assert.True(payload.RootElement.TryGetProperty("token", out var tokenElement));
+            Assert.False(string.IsNullOrWhiteSpace(tokenElement.GetString()));
+            Assert.True(payload.RootElement.TryGetProperty("expiresAt", out _));
         }
 
         [Fact]
-        public async Task QueryToken_DoesNot_Authenticate_ImageEndpoint()
+        public async Task ImageToken_Allows_ImageEndpoint_WithoutCookieOrBearer()
         {
             using var factory = CreateAuthEnabledFactory();
             var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
+
+            string imageToken;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var tokenService = scope.ServiceProvider.GetRequiredService<IImageAccessTokenService>();
+                imageToken = tokenService.CreateToken("testuser").Token;
+            }
 
             using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
             {
@@ -280,7 +293,31 @@ namespace Listenarr.Tests.Features.Api
                 HandleCookies = false,
             });
 
-            var resp = await client.GetAsync($"{apiBase}/images/B00TOKEN01?t=stale-or-invalid-token");
+            var resp = await client.GetAsync($"{apiBase}/images/B00TOKEN01?t={Uri.EscapeDataString(imageToken)}");
+
+            Assert.NotEqual(HttpStatusCode.Unauthorized, resp.StatusCode);
+        }
+
+        [Fact]
+        public async Task ImageToken_DoesNot_Authenticate_NonImageEndpoints()
+        {
+            using var factory = CreateAuthEnabledFactory();
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
+
+            string imageToken;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var tokenService = scope.ServiceProvider.GetRequiredService<IImageAccessTokenService>();
+                imageToken = tokenService.CreateToken("testuser").Token;
+            }
+
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false,
+                HandleCookies = false,
+            });
+
+            var resp = await client.GetAsync($"{apiBase}/library?t={Uri.EscapeDataString(imageToken)}");
 
             Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
         }

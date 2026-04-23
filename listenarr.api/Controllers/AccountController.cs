@@ -33,19 +33,22 @@ namespace Listenarr.Api.Controllers
         private readonly IUserService _userService;
         private readonly ILoginRateLimiter _rateLimiter;
         private readonly ISessionService _sessionService;
+        private readonly IImageAccessTokenService _imageAccessTokenService;
 
         public AccountController(
             IStartupConfigService startupConfigService,
             ILogger<AccountController> logger,
             IUserService userService,
             ILoginRateLimiter rateLimiter,
-            ISessionService sessionService)
+            ISessionService sessionService,
+            IImageAccessTokenService imageAccessTokenService)
         {
             _startupConfigService = startupConfigService;
             _logger = logger;
             _userService = userService;
             _rateLimiter = rateLimiter;
             _sessionService = sessionService;
+            _imageAccessTokenService = imageAccessTokenService;
         }
 
         /// <summary>
@@ -213,6 +216,27 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
+        /// Issue a short-lived image-only access token for direct image requests.
+        /// </summary>
+        [HttpGet("image-token")]
+        public ActionResult<object> GetImageToken()
+        {
+            if (!(User?.Identity?.IsAuthenticated ?? false))
+            {
+                return Unauthorized();
+            }
+
+            var username = User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return Unauthorized();
+            }
+
+            var imageToken = _imageAccessTokenService.CreateToken(username);
+            return Ok(new { token = imageToken.Token, expiresAt = imageToken.ExpiresAt });
+        }
+
+        /// <summary>
         /// List all administrator accounts.
         /// </summary>
         /// <returns>A collection of admin user summaries (id, username, email, creation date).</returns>
@@ -260,5 +284,4 @@ namespace Listenarr.Api.Controllers
     }
 
 }
-
 

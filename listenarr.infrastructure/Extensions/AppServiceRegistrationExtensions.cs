@@ -138,6 +138,7 @@ namespace Listenarr.Infrastructure.Extensions
             // Always register session service, but it will check config internally
             services.AddScoped<SessionService>();
             services.AddScoped<ISessionService, ConditionalSessionService>();
+            services.AddScoped<IImageAccessTokenService, ImageAccessTokenService>();
 
             // Scan queue & background workers registrations are left in Program.cs (hosted services)
             // but any other application service registrations belong here.
