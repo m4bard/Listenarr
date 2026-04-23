@@ -35,14 +35,22 @@ namespace Listenarr.Api.Controllers
         private readonly ILogger<DiscordController> _logger;
         private readonly IDiscordBotService _botService;
         private readonly IProcessRunner _processRunner;
+        private readonly IWebHostEnvironment? _appPathService;
 
-        public DiscordController(IConfigurationService configurationService, IHttpClientFactory httpClientFactory, ILogger<DiscordController> logger, IDiscordBotService botService, IProcessRunner processRunner)
+        public DiscordController(
+            IConfigurationService configurationService,
+            IHttpClientFactory httpClientFactory,
+            ILogger<DiscordController> logger,
+            IDiscordBotService botService,
+            IProcessRunner processRunner,
+            IWebHostEnvironment? appPathService = null)
         {
             _configurationService = configurationService;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _botService = botService;
             _processRunner = processRunner;
+            _appPathService = appPathService;
         }
 
         /// <summary>
@@ -390,8 +398,8 @@ namespace Listenarr.Api.Controllers
         {
             try
             {
-                var contentRoot = System.IO.Path.Join(AppContext.BaseDirectory);
-                // In ASP.NET Core the content root is typically the ContentRootPath, but in controllers we can use AppContext.BaseDirectory
+                var contentRoot = _appPathService?.ContentRootPath
+                    ?? Path.GetFullPath(Directory.GetCurrentDirectory());
                 var botDirectory = System.IO.Path.Join(contentRoot, "tools", "discord-bot");
                 var indexJsPath = System.IO.Path.Join(botDirectory, "index.js");
 
@@ -447,6 +455,3 @@ namespace Listenarr.Api.Controllers
         }
     }
 }
-
-
-

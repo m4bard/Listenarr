@@ -17,6 +17,7 @@
  */
 using System.Net;
 using System.Net.Http.Headers;
+using System.Text.Json;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
@@ -162,6 +163,85 @@ namespace Listenarr.Tests.Features.Api
         }
 
         [Fact]
+        public async Task ImageTokenEndpoint_ReturnsToken_ForAuthenticatedSession()
+        {
+            using var factory = CreateAuthEnabledFactory();
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
+
+            string sessionToken;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var sessionService = scope.ServiceProvider.GetRequiredService<ISessionService>();
+                sessionToken = await sessionService.CreateSessionAsync("testuser", true, false);
+            }
+
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false,
+                HandleCookies = false,
+            });
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{apiBase}/account/image-token");
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", sessionToken);
+            var resp = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+
+            var payload = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            Assert.True(payload.RootElement.TryGetProperty("token", out var tokenElement));
+            Assert.False(string.IsNullOrWhiteSpace(tokenElement.GetString()));
+            Assert.True(payload.RootElement.TryGetProperty("expiresAt", out _));
+        }
+
+        [Fact]
+        public async Task ImageToken_Allows_ImageEndpoint_WithoutCookieOrBearer()
+        {
+            using var factory = CreateAuthEnabledFactory();
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
+
+            string imageToken;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var tokenService = scope.ServiceProvider.GetRequiredService<IImageAccessTokenService>();
+                imageToken = tokenService.CreateToken("testuser").Token;
+            }
+
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false,
+                HandleCookies = false,
+            });
+
+            var resp = await client.GetAsync($"{apiBase}/images/B00TOKEN01?t={Uri.EscapeDataString(imageToken)}");
+
+            Assert.NotEqual(HttpStatusCode.Unauthorized, resp.StatusCode);
+        }
+
+        [Fact]
+        public async Task ImageToken_DoesNot_Authenticate_NonImageEndpoints()
+        {
+            using var factory = CreateAuthEnabledFactory();
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
+
+            string imageToken;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var tokenService = scope.ServiceProvider.GetRequiredService<IImageAccessTokenService>();
+                imageToken = tokenService.CreateToken("testuser").Token;
+            }
+
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false,
+                HandleCookies = false,
+            });
+
+            var resp = await client.GetAsync($"{apiBase}/library?t={Uri.EscapeDataString(imageToken)}");
+
+            Assert.Equal(HttpStatusCode.Unauthorized, resp.StatusCode);
+        }
+
+        [Fact]
         public async Task ApiKeyHeader_AuthenticatesSuccessfully()
         {
             var apiKey = "test-api-key-12345";
@@ -208,6 +288,23 @@ namespace Listenarr.Tests.Features.Api
 
             // No Bearer, no cookie, no API key — should still succeed when auth is disabled
             var resp = await client.GetAsync($"{apiBase}/library");
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+        }
+
+        [Fact]
+        public async Task ReadyEndpoint_AllowsAnonymous_WhenAuthEnabled()
+        {
+            using var factory = CreateAuthEnabledFactory();
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
+
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false,
+                HandleCookies = false,
+            });
+
+            var resp = await client.GetAsync($"{apiBase}/system/ready");
+
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
         }
 

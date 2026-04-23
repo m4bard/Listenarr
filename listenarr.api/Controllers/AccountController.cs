@@ -33,14 +33,22 @@ namespace Listenarr.Api.Controllers
         private readonly IUserService _userService;
         private readonly ILoginRateLimiter _rateLimiter;
         private readonly ISessionService _sessionService;
+        private readonly IImageAccessTokenService _imageAccessTokenService;
 
-        public AccountController(IStartupConfigService startupConfigService, ILogger<AccountController> logger, IUserService userService, ILoginRateLimiter rateLimiter, ISessionService sessionService)
+        public AccountController(
+            IStartupConfigService startupConfigService,
+            ILogger<AccountController> logger,
+            IUserService userService,
+            ILoginRateLimiter rateLimiter,
+            ISessionService sessionService,
+            IImageAccessTokenService imageAccessTokenService)
         {
             _startupConfigService = startupConfigService;
             _logger = logger;
             _userService = userService;
             _rateLimiter = rateLimiter;
             _sessionService = sessionService;
+            _imageAccessTokenService = imageAccessTokenService;
         }
 
         /// <summary>
@@ -95,6 +103,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var sessionToken = await _sessionService.CreateSessionAsync(req.Username, user?.IsAdmin == true, req.RememberMe);
+                var imageToken = _imageAccessTokenService.CreateToken(user?.Username ?? req.Username);
 
                 // Set HttpOnly session cookie so browsers can authenticate resource
                 // requests (images, etc.) without JavaScript intervention.
@@ -107,7 +116,14 @@ namespace Listenarr.Api.Controllers
                     MaxAge = req.RememberMe ? SessionService.RememberMeExpiration : SessionService.DefaultExpiration,
                 });
 
-                return Ok(new { message = "Logged in", sessionToken, authType = "session" });
+                return Ok(new
+                {
+                    message = "Logged in",
+                    sessionToken,
+                    authType = "session",
+                    imageToken = imageToken.Token,
+                    imageTokenExpiresAt = imageToken.ExpiresAt,
+                });
             }
             catch (InvalidOperationException)
             {
@@ -215,6 +231,27 @@ namespace Listenarr.Api.Controllers
                 return Ok(new { authenticated = false });
 
             return Ok(new { authenticated = true, name = User?.Identity?.Name ?? string.Empty });
+        }
+
+        /// <summary>
+        /// Issue a short-lived image-only access token for direct image requests.
+        /// </summary>
+        [HttpGet("image-token")]
+        public ActionResult<object> GetImageToken()
+        {
+            if (!(User?.Identity?.IsAuthenticated ?? false))
+            {
+                return Unauthorized();
+            }
+
+            var username = User?.Identity?.Name;
+            if (string.IsNullOrWhiteSpace(username))
+            {
+                return Unauthorized();
+            }
+
+            var imageToken = _imageAccessTokenService.CreateToken(username);
+            return Ok(new { token = imageToken.Token, expiresAt = imageToken.ExpiresAt });
         }
 
         /// <summary>

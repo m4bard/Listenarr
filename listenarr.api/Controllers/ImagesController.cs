@@ -956,6 +956,7 @@ namespace Listenarr.Api.Controllers
                 _logger.LogInformation("Serving cached image for identifier: {Identifier}, path: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(relativePath));
 
                 // Return the image with caching headers
+                Response.Headers["Cache-Control"] = "private, max-age=3600";
                 return PhysicalFile(fullPath, contentType, enableRangeProcessing: true);
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

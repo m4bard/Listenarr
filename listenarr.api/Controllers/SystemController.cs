@@ -37,6 +37,19 @@ namespace Listenarr.Api.Controllers
         }
 
         /// <summary>
+        /// Lightweight readiness probe for local tooling and reverse proxies.
+        /// </summary>
+        [AllowAnonymous]
+        [HttpGet("ready")]
+        public IActionResult GetReady()
+        {
+            return Ok(new
+            {
+                status = "ready"
+            });
+        }
+
+        /// <summary>
         /// Get current system information including OS, runtime, memory, and CPU usage.
         /// </summary>
         [HttpGet("info")]

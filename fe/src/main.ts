@@ -139,6 +139,9 @@ import { getStartupConfigCached } from '@/services/startupConfigCache'
 getStartupConfigCached(2000)
   .catch(() => null)
   .then(() => {
+    apiService.ensureImageAccessTokenForCurrentAuth().catch((e) => {
+      if (import.meta.env.DEV) console.debug('[ApiService] ensureImageAccessToken failed', e)
+    })
     apiService.ensureAntiforgeryForCurrentAuth().catch((e) => {
       if (import.meta.env.DEV) console.debug('[ApiService] ensureAntiforgery failed', e)
     })

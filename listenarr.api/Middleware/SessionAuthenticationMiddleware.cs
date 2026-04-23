@@ -31,7 +31,10 @@ namespace Listenarr.Api.Middleware
             _logger = logger;
         }
 
-        public async Task InvokeAsync(HttpContext context, ISessionService sessionService)
+        public async Task InvokeAsync(
+            HttpContext context,
+            ISessionService sessionService,
+            IImageAccessTokenService imageAccessTokenService)
         {
             // Only process session authentication if no user is already authenticated
             var isAlreadyAuthenticated = context.User.Identity?.IsAuthenticated ?? false;
@@ -59,6 +62,30 @@ namespace Listenarr.Api.Middleware
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                     {
                         _logger.LogError(ex, "[SessionAuth] Error during session authentication for {Path}", path);
+                    }
+                }
+                if (!(context.User.Identity?.IsAuthenticated ?? false))
+                {
+                    var imageAccessToken = ExtractImageAccessToken(context);
+                    if (!string.IsNullOrEmpty(imageAccessToken))
+                    {
+                        try
+                        {
+                            var principal = imageAccessTokenService.ValidateToken(imageAccessToken);
+                            if (principal != null)
+                            {
+                                context.User = principal;
+                                _logger.LogDebug("[SessionAuth] Image token authentication successful for {Path}", path);
+                            }
+                            else
+                            {
+                                _logger.LogDebug("[SessionAuth] Image token invalid or expired for {Path}", path);
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            _logger.LogError(ex, "[SessionAuth] Error during image token authentication for {Path}", path);
+                        }
                     }
                 }
                 else if (path.Contains("startupconfig"))
@@ -120,6 +147,35 @@ namespace Listenarr.Api.Middleware
             }
 
             return null;
+        }
+
+        private static string? ExtractImageAccessToken(HttpContext context)
+        {
+            var path = NormalizeApiVersionedPath(context.Request.Path.Value ?? string.Empty);
+            if (!path.StartsWith("/api/images/", StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            var token = context.Request.Query["t"].FirstOrDefault();
+            return string.IsNullOrWhiteSpace(token) ? null : token;
+        }
+
+        private static string NormalizeApiVersionedPath(string path)
+        {
+            if (!path.StartsWith("/api/v", StringComparison.OrdinalIgnoreCase))
+            {
+                return path;
+            }
+
+            var versionStart = "/api/v".Length;
+            var slashAfterVersion = path.IndexOf('/', versionStart);
+            if (slashAfterVersion <= 0)
+            {
+                return path;
+            }
+
+            return "/api" + path[slashAfterVersion..];
         }
     }
 }
