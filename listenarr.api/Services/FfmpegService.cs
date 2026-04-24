@@ -79,7 +79,8 @@ namespace Listenarr.Api.Services
                     if (File.Exists(path)) File.Delete(path);
                     return;
                 }
-                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                {
                     if (i == retries - 1) return;
                     try { await Task.Delay(delayMs, cancellationToken); } catch (OperationCanceledException) { return; }
                 }
@@ -188,7 +189,8 @@ namespace Listenarr.Api.Services
                         }
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Error while reading startup ffmpeg provider config");
                 }
 
@@ -220,7 +222,8 @@ namespace Listenarr.Api.Services
                     computedHash = hashHex;
                     _logger.LogInformation("Downloaded ffprobe archive SHA256={Hash}", hashHex);
                 }
-                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { /* non-fatal */ 
+                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+                { /* non-fatal */
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
 
@@ -245,12 +248,14 @@ namespace Listenarr.Api.Services
                                 var parsed = ParseChecksumFileForAsset(content, Path.GetFileName(downloadUrl));
                                 if (!string.IsNullOrEmpty(parsed)) { expected = parsed; break; }
                             }
-                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+                            {
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
                         }
                     }
-                    catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
+                    catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
+                    {
                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
                 }
@@ -309,7 +314,8 @@ namespace Listenarr.Api.Services
                         }
                         await TryDeleteFileAsync(tmpFile);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Managed extraction failed for {Tmp}; skipping system tar fallback to avoid unsafe archive extraction", tmpFile);
                         await TryDeleteFileAsync(tmpFile);
                         return null;
@@ -348,12 +354,14 @@ namespace Listenarr.Api.Services
                                     _logger.LogWarning("IProcessRunner is not available; skipping system 'chmod' fallback for {Candidate}", cand);
                                 }
                             }
-                            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { /* best effort */ 
+                            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException)
+                            { /* best effort */
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
                         }
                     }
-                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { /* best effort */ 
+                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException)
+                    { /* best effort */
                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                     }
                 }
@@ -407,7 +415,9 @@ namespace Listenarr.Api.Services
                                 // If destination already exists, remove to allow move
                                 if (File.Exists(dest))
                                 {
-                                    try { File.Delete(dest); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { /* best-effort */ 
+                                    try { File.Delete(dest); }
+                                    catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException)
+                                    { /* best-effort */
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                     }
                                 }
@@ -418,13 +428,15 @@ namespace Listenarr.Api.Services
                                     File.Move(chosen, dest);
                                     _logger.LogInformation("Moved ffprobe from {Src} to {Dest}", chosen, dest);
                                 }
-                                catch (Exception mvEx) when (mvEx is not OperationCanceledException && mvEx is not OutOfMemoryException && mvEx is not StackOverflowException) {
+                                catch (Exception mvEx) when (mvEx is not OperationCanceledException && mvEx is not OutOfMemoryException && mvEx is not StackOverflowException)
+                                {
                                     try
                                     {
                                         File.Copy(chosen, dest, overwrite: true);
                                         _logger.LogInformation("Copied ffprobe from {Src} to {Dest} (move failed: {Err})", chosen, dest, mvEx.Message);
                                     }
-                                    catch (Exception cpEx) when (cpEx is not OperationCanceledException && cpEx is not OutOfMemoryException && cpEx is not StackOverflowException) {
+                                    catch (Exception cpEx) when (cpEx is not OperationCanceledException && cpEx is not OutOfMemoryException && cpEx is not StackOverflowException)
+                                    {
                                         _logger.LogWarning(cpEx, "Failed to copy ffprobe from {Src} to {Dest}", chosen, dest);
                                     }
                                 }
@@ -454,12 +466,14 @@ namespace Listenarr.Api.Services
                                         _logger.LogWarning("IProcessRunner is not available; skipping system 'chmod' fallback for {Dest}", dest);
                                     }
                                 }
-                                catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) { /* best effort */ 
+                                catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException)
+                                { /* best effort */
                                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                 }
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             _logger.LogWarning(ex, "Failed to move or copy ffprobe candidate {Src} to {Dest}", chosen, _ffprobePath);
                         }
                     }
@@ -468,7 +482,8 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("No ffprobe binary found in extracted files under {BaseDir}", _baseDir);
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogDebug(ex, "Non-fatal error while locating/copying ffprobe from extracted files");
                 }
 
@@ -494,7 +509,8 @@ namespace Listenarr.Api.Services
                 _logger.LogWarning(ex, "ffprobe download/install was canceled");
                 return null;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to download or install ffprobe");
                 return null;
             }
@@ -580,7 +596,8 @@ namespace Listenarr.Api.Services
                                     var c = await (await _httpClient.GetAsync(url)).Content.ReadAsStringAsync();
                                     if (!string.IsNullOrEmpty(c)) checksumContent = c;
                                 }
-                                catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { 
+                                catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException)
+                                {
                                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                 }
                             }
@@ -604,7 +621,8 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "GitHub asset discovery failed for repo {Repo}", repo);
             }
 

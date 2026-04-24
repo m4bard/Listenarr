@@ -107,7 +107,8 @@ namespace Listenarr.Api.Services
 
                 return result;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error fetching metadata from Audnexus for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
@@ -148,7 +149,8 @@ namespace Listenarr.Api.Services
                     LogRedaction.SanitizeText(name), result?.Count ?? 0);
                 return result;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error searching Audnexus for author {Name}", LogRedaction.SanitizeText(name));
                 return null;
             }

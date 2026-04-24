@@ -53,7 +53,7 @@ namespace Listenarr.Api.Services
         }
 
         /// <summary>
-        /// Apply the configured file naming pattern to generate the final file path
+        /// Apply the configured file naming pattern to generate the final file path with a specific output path
         /// </summary>
         public async Task<string> GenerateFilePathAsync(
             AudioMetadata metadata,
@@ -62,11 +62,11 @@ namespace Listenarr.Api.Services
         {
             var settings = await _configService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
             var folderPattern = settings.FolderNamingPattern;
-            
+
             // Determine if this is a multi-file import (has disk or chapter number)
             bool isMultiFile = metadata.DiscNumber.HasValue || metadata.TrackNumber.HasValue;
-            var filePattern = isMultiFile 
-                ? settings.MultiFileNamingPattern 
+            var filePattern = isMultiFile
+                ? settings.MultiFileNamingPattern
                 : settings.FileNamingPattern;
 
             var effectiveFolderPattern = folderPattern;
@@ -83,9 +83,10 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+            {
                 // If paths are invalid, fall back to configured folder pattern
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             var variables = BuildVariables(metadata);
@@ -96,9 +97,10 @@ namespace Listenarr.Api.Services
                 var dbg = string.Join(", ", variables.Select(kv => $"{kv.Key}='{kv.Value}'"));
                 _logger.LogInformation("FileNamingService variables: {Vars}", dbg);
             }
-            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+            {
                 // ignore logging errors
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             string relativePath;
@@ -117,7 +119,7 @@ namespace Listenarr.Api.Services
                 var effectiveFilePattern = string.IsNullOrWhiteSpace(filePattern) ? "{Title}" : filePattern;
 
                 var folderRelative = ApplyNamingPattern(effectiveFolderPattern, variables, treatAsFilename: false);
-                
+
                 // Normalize path separators to platform-specific ones
                 if (!string.IsNullOrWhiteSpace(folderRelative))
                 {

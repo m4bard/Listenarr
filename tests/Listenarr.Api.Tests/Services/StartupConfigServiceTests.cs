@@ -48,47 +48,47 @@ namespace Listenarr.Api.Tests.Services
 
                 var svc = new StartupConfigService(logger, envMock.Object);
 
-            // default config should exist and have false auth
-            var original = svc.GetConfig();
-            Assert.NotNull(original);
-            Assert.Equal("false", original.AuthenticationRequired);
+                // default config should exist and have false auth
+                var original = svc.GetConfig();
+                Assert.NotNull(original);
+                Assert.Equal("false", original.AuthenticationRequired);
 
-            // update port and also explicitly enable auth
-            var modified = new StartupConfig
-            {
-                AuthenticationRequired = "true",
-                Port = 12345,
-                ApiKey = original.ApiKey
-            };
+                // update port and also explicitly enable auth
+                var modified = new StartupConfig
+                {
+                    AuthenticationRequired = "true",
+                    Port = 12345,
+                    ApiKey = original.ApiKey
+                };
 
-            await svc.SaveAsync(modified);
+                await svc.SaveAsync(modified);
 
-            // after saving, service config should reflect the new auth value and port
-            var after = svc.GetConfig();
-            Assert.NotNull(after);
-            Assert.Equal("true", after.AuthenticationRequired);
-            Assert.Equal(12345, after.Port);
+                // after saving, service config should reflect the new auth value and port
+                var after = svc.GetConfig();
+                Assert.NotNull(after);
+                Assert.Equal("true", after.AuthenticationRequired);
+                Assert.Equal(12345, after.Port);
 
-            // the file on disk should also contain the updated auth flag
-            var jsonPath = Path.Join(cfgDir, "config.json");
-            Assert.True(File.Exists(jsonPath));
-            var json = File.ReadAllText(jsonPath);
-            Assert.Contains("\"AuthenticationRequired\": \"true\"", json);
+                // the file on disk should also contain the updated auth flag
+                var jsonPath = Path.Join(cfgDir, "config.json");
+                Assert.True(File.Exists(jsonPath));
+                var json = File.ReadAllText(jsonPath);
+                Assert.Contains("\"AuthenticationRequired\": \"true\"", json);
 
-            // now toggle back to false and save again
-            var toggle = new StartupConfig
-            {
-                AuthenticationRequired = "false",
-                Port = 54321,
-                ApiKey = after.ApiKey
-            };
+                // now toggle back to false and save again
+                var toggle = new StartupConfig
+                {
+                    AuthenticationRequired = "false",
+                    Port = 54321,
+                    ApiKey = after.ApiKey
+                };
 
-            await svc.SaveAsync(toggle);
-            var after2 = svc.GetConfig();
-            Assert.Equal("false", after2.AuthenticationRequired);
-            Assert.Equal(54321, after2.Port);
-            json = File.ReadAllText(jsonPath);
-            Assert.Contains("\"AuthenticationRequired\": \"false\"", json);
+                await svc.SaveAsync(toggle);
+                var after2 = svc.GetConfig();
+                Assert.Equal("false", after2.AuthenticationRequired);
+                Assert.Equal(54321, after2.Port);
+                json = File.ReadAllText(jsonPath);
+                Assert.Contains("\"AuthenticationRequired\": \"false\"", json);
             }
             finally
             {

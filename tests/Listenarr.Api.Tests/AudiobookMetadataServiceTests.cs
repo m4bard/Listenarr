@@ -50,7 +50,8 @@ namespace Listenarr.Api.Tests
             audibleMock.Setup(a => a.GetBookMetadataAsync(It.IsAny<string>(), It.IsAny<string>(), It.IsAny<bool>(), It.IsAny<string?>())).ReturnsAsync((AudibleBookResponse?)null);
 
             // Audnexus returns a book with Image, Authors, Description and IsAdult set
-            var audnexusResp = new AudnexusBookResponse {
+            var audnexusResp = new AudnexusBookResponse
+            {
                 Asin = "BTESTASIN",
                 Title = "Test Title",
                 Image = "https://audnexus.covers/cover.jpg",

@@ -25,7 +25,8 @@ public class ManualImportItemDto
 
     [JsonPropertyName("fullPath")]
     [Required]
-    public string? FullPath {
+    public string? FullPath
+    {
         get;
         set
         {

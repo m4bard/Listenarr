@@ -56,7 +56,8 @@ namespace Listenarr.Api.Controllers
                 var result = await _downloadService.SearchAndDownloadAsync(request.AudiobookId);
                 return Ok(result);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error in search and download for audiobook {AudiobookId}", request.AudiobookId);
                 return StatusCode(500, new { message = "Failed to search and download", error = ex.Message });
             }
@@ -98,7 +99,8 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(new { downloadId, message = "Sent to download client successfully" });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error sending to download client");
                 return StatusCode(500, new { message = "Failed to send to download client", error = ex.Message });
             }
@@ -115,7 +117,8 @@ namespace Listenarr.Api.Controllers
                 var snapshot = await _downloadQueueService.GetQueueSnapshotAsync();
                 return Ok(snapshot);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error getting download queue");
                 return StatusCode(500, new { message = "Failed to get download queue", error = ex.Message });
             }
@@ -142,7 +145,8 @@ namespace Listenarr.Api.Controllers
 
                 return NotFound(new { error = "Cached torrent not found", downloadId });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving cached torrent for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                 return StatusCode(500, new { message = "Failed to retrieve cached torrent", error = ex.Message });
             }
@@ -165,7 +169,8 @@ namespace Listenarr.Api.Controllers
                 }
                 return NotFound(new { error = "Cached announces not found", downloadId });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving cached announces for download {DownloadId}", LogRedaction.SanitizeText(downloadId));
                 return StatusCode(500, new { message = "Failed to retrieve cached announces", error = ex.Message });
             }
@@ -189,7 +194,8 @@ namespace Listenarr.Api.Controllers
                 }
                 return NotFound(new { message = "Download not found in queue or removal failed. Try force=true to remove from database only." });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error removing from queue");
                 return StatusCode(500, new { message = "Failed to remove from queue", error = ex.Message });
             }
@@ -211,7 +217,8 @@ namespace Listenarr.Api.Controllers
                 }
                 return NotFound(new { message = "Download not found or not eligible for reprocessing" });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error reprocessing download {DownloadId}", downloadId);
                 return StatusCode(500, new { message = "Failed to reprocess download", error = ex.Message });
             }
@@ -235,7 +242,8 @@ namespace Listenarr.Api.Controllers
                     results
                 });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error in bulk reprocess");
                 return StatusCode(500, new { message = "Failed to bulk reprocess downloads", error = ex.Message });
             }
@@ -263,7 +271,8 @@ namespace Listenarr.Api.Controllers
                     results
                 });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error in reprocess all");
                 return StatusCode(500, new { message = "Failed to reprocess all downloads", error = ex.Message });
             }
@@ -280,7 +289,8 @@ namespace Listenarr.Api.Controllers
                 var stats = await _processingQueueService.GetStatsAsync();
                 return Ok(stats);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error getting processing stats");
                 return StatusCode(500, new { message = "Failed to get processing stats", error = ex.Message });
             }
@@ -298,7 +308,8 @@ namespace Listenarr.Api.Controllers
                 var activity = await _processingQueueService.GetRecentActivityAsync(count);
                 return Ok(activity);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error getting processing activity");
                 return StatusCode(500, new { message = "Failed to get processing activity", error = ex.Message });
             }

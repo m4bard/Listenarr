@@ -55,7 +55,8 @@ namespace Listenarr.Api.Controllers
                 // Optionally redact sensitive fields here if needed
                 return Ok(systemInfo);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving system info");
                 return StatusCode(500, new { error = "Failed to retrieve system information" });
             }
@@ -78,7 +79,8 @@ namespace Listenarr.Api.Controllers
                 var storageInfo = _systemService.GetStorageInfo();
                 return Ok(storageInfo);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving storage info");
                 return StatusCode(500, new { error = "Failed to retrieve storage information" });
             }
@@ -101,7 +103,8 @@ namespace Listenarr.Api.Controllers
                 var serviceHealth = await _systemService.GetServiceHealthAsync();
                 return Ok(serviceHealth);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving service health");
                 return StatusCode(500, new { error = "Failed to retrieve service health" });
             }
@@ -126,7 +129,8 @@ namespace Listenarr.Api.Controllers
                 // Optionally redact sensitive log entries here if needed
                 return Ok(logs);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving logs");
                 return StatusCode(500, new { error = "Failed to retrieve logs" });
             }
@@ -151,7 +155,8 @@ namespace Listenarr.Api.Controllers
                 _logger.LogError("Test Error log generated from API");
                 return Ok(new { message = "Test logs generated successfully" });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error generating test logs");
                 return StatusCode(500, new { error = "Failed to generate test logs" });
             }
@@ -209,7 +214,8 @@ namespace Listenarr.Api.Controllers
 
                 return File(generatedBytes, "text/plain", generatedFileName);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error downloading logs");
                 return StatusCode(500, new { error = "Failed to download logs" });
             }

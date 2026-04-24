@@ -192,7 +192,7 @@ namespace Listenarr.Api.Controllers
                 // If this is a Newznab/Torznab style indexer, append the apikey query parameter and add capabilities query to test auth
                 var implName = (indexer.Implementation ?? string.Empty).Trim().ToLowerInvariant();
                 var isNewznabStyle = implName == "newznab" || implName == "torznab";
-                
+
                 if (isNewznabStyle)
                 {
                     // Newznab/Torznab indexers REQUIRE an API key for authentication
@@ -201,7 +201,7 @@ namespace Listenarr.Api.Controllers
                         await SaveTestResultAsync(indexer, persist, false, "API key is required for Newznab/Torznab indexers");
                         return BadRequest(new { success = false, message = "API key is required for Newznab/Torznab indexers", indexer = RedactIndexerForCaller(indexer) });
                     }
-                    
+
                     // Use search endpoint (t=search) instead of capabilities (t=caps) because
                     // many indexers expose t=caps publicly without authentication.
                     // t=search reliably enforces authentication.
@@ -235,15 +235,15 @@ namespace Listenarr.Api.Controllers
                 }, testUrl);
 
                 _logger.LogInformation("[IndexerTest] {Name} responded {StatusCode}", LogRedaction.SanitizeText(indexer.Name), (int)response.StatusCode);
-                
+
                 // Check for HTTP-level authentication failures
-                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized || 
+                if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized ||
                     response.StatusCode == System.Net.HttpStatusCode.Forbidden)
                 {
                     await SaveTestResultAsync(indexer, persist, false, $"Authentication failed: HTTP {(int)response.StatusCode}");
                     return BadRequest(new { success = false, message = "Authentication failed", status = (int)response.StatusCode, indexer = RedactIndexerForCaller(indexer) });
                 }
-                
+
                 if (!response.IsSuccessStatusCode)
                 {
                     await SaveTestResultAsync(indexer, persist, false, $"HTTP {(int)response.StatusCode}");
@@ -255,7 +255,7 @@ namespace Listenarr.Api.Controllers
                 {
                     var xmlContent = await response.Content.ReadAsStringAsync();
                     var errorMessage = ParseNewznabError(xmlContent);
-                    
+
                     if (errorMessage != null)
                     {
                         var isAuthError = errorMessage.Contains("api", StringComparison.OrdinalIgnoreCase) ||
@@ -263,7 +263,7 @@ namespace Listenarr.Api.Controllers
                                          errorMessage.Contains("unauthorized", StringComparison.OrdinalIgnoreCase) ||
                                          errorMessage.Contains("invalid", StringComparison.OrdinalIgnoreCase) ||
                                          errorMessage.Contains("authentication", StringComparison.OrdinalIgnoreCase);
-                        
+
                         var failureMessage = isAuthError ? $"Authentication failed: {errorMessage}" : errorMessage;
                         await SaveTestResultAsync(indexer, persist, false, failureMessage);
                         return BadRequest(new { success = false, message = failureMessage, indexer = RedactIndexerForCaller(indexer) });
@@ -314,10 +314,10 @@ namespace Listenarr.Api.Controllers
 
                 using var reader = System.Xml.XmlReader.Create(new System.IO.StringReader(xmlContent), settings);
                 var doc = System.Xml.Linq.XDocument.Load(reader);
-                
+
                 // Check for error element (can be at root, under rss, or as a descendant)
                 System.Xml.Linq.XElement? errorElement = null;
-                
+
                 // Case 1: Root element is <error>, Case 2: Error is a child or descendant
                 errorElement = doc.Root?.Name.LocalName.Equals("error", StringComparison.OrdinalIgnoreCase) == true
                     ? doc.Root
@@ -329,10 +329,11 @@ namespace Listenarr.Api.Controllers
                     var description = errorElement.Attribute("description")?.Value ?? errorElement.Value;
                     return string.IsNullOrEmpty(description) ? $"Error code: {code}" : description;
                 }
-                
+
                 return null;
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+            {
                 // If we can't parse the XML, assume no error element
                 return null;
             }

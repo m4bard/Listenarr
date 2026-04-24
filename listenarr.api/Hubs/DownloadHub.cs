@@ -77,7 +77,8 @@ namespace Listenarr.Api.Hubs
                     await _pushService.HandlePushAsync(download);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error processing PushDownloadUpdate");
             }
         }

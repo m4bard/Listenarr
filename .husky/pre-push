@@ -1,0 +1,17 @@
+echo "Checking fronted tests..."
+npm run test:frontend || (
+  echo "--------------------------------------------------"
+  echo "❌  ERROR: FRONTED TEST FAILED"
+  echo "Push blocked. Fix the test before push."
+  echo "--------------------------------------------------"
+  exit 1
+)
+
+echo "Checking backend tests..."
+npm run test:backend || (
+  echo "--------------------------------------------------"
+  echo "❌  ERROR: BACKEND TEST FAILED"
+  echo "Push blocked. Fix the test before push."
+  echo "--------------------------------------------------"
+  exit 1
+)

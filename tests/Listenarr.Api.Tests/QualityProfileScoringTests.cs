@@ -555,7 +555,7 @@ namespace Listenarr.Api.Tests
             };
 
             var score = await service.ScoreSearchResult(result, profile);
-            
+
             // Accept either an explicit rejection or a numeric score below the configured minimum
             Assert.True(score.IsRejected || score.TotalScore < profile.MinimumScore, "Result should be rejected when score is below MinimumScore");
             Assert.True(score.RejectionReasons.Any(r => r.Contains("below profile minimum")) || score.TotalScore < profile.MinimumScore, "Expected either a rejection reason or a numeric score below the minimum");
@@ -591,7 +591,7 @@ namespace Listenarr.Api.Tests
             };
 
             var score = await service.ScoreSearchResult(result, profile);
-            
+
             Assert.False(score.IsRejected, "Result should not be rejected when MinimumScore = 0 and score > 0");
             Assert.True(score.TotalScore > 0, "Score should be positive");
         }

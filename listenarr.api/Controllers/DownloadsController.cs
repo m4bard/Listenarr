@@ -112,7 +112,8 @@ public class DownloadsController : ControllerBase
             _logger.LogInformation("Retrieved {Count} downloads", downloads.Count);
             return Ok(enhancedDownloads);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error retrieving downloads");
             return StatusCode(500, new { error = "Failed to retrieve downloads", message = ex.Message });
         }
@@ -160,11 +161,12 @@ public class DownloadsController : ControllerBase
 
             return Ok(downloadObj);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error retrieving download {DownloadId}", LogRedaction.SanitizeText(id));
             return StatusCode(500, new { error = "Failed to retrieve download", message = ex.Message });
         }
-      }
+    }
 
     /// <summary>
     /// Retry importing a download that was blocked due to import issues. Resets status to ImportPending.
@@ -244,7 +246,8 @@ public class DownloadsController : ControllerBase
             _logger.LogInformation("Retrieved {Count} active downloads", activeDownloads.Count);
             return Ok(enhancedActiveDownloads);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error retrieving active downloads");
             return StatusCode(500, new { error = "Failed to retrieve active downloads", message = ex.Message });
         }
@@ -272,7 +275,8 @@ public class DownloadsController : ControllerBase
             _logger.LogInformation("Deleted download record {DownloadId}", LogRedaction.SanitizeText(id));
             return Ok(new { message = "Download deleted successfully", id });
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error deleting download {DownloadId}", LogRedaction.SanitizeText(id));
             return StatusCode(500, new { error = "Failed to delete download", message = ex.Message });
         }
@@ -293,7 +297,8 @@ public class DownloadsController : ControllerBase
             _logger.LogInformation("Cleared {Count} completed downloads", completedDownloads.Count);
             return Ok(new { message = "Completed downloads cleared", count = completedDownloads.Count });
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error clearing completed downloads");
             return StatusCode(500, new { error = "Failed to clear completed downloads", message = ex.Message });
         }
@@ -314,7 +319,8 @@ public class DownloadsController : ControllerBase
             _logger.LogInformation("Cleared {Count} failed downloads", failedDownloads.Count);
             return Ok(new { message = "Failed downloads cleared", count = failedDownloads.Count });
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error clearing failed downloads");
             return StatusCode(500, new { error = "Failed to clear failed downloads", message = ex.Message });
         }

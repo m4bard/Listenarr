@@ -36,19 +36,19 @@ namespace Listenarr.Api.Services.Adapters
         Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default);
         Task<string?> AddAsync(DownloadClientConfiguration client, SearchResult result, CancellationToken ct = default);
         Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default);
-        
+
         /// <summary>
         /// Legacy method - returns QueueItem list (backward compatible)
         /// Will be deprecated in favor of GetItemsAsync
         /// </summary>
         Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default);
-        
+
         /// <summary>
         /// Returns normalized DownloadClientItem list
         /// This is the preferred method going forward
         /// </summary>
         Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default);
-        
+
         Task<List<(string Id, string Name)>> GetRecentHistoryAsync(DownloadClientConfiguration client, int limit = 100, CancellationToken ct = default);
 
         /// <summary>
@@ -66,7 +66,7 @@ namespace Listenarr.Api.Services.Adapters
             DownloadClientItem item,
             DownloadClientItem? previousAttempt = null,
             CancellationToken ct = default);
-        
+
         /// <summary>
         /// Legacy method for backward compatibility
         /// </summary>

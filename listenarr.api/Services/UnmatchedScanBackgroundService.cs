@@ -423,14 +423,14 @@ namespace Listenarr.Api.Services
 
         private static void ApplyEmbeddedTags(PathParsedMetadata target, PathParsedMetadata tags)
         {
-            if (!string.IsNullOrEmpty(tags.Title))        target.Title = tags.Title;
-            if (!string.IsNullOrEmpty(tags.Author))       target.Author = tags.Author;
-            if (!string.IsNullOrEmpty(tags.Narrator))     target.Narrator = tags.Narrator;
-            if (!string.IsNullOrEmpty(tags.Series))       target.Series = tags.Series;
+            if (!string.IsNullOrEmpty(tags.Title)) target.Title = tags.Title;
+            if (!string.IsNullOrEmpty(tags.Author)) target.Author = tags.Author;
+            if (!string.IsNullOrEmpty(tags.Narrator)) target.Narrator = tags.Narrator;
+            if (!string.IsNullOrEmpty(tags.Series)) target.Series = tags.Series;
             if (!string.IsNullOrEmpty(tags.SeriesNumber)) target.SeriesNumber = tags.SeriesNumber;
-            if (!string.IsNullOrEmpty(tags.Year))         target.Year = tags.Year;
-            if (!string.IsNullOrEmpty(tags.Description))  target.Description = tags.Description;
-            if (!string.IsNullOrEmpty(tags.Asin))         target.Asin = tags.Asin;
+            if (!string.IsNullOrEmpty(tags.Year)) target.Year = tags.Year;
+            if (!string.IsNullOrEmpty(tags.Description)) target.Description = tags.Description;
+            if (!string.IsNullOrEmpty(tags.Asin)) target.Asin = tags.Asin;
         }
 
         private List<string> CollectAudioFiles(string rootFolderPath)

@@ -110,7 +110,8 @@ public class ManualImportController : ControllerBase
 
             return Ok(new { items });
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error previewing manual import for path {Path}", path);
             return StatusCode(500, new { error = "Failed to preview import" });
         }
@@ -199,7 +200,8 @@ public class ManualImportController : ControllerBase
                 results = results
             });
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error starting manual import");
             return StatusCode(500, new { error = "Failed to start import" });
         }
@@ -218,10 +220,10 @@ public class ManualImportController : ControllerBase
     /// <returns>Result of the importation</returns>
     /// <exception cref="IOException"></exception>
     private async Task<ManualImportResultDto> ImportFileAsync(
-        ManualImportItemDto item, 
+        ManualImportItemDto item,
         FileAction action,
         string sourceDirectory,
-        HashSet<string> usedDestinations, 
+        HashSet<string> usedDestinations,
         List<RootFolder> rootFolders,
         ApplicationSettings settings,
         bool hasMultipleFile = false)
@@ -249,8 +251,8 @@ public class ManualImportController : ControllerBase
 
             // Validate source is within a configured root folder (prevents path traversal)
             var isUnderSourceDirectory = FileUtils.IsPathInsideOf(item.FullPath, sourceDirectory);
-            
-            var isUnderConfiguredRoot = rootFolders.Any(r =>  FileUtils.IsPathInsideOf(item.FullPath, r.Path));
+
+            var isUnderConfiguredRoot = rootFolders.Any(r => FileUtils.IsPathInsideOf(item.FullPath, r.Path));
 
             if (!isUnderSourceDirectory && !isUnderConfiguredRoot)
             {
@@ -293,7 +295,8 @@ public class ManualImportController : ControllerBase
                 Audiobook = audiobook
             };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error importing file {FilePath}", item.FullPath);
             return ManualImportResultDto.FailureResult(ex.Message, item.FullPath);
         }
@@ -440,7 +443,8 @@ public class ManualImportController : ControllerBase
                 }
             }
         }
-        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+        {
             isCustomBasePath = !string.IsNullOrWhiteSpace(basePath) && !string.IsNullOrWhiteSpace(configuredOutput)
                 && !string.Equals(basePath, configuredOutput, StringComparison.OrdinalIgnoreCase);
         }
@@ -454,7 +458,7 @@ public class ManualImportController : ControllerBase
 
         // Build variables for the pattern - only include non-empty values
         var variables = new Dictionary<string, object>();
-        
+
         // Get first author from Authors list
         var author = audiobook.Authors?.FirstOrDefault();
         if (!string.IsNullOrWhiteSpace(author))
@@ -480,7 +484,7 @@ public class ManualImportController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(audiobook.Edition))
             variables["Edition"] = audiobook.Edition;
-        
+
         // Preserve the older title+subtitle uniqueness behavior unless the user explicitly uses {Subtitle}.
         // (e.g. "The Land" + "Founding" → "The Land: Founding")
         var usesSubtitleToken = (!string.IsNullOrWhiteSpace(folderPattern) && folderPattern.IndexOf("Subtitle", StringComparison.OrdinalIgnoreCase) >= 0)
@@ -495,10 +499,10 @@ public class ManualImportController : ControllerBase
         variables["Title"] = !string.IsNullOrWhiteSpace(titleFull)
             ? titleFull
             : "Unknown Title"; // Title is required as fallback
-        
+
         if (!string.IsNullOrWhiteSpace(audiobook.Series))
             variables["Series"] = audiobook.Series;
-        
+
         if (!string.IsNullOrWhiteSpace(audiobook.PublishYear))
             variables["Year"] = audiobook.PublishYear;
 

@@ -36,12 +36,12 @@ namespace Listenarr.Api.Extensions
             services.AddScoped<IConfigurationService, ConfigurationService>();
             // Startup config: read config.json (optional) and expose via IStartupConfigService
             services.AddSingleton<IStartupConfigService, StartupConfigService>();
-            
+
             // Register indexer search providers
             services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
             services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
             services.AddScoped<IIndexerSearchProvider, MyAnonamouseSearchProvider>();
-            
+
             services.AddScoped<ISearchService, SearchService>();
             services.AddScoped<IMetadataService, MetadataService>();
             services.AddScoped<IAudioFileService, AudioFileService>();

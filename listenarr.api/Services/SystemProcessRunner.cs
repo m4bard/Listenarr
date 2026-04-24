@@ -60,7 +60,8 @@ namespace Listenarr.Api.Services
                 if (!exited)
                 {
                     try { process.Kill(true); }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogDebug(ex, "Failed to kill timed-out process {FileName} {Args}", startInfo.FileName, startInfo.Arguments);
                     }
                     _logger.LogWarning("Process timed out after {Timeout}ms: {FileName} {Args}", timeoutMs, startInfo.FileName, startInfo.Arguments);
@@ -69,7 +70,8 @@ namespace Listenarr.Api.Services
 
                 // Ensure asynchronous output readers have flushed into our buffers before reading them.
                 try { process.WaitForExit(); }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogDebug(ex, "Failed waiting for process output readers to flush for {FileName} {Args}", startInfo.FileName, startInfo.Arguments);
                 }
 
@@ -90,7 +92,8 @@ namespace Listenarr.Api.Services
                 _logger.LogWarning("Process run cancelled for {File} {Args}", startInfo.FileName, startInfo.Arguments);
                 return new ProcessResult(-1, stdout.ToString(), stderr + "\nOperationCanceled", false);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 // Include exception details in the returned stderr so callers can surface meaningful diagnostics
                 var errText = stderr.ToString();
                 try
@@ -121,7 +124,8 @@ namespace Listenarr.Api.Services
                 process.Start();
                 return process;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to start process {File} {Args}", startInfo.FileName, startInfo.Arguments);
                 throw;
             }
@@ -161,7 +165,8 @@ namespace Listenarr.Api.Services
                 if (_disposed) return;
                 _disposed = true;
                 try { _action(); }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     System.Diagnostics.Debug.WriteLine($"SystemProcessRunner.DisposableAction cleanup failed: {ex.Message}");
                 }
             }

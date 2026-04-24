@@ -57,7 +57,8 @@ namespace Listenarr.Api.Services
                     }
 
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "FileFinalizer: failed processing import result for download {DownloadId}", downloadId);
                 }
             }
@@ -84,7 +85,8 @@ namespace Listenarr.Api.Services
                     }
 
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "FileFinalizer: failed updating FinalPath for download {DownloadId}", downloadId);
                 }
             }

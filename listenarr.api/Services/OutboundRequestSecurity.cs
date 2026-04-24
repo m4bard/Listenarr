@@ -123,7 +123,8 @@ public static class OutboundRequestSecurity
             logger.LogWarning(ex, "Blocked outbound request because DNS resolution failed for host {Host}", uri.Host);
             return false;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             logger.LogWarning(ex, "Blocked outbound request due to unexpected DNS validation error for host {Host}", uri.Host);
             return false;
         }

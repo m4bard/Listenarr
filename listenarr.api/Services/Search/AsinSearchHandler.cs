@@ -69,7 +69,7 @@ public class AsinSearchHandler
         // Step 1: Try to get metadata from the Audible-backed provider first.
         _logger.LogInformation("Attempting Audible catalog metadata for ASIN {Asin}", asin);
         await _searchProgressReporter.BroadcastAsync($"Searching Audible for {asin}", null);
-        
+
         try
         {
             var audibleData = await _audibleService.GetBookMetadataAsync(asin, "us", true);
@@ -84,7 +84,8 @@ public class AsinSearchHandler
                 _logger.LogInformation("Audible metadata returned no data for ASIN {Asin}", asin);
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogDebug(ex, "Failed to get metadata from Audible for ASIN {Asin}", asin);
         }
 
@@ -112,7 +113,8 @@ public class AsinSearchHandler
                         }
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogDebug(ex, "Failed to get metadata from {Source} for ASIN {Asin}", source.Name, asin);
                 }
             }
@@ -124,7 +126,7 @@ public class AsinSearchHandler
         {
             await _searchProgressReporter.BroadcastAsync($"Found audiobook: {metadata.Title}", null);
             var result = await _metadataConverters.ConvertMetadataToSearchResultAsync(metadata, asin, null, null, null);
-            _logger.LogInformation("Converted metadata to SearchResult: Title={Title}, Series={Series}, SeriesNumber={SeriesNumber}", 
+            _logger.LogInformation("Converted metadata to SearchResult: Title={Title}, Series={Series}, SeriesNumber={SeriesNumber}",
                 result.Title, result.Series, result.SeriesNumber);
             result.IsEnriched = true;
             result.MetadataSource = metadataSourceName;

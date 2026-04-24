@@ -49,7 +49,8 @@ namespace Listenarr.Api.Controllers
                 var profiles = await _qualityProfileService.GetAllAsync();
                 return Ok(profiles);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving quality profiles");
                 return StatusCode(500, new { error = "Failed to retrieve quality profiles" });
             }
@@ -71,7 +72,8 @@ namespace Listenarr.Api.Controllers
                 }
                 return Ok(profile);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving quality profile {Id}", id);
                 return StatusCode(500, new { error = "Failed to retrieve quality profile" });
             }
@@ -92,7 +94,8 @@ namespace Listenarr.Api.Controllers
                 }
                 return Ok(profile);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving default quality profile");
                 return StatusCode(500, new { error = "Failed to retrieve default quality profile" });
             }
@@ -115,7 +118,8 @@ namespace Listenarr.Api.Controllers
                 var created = await _qualityProfileService.CreateAsync(profile);
                 return CreatedAtAction(nameof(GetById), new { id = created.Id }, created);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error creating quality profile");
                 return StatusCode(500, new { error = "Failed to create quality profile" });
             }
@@ -149,7 +153,8 @@ namespace Listenarr.Api.Controllers
                 _logger.LogWarning(ex, "Quality profile not found: {Id}", id);
                 return NotFound(new { error = ex.Message });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error updating quality profile {Id}", id);
                 return StatusCode(500, new { error = "Failed to update quality profile" });
             }
@@ -176,7 +181,8 @@ namespace Listenarr.Api.Controllers
                 _logger.LogWarning(ex, "Cannot delete quality profile: {Id}", id);
                 return BadRequest(new { error = ex.Message });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error deleting quality profile {Id}", id);
                 return StatusCode(500, new { error = "Failed to delete quality profile" });
             }
@@ -203,7 +209,8 @@ namespace Listenarr.Api.Controllers
                 var scores = await _qualityProfileService.ScoreSearchResults(searchResults, profile);
                 return Ok(scores);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error scoring search results with profile {Id}", id);
                 return StatusCode(500, new { error = "Failed to score search results" });
             }

@@ -92,7 +92,8 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(result);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error fetching metadata for ASIN: {Asin}", asin);
                 return StatusCode(500, $"Error fetching metadata: {ex.Message}");
             }
@@ -126,7 +127,8 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(result);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error fetching Audible metadata for ASIN: {Asin}", asin);
                 return StatusCode(500, "Internal server error");
             }
@@ -449,7 +451,8 @@ namespace Listenarr.Api.Controllers
                         if (!string.IsNullOrWhiteSpace(cached)) cached = "/" + cached.TrimStart('/');
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to cache author image for {Author}", name);
                 }
 
@@ -482,7 +485,8 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(result);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error looking up author: {Name}", name);
                 return StatusCode(500, "Internal server error");
             }

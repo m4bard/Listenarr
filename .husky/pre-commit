@@ -1,0 +1,9 @@
+echo "Checking code formatting..."
+
+dotnet format --no-restore --verify-no-changes || (
+  echo "--------------------------------------------------"
+  echo "⚠️  FORMATTING WARNING:"
+  echo "Files need formatting. Run 'dotnet format' locally."
+  echo "--------------------------------------------------"
+  exit 1
+)

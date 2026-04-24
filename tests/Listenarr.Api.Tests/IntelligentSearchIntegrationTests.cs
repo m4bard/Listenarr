@@ -132,7 +132,7 @@ namespace Listenarr.Api.Tests
             Assert.Contains(returned!, r => string.Equals(r.Asin, "0563528885", StringComparison.OrdinalIgnoreCase));
         }
 
-        
+
     }
 
     internal class TestEmptyOpenLibraryService : IOpenLibraryService

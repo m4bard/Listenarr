@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using Serilog;
 using Microsoft.Data.Sqlite;
 using System.IO;
@@ -42,7 +42,8 @@ static class DeleteDownloadsProgram
                     cmd2.ExecuteNonQuery();
                     Log.Logger.Information("Reset sqlite_sequence for Downloads (if it existed).");
                 }
-                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                {
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
             }
@@ -52,7 +53,8 @@ static class DeleteDownloadsProgram
             Log.Logger.Information("Done.");
             return 0;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             Log.Logger.Error(ex, "Error while deleting downloads");
             return 1;
         }

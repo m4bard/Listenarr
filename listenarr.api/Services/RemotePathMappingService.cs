@@ -82,7 +82,9 @@ public class RemotePathMappingService : IRemotePathMappingService
             "Created remote path mapping {MappingId} for client {ClientId}: {RemotePath} -> {LocalPath}",
             saved.Id, saved.DownloadClientId, saved.RemotePath, saved.LocalPath);
 
-        try { _cache.Remove($"rpm_client_{saved.DownloadClientId}"); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+        try { _cache.Remove($"rpm_client_{saved.DownloadClientId}"); }
+        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+        {
             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
         }
 
@@ -107,7 +109,9 @@ public class RemotePathMappingService : IRemotePathMappingService
             "Updated remote path mapping {MappingId} for client {ClientId}: {RemotePath} -> {LocalPath}",
             saved.Id, saved.DownloadClientId, saved.RemotePath, saved.LocalPath);
 
-        try { _cache.Remove($"rpm_client_{saved.DownloadClientId}"); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
+        try { _cache.Remove($"rpm_client_{saved.DownloadClientId}"); }
+        catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+        {
             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
         }
 
@@ -127,7 +131,9 @@ public class RemotePathMappingService : IRemotePathMappingService
                 "Deleted remote path mapping {MappingId} for client {ClientId}",
                 id, existing.DownloadClientId);
 
-            try { _cache.Remove($"rpm_client_{existing.DownloadClientId}"); } catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
+            try { _cache.Remove($"rpm_client_{existing.DownloadClientId}"); }
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+            {
                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
         }

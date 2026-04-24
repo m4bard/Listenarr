@@ -73,7 +73,7 @@ public class AsinCandidateCollector
             ct.ThrowIfCancellationRequested();
             await _searchProgressReporter.BroadcastAsync($"Searching OpenLibrary for additional titles", null);
             var books = await _openLibraryService.SearchBooksAsync(query, null, 5);
-            
+
             foreach (var book in books.Docs.Take(3))
             {
                 ct.ThrowIfCancellationRequested();
@@ -114,7 +114,7 @@ public class AsinCandidateCollector
                         {
                             // Use OpenLibrary Key as the Id instead of random GUID
                             searchResult.Id = book.Key;
-                            
+
                             if (book.Key.StartsWith("/works", StringComparison.OrdinalIgnoreCase))
                             {
                                 searchResult.ProductUrl = $"https://openlibrary.org{book.Key}";
@@ -128,7 +128,7 @@ public class AsinCandidateCollector
                         }
 
                         collection.OpenLibraryDerivedResults.Add(searchResult);
-                        
+
                         // Only store in dictionary if we have a valid OpenLibrary Key
                         // Don't use GUID fallback as it creates invalid openLibraryId values
                         if (!string.IsNullOrWhiteSpace(book.Key))
@@ -136,13 +136,15 @@ public class AsinCandidateCollector
                             collection.AsinToOpenLibrary[book.Key] = book;
                         }
                     }
-                    catch (Exception exConvert) when (exConvert is not OperationCanceledException && exConvert is not OutOfMemoryException && exConvert is not StackOverflowException) {
+                    catch (Exception exConvert) when (exConvert is not OperationCanceledException && exConvert is not OutOfMemoryException && exConvert is not StackOverflowException)
+                    {
                         _logger.LogWarning(exConvert, "Failed to convert OpenLibrary book to SearchResult: {Title}", book.Title);
                     }
                 }
             }
         }
-        catch (Exception exOL) when (exOL is not OperationCanceledException && exOL is not OutOfMemoryException && exOL is not StackOverflowException) {
+        catch (Exception exOL) when (exOL is not OperationCanceledException && exOL is not OutOfMemoryException && exOL is not StackOverflowException)
+        {
             _logger.LogWarning(exOL, "OpenLibrary augmentation failed: {Message}", exOL.Message);
         }
     }

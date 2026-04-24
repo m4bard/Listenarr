@@ -85,7 +85,8 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogWarning(ex, "Queue monitor cycle canceled/timed out; continuing");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogError(ex, "Error in Queue Monitor Service");
                 }
 
@@ -133,7 +134,8 @@ namespace Listenarr.Api.Services
                     _lastQueueSnapshot = currentSnapshot;
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to monitor queue");
             }
         }

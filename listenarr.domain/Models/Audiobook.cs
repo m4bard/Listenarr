@@ -62,7 +62,8 @@ namespace Listenarr.Domain.Models
         public long? FileSize { get; set; }
 
         // Base path for multi-file audiobooks (common root directory)
-        public string? BasePath {
+        public string? BasePath
+        {
             get
             {
                 // TODO: Should be put on the set operation with appropriate DB migration to normalize existing data
