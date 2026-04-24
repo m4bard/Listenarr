@@ -58,10 +58,23 @@ namespace Listenarr.Api.Tests
             var startupConfigServiceMock = new Mock<IStartupConfigService>();
             startupConfigServiceMock.Setup(s => s.GetConfig()).Returns(new StartupConfig { AuthenticationRequired = "false" });
 
+            var importItemResolutionServiceMock = new Mock<IImportItemResolutionService>();
+            importItemResolutionServiceMock
+                .Setup(r => r.ResolveImportItemAsync(
+                    It.IsAny<Download>(),
+                    It.IsAny<QueueItem>(),
+                    It.IsAny<QueueItem?>(),
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync((Download download, QueueItem queueItem, QueueItem? previousAttempt, CancellationToken ct) =>
+                {
+                    return queueItem;
+                });
+
             var services = new ServiceCollection();
             services.AddLogging();
             services.AddSingleton(configMock.Object);
             services.AddSingleton(startupConfigServiceMock.Object);
+            services.AddSingleton(importItemResolutionServiceMock.Object);
             services.AddSingleton(new Mock<IAppMetricsService>().Object);
             services.AddSingleton(new Mock<IDownloadService>().Object);
             services.AddSingleton(new Mock<IFfmpegService>().Object);
