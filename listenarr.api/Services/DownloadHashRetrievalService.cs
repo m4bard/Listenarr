@@ -16,15 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
-using Listenarr.Api.Services.Adapters;
-using Listenarr.Domain.Models;
-using Listenarr.Application.Repositories;
-using Microsoft.Extensions.Logging;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services
 {
@@ -151,7 +143,7 @@ namespace Listenarr.Api.Services
                 // Try to find our download by title/name
                 var match = items.FirstOrDefault(item =>
                     string.Equals(item.Title, query.Title, StringComparison.OrdinalIgnoreCase) ||
-                    AreTitlesSimilar(item.Title, query.Title));
+                    TitleUtils.AreTitlesSimilarWithLevenstein(item.Title, query.Title));
 
                 if (match != null && !string.IsNullOrEmpty(match.DownloadId))
                 {
@@ -195,72 +187,6 @@ namespace Listenarr.Api.Services
                     query.RetryCount + 1, query.Title, client.Name);
                 return null;
             }
-        }
-
-        /// <summary>
-        /// Check if two titles are similar (normalized comparison)
-        /// </summary>
-        private bool AreTitlesSimilar(string title1, string title2)
-        {
-            if (string.IsNullOrWhiteSpace(title1) || string.IsNullOrWhiteSpace(title2))
-                return false;
-
-            var norm1 = NormalizeTitle(title1);
-            var norm2 = NormalizeTitle(title2);
-
-            // Exact match after normalization
-            if (string.Equals(norm1, norm2, StringComparison.OrdinalIgnoreCase))
-                return true;
-
-            // Fuzzy match with Levenshtein distance (25% threshold)
-            var distance = ComputeLevenshteinDistance(norm1, norm2);
-            var maxLength = Math.Max(norm1.Length, norm2.Length);
-            var similarity = 1.0 - (double)distance / maxLength;
-
-            return similarity >= 0.75; // 75% similarity threshold
-        }
-
-        /// <summary>
-        /// Normalize title for comparison (remove special chars, extra spaces, etc.)
-        /// </summary>
-        private string NormalizeTitle(string title)
-        {
-            if (string.IsNullOrWhiteSpace(title))
-                return string.Empty;
-
-            // Remove special characters, normalize spaces
-            var normalized = System.Text.RegularExpressions.Regex.Replace(title, @"[^\w\s]", " ");
-            normalized = System.Text.RegularExpressions.Regex.Replace(normalized, @"\s+", " ");
-            return normalized.Trim().ToLowerInvariant();
-        }
-
-        /// <summary>
-        /// Compute Levenshtein distance between two strings
-        /// </summary>
-        private int ComputeLevenshteinDistance(string s1, string s2)
-        {
-            if (string.IsNullOrEmpty(s1)) return s2?.Length ?? 0;
-            if (string.IsNullOrEmpty(s2)) return s1.Length;
-
-            var d = new int[s1.Length + 1, s2.Length + 1];
-
-            for (int i = 0; i <= s1.Length; i++)
-                d[i, 0] = i;
-            for (int j = 0; j <= s2.Length; j++)
-                d[0, j] = j;
-
-            for (int j = 1; j <= s2.Length; j++)
-            {
-                for (int i = 1; i <= s1.Length; i++)
-                {
-                    var cost = s1[i - 1] == s2[j - 1] ? 0 : 1;
-                    d[i, j] = Math.Min(
-                        Math.Min(d[i - 1, j] + 1, d[i, j - 1] + 1),
-                        d[i - 1, j - 1] + cost);
-                }
-            }
-
-            return d[s1.Length, s2.Length];
         }
 
         /// <summary>

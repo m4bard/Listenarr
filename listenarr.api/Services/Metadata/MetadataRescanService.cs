@@ -19,7 +19,7 @@ using AsyncKeyedLock;
 using Listenarr.Application.Repositories;
 using Listenarr.Domain.Utils;
 
-namespace Listenarr.Api.Services
+namespace Listenarr.Api.Services.Metadata
 {
     // Background hosted service to rescan files missing metadata and populate DB fields
     public class MetadataRescanService : BackgroundService

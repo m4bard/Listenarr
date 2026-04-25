@@ -26,6 +26,7 @@ using Moq;
 using Xunit;
 using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
+using Listenarr.Api.Services.Metadata;
 
 namespace Listenarr.Api.Tests
 {

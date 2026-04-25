@@ -37,6 +37,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
+using Listenarr.Api.Services.Metadata;
 
 namespace Listenarr.Api.Tests
 {

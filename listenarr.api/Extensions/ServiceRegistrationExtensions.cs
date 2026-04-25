@@ -192,9 +192,6 @@ namespace Listenarr.Api.Extensions
             // Validate download client configuration at startup, surface errors early
             services.AddSingleton<IValidateOptions<DownloadClientsOptions>, DownloadClientsOptionsValidator>();
 
-            // Title matching service extracted from DownloadService for easier testing
-            services.AddScoped<ITitleMatchingService, TitleMatchingService>();
-
             // Shared helpers
             services.AddScoped<INzbUrlResolver, NzbUrlResolver>();
             services.AddScoped<ITorrentFileDownloader, TorrentFileDownloader>();

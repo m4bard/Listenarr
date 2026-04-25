@@ -39,7 +39,7 @@ public interface IRemotePathMappingService
     /// <summary>
     /// Get all remote path mappings for a specific download client
     /// </summary>
-    Task<List<RemotePathMapping>> GetByClientIdAsync(string downloadClientId);
+    Task<List<RemotePathMapping>> GetPathMappingByClientIdAsync(string downloadClientId);
 
     /// <summary>
     /// Create a new remote path mapping

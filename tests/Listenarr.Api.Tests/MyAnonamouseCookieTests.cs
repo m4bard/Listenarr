@@ -773,7 +773,7 @@ namespace Listenarr.Api.Tests
             public Task<bool> DeleteAsync(int id) => Task.FromResult(true);
             public Task<List<RemotePathMapping>> GetAllAsync() => Task.FromResult(new List<RemotePathMapping>());
             public Task<RemotePathMapping?> GetByIdAsync(int id) => Task.FromResult<RemotePathMapping?>(null);
-            public Task<List<RemotePathMapping>> GetByClientIdAsync(string downloadClientId) => Task.FromResult(new List<RemotePathMapping>());
+            public Task<List<RemotePathMapping>> GetPathMappingByClientIdAsync(string downloadClientId) => Task.FromResult(new List<RemotePathMapping>());
             public Task<string> TranslatePathAsync(string downloadClientId, string remotePath) => Task.FromResult(remotePath);
             public Task<bool> RequiresTranslationAsync(string downloadClientId, string remotePath) => Task.FromResult(false);
             public Task<RemotePathMapping> UpdateAsync(RemotePathMapping mapping) => Task.FromResult(mapping);

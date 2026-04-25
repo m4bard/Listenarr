@@ -17,9 +17,8 @@
  */
 
 using System.Runtime.InteropServices;
-using Listenarr.Application.Repositories;
-using Listenarr.Domain.Models;
 using Listenarr.Domain.Utils;
+using Listenarr.Api.Services.Metadata;
 
 namespace Listenarr.Api.Services
 {
@@ -270,7 +269,7 @@ namespace Listenarr.Api.Services
                             : null;
                         var preliminaryItem = new QueueItem
                         {
-                            Id = GetClientDownloadItemId(dl) ?? dl.Id,
+                            Id = dl.GetClientDownloadItemId() ?? dl.Id,
                             Title = dl.Title ?? "Unknown",
                             Status = "completed",
                             ContentPath = dl.FinalPath is not null ? dl.FinalPath : clientContentPath ?? dl.DownloadPath,
@@ -349,7 +348,8 @@ namespace Listenarr.Api.Services
             var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
             var pathMappingService = scope.ServiceProvider.GetService<IRemotePathMappingService>();
             var fileNamingService = scope.ServiceProvider.GetService<IFileNamingService>();
-            var metadataService = scope.ServiceProvider.GetService<IMetadataService>();
+            var metadataService = scope.ServiceProvider.GetRequiredService<IMetadataService>();
+            var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
 
             job.AddLogEntry($"Starting file processing: {job.SourcePath}");
 
@@ -393,12 +393,25 @@ namespace Listenarr.Api.Services
             if (Directory.Exists(job.SourcePath) && !File.Exists(job.SourcePath))
             {
                 job.AddLogEntry($"Source is a directory, scanning for importable files: {job.SourcePath}");
-                var importableFiles = Directory.EnumerateFiles(job.SourcePath, "*.*", SearchOption.AllDirectories)
-                    .Where(f => !FileUtils.IsBlacklistedFile(f, settings.ImportBlacklistExtensions))
-                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
-                    .ToList();
+                var importableFiles = new List<string>();
+                
+                var download = await downloadRepository.GetByIdAsync(job.DownloadId);
+                if (download != null)
+                {
+                    try
+                    {
+                        importableFiles = await MatchLocalAndDownloadedFilesAsync(scope, download, job.SourcePath, settings.ImportBlacklistExtensions, _logger, cancellationToken);
+                    }
+                    catch(DownloadProcessingException exception)
+                    {
+                        // FIXME: Should we really still process unfiltered files in that case ?
+                        _logger.LogWarning(exception, exception.Message);
 
-                importableFiles = await FilterToClientReportedFilesAsync(job, scope, importableFiles, cancellationToken);
+                        importableFiles = [.. Directory.EnumerateFiles(job.SourcePath, "*.*", SearchOption.AllDirectories)
+                                .Where(f => !FileUtils.IsBlacklistedFile(f, settings.ImportBlacklistExtensions))
+                                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)];
+                    }
+                }
 
                 if (importableFiles.Count == 0)
                 {
@@ -446,11 +459,24 @@ namespace Listenarr.Api.Services
                 if (job.Status != ProcessingJobStatus.Failed && job.Status != ProcessingJobStatus.Retry)
                 {
                     var completionPath = primaryCompletionPath ?? fallbackCompletionPath;
+
+                    if (importableFiles.Count > 1)
+                    {
+                        // We give a directory in which to import the files
+                        completionPath = Path.GetDirectoryName(completionPath);
+                        
+                        // The directory must exist
+                        if (!string.IsNullOrWhiteSpace(completionPath))
+                        {
+                            Directory.CreateDirectory(completionPath);
+                        }
+                    }
+
                     if (!string.IsNullOrWhiteSpace(completionPath))
                     {
                         job.DestinationPath = completionPath;
-                        job.AddLogEntry($"Finalizing directory batch using completion path: {completionPath}");
-                        await FinalizeProcessedDownloadAsync(job, downloadService, completionPath);
+                        job.AddLogEntry($"Finalizing directory batch with destination: {job.DestinationPath} from {job.SourcePath}");
+                        await FinalizeProcessedDownloadAsync(job, downloadService);
                     }
                 }
 
@@ -466,7 +492,7 @@ namespace Listenarr.Api.Services
             IDownloadService downloadService,
             ApplicationSettings settings,
             IFileNamingService? fileNamingService,
-            IMetadataService? metadataService,
+            IMetadataService metadataService,
             CancellationToken cancellationToken,
             bool finalizeDownload = true)
         {
@@ -483,150 +509,18 @@ namespace Listenarr.Api.Services
                 {
                     job.AddLogEntry("Using file naming service for destination path");
 
-                    // Build metadata for naming - get download info from database
-                    var metadata = new AudioMetadata { Title = "Unknown Title" };
-                    // When possible we'll build a namingMetadata from the linked Audiobook to ensure
-                    // audiobook fields are authoritative for naming (avoid extracted tags overwriting them).
-                    AudioMetadata? namingMetadata = null;
-
                     using var scope = _serviceScopeFactory.CreateScope();
-                    var scopedDownloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
-                    var scopedAudiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
-                    var download = await scopedDownloadRepository.FindAsync(job.DownloadId);
-                    if (download != null)
+                    var downloadRepository = scope.ServiceProvider.GetRequiredService<IDownloadRepository>();
+                    var audiobookRepository = scope.ServiceProvider.GetRequiredService<IAudiobookRepository>();
+                    var download = await downloadRepository.FindAsync(job.DownloadId);
+                    Audiobook? audiobook = null;
+                    if (download != null && download.AudiobookId != null)
                     {
-                        // Start with values from the download record
-                        metadata.Title = download.Title ?? metadata.Title;
-                        metadata.Artist = download.Artist ?? string.Empty;
-                        metadata.Album = download.Album ?? string.Empty;
-                        job.AddLogEntry($"Using download metadata: {metadata.Title} by {metadata.Artist}");
-
-                        // If the download is linked to an Audiobook, prefer its metadata for naming
-                        if (download.AudiobookId != null)
-                        {
-                            try
-                            {
-                                var audiobook = await scopedAudiobookRepository.GetByIdAsync(download.AudiobookId.Value);
-                                if (audiobook != null)
-                                {
-                                    // Create a naming-only metadata object from the Audiobook. This will be
-                                    // used as the authoritative source for file naming fields.
-                                    var fallbackAuthor = !string.IsNullOrWhiteSpace(metadata.Artist) &&
-                                        !string.Equals(metadata.Artist.Trim(), metadata.Narrator?.Trim(), StringComparison.OrdinalIgnoreCase)
-                                            ? metadata.Artist
-                                            : (!string.IsNullOrWhiteSpace(metadata.AlbumArtist) &&
-                                               !string.Equals(metadata.AlbumArtist.Trim(), metadata.Narrator?.Trim(), StringComparison.OrdinalIgnoreCase)
-                                                ? metadata.AlbumArtist
-                                                : "Unknown Author");
-
-                                    namingMetadata = new AudioMetadata
-                                    {
-                                        Title = audiobook.Title ?? metadata.Title,
-                                        Subtitle = !string.IsNullOrWhiteSpace(audiobook.Subtitle) ? audiobook.Subtitle : metadata.Subtitle,
-                                        Edition = !string.IsNullOrWhiteSpace(audiobook.Edition) ? audiobook.Edition : metadata.Edition,
-                                        Artist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : fallbackAuthor,
-                                        AlbumArtist = (audiobook.Authors != null && audiobook.Authors.Any()) ? string.Join(", ", audiobook.Authors) : fallbackAuthor,
-                                        Narrator = (audiobook.Narrators != null && audiobook.Narrators.Any())
-                                            ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n)))
-                                            : metadata.Narrator,
-                                        Publisher = !string.IsNullOrWhiteSpace(audiobook.Publisher) ? audiobook.Publisher : metadata.Publisher,
-                                        Language = !string.IsNullOrWhiteSpace(audiobook.Language) ? audiobook.Language : metadata.Language,
-                                        Asin = !string.IsNullOrWhiteSpace(audiobook.Asin) ? audiobook.Asin : metadata.Asin,
-                                        Series = audiobook.Series,
-                                        // Prefer audiobook's publish year when available
-                                        Year = int.TryParse(audiobook.PublishYear, out var py) ? py : (int?)null,
-                                        // Series position / number
-                                        SeriesPosition = !string.IsNullOrWhiteSpace(audiobook.SeriesNumber) && decimal.TryParse(audiobook.SeriesNumber, out var sp) ? sp : (decimal?)null,
-                                        // Quality string from audiobook record
-                                        // Map into Bitrate/Format heuristically if useful; for now store textual quality
-                                        // We'll put it into AdditionalData so FileNamingService can use Format/Bitrate/Quality
-                                        AdditionalData = new Dictionary<string, object> { { "Quality", audiobook.Quality ?? string.Empty } }
-                                    };
-
-                                    job.AddLogEntry($"Using audiobook metadata for naming: {namingMetadata.Title} by {namingMetadata.Artist}");
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                job.AddLogEntry($"Failed to retrieve audiobook metadata: {ex.Message}");
-                            }
-                        }
+                        audiobook = await audiobookRepository.GetByIdAsync(download.AudiobookId.GetValueOrDefault());
                     }
+            
+                    var metadata = await metadataService.FetchMetadataAsync(job, download, audiobook, cancellationToken);
 
-                    // Only extract file metadata for naming when we do NOT have audiobook naming metadata.
-                    // If the download is linked to an audiobook (namingMetadata != null) we must not use
-                    // file-embedded tags for naming â€” the audiobook DB entry is authoritative.
-                    if (namingMetadata == null && metadataService != null)
-                    {
-                        try
-                        {
-                            // Log source state immediately before attempting the file operation for diagnostics
-                            try
-                            {
-                                var exists = File.Exists(sourcePath);
-                                var size = exists ? new FileInfo(sourcePath).Length : (long?)null;
-                                var last = exists ? File.GetLastWriteTimeUtc(sourcePath).ToString("o") : "(not found)";
-                                job.AddLogEntry($"Operation pre-check: sourceExists={exists}, size={(size.HasValue ? size.ToString() : "(n/a)")}, lastWriteUtc={last}");
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                job.AddLogEntry($"Failed to collect source diagnostics: {ex.Message}");
-                            }
-                            var extractedMetadata = await metadataService.ExtractFileMetadataAsync(sourcePath);
-                            if (extractedMetadata != null)
-                            {
-                                // No audiobook naming metadata - merge extracted values without overwriting
-                                string FirstNonEmpty(params string?[] candidates)
-                                {
-                                    return candidates.FirstOrDefault(c => !string.IsNullOrWhiteSpace(c)) ?? string.Empty;
-                                }
-
-                                metadata.Title = FirstNonEmpty(metadata.Title, extractedMetadata.Title, "Unknown Title");
-                                metadata.Artist = FirstNonEmpty(metadata.Artist, extractedMetadata.Artist, extractedMetadata.AlbumArtist, metadata.Artist);
-                                metadata.Album = FirstNonEmpty(metadata.Album, extractedMetadata.Album, metadata.Album);
-
-                                if (!metadata.SeriesPosition.HasValue && extractedMetadata.SeriesPosition.HasValue)
-                                    metadata.SeriesPosition = extractedMetadata.SeriesPosition;
-                                if (!metadata.TrackNumber.HasValue && extractedMetadata.TrackNumber.HasValue)
-                                    metadata.TrackNumber = extractedMetadata.TrackNumber;
-                                if (!metadata.DiscNumber.HasValue && extractedMetadata.DiscNumber.HasValue)
-                                    metadata.DiscNumber = extractedMetadata.DiscNumber;
-                                if (!metadata.Year.HasValue && extractedMetadata.Year.HasValue)
-                                    metadata.Year = extractedMetadata.Year;
-                                if (!metadata.Bitrate.HasValue && extractedMetadata.Bitrate.HasValue)
-                                    metadata.Bitrate = extractedMetadata.Bitrate;
-                                if (string.IsNullOrWhiteSpace(metadata.Format) && !string.IsNullOrWhiteSpace(extractedMetadata.Format))
-                                    metadata.Format = extractedMetadata.Format;
-
-                                job.AddLogEntry($"Merged extracted metadata: {metadata.Title} by {metadata.Artist}");
-                            }
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            job.AddLogEntry($"Failed to extract metadata: {ex.Message}");
-                        }
-                    }
-
-                    // Generate path using naming pattern
-                    // Use namingMetadata if present (authoritative audiobook fields), otherwise use metadata
-                    var metadataForNaming = namingMetadata ?? metadata;
-
-                    // Log naming variables for diagnostics
-                    try
-                    {
-                        var dbgVars = $"Author={(metadataForNaming.Artist ?? "(null)")}, Series={(metadataForNaming.Series ?? "(null)")}, Title={(metadataForNaming.Title ?? "(null)")}";
-                        job.AddLogEntry($"Resolved naming metadata: {dbgVars}");
-                    }
-                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
-                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                    }
-
-                    // Record the resolved naming metadata on the job for diagnostics
-                    try
-                    {
-                        job.AddLogEntry($"Resolved naming metadata: Author='{metadataForNaming.Artist}', AlbumArtist='{metadataForNaming.AlbumArtist}', Series='{metadataForNaming.Series}', Title='{metadataForNaming.Title}', Year='{metadataForNaming.Year}'");
-                    }
-                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
-                        // ignore logging errors
-                                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                    }
                     // For processing jobs, compute the appropriate destination directory first.
                     // If the download is linked to an audiobook and the audiobook has a BasePath,
                     // prefer that as the base directory (and use filename-only pattern in those
@@ -640,32 +534,22 @@ namespace Listenarr.Api.Services
                     // If the download links to an audiobook and we've built an audiobook naming
                     // metadata above, prefer the audiobook BasePath and switch to a filename-only
                     // pattern so we don't create arbitrary folders inside an audiobook base path.
-                    try
+                    if (audiobook != null && !string.IsNullOrWhiteSpace(audiobook.BasePath))
                     {
-                        if (download != null && download.AudiobookId != null)
-                        {
-                            var audiobook = await scopedAudiobookRepository.GetByIdAsync(download.AudiobookId.Value);
-                            if (audiobook != null && !string.IsNullOrWhiteSpace(audiobook.BasePath))
-                            {
-                                basePathForFile = audiobook.BasePath;
+                        basePathForFile = audiobook.BasePath;
 
-                                // If a global pattern exists, use only the filename portion when an
-                                // audiobook BasePath is present; this avoids creating unintended
-                                // subfolders under the audiobook base path.
-                                // Use the configured filename pattern in full when computing the
-                                // tentative generated path relative to the audiobook BasePath.
-                            }
-                        }
-                    }
-                    catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
-                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                        // If a global pattern exists, use only the filename portion when an
+                        // audiobook BasePath is present; this avoids creating unintended
+                        // subfolders under the audiobook base path.
+                        // Use the configured filename pattern in full when computing the
+                        // tentative generated path relative to the audiobook BasePath.
                     }
 
                     // Now generate a tentative path using the filename-only or relative pattern
                     // so we can compute the destination directory. We'll not actually apply the
                     // full pattern on the source; instead we will place the file into destDir
                     // using original filename first.
-                    var generatedPath = await fileNamingService.GenerateFilePathAsync(metadataForNaming, basePathForFile, null, null, ext);
+                    var generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, basePathForFile, ext);
 
                     // Preserve subdirectories from the generated path. The naming pattern may include
                     // subfolders (e.g. {Author}/{Series}/...). If the generatedPath is rooted, use it
@@ -1076,122 +960,111 @@ namespace Listenarr.Api.Services
 
             if (finalizeDownload && !string.IsNullOrWhiteSpace(job.DestinationPath))
             {
-                await FinalizeProcessedDownloadAsync(job, downloadService, job.DestinationPath);
+                await FinalizeProcessedDownloadAsync(job, downloadService);
             }
         }
 
-        private async Task<List<string>> FilterToClientReportedFilesAsync(
-            DownloadProcessingJob job,
+        /// <summary>
+        /// List files in the given folder and check which ones belongs to the given download
+        /// </summary>
+        /// <param name="scope">Scope provider to query required services</param>
+        /// <param name="download">Download to which we want to match files</param>
+        /// <param name="localPath">Local Listenarr path where files are located</param>
+        /// <param name="blacklistedExtensions">List of file extension that can never be matched</param>
+        /// <param name="cancellationToken"></param>
+        /// <param name="logger"></param>
+        /// <returns>List of files that are in the given local directory and also part of the given download</returns>
+        /// <exception cref="DownloadProcessingException">Thrown when we are technicaly unable to perform the filtering based on download client retrieved informations</exception>
+        public static async Task<List<string>> MatchLocalAndDownloadedFilesAsync(
             IServiceScope scope,
-            List<string> importableFiles,
-            CancellationToken cancellationToken)
+            Download download,
+            string localPath,
+            List<string> blacklistedExtensions,
+            ILogger logger,
+            CancellationToken cancellationToken = default)
         {
+            var importableFiles = Directory.EnumerateFiles(localPath, "*.*", SearchOption.AllDirectories)
+                .Where(f => !FileUtils.IsBlacklistedFile(f, blacklistedExtensions))
+                .Select(f => FileUtils.NormalizeStoredPath(f))
+                .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
+                .ToList();
             try
             {
-                var dlRepository = scope.ServiceProvider.GetService<IDownloadRepository>();
-                var importResolver = scope.ServiceProvider.GetService<IImportItemResolutionService>();
-
-                if (dlRepository == null || importResolver == null)
-                {
-                    return importableFiles;
-                }
-
-                var download = await dlRepository.FindAsync(job.DownloadId);
-                if (download == null)
-                {
-                    return importableFiles;
-                }
+                var importResolver = scope.ServiceProvider.GetRequiredService<IImportItemResolutionService>();
+                var remotePathMappingService = scope.ServiceProvider.GetRequiredService<IRemotePathMappingService>();
 
                 var clientContentPath = download.Metadata?.TryGetValue("ClientContentPath", out var ccp) is true
                     ? ccp?.ToString()
                     : null;
                 var preliminaryItem = new QueueItem
                 {
-                    Id = GetClientDownloadItemId(download) ?? download.Id,
+                    Id = download.GetClientDownloadItemId() ?? download.Id,
                     Title = download.Title ?? "Unknown",
                     Status = "completed",
                     ContentPath = clientContentPath ?? (download.FinalPath is not null ? download.FinalPath : download.DownloadPath),
                     DownloadClientId = download.DownloadClientId
                 };
 
-                var resolvedItem = await importResolver.ResolveImportItemAsync(
+                var downloadClientItem = await importResolver.ResolveImportItemAsync(
                     download,
                     preliminaryItem,
                     previousAttempt: null,
                     cancellationToken);
 
-                if (resolvedItem.SourceFiles == null || resolvedItem.SourceFiles.Count == 0)
+                if (downloadClientItem == null || downloadClientItem.SourceFiles == null || downloadClientItem.SourceFiles.Count == 0)
                 {
-                    return importableFiles;
+                    throw new DownloadProcessingException($"Unable to get the client item matching download or no files reported by the download client for download {download.Id}");
                 }
 
                 var allowedFiles = new HashSet<string>(
-                    resolvedItem.SourceFiles
+                    downloadClientItem.SourceFiles
                         .Where(path => !string.IsNullOrWhiteSpace(path))
                         .Select(path => FileUtils.NormalizeStoredPath(path)),
                     StringComparer.OrdinalIgnoreCase);
 
-                var filteredFiles = importableFiles
-                    .Where(path => allowedFiles.Contains(FileUtils.NormalizeStoredPath(path)))
-                    .ToList();
+                // Apply remote path mapping
+                var translationTasks = allowedFiles
+                    .Select(path => remotePathMappingService.TranslatePathAsync(download.DownloadClientId, path));
+                    
+                var tranlatedAllowedFiles = await Task.WhenAll(translationTasks);
 
+                var filteredFiles = importableFiles
+                    .Where(tranlatedAllowedFiles.Contains)
+                    .ToList();
+                
                 if (filteredFiles.Count == 0)
                 {
-                    _logger.LogWarning(
+                    logger.LogWarning(
                         "Download client reported {ClientFileCount} related file(s) for download {DownloadId}, but none matched the local import candidates under {SourcePath}",
                         allowedFiles.Count,
-                        job.DownloadId,
-                        job.SourcePath);
-                    return importableFiles;
+                        download.Id,
+                        localPath);
                 }
-
-                _logger.LogInformation(
-                    "Scoped directory import for download {DownloadId} from {OriginalCount} to {FilteredCount} file(s) using the download client's reported file list",
-                    job.DownloadId,
-                    importableFiles.Count,
-                    filteredFiles.Count);
-
+                else
+                {
+                    logger.LogInformation(
+                        "Scoped directory import for download {DownloadId} from {OriginalCount} to {FilteredCount} file(s) using the download client's reported file list",
+                        download.Id,
+                        importableFiles.Count,
+                        filteredFiles.Count);
+                }
                 return filteredFiles;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            catch (Exception ex) when (ex is not (DownloadProcessingException or OperationCanceledException or OutOfMemoryException or StackOverflowException))
             {
-                _logger.LogDebug(ex, "Failed to scope directory import to download-client reported files for download {DownloadId}", job.DownloadId);
-                return importableFiles;
+                throw new DownloadProcessingException($"Unknown error while matching download client files to local files for import for download {download.Id}", ex);
             }
         }
 
-        private static string? GetClientDownloadItemId(Download download)
+        private async Task FinalizeProcessedDownloadAsync(DownloadProcessingJob job, IDownloadService downloadService)
         {
-            if (download.Metadata == null)
+            if (job.SourcePath == null)
             {
-                return null;
+                throw new ArgumentNullException(nameof(job), "Job.SourcePath is required");
             }
 
-            if (download.Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
-            {
-                var clientId = clientIdObj?.ToString();
-                if (!string.IsNullOrWhiteSpace(clientId))
-                {
-                    return clientId;
-                }
-            }
-
-            if (download.Metadata.TryGetValue("TorrentHash", out var torrentHashObj))
-            {
-                var torrentHash = torrentHashObj?.ToString();
-                if (!string.IsNullOrWhiteSpace(torrentHash))
-                {
-                    return torrentHash;
-                }
-            }
-
-            return null;
-        }
-
-        private async Task FinalizeProcessedDownloadAsync(DownloadProcessingJob job, IDownloadService downloadService, string destinationPath)
-        {
-            await downloadService.ProcessCompletedDownloadAsync(job.DownloadId, destinationPath);
-            job.AddLogEntry($"Updated download record with final path: {destinationPath}");
+            await downloadService.ProcessCompletedDownloadAsync(job.DownloadId, job.SourcePath);
+            job.AddLogEntry($"Updated download record with source path: {job.SourcePath}");
 
             try
             {

@@ -116,7 +116,7 @@ namespace Listenarr.Api.Services
                         metadata.Album = download.Album ?? string.Empty;
                     }
 
-                    generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, outputPath, null, null, ext);
+                    generatedPath = await fileNamingService.GenerateFilePathAsync(metadata, outputPath, ext);
                 }
                 else
                 {

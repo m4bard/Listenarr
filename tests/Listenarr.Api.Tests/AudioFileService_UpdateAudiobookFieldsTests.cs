@@ -24,6 +24,7 @@ using Listenarr.Api.Services;
 using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging.Abstractions;
+using Listenarr.Api.Services.Metadata;
 
 namespace Listenarr.Api.Tests
 {

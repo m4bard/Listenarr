@@ -89,40 +89,41 @@ namespace Listenarr.Domain.Utils
         {
             if (string.IsNullOrWhiteSpace(path))
             {
-                return string.Empty;
+                path = string.Empty;
             }
 
-            var trimmedPath = path.Trim();
-            string normalizedPath;
             try
             {
-                normalizedPath = Path.GetFullPath(trimmedPath);
+                path = Path.GetFullPath(path);
             }
-            catch (Exception caughtEx_0) when (caughtEx_0 is not OperationCanceledException && caughtEx_0 is not OutOfMemoryException && caughtEx_0 is not StackOverflowException)
+            catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
             {
-                normalizedPath = trimmedPath;
             }
 
-            if (string.IsNullOrWhiteSpace(normalizedPath))
+            if (OperatingSystem.IsWindows())
             {
-                return trimmedPath;
+                try
+                {
+                    var resolver = longPathResolver;
+                    resolver ??= TryResolveLongWindowsPath;
+                    path = ExpandKnownWindowsPathSegments(path, resolver);
+                }
+                catch (Exception exception) when (exception is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+                {
+                }
             }
 
-            var resolver = longPathResolver;
-            if (resolver == null && !OperatingSystem.IsWindows())
+            return path;
+        }
+
+        public static string EnsureTrailingSeparator(string path)
+        {
+            if (string.IsNullOrEmpty(path))
             {
-                return normalizedPath;
+                return path;
             }
 
-            resolver ??= TryResolveLongWindowsPath;
-            try
-            {
-                return ExpandKnownWindowsPathSegments(normalizedPath, resolver);
-            }
-            catch (Exception caughtEx_00) when (caughtEx_00 is not OperationCanceledException && caughtEx_00 is not OutOfMemoryException && caughtEx_00 is not StackOverflowException)
-            {
-                return normalizedPath;
-            }
+            return path.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar) + Path.DirectorySeparatorChar;
         }
 
         public static bool IsBlacklistedFile(string filePath, IEnumerable<string>? blacklistExtensions)
@@ -657,7 +658,46 @@ namespace Listenarr.Domain.Utils
             return Path.Combine(root, Path.Combine(segments));
         }
 
-        
+        /// <summary>
+        /// Create a filesystem-safe name from arbitrary text by removing invalid path characters
+        /// and normalizing whitespace. Keeps it conservative to avoid unexpected folder creation.
+        /// </summary>
+        public static string SafeFileName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return "unknown";
+            // Remove invalid path chars
+            var invalid = Path.GetInvalidFileNameChars();
+            var cleaned = new string(name.Where(c => !invalid.Contains(c)).ToArray());
+            // Replace sequences of non-alphanumeric characters with single space
+            var normalized = System.Text.RegularExpressions.Regex.Replace(cleaned, "[^A-Za-z0-9]+", " ");
+            normalized = normalized.Trim();
+            return normalized.Length == 0 ? "unknown" : normalized;
+        }
+
+        public static string CombineWithOptionalBase(string? basePath, string candidatePath)
+        {
+            if (string.IsNullOrEmpty(candidatePath))
+            {
+                return candidatePath;
+            }
+
+            if (Path.IsPathRooted(candidatePath) || string.IsNullOrWhiteSpace(basePath))
+            {
+                return candidatePath;
+            }
+
+            
+            var relativePath = candidatePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            if (Path.IsPathRooted(relativePath))
+            {
+                return relativePath;
+            }
+
+            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.IsNullOrEmpty(normalizedBasePath)
+                ? relativePath
+                : Path.Join(normalizedBasePath, relativePath);
+        }
     }
 }
 

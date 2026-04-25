@@ -15,40 +15,26 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System;
-using System.IO;
 using System.Reflection;
-using System.Threading;
-using System.Threading.Tasks;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Moq;
 using Xunit;
 using Listenarr.Api.Services;
-using Listenarr.Domain.Models;
+using Listenarr.Api.Services.Metadata;
+using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Tests
 {
-    public class DownloadProcessing_FileMissingRetryTests
+    [Trait("Category", "DownloadProcessing")]
+    public class DownloadProcessing_FileMissingRetryTests : BaseTests
     {
         [Fact]
         public async Task ProcessMoveOrCopy_IfSourceMissing_SchedulesRetryAndRecordsMetric()
         {
-            var dbOptions = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
+            var destRoot = GetTempDirectory("dl-dest");
+            var sourceFile = await GetFileAsync(GetTempPath(), "dl-missing.mp3");
 
-            var db = new ListenArrDbContext(dbOptions);
-
-            // Create temp source file then delete it to simulate race
-            var sourceFile = Path.Join(Path.GetTempPath(), $"dl-missing-{Guid.NewGuid()}.mp3");
-            await File.WriteAllTextAsync(sourceFile, "test");
-
-            // Destination directory must exist for background service to attempt operations
-            var destRoot = Path.Join(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
-            Directory.CreateDirectory(destRoot);
-
-            // Add a download record and a processing job
             var dl = new Download
             {
                 Id = "missing-test-1",
@@ -58,13 +44,8 @@ namespace Listenarr.Api.Tests
                 StartedAt = DateTime.UtcNow,
                 CompletedAt = DateTime.UtcNow
             };
-            db.Downloads.Add(dl);
-            await db.SaveChangesAsync();
 
-            // Setup DI + services
-            var services = new ServiceCollection();
-            services.AddLogging();
-            services.AddSingleton(db);
+            var services = MockUtils.InitServiceCollection();
 
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings
@@ -75,31 +56,23 @@ namespace Listenarr.Api.Tests
             });
             services.AddSingleton<IConfigurationService>(configMock.Object);
 
-            var downloadServiceMock = new Mock<IDownloadService>();
-            services.AddSingleton<IDownloadService>(downloadServiceMock.Object);
-
-            // Queue service uses DbContext and logger - register real instance
-            services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
-            services.AddSingleton<IDownloadProcessingJobRepository>(new TestDownloadProcessingJobRepository(db));
-
             // Mock IImportItemResolutionService - just returns the preliminary item unchanged
             var importResolutionMock = new Mock<IImportItemResolutionService>();
             importResolutionMock
                 .Setup(x => x.ResolveImportItemAsync(It.IsAny<Download>(), It.IsAny<QueueItem>(), It.IsAny<QueueItem>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Download d, QueueItem q, QueueItem? p, CancellationToken ct) => q);
             services.AddScoped<IImportItemResolutionService>(_ => importResolutionMock.Object);
-
+            
             var metricsMock = new Mock<IAppMetricsService>();
             services.AddSingleton<IAppMetricsService>(metricsMock.Object);
 
-            var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadProcessingBackgroundService>>();
-
             var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+            var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
 
-            var queueService = provider.GetRequiredService<IDownloadProcessingQueueService>();
+            await downloadRepository.AddAsync(dl);
 
             // Enqueue the job pointing to the source file
+            var queueService = provider.GetRequiredService<IDownloadProcessingQueueService>();
             var jobId = await queueService.QueueDownloadProcessingAsync(dl.Id, sourceFile, null);
             var job = await queueService.GetJobAsync(jobId);
 
@@ -107,7 +80,10 @@ namespace Listenarr.Api.Tests
             try { File.Delete(sourceFile); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
 
             // Create the background service instance (no longer needs importItemResolution in constructor)
-            var svc = new DownloadProcessingBackgroundService(scopeFactory, loggerMock.Object, metricsMock.Object);
+            var svc = new DownloadProcessingBackgroundService(
+                provider.GetRequiredService<IServiceScopeFactory>(), 
+                provider.GetRequiredService<ILogger<DownloadProcessingBackgroundService>>(), 
+                metricsMock.Object);
 
             // Set job to processing (the outer loop normally does this)
             job.Status = ProcessingJobStatus.Processing;
@@ -145,25 +121,14 @@ namespace Listenarr.Api.Tests
         [Fact]
         public async Task ProcessMoveOrCopy_DirectorySource_FinalizesOnceAfterCompanionFilesAreCopied()
         {
-            var dbOptions = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
+            var sourceDir = GetTempDirectory("dl-dir");
+            var destRoot = GetTempDirectory("dl-dest");
 
-            var db = new ListenArrDbContext(dbOptions);
+            var audioPath = await GetFileAsync(sourceDir, "book.m4b");
+            var coverPath = await GetFileAsync(sourceDir, "cover.jpg");
+            var txtPath = await GetFileAsync(sourceDir, "book.txt");
 
-            var sourceDir = Path.Join(Path.GetTempPath(), $"dl-dir-{Guid.NewGuid()}");
-            var destRoot = Path.Join(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
-            Directory.CreateDirectory(sourceDir);
-            Directory.CreateDirectory(destRoot);
-
-            var audioPath = Path.Join(sourceDir, "book.m4b");
-            var coverPath = Path.Join(sourceDir, "cover.jpg");
-            var txtPath = Path.Join(sourceDir, "book.txt");
-            await File.WriteAllTextAsync(audioPath, "audio");
-            await File.WriteAllTextAsync(coverPath, "cover");
-            await File.WriteAllTextAsync(txtPath, "notes");
-
-            var dl = new Download
+            var download = new Download
             {
                 Id = "dir-batch-test-1",
                 Status = DownloadStatus.Completed,
@@ -172,13 +137,17 @@ namespace Listenarr.Api.Tests
                 StartedAt = DateTime.UtcNow,
                 CompletedAt = DateTime.UtcNow
             };
-            db.Downloads.Add(dl);
-            await db.SaveChangesAsync();
 
-            var services = new ServiceCollection();
-            services.AddLogging();
-            services.AddSingleton(db);
-            services.AddSingleton<IDownloadRepository>(new TestDownloadRepository(db));
+            var job = new DownloadProcessingJob
+            {
+                Id = "job-dir-batch-1",
+                DownloadId = download.Id,
+                JobType = ProcessingJobType.MoveOrCopyFile,
+                Status = ProcessingJobStatus.Processing,
+                SourcePath = sourceDir
+            };
+
+            var services = MockUtils.InitServiceCollection();
 
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings
@@ -189,97 +158,77 @@ namespace Listenarr.Api.Tests
             });
             services.AddSingleton<IConfigurationService>(configMock.Object);
 
-            string? finalizedPath = null;
             var downloadServiceMock = new Mock<IDownloadService>();
+            services.AddSingleton<IDownloadService>(downloadServiceMock.Object);
+
+
+            var provider = services.BuildServiceProvider();
+            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
+            var svc = new DownloadProcessingBackgroundService(
+                provider.GetRequiredService<IServiceScopeFactory>(), 
+                provider.GetRequiredService<ILogger<DownloadProcessingBackgroundService>>(),
+                provider.GetRequiredService<IAppMetricsService>());
+
+            var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
+
+            await downloadRepository.AddAsync(download);
+            
+            string? processedPath = null;
             downloadServiceMock
-                .Setup(d => d.ProcessCompletedDownloadAsync(dl.Id, It.IsAny<string>()))
-                .Callback<string, string>((id, path) =>
+                .Setup(d => d.ProcessCompletedDownloadAsync(download.Id, It.IsAny<string>()))
+                .Callback<string, string>(async (id, path) =>
                 {
-                    finalizedPath = path;
-                    var tracked = db.Downloads.Find(id);
+                    processedPath = path;
+                    var tracked = await downloadRepository.GetByIdAsync(id);
                     if (tracked != null)
                     {
                         tracked.Status = DownloadStatus.Moved;
                         tracked.FinalPath = path;
-                        db.SaveChanges();
+                        await downloadRepository.UpdateAsync(tracked);
                     }
                 })
                 .Returns(Task.CompletedTask);
-            services.AddSingleton<IDownloadService>(downloadServiceMock.Object);
-
-            var metricsMock = new Mock<IAppMetricsService>();
-            services.AddSingleton<IAppMetricsService>(metricsMock.Object);
-
-            var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadProcessingBackgroundService>>();
-
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-            var svc = new DownloadProcessingBackgroundService(scopeFactory, loggerMock.Object, metricsMock.Object);
-
-            var job = new DownloadProcessingJob
-            {
-                Id = "job-dir-batch-1",
-                DownloadId = dl.Id,
-                JobType = ProcessingJobType.MoveOrCopyFile,
-                Status = ProcessingJobStatus.Processing,
-                SourcePath = sourceDir
-            };
 
             using var scope = provider.CreateScope();
 
             var method = typeof(DownloadProcessingBackgroundService).GetMethod("ProcessMoveOrCopyJobAsync", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.NotNull(method);
 
-            var task = (Task)method!.Invoke(svc, new object[] { job, scope, CancellationToken.None })!;
-            await task;
-
             var expectedAudioDest = Path.Join(destRoot, "book.m4b");
             var expectedCoverDest = Path.Join(destRoot, "cover.jpg");
             var expectedTxtDest = Path.Join(destRoot, "book.txt");
 
+            Assert.False(File.Exists(expectedAudioDest));
+            Assert.False(File.Exists(expectedCoverDest));
+            Assert.False(File.Exists(expectedTxtDest));
+            Assert.Null(processedPath);
+            Assert.Null(job.DestinationPath);
+
+            var task = (Task)method!.Invoke(svc, [job, scope, CancellationToken.None])!;
+            await task;
+
             Assert.True(File.Exists(expectedAudioDest));
             Assert.True(File.Exists(expectedCoverDest));
             Assert.True(File.Exists(expectedTxtDest));
-            Assert.Equal(expectedAudioDest, finalizedPath);
-            Assert.Equal(expectedAudioDest, job.DestinationPath);
+            Assert.Equal(sourceDir, processedPath);
+            Assert.Equal(destRoot, job.DestinationPath);
 
-            downloadServiceMock.Verify(d => d.ProcessCompletedDownloadAsync(dl.Id, expectedAudioDest), Times.Once);
-            downloadServiceMock.Verify(d => d.ProcessCompletedDownloadAsync(dl.Id, expectedCoverDest), Times.Never);
-            downloadServiceMock.Verify(d => d.ProcessCompletedDownloadAsync(dl.Id, expectedTxtDest), Times.Never);
-
-            try { Directory.Delete(sourceDir, true); }
-            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
-            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
-
-            try { Directory.Delete(destRoot, true); }
-            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
-            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
+            downloadServiceMock.Verify(d => d.ProcessCompletedDownloadAsync(download.Id, sourceDir), Times.Once);
         }
 
         [Fact]
+        [Trait("Method", "ProcessMoveOrCopyJobAsync")]
         public async Task ProcessMoveOrCopy_DirectorySource_UsesClientReportedFilesToExcludeUnrelatedFiles()
         {
-            var dbOptions = new DbContextOptionsBuilder<ListenArrDbContext>()
-                .UseInMemoryDatabase(Guid.NewGuid().ToString())
-                .Options;
+            var sourceDir = GetTempDirectory($"dl-dir");
+            var destRoot = GetTempDirectory($"dl-dest");
 
-            var db = new ListenArrDbContext(dbOptions);
+            var audioPath = await GetFileAsync(sourceDir, "book.m4b");
+            var coverPath = await GetFileAsync(sourceDir, "cover.jpg");
+            var txtPath = await GetFileAsync(sourceDir, "book.txt");
+            var unrelatedPath = await GetFileAsync(sourceDir, "unrelated.txt");
 
-            var sourceDir = Path.Join(Path.GetTempPath(), $"dl-dir-{Guid.NewGuid()}");
-            var destRoot = Path.Join(Path.GetTempPath(), $"dl-dest-{Guid.NewGuid()}");
-            Directory.CreateDirectory(sourceDir);
-            Directory.CreateDirectory(destRoot);
-
-            var audioPath = Path.Join(sourceDir, "book.m4b");
-            var coverPath = Path.Join(sourceDir, "cover.jpg");
-            var txtPath = Path.Join(sourceDir, "book.txt");
-            var unrelatedPath = Path.Join(sourceDir, "unrelated.txt");
-            await File.WriteAllTextAsync(audioPath, "audio");
-            await File.WriteAllTextAsync(coverPath, "cover");
-            await File.WriteAllTextAsync(txtPath, "notes");
-            await File.WriteAllTextAsync(unrelatedPath, "ignore");
-
-            var dl = new Download
+            var download = new Download
             {
                 Id = "dir-batch-client-scope-1",
                 Status = DownloadStatus.Completed,
@@ -293,13 +242,17 @@ namespace Listenarr.Api.Tests
                     ["TorrentHash"] = "ABC123"
                 }
             };
-            db.Downloads.Add(dl);
-            await db.SaveChangesAsync();
 
-            var services = new ServiceCollection();
-            services.AddLogging();
-            services.AddSingleton(db);
-            services.AddSingleton<IDownloadRepository>(new TestDownloadRepository(db));
+            var job = new DownloadProcessingJob
+            {
+                Id = "job-dir-batch-client-scope-1",
+                DownloadId = download.Id,
+                JobType = ProcessingJobType.MoveOrCopyFile,
+                Status = ProcessingJobStatus.Processing,
+                SourcePath = sourceDir
+            };
+
+            var services = MockUtils.InitServiceCollection();
 
             var configMock = new Mock<IConfigurationService>();
             configMock.Setup(c => c.GetApplicationSettingsAsync()).ReturnsAsync(new ApplicationSettings
@@ -313,73 +266,59 @@ namespace Listenarr.Api.Tests
             var importResolverMock = new Mock<IImportItemResolutionService>();
             importResolverMock
                 .Setup(r => r.ResolveImportItemAsync(
-                    It.Is<Download>(d => d.Id == dl.Id),
+                    It.Is<Download>(d => d.Id == download.Id),
                     It.IsAny<QueueItem>(),
                     It.IsAny<QueueItem?>(),
                     It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Download download, QueueItem queueItem, QueueItem? previousAttempt, CancellationToken ct) =>
                 {
-                    queueItem.SourceFiles = new List<string> { audioPath, coverPath, txtPath };
+                    queueItem.SourceFiles = [audioPath, coverPath, txtPath];
                     return queueItem;
                 });
             services.AddSingleton<IImportItemResolutionService>(importResolverMock.Object);
 
-            string? finalizedPath = null;
             var downloadServiceMock = new Mock<IDownloadService>();
+            services.AddSingleton<IDownloadService>(downloadServiceMock.Object);
+            
+            var provider = services.BuildServiceProvider();
+
+            var svc = new DownloadProcessingBackgroundService(
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                provider.GetRequiredService<ILogger<DownloadProcessingBackgroundService>>(),
+                provider.GetRequiredService<IAppMetricsService>());
+
+            var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
+
+            await downloadRepository.AddAsync(download);
+            
+            string? processedPath = null;
             downloadServiceMock
-                .Setup(d => d.ProcessCompletedDownloadAsync(dl.Id, It.IsAny<string>()))
-                .Callback<string, string>((id, path) =>
+                .Setup(d => d.ProcessCompletedDownloadAsync(download.Id, It.IsAny<string>()))
+                .Callback<string, string>(async (id, path) =>
                 {
-                    finalizedPath = path;
-                    var tracked = db.Downloads.Find(id);
+                    processedPath = path;
+                    var tracked = await downloadRepository.GetByIdAsync(id);
                     if (tracked != null)
                     {
                         tracked.Status = DownloadStatus.Moved;
                         tracked.FinalPath = path;
-                        db.SaveChanges();
+                        await downloadRepository.UpdateAsync(tracked);
                     }
                 })
                 .Returns(Task.CompletedTask);
-            services.AddSingleton<IDownloadService>(downloadServiceMock.Object);
-
-            var metricsMock = new Mock<IAppMetricsService>();
-            services.AddSingleton<IAppMetricsService>(metricsMock.Object);
-
-            var loggerMock = new Mock<Microsoft.Extensions.Logging.ILogger<DownloadProcessingBackgroundService>>();
-
-            var provider = services.BuildServiceProvider();
-            var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-            var svc = new DownloadProcessingBackgroundService(scopeFactory, loggerMock.Object, metricsMock.Object);
-
-            var job = new DownloadProcessingJob
-            {
-                Id = "job-dir-batch-client-scope-1",
-                DownloadId = dl.Id,
-                JobType = ProcessingJobType.MoveOrCopyFile,
-                Status = ProcessingJobStatus.Processing,
-                SourcePath = sourceDir
-            };
 
             using var scope = provider.CreateScope();
             var method = typeof(DownloadProcessingBackgroundService).GetMethod("ProcessMoveOrCopyJobAsync", BindingFlags.NonPublic | BindingFlags.Instance);
             Assert.NotNull(method);
 
-            var task = (Task)method!.Invoke(svc, new object[] { job, scope, CancellationToken.None })!;
+            var task = (Task)method!.Invoke(svc, [job, scope, CancellationToken.None])!;
             await task;
 
             Assert.True(File.Exists(Path.Join(destRoot, "book.m4b")));
             Assert.True(File.Exists(Path.Join(destRoot, "cover.jpg")));
             Assert.True(File.Exists(Path.Join(destRoot, "book.txt")));
             Assert.False(File.Exists(Path.Join(destRoot, "unrelated.txt")));
-            Assert.Equal(Path.Join(destRoot, "book.m4b"), finalizedPath);
-
-            try { Directory.Delete(sourceDir, true); }
-            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
-            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
-
-            try { Directory.Delete(destRoot, true); }
-            catch (IOException) { /* Best-effort cleanup for temp test directories. */ }
-            catch (UnauthorizedAccessException) { /* Best-effort cleanup for temp test directories. */ }
+            Assert.Equal(sourceDir, processedPath);
         }
     }
 }

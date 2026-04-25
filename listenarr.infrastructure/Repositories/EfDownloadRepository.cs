@@ -80,31 +80,28 @@ namespace Listenarr.Infrastructure.Repositories
             return await ctx.Downloads.AsNoTracking().ToListAsync();
         }
 
-        public async Task<List<QueueTrackedDownload>> GetQueueDisplayCandidatesAsync()
+        public async Task<List<Download>> GetQueueDisplayCandidatesAsync()
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             var ddl = await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId == "DDL" && d.Status != DownloadStatus.Moved)
-                .Select(ToQueueTrackedDownloadProjection())
                 .ToListAsync();
             var nonDdl = await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId != "DDL")
                 .Where(d => d.Status != DownloadStatus.Moved && d.Status != DownloadStatus.Failed)
                 .Where(d => d.Status != DownloadStatus.Completed || string.IsNullOrEmpty(d.FinalPath))
-                .Select(ToQueueTrackedDownloadProjection())
                 .ToListAsync();
             return ddl.Concat(nonDdl).ToList();
         }
 
-        public async Task<List<QueueTrackedDownload>> GetQueueMatchingCandidatesAsync()
+        public async Task<List<Download>> GetQueueMatchingCandidatesAsync()
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
             return await ctx.Downloads
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId != "DDL" && d.Status != DownloadStatus.Failed)
-                .Select(ToQueueTrackedDownloadProjection())
                 .ToListAsync();
         }
 
@@ -136,6 +133,14 @@ namespace Listenarr.Infrastructure.Repositories
                 .AsNoTracking()
                 .Where(d => d.DownloadClientId == clientId)
                 .ToListAsync();
+        }
+
+        public async Task<Download> GetByIdAsync(string id)
+        {
+            await using var ctx = await _dbFactory.CreateDbContextAsync();
+            return await ctx.Downloads
+                .AsNoTracking()
+                .FirstAsync(d => d.Id == id);
         }
 
         public async Task<List<Download>> GetByIdsAsync(IEnumerable<string> ids)
@@ -214,26 +219,6 @@ namespace Listenarr.Infrastructure.Repositories
                 return false;
             value = raw.ToString() ?? string.Empty;
             return !string.IsNullOrWhiteSpace(value);
-        }
-
-        private static System.Linq.Expressions.Expression<Func<Download, QueueTrackedDownload>> ToQueueTrackedDownloadProjection()
-        {
-            return d => new QueueTrackedDownload
-            {
-                Id = d.Id,
-                DownloadClientId = d.DownloadClientId,
-                Title = d.Title,
-                Artist = d.Artist,
-                Status = d.Status,
-                StartedAt = d.StartedAt,
-                TotalSize = d.TotalSize,
-                DownloadedSize = d.DownloadedSize,
-                DownloadPath = d.DownloadPath,
-                FinalPath = d.FinalPath,
-                Metadata = d.Metadata,
-                AudiobookId = d.AudiobookId,
-                Language = d.Language
-            };
         }
     }
 }
