@@ -10,8 +10,7 @@ permissions:
   packages: write
 
 on:
-  pull_request:
-    types: [ closed ]
+  push:
     branches: [ canary ]
   workflow_dispatch:
 
@@ -20,9 +19,10 @@ jobs:
     if: >
       github.event_name == 'workflow_dispatch' ||
       (
-        github.event.pull_request.merged == true &&
+        github.event_name == 'push' &&
         github.actor != 'github-actions[bot]' &&
-        !contains(toJson(github.event.pull_request.labels.*.name), 'automated')
+        !contains(github.event.head_commit.message, '[skip ci]') &&
+        !contains(github.event.head_commit.message, '[ci skip]')
       )
     runs-on: ubuntu-latest
     outputs:
@@ -50,8 +50,55 @@ jobs:
         with:
           node-version: 24
 
+      - name: Extract Pull Request info
+        id: find_triggering_pr
+        uses: actions/github-script@v6
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            if (context.eventName === 'workflow_dispatch') {
+              core.setOutput('PR_NUMBER', '');
+              core.setOutput('PR_TITLE', '');
+              core.setOutput('PR_BODY_RAW', '');
+              core.setOutput('PR_LABELS_JSON', '[]');
+              return;
+            }
+
+            const { owner, repo } = context.repo;
+            const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+              owner,
+              repo,
+              commit_sha: context.sha
+            });
+
+            const pullRequests = associated.data || [];
+            const pr = pullRequests.find(item => item.base?.ref === 'canary' && item.merged_at)
+              ?? pullRequests.find(item => item.base?.ref === 'canary')
+              ?? pullRequests[0];
+
+            if (!pr) {
+              core.setOutput('PR_NUMBER', '');
+              core.setOutput('PR_TITLE', '');
+              core.setOutput('PR_BODY_RAW', '');
+              core.setOutput('PR_LABELS_JSON', '[]');
+              core.warning(`No pull request was associated with commit ${context.sha}.`);
+              return;
+            }
+
+            const labels = (pr.labels || [])
+              .map(label => typeof label === 'string' ? label : label.name)
+              .filter(Boolean);
+
+            core.setOutput('PR_NUMBER', pr.number.toString());
+            core.setOutput('PR_TITLE', pr.title || '');
+            core.setOutput('PR_BODY_RAW', pr.body || '');
+            core.setOutput('PR_LABELS_JSON', JSON.stringify(labels));
+
       - name: Determine version bump type from PR labels
         id: bump-type
+        env:
+          PR_LABELS_JSON: ${{ steps.find_triggering_pr.outputs.PR_LABELS_JSON }}
+          PR_NUMBER: ${{ steps.find_triggering_pr.outputs.PR_NUMBER }}
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
@@ -59,7 +106,13 @@ jobs:
             echo "Manual dispatch — no version bump, rebuilding at current version."
             exit 0
           fi
-          LABELS='${{ toJson(github.event.pull_request.labels.*.name) }}'
+
+          if [ -z "${PR_NUMBER}" ]; then
+            echo "::error::No merged PR was associated with push commit ${GITHUB_SHA}. Use workflow_dispatch to rebuild without a version bump."
+            exit 1
+          fi
+
+          LABELS="${PR_LABELS_JSON:-[]}"
           echo "PR labels: $LABELS"
           if echo "$LABELS" | jq -e 'contains(["major"])' > /dev/null; then
             echo "bump=major" >> "$GITHUB_OUTPUT"
@@ -71,7 +124,7 @@ jobs:
             echo "bump=patch" >> "$GITHUB_OUTPUT"
             echo "Bump type: patch"
           else
-            echo "::error::PR #${{ github.event.pull_request.number }} has no version bump label. Add 'patch', 'minor', or 'major'."
+            echo "::error::PR #${PR_NUMBER} has no version bump label. Add 'patch', 'minor', or 'major'."
             exit 1
           fi
 
@@ -322,18 +375,7 @@ jobs:
 
       - name: Compute short SHA
         id: short-sha
-        run: echo "SHORT_SHA=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
-
-      - name: Extract Pull Request info
-        id: find_triggering_pr
-        uses: actions/github-script@v6
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const pr = context.payload.pull_request;
-            core.setOutput('PR_NUMBER', pr ? pr.number.toString() : '');
-            core.setOutput('PR_TITLE', pr ? pr.title : '');
-            core.setOutput('PR_BODY_RAW', pr ? (pr.body || '') : '');
+        run: echo "SHORT_SHA=$(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
 
   canary-publish:
     needs: canary-build
