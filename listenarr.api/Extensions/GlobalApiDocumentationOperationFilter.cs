@@ -17,7 +17,7 @@
  */
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Listenarr.Api.Extensions
@@ -78,7 +78,10 @@ namespace Listenarr.Api.Extensions
 
             if (operation.Tags == null || operation.Tags.Count == 0)
             {
-                operation.Tags = new List<OpenApiTag> { new() { Name = controllerName } };
+                operation.Tags = new HashSet<OpenApiTagReference>
+                {
+                    new(controllerName, null!, null)
+                };
             }
 
             ApplyParameterDescriptions(operation, apiDescription);
@@ -129,12 +132,17 @@ namespace Listenarr.Api.Extensions
             // For mutating methods, make request body requirement explicit in Swagger UI.
             if (httpMethod is "POST" or "PUT" or "PATCH")
             {
-                operation.RequestBody.Required = true;
+                if (operation.RequestBody is OpenApiRequestBody requestBody)
+                {
+                    requestBody.Required = true;
+                }
             }
         }
 
         private static void ApplyResponseDescriptions(OpenApiOperation operation, string httpMethod)
         {
+            operation.Responses ??= new OpenApiResponses();
+
             if (operation.Responses.Count == 0)
             {
                 var defaultCode = httpMethod switch
@@ -170,6 +178,7 @@ namespace Listenarr.Api.Extensions
                 return;
             }
 
+            operation.Responses ??= new OpenApiResponses();
             operation.Security ??= new List<OpenApiSecurityRequirement>();
 
             AddSecurityRequirement(operation.Security, SessionBearerScheme);
@@ -246,14 +255,7 @@ namespace Listenarr.Api.Extensions
 
         private static void AddSecurityRequirement(IList<OpenApiSecurityRequirement> requirements, string schemeId)
         {
-            var reference = new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = schemeId
-                }
-            };
+            var reference = new OpenApiSecuritySchemeReference(schemeId, null!, null);
 
             if (requirements.Any(existing => existing.Keys.Any(k => string.Equals(k.Reference?.Id, schemeId, StringComparison.Ordinal))))
             {
@@ -262,7 +264,7 @@ namespace Listenarr.Api.Extensions
 
             requirements.Add(new OpenApiSecurityRequirement
             {
-                [reference] = Array.Empty<string>()
+                [reference] = []
             });
         }
 

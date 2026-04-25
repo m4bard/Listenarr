@@ -264,7 +264,7 @@ namespace Listenarr.Api.Services
 
                 if (downloadUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase) || downloadUrl.EndsWith(".ffmpeg.zip", StringComparison.OrdinalIgnoreCase))
                 {
-                    using var archive = SharpCompress.Archives.Zip.ZipArchive.Open(tmpFile);
+                    using var archive = SharpCompress.Archives.Zip.ZipArchive.OpenArchive(tmpFile, new ReaderOptions());
                     var baseRoot = Path.GetFullPath(_baseDir);
                     foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
                     {
@@ -287,7 +287,7 @@ namespace Listenarr.Api.Services
                     {
                         using var stream = File.OpenRead(tmpFile);
                         var readerOptions = new ReaderOptions { LeaveStreamOpen = false };
-                        using var reader = ReaderFactory.Open(stream, readerOptions);
+                        using var reader = ReaderFactory.OpenReader(stream, readerOptions);
                         var baseRoot = Path.GetFullPath(_baseDir);
                         while (reader.MoveToNextEntry())
                         {
@@ -310,33 +310,9 @@ namespace Listenarr.Api.Services
                         await TryDeleteFileAsync(tmpFile);
                     }
                     catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "Managed extraction failed, attempting fallback to system tar for {Tmp}", tmpFile);
-                        try
-                        {
-                            var psi = new System.Diagnostics.ProcessStartInfo
-                            {
-                                FileName = "tar",
-                                Arguments = $"-xf \"{tmpFile}\" -C \"{_baseDir}\"",
-                                RedirectStandardOutput = true,
-                                RedirectStandardError = true,
-                                UseShellExecute = false,
-                                CreateNoWindow = true
-                            };
-
-                            if (_processRunner != null)
-                            {
-                                await _processRunner.RunAsync(psi, 30000);
-                                await TryDeleteFileAsync(tmpFile);
-                            }
-                            else
-                            {
-                                _logger.LogWarning("IProcessRunner is not available; skipping system 'tar' extraction fallback for {Tmp}", tmpFile);
-                                await TryDeleteFileAsync(tmpFile);
-                            }
-                        }
-                        catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { /* best-effort */ 
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                        }
+                        _logger.LogWarning(ex, "Managed extraction failed for {Tmp}; skipping system tar fallback to avoid unsafe archive extraction", tmpFile);
+                        await TryDeleteFileAsync(tmpFile);
+                        return null;
                     }
                 }
                 else
@@ -494,6 +470,12 @@ namespace Listenarr.Api.Services
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
                     _logger.LogDebug(ex, "Non-fatal error while locating/copying ffprobe from extracted files");
+                }
+
+                if (!File.Exists(_ffprobePath))
+                {
+                    _logger.LogWarning("ffprobe install did not produce the expected binary at {Path}", _ffprobePath);
+                    return null;
                 }
 
                 var licensePath = Path.Join(_baseDir, "LICENSE_NOTICE.txt");

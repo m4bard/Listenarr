@@ -22,6 +22,7 @@ using System.Threading.Tasks;
 using Microsoft.Extensions.Logging;
 using SharpCompress.Archives;
 using SharpCompress.Common;
+using SharpCompress.Readers;
 
 namespace Listenarr.Api.Services
 {
@@ -53,7 +54,7 @@ namespace Listenarr.Api.Services
                 Directory.CreateDirectory(tmp);
 
                 // Use SharpCompress to extract safely
-                using var archive = ArchiveFactory.Open(archivePath);
+                using var archive = ArchiveFactory.OpenArchive(archivePath, new ReaderOptions());
                 var tmpRoot = Path.GetFullPath(tmp);
                 foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
                 {
