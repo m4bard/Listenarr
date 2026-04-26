@@ -830,6 +830,7 @@ builder.Services.AddSwaggerGen(options =>
     // the same simple type name (e.g. TranslatePathRequest).
     options.CustomSchemaIds(type => (type.FullName ?? type.Name).Replace('+', '.'));
     options.OperationFilter<GlobalApiDocumentationOperationFilter>();
+    options.DocumentFilter<SwaggerSecurityRequirementDocumentFilter>();
     options.DocumentFilter<SwaggerTagOrderDocumentFilter>();
 
     // Resolve conflicting actions (ambiguous HTTP method actions) by selecting the first

@@ -28,11 +28,6 @@ namespace Listenarr.Api.Extensions
     /// </summary>
     public sealed class GlobalApiDocumentationOperationFilter : IOperationFilter
     {
-        private const string SessionBearerScheme = "SessionBearer";
-        private const string SessionTokenScheme = "SessionTokenHeader";
-        private const string ApiKeyScheme = "ApiKeyHeader";
-        private const string ApiKeyAuthorizationScheme = "ApiKeyAuthorization";
-
         private static readonly IReadOnlyDictionary<string, string> ResponseDescriptionMap =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -179,12 +174,8 @@ namespace Listenarr.Api.Extensions
             }
 
             operation.Responses ??= new OpenApiResponses();
-            operation.Security ??= new List<OpenApiSecurityRequirement>();
-
-            AddSecurityRequirement(operation.Security, SessionBearerScheme);
-            AddSecurityRequirement(operation.Security, SessionTokenScheme);
-            AddSecurityRequirement(operation.Security, ApiKeyScheme);
-            AddSecurityRequirement(operation.Security, ApiKeyAuthorizationScheme);
+            operation.Metadata ??= new Dictionary<string, object>();
+            operation.Metadata[SwaggerSecurityRequirementDocumentFilter.AuthenticationRequiredMetadataKey] = true;
 
             if (!operation.Responses.ContainsKey("401"))
             {
@@ -252,21 +243,6 @@ namespace Listenarr.Api.Extensions
         private static bool HasAllowAnonymous(OperationFilterContext context) =>
             context.MethodInfo.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any() ||
             (context.MethodInfo.DeclaringType?.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any() ?? false);
-
-        private static void AddSecurityRequirement(IList<OpenApiSecurityRequirement> requirements, string schemeId)
-        {
-            var reference = new OpenApiSecuritySchemeReference(schemeId, null!, null);
-
-            if (requirements.Any(existing => existing.Keys.Any(k => string.Equals(k.Reference?.Id, schemeId, StringComparison.Ordinal))))
-            {
-                return;
-            }
-
-            requirements.Add(new OpenApiSecurityRequirement
-            {
-                [reference] = []
-            });
-        }
 
         private static string ResolveResponseDescription(string statusCode) =>
             ResponseDescriptionMap.TryGetValue(statusCode, out var description)
