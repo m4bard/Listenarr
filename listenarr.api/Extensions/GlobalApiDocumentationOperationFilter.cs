@@ -17,7 +17,7 @@
  */
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc.ApiExplorer;
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Listenarr.Api.Extensions
@@ -28,11 +28,6 @@ namespace Listenarr.Api.Extensions
     /// </summary>
     public sealed class GlobalApiDocumentationOperationFilter : IOperationFilter
     {
-        private const string SessionBearerScheme = "SessionBearer";
-        private const string SessionTokenScheme = "SessionTokenHeader";
-        private const string ApiKeyScheme = "ApiKeyHeader";
-        private const string ApiKeyAuthorizationScheme = "ApiKeyAuthorization";
-
         private static readonly IReadOnlyDictionary<string, string> ResponseDescriptionMap =
             new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
             {
@@ -78,7 +73,10 @@ namespace Listenarr.Api.Extensions
 
             if (operation.Tags == null || operation.Tags.Count == 0)
             {
-                operation.Tags = new List<OpenApiTag> { new() { Name = controllerName } };
+                operation.Tags = new HashSet<OpenApiTagReference>
+                {
+                    new(controllerName, null!, null)
+                };
             }
 
             ApplyParameterDescriptions(operation, apiDescription);
@@ -129,12 +127,17 @@ namespace Listenarr.Api.Extensions
             // For mutating methods, make request body requirement explicit in Swagger UI.
             if (httpMethod is "POST" or "PUT" or "PATCH")
             {
-                operation.RequestBody.Required = true;
+                if (operation.RequestBody is OpenApiRequestBody requestBody)
+                {
+                    requestBody.Required = true;
+                }
             }
         }
 
         private static void ApplyResponseDescriptions(OpenApiOperation operation, string httpMethod)
         {
+            operation.Responses ??= new OpenApiResponses();
+
             if (operation.Responses.Count == 0)
             {
                 var defaultCode = httpMethod switch
@@ -170,12 +173,9 @@ namespace Listenarr.Api.Extensions
                 return;
             }
 
-            operation.Security ??= new List<OpenApiSecurityRequirement>();
-
-            AddSecurityRequirement(operation.Security, SessionBearerScheme);
-            AddSecurityRequirement(operation.Security, SessionTokenScheme);
-            AddSecurityRequirement(operation.Security, ApiKeyScheme);
-            AddSecurityRequirement(operation.Security, ApiKeyAuthorizationScheme);
+            operation.Responses ??= new OpenApiResponses();
+            operation.Metadata ??= new Dictionary<string, object>();
+            operation.Metadata[SwaggerSecurityRequirementDocumentFilter.AuthenticationRequiredMetadataKey] = true;
 
             if (!operation.Responses.ContainsKey("401"))
             {
@@ -243,28 +243,6 @@ namespace Listenarr.Api.Extensions
         private static bool HasAllowAnonymous(OperationFilterContext context) =>
             context.MethodInfo.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any() ||
             (context.MethodInfo.DeclaringType?.GetCustomAttributes(true).OfType<AllowAnonymousAttribute>().Any() ?? false);
-
-        private static void AddSecurityRequirement(IList<OpenApiSecurityRequirement> requirements, string schemeId)
-        {
-            var reference = new OpenApiSecurityScheme
-            {
-                Reference = new OpenApiReference
-                {
-                    Type = ReferenceType.SecurityScheme,
-                    Id = schemeId
-                }
-            };
-
-            if (requirements.Any(existing => existing.Keys.Any(k => string.Equals(k.Reference?.Id, schemeId, StringComparison.Ordinal))))
-            {
-                return;
-            }
-
-            requirements.Add(new OpenApiSecurityRequirement
-            {
-                [reference] = Array.Empty<string>()
-            });
-        }
 
         private static string ResolveResponseDescription(string statusCode) =>
             ResponseDescriptionMap.TryGetValue(statusCode, out var description)

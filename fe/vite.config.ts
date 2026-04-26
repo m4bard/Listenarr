@@ -4,7 +4,6 @@ import type { ServerResponse } from 'node:http'
 import { defineConfig } from 'vite'
 import type { PluginOption } from 'vite'
 import vue from '@vitejs/plugin-vue'
-import vueDevTools from 'vite-plugin-vue-devtools'
 // Visualizer for bundle analysis. We cast to any when injecting to avoid
 // TypeScript plugin signature mismatches between rollup and vite types.
 import { visualizer } from 'rollup-plugin-visualizer'
@@ -13,7 +12,6 @@ import { visualizer } from 'rollup-plugin-visualizer'
 export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
-    vueDevTools(),
     // Generate a static treemap report after build
     // cast to any to satisfy TypeScript when mixing rollup plugin types with Vite
   // cast plugin to any to avoid Vite/TS signature issues

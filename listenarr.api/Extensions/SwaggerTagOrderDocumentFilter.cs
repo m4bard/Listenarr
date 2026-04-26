@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Microsoft.OpenApi.Models;
+using Microsoft.OpenApi;
 using Swashbuckle.AspNetCore.SwaggerGen;
 
 namespace Listenarr.Api.Extensions;
@@ -54,17 +54,36 @@ public sealed class SwaggerTagOrderDocumentFilter : IDocumentFilter
     {
         // Build a lookup of existing tags in the document (auto-generated from controller actions)
         var existingTagNames = new HashSet<string>(
-            swaggerDoc.Tags?.Select(t => t.Name) ?? [],
+            swaggerDoc.Tags?
+                .Select(t => t.Name)
+                .Where(name => !string.IsNullOrWhiteSpace(name))
+                .Cast<string>() ?? [],
             StringComparer.OrdinalIgnoreCase);
 
         // Also collect any tags referenced by operations that don't yet have a top-level entry
-        foreach (var pathItem in swaggerDoc.Paths.Values)
+        if (swaggerDoc.Paths != null)
         {
-            foreach (var operation in pathItem.Operations.Values)
+            foreach (var pathItem in swaggerDoc.Paths.Values)
             {
-                foreach (var tag in operation.Tags)
+                if (pathItem.Operations == null)
                 {
-                    existingTagNames.Add(tag.Name);
+                    continue;
+                }
+
+                foreach (var operation in pathItem.Operations.Values)
+                {
+                    if (operation.Tags == null)
+                    {
+                        continue;
+                    }
+
+                    foreach (var tag in operation.Tags)
+                    {
+                        if (!string.IsNullOrWhiteSpace(tag.Name))
+                        {
+                            existingTagNames.Add(tag.Name);
+                        }
+                    }
                 }
             }
         }
@@ -87,6 +106,6 @@ public sealed class SwaggerTagOrderDocumentFilter : IDocumentFilter
             result.Add(new OpenApiTag { Name = remaining });
         }
 
-        swaggerDoc.Tags = result;
+        swaggerDoc.Tags = new HashSet<OpenApiTag>(result);
     }
 }
