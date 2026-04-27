@@ -38,8 +38,25 @@ namespace Listenarr.Application.Common
     public class ImageCacheService : IImageCacheService, IDisposable
     {
         private const int MaxImageRedirects = 5;
+        private const long MaxDownloadedImageBytes = 10L * 1024L * 1024L;
+        private static readonly HashSet<string> AllowedDownloadedImageMediaTypes = new(StringComparer.OrdinalIgnoreCase)
+        {
+            "image/jpeg",
+            "image/png",
+            "image/webp",
+            "image/gif",
+        };
+
+        private static readonly HashSet<string> AllowedDownloadedImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+            ".gif",
+        };
+
         private readonly ILogger<ImageCacheService> _logger;
-        private readonly HttpClient _httpClient;
         private readonly HttpClient _httpClientNoRedirect;
         private readonly string _tempCachePath;
         private readonly string _libraryImagePath;
@@ -51,13 +68,13 @@ namespace Listenarr.Application.Common
         public ImageCacheService(ILogger<ImageCacheService> logger, IHttpClientFactory httpClientFactory, string contentRootPath)
         {
             _logger = logger;
-            _httpClient = httpClientFactory.CreateClient();
+            using var httpClient = httpClientFactory.CreateClient();
             _httpClientNoRedirect = new HttpClient(new HttpClientHandler
             {
                 AllowAutoRedirect = false
             })
             {
-                Timeout = _httpClient.Timeout
+                Timeout = httpClient.Timeout
             };
             _contentRootPath = ResolveEffectiveContentRoot(contentRootPath);
 
@@ -278,9 +295,31 @@ namespace Listenarr.Application.Common
                 var finalUri = download.FinalUri;
                 response.EnsureSuccessStatusCode();
 
-                // Read bytes first so we can reject tiny placeholder images (for example 1x1)
-                var imageBytes = await response.Content.ReadAsByteArrayAsync();
                 var mediaType = response.Content.Headers.ContentType?.MediaType;
+                if (!IsAllowedDownloadedImageContent(mediaType, finalUri))
+                {
+                    _logger.LogWarning(
+                        "Blocked image download for {Identifier} from {Url}: unsupported content type {ContentType}",
+                        LogRedaction.SanitizeText(identifier),
+                        LogRedaction.SanitizeText(finalUri.ToString()),
+                        LogRedaction.SanitizeText(mediaType ?? "(none)"));
+                    return null;
+                }
+
+                var contentLength = response.Content.Headers.ContentLength;
+                if (contentLength.HasValue && contentLength.Value > MaxDownloadedImageBytes)
+                {
+                    _logger.LogWarning(
+                        "Blocked image download for {Identifier} from {Url}: content length {ContentLength} exceeds {MaxBytes} bytes",
+                        LogRedaction.SanitizeText(identifier),
+                        LogRedaction.SanitizeText(finalUri.ToString()),
+                        contentLength.Value,
+                        MaxDownloadedImageBytes);
+                    return null;
+                }
+
+                // Read bytes first so we can reject tiny placeholder images (for example 1x1).
+                var imageBytes = await ReadContentWithLimitAsync(response.Content, MaxDownloadedImageBytes);
                 if (IsPlaceholderImage(imageBytes, mediaType))
                 {
                     _logger.LogInformation("Skipping placeholder/tiny image for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(imageUrl));
@@ -288,7 +327,7 @@ namespace Listenarr.Application.Common
                 }
 
                 // Determine file extension from content type or URL
-                var extension = GetImageExtension(finalUri.ToString(), response.Content.Headers.ContentType?.MediaType);
+                var extension = GetImageExtension(finalUri.ToString(), mediaType);
                 var fileName = NormalizeRelativeFileName($"{SanitizeFileName(identifier)}{extension}");
                 var filePath = CombineRelativePath(_tempCachePath, fileName);
 
@@ -710,25 +749,81 @@ namespace Listenarr.Application.Common
             return normalized.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
         }
 
-        private string GetImageExtension(string url, string? contentType)
+        private static async Task<byte[]> ReadContentWithLimitAsync(HttpContent content, long maxBytes)
+        {
+            await using var contentStream = await content.ReadAsStreamAsync();
+            using var bufferStream = new MemoryStream();
+            var buffer = new byte[81920];
+            long totalBytes = 0;
+
+            while (true)
+            {
+                var read = await contentStream.ReadAsync(buffer.AsMemory(0, buffer.Length));
+                if (read == 0)
+                {
+                    break;
+                }
+
+                totalBytes += read;
+                if (totalBytes > maxBytes)
+                {
+                    throw new InvalidOperationException($"Downloaded image exceeds the {maxBytes} byte limit.");
+                }
+
+                bufferStream.Write(buffer, 0, read);
+            }
+
+            return bufferStream.ToArray();
+        }
+
+        private static bool IsAllowedDownloadedImageContent(string? mediaType, Uri finalUri)
+        {
+            if (!string.IsNullOrWhiteSpace(mediaType))
+            {
+                return AllowedDownloadedImageMediaTypes.Contains(mediaType.Trim());
+            }
+
+            var extension = GetUrlPathExtension(finalUri.ToString());
+            return AllowedDownloadedImageExtensions.Contains(extension);
+        }
+
+        private static string GetImageExtension(string url, string? contentType)
         {
             // Try to get extension from content type
             if (!string.IsNullOrEmpty(contentType))
             {
-                if (contentType.Contains("jpeg")) return ".jpg";
-                if (contentType.Contains("png")) return ".png";
-                if (contentType.Contains("webp")) return ".webp";
-                if (contentType.Contains("gif")) return ".gif";
-                if (contentType.Contains("svg+xml")) return ".svg";
+                if (contentType.Equals("image/jpeg", StringComparison.OrdinalIgnoreCase)) return ".jpg";
+                if (contentType.Equals("image/png", StringComparison.OrdinalIgnoreCase)) return ".png";
+                if (contentType.Equals("image/webp", StringComparison.OrdinalIgnoreCase)) return ".webp";
+                if (contentType.Equals("image/gif", StringComparison.OrdinalIgnoreCase)) return ".gif";
             }
 
             // Try to get extension from URL
-            var urlExtension = Path.GetExtension(url).ToLower();
-            if (!string.IsNullOrEmpty(urlExtension) && urlExtension.Length <= 5)
-                return urlExtension;
+            var urlExtension = GetUrlPathExtension(url);
+            if (AllowedDownloadedImageExtensions.Contains(urlExtension))
+            {
+                return urlExtension.Equals(".jpeg", StringComparison.OrdinalIgnoreCase) ? ".jpg" : urlExtension.ToLowerInvariant();
+            }
 
             // Default to .jpg
             return ".jpg";
+        }
+
+        private static string GetUrlPathExtension(string url)
+        {
+            try
+            {
+                if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+                {
+                    return Path.GetExtension(uri.AbsolutePath) ?? string.Empty;
+                }
+            }
+            catch
+            {
+                // Fall back to path parsing below.
+            }
+
+            return Path.GetExtension(url.Split('?', '#')[0]) ?? string.Empty;
         }
 
         private async Task<(HttpResponseMessage Response, Uri FinalUri)> DownloadWithValidatedRedirectsAsync(string imageUrl)
@@ -1005,15 +1100,6 @@ namespace Listenarr.Application.Common
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
                 _logger.LogWarning(ex, "Failed disposing no-redirect HttpClient in ImageCacheService");
-            }
-
-            try
-            {
-                _httpClient.Dispose();
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
-            {
-                _logger.LogWarning(ex, "Failed disposing HttpClient in ImageCacheService");
             }
         }
     }

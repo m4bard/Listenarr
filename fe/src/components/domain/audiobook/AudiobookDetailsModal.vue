@@ -211,13 +211,7 @@ const { getProtectedImageSrc } = useProtectedImages()
 const qualityProfiles = ref<QualityProfile[]>([])
 const selectedQualityProfileId = ref<number | null>(null)
 
-const coverImageUrl = computed(() =>
-  getProtectedImageSrc(
-    props.book?.imageUrl,
-    `details-modal-${props.book?.asin || props.book?.openLibraryId || props.book?.title || 'unknown'}`,
-    '',
-  ),
-)
+const coverImageUrl = computed(() => getProtectedImageSrc(props.book?.imageUrl))
 
 const assignedProfileName = computed(() => {
   const id = props.book?.qualityProfileId

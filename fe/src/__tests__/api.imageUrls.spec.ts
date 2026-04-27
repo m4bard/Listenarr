@@ -15,39 +15,17 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 vi.unmock('../services/api')
 
 import { apiService as svc } from '../services/api'
 import { API_BASE_PATH } from '@/services/apiBase'
 
-describe('ApiService backend image URLs', () => {
-  beforeEach(() => {
-    vi.restoreAllMocks()
-  })
-
-  afterEach(() => {
-    vi.resetAllMocks()
-    vi.unstubAllGlobals()
-  })
-
+describe('ApiService image URLs', () => {
   it('returns backend image URLs without appending a query token', () => {
     expect(svc.getImageUrl(`${API_BASE_PATH}/images/ASIN000001`)).toBe(
       `${API_BASE_PATH}/images/ASIN000001`,
     )
-  })
-
-  it('returns backend image URLs directly without fetching an image auth token', async () => {
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      throw new Error(`Unexpected fetch: ${String(input)}`)
-    })
-
-    vi.stubGlobal('fetch', fetchMock)
-
-    const url = await svc.fetchImageObjectUrl(`${API_BASE_PATH}/images/ASIN000002`)
-
-    expect(url).toBe(`${API_BASE_PATH}/images/ASIN000002`)
-    expect(fetchMock).not.toHaveBeenCalled()
   })
 })

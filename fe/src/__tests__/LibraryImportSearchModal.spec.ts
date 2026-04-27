@@ -73,7 +73,6 @@ describe('LibraryImportSearchModal', () => {
 
     expect(getProtectedImageSrc).toHaveBeenCalledWith(
       '/api/v1/images/B000APXZHK',
-      'library-import-search-B000APXZHK',
       '/placeholder.svg',
     )
     expect(wrapper.find('img').attributes('src')).toBe('https://example.com/protected.jpg')

@@ -645,7 +645,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, watch, computed, nextTick, type Component } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, type Component } from 'vue'
 import { useToast } from '@/services/toastService'
 import type { Audiobook as AudiobookType } from '@/types'
 import { useRoute, useRouter } from 'vue-router'
@@ -657,7 +657,6 @@ import { isApiImagesUrl } from '@/services/apiBase'
 import { handleImageError } from '@/utils/imageFallback'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import { joinPaths, isAbsolutePath } from '@/utils/path'
-import { observeLazyImages, ensureVisibleImagesLoad } from '@/utils/lazyLoad'
 import { signalRService } from '@/services/signalr'
 import type {
   Audiobook,
@@ -1020,7 +1019,6 @@ const capitalizeFirst = (str: string | undefined): string => {
 const coverImageUrl = computed(() => {
   return getProtectedImageSrc(
     audiobook.value?.imageUrl,
-    `audiobook-detail-${audiobook.value?.id ?? 'none'}`,
     getPlaceholderUrl(),
   )
 })
@@ -1177,11 +1175,6 @@ onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
 
   await loadAudiobook()
-
-  // Setup lazy loading for images
-  await nextTick()
-  observeLazyImages()
-  ensureVisibleImagesLoad()
 
   // subscribe to scan job updates
   signalRService.onScanJobUpdate((job) => {

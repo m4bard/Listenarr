@@ -81,7 +81,7 @@
             <div class="col-poster">
               <img
                 class="row-poster"
-                :src="getProtectedImageSrc(item.imageUrl, `wanted-${item.id}`, getPlaceholderUrl())"
+                :src="getProtectedImageSrc(item.imageUrl, getPlaceholderUrl())"
                 :alt="item.title"
                 loading="lazy"
                 decoding="async"

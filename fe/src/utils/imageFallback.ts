@@ -29,15 +29,9 @@ export function handleImageError(ev: Event) {
       imgRec.__imageFallbackDone = true
     } catch {}
 
-    // Set placeholder and clear lazy attributes
+    // Set placeholder
     try {
       img.src = getPlaceholderUrl()
-    } catch {}
-    try {
-      img.removeAttribute('data-src')
-    } catch {}
-    try {
-      img.removeAttribute('data-original-src')
     } catch {}
     try {
       ;(img as unknown as { onerror?: ((ev: Event) => void) | null }).onerror = null
