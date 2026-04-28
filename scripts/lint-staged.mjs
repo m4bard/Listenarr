@@ -1,6 +1,5 @@
 import { spawnSync } from 'node:child_process'
 
-const npmCommand = process.platform === 'win32' ? 'npm.cmd' : 'npm'
 const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx'
 
 const run = (command, args, options = {}) => {
@@ -44,6 +43,9 @@ const backendFiles = stagedFiles.filter((file) => file.endsWith('.cs'))
 const frontendLintFiles = stagedFiles
   .filter((file) => /^fe\/.+\.(?:js|jsx|mjs|cjs|ts|tsx|mts|cts|vue)$/.test(file))
   .map((file) => file.slice('fe/'.length))
+const frontendVueFiles = stagedFiles
+  .filter((file) => /^fe\/.+\.vue$/.test(file))
+  .map((file) => file.slice('fe/'.length))
 const frontendFormatFiles = stagedFiles
   .filter((file) => /^fe\/src\/.+\.(?:js|jsx|mjs|cjs|ts|tsx|mts|cts|vue|css|scss|sass|less|styl)$/.test(file))
   .map((file) => file.slice('fe/'.length))
@@ -69,7 +71,12 @@ if (backendFiles.length > 0) {
 
 if (frontendLintFiles.length > 0) {
   console.log('Checking staged frontend lint rules...')
-  run(npmCommand, ['run', '--silent', 'lint:check', '--', ...frontendLintFiles], { cwd: 'fe' })
+  run(npxCommand, ['eslint', ...frontendLintFiles], { cwd: 'fe' })
+}
+
+if (frontendVueFiles.length > 0) {
+  console.log('Checking staged Vue template handlers...')
+  run('node', ['scripts/check-vue-template-handlers.mjs', ...frontendVueFiles], { cwd: 'fe' })
 }
 
 if (frontendFormatFiles.length > 0) {
