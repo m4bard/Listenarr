@@ -58,7 +58,7 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
 
       // Set up event handlers
       connection.value.on('ReceiveLog', (logEntry: LogEntry) => {
-        console.log('[LogHub] Received log:', logEntry)
+        logger.debug('[LogHub] Received log:', logEntry)
         // Add new log to the beginning of the array
         logs.value.unshift(logEntry)
 
@@ -70,28 +70,28 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
 
       connection.value.onreconnecting(() => {
         isConnected.value = false
-        console.log('[LogHub] Reconnecting...')
+        logger.info('[LogHub] Reconnecting...')
       })
 
       connection.value.onreconnected(() => {
         isConnected.value = true
-        console.log('[LogHub] Reconnected')
+        logger.info('[LogHub] Reconnected')
       })
 
       connection.value.onclose(() => {
         isConnected.value = false
-        console.log('[LogHub] Connection closed')
+        logger.info('[LogHub] Connection closed')
       })
 
       // Start the connection
       await connection.value.start()
       isConnected.value = true
-      console.log('[LogHub] Connected successfully')
+      logger.info('[LogHub] Connected successfully')
 
       // Load initial logs from API
       await loadInitialLogs()
     } catch (error) {
-      console.error('[LogHub] Connection error:', error)
+      logger.error('[LogHub] Connection error:', error)
       isConnected.value = false
     } finally {
       isConnecting.value = false
@@ -104,9 +104,9 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
         await connection.value.stop()
         connection.value = null
         isConnected.value = false
-        console.log('[LogHub] Disconnected')
+        logger.info('[LogHub] Disconnected')
       } catch (error) {
-        console.error('[LogHub] Disconnect error:', error)
+        logger.error('[LogHub] Disconnect error:', error)
       }
     }
   }
@@ -126,7 +126,7 @@ export function useSystemLogs(maxLogs = 100, autoConnect = true) {
         })
       }
     } catch (error) {
-      console.error('[LogHub] Failed to load initial logs:', error)
+      logger.error('[LogHub] Failed to load initial logs:', error)
     }
   }
 
