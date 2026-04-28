@@ -86,18 +86,22 @@
                 <div class="col col-check">
                   <Checkbox :modelValue="allSelected" @update:modelValue="setAllSelected" />
                 </div>
-                <div v-for="field in importFields" :key="field.key" :class="`col ${ field.class }`">{{ field.label }}</div>
+                <div v-for="field in importFields" :key="field.key" :class="`col ${field.class}`">
+                  {{ field.label }}
+                </div>
                 <div class="col col-action"></div>
               </div>
 
               <div class="preview-body">
                 <div v-for="(it, idx) in previewItems" :key="idx" class="preview-row">
                   <div class="col col-check"><Checkbox v-model="it.selected" /></div>
-                  <div v-for="field in importFields" :key="field.key" :class="`col ${ field.class }`">
-                    <div v-if="field.editable" class="clickable-cell" @click="openCellEditor(it, field.key)">
-                      <span v-if="field.get(it)">{{
-                        field.display(it)
-                      }}</span>
+                  <div v-for="field in importFields" :key="field.key" :class="`col ${field.class}`">
+                    <div
+                      v-if="field.editable"
+                      class="clickable-cell"
+                      @click="openCellEditor(it, field.key)"
+                    >
+                      <span v-if="field.get(it)">{{ field.display(it) }}</span>
                       <span v-else class="placeholder">&nbsp;</span>
                     </div>
                     <span v-else>{{ field.display(it) }}</span>
@@ -121,7 +125,6 @@
           </div>
         </div>
       </ModalBody>
-
     </template>
 
     <template #footer>
@@ -139,7 +142,13 @@
             :disabled="selectedCount === 0 || loading"
           >
             <option value="">Select...</option>
-            <option v-for="field in importFields.filter((field: ImportField) => field.editable)" :key="field.key" :value="field.key">{{ field.label }}</option>
+            <option
+              v-for="field in importFields.filter((field: ImportField) => field.editable)"
+              :key="field.key"
+              :value="field.key"
+            >
+              {{ field.label }}
+            </option>
           </select>
 
           <select v-if="showPreview" class="extra-select" v-model="action">
@@ -182,20 +191,28 @@
     </template>
   </Modal>
 
-  <FolderBrowserModal v-model:visible="showBrowserModal" v-model:modelValue="selectedPath" :show-input="true" :show-files="true" @close="showBrowserModal = false" />
+  <FolderBrowserModal
+    v-model:visible="showBrowserModal"
+    v-model:modelValue="selectedPath"
+    :show-input="true"
+    :show-files="true"
+    @close="showBrowserModal = false"
+  />
 
-    <Modal :visible="showMatch" size="lg" @close="closeMatch">
-      <template #header>
-        <h3>Match file to audiobook</h3>
-      </template>
+  <Modal :visible="showMatch" size="lg" @close="closeMatch">
+    <template #header>
+      <h3>Match file to audiobook</h3>
+    </template>
 
-      <template #default>
-        <select v-model="matchSelection" class="form-select">
-          <option v-for="book in library" :key="book.id" :value="book.id">{{ getBookDisplay(book) }}</option>
-        </select>
-      </template>
+    <template #default>
+      <select v-model="matchSelection" class="form-select">
+        <option v-for="book in library" :key="book.id" :value="book.id">
+          {{ getBookDisplay(book) }}
+        </option>
+      </select>
+    </template>
 
-      <template #footer>
+    <template #footer>
       <ModalFooter :showCancel="false">
         <template #left>
           <button class="cancel-button btn" @click="closeMatch"><PhX /> Cancel</button>
@@ -205,7 +222,7 @@
         </template>
       </ModalFooter>
     </template>
-    </Modal>
+  </Modal>
 
   <Modal :visible="showCellEditor" size="lg" @close="closeCellEditor">
     <template #header>
@@ -281,16 +298,26 @@
 
         <div v-else-if="cellEditorField === 'releaseGroup'" class="editor-row">
           <label>Release Group</label>
-          <input v-model="cellEditorValue" class="form-input" placeholder="Enter release group..." />
+          <input
+            v-model="cellEditorValue"
+            class="form-input"
+            placeholder="Enter release group..."
+          />
         </div>
       </div>
     </template>
 
     <template #footer>
       <button class="cancel-button btn" @click="closeCellEditor">Cancel</button>
-      <button v-if="cellEditorField === 'releaseGroup'" class="btn btn-primary" @click="saveCellEditor">Save</button>
+      <button
+        v-if="cellEditorField === 'releaseGroup'"
+        class="btn btn-primary"
+        @click="saveCellEditor"
+      >
+        Save
+      </button>
     </template>
-  </Modal> 
+  </Modal>
 </template>
 
 <script setup lang="ts">
@@ -299,8 +326,13 @@ import { PhFolderOpen, PhX, PhRocket, PhUser, PhSpinner, PhInfo } from '@phospho
 import type { ManualImportRequest } from '@/types'
 import FolderBrowser from '@/components/ui/FolderBrowser.vue'
 import Checkbox from '@/components/form/Checkbox.vue'
-import FolderBrowserModal from '@/components/feedback/FolderBrowserModal.vue' 
-import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/feedback' /* keep ModalFooter for footer layout */
+import FolderBrowserModal from '@/components/feedback/FolderBrowserModal.vue'
+import {
+  Modal,
+  ModalHeader,
+  ModalBody,
+  ModalFooter,
+} from '@/components/feedback' /* keep ModalFooter for footer layout */
 import { apiService } from '@/services/api'
 import { useLibraryStore } from '@/stores/library'
 import { useConfigurationStore } from '@/stores/configuration'
@@ -336,13 +368,13 @@ interface PreviewItem {
 const previewItems = ref<PreviewItem[]>([])
 
 interface ImportField {
-  key: string;
-  label: string;
-  class: string;
-  editable: boolean;
-  set: (item: PreviewItem, value: string | number | null) => void;
-  get: (item: PreviewItem) => string | number | null;
-  display: (item: PreviewItem) => string;
+  key: string
+  label: string
+  class: string
+  editable: boolean
+  set: (item: PreviewItem, value: string | number | null) => void
+  get: (item: PreviewItem) => string | number | null
+  display: (item: PreviewItem) => string
 }
 const importFields = [
   {
@@ -351,43 +383,43 @@ const importFields = [
     class: 'col-path relative',
     editable: false,
     get: (item: PreviewItem) => item.relativePath,
-    display: (item: PreviewItem) => item.relativePath
+    display: (item: PreviewItem) => item.relativePath,
   },
   {
     key: 'audiobook',
     label: 'Audiobook',
     class: 'col-audiobook',
     editable: true,
-    set: (item: PreviewItem, value: number) => item.matchedAudiobookId = value,
+    set: (item: PreviewItem, value: number) => (item.matchedAudiobookId = value),
     get: (item: PreviewItem) => item.matchedAudiobookId,
-    display: (item: PreviewItem) => getLibraryTitle(item.matchedAudiobookId)
+    display: (item: PreviewItem) => getLibraryTitle(item.matchedAudiobookId),
   },
   {
     key: 'releaseGroup',
     label: 'Release Group',
     class: 'col-release-group',
     editable: true,
-    set: (item: PreviewItem, value: string) => item.releaseGroup = value,
+    set: (item: PreviewItem, value: string) => (item.releaseGroup = value),
     get: (item: PreviewItem) => item.releaseGroup,
-    display: (item: PreviewItem) => item.releaseGroup
+    display: (item: PreviewItem) => item.releaseGroup,
   },
   {
     key: 'quality',
     label: 'Quality',
     class: 'col-quality',
     editable: true,
-    set: (item: PreviewItem, value: number) => item.qualityProfileId = value,
+    set: (item: PreviewItem, value: number) => (item.qualityProfileId = value),
     get: (item: PreviewItem) => item.qualityProfileId,
-    display: (item: PreviewItem) => getQualityName(item.qualityProfileId)
+    display: (item: PreviewItem) => getQualityName(item.qualityProfileId),
   },
   {
     key: 'language',
     label: 'Language',
     class: 'col-language',
     editable: true,
-    set: (item: PreviewItem, value: string) => item.language = value,
+    set: (item: PreviewItem, value: string) => (item.language = value),
     get: (item: PreviewItem) => item.language,
-    display: (item: PreviewItem) => getLanguageName(item.language)
+    display: (item: PreviewItem) => getLanguageName(item.language),
   },
   {
     key: 'size',
@@ -395,8 +427,8 @@ const importFields = [
     class: 'col-size',
     editable: false,
     get: (item: PreviewItem) => item.size,
-    display: (item: PreviewItem) => item.size
-  }
+    display: (item: PreviewItem) => item.size,
+  },
 ] as ImportField[]
 
 // Recent folders stored in sessionStorage
@@ -535,7 +567,7 @@ const openCellEditor = (item: PreviewItem, selectedField: string) => {
 }
 
 const openCellsEditor = () => {
-  cellEditorItems.value = previewItems.value.filter(item => item.selected === true)
+  cellEditorItems.value = previewItems.value.filter((item) => item.selected === true)
   cellEditorField.value = inputField.value
   cellEditorValue.value = null
   showCellEditor.value = true
@@ -641,8 +673,7 @@ const startAutomaticImport = async () => {
   try {
     // When running automatic import, send minimal request; backend will handle scanning
     const autoPayload: ManualImportRequest = { path: selectedPath.value, mode: 'automatic' }
-    if (action.value !== '')
-      autoPayload.action = action.value
+    if (action.value !== '') autoPayload.action = action.value
     const resp = await apiService.startManualImport(autoPayload)
     // resp should contain import summary
     emit('imported', { imported: resp.importedCount ?? 0 })
@@ -703,7 +734,6 @@ const close = () => {
   emit('close')
 }
 
- 
 const closeMatch = () => {
   showMatch.value = false
   matchTarget.value = null

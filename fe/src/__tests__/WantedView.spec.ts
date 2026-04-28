@@ -68,7 +68,7 @@ describe('WantedView image recache behavior', () => {
     // Prevent fetchLibrary from running during mount
     store.fetchLibrary = vi.fn(async () => undefined)
 
-    const wrapper = mount(WantedView, { global: { plugins: [pinia] } });
+    const wrapper = mount(WantedView, { global: { plugins: [pinia] } })
 
     // Allow onMounted work to complete
     await new Promise((r) => setTimeout(r, 10))

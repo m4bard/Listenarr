@@ -25,7 +25,9 @@ const advancedSearch = vi.fn()
 const scanUnmatchedFiles = vi.fn()
 const getUnmatchedResults = vi.fn()
 const getSavedUnmatchedFiles = vi.fn()
-let unmatchedScanHandler: ((payload: { jobId: string, error?: string }) => void | Promise<void>) | null = null
+let unmatchedScanHandler:
+  | ((payload: { jobId: string; error?: string }) => void | Promise<void>)
+  | null = null
 
 vi.mock('@/services/api', () => ({
   apiService: {
@@ -190,6 +192,8 @@ describe('library import store', () => {
       author: 'Roger Zelazny',
       cap: 5,
     })
-    expect(store.items['C:\\incoming\\Chapter 01.mp3']?.selectedMatch?.title).toBe('Jack of Shadows')
+    expect(store.items['C:\\incoming\\Chapter 01.mp3']?.selectedMatch?.title).toBe(
+      'Jack of Shadows',
+    )
   })
 })

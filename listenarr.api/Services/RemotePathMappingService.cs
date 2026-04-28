@@ -157,7 +157,7 @@ public class RemotePathMappingService : IRemotePathMappingService
             FileUtils.EnsureTrailingSeparator(remotePath)
         ];
 
-        foreach(var currentRemotePath in tryingRemotePaths)
+        foreach (var currentRemotePath in tryingRemotePaths)
         {
             var mappings = await GetPathMappingByClientIdAsync(downloadClientId);
             foreach (var mapping in mappings)

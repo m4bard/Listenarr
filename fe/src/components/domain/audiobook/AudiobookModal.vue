@@ -109,11 +109,7 @@
                 <div v-if="book.asin" class="detail-item">
                   <span class="label">ASIN:</span>
                   <span class="value">
-                    <a
-                      :href="audibleProductUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
+                    <a :href="audibleProductUrl" target="_blank" rel="noopener noreferrer">
                       {{ book.asin }}
                     </a>
                   </span>
@@ -125,11 +121,7 @@
                 <div v-if="book.openLibraryId && openLibraryUrl" class="detail-item">
                   <span class="label">OpenLibrary ID:</span>
                   <span class="value">
-                    <a
-                      :href="openLibraryUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
+                    <a :href="openLibraryUrl" target="_blank" rel="noopener noreferrer">
                       {{ book.openLibraryId }}
                     </a>
                   </span>
@@ -142,7 +134,10 @@
               <div class="detail-grid">
                 <div v-if="book.series" class="detail-item">
                   <span class="label">Series:</span>
-                  <span class="value">{{ book.series }}<span v-if="book.seriesNumber"> #{{ book.seriesNumber }}</span></span>
+                  <span class="value"
+                    >{{ book.series
+                    }}<span v-if="book.seriesNumber"> #{{ book.seriesNumber }}</span></span
+                  >
                 </div>
                 <div v-if="book.genres?.length" class="detail-item">
                   <span class="label">Genres:</span>
@@ -197,11 +192,7 @@ import { PhX, PhImage, PhStar } from '@phosphor-icons/vue'
 import { stripHtmlAndNormalize } from '@/utils/textUtils'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import { Modal, ModalBody, ModalHeader } from '@/components/feedback'
-import {
-  formatDate,
-  formatRuntime,
-  capitalizeFirst,
-} from '@/utils/searchResultFormatting'
+import { formatDate, formatRuntime, capitalizeFirst } from '@/utils/searchResultFormatting'
 
 interface Props {
   visible: boolean
@@ -238,8 +229,7 @@ const assignedProfileName = computed(() => {
 const normalizedSourceName = computed(() => {
   const source = props.book?.source?.trim()
   if (!source) return ''
-  if (source.toLowerCase().includes('audible'))
-    return 'Audible'
+  if (source.toLowerCase().includes('audible')) return 'Audible'
   return source
 })
 
@@ -258,46 +248,49 @@ const audibleProductUrl = computed(() => {
 const openLibraryUrl = computed(() => {
   const olid = props.book?.openLibraryId
   if (!olid) return null
-  
+
   // Don't show GUIDs - they're invalid OpenLibrary IDs from legacy data
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(olid)) {
     return null
   }
-  
+
   // Handle different OpenLibrary ID formats
   // Format 1: /works/OL123W or /books/OL123M (full path)
   if (olid.startsWith('/works/') || olid.startsWith('/books/')) {
     return `https://openlibrary.org${olid}`
   }
-  
+
   // Format 2: OL123W or OL123M (standard OpenLibrary ID)
   if (/^OL\w+[WM]$/i.test(olid)) {
     // Work IDs end with W, Edition IDs end with M
     const type = olid.toUpperCase().endsWith('W') ? 'works' : 'books'
     return `https://openlibrary.org/${type}/${olid}`
   }
-  
+
   // Fallback: assume it's a book edition ID
   return `https://openlibrary.org/books/${olid}`
 })
 
 const publishDate = computed((): string | null => {
   const book = props.book
-  
+
   // Debug logging
   console.log('AudiobookDetailsModal - book object:', book)
   console.log('AudiobookDetailsModal - book.publishedDate:', book.publishedDate)
   console.log('AudiobookDetailsModal - book.searchResult:', book.searchResult)
   if (book.searchResult) {
-    console.log('AudiobookDetailsModal - book.searchResult.publishedDate:', book.searchResult.publishedDate)
+    console.log(
+      'AudiobookDetailsModal - book.searchResult.publishedDate:',
+      book.searchResult.publishedDate,
+    )
   }
-  
+
   // Check standard typed field first
   if (book.publishedDate) {
     console.log('Found publishedDate:', book.publishedDate)
     return book.publishedDate
   }
-  
+
   // Use type assertion to check alternative field names
   type BookWithDateVariants = typeof book & {
     releaseDate?: string
@@ -305,7 +298,7 @@ const publishDate = computed((): string | null => {
     publishedDate?: string
   }
   const bookWithVariants = book as BookWithDateVariants
-  
+
   if (bookWithVariants.releaseDate) {
     console.log('Found releaseDate:', bookWithVariants.releaseDate)
     return bookWithVariants.releaseDate
@@ -318,7 +311,7 @@ const publishDate = computed((): string | null => {
     console.log('Found publishedDate from variants:', bookWithVariants.publishedDate)
     return bookWithVariants.publishedDate
   }
-  
+
   // Check searchResult for date fields
   if (book.searchResult) {
     type SearchResultWithDateVariants = typeof book.searchResult & {
@@ -327,7 +320,7 @@ const publishDate = computed((): string | null => {
       ReleaseDate?: string
     }
     const sr = book.searchResult as SearchResultWithDateVariants
-    
+
     if (sr.publishedDate) {
       console.log('Found publishedDate in searchResult:', sr.publishedDate)
       return sr.publishedDate
@@ -341,7 +334,7 @@ const publishDate = computed((): string | null => {
       return sr.ReleaseDate
     }
   }
-  
+
   console.log('No publishedDate found anywhere')
   return null
 })
@@ -483,14 +476,22 @@ watch(
 .destination-row .relative-input:focus {
   outline: none;
   border-color: #2196f3;
-  box-shadow: 0 0 0 3px rgba(33,150,243,0.06);
+  box-shadow: 0 0 0 3px rgba(33, 150, 243, 0.06);
 }
 
-.destination-actions { display:flex; gap:0.5rem; }
+.destination-actions {
+  display: flex;
+  gap: 0.5rem;
+}
 
 @media (max-width: 720px) {
-  .destination-row { flex-direction: column; align-items: stretch; }
-  .destination-row .root-select { max-width: 100%; }
+  .destination-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .destination-row .root-select {
+    max-width: 100%;
+  }
 }
 
 .placeholder-cover i {
@@ -593,7 +594,11 @@ watch(
 }
 
 /* Base modal-footer styles are centralized in src/assets/modals.css. Keep only this modal's responsive/footer-specific overrides. */
-.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
+.modal-footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
 
 /* Buttons are centralized in `src/assets/buttons.css`. Use `.btn` and `.btn-primary` if needed. */
 

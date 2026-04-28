@@ -18,11 +18,7 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
-      <ModalHeader
-        title="Unmatched Files"
-        :icon="PhMagnifyingGlass"
-        @close="close"
-      />
+      <ModalHeader title="Unmatched Files" :icon="PhMagnifyingGlass" @close="close" />
     </template>
 
     <template #default>
@@ -30,7 +26,9 @@
         <!-- Scanning in progress -->
         <div v-if="phase === 'scanning'" class="scan-status">
           <PhSpinner class="ph-spin scan-spinner" />
-          <p>Scanning <strong>{{ rootFolderName }}</strong> for audio files not in your library…</p>
+          <p>
+            Scanning <strong>{{ rootFolderName }}</strong> for audio files not in your library…
+          </p>
         </div>
 
         <!-- Scan error -->
@@ -43,7 +41,10 @@
         <div v-else-if="phase === 'empty'" class="empty-state">
           <PhMagnifyingGlass class="empty-icon" />
           <h4>No scan results yet</h4>
-          <p>Click <strong>Scan</strong> to search <strong>{{ rootFolderName }}</strong> for audio files not in your library.</p>
+          <p>
+            Click <strong>Scan</strong> to search <strong>{{ rootFolderName }}</strong> for audio
+            files not in your library.
+          </p>
         </div>
 
         <!-- Results -->
@@ -51,13 +52,19 @@
           <div v-if="items.length === 0" class="empty-state">
             <PhCheckCircle class="empty-icon" />
             <h4>All files are in your library</h4>
-            <p>No unmatched audio files were found in <strong>{{ rootFolderName }}</strong>.</p>
+            <p>
+              No unmatched audio files were found in <strong>{{ rootFolderName }}</strong
+              >.
+            </p>
           </div>
 
           <div v-else>
             <p class="results-summary">
-              Found <strong>{{ items.length }}</strong> folder{{ items.length !== 1 ? 's' : '' }} with audio files not in your library.
-              <span v-if="lastScannedAt" class="last-scanned">Last scanned {{ timeAgo(lastScannedAt) }}</span>
+              Found <strong>{{ items.length }}</strong> folder{{ items.length !== 1 ? 's' : '' }}
+              with audio files not in your library.
+              <span v-if="lastScannedAt" class="last-scanned"
+                >Last scanned {{ timeAgo(lastScannedAt) }}</span
+              >
             </p>
 
             <div class="results-table-wrapper">
@@ -81,7 +88,12 @@
                     </td>
                     <td class="cell-author">{{ item.author || '—' }}</td>
                     <td class="cell-series">
-                      <span v-if="item.series">{{ item.series }}<span v-if="item.seriesNumber" class="series-number"> #{{ item.seriesNumber }}</span></span>
+                      <span v-if="item.series"
+                        >{{ item.series
+                        }}<span v-if="item.seriesNumber" class="series-number">
+                          #{{ item.seriesNumber }}</span
+                        ></span
+                      >
                       <span v-else>—</span>
                     </td>
                     <td class="cell-year">{{ item.year || '—' }}</td>
@@ -96,11 +108,7 @@
                       >
                         Add
                       </button>
-                      <button
-                        class="icon-button btn-sm"
-                        @click="ignore(item)"
-                        title="Ignore"
-                      >
+                      <button class="icon-button btn-sm" @click="ignore(item)" title="Ignore">
                         <PhX />
                       </button>
                     </td>
@@ -116,10 +124,15 @@
     <template #footer>
       <ModalFooter :showCancel="false">
         <template #left>
-          <div v-if="phase === 'results' && rootFoldersStore.folders.length" class="destination-selector">
+          <div
+            v-if="phase === 'results' && rootFoldersStore.folders.length"
+            class="destination-selector"
+          >
             <span class="dest-label">{{ fileActionLabel }}:</span>
             <select v-model="destinationFolderId" class="dest-select" :disabled="bulkAdding">
-              <option v-for="f in rootFoldersStore.folders" :key="f.id" :value="f.id">{{ f.name }}</option>
+              <option v-for="f in rootFoldersStore.folders" :key="f.id" :value="f.id">
+                {{ f.name }}
+              </option>
             </select>
           </div>
           <div v-if="phase === 'results' && asinCount > 0 && !bulkAdding" class="bulk-hint">
@@ -237,7 +250,9 @@ const destinationFolder = computed(
 )
 
 const fileAction = computed(() => configStore.applicationSettings?.completedFileAction ?? 'Move')
-const fileActionLabel = computed(() => (fileAction.value === 'Hardlink/Copy' ? 'Copy to' : 'Move to'))
+const fileActionLabel = computed(() =>
+  fileAction.value === 'Hardlink/Copy' ? 'Copy to' : 'Move to',
+)
 const fileInputMode = computed<'move' | 'hardlink/copy'>(() =>
   fileAction.value === 'Hardlink/Copy' ? 'hardlink/copy' : 'move',
 )
@@ -385,7 +400,10 @@ async function onAdded(audiobook: Audiobook) {
     })
     toast.success('Added', `${audiobook.title || item.title || 'Book'} added to library`)
   } catch {
-    toast.success('Added', `${audiobook.title || item.title || 'Book'} added — link files manually if needed`)
+    toast.success(
+      'Added',
+      `${audiobook.title || item.title || 'Book'} added — link files manually if needed`,
+    )
   }
 
   // Remove from the results table
@@ -474,10 +492,16 @@ async function addAllWithAsin() {
           items: [{ fullPath: item.fullPath, matchedAudiobookId: audiobook.id }],
         })
         if (importResult && importResult.importedCount === 0) {
-          toast.warning('File not linked', `${item.title || 'Book'} was added but the file could not be moved — check the library path`)
+          toast.warning(
+            'File not linked',
+            `${item.title || 'Book'} was added but the file could not be moved — check the library path`,
+          )
         }
       } catch {
-        toast.warning('File not linked', `${item.title || 'Book'} was added but the file could not be moved`)
+        toast.warning(
+          'File not linked',
+          `${item.title || 'Book'} was added but the file could not be moved`,
+        )
       }
 
       items.value = items.value.filter((i) => i.fullPath !== item.fullPath)
@@ -491,7 +515,10 @@ async function addAllWithAsin() {
   bulkAdding.value = false
 
   if (added > 0) {
-    toast.success('Bulk add complete', `Added ${added} book${added !== 1 ? 's' : ''}${skipped > 0 ? `, ${skipped} skipped (no match)` : ''}`)
+    toast.success(
+      'Bulk add complete',
+      `Added ${added} book${added !== 1 ? 's' : ''}${skipped > 0 ? `, ${skipped} skipped (no match)` : ''}`,
+    )
   } else {
     toast.info('No matches found', 'No Audible metadata records found for the ASINs in this scan')
   }

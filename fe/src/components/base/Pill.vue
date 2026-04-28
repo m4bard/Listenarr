@@ -45,7 +45,15 @@ defineOptions({ name: 'BasePill' })
  *    <Pill variant="error">Issues</Pill>
  */
 
-type VariantType = 'default' | 'primary' | 'success' | 'warning' | 'error' | 'info' | 'count' | 'subtle'
+type VariantType =
+  | 'default'
+  | 'primary'
+  | 'success'
+  | 'warning'
+  | 'error'
+  | 'info'
+  | 'count'
+  | 'subtle'
 
 interface Props {
   variant?: VariantType

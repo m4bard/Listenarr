@@ -62,7 +62,7 @@ namespace Listenarr.Api.Tests
                 .Setup(x => x.ResolveImportItemAsync(It.IsAny<Download>(), It.IsAny<QueueItem>(), It.IsAny<QueueItem>(), It.IsAny<CancellationToken>()))
                 .ReturnsAsync((Download d, QueueItem q, QueueItem? p, CancellationToken ct) => q);
             services.AddScoped<IImportItemResolutionService>(_ => importResolutionMock.Object);
-            
+
             var metricsMock = new Mock<IAppMetricsService>();
             services.AddSingleton<IAppMetricsService>(metricsMock.Object);
 
@@ -81,8 +81,8 @@ namespace Listenarr.Api.Tests
 
             // Create the background service instance (no longer needs importItemResolution in constructor)
             var svc = new DownloadProcessingBackgroundService(
-                provider.GetRequiredService<IServiceScopeFactory>(), 
-                provider.GetRequiredService<ILogger<DownloadProcessingBackgroundService>>(), 
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                provider.GetRequiredService<ILogger<DownloadProcessingBackgroundService>>(),
                 metricsMock.Object);
 
             // Set job to processing (the outer loop normally does this)
@@ -165,14 +165,14 @@ namespace Listenarr.Api.Tests
             var provider = services.BuildServiceProvider();
             var scopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
             var svc = new DownloadProcessingBackgroundService(
-                provider.GetRequiredService<IServiceScopeFactory>(), 
+                provider.GetRequiredService<IServiceScopeFactory>(),
                 provider.GetRequiredService<ILogger<DownloadProcessingBackgroundService>>(),
                 provider.GetRequiredService<IAppMetricsService>());
 
             var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
 
             await downloadRepository.AddAsync(download);
-            
+
             string? processedPath = null;
             downloadServiceMock
                 .Setup(d => d.ProcessCompletedDownloadAsync(download.Id, It.IsAny<string>()))
@@ -279,7 +279,7 @@ namespace Listenarr.Api.Tests
 
             var downloadServiceMock = new Mock<IDownloadService>();
             services.AddSingleton<IDownloadService>(downloadServiceMock.Object);
-            
+
             var provider = services.BuildServiceProvider();
 
             var svc = new DownloadProcessingBackgroundService(
@@ -290,7 +290,7 @@ namespace Listenarr.Api.Tests
             var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
 
             await downloadRepository.AddAsync(download);
-            
+
             string? processedPath = null;
             downloadServiceMock
                 .Setup(d => d.ProcessCompletedDownloadAsync(download.Id, It.IsAny<string>()))

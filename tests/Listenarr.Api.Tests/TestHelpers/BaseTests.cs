@@ -27,7 +27,7 @@ namespace Listenarr.Api.Tests
                 _tempFolder = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
                 Directory.CreateDirectory(_tempFolder);
             }
-            
+
             return _tempFolder;
         }
 

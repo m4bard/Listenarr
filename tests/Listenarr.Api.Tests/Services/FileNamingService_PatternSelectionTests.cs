@@ -434,19 +434,19 @@ namespace Listenarr.Api.Tests
 
             var metadata = new AudioMetadata
             {
-                Artist = "Isaac Asimov", 
-                Series = "Le Cycle de Fondation", 
-                Title = "Seconde Fondation", 
-                Subtitle = "Le Cycle de Fondation 3", 
-                Edition = "", 
-                Narrator = "Stéphane Ronchewski", 
-                Publisher = "Audiolib", 
-                Language = "french", 
-                Asin = "2367628815", 
-                SeriesPosition = 3, 
-                Year = 2019, 
-                Bitrate = 64238, 
-                DiscNumber = null, 
+                Artist = "Isaac Asimov",
+                Series = "Le Cycle de Fondation",
+                Title = "Seconde Fondation",
+                Subtitle = "Le Cycle de Fondation 3",
+                Edition = "",
+                Narrator = "Stéphane Ronchewski",
+                Publisher = "Audiolib",
+                Language = "french",
+                Asin = "2367628815",
+                SeriesPosition = 3,
+                Year = 2019,
+                Bitrate = 64238,
+                DiscNumber = null,
                 TrackNumber = 31
             };
 
@@ -472,19 +472,19 @@ namespace Listenarr.Api.Tests
 
             var metadata = new AudioMetadata
             {
-                Artist = "Isaac Asimov", 
-                Series = "Le Cycle de Fondation", 
-                Title = "Seconde Fondation", 
-                Subtitle = "Le Cycle de Fondation 3", 
-                Edition = "", 
-                Narrator = "Stéphane Ronchewski", 
-                Publisher = "Audiolib", 
-                Language = "french", 
-                Asin = "2367628815", 
-                SeriesPosition = 3, 
-                Year = 2019, 
-                Bitrate = 64238, 
-                DiscNumber = null, 
+                Artist = "Isaac Asimov",
+                Series = "Le Cycle de Fondation",
+                Title = "Seconde Fondation",
+                Subtitle = "Le Cycle de Fondation 3",
+                Edition = "",
+                Narrator = "Stéphane Ronchewski",
+                Publisher = "Audiolib",
+                Language = "french",
+                Asin = "2367628815",
+                SeriesPosition = 3,
+                Year = 2019,
+                Bitrate = 64238,
+                DiscNumber = null,
                 TrackNumber = 31
             };
 

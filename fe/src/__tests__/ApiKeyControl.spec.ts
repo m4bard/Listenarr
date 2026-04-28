@@ -74,9 +74,6 @@ describe('ApiKeyControl', () => {
     // Ensure underlying API was called
     const apiModule = await import('@/services/api')
 
-
-
-
     expect((apiModule.apiService.regenerateApiKey as unknown).mock).toBeTruthy()
     expect((apiModule.apiService.regenerateApiKey as unknown).mock.calls.length).toBeGreaterThan(0)
 
@@ -115,7 +112,9 @@ describe('ApiKeyControl', () => {
     // Ensure underlying API was called
     const apiModule = await import('@/services/api')
     expect((apiModule.apiService.generateInitialApiKey as unknown).mock).toBeTruthy()
-    expect((apiModule.apiService.generateInitialApiKey as unknown).mock.calls.length).toBeGreaterThan(0)
+    expect(
+      (apiModule.apiService.generateInitialApiKey as unknown).mock.calls.length,
+    ).toBeGreaterThan(0)
 
     expect(wrapper.emitted()['update:apiKey']).toBeTruthy()
     expect(wrapper.emitted()['update:apiKey']![0]).toEqual(['INITKEY'])

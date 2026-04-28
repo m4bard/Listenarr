@@ -3,7 +3,9 @@
 }
 
 /* Ensure consistent spacing between form groups inside any .form-body across the app */
-.form-body > .form-group { margin-bottom: 1rem; }
+.form-body > .form-group {
+  margin-bottom: 1rem;
+}
 
 .checkbox-group label {
   display: flex;

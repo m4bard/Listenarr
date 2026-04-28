@@ -401,7 +401,7 @@ namespace Listenarr.Api.Services
             {
                 job.AddLogEntry($"Source is a directory, scanning for importable files: {job.SourcePath}");
                 var importableFiles = new List<string>();
-                
+
                 var download = await downloadRepository.GetByIdAsync(job.DownloadId);
                 if (download != null)
                 {
@@ -409,7 +409,7 @@ namespace Listenarr.Api.Services
                     {
                         importableFiles = await MatchLocalAndDownloadedFilesAsync(scope, download, job.SourcePath, settings.ImportBlacklistExtensions, _logger, cancellationToken);
                     }
-                    catch(DownloadProcessingException exception)
+                    catch (DownloadProcessingException exception)
                     {
                         // FIXME: Should we really still process unfiltered files in that case ?
                         _logger.LogWarning(exception, exception.Message);
@@ -471,7 +471,7 @@ namespace Listenarr.Api.Services
                     {
                         // We give a directory in which to import the files
                         completionPath = Path.GetDirectoryName(completionPath);
-                        
+
                         // The directory must exist
                         if (!string.IsNullOrWhiteSpace(completionPath))
                         {
@@ -1052,13 +1052,13 @@ namespace Listenarr.Api.Services
                 // Apply remote path mapping
                 var translationTasks = allowedFiles
                     .Select(path => remotePathMappingService.TranslatePathAsync(download.DownloadClientId, path));
-                    
+
                 var tranlatedAllowedFiles = await Task.WhenAll(translationTasks);
 
                 var filteredFiles = importableFiles
                     .Where(tranlatedAllowedFiles.Contains)
                     .ToList();
-                
+
                 if (filteredFiles.Count == 0)
                 {
                     logger.LogWarning(

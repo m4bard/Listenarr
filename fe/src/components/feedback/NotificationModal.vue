@@ -34,7 +34,9 @@
           <slot />
         </div>
 
-        <button class="notification-close" type="button" aria-label="Close" @click="onClose">✕</button>
+        <button class="notification-close" type="button" aria-label="Close" @click="onClose">
+          ✕
+        </button>
       </div>
     </div>
   </transition>

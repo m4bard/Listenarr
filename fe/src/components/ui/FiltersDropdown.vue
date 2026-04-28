@@ -23,7 +23,13 @@
     </button>
 
     <div v-if="open" class="dropdown">
-      <div v-for="o in builtInOptions" :key="o.value" class="dropdown-item" :class="{ active: selectedBuiltIn === o.value }" @click="selectBuiltIn(o.value)">
+      <div
+        v-for="o in builtInOptions"
+        :key="o.value"
+        class="dropdown-item"
+        :class="{ active: selectedBuiltIn === o.value }"
+        @click="selectBuiltIn(o.value)"
+      >
         <div class="dropdown-item-main">
           <span>{{ o.label }}</span>
         </div>
@@ -33,7 +39,12 @@
       <div class="dropdown-divider"></div>
 
       <div v-if="customFilters.length === 0" class="dropdown-item">No custom filters</div>
-      <div v-for="f in customFilters" :key="f.id" class="dropdown-item" :class="{ active: selectedCustom === f.id }">
+      <div
+        v-for="f in customFilters"
+        :key="f.id"
+        class="dropdown-item"
+        :class="{ active: selectedCustom === f.id }"
+      >
         <div class="dropdown-item-main" @click="selectCustom(f.id)">{{ f.label }}</div>
         <div v-if="selectedCustom === f.id" class="check">✓</div>
         <div v-else class="dropdown-item-actions">
@@ -43,7 +54,9 @@
       </div>
 
       <div class="dropdown-divider"></div>
-      <div v-if="hasActiveFilter" class="dropdown-item reset" @click="resetFilter">Reset filter</div>
+      <div v-if="hasActiveFilter" class="dropdown-item reset" @click="resetFilter">
+        Reset filter
+      </div>
       <div class="dropdown-item create" @click="emitCreate">Create filter</div>
     </div>
   </div>
@@ -240,7 +253,7 @@ onUnmounted(() => document.removeEventListener('click', handleClickOutside))
     min-width: 180px;
     max-width: calc(100vw - 16px);
   }
-  
+
   .trigger {
     padding: 8px 6px;
     min-width: 36px;

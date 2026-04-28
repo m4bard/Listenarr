@@ -18,21 +18,35 @@
 <template>
   <Modal :visible="visible" size="lg" @close="closeModal">
     <template #header>
-      <ModalHeader :title="profile ? 'Edit Quality Profile' : 'Create Quality Profile'" :icon="PhStar" @close="closeModal" />
+      <ModalHeader
+        :title="profile ? 'Edit Quality Profile' : 'Create Quality Profile'"
+        :icon="PhStar"
+        @close="closeModal"
+      />
     </template>
 
     <template #default>
-
       <ModalBody>
         <form @submit.prevent="handleSubmit">
           <!-- Basic Information -->
           <FormSection title="Basic Information" :icon="PhInfo">
             <FormRow label="Profile Name *" labelFor="name">
-              <input id="name" v-model="formData.name" type="text" required placeholder="e.g., High Quality, Any Quality, Space Saver" />
+              <input
+                id="name"
+                v-model="formData.name"
+                type="text"
+                required
+                placeholder="e.g., High Quality, Any Quality, Space Saver"
+              />
             </FormRow>
 
             <FormRow label="Description" labelFor="description">
-              <textarea id="description" v-model="formData.description" rows="2" placeholder="Optional description of this quality profile"></textarea>
+              <textarea
+                id="description"
+                v-model="formData.description"
+                rows="2"
+                placeholder="Optional description of this quality profile"
+              ></textarea>
             </FormRow>
 
             <CheckboxCard v-model="formData.isDefault" title="Set as default profile" />
@@ -44,7 +58,7 @@
           <!-- Quality Definitions (Hierarchical Codec/Bitrate Selection) -->
           <FormSection title="Quality Definitions" :icon="PhCheckSquare">
             <p class="section-description">
-              Select which codecs you want, then choose specific bitrates for lossy formats. 
+              Select which codecs you want, then choose specific bitrates for lossy formats.
               Qualities higher in the list are preferred. Drag to reorder.
             </p>
 
@@ -53,8 +67,8 @@
               <h4 class="subsection-title">Select Codecs</h4>
               <div class="codec-grid">
                 <label v-for="codec in availableCodecs" :key="codec.codec" class="codec-checkbox">
-                  <input 
-                    type="checkbox" 
+                  <input
+                    type="checkbox"
                     :checked="isCodecEnabled(codec.codec)"
                     @change="toggleCodec(codec.codec, ($event.target as HTMLInputElement).checked)"
                   />
@@ -78,7 +92,8 @@
               <h4 class="subsection-title">Quality Priority Order</h4>
               <p class="info-text-small">
                 <PhInfo />
-                Qualities higher in the list are more preferred. Only checked qualities will be downloaded.
+                Qualities higher in the list are more preferred. Only checked qualities will be
+                downloaded.
               </p>
 
               <div class="quality-groups">
@@ -95,11 +110,15 @@
                       type="text"
                       ref="groupNameInput"
                     />
-                    <span v-else class="group-title">{{ customGroupNames.get('FLAC') || 'Lossless' }}</span>
-                    <button 
+                    <span v-else class="group-title">{{
+                      customGroupNames.get('FLAC') || 'Lossless'
+                    }}</span>
+                    <button
                       v-if="editingGroupName !== 'FLAC'"
-                      type="button" 
-                      @click="startEditingGroupName('FLAC', customGroupNames.get('FLAC') || 'Lossless')"
+                      type="button"
+                      @click="
+                        startEditingGroupName('FLAC', customGroupNames.get('FLAC') || 'Lossless')
+                      "
                       class="edit-group-btn"
                       title="Rename group"
                     >
@@ -117,8 +136,8 @@
                       @drop="handleDrop($event, quality)"
                     >
                       <PhDotsSixVertical class="drag-handle" />
-                      <Checkbox 
-                        :modelValue="quality.enabled" 
+                      <Checkbox
+                        :modelValue="quality.enabled"
                         @update:modelValue="(val: boolean) => toggleQualityItem(quality.id, val)"
                       >
                         <span class="quality-label">{{ quality.label }}</span>
@@ -144,11 +163,18 @@
                       class="group-name-input"
                       type="text"
                     />
-                    <span v-else class="group-title">{{ customGroupNames.get(codecGroup.codec) || codecGroup.label }}</span>
-                    <button 
+                    <span v-else class="group-title">{{
+                      customGroupNames.get(codecGroup.codec) || codecGroup.label
+                    }}</span>
+                    <button
                       v-if="editingGroupName !== codecGroup.codec"
-                      type="button" 
-                      @click="startEditingGroupName(codecGroup.codec, customGroupNames.get(codecGroup.codec) || codecGroup.label)"
+                      type="button"
+                      @click="
+                        startEditingGroupName(
+                          codecGroup.codec,
+                          customGroupNames.get(codecGroup.codec) || codecGroup.label,
+                        )
+                      "
                       class="edit-group-btn"
                       title="Rename group"
                     >
@@ -166,13 +192,15 @@
                       @drop="handleDrop($event, quality)"
                     >
                       <PhDotsSixVertical class="drag-handle" />
-                      <Checkbox 
-                        :modelValue="quality.enabled" 
+                      <Checkbox
+                        :modelValue="quality.enabled"
                         @update:modelValue="(val: boolean) => toggleQualityItem(quality.id, val)"
                       >
                         <span class="quality-label">
                           {{ quality.label }}
-                          <span v-if="quality.bitrate" class="bitrate-badge">{{ quality.bitrate }} kbps</span>
+                          <span v-if="quality.bitrate" class="bitrate-badge"
+                            >{{ quality.bitrate }} kbps</span
+                          >
                         </span>
                       </Checkbox>
                     </div>
@@ -184,19 +212,15 @@
             <!-- Cutoff Selection -->
             <div class="cutoff-selection">
               <h4 class="subsection-title">Upgrade Until</h4>
-              <CheckboxCard 
-                v-model="upgradesEnabled" 
+              <CheckboxCard
+                v-model="upgradesEnabled"
                 title="Enable Quality Upgrades"
                 description="If disabled, qualities will not be upgraded"
               />
               <FormRow v-if="upgradesEnabled" label="Upgrade Until" labelFor="cutoff-quality">
                 <select id="cutoff-quality" v-model="formData.cutoffQuality">
                   <option value="">No Cutoff (Always Upgrade)</option>
-                  <option 
-                    v-for="quality in enabledQualities" 
-                    :key="quality.id" 
-                    :value="quality.id"
-                  >
+                  <option v-for="quality in enabledQualities" :key="quality.id" :value="quality.id">
                     {{ quality.label }}
                   </option>
                 </select>
@@ -216,11 +240,23 @@
 
             <div class="form-row">
               <FormRow label="Minimum Size (MB)" labelFor="minimumSize">
-                <input id="minimumSize" v-model.number="formData.minimumSize" type="number" min="0" placeholder="No minimum" />
+                <input
+                  id="minimumSize"
+                  v-model.number="formData.minimumSize"
+                  type="number"
+                  min="0"
+                  placeholder="No minimum"
+                />
               </FormRow>
 
               <FormRow label="Maximum Size (MB)" labelFor="maximumSize">
-                <input id="maximumSize" v-model.number="formData.maximumSize" type="number" min="0" placeholder="No maximum" />
+                <input
+                  id="maximumSize"
+                  v-model.number="formData.maximumSize"
+                  type="number"
+                  min="0"
+                  placeholder="No maximum"
+                />
               </FormRow>
             </div>
           </FormSection>
@@ -234,8 +270,17 @@
                 Releases containing these words will receive bonus points in scoring.
               </p>
               <div class="tag-input-group">
-                <div :class="['tags-list', { 'tags-list-empty': (formData.preferredWords?.length || 0) === 0 }]">
-                  <div v-for="(word, index) in formData.preferredWords" :key="index" class="tag positive removable">
+                <div
+                  :class="[
+                    'tags-list',
+                    { 'tags-list-empty': (formData.preferredWords?.length || 0) === 0 },
+                  ]"
+                >
+                  <div
+                    v-for="(word, index) in formData.preferredWords"
+                    :key="index"
+                    class="tag positive removable"
+                  >
                     {{ word }}
                     <button type="button" @click="removePreferredWord(index)" class="tag-remove">
                       <PhX />
@@ -243,9 +288,21 @@
                   </div>
                 </div>
                 <div class="tag-input">
-                  <input v-model="newPreferredWord" @keypress.enter.prevent="addPreferredWord" type="text"
-                    placeholder="e.g., unabridged, complete" />
-                  <button type="button" @click="addPreferredWord" :disabled="!newPreferredWord.trim()" :aria-disabled="!newPreferredWord.trim()" class="btn icon-btn btn-primary btn-sm" title="Add preferred word" aria-label="Add preferred word">
+                  <input
+                    v-model="newPreferredWord"
+                    @keypress.enter.prevent="addPreferredWord"
+                    type="text"
+                    placeholder="e.g., unabridged, complete"
+                  />
+                  <button
+                    type="button"
+                    @click="addPreferredWord"
+                    :disabled="!newPreferredWord.trim()"
+                    :aria-disabled="!newPreferredWord.trim()"
+                    class="btn icon-btn btn-primary btn-sm"
+                    title="Add preferred word"
+                    aria-label="Add preferred word"
+                  >
                     <PhPlus />
                   </button>
                 </div>
@@ -259,8 +316,17 @@
                 Releases MUST contain at least one of these words (case-insensitive).
               </p>
               <div class="tag-input-group">
-                <div :class="['tags-list', { 'tags-list-empty': (formData.mustContain?.length || 0) === 0 }]">
-                  <div v-for="(word, index) in formData.mustContain" :key="index" class="tag required removable">
+                <div
+                  :class="[
+                    'tags-list',
+                    { 'tags-list-empty': (formData.mustContain?.length || 0) === 0 },
+                  ]"
+                >
+                  <div
+                    v-for="(word, index) in formData.mustContain"
+                    :key="index"
+                    class="tag required removable"
+                  >
                     {{ word }}
                     <button type="button" @click="removeMustContain(index)" class="tag-remove">
                       <PhX />
@@ -268,9 +334,21 @@
                   </div>
                 </div>
                 <div class="tag-input">
-                  <input v-model="newMustContain" @keypress.enter.prevent="addMustContain" type="text"
-                    placeholder="e.g., audiobook" />
-                  <button type="button" @click="addMustContain" :disabled="!newMustContain.trim()" :aria-disabled="!newMustContain.trim()" class="btn icon-btn btn-primary btn-sm" title="Add required word" aria-label="Add required word">
+                  <input
+                    v-model="newMustContain"
+                    @keypress.enter.prevent="addMustContain"
+                    type="text"
+                    placeholder="e.g., audiobook"
+                  />
+                  <button
+                    type="button"
+                    @click="addMustContain"
+                    :disabled="!newMustContain.trim()"
+                    :aria-disabled="!newMustContain.trim()"
+                    class="btn icon-btn btn-primary btn-sm"
+                    title="Add required word"
+                    aria-label="Add required word"
+                  >
                     <PhPlus />
                   </button>
                 </div>
@@ -284,8 +362,17 @@
                 Releases containing any of these words will be rejected (case-insensitive).
               </p>
               <div class="tag-input-group">
-                <div :class="['tags-list', { 'tags-list-empty': (formData.mustNotContain?.length || 0) === 0 }]">
-                  <div v-for="(word, index) in formData.mustNotContain" :key="index" class="tag forbidden removable">
+                <div
+                  :class="[
+                    'tags-list',
+                    { 'tags-list-empty': (formData.mustNotContain?.length || 0) === 0 },
+                  ]"
+                >
+                  <div
+                    v-for="(word, index) in formData.mustNotContain"
+                    :key="index"
+                    class="tag forbidden removable"
+                  >
                     {{ word }}
                     <button type="button" @click="removeMustNotContain(index)" class="tag-remove">
                       <PhX />
@@ -293,9 +380,21 @@
                   </div>
                 </div>
                 <div class="tag-input">
-                  <input v-model="newMustNotContain" @keypress.enter.prevent="addMustNotContain" type="text"
-                    placeholder="e.g., abridged, radio" />
-                  <button type="button" @click="addMustNotContain" :disabled="!newMustNotContain.trim()" :aria-disabled="!newMustNotContain.trim()" class="btn icon-btn btn-primary btn-sm" title="Add forbidden word" aria-label="Add forbidden word">
+                  <input
+                    v-model="newMustNotContain"
+                    @keypress.enter.prevent="addMustNotContain"
+                    type="text"
+                    placeholder="e.g., abridged, radio"
+                  />
+                  <button
+                    type="button"
+                    @click="addMustNotContain"
+                    :disabled="!newMustNotContain.trim()"
+                    :aria-disabled="!newMustNotContain.trim()"
+                    class="btn icon-btn btn-primary btn-sm"
+                    title="Add forbidden word"
+                    aria-label="Add forbidden word"
+                  >
                     <PhPlus />
                   </button>
                 </div>
@@ -308,8 +407,17 @@
             <p class="section-description">Preferred languages in order of preference.</p>
 
             <div class="tag-input-group">
-              <div :class="['tags-list', { 'tags-list-empty': (formData.preferredLanguages?.length || 0) === 0 }]">
-                <div v-for="(lang, index) in formData.preferredLanguages" :key="index" class="tag removable">
+              <div
+                :class="[
+                  'tags-list',
+                  { 'tags-list-empty': (formData.preferredLanguages?.length || 0) === 0 },
+                ]"
+              >
+                <div
+                  v-for="(lang, index) in formData.preferredLanguages"
+                  :key="index"
+                  class="tag removable"
+                >
                   {{ lang }}
                   <button type="button" @click="removeLanguage(index)" class="tag-remove">
                     <PhX />
@@ -317,9 +425,21 @@
                 </div>
               </div>
               <div class="tag-input">
-                <input v-model="newLanguage" @keypress.enter.prevent="addLanguage" type="text"
-                  placeholder="e.g., English, Spanish" />
-                <button type="button" @click="addLanguage" :disabled="!newLanguage.trim()" :aria-disabled="!newLanguage.trim()" class="btn icon-btn btn-primary btn-sm" title="Add language" aria-label="Add language">
+                <input
+                  v-model="newLanguage"
+                  @keypress.enter.prevent="addLanguage"
+                  type="text"
+                  placeholder="e.g., English, Spanish"
+                />
+                <button
+                  type="button"
+                  @click="addLanguage"
+                  :disabled="!newLanguage.trim()"
+                  :aria-disabled="!newLanguage.trim()"
+                  class="btn icon-btn btn-primary btn-sm"
+                  title="Add language"
+                  aria-label="Add language"
+                >
                   <PhPlus />
                 </button>
               </div>
@@ -329,17 +449,45 @@
           <!-- Release Preferences -->
           <FormSection title="Release Preferences" :icon="PhClockCounterClockwise">
             <FormRow label="Minimum Seeders (Torrents)" labelFor="minimumSeeders">
-              <input id="minimumSeeders" v-model.number="formData.minimumSeeders" type="number" min="0" placeholder="0 = no minimum" />
+              <input
+                id="minimumSeeders"
+                v-model.number="formData.minimumSeeders"
+                type="number"
+                min="0"
+                placeholder="0 = no minimum"
+              />
             </FormRow>
 
             <FormRow label="Minimum Score Threshold" labelFor="minimumScore">
-              <input id="minimumScore" v-model.number="formData.minimumScore" type="number" min="0" max="100" placeholder="0 = allow any score" />
+              <input
+                id="minimumScore"
+                v-model.number="formData.minimumScore"
+                type="number"
+                min="0"
+                max="100"
+                placeholder="0 = allow any score"
+              />
             </FormRow>
 
-            <CheckboxCard v-model="formData.preferNewerReleases" title="Prefer newer releases" description="Give bonus points to more recent releases (torrent upload date)" />
+            <CheckboxCard
+              v-model="formData.preferNewerReleases"
+              title="Prefer newer releases"
+              description="Give bonus points to more recent releases (torrent upload date)"
+            />
 
-            <FormRow v-if="formData.preferNewerReleases" label="Maximum Age (Days)" labelFor="maximumAge" help="Reject releases older than this many days (0 = no limit)">
-              <input id="maximumAge" v-model.number="formData.maximumAge" type="number" min="0" placeholder="0 = no maximum" />
+            <FormRow
+              v-if="formData.preferNewerReleases"
+              label="Maximum Age (Days)"
+              labelFor="maximumAge"
+              help="Reject releases older than this many days (0 = no limit)"
+            >
+              <input
+                id="maximumAge"
+                v-model.number="formData.maximumAge"
+                type="number"
+                min="0"
+                placeholder="0 = no maximum"
+              />
             </FormRow>
           </FormSection>
         </form>
@@ -367,9 +515,21 @@ import FormRow from '@/components/settings/FormRow.vue'
 import Checkbox from '@/components/form/Checkbox.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 import {
-  PhX, PhStar, PhCheck, PhPlus, PhInfo, PhCheckSquare, PhRuler, PhPencilSimple,
-  PhSparkle, PhTextAa, PhTranslate, PhClockCounterClockwise, PhDotsSixVertical, PhMusicNotesSimple 
-} from '@phosphor-icons/vue' 
+  PhX,
+  PhStar,
+  PhCheck,
+  PhPlus,
+  PhInfo,
+  PhCheckSquare,
+  PhRuler,
+  PhPencilSimple,
+  PhSparkle,
+  PhTextAa,
+  PhTranslate,
+  PhClockCounterClockwise,
+  PhDotsSixVertical,
+  PhMusicNotesSimple,
+} from '@phosphor-icons/vue'
 import type { QualityProfile, CodecDefinition, QualityItem, QualityDefinition } from '@/types'
 import { useToast } from '@/services/toastService'
 
@@ -390,7 +550,13 @@ const toast = useToast()
  */
 const availableCodecs: CodecDefinition[] = [
   { codec: 'FLAC', label: 'FLAC', isLossless: true },
-  { codec: 'MP3', label: 'MP3', isLossless: false, bitrates: [320, 256, 192, 128, 64], supportsVBR: true },
+  {
+    codec: 'MP3',
+    label: 'MP3',
+    isLossless: false,
+    bitrates: [320, 256, 192, 128, 64],
+    supportsVBR: true,
+  },
   { codec: 'AAC', label: 'AAC', isLossless: false, bitrates: [320, 256, 192, 128, 96, 64] },
   { codec: 'OPUS', label: 'OPUS', isLossless: false, bitrates: [192, 128, 96, 64] },
   { codec: 'OGG Vorbis', label: 'OGG Vorbis', isLossless: false, bitrates: [320, 256, 192, 128] },
@@ -433,7 +599,7 @@ const toggleCodec = (codec: string, enabled: boolean) => {
   } else {
     enabledCodecs.value.delete(codec)
     // Remove qualities for this codec
-    qualityItems.value = qualityItems.value.filter(q => q.codec !== codec)
+    qualityItems.value = qualityItems.value.filter((q) => q.codec !== codec)
     if (codec === 'AAC') {
       preferM4b.value = false
     }
@@ -444,12 +610,11 @@ const toggleCodec = (codec: string, enabled: boolean) => {
  * Add quality items for a newly enabled codec
  */
 const addQualitiesForCodec = (codecName: string) => {
-  const codec = availableCodecs.find(c => c.codec === codecName)
+  const codec = availableCodecs.find((c) => c.codec === codecName)
   if (!codec) return
 
-  const maxPriority = qualityItems.value.length > 0 
-    ? Math.max(...qualityItems.value.map(q => q.priority))
-    : -1
+  const maxPriority =
+    qualityItems.value.length > 0 ? Math.max(...qualityItems.value.map((q) => q.priority)) : -1
 
   if (codec.isLossless) {
     // Add single lossless quality
@@ -459,7 +624,7 @@ const addQualitiesForCodec = (codecName: string) => {
       label: codec.label,
       isLossless: true,
       enabled: true,
-      priority: maxPriority + 1
+      priority: maxPriority + 1,
     })
   } else {
     // Add bitrate variants
@@ -471,7 +636,7 @@ const addQualitiesForCodec = (codecName: string) => {
         label: `${codec.label} ${bitrate} kbps`,
         isLossless: false,
         enabled: true,
-        priority: maxPriority + 1 + index
+        priority: maxPriority + 1 + index,
       })
     })
 
@@ -483,7 +648,7 @@ const addQualitiesForCodec = (codecName: string) => {
         label: `${codec.label} Variable Bitrate`,
         isLossless: false,
         enabled: true,
-        priority: maxPriority + 1 + (codec.bitrates?.length || 0)
+        priority: maxPriority + 1 + (codec.bitrates?.length || 0),
       })
     }
   }
@@ -525,7 +690,7 @@ const saveGroupName = (codec: string) => {
  * Toggle individual quality item
  */
 const toggleQualityItem = (qualityId: string, enabled: boolean) => {
-  const quality = qualityItems.value.find(q => q.id === qualityId)
+  const quality = qualityItems.value.find((q) => q.id === qualityId)
   if (quality) {
     quality.enabled = enabled
   }
@@ -536,7 +701,7 @@ const toggleQualityItem = (qualityId: string, enabled: boolean) => {
  */
 const losslessQualities = computed(() => {
   return qualityItems.value
-    .filter(q => q.isLossless && enabledCodecs.value.has(q.codec))
+    .filter((q) => q.isLossless && enabledCodecs.value.has(q.codec))
     .sort((a, b) => a.priority - b.priority)
 })
 
@@ -545,26 +710,31 @@ const losslessQualities = computed(() => {
  */
 const lossyCodecGroups = computed(() => {
   const groups = new Map<string, { codec: string; label: string; qualities: QualityItem[] }>()
-  
+
   qualityItems.value
-    .filter(q => !q.isLossless && enabledCodecs.value.has(q.codec) && (q.codec !== 'M4B' || enabledCodecs.value.has('AAC')))
-    .forEach(quality => {
+    .filter(
+      (q) =>
+        !q.isLossless &&
+        enabledCodecs.value.has(q.codec) &&
+        (q.codec !== 'M4B' || enabledCodecs.value.has('AAC')),
+    )
+    .forEach((quality) => {
       if (!groups.has(quality.codec)) {
-        const codec = availableCodecs.find(c => c.codec === quality.codec)
+        const codec = availableCodecs.find((c) => c.codec === quality.codec)
         groups.set(quality.codec, {
           codec: quality.codec,
           label: codec?.label || quality.codec,
-          qualities: []
+          qualities: [],
         })
       }
       groups.get(quality.codec)!.qualities.push(quality)
     })
-  
+
   // Sort qualities within each group by priority
-  groups.forEach(group => {
+  groups.forEach((group) => {
     group.qualities.sort((a, b) => a.priority - b.priority)
   })
-  
+
   return Array.from(groups.values())
 })
 
@@ -572,9 +742,7 @@ const lossyCodecGroups = computed(() => {
  * Get enabled qualities for cutoff dropdown
  */
 const enabledQualities = computed(() => {
-  return qualityItems.value
-    .filter(q => q.enabled)
-    .sort((a, b) => a.priority - b.priority)
+  return qualityItems.value.filter((q) => q.enabled).sort((a, b) => a.priority - b.priority)
 })
 
 /**
@@ -589,29 +757,29 @@ const handleDragStart = (event: DragEvent, quality: QualityItem) => {
 
 const handleDrop = (event: DragEvent, targetQuality: QualityItem) => {
   event.preventDefault()
-  
+
   if (!draggedQuality.value || draggedQuality.value.id === targetQuality.id) {
     return
   }
-  
+
   // Get current indices
-  const draggedIndex = qualityItems.value.findIndex(q => q.id === draggedQuality.value!.id)
-  const targetIndex = qualityItems.value.findIndex(q => q.id === targetQuality.id)
-  
+  const draggedIndex = qualityItems.value.findIndex((q) => q.id === draggedQuality.value!.id)
+  const targetIndex = qualityItems.value.findIndex((q) => q.id === targetQuality.id)
+
   if (draggedIndex === -1 || targetIndex === -1) return
-  
+
   // Reorder array
   const items = [...qualityItems.value]
   const removed = items.splice(draggedIndex, 1)
   if (removed.length === 0) return
   const draggedItem = removed[0]!
   items.splice(targetIndex, 0, draggedItem)
-  
+
   // Reassign priorities based on new order
   items.forEach((item, index) => {
     item.priority = index
   })
-  
+
   qualityItems.value = items
   draggedQuality.value = null
 }
@@ -655,11 +823,19 @@ watch(
       formData.value.cutoffQuality = newProfile.cutoffQuality || ''
       formData.value.minimumSize = newProfile.minimumSize
       formData.value.maximumSize = newProfile.maximumSize
-      formData.value.preferredFormats = newProfile.preferredFormats ? [...newProfile.preferredFormats] : []
-      formData.value.preferredWords = newProfile.preferredWords ? [...newProfile.preferredWords] : []
-      formData.value.mustNotContain = newProfile.mustNotContain ? [...newProfile.mustNotContain] : []
+      formData.value.preferredFormats = newProfile.preferredFormats
+        ? [...newProfile.preferredFormats]
+        : []
+      formData.value.preferredWords = newProfile.preferredWords
+        ? [...newProfile.preferredWords]
+        : []
+      formData.value.mustNotContain = newProfile.mustNotContain
+        ? [...newProfile.mustNotContain]
+        : []
       formData.value.mustContain = newProfile.mustContain ? [...newProfile.mustContain] : []
-      formData.value.preferredLanguages = newProfile.preferredLanguages ? [...newProfile.preferredLanguages] : []
+      formData.value.preferredLanguages = newProfile.preferredLanguages
+        ? [...newProfile.preferredLanguages]
+        : []
       formData.value.minimumSeeders = newProfile.minimumSeeders
       formData.value.minimumScore = newProfile.minimumScore || 0
       formData.value.isDefault = newProfile.isDefault
@@ -677,10 +853,10 @@ watch(
           customGroupNames.value.set(codec, name as string)
         })
       }
-      
+
       // Initialize quality items from saved qualities
       initializeQualitiesFromProfile(newProfile)
-      
+
       // Check if upgrades are disabled
       upgradesEnabled.value = !!newProfile.cutoffQuality
     } else {
@@ -706,7 +882,7 @@ watch(
 
       preferM4b.value = false
       customGroupNames.value.clear()
-      
+
       // Reset quality items
       qualityItems.value = []
       enabledCodecs.value = new Set()
@@ -723,11 +899,11 @@ const initializeQualitiesFromProfile = (profile: QualityProfile) => {
   // Clear existing
   qualityItems.value = []
   enabledCodecs.value = new Set()
-  
+
   if (!profile.qualities || profile.qualities.length === 0) {
     return
   }
-  
+
   // Build quality items from profile
   profile.qualities.forEach((qualityDef) => {
     const typedQualityDef = qualityDef as QualityDefinition & {
@@ -743,9 +919,7 @@ const initializeQualitiesFromProfile = (profile: QualityProfile) => {
 
     if (!codec || isLossless === undefined) return
 
-    const label =
-      parsed?.label ||
-      (bitrate ? `${codec} ${bitrate} kbps` : codec)
+    const label = parsed?.label || (bitrate ? `${codec} ${bitrate} kbps` : codec)
 
     const id = qualityDef.quality || (bitrate ? `${codec} ${bitrate}kbps` : codec)
 
@@ -765,7 +939,7 @@ const initializeQualitiesFromProfile = (profile: QualityProfile) => {
       priority: qualityDef.priority,
     })
   })
-  
+
   // Sort by priority
   qualityItems.value.sort((a, b) => a.priority - b.priority)
 }
@@ -776,69 +950,144 @@ const initializeQualitiesFromProfile = (profile: QualityProfile) => {
 const parseQualityString = (qualityStr: string): QualityItem | null => {
   // FLAC
   if (qualityStr === 'FLAC') {
-    return { id: 'FLAC', codec: 'FLAC', label: 'FLAC', isLossless: true, enabled: false, priority: 0 }
+    return {
+      id: 'FLAC',
+      codec: 'FLAC',
+      label: 'FLAC',
+      isLossless: true,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // MP3 with bitrate
   const mp3Match = qualityStr.match(/MP3\s+(\d+)\s?kbps/i)
   if (mp3Match) {
     const bitrate = parseInt(mp3Match[1]!)
-    return { id: qualityStr, codec: 'MP3', bitrate, label: `MP3 ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: qualityStr,
+      codec: 'MP3',
+      bitrate,
+      label: `MP3 ${bitrate} kbps`,
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // MP3 VBR
   if (qualityStr === 'MP3 VBR') {
-    return { id: 'MP3 VBR', codec: 'MP3', label: 'MP3 Variable Bitrate', isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: 'MP3 VBR',
+      codec: 'MP3',
+      label: 'MP3 Variable Bitrate',
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // AAC with bitrate
   const aacMatch = qualityStr.match(/AAC\s+(\d+)\s?kbps/i)
   if (aacMatch) {
     const bitrate = parseInt(aacMatch[1]!)
-    return { id: qualityStr, codec: 'AAC', bitrate, label: `AAC ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: qualityStr,
+      codec: 'AAC',
+      bitrate,
+      label: `AAC ${bitrate} kbps`,
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // AAC without bitrate
   if (qualityStr === 'AAC') {
     return { id: 'AAC', codec: 'AAC', label: 'AAC', isLossless: false, enabled: false, priority: 0 }
   }
-  
+
   // M4B with bitrate
   const m4bMatch = qualityStr.match(/M4B\s+(\d+)\s?kbps/i)
   if (m4bMatch) {
     const bitrate = parseInt(m4bMatch[1]!)
-    return { id: qualityStr, codec: 'M4B', bitrate, label: `M4B ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: qualityStr,
+      codec: 'M4B',
+      bitrate,
+      label: `M4B ${bitrate} kbps`,
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // M4B without bitrate
   if (qualityStr === 'M4B') {
-    return { id: 'M4B', codec: 'M4B', label: 'M4B (AAC)', isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: 'M4B',
+      codec: 'M4B',
+      label: 'M4B (AAC)',
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // OPUS with bitrate
   const opusMatch = qualityStr.match(/OPUS\s+(\d+)\s?kbps/i)
   if (opusMatch) {
     const bitrate = parseInt(opusMatch[1]!)
-    return { id: qualityStr, codec: 'OPUS', bitrate, label: `OPUS ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: qualityStr,
+      codec: 'OPUS',
+      bitrate,
+      label: `OPUS ${bitrate} kbps`,
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // OPUS without bitrate
   if (qualityStr === 'OPUS') {
-    return { id: 'OPUS', codec: 'OPUS', label: 'OPUS', isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: 'OPUS',
+      codec: 'OPUS',
+      label: 'OPUS',
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // OGG Vorbis with bitrate
   const oggMatch = qualityStr.match(/OGG Vorbis\s+(\d+)\s?kbps/i)
   if (oggMatch) {
     const bitrate = parseInt(oggMatch[1]!)
-    return { id: qualityStr, codec: 'OGG Vorbis', bitrate, label: `OGG Vorbis ${bitrate} kbps`, isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: qualityStr,
+      codec: 'OGG Vorbis',
+      bitrate,
+      label: `OGG Vorbis ${bitrate} kbps`,
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   // OGG Vorbis without bitrate
   if (qualityStr === 'OGG Vorbis') {
-    return { id: 'OGG Vorbis', codec: 'OGG Vorbis', label: 'OGG Vorbis', isLossless: false, enabled: false, priority: 0 }
+    return {
+      id: 'OGG Vorbis',
+      codec: 'OGG Vorbis',
+      label: 'OGG Vorbis',
+      isLossless: false,
+      enabled: false,
+      priority: 0,
+    }
   }
-  
+
   return null
 }
 
@@ -852,7 +1101,7 @@ const buildQualityDefinitions = () => {
     priority: index, // Use array index as priority after drag-drop reordering
     codec: quality.codec,
     bitrate: quality.bitrate,
-    isLossless: quality.isLossless
+    isLossless: quality.isLossless,
   }))
 }
 
@@ -939,7 +1188,7 @@ const handleSubmit = () => {
   formData.value.customGroupNames = Object.fromEntries(customGroupNames.value)
 
   // Validate at least one quality is selected
-  if (!qualityItems.value.some(q => q.enabled)) {
+  if (!qualityItems.value.some((q) => q.enabled)) {
     toast.error('Validation', 'Please select at least one quality')
     saving.value = false
     return
@@ -953,7 +1202,7 @@ const handleSubmit = () => {
       return
     }
 
-    if (!qualityItems.value.some(q => q.id === formData.value.cutoffQuality && q.enabled)) {
+    if (!qualityItems.value.some((q) => q.id === formData.value.cutoffQuality && q.enabled)) {
       toast.error('Validation', 'Cutoff quality must be one of the enabled qualities')
       saving.value = false
       return
@@ -1107,7 +1356,7 @@ const handleSubmit = () => {
 .checkbox-label input[type='checkbox']:checked {
   background-color: var(--brand-focus);
   border-color: var(--brand-focus);
-} 
+}
 
 .checkbox-label input[type='checkbox']:checked::after {
   content: '';
@@ -1192,7 +1441,7 @@ const handleSubmit = () => {
   background-color: #222;
 }
 
-.codec-checkbox input[type="checkbox"] {
+.codec-checkbox input[type='checkbox'] {
   width: 18px;
   height: 18px;
   cursor: pointer;
@@ -1482,7 +1731,9 @@ const handleSubmit = () => {
   padding: 0;
   margin: 0;
   overflow: hidden;
-  transition: height 0.12s ease, opacity 0.12s ease;
+  transition:
+    height 0.12s ease,
+    opacity 0.12s ease;
   opacity: 0;
 }
 

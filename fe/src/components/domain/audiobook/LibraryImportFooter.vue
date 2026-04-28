@@ -33,7 +33,8 @@
           <option value="hardlink/copy">Hardlink / Copy</option>
         </select>
         <div v-if="store.action != 'none'">
-          <label class="footer-label">to
+          <label class="footer-label"
+            >to
             <select
               v-model="destinationFolderId"
               class="mode-select destination-select"
@@ -70,7 +71,11 @@
         <span class="processing-label">
           Processing {{ store.processedCount }} / {{ store.itemList.length }}...
         </span>
-        <button class="btn btn-secondary btn-sm" :disabled="isImporting" @click="store.stopProcessing()">
+        <button
+          class="btn btn-secondary btn-sm"
+          :disabled="isImporting"
+          @click="store.stopProcessing()"
+        >
           <PhStop :size="14" />
           Cancel
         </button>
@@ -110,12 +115,10 @@ const destinationFolderId = ref<number | null>(props.folders[0]?.id ?? null)
 const isImporting = ref(false)
 const importingCount = ref(0)
 
-const destinationPath = computed(
-  () => {
-    if (store.action == 'none') return '';
-    return props.folders.find((f) => f.id === destinationFolderId.value)?.path ?? ''
-  }
-)
+const destinationPath = computed(() => {
+  if (store.action == 'none') return ''
+  return props.folders.find((f) => f.id === destinationFolderId.value)?.path ?? ''
+})
 
 const displayImportCount = computed(() =>
   isImporting.value ? importingCount.value : store.selectedCount,
@@ -147,7 +150,10 @@ async function handleImport() {
     }
 
     if (errors.length > 0) {
-      toast.error('Import errors', `${errors.length} item${errors.length !== 1 ? 's' : ''} failed - check logs`)
+      toast.error(
+        'Import errors',
+        `${errors.length} item${errors.length !== 1 ? 's' : ''} failed - check logs`,
+      )
     }
   } finally {
     isImporting.value = false

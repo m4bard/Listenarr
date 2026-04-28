@@ -75,15 +75,30 @@
 }
 
 /* Compact modal body variant for tighter modals (use via <ModalBody compact>) */
-.modal-body--compact { padding: 1rem; }
-.modal-body--tight { padding: 0.75rem; }
+.modal-body--compact {
+  padding: 1rem;
+}
+.modal-body--tight {
+  padding: 0.75rem;
+}
 
 /* Ensure form bodies inside modals follow the standardized form-group spacing */
-.modal-content .form-body > .form-group { margin-bottom: 2rem; }
+.modal-content .form-body > .form-group {
+  margin-bottom: 2rem;
+}
 
 /* Standard spacing for radio/checkbox option groups inside modals */
-.modal-content .radio-group { display: flex; flex-direction: column; gap: 0.75rem; }
-.modal-content .checkbox-group { display: flex; flex-direction: column; gap: 0.75rem; margin-bottom: 0.75rem; }
+.modal-content .radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.modal-content .checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
 
 /* Global radio / checkbox card visuals for modals */
 .modal-content .radio-label {
@@ -98,7 +113,10 @@
   transition: all 0.12s ease;
 }
 
-.modal-content .checkbox-label { display: inline-flex; text-align: left; }
+.modal-content .checkbox-label {
+  display: inline-flex;
+  text-align: left;
+}
 /* Only apply card visuals to checkboxes when inside a modal checkbox-group (avoids double-card) */
 .modal-content .checkbox-group .input-checkbox {
   display: flex;
@@ -141,18 +159,35 @@
   align-self: flex-start;
   margin-top: 0.15rem;
 }
-.modal-content .radio-title { color: #fff; font-weight: 500; font-size: 0.95rem; }
+.modal-content .radio-title {
+  color: #fff;
+  font-weight: 500;
+  font-size: 0.95rem;
+}
 .modal-content .radio-label:not(.active) .radio-title,
 .modal-content .checkbox-label:not(.active) .checkbox-title,
-.modal-content .checkbox-group .input-checkbox:not(.active) .checkbox-label > * { color: #ccc; font-weight: 500; }
+.modal-content .checkbox-group .input-checkbox:not(.active) .checkbox-label > * {
+  color: #ccc;
+  font-weight: 500;
+}
 .modal-content .radio-content small,
 .modal-content .checkbox-content small,
-.modal-content .checkbox-group .input-checkbox .checkbox-label small { color: #999; font-size: 0.85rem; line-height: 1.4; }
+.modal-content .checkbox-group .input-checkbox .checkbox-label small {
+  color: #999;
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
 
 /* Modal section spacing utilities */
-.modal-content .modal-section { margin-bottom: 1rem; }
-.modal-content .modal-section--compact { margin-bottom: 0.75rem; }
-.modal-content .modal-section--loose { margin-bottom: 2rem; }
+.modal-content .modal-section {
+  margin-bottom: 1rem;
+}
+.modal-content .modal-section--compact {
+  margin-bottom: 0.75rem;
+}
+.modal-content .modal-section--loose {
+  margin-bottom: 2rem;
+}
 
 .modal-actions,
 .modal-footer {
@@ -337,55 +372,124 @@
 
 /* Custom checkbox & radio styles scoped to modals */
 /* Uses markup pattern: .checkbox-wrapper > input + .checkbox-content, .radio-label > input + .radio-content */
-.modal-content .checkbox-wrapper { position: relative; display: flex; align-items: flex-start; gap: 0.75rem; }
-.modal-content .checkbox-wrapper input[type="checkbox"] {
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; opacity: 0; margin: 0; cursor: pointer; z-index: 3;
+.modal-content .checkbox-wrapper {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
 }
-.modal-content .checkbox-content { position: relative; padding-left: 26px; display: flex; flex-direction: column; gap: 0.25rem; }
+.modal-content .checkbox-wrapper input[type='checkbox'] {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+  z-index: 3;
+}
+.modal-content .checkbox-content {
+  position: relative;
+  padding-left: 26px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
 /* Match the app's standard .checkbox-box visuals: 16px box, subtle border, small radius */
 .modal-content .checkbox-content::before {
   content: '';
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-  width: 16px; height: 16px; border-radius: 3px;
-  background: transparent; border: 1px solid rgba(255,255,255,0.12); box-sizing: border-box;
-  transition: all 0.12s ease; z-index: 1;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-sizing: border-box;
+  transition: all 0.12s ease;
+  z-index: 1;
 }
 /* Checked state uses brand color like the app */
-.modal-content .checkbox-wrapper input[type="checkbox"]:checked + .checkbox-content::before {
-  background: var(--brand-500); border-color: var(--brand-500); box-shadow: none;
+.modal-content .checkbox-wrapper input[type='checkbox']:checked + .checkbox-content::before {
+  background: var(--brand-500);
+  border-color: var(--brand-500);
+  box-shadow: none;
 }
 /* Checkmark - subtle, centered */
-.modal-content .checkbox-wrapper input[type="checkbox"]:checked + .checkbox-content::after {
+.modal-content .checkbox-wrapper input[type='checkbox']:checked + .checkbox-content::after {
   content: '';
-  position: absolute; left: 5px; top: 50%; transform: translateY(-50%) rotate(45deg);
-  width: 5px; height: 8px; border: solid white; border-width: 0 2px 2px 0; z-index: 4;
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%) rotate(45deg);
+  width: 5px;
+  height: 8px;
+  border: solid white;
+  border-width: 0 2px 2px 0;
+  z-index: 4;
 }
-
 
 /* Radios */
-.modal-content .radio-label { position: relative; }
-.modal-content .radio-label input[type="radio"] {
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; opacity: 0; margin: 0; cursor: pointer; z-index: 3;
+.modal-content .radio-label {
+  position: relative;
 }
-.modal-content .radio-label .radio-content { position: relative; padding-left: 28px; }
+.modal-content .radio-label input[type='radio'] {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  opacity: 0;
+  margin: 0;
+  cursor: pointer;
+  z-index: 3;
+}
+.modal-content .radio-label .radio-content {
+  position: relative;
+  padding-left: 28px;
+}
 .modal-content .radio-label .radio-content::before {
   content: '';
-  position: absolute; left: 0; top: 50%; transform: translateY(-50%);
-  width: 18px; height: 18px; border-radius: 50%; background: #1e1e1e; border: 1px solid #444; transition: all 0.12s ease; z-index: 1;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #1e1e1e;
+  border: 1px solid #444;
+  transition: all 0.12s ease;
+  z-index: 1;
 }
-.modal-content .radio-label input[type="radio"]:checked + .radio-content::before {
-  background: var(--brand-focus); border-color: var(--brand-focus); box-shadow: 0 0 0 4px rgba(var(--brand-rgb), 0.08);
+.modal-content .radio-label input[type='radio']:checked + .radio-content::before {
+  background: var(--brand-focus);
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 4px rgba(var(--brand-rgb), 0.08);
 }
-.modal-content .radio-label input[type="radio"]:checked + .radio-content::after {
+.modal-content .radio-label input[type='radio']:checked + .radio-content::after {
   content: '';
-  position: absolute; left: 5px; top: 50%; transform: translateY(-50%);
-  width: 8px; height: 8px; border-radius: 50%; background: white; z-index: 4;
+  position: absolute;
+  left: 5px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: white;
+  z-index: 4;
 }
 
 /* Focus styling */
-.modal-content .checkbox-wrapper input[type="checkbox"]:focus-visible + .checkbox-content::before,
-.modal-content .radio-label input[type="radio"]:focus-visible + .radio-content::before {
-  outline: 3px solid rgba(var(--brand-rgb), 0.12); outline-offset: 2px;
+.modal-content .checkbox-wrapper input[type='checkbox']:focus-visible + .checkbox-content::before,
+.modal-content .radio-label input[type='radio']:focus-visible + .radio-content::before {
+  outline: 3px solid rgba(var(--brand-rgb), 0.12);
+  outline-offset: 2px;
 }
 
 /* Shared delete dialog option layout */
@@ -409,7 +513,9 @@
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .modal-content .delete-options .checkbox-label:hover {
@@ -439,9 +545,15 @@
 }
 
 /* Small modal size variations */
-.modal-sm { max-width: 420px }
-.modal-md { max-width: 700px }
-.modal-lg { max-width: 1000px }
+.modal-sm {
+  max-width: 420px;
+}
+.modal-md {
+  max-width: 700px;
+}
+.modal-lg {
+  max-width: 1000px;
+}
 
 /* Backwards-compatible dialog classes (legacy components) — standardized to the modal look & sizes */
 .dialog-overlay,
@@ -475,8 +587,12 @@
 
 /* Default sizes for legacy dialog variants so they match the centralized modal sizes */
 .dialog,
-.match-dialog { max-width: 700px /* modal-md */; }
-.confirm-dialog { max-width: 520px /* smaller confirm dialogs */; }
+.match-dialog {
+  max-width: 700px /* modal-md */;
+}
+.confirm-dialog {
+  max-width: 520px /* smaller confirm dialogs */;
+}
 
 /* Align inner spacing with centralized modal body/footer/header */
 .dialog .dialog-header,
@@ -523,7 +639,7 @@
     min-width: 0;
     justify-content: center;
   }
-} 
+}
 
 /* Shared modal form control styles */
 .modal-content .form-group {
@@ -539,8 +655,12 @@
   margin-bottom: 0;
 }
 /* Utility modifiers */
-.modal-content .form-group--compact { margin-bottom: 0.5rem; }
-.modal-content .form-group--no-margin { margin-bottom: 0; }
+.modal-content .form-group--compact {
+  margin-bottom: 0.5rem;
+}
+.modal-content .form-group--no-margin {
+  margin-bottom: 0;
+}
 
 .modal-content .form-group label {
   font-weight: 500;
@@ -600,9 +720,15 @@
 }
 
 /* Ensure any Ph icons that might be hidden are visible */
-.modal-content .form-label i { display: none !important; }
-.modal-content .form-label svg { display: inline-block !important; }
-.modal-content .info-section svg { display: inline-block !important; }
+.modal-content .form-label i {
+  display: none !important;
+}
+.modal-content .form-label svg {
+  display: inline-block !important;
+}
+.modal-content .info-section svg {
+  display: inline-block !important;
+}
 
 /* Card wrapper for controls following the label */
 .modal-content .form-control-card {
@@ -610,7 +736,7 @@
   border: 1px solid #333;
   border-radius: 8px;
   padding: 1rem;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
 }
 /* Small vertical spacing between children inside the control-card */
 .modal-content .form-control-card > * + * {
@@ -661,7 +787,7 @@
   background-color: #1a1a1a;
   color: #fff;
   transition: all 0.2s;
-} 
+}
 
 .modal-content input.form-control:focus,
 .modal-content select.form-control:focus,
@@ -726,11 +852,11 @@
 
 /* Modal-specific validation appearance (match modal's alerts) */
 .modal-content .folder-browser .validation-message {
-  display:block;
-  width:100%;
-  padding:0.85rem 1rem;
-  border-radius:6px;
-  margin-bottom:1rem;
+  display: block;
+  width: 100%;
+  padding: 0.85rem 1rem;
+  border-radius: 6px;
+  margin-bottom: 1rem;
   font-weight: 500;
 }
 .modal-content .folder-browser .validation-message.success {
@@ -808,8 +934,14 @@
   border-radius: 8px;
   padding: 0.75rem;
   margin-top: 0.5rem;
-  box-shadow: 0 6px 14px rgba(0,0,0,0.20);
+  box-shadow: 0 6px 14px rgba(0, 0, 0, 0.2);
 }
-.modal-content .section-card.section-card--no-top { margin-top: 0 }
-.modal-content .section-card > *:first-child { margin-top: 0; }
-.modal-content .section-card > *:last-child { margin-bottom: 0; }
+.modal-content .section-card.section-card--no-top {
+  margin-top: 0;
+}
+.modal-content .section-card > *:first-child {
+  margin-top: 0;
+}
+.modal-content .section-card > *:last-child {
+  margin-bottom: 0;
+}

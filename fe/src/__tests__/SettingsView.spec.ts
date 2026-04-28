@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
- 
+
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { Mock } from 'vitest'
-import { mount } from '@vue/test-utils' 
+import { mount } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import SettingsView from '@/views/SettingsView.vue'
@@ -134,11 +134,15 @@ describe('SettingsView', () => {
     // Access internal setup state to check showPassword directly (more reliable in VTU)
     const setupState = vm.$?.setupState ?? vm.$setup ?? (vm as unknown as SetupState)
     // initial value should be false
-    expect((setupState.showPassword as unknown)?.value ?? (setupState.showPassword as unknown)).toBe(false)
+    expect(
+      (setupState.showPassword as unknown)?.value ?? (setupState.showPassword as unknown),
+    ).toBe(false)
     // Toggle via exposed function
     vm.toggleShowPassword?.()
     await wrapper.vm.$nextTick()
-    expect((setupState.showPassword as unknown)?.value ?? (setupState.showPassword as unknown)).toBe(true)
+    expect(
+      (setupState.showPassword as unknown)?.value ?? (setupState.showPassword as unknown),
+    ).toBe(true)
   })
 
   // Note: legacy "Prefer US domain" setting was removed from the UI;

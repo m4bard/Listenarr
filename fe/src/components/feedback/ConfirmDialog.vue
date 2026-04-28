@@ -16,14 +16,22 @@
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
 <template>
-  <Modal class="confirm-dialog" :visible="modelValue" :title="title || 'Confirm'" size="sm" @close="onCancel">
+  <Modal
+    class="confirm-dialog"
+    :visible="modelValue"
+    :title="title || 'Confirm'"
+    size="sm"
+    @close="onCancel"
+  >
     <div class="confirm-body">
       <p>{{ stripHtmlAndNormalize(message) }}</p>
     </div>
 
     <template #footer>
       <button class="btn cancel" @click="onCancel">{{ cancelText }}</button>
-      <button class="btn confirm" :class="danger ? 'btn-danger' : 'btn-info'" @click="onConfirm">{{ confirmText }}</button>
+      <button class="btn confirm" :class="danger ? 'btn-danger' : 'btn-info'" @click="onConfirm">
+        {{ confirmText }}
+      </button>
     </template>
   </Modal>
 </template>
@@ -55,5 +63,9 @@ function onCancel() {
 
 <style scoped>
 /* Rely on centralized modal styles for layout; keep tiny confirm-specific tweaks here */
-.confirm-body p { color: #ddd; margin: 0 0 0.5rem 0; white-space: pre-wrap }
+.confirm-body p {
+  color: #ddd;
+  margin: 0 0 0.5rem 0;
+  white-space: pre-wrap;
+}
 </style>

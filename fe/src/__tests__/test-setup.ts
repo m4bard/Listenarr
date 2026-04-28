@@ -15,7 +15,7 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
- 
+
 // Test setup: Polyfill / mock environment pieces that tests expect
 // - Provide a Mock WebSocket implementation so SignalR code can run in jsdom
 
@@ -50,14 +50,13 @@ import fs from 'fs'
 
 // Diagnostic: help locate failures during test setup in CI/local runs
 try {
-   
   console.log('[test-setup] initializing test setup')
 } catch {}
 
 // Provide default component stubs for Modal teleporting components so unit tests
 // render modal content inline instead of using real teleport behavior.
 import { config as vtConfig } from '@vue/test-utils'
-const globalConfig = ((vtConfig.global ??= {} as unknown) as unknown)
+const globalConfig = (vtConfig.global ??= {} as unknown) as unknown
 globalConfig.components = {
   ...(globalConfig.components || {}),
   // Render modal content inline with accessible dialog attributes so tests
@@ -73,7 +72,8 @@ globalConfig.components = {
   // don't fail on missing component resolution for icon or small base pieces.
   LoadingState: {
     props: ['message', 'size'],
-    template: '<div class="loading-state"><div class="spinner"/><p v-if="message">{{ message }}</p></div>',
+    template:
+      '<div class="loading-state"><div class="spinner"/><p v-if="message">{{ message }}</p></div>',
   },
   PhSpinner: {
     props: ['size'],
@@ -148,7 +148,7 @@ vi.mock('@/services/api', () => {
         if (svc.searchAudibleByTitleAndAuthor) {
           const resp = (await svc.searchAudibleByTitleAndAuthor(p.title, p.author)) as unknown
           const r = resp as unknown
-          return (r?.results) || r || []
+          return r?.results || r || []
         }
         return []
       }
@@ -176,11 +176,13 @@ vi.mock('@/services/api', () => {
         typeof destPath === 'string' &&
         // simple heuristic: same leading path segment or same drive letter on Windows
         (sourcePath.split(/[\\/]/)[1] === destPath.split(/[\\/]/)[1] ||
-          (/^[A-Za-z]:/.test(sourcePath) && sourcePath[0].toLowerCase() === destPath[0]?.toLowerCase()))
+          (/^[A-Za-z]:/.test(sourcePath) &&
+            sourcePath[0].toLowerCase() === destPath[0]?.toLowerCase()))
       return {
         sameVolume: Boolean(same),
         willBreakHardlinks: !same,
-        sourceVolume: typeof sourcePath === 'string' ? sourcePath.split(/[\\/]/)[1] || '' : undefined,
+        sourceVolume:
+          typeof sourcePath === 'string' ? sourcePath.split(/[\\/]/)[1] || '' : undefined,
         destVolume: typeof destPath === 'string' ? destPath.split(/[\\/]/)[1] || '' : undefined,
         message: same ? 'Same volume' : 'Different volumes',
       }
@@ -274,7 +276,11 @@ if (typeof console.debug !== 'function') console.debug = console.log.bind(consol
 // to reject the path; setting the location prevents those file URLs from
 // appearing during transforms and stacktrace processing.
 try {
-  if (typeof window !== 'undefined' && window.location && window.location.href.startsWith('file:')) {
+  if (
+    typeof window !== 'undefined' &&
+    window.location &&
+    window.location.href.startsWith('file:')
+  ) {
     // Replace file://... base with http://localhost/
     window.history.replaceState({}, '', 'http://localhost/')
   }
@@ -368,89 +374,85 @@ try {
 } catch {}
 
 // Defensive: some test runners / source-map consumers may attempt to read 'file:///logo.svg'
-  // which can throw on Windows / Node file APIs. Normalize any `file:///...` paths to an
-  // absolute pathname or return an empty string so tests don't crash during stacktrace
-  // or source-map processing.
-  try {
-     
-    const _fs = fs
-    const _origRead = _fs.readFile.bind(_fs)
-    const _origReadSync = _fs.readFileSync.bind(_fs)
-    const _origExistsSync = _fs.existsSync.bind(_fs)
-    const _origStatSync = _fs.statSync.bind(_fs)
-    const _origRealpathSync = _fs.realpathSync.bind(_fs)
-    const _origCreateReadStream = _fs.createReadStream.bind(_fs)
-    const _origOpenSync = _fs.openSync ? _fs.openSync.bind(_fs) : undefined
-    const _origPromisesRead = _fs.promises && _fs.promises.readFile ? _fs.promises.readFile.bind(_fs.promises) : undefined
+// which can throw on Windows / Node file APIs. Normalize any `file:///...` paths to an
+// absolute pathname or return an empty string so tests don't crash during stacktrace
+// or source-map processing.
+try {
+  const _fs = fs
+  const _origRead = _fs.readFile.bind(_fs)
+  const _origReadSync = _fs.readFileSync.bind(_fs)
+  const _origExistsSync = _fs.existsSync.bind(_fs)
+  const _origStatSync = _fs.statSync.bind(_fs)
+  const _origRealpathSync = _fs.realpathSync.bind(_fs)
+  const _origCreateReadStream = _fs.createReadStream.bind(_fs)
+  const _origOpenSync = _fs.openSync ? _fs.openSync.bind(_fs) : undefined
+  const _origPromisesRead =
+    _fs.promises && _fs.promises.readFile ? _fs.promises.readFile.bind(_fs.promises) : undefined
 
-    function normalizePathArg(p: unknown) {
-      try {
-        if (typeof p === 'string' && p.startsWith('file:///')) {
-          // Convert 'file:///logo.svg' -> '/logo.svg' (safe for test runtime)
-          return new URL(p).pathname
-        }
-      } catch {}
-      return p
-    }
-
-    function isProblematicLogoPath(p: unknown) {
-      const np = typeof p === 'string' ? p : ''
-      return np === 'file:///logo.svg' || np.endsWith('/logo.svg')
-    }
-
-    ;(_fs as unknown).readFile = function (p: unknown, ...args: unknown[]) {
-      const path = normalizePathArg(p)
-      if (isProblematicLogoPath(p)) {
-        const cb = args[args.length - 1]
-        if (typeof cb === 'function') return cb(null, '')
-        return Promise.resolve('')
+  function normalizePathArg(p: unknown) {
+    try {
+      if (typeof p === 'string' && p.startsWith('file:///')) {
+        // Convert 'file:///logo.svg' -> '/logo.svg' (safe for test runtime)
+        return new URL(p).pathname
       }
-      return _origRead(path, ...args)
-    }
+    } catch {}
+    return p
+  }
 
-    ;(_fs as unknown).readFileSync = function (p: unknown, ...args: unknown[]) {
+  function isProblematicLogoPath(p: unknown) {
+    const np = typeof p === 'string' ? p : ''
+    return np === 'file:///logo.svg' || np.endsWith('/logo.svg')
+  }
+
+  ;(_fs as unknown).readFile = function (p: unknown, ...args: unknown[]) {
+    const path = normalizePathArg(p)
+    if (isProblematicLogoPath(p)) {
+      const cb = args[args.length - 1]
+      if (typeof cb === 'function') return cb(null, '')
+      return Promise.resolve('')
+    }
+    return _origRead(path, ...args)
+  }
+  ;(_fs as unknown).readFileSync = function (p: unknown, ...args: unknown[]) {
+    const path = normalizePathArg(p)
+    if (isProblematicLogoPath(p)) return ''
+    return _origReadSync(path, ...args)
+  }
+
+  if (_origPromisesRead) {
+    ;(_fs as unknown).promises.readFile = function (p: unknown, ...args: unknown[]) {
       const path = normalizePathArg(p)
-      if (isProblematicLogoPath(p)) return ''
-      return _origReadSync(path, ...args)
+      if (isProblematicLogoPath(p)) return Promise.resolve('')
+      return _origPromisesRead(path, ...args)
     }
+  }
 
-    if (_origPromisesRead) {
-      ;(_fs as unknown).promises.readFile = function (p: unknown, ...args: unknown[]) {
-        const path = normalizePathArg(p)
-        if (isProblematicLogoPath(p)) return Promise.resolve('')
-        return _origPromisesRead(path, ...args)
-      }
-    }
+  ;(_fs as unknown).existsSync = function (p: unknown) {
+    const path = normalizePathArg(p)
+    if (isProblematicLogoPath(p)) return true
+    return _origExistsSync(path)
+  }
+  ;(_fs as unknown).statSync = function (p: unknown, ...args: unknown[]) {
+    const path = normalizePathArg(p)
+    if (isProblematicLogoPath(p)) return { isFile: () => true, isDirectory: () => false } as unknown
+    return _origStatSync(path, ...args)
+  }
+  ;(_fs as unknown).realpathSync = function (p: unknown, ...args: unknown[]) {
+    const path = normalizePathArg(p)
+    if (isProblematicLogoPath(p)) return path
+    return _origRealpathSync(path, ...args)
+  }
+  ;(_fs as unknown).createReadStream = function (p: unknown, ...args: unknown[]) {
+    const path = normalizePathArg(p)
+    if (isProblematicLogoPath(p)) return _origCreateReadStream('/dev/null')
+    return _origCreateReadStream(path, ...args)
+  }
 
-    ;(_fs as unknown).existsSync = function (p: unknown) {
+  if (_origOpenSync) {
+    ;(_fs as unknown).openSync = function (p: unknown, ...args: unknown[]) {
       const path = normalizePathArg(p)
-      if (isProblematicLogoPath(p)) return true
-      return _origExistsSync(path)
+      if (isProblematicLogoPath(p)) return _origOpenSync(path)
+      return _origOpenSync(path, ...args)
     }
-
-    ;(_fs as unknown).statSync = function (p: unknown, ...args: unknown[]) {
-      const path = normalizePathArg(p)
-      if (isProblematicLogoPath(p)) return { isFile: () => true, isDirectory: () => false } as unknown
-      return _origStatSync(path, ...args)
-    }
-
-    ;(_fs as unknown).realpathSync = function (p: unknown, ...args: unknown[]) {
-      const path = normalizePathArg(p)
-      if (isProblematicLogoPath(p)) return path
-      return _origRealpathSync(path, ...args)
-    }
-
-    ;(_fs as unknown).createReadStream = function (p: unknown, ...args: unknown[]) {
-      const path = normalizePathArg(p)
-      if (isProblematicLogoPath(p)) return _origCreateReadStream('/dev/null')
-      return _origCreateReadStream(path, ...args)
-    }
-
-    if (_origOpenSync) {
-      ;(_fs as unknown).openSync = function (p: unknown, ...args: unknown[]) {
-        const path = normalizePathArg(p)
-        if (isProblematicLogoPath(p)) return _origOpenSync(path)
-        return _origOpenSync(path, ...args)
-      }
-    }
-  } catch {}
+  }
+} catch {}

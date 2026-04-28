@@ -109,9 +109,13 @@ describe('IndexersTab', () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
 
-    expect((wrapper.get('#prowlarr-url').element as HTMLInputElement).value).toBe('http://localhost')
+    expect((wrapper.get('#prowlarr-url').element as HTMLInputElement).value).toBe(
+      'http://localhost',
+    )
     expect((wrapper.get('#prowlarr-port').element as HTMLInputElement).value).toBe('9696')
-    expect((wrapper.get('#prowlarr-tag-filter').element as HTMLInputElement).value).toBe('audiobooks')
+    expect((wrapper.get('#prowlarr-tag-filter').element as HTMLInputElement).value).toBe(
+      'audiobooks',
+    )
     expect((wrapper.get('#prowlarr-key').element as HTMLInputElement).value).toBe('')
     expect(wrapper.text()).toContain('saved API key is already stored securely on the server')
 
@@ -161,7 +165,9 @@ describe('IndexersTab', () => {
 
     await wrapper.get('#prowlarr-port').setValue('')
 
-    await (wrapper.vm as unknown as { importFromProwlarr: () => Promise<void> }).importFromProwlarr()
+    await (
+      wrapper.vm as unknown as { importFromProwlarr: () => Promise<void> }
+    ).importFromProwlarr()
 
     expect(importProwlarrIndexers).toHaveBeenCalledWith({
       url: 'http://localhost',
@@ -212,10 +218,11 @@ describe('IndexersTab', () => {
     await wrapper.vm.$nextTick()
     await new Promise((resolve) => setTimeout(resolve, 0))
     await wrapper.vm.$nextTick()
-
     ;(wrapper.vm as unknown as { prowlarrPort: number }).prowlarrPort = 9696
 
-    await (wrapper.vm as unknown as { importFromProwlarr: () => Promise<void> }).importFromProwlarr()
+    await (
+      wrapper.vm as unknown as { importFromProwlarr: () => Promise<void> }
+    ).importFromProwlarr()
 
     expect(importProwlarrIndexers).toHaveBeenCalledWith({
       url: 'http://localhost',

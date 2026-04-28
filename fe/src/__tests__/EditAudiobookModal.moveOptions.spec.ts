@@ -133,8 +133,8 @@ describe('EditAudiobookModal move options', () => {
     })
 
     await new Promise((r) => setTimeout(r, 200))
-
-    ;(wrapper.vm as unknown as { formData: { edition: string } }).formData.edition = 'Revised Edition'
+    ;(wrapper.vm as unknown as { formData: { edition: string } }).formData.edition =
+      'Revised Edition'
     await wrapper.vm.$nextTick()
 
     await (wrapper.vm as unknown as { handleSave: () => Promise<void> }).handleSave()
@@ -308,9 +308,7 @@ describe('EditAudiobookModal move options', () => {
       '2024-01-15',
     )
 
-    const authorTags = wrapper
-      .findAll('.author-tags-editor .tag-item')
-      .map((item) => item.text())
+    const authorTags = wrapper.findAll('.author-tags-editor .tag-item').map((item) => item.text())
     expect(authorTags).toEqual(expect.arrayContaining(['Author']))
 
     const narratorTags = wrapper
@@ -318,9 +316,7 @@ describe('EditAudiobookModal move options', () => {
       .map((item) => item.text())
     expect(narratorTags).toEqual(expect.arrayContaining(['Narrator One', 'Narrator Two']))
 
-    const genreTags = wrapper
-      .findAll('.genre-tags-editor .tag-item')
-      .map((item) => item.text())
+    const genreTags = wrapper.findAll('.genre-tags-editor .tag-item').map((item) => item.text())
     expect(genreTags).toEqual(expect.arrayContaining(['Fantasy', 'Adventure']))
     expect((wrapper.get('#metadata-series-name-0').element as HTMLInputElement).value).toBe(
       'Existing Series',
@@ -366,8 +362,8 @@ describe('EditAudiobookModal move options', () => {
       '2024-03-01',
     )
     expect((wrapper.get('#metadata-language').element as HTMLInputElement).value).toBe('English')
-    expect(
-      wrapper.findAll('.narrator-tags-editor .tag-item').map((item) => item.text()),
-    ).toEqual(expect.arrayContaining(['Narrator One']))
+    expect(wrapper.findAll('.narrator-tags-editor .tag-item').map((item) => item.text())).toEqual(
+      expect.arrayContaining(['Narrator One']),
+    )
   })
 })

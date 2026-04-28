@@ -83,7 +83,10 @@ async function onCopy() {
 }
 
 async function onRegenerate() {
-  const confirmed = await showConfirm('Are you sure you want to regenerate the API key? This will invalidate the existing key.', 'Regenerate API Key')
+  const confirmed = await showConfirm(
+    'Are you sure you want to regenerate the API key? This will invalidate the existing key.',
+    'Regenerate API Key',
+  )
   if (!confirmed) return
   try {
     if (!props.apiKey) {

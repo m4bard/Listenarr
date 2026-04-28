@@ -135,13 +135,7 @@ export const extractPublishedDate = (result: NormalizedResult): string | undefin
  * extractNarrators({ narrator: "Scott Brick" }) // "Scott Brick"
  */
 export const extractNarrators = (result: NormalizedResult): string => {
-  const narr = pick<unknown>(
-    result,
-    'narrators',
-    'Narrators',
-    'narrator',
-    'Narrator',
-  )
+  const narr = pick<unknown>(result, 'narrators', 'Narrators', 'narrator', 'Narrator')
 
   if (!narr) return ''
 
@@ -272,13 +266,7 @@ export const getPrimaryId = (result: NormalizedResult): string => {
  * @returns Subtitle string or undefined
  */
 export const extractSubtitle = (result: NormalizedResult): string | undefined => {
-  const sub = pick<unknown>(
-    result,
-    'subtitle',
-    'Subtitle',
-    'subtitles',
-    'Subtitles',
-  )
+  const sub = pick<unknown>(result, 'subtitle', 'Subtitle', 'subtitles', 'Subtitles')
 
   if (!sub) return undefined
 
@@ -313,9 +301,7 @@ export const extractPublishers = (result: NormalizedResult): string[] => {
   if (!pub) return []
 
   if (Array.isArray(pub)) {
-    return pub
-      .map((p) => (typeof p === 'string' ? p.trim() : String(p).trim()))
-      .filter(Boolean)
+    return pub.map((p) => (typeof p === 'string' ? p.trim() : String(p).trim())).filter(Boolean)
   }
 
   if (typeof pub === 'string') {
@@ -411,7 +397,8 @@ export const canAddOpenLibraryResult = (book: unknown): boolean => {
   if (!title || (typeof title === 'string' && !title.trim())) return false
   const isbn = b['isbn'] ?? b['ISBN']
   if (!isbn) return false
-  if (Array.isArray(isbn) && isbn.length > 0 && typeof isbn[0] === 'string' && isbn[0].trim()) return true
+  if (Array.isArray(isbn) && isbn.length > 0 && typeof isbn[0] === 'string' && isbn[0].trim())
+    return true
   if (typeof isbn === 'string' && isbn.trim()) return true
   return false
 }

@@ -28,7 +28,8 @@ describe('AuthenticationSection', () => {
   })
 
   it('emits update:authEnabled when checkbox toggled', async () => {
-    const { default: AuthenticationSection } = await import('@/components/settings/AuthenticationSection.vue')
+    const { default: AuthenticationSection } =
+      await import('@/components/settings/AuthenticationSection.vue')
     const wrapper = mount(AuthenticationSection, {
       props: { settings: { adminUsername: 'admin', adminPassword: '' }, authEnabled: false },
       global: { components: { PasswordInput, Checkbox } },
@@ -43,7 +44,8 @@ describe('AuthenticationSection', () => {
   })
 
   it('emits update:settings when username or password changes', async () => {
-    const { default: AuthenticationSection } = await import('@/components/settings/AuthenticationSection.vue')
+    const { default: AuthenticationSection } =
+      await import('@/components/settings/AuthenticationSection.vue')
     const wrapper = mount(AuthenticationSection, {
       props: { settings: { adminUsername: 'admin', adminPassword: '' }, authEnabled: true },
       global: { components: { PasswordInput } },
@@ -67,11 +69,16 @@ describe('AuthenticationSection', () => {
   })
 
   it('emits update:startupConfig when ApiKeyControl emits update:apiKey', async () => {
-    const { default: AuthenticationSection } = await import('@/components/settings/AuthenticationSection.vue')
+    const { default: AuthenticationSection } =
+      await import('@/components/settings/AuthenticationSection.vue')
     const { default: ApiKeyControl } = await import('@/components/ui/ApiKeyControl.vue')
 
     const wrapper = mount(AuthenticationSection, {
-      props: { settings: { adminUsername: 'admin', adminPassword: '' }, authEnabled: true, startupConfig: { apiKey: 'OLD' } },
+      props: {
+        settings: { adminUsername: 'admin', adminPassword: '' },
+        authEnabled: true,
+        startupConfig: { apiKey: 'OLD' },
+      },
       global: { components: { ApiKeyControl } },
     })
 

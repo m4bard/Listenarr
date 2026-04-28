@@ -35,7 +35,11 @@
             :aria-label="action.ariaLabel"
             :aria-pressed="action.key === 'monitor' ? audiobook.monitored : undefined"
           >
-            <component :is="action.icon" v-bind="action.iconProps || {}" :class="action.iconClass" />
+            <component
+              :is="action.icon"
+              v-bind="action.iconProps || {}"
+              :class="action.iconClass"
+            />
           </button>
         </div>
 
@@ -50,14 +54,22 @@
             :title="action.title"
             :aria-label="action.ariaLabel"
           >
-            <component :is="action.icon" v-bind="action.iconProps || {}" :class="action.iconClass" />
+            <component
+              :is="action.icon"
+              v-bind="action.iconProps || {}"
+              :class="action.iconClass"
+            />
           </button>
         </div>
 
         <!-- Mobile: collapse remaining actions into a More dropdown -->
         <div class="more-wrapper tabs-mobile">
-          <button class="nav-btn more-btn" @click.stop="showMoreActions = !showMoreActions"
-            :aria-expanded="showMoreActions" title="More actions">
+          <button
+            class="nav-btn more-btn"
+            @click.stop="showMoreActions = !showMoreActions"
+            :aria-expanded="showMoreActions"
+            title="More actions"
+          >
             <PhCaretDown />
             More
           </button>
@@ -69,7 +81,11 @@
               :disabled="action.disabled"
               @click="runTopAction(action, true)"
             >
-              <component :is="action.icon" v-bind="action.iconProps || {}" :class="action.iconClass" />
+              <component
+                :is="action.icon"
+                v-bind="action.iconProps || {}"
+                :class="action.iconClass"
+              />
               <span>{{ action.label }}</span>
             </button>
           </div>
@@ -82,8 +98,14 @@
       <div class="backdrop" :style="{ backgroundImage: `url(${coverImageUrl})` }"></div>
       <div class="hero-content">
         <div class="poster-container">
-          <img :src="coverImageUrl" :alt="audiobook.title" class="poster" loading="lazy" decoding="async"
-            @error="handleImageError" />
+          <img
+            :src="coverImageUrl"
+            :alt="audiobook.title"
+            class="poster"
+            loading="lazy"
+            decoding="async"
+            @error="handleImageError"
+          />
         </div>
         <div class="info-section">
           <h1 class="title">{{ safeText(audiobook.title) }}</h1>
@@ -143,9 +165,14 @@
           </div>
 
           <div class="description" v-if="audiobook.description">
-            <div class="description-content" :class="{ expanded: showFullDescription }">{{ stripHtmlAndNormalize(audiobook.description) }}
+            <div class="description-content" :class="{ expanded: showFullDescription }">
+              {{ stripHtmlAndNormalize(audiobook.description) }}
             </div>
-            <button v-if="!showFullDescription" class="show-more-btn" @click="showFullDescription = true">
+            <button
+              v-if="!showFullDescription"
+              class="show-more-btn"
+              @click="showFullDescription = true"
+            >
               Show More
             </button>
             <button v-else class="show-more-btn" @click="showFullDescription = false">
@@ -166,15 +193,27 @@
       <!-- Desktop tabs -->
       <div class="tabs-desktop">
         <div class="tabs">
-          <button class="tab" :class="{ active: activeTab === 'details' }" @click="activeTab = 'details'">
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'details' }"
+            @click="activeTab = 'details'"
+          >
             <PhInfo />
             Details
           </button>
-          <button class="tab" :class="{ active: activeTab === 'files' }" @click="activeTab = 'files'">
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'files' }"
+            @click="activeTab = 'files'"
+          >
             <PhFile />
             Files
           </button>
-          <button class="tab" :class="{ active: activeTab === 'history' }" @click="activeTab = 'history'">
+          <button
+            class="tab"
+            :class="{ active: activeTab === 'history' }"
+            @click="activeTab = 'history'"
+          >
             <PhClockCounterClockwise />
             History
           </button>
@@ -235,7 +274,11 @@
             </div>
             <div class="detail-row" v-if="audiobook.publishedDate || audiobook.publishYear">
               <span class="label">Release Date:</span>
-              <span class="value">{{ audiobook.publishedDate ? formatDate(audiobook.publishedDate) : audiobook.publishYear }}</span>
+              <span class="value">{{
+                audiobook.publishedDate
+                  ? formatDate(audiobook.publishedDate)
+                  : audiobook.publishYear
+              }}</span>
             </div>
             <div class="detail-row" v-if="audiobook.language">
               <span class="label">Language:</span>
@@ -286,7 +329,11 @@
             <div class="detail-row detail-row-stacked" v-if="displayIdentifiers.length">
               <span class="label">Associated IDs:</span>
               <div class="value identifiers-list">
-                <div v-for="identifier in displayIdentifiers" :key="identifier.key" class="identifier-item">
+                <div
+                  v-for="identifier in displayIdentifiers"
+                  :key="identifier.key"
+                  class="identifier-item"
+                >
                   <span class="identifier-type">{{ identifier.typeLabel }}</span>
                   <a
                     v-if="identifier.href"
@@ -302,7 +349,10 @@
                 </div>
               </div>
             </div>
-            <div class="detail-row" v-else-if="audiobook.asin || audiobook.isbn || audiobook.openLibraryId">
+            <div
+              class="detail-row"
+              v-else-if="audiobook.asin || audiobook.isbn || audiobook.openLibraryId"
+            >
               <span class="label">Associated IDs:</span>
               <span class="value">Unavailable</span>
             </div>
@@ -354,19 +404,28 @@
           </div>
         </div>
         <div v-if="audiobook.files && audiobook.files.length" class="file-list">
-          <div v-for="f in audiobook.files" :key="f.id" class="file-item"
-            :class="{ expanded: isFileAccordionExpanded(f.id) }">
+          <div
+            v-for="f in audiobook.files"
+            :key="f.id"
+            class="file-item"
+            :class="{ expanded: isFileAccordionExpanded(f.id) }"
+          >
             <div class="file-header" @click="toggleFileAccordion(f.id)">
               <div class="file-info">
                 <PhFileAudio />
                 <span class="file-name">{{ getFileName(f.path) }}</span>
-                <small class="file-meta">• {{ f.format ? f.format.toUpperCase() : '' }}
-                  {{ f.durationSeconds ? '• ' + formatDuration(f.durationSeconds) : '' }}</small>
+                <small class="file-meta"
+                  >• {{ f.format ? f.format.toUpperCase() : '' }}
+                  {{ f.durationSeconds ? '• ' + formatDuration(f.durationSeconds) : '' }}</small
+                >
               </div>
               <div class="file-actions">
                 <span class="file-size" v-if="f.size">{{ formatFileSize(f.size) }}</span>
                 <span class="file-size" v-else>Unknown size</span>
-                <PhCaretDown class="accordion-toggle" :class="{ rotated: isFileAccordionExpanded(f.id) }" />
+                <PhCaretDown
+                  class="accordion-toggle"
+                  :class="{ rotated: isFileAccordionExpanded(f.id) }"
+                />
               </div>
             </div>
             <div v-if="isFileAccordionExpanded(f.id)" class="file-accordion">
@@ -432,7 +491,12 @@
       <div id="history" v-if="activeTab === 'history'" class="history-content">
         <div class="history-header">
           <h3>History</h3>
-          <button v-if="historyEntries.length > 0" class="refresh-btn" @click="loadHistory" :disabled="historyLoading">
+          <button
+            v-if="historyEntries.length > 0"
+            class="refresh-btn"
+            @click="loadHistory"
+            :disabled="historyLoading"
+          >
             <PhArrowClockwise :class="{ 'ph-spin': historyLoading }" />
             Refresh
           </button>
@@ -480,12 +544,22 @@
       </div>
     </div>
 
-    <DeleteConfirmationModal :visible="showDeleteDialog" title="Delete Audiobook" :confirmText="deleting ? 'Deleting...' : 'Delete'" @close="cancelDelete"
-      @confirm="executeDelete">
+    <DeleteConfirmationModal
+      :visible="showDeleteDialog"
+      title="Delete Audiobook"
+      :confirmText="deleting ? 'Deleting...' : 'Delete'"
+      @close="cancelDelete"
+      @confirm="executeDelete"
+    >
       <template #default>
-        <p>Are you sure you want to delete <strong>{{ audiobook.title }}</strong>?</p>
-        <p class="warning-text">This action cannot be undone. The audiobook data and cached images will be permanently
-          removed.</p>
+        <p>
+          Are you sure you want to delete <strong>{{ audiobook.title }}</strong
+          >?
+        </p>
+        <p class="warning-text">
+          This action cannot be undone. The audiobook data and cached images will be permanently
+          removed.
+        </p>
         <div class="delete-options">
           <div class="checkbox-row">
             <label class="checkbox-wrapper checkbox-label">
@@ -496,8 +570,13 @@
                 aria-label="Remove all files in the audiobook folder from disk"
               />
               <div class="checkbox-content">
-                <span class="checkbox-title">Remove all files in the audiobook folder from disk</span>
-                <small>Deletes every file inside the audiobook folder when it can be identified safely. Leave the folder itself unless you also choose the option below.</small>
+                <span class="checkbox-title"
+                  >Remove all files in the audiobook folder from disk</span
+                >
+                <small
+                  >Deletes every file inside the audiobook folder when it can be identified safely.
+                  Leave the folder itself unless you also choose the option below.</small
+                >
               </div>
             </label>
           </div>
@@ -512,7 +591,10 @@
               />
               <div class="checkbox-content">
                 <span class="checkbox-title">Also remove the audiobook folder</span>
-                <small>Deletes the audiobook folder itself when it is safe to do so. This also removes everything inside it.</small>
+                <small
+                  >Deletes the audiobook folder itself when it is safe to do so. This also removes
+                  everything inside it.</small
+                >
               </div>
             </label>
           </div>
@@ -539,8 +621,12 @@
   </div>
 
   <!-- Edit Audiobook Modal -->
-  <EditAudiobookModal :is-open="showEditModal" :audiobook="audiobook" @close="closeEditModal"
-    @saved="handleEditSaved" />
+  <EditAudiobookModal
+    :is-open="showEditModal"
+    :audiobook="audiobook"
+    @close="closeEditModal"
+    @saved="handleEditSaved"
+  />
 
   <!-- Manual Search Modal -->
   <ManualSearchModal
@@ -556,7 +642,6 @@
     @close="showOrganizeModal = false"
     @done="handleOrganizeDone"
   />
-
 </template>
 
 <script setup lang="ts">
@@ -676,7 +761,9 @@ const topActions = computed<DetailTopAction[]>(() => [
     ariaLabel: 'Refresh',
     icon: PhArrowClockwise,
     desktopGroup: 'primary',
-    onClick: () => { void refresh() },
+    onClick: () => {
+      void refresh()
+    },
   },
   {
     key: 'manual-search',
@@ -696,7 +783,9 @@ const topActions = computed<DetailTopAction[]>(() => [
     iconClass: scanning.value ? 'ph-spin' : undefined,
     disabled: scanning.value || scanQueued.value,
     desktopGroup: 'primary',
-    onClick: () => { void scanFiles() },
+    onClick: () => {
+      void scanFiles()
+    },
   },
   {
     key: 'monitor',
@@ -728,7 +817,9 @@ const topActions = computed<DetailTopAction[]>(() => [
     iconClass: rescanningMetadata.value ? 'ph-spin' : undefined,
     disabled: rescanningMetadata.value || !audiobook.value,
     desktopGroup: 'secondary',
-    onClick: () => { void rescanMetadata() },
+    onClick: () => {
+      void rescanMetadata()
+    },
   },
   {
     key: 'organize',
@@ -738,7 +829,9 @@ const topActions = computed<DetailTopAction[]>(() => [
     icon: PhFolderOpen,
     disabled: !audiobook.value?.files?.length && !audiobook.value?.filePath,
     desktopGroup: 'secondary',
-    onClick: () => { showOrganizeModal.value = true },
+    onClick: () => {
+      showOrganizeModal.value = true
+    },
   },
   {
     key: 'delete',
@@ -753,8 +846,12 @@ const topActions = computed<DetailTopAction[]>(() => [
   },
 ])
 
-const primaryTopActions = computed(() => topActions.value.filter((a) => a.desktopGroup === 'primary'))
-const secondaryTopActions = computed(() => topActions.value.filter((a) => a.desktopGroup === 'secondary'))
+const primaryTopActions = computed(() =>
+  topActions.value.filter((a) => a.desktopGroup === 'primary'),
+)
+const secondaryTopActions = computed(() =>
+  topActions.value.filter((a) => a.desktopGroup === 'secondary'),
+)
 
 function runTopAction(action: DetailTopAction, closeMoreMenu = false) {
   action.onClick()
@@ -773,7 +870,15 @@ type DetailIdentifierItem = {
 }
 
 type DetailTopAction = {
-  key: 'refresh' | 'manual-search' | 'scan' | 'monitor' | 'edit' | 'rescan-metadata' | 'organize' | 'delete'
+  key:
+    | 'refresh'
+    | 'manual-search'
+    | 'scan'
+    | 'monitor'
+    | 'edit'
+    | 'rescan-metadata'
+    | 'organize'
+    | 'delete'
   label: string
   title: string
   ariaLabel: string
@@ -786,8 +891,6 @@ type DetailTopAction = {
   mobileClass?: string
   onClick: () => void
 }
-
-
 
 const assignedProfileName = computed(() => {
   if (!audiobook.value) return null
@@ -979,9 +1082,7 @@ function sanitizePathComponent(s?: string): string {
 
 function getLegacyIsbnValues(raw: unknown): string[] {
   if (Array.isArray(raw)) {
-    return raw
-      .map((value) => (typeof value === 'string' ? value.trim() : ''))
-      .filter(Boolean)
+    return raw.map((value) => (typeof value === 'string' ? value.trim() : '')).filter(Boolean)
   }
 
   if (typeof raw !== 'string') return []
@@ -1005,13 +1106,15 @@ function getIdentifierSortOrder(type: AudiobookExternalIdentifier['type']): numb
 }
 
 function normalizeIdentifierKey(type: AudiobookExternalIdentifier['type'], value: string): string {
-  const normalizedValue = type === 'Isbn'
-    ? value.replace(/[-\s]/g, '').toUpperCase()
-    : value.trim().toUpperCase()
+  const normalizedValue =
+    type === 'Isbn' ? value.replace(/[-\s]/g, '').toUpperCase() : value.trim().toUpperCase()
   return `${type}:${normalizedValue}`
 }
 
-function getIdentifierHref(type: AudiobookExternalIdentifier['type'], value: string): string | null {
+function getIdentifierHref(
+  type: AudiobookExternalIdentifier['type'],
+  value: string,
+): string | null {
   if (type === 'Asin') {
     return `https://www.audible.com/pd/${encodeURIComponent(value)}`
   }
@@ -1057,7 +1160,7 @@ watch(activeTab, async (newTab) => {
   }
   try {
     history.replaceState(null, '', `#${newTab}`)
-  } catch { }
+  } catch {}
 })
 
 // Handle dropdown tab change
@@ -1123,10 +1226,13 @@ onMounted(async () => {
 
       // Apply merged object reactively
       audiobook.value = merged
-    }
-    catch {
+    } catch {
       // Fallback: if merge fails, try a full reload
-      setTimeout(async () => { try { await loadAudiobook() } catch { } }, 250)
+      setTimeout(async () => {
+        try {
+          await loadAudiobook()
+        } catch {}
+      }, 250)
     }
   })
 })
@@ -1141,7 +1247,7 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
   try {
     if (audiobookUpdateUnsub) audiobookUpdateUnsub()
-  } catch { }
+  } catch {}
 })
 
 watch(
@@ -1150,8 +1256,6 @@ watch(
     syncActiveTabFromRoute()
   },
 )
-
-
 
 async function loadAudiobook() {
   loading.value = true
@@ -1206,13 +1310,11 @@ async function afterLoad() {
       const url = apiService.getImageUrl(img)
       if (url && isApiImagesUrl(url)) {
         // fire-and-forget: ensure backend cached copy exists for this image
-        void ensureImageCached(url).catch(() => { })
+        void ensureImageCached(url).catch(() => {})
       }
     }
-  } catch { }
+  } catch {}
 }
-
-
 
 async function loadQualityProfilesForDetail() {
   try {
@@ -1512,8 +1614,6 @@ async function handleOrganizeDone() {
   showOrganizeModal.value = false
   await loadAudiobook()
 }
-
-
 
 function formatRuntime(minutes: number): string {
   // Guard against legacy data stored in seconds (> 333 hours is unrealistic for minutes)
@@ -2283,7 +2383,7 @@ function formatDate(dateString?: string): string {
   }
 
   /* Keep the back button prominent but inline with actions on mobile */
-  .top-nav>.nav-btn:first-of-type {
+  .top-nav > .nav-btn:first-of-type {
     width: auto;
     justify-content: flex-start;
     gap: 10px;
@@ -2326,7 +2426,7 @@ function formatDate(dateString?: string): string {
 
   /* Make icon slightly larger to improve affordance */
   .nav-actions .nav-btn svg,
-  .top-nav>.nav-btn svg {
+  .top-nav > .nav-btn svg {
     width: 20px;
     height: 20px;
   }
@@ -2798,7 +2898,6 @@ a.identifier-link:hover {
 
 /* Mobile-specific refinements to improve layout and prevent overflow */
 @media (max-width: 768px) {
-
   /* Make poster a bit smaller and centered for narrow viewports */
   .poster {
     width: 200px;
@@ -3116,7 +3215,9 @@ a.identifier-link:hover {
   border-radius: 12px;
   border: 1px solid rgba(255, 255, 255, 0.1);
   background: rgba(255, 255, 255, 0.03);
-  transition: border-color 0.2s ease, background-color 0.2s ease;
+  transition:
+    border-color 0.2s ease,
+    background-color 0.2s ease;
 }
 
 .delete-options .checkbox-label:hover {

@@ -25,7 +25,10 @@
         </h3>
       </div>
 
-      <LoadingState v-if="loading && qualityProfiles.length === 0" message="Loading quality profiles..." />
+      <LoadingState
+        v-if="loading && qualityProfiles.length === 0"
+        message="Loading quality profiles..."
+      />
 
       <!-- Empty State -->
       <div v-else-if="qualityProfiles.length === 0" class="empty-state">
@@ -48,14 +51,17 @@
             <div class="profile-title-section">
               <div class="profile-name-row">
                 <h4>{{ profile.name }}</h4>
-
               </div>
               <p v-if="profile.description" class="profile-description">
                 {{ profile.description }}
               </p>
             </div>
             <div class="profile-actions">
-              <button @click="editProfile(profile)" class="icon-button action-edit" title="Edit Profile">
+              <button
+                @click="editProfile(profile)"
+                class="icon-button action-edit"
+                title="Edit Profile"
+              >
                 <PhPencil />
               </button>
               <button
@@ -89,7 +95,11 @@
                 Upgrade until {{ profile.cutoffQuality }}
               </div>
               <div class="quality-groups">
-                <div v-for="group in getQualityGroups(profile)" :key="group.key" class="quality-group">
+                <div
+                  v-for="group in getQualityGroups(profile)"
+                  :key="group.key"
+                  class="quality-group"
+                >
                   <div class="quality-group-header">
                     <span class="quality-group-title">{{ group.label }}</span>
                   </div>
@@ -243,17 +253,32 @@
       <QualityProfileFormModal
         :visible="showQualityProfileForm"
         :profile="editingQualityProfile"
-        @close="showQualityProfileForm = false; editingQualityProfile = null"
+        @close="
+          () => {
+            showQualityProfileForm = false
+            editingQualityProfile = null
+          }
+        "
         @save="saveQualityProfile"
       />
 
       <!-- Delete Confirmation Modal (shared) -->
-      <DeleteConfirmationModal :visible="!!profileToDelete" title="Delete Quality Profile" @close="profileToDelete = null" @confirm="executeDeleteProfile">
+      <DeleteConfirmationModal
+        :visible="!!profileToDelete"
+        title="Delete Quality Profile"
+        @close="profileToDelete = null"
+        @confirm="executeDeleteProfile"
+      >
         <template v-slot>
-          <p>Are you sure you want to delete the quality profile <strong>{{ profileToDelete?.name }}</strong>?</p>
+          <p>
+            Are you sure you want to delete the quality profile
+            <strong>{{ profileToDelete?.name }}</strong
+            >?
+          </p>
           <p v-if="profileToDelete?.isDefault" class="warning-text">
             <PhWarning />
-            This is the default profile and cannot be deleted. Please set another profile as default first.
+            This is the default profile and cannot be deleted. Please set another profile as default
+            first.
           </p>
           <p>This action cannot be undone.</p>
         </template>
@@ -362,7 +387,12 @@ const parseQualityString = (qualityStr: string): Omit<DisplayQuality, 'priority'
   const oggMatch = qualityStr.match(/OGG Vorbis (\d+)kbps/)
   if (oggMatch) {
     const bitrate = parseInt(oggMatch[1]!)
-    return { id: qualityStr, codec: 'OGG Vorbis', label: `OGG Vorbis ${bitrate} kbps`, isLossless: false }
+    return {
+      id: qualityStr,
+      codec: 'OGG Vorbis',
+      label: `OGG Vorbis ${bitrate} kbps`,
+      isLossless: false,
+    }
   }
 
   if (qualityStr === 'OGG Vorbis') {
@@ -385,7 +415,8 @@ const toDisplayQuality = (quality: QualityProfile['qualities'][number]): Display
   const label =
     parsed?.label ||
     (() => {
-      const bitrate = (quality as QualityProfile['qualities'][number] & { bitrate?: number }).bitrate
+      const bitrate = (quality as QualityProfile['qualities'][number] & { bitrate?: number })
+        .bitrate
       if (bitrate) return `${codec} ${bitrate} kbps`
       return quality.quality || codec
     })()
@@ -942,5 +973,4 @@ defineExpose({
   color: #f44336;
   border: 1px solid rgba(244, 67, 54, 0.3);
 }
-
 </style>

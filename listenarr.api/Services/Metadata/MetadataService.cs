@@ -42,7 +42,7 @@ namespace Listenarr.Api.Services.Metadata
             CancellationToken cancellationToken)
         {
             var sourcePath = job.SourcePath!;
-            var metadata = new AudioMetadata {};
+            var metadata = new AudioMetadata { };
 
             // If the download is linked to an Audiobook, prefer its metadata for naming
             if (audiobook != null)
@@ -74,7 +74,8 @@ namespace Listenarr.Api.Services.Metadata
                     job.AddLogEntry($"Merged extracted metadata: {metadata.Title} by {metadata.Artist}");
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 job.AddLogEntry($"Failed to extract metadata: {ex.Message}");
             }
 
@@ -86,7 +87,7 @@ namespace Listenarr.Api.Services.Metadata
                         !string.Equals(metadata.AlbumArtist.Trim(), metadata.Narrator?.Trim(), StringComparison.OrdinalIgnoreCase)
                         ? metadata.AlbumArtist
                         : "Unknown Author");
-            
+
             // Only use the given values when all else has failed and values are still empty
             metadata.Update(new AudioMetadata { Title = "Unknown Title", Artist = fallbackAuthor, AlbumArtist = fallbackAuthor });
 
@@ -133,7 +134,8 @@ namespace Listenarr.Api.Services.Metadata
 
                 return ParseAudnexusResponse(audnexusData);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error fetching metadata for title: {Title}, artist: {Artist}", LogRedaction.SanitizeText(title), LogRedaction.SanitizeText(artist));
                 return null;
             }
@@ -164,7 +166,7 @@ namespace Listenarr.Api.Services.Metadata
                     // Let the outer method fall back to filename-based metadata
                     return null;
                 }
-            
+
                 try
                 {
                     var ffprobeResult = await _ffmpegService.RunFfprobeAsync(filePath);
@@ -173,7 +175,7 @@ namespace Listenarr.Api.Services.Metadata
                         return ffprobeResult;
                     }
                 }
-                catch(FfmpegException ex)
+                catch (FfmpegException ex)
                 {
                     _logger.LogWarning(ex, "Unable to extract metadata using ffprobe: Using basic filename based metadatas");
                 }
@@ -189,7 +191,8 @@ namespace Listenarr.Api.Services.Metadata
                 _logger.LogInformation("Extracted basic metadata from file: {File}", LogRedaction.SanitizeFilePath(filePath));
                 return fallback;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error extracting metadata from file: {File}", LogRedaction.SanitizeFilePath(filePath));
                 return new AudioMetadata();
             }
@@ -203,7 +206,8 @@ namespace Listenarr.Api.Services.Metadata
                 _logger.LogInformation("Applied metadata to file: {File}", LogRedaction.SanitizeText(filePath));
                 await Task.CompletedTask;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error applying metadata to file: {File}", LogRedaction.SanitizeText(filePath));
             }
         }
@@ -252,7 +256,8 @@ namespace Listenarr.Api.Services.Metadata
                 }
                 return null;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error downloading cover art from: {Url}", LogRedaction.SanitizeUrl(coverArtUrl));
                 return null;
             }

@@ -82,12 +82,19 @@
           >
             <div class="col-title">
               <div class="title-cell">
-                <RouterLink v-if="item.audiobookId" :to="`/audiobooks/${item.audiobookId}`" class="title-link">{{ getDisplayTitle(item) }}</RouterLink>
+                <RouterLink
+                  v-if="item.audiobookId"
+                  :to="`/audiobooks/${item.audiobookId}`"
+                  class="title-link"
+                  >{{ getDisplayTitle(item) }}</RouterLink
+                >
                 <span v-else class="title-text">{{ getDisplayTitle(item) }}</span>
               </div>
             </div>
             <div class="col-quality">
-              <span v-if="item.quality && item.quality !== '*'" class="quality-tag">{{ item.quality }}</span>
+              <span v-if="item.quality && item.quality !== '*'" class="quality-tag">{{
+                item.quality
+              }}</span>
               <span v-else class="muted">-</span>
             </div>
             <div class="col-language">
@@ -143,7 +150,11 @@
     <EmptyState
       v-else-if="filteredQueue.length === 0 && !loading"
       :title="filterText ? 'No Matching Downloads' : 'No Active Downloads'"
-      :message="filterText ? 'No downloads match your filter.' : 'Downloads will appear here when you send items to your download clients.'"
+      :message="
+        filterText
+          ? 'No downloads match your filter.'
+          : 'Downloads will appear here when you send items to your download clients.'
+      "
     >
       <template #icon>
         <PhQueue :size="48" />
@@ -282,8 +293,10 @@ const getSnapshotStatusTitle = (item: QueueItem): string => {
 
   const parts = ['Showing cached queue data']
   if (item.downloadClient) parts.push(`for ${item.downloadClient}`)
-  if (item.snapshotAgeSeconds != null) parts.push(`captured ${formatSnapshotAge(item.snapshotAgeSeconds)}`)
-  if (item.snapshotFailureReason) parts.push(`after ${formatSnapshotReason(item.snapshotFailureReason)}`)
+  if (item.snapshotAgeSeconds != null)
+    parts.push(`captured ${formatSnapshotAge(item.snapshotAgeSeconds)}`)
+  if (item.snapshotFailureReason)
+    parts.push(`after ${formatSnapshotReason(item.snapshotFailureReason)}`)
   return parts.join(' ')
 }
 
@@ -459,7 +472,8 @@ const convertDownloadToQueueItem = (download: Download): QueueItem => {
     quality: '',
     downloadClient: clientName ?? download.downloadClientId ?? 'Unknown Client',
     downloadClientId: download.downloadClientId,
-    downloadClientType: ((download.downloadClientId || '').toString().toUpperCase() === 'DDL') ? 'DDL' : 'external',
+    downloadClientType:
+      (download.downloadClientId || '').toString().toUpperCase() === 'DDL' ? 'DDL' : 'external',
     addedAt: download.startedAt,
     canPause: false,
     canRemove: true,
@@ -480,13 +494,15 @@ const allActivityItems = computed(() => {
   const failedDownloadsList = unref(downloadsStore.failedDownloads || [])
 
   const ddlDownloadItems = activeDownloadsList
-    .filter((d) => ((d.downloadClientId || '').toString().toUpperCase() === 'DDL'))
+    .filter((d) => (d.downloadClientId || '').toString().toUpperCase() === 'DDL')
     .map(convertDownloadToQueueItem)
 
   const failedDDLItems = failedDownloadsList.map(convertDownloadToQueueItem)
 
   const externalActiveDownloads = activeDownloadsList
-    .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
+    .filter(
+      (d) => d.downloadClientId && (d.downloadClientId || '').toString().toUpperCase() !== 'DDL',
+    )
     .filter((d) => !trackedQueueIds.has(d.id))
     .map(convertDownloadToQueueItem)
 
@@ -494,7 +510,9 @@ const allActivityItems = computed(() => {
 
   if (showCompletedExternalDownloads.value) {
     const completedExternal = (downloadsStore.completedDownloads || [])
-      .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
+      .filter(
+        (d) => d.downloadClientId && (d.downloadClientId || '').toString().toUpperCase() !== 'DDL',
+      )
       .map(convertDownloadToQueueItem)
 
     const map = new Map<string, QueueItem>()
@@ -518,7 +536,9 @@ const allActivityItems = computed(() => {
   // Also include completed external downloads from the downloads store
   // so completed items are visible in the unified table
   const completedExternal = (downloadsStore.completedDownloads || [])
-    .filter((d) => d.downloadClientId && ((d.downloadClientId || '').toString().toUpperCase() !== 'DDL'))
+    .filter(
+      (d) => d.downloadClientId && (d.downloadClientId || '').toString().toUpperCase() !== 'DDL',
+    )
     .map(convertDownloadToQueueItem)
 
   const failedFromDownloads = (downloadsStore.failedDownloads || []).map(convertDownloadToQueueItem)
@@ -587,8 +607,8 @@ const removeFromQueue = async (item: QueueItem) => {
   itemToRemove.value = item
 
   if (
-    ((item.downloadClientId || '').toString().toUpperCase() === 'DDL') ||
-    ((item.downloadClientType || '').toString().toUpperCase() === 'DDL')
+    (item.downloadClientId || '').toString().toUpperCase() === 'DDL' ||
+    (item.downloadClientType || '').toString().toUpperCase() === 'DDL'
   ) {
     clientHasQueueEntry.value = true
     showRemoveModal.value = true
@@ -606,8 +626,8 @@ const confirmRemove = async () => {
   removing.value = true
   try {
     if (
-      ((itemToRemove.value.downloadClientId || '').toString().toUpperCase() === 'DDL') ||
-      ((itemToRemove.value.downloadClientType || '').toString().toUpperCase() === 'DDL')
+      (itemToRemove.value.downloadClientId || '').toString().toUpperCase() === 'DDL' ||
+      (itemToRemove.value.downloadClientType || '').toString().toUpperCase() === 'DDL'
     ) {
       await apiService.cancelDownload(itemToRemove.value.id)
       await downloadsStore.loadDownloads()
@@ -763,7 +783,9 @@ onUnmounted(() => {
   width: 220px;
   height: var(--control-height, 40px);
   box-sizing: border-box;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .filter-input::placeholder {
@@ -848,7 +870,9 @@ onUnmounted(() => {
 .queue-header,
 .queue-row {
   display: grid;
-  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr) 40px;
+  grid-template-columns:
+    minmax(0, 3fr) minmax(0, 1fr) minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr)
+    minmax(0, 1fr) 40px;
   align-items: center;
 }
 

@@ -19,7 +19,9 @@
   <Modal :visible="visible" size="sm" :title="title" @close="$emit('close')">
     <template #header>
       <ModalHeader :title="title" @close="$emit('close')">
-        <template #icon><slot name="icon"><PhWarningCircle /></slot></template>
+        <template #icon
+          ><slot name="icon"><PhWarningCircle /></slot
+        ></template>
       </ModalHeader>
     </template>
 
@@ -31,14 +33,16 @@
 
     <template #footer>
       <button @click="$emit('close')" class="cancel-button btn">Cancel</button>
-      <button @click="$emit('confirm')" class="delete-button modal-delete-button"> <slot name="confirm-icon"><PhTrash /></slot> {{ confirmText }}</button>
+      <button @click="$emit('confirm')" class="delete-button modal-delete-button">
+        <slot name="confirm-icon"><PhTrash /></slot> {{ confirmText }}
+      </button>
     </template>
   </Modal>
 </template>
 
 <script setup lang="ts">
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
-import { PhWarningCircle, PhTrash } from '@phosphor-icons/vue' 
+import { PhWarningCircle, PhTrash } from '@phosphor-icons/vue'
 defineProps({
   visible: { type: Boolean, required: true },
   title: { type: String, default: 'Delete' },
@@ -48,5 +52,7 @@ defineProps({
 
 <style scoped>
 /* small tweaks; main modal button styles live in the centralized stylesheet */
-.modal-body p { margin: 0 0 1rem 0 }
+.modal-body p {
+  margin: 0 0 1rem 0;
+}
 </style>

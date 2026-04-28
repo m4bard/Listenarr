@@ -50,7 +50,9 @@ describe('ActivityView mobile virtualization', () => {
       canRemove: true,
     }))
 
-    vi.spyOn(globalThis, 'setInterval').mockReturnValue(1 as unknown as ReturnType<typeof setInterval>)
+    vi.spyOn(globalThis, 'setInterval').mockReturnValue(
+      1 as unknown as ReturnType<typeof setInterval>,
+    )
     vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => undefined)
 
     vi.doMock('@/services/signalr', () => ({

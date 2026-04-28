@@ -79,7 +79,7 @@
                 class="icon-button action-secondary"
                 :class="{
                   'test-success': lastTestResults[indexer.id] === 'success',
-                  'test-fail': lastTestResults[indexer.id] === 'fail'
+                  'test-fail': lastTestResults[indexer.id] === 'fail',
                 }"
                 title="Test"
                 :disabled="testingIndexer === indexer.id"
@@ -129,7 +129,9 @@
               <div class="feature-badges">
                 <Pill variant="success" v-if="indexer.enableRss">RSS</Pill>
                 <Pill variant="primary" v-if="indexer.enableAutomaticSearch">Automatic Search</Pill>
-                <Pill variant="info" v-if="indexer.enableInteractiveSearch">Interactive Search</Pill>
+                <Pill variant="info" v-if="indexer.enableInteractiveSearch"
+                  >Interactive Search</Pill
+                >
               </div>
             </div>
             <div class="detail-row" v-if="indexer.lastTestedAt">
@@ -163,13 +165,22 @@
       <IndexerFormModal
         :visible="showIndexerForm"
         :editing-indexer="editingIndexer"
-        @close="showIndexerForm = false; editingIndexer = null"
+        @close="
+          () => {
+            showIndexerForm = false
+            editingIndexer = null
+          }
+        "
         @saved="loadIndexers()"
       />
 
       <Modal :visible="showProwlarrModal" size="md" @close="closeProwlarrModal">
         <template #header>
-          <ModalHeader title="Import from Prowlarr" :icon="PhDownloadSimple" @close="closeProwlarrModal" />
+          <ModalHeader
+            title="Import from Prowlarr"
+            :icon="PhDownloadSimple"
+            @close="closeProwlarrModal"
+          />
         </template>
         <template #default>
           <ModalForm :submitting="importingProwlarr" @submit="importFromProwlarr">
@@ -220,24 +231,29 @@
                 <FormRow
                   label="API Key"
                   labelFor="prowlarr-key"
-                  :help="hasSavedProwlarrApiKey
-                    ? 'A saved API key is already stored securely on the server. Leave this blank to reuse it, or enter a new key to replace it.'
-                    : 'Find this in Prowlarr Settings → General'"
+                  :help="
+                    hasSavedProwlarrApiKey
+                      ? 'A saved API key is already stored securely on the server. Leave this blank to reuse it, or enter a new key to replace it.'
+                      : 'Find this in Prowlarr Settings → General'
+                  "
                 >
                   <PasswordInput
                     id="prowlarr-key"
                     v-model="prowlarrApiKey"
                     autocomplete="off"
                     class="form-input"
-                    :placeholder="hasSavedProwlarrApiKey ? 'Leave blank to use saved API key' : 'Prowlarr API Key'"
+                    :placeholder="
+                      hasSavedProwlarrApiKey
+                        ? 'Leave blank to use saved API key'
+                        : 'Prowlarr API Key'
+                    "
                   />
                 </FormRow>
               </FormSection>
 
               <div v-if="prowlarrSummary" class="prowlarr-summary">
-                Imported {{ prowlarrSummary.addedCount }} indexer(s), skipped {{
-                  prowlarrSummary.skippedCount
-                }}.
+                Imported {{ prowlarrSummary.addedCount }} indexer(s), skipped
+                {{ prowlarrSummary.skippedCount }}.
               </div>
             </ModalBody>
           </ModalForm>
@@ -256,9 +272,17 @@
       </Modal>
 
       <!-- Delete Indexer Confirmation Modal (shared) -->
-      <DeleteConfirmationModal :visible="!!indexerToDelete" title="Delete Indexer" @close="indexerToDelete = null" @confirm="executeDeleteIndexer">
+      <DeleteConfirmationModal
+        :visible="!!indexerToDelete"
+        title="Delete Indexer"
+        @close="indexerToDelete = null"
+        @confirm="executeDeleteIndexer"
+      >
         <template v-slot>
-          <p>Are you sure you want to delete the indexer <strong>{{ indexerToDelete?.name }}</strong>?</p>
+          <p>
+            Are you sure you want to delete the indexer <strong>{{ indexerToDelete?.name }}</strong
+            >?
+          </p>
           <p>This action cannot be undone.</p>
         </template>
       </DeleteConfirmationModal>
@@ -332,9 +356,12 @@ const formatApiError = (error: unknown): string => {
   const data = resp?.data as unknown
   if (data) {
     if (typeof data === 'string') return data
-    if ((data as Record<string, unknown>)['message']) return String((data as Record<string, unknown>)['message'])
-    if ((data as Record<string, unknown>)['error']) return String((data as Record<string, unknown>)['error'])
-    if ((data as Record<string, unknown>)['title']) return String((data as Record<string, unknown>)['title'])
+    if ((data as Record<string, unknown>)['message'])
+      return String((data as Record<string, unknown>)['message'])
+    if ((data as Record<string, unknown>)['error'])
+      return String((data as Record<string, unknown>)['error'])
+    if ((data as Record<string, unknown>)['title'])
+      return String((data as Record<string, unknown>)['title'])
   }
   if (err?.message) return err.message
   return 'An unknown error occurred'
@@ -693,9 +720,15 @@ defineExpose({ openAddIndexer, openProwlarrImport: openProwlarrModal })
 }
 
 @keyframes highlightPulse {
-  0% { transform: translateY(0); }
-  50% { transform: translateY(-4px); }
-  100% { transform: translateY(0); }
+  0% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+  100% {
+    transform: translateY(0);
+  }
 }
 
 .indexer-card.disabled {
@@ -845,8 +878,6 @@ defineExpose({ openAddIndexer, openProwlarrImport: openProwlarrModal })
   border-radius: 4px;
   border: 1px solid var(--error);
 }
-
-
 
 /* Section Header */
 .section-header {

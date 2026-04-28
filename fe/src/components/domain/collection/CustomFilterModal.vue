@@ -26,7 +26,13 @@
         <form @submit.prevent="onSave" class="edit-form">
           <div class="form-row">
             <label class="form-label" for="filter-label">Label</label>
-            <input id="filter-label" v-model="local.label" class="form-input" placeholder="Filter name" autocomplete="off" />
+            <input
+              id="filter-label"
+              v-model="local.label"
+              class="form-input"
+              placeholder="Filter name"
+              autocomplete="off"
+            />
           </div>
           <div class="form-row">
             <label class="form-label">Filters</label>
@@ -67,7 +73,11 @@
                       <option value="is">is</option>
                       <option value="is_not">is not</option>
                     </template>
-                    <template v-else-if="['publishYear', 'publishedYear', 'files', 'filesize'].includes(r.field)">
+                    <template
+                      v-else-if="
+                        ['publishYear', 'publishedYear', 'files', 'filesize'].includes(r.field)
+                      "
+                    >
                       <option value="eq">=</option>
                       <option value="ne">!=</option>
                       <option value="lt">&lt;</option>
@@ -139,12 +149,24 @@
                   <template v-else>
                     <input v-model="r.value" class="form-input value-input" placeholder="Value" />
                   </template>
-                  <button type="button" class="group-toggle end" :class="{ active: r.groupEnd }" @click.prevent="r.groupEnd = !r.groupEnd" :aria-pressed="r.groupEnd" title="End group">
+                  <button
+                    type="button"
+                    class="group-toggle end"
+                    :class="{ active: r.groupEnd }"
+                    @click.prevent="r.groupEnd = !r.groupEnd"
+                    :aria-pressed="r.groupEnd"
+                    title="End group"
+                  >
                     )
                   </button>
                 </div>
                 <div class="rule-actions">
-                  <button type="button" class="btn btn-secondary" @click.prevent="removeRule(idx)" title="Remove rule">
+                  <button
+                    type="button"
+                    class="btn btn-secondary"
+                    @click.prevent="removeRule(idx)"
+                    title="Remove rule"
+                  >
                     −
                   </button>
                 </div>
@@ -170,7 +192,7 @@
 <script setup lang="ts">
 import { ref, watch, toRaw } from 'vue'
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
-import { PhFunnel, PhX, PhCheck } from '@phosphor-icons/vue' 
+import { PhFunnel, PhX, PhCheck } from '@phosphor-icons/vue'
 
 // Types
 type Rule = {
@@ -322,7 +344,6 @@ function onClose() {
 </script>
 
 <style scoped>
-
 .modal-header {
   display: flex;
   align-items: center;
@@ -372,7 +393,7 @@ function onClose() {
 .rule-row.card {
   background: #181a1b;
   border-radius: 8px;
-  box-shadow: 0 1px 4px 0 rgba(0,0,0,0.12);
+  box-shadow: 0 1px 4px 0 rgba(0, 0, 0, 0.12);
   padding: 12px 14px 10px 14px;
   display: flex;
   flex-direction: row;
@@ -395,7 +416,8 @@ function onClose() {
 .op-select {
   min-width: 110px;
 }
-.value-select, .value-input {
+.value-select,
+.value-input {
   min-width: 120px;
   max-width: 180px;
 }
@@ -422,7 +444,10 @@ function onClose() {
   border-radius: 6px;
   cursor: pointer;
   font-size: 1.1em;
-  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s,
+    color 0.15s;
 }
 .group-toggle.active {
   background: rgba(33, 150, 243, 0.12);

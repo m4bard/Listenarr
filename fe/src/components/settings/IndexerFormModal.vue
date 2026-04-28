@@ -18,21 +18,36 @@
 <template>
   <Modal :visible="visible" size="lg" @close="closeModal">
     <template #header>
-      <ModalHeader :title="editingIndexer ? 'Edit Indexer' : 'Add Indexer'" :icon="PhGlobe" iconLabel="Indexer" @close="closeModal" />
-    </template> 
+      <ModalHeader
+        :title="editingIndexer ? 'Edit Indexer' : 'Add Indexer'"
+        :icon="PhGlobe"
+        iconLabel="Indexer"
+        @close="closeModal"
+      />
+    </template>
 
     <template #default>
       <ModalForm :submitting="saving" @submit="handleSubmit">
         <ModalBody>
           <!-- Activation -->
           <FormSection title="Activation" :icon="PhToggleRight">
-            <CheckboxCard v-model="formData.isEnabled" title="Enable" description="Enable this indexer" />
+            <CheckboxCard
+              v-model="formData.isEnabled"
+              title="Enable"
+              description="Enable this indexer"
+            />
           </FormSection>
 
           <!-- Basic Information -->
           <FormSection title="Basic Information" :icon="PhGlobe">
             <FormRow label="Name *" labelFor="name">
-              <input id="name" v-model="formData.name" type="text" required placeholder="e.g., My Indexer" />
+              <input
+                id="name"
+                v-model="formData.name"
+                type="text"
+                required
+                placeholder="e.g., My Indexer"
+              />
             </FormRow>
 
             <FormRow label="Implementation *" labelFor="implementation">
@@ -45,7 +60,11 @@
               </select>
             </FormRow>
 
-            <FormRow v-if="formData.implementation !== 'InternetArchive'" label="URL *" labelFor="url">
+            <FormRow
+              v-if="formData.implementation !== 'InternetArchive'"
+              label="URL *"
+              labelFor="url"
+            >
               <select
                 v-if="formData.implementation === 'MyAnonamouse'"
                 id="url"
@@ -119,7 +138,9 @@
                 </FormRow>
 
                 <FormRow>
-                  <Checkbox v-model="mamEnrichResults">Enrich results (fetch item page for missing fields)</Checkbox>
+                  <Checkbox v-model="mamEnrichResults"
+                    >Enrich results (fetch item page for missing fields)</Checkbox
+                  >
                 </FormRow>
 
                 <FormRow label="Enrich top results">
@@ -158,10 +179,21 @@
               label="API Key"
               labelFor="apiKey"
             >
-              <PasswordInput id="apiKey" v-model="formData.apiKey" autocomplete="off" placeholder="Your API key" class="admin-input" />
+              <PasswordInput
+                id="apiKey"
+                v-model="formData.apiKey"
+                autocomplete="off"
+                placeholder="Your API key"
+                class="admin-input"
+              />
             </FormRow>
 
-            <FormRow v-if="formData.implementation !== 'InternetArchive'" label="Categories" labelFor="categories" help="Leave empty to search all categories">
+            <FormRow
+              v-if="formData.implementation !== 'InternetArchive'"
+              label="Categories"
+              labelFor="categories"
+              help="Leave empty to search all categories"
+            >
               <input
                 id="categories"
                 v-model="formData.categories"
@@ -173,38 +205,73 @@
 
           <!-- Features -->
           <FormSection title="Features" :icon="PhGear">
-            <CheckboxCard v-if="formData.implementation !== 'InternetArchive'" v-model="formData.enableRss" title="Enable RSS" description="Use RSS feeds to monitor for new releases" />
+            <CheckboxCard
+              v-if="formData.implementation !== 'InternetArchive'"
+              v-model="formData.enableRss"
+              title="Enable RSS"
+              description="Use RSS feeds to monitor for new releases"
+            />
 
-            <CheckboxCard v-model="formData.enableAutomaticSearch" title="Enable Automatic Search" description="Use this indexer for automatic searches" />
+            <CheckboxCard
+              v-model="formData.enableAutomaticSearch"
+              title="Enable Automatic Search"
+              description="Use this indexer for automatic searches"
+            />
 
-            <CheckboxCard v-model="formData.enableInteractiveSearch" title="Enable Interactive Search" description="Use this indexer for manual searches" />
+            <CheckboxCard
+              v-model="formData.enableInteractiveSearch"
+              title="Enable Interactive Search"
+              description="Use this indexer for manual searches"
+            />
           </FormSection>
 
           <!-- Advanced Settings -->
           <FormSection title="Advanced Settings" :icon="PhGear">
             <div class="form-row">
-              <FormRow label="Priority" labelFor="priority" help="Higher priority indexers are searched first (1-100)">
-                <input id="priority" v-model.number="formData.priority" type="number" min="1" max="100" />
+              <FormRow
+                label="Priority"
+                labelFor="priority"
+                help="Higher priority indexers are searched first (1-100)"
+              >
+                <input
+                  id="priority"
+                  v-model.number="formData.priority"
+                  type="number"
+                  min="1"
+                  max="100"
+                />
               </FormRow>
 
-              <FormRow v-if="formData.implementation !== 'InternetArchive'" label="Minimum Age (minutes)" labelFor="minimumAge" help="Wait time before grabbing new releases (0 = disabled)">
+              <FormRow
+                v-if="formData.implementation !== 'InternetArchive'"
+                label="Minimum Age (minutes)"
+                labelFor="minimumAge"
+                help="Wait time before grabbing new releases (0 = disabled)"
+              >
                 <input id="minimumAge" v-model.number="formData.minimumAge" type="number" min="0" />
               </FormRow>
             </div>
 
             <div class="form-row" v-if="formData.implementation === 'Newznab'">
-              <FormRow label="Retention (days)" labelFor="retention" help="Usenet retention in days (0 = unlimited)">
+              <FormRow
+                label="Retention (days)"
+                labelFor="retention"
+                help="Usenet retention in days (0 = unlimited)"
+              >
                 <input id="retention" v-model.number="formData.retention" type="number" min="0" />
               </FormRow>
             </div>
 
-            <FormRow label="Maximum Size (MB)" labelFor="maximumSize" help="Maximum allowed size in megabytes (0 = unlimited)">
+            <FormRow
+              label="Maximum Size (MB)"
+              labelFor="maximumSize"
+              help="Maximum allowed size in megabytes (0 = unlimited)"
+            >
               <input id="maximumSize" v-model.number="formData.maximumSize" type="number" min="0" />
             </FormRow>
           </FormSection>
         </ModalBody>
       </ModalForm>
-
     </template>
 
     <template #footer>
@@ -230,8 +297,8 @@ import Checkbox from '@/components/form/Checkbox.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import CheckboxCard from '@/components/settings/CheckboxCard.vue'
 import FormSection from '@/components/settings/FormSection.vue'
-import { PhGlobe, PhGear, PhToggleRight, PhInfo } from '@phosphor-icons/vue' 
-import type { Indexer } from '@/types' 
+import { PhGlobe, PhGear, PhToggleRight, PhInfo } from '@phosphor-icons/vue'
+import type { Indexer } from '@/types'
 import {
   createIndexer,
   updateIndexer,
@@ -440,7 +507,7 @@ const testConnection = async () => {
     const payload = buildIndexerPayload()
     // If API key is empty and editing an existing indexer, include the ID so server merges the saved API key
     if (!payload.apiKey && props.editingIndexer?.id) {
-      (payload as unknown as { id?: number }).id = props.editingIndexer.id
+      ;(payload as unknown as { id?: number }).id = props.editingIndexer.id
     }
     const result = await apiTestIndexerDraft(payload)
     if (result.success) {
@@ -602,12 +669,19 @@ const handleSubmit = async () => {
   gap: 1rem;
 }
 
-
-
 /* Settings indexer-specific overrides */
-.checkbox-group { display: flex; flex-direction: column; gap: 0.75rem; }
-.checkbox-group label:hover { border-color: var(--brand-500); background-color: #222 }
-.checkbox-group label span { flex: 1 }
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+.checkbox-group label:hover {
+  border-color: var(--brand-500);
+  background-color: #222;
+}
+.checkbox-group label span {
+  flex: 1;
+}
 
 .checkbox-group label strong {
   color: #fff;

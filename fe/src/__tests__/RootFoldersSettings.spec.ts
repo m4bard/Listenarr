@@ -33,9 +33,10 @@ describe('RootFoldersSettings', () => {
     let resolveFn: (value: unknown) => void = () => {}
     // spy on the apiService instance method (module-level named export is not present in TS types)
     vi.spyOn((api as unknown).apiService, 'getRootFolders').mockImplementation(
-      () => new Promise((res) => {
-        resolveFn = res
-      }) as unknown,
+      () =>
+        new Promise((res) => {
+          resolveFn = res
+        }) as unknown,
     )
 
     const wrapper = mount(RootFoldersSettings, { global: { plugins: [pinia] } })

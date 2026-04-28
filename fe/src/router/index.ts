@@ -117,7 +117,9 @@ const router = createRouter({
   routes,
 })
 
-const redactStartupConfigForLog = (config: StartupConfig | null): StartupConfig | Record<string, unknown> | null => {
+const redactStartupConfigForLog = (
+  config: StartupConfig | null,
+): StartupConfig | Record<string, unknown> | null => {
   if (!config || typeof config !== 'object') return config
   const cloned = { ...(config as Record<string, unknown>) }
   if (typeof cloned.apiKey === 'string' && cloned.apiKey.length > 0) cloned.apiKey = 'redacted'
@@ -155,8 +157,6 @@ export function preloadRoute(nameOrPath: string) {
 
 // Navigation guard: protect routes requiring auth and preserve redirectTo
 
-
-
 router.beforeEach(async (to, from) => {
   if (import.meta.env.CYPRESS) return true
   const auth = useAuthStore()
@@ -186,12 +186,12 @@ router.beforeEach(async (to, from) => {
   logger.debug('[router] startupConfig', redactStartupConfigForLog(startupConfig))
   const authRequiredConfig = (() => {
     if (startupConfigMissing) {
-        logger.debug('[router] startupConfig missing, defaulting authRequiredConfig to false')
-        // If the backend is temporarily unreachable or the config fetch fails,
-        // do not force the login screen. Treat missing config as "no auth"
-        // to avoid blocking the SPA from loading.
-        return false
-      }
+      logger.debug('[router] startupConfig missing, defaulting authRequiredConfig to false')
+      // If the backend is temporarily unreachable or the config fetch fails,
+      // do not force the login screen. Treat missing config as "no auth"
+      // to avoid blocking the SPA from loading.
+      return false
+    }
     const raw =
       startupConfig?.authenticationRequired ??
       (startupConfig as StartupConfig & { AuthenticationRequired?: string | boolean })

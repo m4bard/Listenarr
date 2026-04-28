@@ -1,4 +1,4 @@
-﻿using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
@@ -45,7 +45,7 @@ namespace Listenarr.Api.Tests
                 }
             });
         }
-        
+
         [Fact]
         public async Task ProcessCompletedDownload_CreatesAudiobookFileAndBroadcasts()
         {
@@ -591,8 +591,8 @@ namespace Listenarr.Api.Tests
 
             var provider = MockUtils.CreateServiceProvider(importItemResolutionServiceMock.Object, localDestination);
             var dpbs = new DownloadProcessingBackgroundService(
-                provider.GetRequiredService<IServiceScopeFactory>(), 
-                new Mock<ILogger<DownloadProcessingBackgroundService>>().Object, 
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new Mock<ILogger<DownloadProcessingBackgroundService>>().Object,
                 provider.GetRequiredService<IAppMetricsService>());
 
             var downloadClientConfigurationRepository = provider.GetRequiredService<IDownloadClientConfigurationRepository>();
@@ -640,7 +640,7 @@ namespace Listenarr.Api.Tests
             {
                 return;
             }
-            
+
             var remoteSource = GetTempDirectory("dl-remote-source ");
             var localSource = GetTempDirectory("dl-local-source ");
             var localDestination = GetTempDirectory("dl-destination");
@@ -678,8 +678,8 @@ namespace Listenarr.Api.Tests
 
             var provider = MockUtils.CreateServiceProvider(importItemResolutionServiceMock.Object, localDestination);
             var downloadProcessingBackgroundService = new DownloadProcessingBackgroundService(
-                provider.GetRequiredService<IServiceScopeFactory>(), 
-                new Mock<ILogger<DownloadProcessingBackgroundService>>().Object, 
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new Mock<ILogger<DownloadProcessingBackgroundService>>().Object,
                 provider.GetRequiredService<IAppMetricsService>());
 
             var downloadClientConfigurationRepository = provider.GetRequiredService<IDownloadClientConfigurationRepository>();

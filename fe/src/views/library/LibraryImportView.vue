@@ -20,7 +20,8 @@
     <div class="page-header">
       <h1>Library Import</h1>
       <p class="page-subtitle">
-        Scan a root folder for audio files not in your library, match them to audiobooks, and import them.
+        Scan a root folder for audio files not in your library, match them to audiobooks, and import
+        them.
       </p>
     </div>
 
@@ -288,13 +289,11 @@ const tableMinWidth = computed(
     columnWidths.value.match,
 )
 
-let resizeState:
-  | {
-      key: LibraryImportResizableColumnKey
-      startX: number
-      startWidth: number
-    }
-  | null = null
+let resizeState: {
+  key: LibraryImportResizableColumnKey
+  startX: number
+  startWidth: number
+} | null = null
 
 onMounted(async () => {
   if (rootFoldersStore.folders.length === 0) await rootFoldersStore.load()
@@ -386,7 +385,10 @@ function handleResize(event: PointerEvent) {
   const minWidth = LIBRARY_IMPORT_COLUMN_MIN_WIDTHS[resizeState.key]
   const nextWidth = Math.max(
     minWidth,
-    Math.min(MAX_COLUMN_WIDTH, Math.round(resizeState.startWidth + event.clientX - resizeState.startX)),
+    Math.min(
+      MAX_COLUMN_WIDTH,
+      Math.round(resizeState.startWidth + event.clientX - resizeState.startX),
+    ),
   )
 
   columnWidths.value = {
@@ -513,7 +515,9 @@ async function refreshRootFolders(newFolder: RootFolder) {
   background-position:
     calc(100% - 1rem) calc(50% - 0.1rem),
     calc(100% - 0.7rem) calc(50% - 0.1rem);
-  background-size: 0.35rem 0.35rem, 0.35rem 0.35rem;
+  background-size:
+    0.35rem 0.35rem,
+    0.35rem 0.35rem;
   background-repeat: no-repeat;
   border: 1px solid #444;
   border-radius: 4px;

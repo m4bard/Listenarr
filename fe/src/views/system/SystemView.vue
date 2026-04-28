@@ -605,7 +605,7 @@ onMounted(() => {
   font-size: 1.1rem;
   color: var(--brand-focus);
   flex-shrink: 0;
-} 
+}
 
 .detail-row .label {
   color: #999;
@@ -704,7 +704,7 @@ onMounted(() => {
   border: 1px solid #333;
   border-radius: 8px;
   padding: 1.5rem;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
 }
 
 .section-header {
@@ -729,7 +729,7 @@ onMounted(() => {
 .section-header h2 i {
   font-size: 1.5rem;
   color: var(--brand-focus);
-} 
+}
 
 .section-title-with-status {
   display: flex;
@@ -793,7 +793,7 @@ onMounted(() => {
   gap: 1rem;
 }
 
-/* InfoCard styling is now defined in InfoCard.vue component */ 
+/* InfoCard styling is now defined in InfoCard.vue component */
 
 /* Logs Container */
 .logs-container {

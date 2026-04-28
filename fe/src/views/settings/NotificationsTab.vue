@@ -85,7 +85,7 @@
                 class="icon-button action-secondary"
                 :class="{
                   'test-success': lastWebhookTestResults[webhook.id] === 'success',
-                  'test-fail': lastWebhookTestResults[webhook.id] === 'fail'
+                  'test-fail': lastWebhookTestResults[webhook.id] === 'fail',
                 }"
                 :title="!webhook.isEnabled ? 'Enable webhook to test' : 'Send test notification'"
                 @click.stop="testWebhook(webhook)"
@@ -103,7 +103,11 @@
                 </template>
               </button>
 
-              <button class="icon-button action-edit" title="Edit webhook" @click.stop="editWebhook(webhook)">
+              <button
+                class="icon-button action-edit"
+                title="Edit webhook"
+                @click.stop="editWebhook(webhook)"
+              >
                 <PhPencil />
               </button>
 
@@ -122,155 +126,221 @@
               <PhLink class="url-icon" />
               <span class="webhook-url">{{ webhook.url }}</span>
             </div>
-
-
           </div>
         </div>
       </div>
 
       <!-- Webhook Configuration Modal (shared Modal component) -->
-      <Modal class="webhook-modal" :visible="showWebhookForm" size="md" :title="editingWebhook ? 'Edit Webhook' : 'Add Webhook'" @close="closeWebhookForm">
+      <Modal
+        class="webhook-modal"
+        :visible="showWebhookForm"
+        size="md"
+        :title="editingWebhook ? 'Edit Webhook' : 'Add Webhook'"
+        @close="closeWebhookForm"
+      >
         <template #header>
-          <ModalHeader :title="(editingWebhook ? 'Edit' : 'Add') + ' Webhook'" :icon="PhLink" @close="closeWebhookForm" />
+          <ModalHeader
+            :title="(editingWebhook ? 'Edit' : 'Add') + ' Webhook'"
+            :icon="PhLink"
+            @close="closeWebhookForm"
+          />
         </template>
 
         <form @submit.prevent="saveWebhook">
           <!-- Delete Webhook Confirmation Modal (shared) -->
-          <DeleteConfirmationModal :visible="!!webhookToDelete" title="Delete Webhook" @close="webhookToDelete = null" @confirm="executeDeleteWebhook">
+          <DeleteConfirmationModal
+            :visible="!!webhookToDelete"
+            title="Delete Webhook"
+            @close="webhookToDelete = null"
+            @confirm="executeDeleteWebhook"
+          >
             <template v-slot>
               <p>
-                Are you sure you want to delete the webhook <strong>{{ webhookToDelete?.name }}</strong>?
+                Are you sure you want to delete the webhook
+                <strong>{{ webhookToDelete?.name }}</strong
+                >?
               </p>
               <p>This action cannot be undone.</p>
             </template>
           </DeleteConfirmationModal>
 
-              <!-- Activation -->
-              <FormSection title="Activation" :icon="PhToggleRight">
-                <CheckboxCard v-model="webhookForm.isEnabled" title="Enable" description="Enable this webhook to start receiving notifications" />
-              </FormSection>
+          <!-- Activation -->
+          <FormSection title="Activation" :icon="PhToggleRight">
+            <CheckboxCard
+              v-model="webhookForm.isEnabled"
+              title="Enable"
+              description="Enable this webhook to start receiving notifications"
+            />
+          </FormSection>
 
-              <!-- Basic Configuration Section -->
-              <FormSection title="Basic" :icon="PhInfo">
-                <FormRow label="Name *" labelFor="webhook-name">
-                  <input
-                    id="webhook-name"
-                    v-model="webhookForm.name"
-                    type="text"
-                    placeholder="e.g., Production Slack Channel"
-                    required
-                    @blur="validateWebhookField('name')"
-                  />
-                  <small v-if="webhookFormErrors.name" class="error-text">{{ webhookFormErrors.name }}</small>
-                </FormRow>
+          <!-- Basic Configuration Section -->
+          <FormSection title="Basic" :icon="PhInfo">
+            <FormRow label="Name *" labelFor="webhook-name">
+              <input
+                id="webhook-name"
+                v-model="webhookForm.name"
+                type="text"
+                placeholder="e.g., Production Slack Channel"
+                required
+                @blur="validateWebhookField('name')"
+              />
+              <small v-if="webhookFormErrors.name" class="error-text">{{
+                webhookFormErrors.name
+              }}</small>
+            </FormRow>
 
-                <FormRow label="Type *" labelFor="webhook-type">
-                  <select
-                    id="webhook-type"
-                    v-model="webhookForm.type"
-                    required
-                    @change="onServiceTypeChange"
-                    @blur="validateWebhookField('type')"
-                  >
-                    <option value="" disabled>Select type...</option>
-                    <option value="Slack">Slack</option>
-                    <option value="Discord">Discord</option>
-                    <option value="Telegram">Telegram</option>
-                    <option value="Pushover">Pushover</option>
-                    <option value="Pushbullet">Pushbullet</option>
-                    <option value="NTFY">NTFY</option>
-                    <option value="Zapier">Zapier / Generic</option>
-                  </select>
-                  <small v-if="webhookFormErrors.type" class="error-text">{{ webhookFormErrors.type }}</small>
-                  <small v-else-if="getServiceHelp()">{{ getServiceHelp() }}</small>
-                </FormRow>
+            <FormRow label="Type *" labelFor="webhook-type">
+              <select
+                id="webhook-type"
+                v-model="webhookForm.type"
+                required
+                @change="onServiceTypeChange"
+                @blur="validateWebhookField('type')"
+              >
+                <option value="" disabled>Select type...</option>
+                <option value="Slack">Slack</option>
+                <option value="Discord">Discord</option>
+                <option value="Telegram">Telegram</option>
+                <option value="Pushover">Pushover</option>
+                <option value="Pushbullet">Pushbullet</option>
+                <option value="NTFY">NTFY</option>
+                <option value="Zapier">Zapier / Generic</option>
+              </select>
+              <small v-if="webhookFormErrors.type" class="error-text">{{
+                webhookFormErrors.type
+              }}</small>
+              <small v-else-if="getServiceHelp()">{{ getServiceHelp() }}</small>
+            </FormRow>
 
-                <FormRow v-if="webhookForm.type !== 'Telegram' && webhookForm.type !== 'Pushover' && webhookForm.type !== 'Pushbullet'" label="Webhook URL *" labelFor="webhook-url">
-                  <input
-                    id="webhook-url"
-                    v-model="webhookForm.url"
-                    type="url"
-                    placeholder="https://hooks.example.com/services/your-webhook-url"
-                    required
-                    @blur="validateWebhookField('url')"
-                  />
-                  <small v-if="webhookFormErrors.url" class="error-text">{{ webhookFormErrors.url }}</small>
-                </FormRow>
+            <FormRow
+              v-if="
+                webhookForm.type !== 'Telegram' &&
+                webhookForm.type !== 'Pushover' &&
+                webhookForm.type !== 'Pushbullet'
+              "
+              label="Webhook URL *"
+              labelFor="webhook-url"
+            >
+              <input
+                id="webhook-url"
+                v-model="webhookForm.url"
+                type="url"
+                placeholder="https://hooks.example.com/services/your-webhook-url"
+                required
+                @blur="validateWebhookField('url')"
+              />
+              <small v-if="webhookFormErrors.url" class="error-text">{{
+                webhookFormErrors.url
+              }}</small>
+            </FormRow>
 
-                <FormRow v-if="webhookForm.type === 'Telegram'" label="Bot Token *" labelFor="telegram-bot-token">
-                  <input
-                    id="telegram-bot-token"
-                    v-model="webhookForm.telegramBotToken"
-                    type="text"
-                    placeholder="123456:ABCdefGhIJklMNopqRst_uvwxYZ"
-                    required
-                    @blur="validateWebhookField('url')"
-                  />
-                  <small v-if="webhookFormErrors.url" class="error-text">{{ webhookFormErrors.url }}</small>
-                </FormRow>
-                <FormRow v-if="webhookForm.type === 'Pushover'" label="Pushover User Key" labelFor="pushover-user-key">
-                  <input
-                    id="pushover-user-key"
-                    v-model="webhookForm.pushoverUserKey"
-                    type="text"
-                    placeholder="User key (e.g., uQiRzpo4DXghDmr9QzzfQu27cmVRsG)"
-                  />
-                </FormRow>
+            <FormRow
+              v-if="webhookForm.type === 'Telegram'"
+              label="Bot Token *"
+              labelFor="telegram-bot-token"
+            >
+              <input
+                id="telegram-bot-token"
+                v-model="webhookForm.telegramBotToken"
+                type="text"
+                placeholder="123456:ABCdefGhIJklMNopqRst_uvwxYZ"
+                required
+                @blur="validateWebhookField('url')"
+              />
+              <small v-if="webhookFormErrors.url" class="error-text">{{
+                webhookFormErrors.url
+              }}</small>
+            </FormRow>
+            <FormRow
+              v-if="webhookForm.type === 'Pushover'"
+              label="Pushover User Key"
+              labelFor="pushover-user-key"
+            >
+              <input
+                id="pushover-user-key"
+                v-model="webhookForm.pushoverUserKey"
+                type="text"
+                placeholder="User key (e.g., uQiRzpo4DXghDmr9QzzfQu27cmVRsG)"
+              />
+            </FormRow>
 
-                <FormRow v-if="webhookForm.type === 'Pushover'" label="Pushover API Token" labelFor="pushover-api-token">
-                  <input
-                    id="pushover-api-token"
-                    v-model="webhookForm.pushoverApiToken"
-                    type="text"
-                    placeholder="Application API token (keep secret)"
-                  />
-                  <small v-if="webhookForm.type === 'Pushover'" class="help-text">You can provide both keys instead of a full webhook URL; they'll be composed on save.</small>
-                </FormRow>
-                <FormRow v-if="webhookForm.type === 'Pushbullet'" label="Pushbullet Access Token" labelFor="pushbullet-access-token">
-                  <input
-                    id="pushbullet-access-token"
-                    v-model="webhookForm.pushbulletAccessToken"
-                    type="text"
-                    placeholder="Access token (keep secret)"
-                    required
-                    @blur="validateWebhookField('url')"
-                  />
-                  <small v-if="webhookForm.type === 'Pushbullet'" class="help-text">Get your Access Token from Pushbullet → Settings → Account → Access Tokens</small>
-                </FormRow>
-                <FormRow v-if="webhookForm.type === 'Telegram'" label="Chat ID (optional)" labelFor="telegram-chat-id">
-                  <input
-                    id="telegram-chat-id"
-                    v-model="webhookForm.telegramChatId"
-                    type="text"
-                    placeholder="e.g., 123456789 or @channelusername"
-                  />
-                  <small class="help-text">Provide a chat ID to target messages. If left blank, include chat_id in the URL.</small>
-                </FormRow>
-              </FormSection>
+            <FormRow
+              v-if="webhookForm.type === 'Pushover'"
+              label="Pushover API Token"
+              labelFor="pushover-api-token"
+            >
+              <input
+                id="pushover-api-token"
+                v-model="webhookForm.pushoverApiToken"
+                type="text"
+                placeholder="Application API token (keep secret)"
+              />
+              <small v-if="webhookForm.type === 'Pushover'" class="help-text"
+                >You can provide both keys instead of a full webhook URL; they'll be composed on
+                save.</small
+              >
+            </FormRow>
+            <FormRow
+              v-if="webhookForm.type === 'Pushbullet'"
+              label="Pushbullet Access Token"
+              labelFor="pushbullet-access-token"
+            >
+              <input
+                id="pushbullet-access-token"
+                v-model="webhookForm.pushbulletAccessToken"
+                type="text"
+                placeholder="Access token (keep secret)"
+                required
+                @blur="validateWebhookField('url')"
+              />
+              <small v-if="webhookForm.type === 'Pushbullet'" class="help-text"
+                >Get your Access Token from Pushbullet → Settings → Account → Access Tokens</small
+              >
+            </FormRow>
+            <FormRow
+              v-if="webhookForm.type === 'Telegram'"
+              label="Chat ID (optional)"
+              labelFor="telegram-chat-id"
+            >
+              <input
+                id="telegram-chat-id"
+                v-model="webhookForm.telegramChatId"
+                type="text"
+                placeholder="e.g., 123456789 or @channelusername"
+              />
+              <small class="help-text"
+                >Provide a chat ID to target messages. If left blank, include chat_id in the
+                URL.</small
+              >
+            </FormRow>
+          </FormSection>
 
-              <!-- Triggers Section -->
-              <FormSection title="Triggers" :icon="PhBell">
-                  <div class="webhook-triggers triggers-grid">
-                    <CheckboxCard
-                      v-for="t in ['book-added','book-downloading','book-available','book-completed']"
-                      :key="t"
-                      :modelValue="webhookForm.triggers.includes(t)"
-                      @update:modelValue="onToggleTriggerValue(t, $event)"
-                      :title="formatTriggerName(t)"
-                    >
-                      <template #default>
-                        <component :is="getTriggerIcon(t)" class="trigger-icon" />
-                      </template>
-                    </CheckboxCard>
-                  </div>
-                  <small v-if="webhookFormErrors.triggers" class="error-text">{{ webhookFormErrors.triggers }}</small>
-              </FormSection>
-
-            </form>
+          <!-- Triggers Section -->
+          <FormSection title="Triggers" :icon="PhBell">
+            <div class="webhook-triggers triggers-grid">
+              <CheckboxCard
+                v-for="t in ['book-added', 'book-downloading', 'book-available', 'book-completed']"
+                :key="t"
+                :modelValue="webhookForm.triggers.includes(t)"
+                @update:modelValue="onToggleTriggerValue(t, $event)"
+                :title="formatTriggerName(t)"
+              >
+                <template #default>
+                  <component :is="getTriggerIcon(t)" class="trigger-icon" />
+                </template>
+              </CheckboxCard>
+            </div>
+            <small v-if="webhookFormErrors.triggers" class="error-text">{{
+              webhookFormErrors.triggers
+            }}</small>
+          </FormSection>
+        </form>
         <template #footer>
           <ModalFooter :showCancel="false">
             <template #left>
-              <button @click="closeWebhookForm" class="cancel-button btn" type="button"><PhX /> Cancel</button>
+              <button @click="closeWebhookForm" class="cancel-button btn" type="button">
+                <PhX /> Cancel
+              </button>
             </template>
             <template #default>
               <button
@@ -308,7 +378,7 @@ import {
   PhPlus,
   PhCheckCircle,
   PhXCircle,
-    PhCircleWavyCheck,
+  PhCircleWavyCheck,
   PhToggleRight,
   PhToggleLeft,
   PhSpinner,
@@ -355,7 +425,6 @@ const formatApiError = (err: unknown): string => {
 }
 
 /* Triggers grid styles */
-
 
 // State
 const showWebhookForm = ref(false)
@@ -416,11 +485,18 @@ const isWebhookFormValid = computed(() => {
   }
 
   if (webhookForm.type === 'Pushover') {
-    return !!(webhookForm.pushoverApiToken && webhookForm.pushoverUserKey && webhookForm.pushoverApiToken.trim().length > 0 && webhookForm.pushoverUserKey.trim().length > 0)
+    return !!(
+      webhookForm.pushoverApiToken &&
+      webhookForm.pushoverUserKey &&
+      webhookForm.pushoverApiToken.trim().length > 0 &&
+      webhookForm.pushoverUserKey.trim().length > 0
+    )
   }
 
   if (webhookForm.type === 'Pushbullet') {
-    return !!(webhookForm.pushbulletAccessToken && webhookForm.pushbulletAccessToken.trim().length > 0)
+    return !!(
+      webhookForm.pushbulletAccessToken && webhookForm.pushbulletAccessToken.trim().length > 0
+    )
   }
 
   // Default: require URL
@@ -525,7 +601,10 @@ const validateWebhookField = (field: 'name' | 'url' | 'type' | 'triggers') => {
           webhookFormErrors.url = ''
         }
       } else if (webhookForm.type === 'Pushbullet') {
-        if (!webhookForm.pushbulletAccessToken || webhookForm.pushbulletAccessToken.trim().length === 0) {
+        if (
+          !webhookForm.pushbulletAccessToken ||
+          webhookForm.pushbulletAccessToken.trim().length === 0
+        ) {
           webhookFormErrors.url = 'Pushbullet Access Token is required'
         } else {
           webhookFormErrors.url = ''
@@ -688,7 +767,6 @@ const editWebhook = (webhook: (typeof webhooks.value)[0]) => {
     } catch {
       // ignore
     }
-
   } catch {
     webhookForm.telegramChatId = ''
   }
@@ -833,16 +911,31 @@ const toggleWebhook = async (webhook: (typeof webhooks.value)[0]) => {
 const testWebhook = async (webhook: (typeof webhooks.value)[0]) => {
   testingWebhook.value = webhook.id
   try {
-    const payload = { trigger: 'book-available', data: { message: 'Test notification from Listenarr UI' } }
-    const response = await apiService.testNotification(payload.trigger, payload.data, webhook.id, webhook.url)
+    const payload = {
+      trigger: 'book-available',
+      data: { message: 'Test notification from Listenarr UI' },
+    }
+    const response = await apiService.testNotification(
+      payload.trigger,
+      payload.data,
+      webhook.id,
+      webhook.url,
+    )
     if (response && response.success) {
-      toast.success('Test notification', response.message || `Test notification sent to ${webhook.name}`)
+      toast.success(
+        'Test notification',
+        response.message || `Test notification sent to ${webhook.name}`,
+      )
       lastWebhookTestResults[webhook.id] = 'success'
     } else {
       toast.error('Test failed', response?.message || 'Failed to send test notification')
       lastWebhookTestResults[webhook.id] = 'fail'
     }
-    console.debug('NotificationsTab: lastWebhookTestResults set', webhook.id, lastWebhookTestResults[webhook.id])
+    console.debug(
+      'NotificationsTab: lastWebhookTestResults set',
+      webhook.id,
+      lastWebhookTestResults[webhook.id],
+    )
     await nextTick()
   } catch (error) {
     errorTracking.captureException(error as Error, {
@@ -852,7 +945,11 @@ const testWebhook = async (webhook: (typeof webhooks.value)[0]) => {
     const errorMessage = formatApiError(error)
     toast.error('Test failed', errorMessage)
     lastWebhookTestResults[webhook.id] = 'fail'
-    console.debug('NotificationsTab: lastWebhookTestResults set', webhook.id, lastWebhookTestResults[webhook.id])
+    console.debug(
+      'NotificationsTab: lastWebhookTestResults set',
+      webhook.id,
+      lastWebhookTestResults[webhook.id],
+    )
     await nextTick()
   } finally {
     testingWebhook.value = null
@@ -862,10 +959,16 @@ const testWebhook = async (webhook: (typeof webhooks.value)[0]) => {
 const testWebhookConfig = async () => {
   testingWebhookConfig.value = true
   try {
-    const payload = { trigger: 'book-available', data: { message: 'Test notification from Listenarr UI' } }
+    const payload = {
+      trigger: 'book-available',
+      data: { message: 'Test notification from Listenarr UI' },
+    }
     const response = await apiService.testNotification(payload.trigger, payload.data)
     if (response && response.success) {
-      toast.success('Test successful', response.message || `Test notification sent to ${webhookForm.type}`)
+      toast.success(
+        'Test successful',
+        response.message || `Test notification sent to ${webhookForm.type}`,
+      )
     } else {
       toast.error('Test failed', response?.message || 'Failed to send test notification')
     }
@@ -884,7 +987,9 @@ const testWebhookConfig = async () => {
 // Persist webhooks to backend settings (do not mutate incoming props)
 const persistWebhooks = async () => {
   // Create a shallow copy of settings and assign updated webhooks
-  const current = props.settings ? { ...(props.settings as unknown as Record<string, unknown>) } : {}
+  const current = props.settings
+    ? { ...(props.settings as unknown as Record<string, unknown>) }
+    : {}
   try {
     const payload: ApplicationSettings = {
       ...(current as unknown as ApplicationSettings),
@@ -1092,14 +1197,21 @@ defineExpose({ openWebhookForm })
    Keep per-view small overrides below. */
 
 /* Notifications-specific overrides */
-.checkbox-group label:hover { border-color: var(--brand-500); }
-.checkbox-group label span { flex: 1; }
-.checkbox-group label small { color: #b3b3b3; }
-.checkbox-group input[type='checkbox']:focus-visible { outline: 2px solid rgba(var(--brand-rgb), 0.24); }
+.checkbox-group label:hover {
+  border-color: var(--brand-500);
+}
+.checkbox-group label span {
+  flex: 1;
+}
+.checkbox-group label small {
+  color: #b3b3b3;
+}
+.checkbox-group input[type='checkbox']:focus-visible {
+  outline: 2px solid rgba(var(--brand-rgb), 0.24);
+}
 /* Modal footer styling moved to shared `modals.css` */
 
 /* Modal actions styling moved to shared `modals.css` */
-
 
 /* Webhooks Grid */
 .webhooks-grid {
@@ -1247,7 +1359,7 @@ defineExpose({ openWebhookForm })
   width: 24px;
   height: 24px;
   border-radius: 6px;
-  background: rgba(255,255,255,0.03);
+  background: rgba(255, 255, 255, 0.03);
   color: var(--color-text-secondary);
   font-size: 1rem;
   flex-shrink: 0;
@@ -1264,13 +1376,12 @@ defineExpose({ openWebhookForm })
   }
 }
 
-
 .webhook-header-actions {
   display: flex;
   align-items: center;
   gap: 0.5rem;
   margin-left: 1rem;
-}   
+}
 
 /* Use centralized .icon-button in src/assets/buttons.css for consistent icon buttons */
 
@@ -1314,8 +1425,8 @@ defineExpose({ openWebhookForm })
 }
 
 .webhook-triggers .checkbox-group {
-  background: rgba(255,255,255,0.02);
-  border: 1px solid rgba(255,255,255,0.04);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.04);
   padding: 0.6rem 0.75rem;
   border-radius: 8px;
   margin: 0;
@@ -1355,8 +1466,6 @@ defineExpose({ openWebhookForm })
   color: var(--color-text-secondary);
   margin: 0 0 0 0.25rem;
 }
-
-
 
 /* Mobile Responsive */
 @media (max-width: 768px) {
@@ -1402,7 +1511,6 @@ defineExpose({ openWebhookForm })
   display: flex;
   align-items: center;
 }
-
 
 /* Spin animation for loading icons */
 .ph-spin {

@@ -144,7 +144,7 @@ namespace Listenarr.Api.Services
                                     throw new DownloadProcessingException("No download avaiable for filtering");
                                 }
                             }
-                            catch(DownloadProcessingException exception)
+                            catch (DownloadProcessingException exception)
                             {
                                 _logger.LogWarning(exception, exception.Message);
                                 _logger.LogInformation("Falling back on intelligent audio file filtering");
@@ -152,10 +152,10 @@ namespace Listenarr.Api.Services
                                 files = [.. Directory.EnumerateFiles(finalPath, "*.*", SearchOption.AllDirectories)
                                     .Where(f => !FileUtils.IsBlacklistedFile(f, settings.ImportBlacklistExtensions))
                                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)];
-                                
+
                                 files = await FilterDirectoryAudioFilesAsync(download, files);
                             }
-                            
+
                             var archiveFiles = files.Where(f => _archiveExtractor.IsArchive(f)).ToList();
                             files = files
                                 .Where(f => !_archiveExtractor.IsArchive(f))

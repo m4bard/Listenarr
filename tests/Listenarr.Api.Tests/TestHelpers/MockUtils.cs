@@ -54,7 +54,7 @@ namespace Listenarr.Api.Tests
                 EnableMetadataProcessing = false,
                 MultiFileNamingPattern = "{Title}-{DiskNumber:00}-{ChapterNumber:00}",
             });
-            
+
             var startupConfigServiceMock = new Mock<IStartupConfigService>();
             startupConfigServiceMock.Setup(s => s.GetConfig()).Returns(new StartupConfig { AuthenticationRequired = "false" });
 
@@ -89,15 +89,15 @@ namespace Listenarr.Api.Tests
             services.AddScoped<IDownloadProcessingQueueService, DownloadProcessingQueueService>();
             services.AddListenarrInfrastructure(options =>
                 options.UseInMemoryDatabase(databaseName: Guid.NewGuid().ToString()));
-            
+
             return services;
         }
-        
+
         public static ServiceProvider CreateServiceProvider(string outputPath = "")
         {
             return CreateServiceProvider(new Mock<IImportItemResolutionService>().Object, outputPath);
         }
-        
+
         public static ServiceProvider CreateServiceProvider(IImportItemResolutionService importItemResolutionService, string outputPath = "", DownloadClientConfiguration downloadClientConfiguration = null)
         {
             var services = InitServiceCollection();
@@ -118,10 +118,10 @@ namespace Listenarr.Api.Tests
                 ]);
                 configMock.Setup(c => c.GetDownloadClientConfigurationAsync(It.IsAny<string>())).ReturnsAsync(downloadClientConfiguration);
             }
-            
+
             services.AddSingleton(configMock.Object);
             services.AddSingleton(importItemResolutionService);
-            
+
             return services.BuildServiceProvider();
         }
 
@@ -145,19 +145,19 @@ namespace Listenarr.Api.Tests
             queueMock.Setup(q => q.GetQueueAsync()).ReturnsAsync([]);
 
             var serviceScopeFactory = provider.GetRequiredService<IServiceScopeFactory>();
-            
+
             var importService = new ImportService(
                 provider.GetRequiredService<IAudiobookRepository>(),
                 serviceScopeFactory,
                 provider.GetRequiredService<IFileNamingService>(),
                 provider.GetRequiredService<IMetadataService>());
-            
+
             var fileFinalizer = new FileFinalizer(
                 importService,
                 provider.GetRequiredService<IDownloadRepository>(),
                 serviceScopeFactory,
                 new Mock<ILogger<FileFinalizer>>().Object);
-            
+
             return new CompletedDownloadProcessor(
                 provider.GetRequiredService<IDownloadRepository>(),
                 fileFinalizer,

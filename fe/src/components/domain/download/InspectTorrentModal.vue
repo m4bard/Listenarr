@@ -39,18 +39,24 @@
     </template>
 
     <template #footer>
-      <button @click="downloadTorrent" :disabled="loading || !hasStoredTorrent" class="btn btn-primary"><PhDownload /> Download Torrent</button>
+      <button
+        @click="downloadTorrent"
+        :disabled="loading || !hasStoredTorrent"
+        class="btn btn-primary"
+      >
+        <PhDownload /> Download Torrent
+      </button>
       <button @click="close" class="cancel-button btn"><PhX /> Close</button>
     </template>
   </Modal>
-</template> 
+</template>
 
 <script setup lang="ts">
 import { ref, watch, computed } from 'vue'
 import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
 import { apiService } from '@/services/api'
 import { logger } from '@/utils/logger'
-import { PhX, PhDownload } from '@phosphor-icons/vue' 
+import { PhX, PhDownload } from '@phosphor-icons/vue'
 
 const props = defineProps<{
   downloadId: string
@@ -104,6 +110,12 @@ function downloadTorrent() {
 
 <style scoped>
 /* Modal-specific styling moved to shared `modals.css` */
-.modal-body { min-height: 120px; }
-.close { background: none; border: none; font-size: 1.2rem; }
+.modal-body {
+  min-height: 120px;
+}
+.close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+}
 </style>

@@ -116,7 +116,9 @@ describe('ActivityView', () => {
   beforeEach(() => {
     vi.resetModules()
     vi.clearAllMocks()
-    vi.spyOn(globalThis, 'setInterval').mockReturnValue(1 as unknown as ReturnType<typeof setInterval>)
+    vi.spyOn(globalThis, 'setInterval').mockReturnValue(
+      1 as unknown as ReturnType<typeof setInterval>,
+    )
     vi.spyOn(globalThis, 'clearInterval').mockImplementation(() => undefined)
   })
 
@@ -131,10 +133,46 @@ describe('ActivityView', () => {
     mockLibraryStore()
     mockDownloadsStore({
       completedDownloads: [
-        { id: 'd1', status: 'Completed', progress: 100, downloadClientId: 'SABnzbd', startedAt: new Date().toISOString(), title: 'One', downloadedSize: 1000, totalSize: 1000 },
-        { id: 'd2', status: 'Completed', progress: 100, downloadClientId: 'qbittorrent', startedAt: new Date().toISOString(), title: 'Two', downloadedSize: 2000, totalSize: 2000 },
-        { id: 'd3', status: 'Completed', progress: 100, downloadClientId: 'transmission', startedAt: new Date().toISOString(), title: 'Three', downloadedSize: 3000, totalSize: 3000 },
-        { id: 'd4', status: 'Completed', progress: 100, downloadClientId: 'nzbget', startedAt: new Date().toISOString(), title: 'Four', downloadedSize: 4000, totalSize: 4000 },
+        {
+          id: 'd1',
+          status: 'Completed',
+          progress: 100,
+          downloadClientId: 'SABnzbd',
+          startedAt: new Date().toISOString(),
+          title: 'One',
+          downloadedSize: 1000,
+          totalSize: 1000,
+        },
+        {
+          id: 'd2',
+          status: 'Completed',
+          progress: 100,
+          downloadClientId: 'qbittorrent',
+          startedAt: new Date().toISOString(),
+          title: 'Two',
+          downloadedSize: 2000,
+          totalSize: 2000,
+        },
+        {
+          id: 'd3',
+          status: 'Completed',
+          progress: 100,
+          downloadClientId: 'transmission',
+          startedAt: new Date().toISOString(),
+          title: 'Three',
+          downloadedSize: 3000,
+          totalSize: 3000,
+        },
+        {
+          id: 'd4',
+          status: 'Completed',
+          progress: 100,
+          downloadClientId: 'nzbget',
+          startedAt: new Date().toISOString(),
+          title: 'Four',
+          downloadedSize: 4000,
+          totalSize: 4000,
+        },
       ],
     })
 
@@ -154,8 +192,26 @@ describe('ActivityView', () => {
     mockLibraryStore()
     mockDownloadsStore({
       completedDownloads: [
-        { id: 'd1', status: 'Completed', progress: 100, downloadClientId: 'SABnzbd', startedAt: new Date().toISOString(), title: 'One', downloadedSize: 1000, totalSize: 1000 },
-        { id: 'd2', status: 'Completed', progress: 100, downloadClientId: 'qbittorrent', startedAt: new Date().toISOString(), title: 'Two', downloadedSize: 2000, totalSize: 2000 },
+        {
+          id: 'd1',
+          status: 'Completed',
+          progress: 100,
+          downloadClientId: 'SABnzbd',
+          startedAt: new Date().toISOString(),
+          title: 'One',
+          downloadedSize: 1000,
+          totalSize: 1000,
+        },
+        {
+          id: 'd2',
+          status: 'Completed',
+          progress: 100,
+          downloadClientId: 'qbittorrent',
+          startedAt: new Date().toISOString(),
+          title: 'Two',
+          downloadedSize: 2000,
+          totalSize: 2000,
+        },
       ],
     })
 
@@ -261,7 +317,13 @@ describe('ActivityView', () => {
     mockLibraryStore()
     mockDownloadsStore({
       failedDownloads: [
-        { id: 'q1', status: 'Failed', progress: 0, downloadClientId: 'qbittorrent', title: 'Queue Failed (DB copy)' },
+        {
+          id: 'q1',
+          status: 'Failed',
+          progress: 0,
+          downloadClientId: 'qbittorrent',
+          title: 'Queue Failed (DB copy)',
+        },
         { id: 'd1', status: 'Failed', progress: 0, downloadClientId: 'DDL', title: 'DDL Failed' },
       ],
     })

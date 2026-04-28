@@ -63,7 +63,7 @@ namespace Listenarr.Api.Services
             _autoInstall = Environment.GetEnvironmentVariable("LISTENARR_AUTO_INSTALL_FFPROBE")?.ToLower() != "false"; // default true
             _startupConfigService = startupConfigService;
             _processRunner = processRunner;
-            
+
             _baseDir = Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
             _ffprobeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe";
             _ffprobePath = Path.Join(_baseDir, _ffprobeName);
@@ -524,7 +524,7 @@ namespace Listenarr.Api.Services
                 {
                     return "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-arm64-static.tar.xz";
                 }
-            
+
                 // johnvansickle static build (x86_64)
                 return "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz";
             }
@@ -711,11 +711,11 @@ namespace Listenarr.Api.Services
                     throw new FfmpegException($"Failed to parse ffprobe JSON output for {sanitizedFilePath}: Cannot retrieve output or retrieved empty output");
                 }
 
-                try 
+                try
                 {
                     ffprobeData = JsonSerializer.Deserialize<JsonElement>(pr.Stdout);
                 }
-                catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) 
+                catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
                 {
                     throw new FfmpegException($"Failed to parse ffprobe JSON output for {sanitizedFilePath}", ex);
                 }
@@ -724,7 +724,8 @@ namespace Listenarr.Api.Services
             {
                 throw new FfmpegException($"ffprobe execution failed for {sanitizedFilePath}", ex);
             }
-            catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException or StackOverflowException)) {
+            catch (Exception ex) when (ex is not (OperationCanceledException or OutOfMemoryException or StackOverflowException))
+            {
                 throw new FfmpegException($"Error running ffprobe for {sanitizedFilePath}", ex);
             }
 
@@ -885,14 +886,16 @@ namespace Listenarr.Api.Services
             return false;
         }
 
-        public string FfprobePath {
+        public string FfprobePath
+        {
             get
             {
                 return _ffprobePath;
             }
         }
 
-        public async Task<string> GetLicenseAsync() {
+        public async Task<string> GetLicenseAsync()
+        {
             var licensePath = Path.Join(_baseDir, "LICENSE_NOTICE.txt");
             if (System.IO.File.Exists(licensePath))
             {

@@ -17,17 +17,35 @@
 -->
 <template>
   <div class="form-section">
-    <h3>
-      <PhToggleLeft /> Features
-    </h3>
+    <h3><PhToggleLeft /> Features</h3>
     <div class="form-body">
-      <CheckboxCard :modelValue="settings.enableMetadataProcessing" @update:modelValue="updateEnableMetadataProcessing" title="Enable Metadata Processing" description="Automatically fetch and embed audiobook metadata" />
+      <CheckboxCard
+        :modelValue="settings.enableMetadataProcessing"
+        @update:modelValue="updateEnableMetadataProcessing"
+        title="Enable Metadata Processing"
+        description="Automatically fetch and embed audiobook metadata"
+      />
 
-      <CheckboxCard :modelValue="settings.enableCoverArtDownload" @update:modelValue="updateEnableCoverArtDownload" title="Enable Cover Art Download" description="Download and embed cover art for audiobooks" />
+      <CheckboxCard
+        :modelValue="settings.enableCoverArtDownload"
+        @update:modelValue="updateEnableCoverArtDownload"
+        title="Enable Cover Art Download"
+        description="Download and embed cover art for audiobooks"
+      />
 
-      <CheckboxCard :modelValue="settings.enableNotifications" @update:modelValue="updateEnableNotifications" title="Enable Notifications" description="Receive notifications for downloads and events" />
+      <CheckboxCard
+        :modelValue="settings.enableNotifications"
+        @update:modelValue="updateEnableNotifications"
+        title="Enable Notifications"
+        description="Receive notifications for downloads and events"
+      />
 
-      <CheckboxCard :modelValue="settings.showCompletedExternalDownloads" @update:modelValue="updateShowCompletedExternalDownloads" title="Show completed external downloads in Activity" description="When enabled, completed torrents/NZBs from external clients will remain visible in the Activity view. When disabled, completed external items will be hidden to reduce clutter." />
+      <CheckboxCard
+        :modelValue="settings.showCompletedExternalDownloads"
+        @update:modelValue="updateShowCompletedExternalDownloads"
+        title="Show completed external downloads in Activity"
+        description="When enabled, completed torrents/NZBs from external clients will remain visible in the Activity view. When disabled, completed external items will be hidden to reduce clutter."
+      />
     </div>
   </div>
 </template>
@@ -78,9 +96,26 @@ h3 {
 }
 
 /* Modal-like Features section */
-.form-body { padding: 1.25rem; border-radius: 6px; border: 1px solid #333; box-shadow: 0 4px 14px rgba(0,0,0,0.6); background-color: #232323; }
+.form-body {
+  padding: 1.25rem;
+  border-radius: 6px;
+  border: 1px solid #333;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  background-color: #232323;
+}
 
-.form-group { margin-bottom: 1.25rem }
-.form-group label { margin-bottom:0.5rem; font-weight:500; color:#fff }
-.form-help { display:block; margin-top:0.5rem; font-size:0.85rem; color:#adb5bd }
+.form-group {
+  margin-bottom: 1.25rem;
+}
+.form-group label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #fff;
+}
+.form-help {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #adb5bd;
+}
 </style>

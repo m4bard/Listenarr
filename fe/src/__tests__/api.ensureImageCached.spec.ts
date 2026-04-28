@@ -46,29 +46,37 @@ describe('ApiService.ensureImageCached', () => {
       fetchedAt: Date.now(),
     })
 
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const s = String(input)
-      if (s.includes(`${imageBasePath}/ASIN000001?url=`) && s.includes('audible.covers')) {
-        return { ok: true, status: 200 }
-      }
-      return { ok: false, status: 404 }
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const s = String(input)
+        if (s.includes(`${imageBasePath}/ASIN000001?url=`) && s.includes('audible.covers')) {
+          return { ok: true, status: 200 }
+        }
+        return { ok: false, status: 404 }
+      }),
+    )
 
     const ok = await svc.ensureImageCached(`${imageBasePath}/ASIN000001`)
 
     expect(ok).toBe(true)
     const fetchCalls = (globalThis.fetch as unknown as FetchLikeMock).mock.calls
-    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000001?url=`))).toBe(true)
+    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000001?url=`))).toBe(
+      true,
+    )
   })
 
   it('falls back to base image endpoint when no candidate URLs are cached', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const s = String(input)
-      if (s.endsWith(`${imageBasePath}/ASIN000002`)) {
-        return { ok: true, status: 200 }
-      }
-      return { ok: false, status: 404 }
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const s = String(input)
+        if (s.endsWith(`${imageBasePath}/ASIN000002`)) {
+          return { ok: true, status: 200 }
+        }
+        return { ok: false, status: 404 }
+      }),
+    )
 
     const ok = await svc.ensureImageCached(`${imageBasePath}/ASIN000002`)
 
@@ -83,22 +91,27 @@ describe('ApiService.ensureImageCached', () => {
       fetchedAt: Date.now(),
     })
 
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const s = String(input)
-      if (s.includes(`${imageBasePath}/ASIN000003?url=`)) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const s = String(input)
+        if (s.includes(`${imageBasePath}/ASIN000003?url=`)) {
+          return { ok: false, status: 404 }
+        }
+        if (s.endsWith(`${imageBasePath}/ASIN000003`)) {
+          return { ok: false, status: 404 }
+        }
         return { ok: false, status: 404 }
-      }
-      if (s.endsWith(`${imageBasePath}/ASIN000003`)) {
-        return { ok: false, status: 404 }
-      }
-      return { ok: false, status: 404 }
-    }))
+      }),
+    )
 
     const ok = await svc.ensureImageCached(`${imageBasePath}/ASIN000003`)
 
     expect(ok).toBe(false)
     const fetchCalls = (globalThis.fetch as unknown as FetchLikeMock).mock.calls
-    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000003?url=`))).toBe(true)
+    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000003?url=`))).toBe(
+      true,
+    )
     expect(fetchCalls.some((c) => String(c[0]).endsWith(`${imageBasePath}/ASIN000003`))).toBe(true)
   })
 })

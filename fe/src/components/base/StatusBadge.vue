@@ -22,7 +22,15 @@
 </template>
 
 <script setup lang="ts">
-type StatusType = 'active' | 'completed' | 'failed' | 'pending' | 'success' | 'paused' | 'cancelled' | 'moved'
+type StatusType =
+  | 'active'
+  | 'completed'
+  | 'failed'
+  | 'pending'
+  | 'success'
+  | 'paused'
+  | 'cancelled'
+  | 'moved'
 
 const props = defineProps({
   status: {

@@ -59,15 +59,29 @@ withDefaults(
     icon?: Component | undefined
     iconLabel?: string | undefined
   }>(),
-  { visible: false, title: 'Confirm', message: '', confirmLabel: 'Confirm', cancelLabel: 'Cancel', size: 'sm', confirming: false },
+  {
+    visible: false,
+    title: 'Confirm',
+    message: '',
+    confirmLabel: 'Confirm',
+    cancelLabel: 'Cancel',
+    size: 'sm',
+    confirming: false,
+  },
 )
 
-const emit = defineEmits(['confirm','cancel'])
+const emit = defineEmits(['confirm', 'cancel'])
 
-function onConfirm() { emit('confirm') }
-function onCancel() { emit('cancel') }
+function onConfirm() {
+  emit('confirm')
+}
+function onCancel() {
+  emit('cancel')
+}
 </script>
 
 <style scoped>
-.confirm-message { color:#ddd; }
+.confirm-message {
+  color: #ddd;
+}
 </style>

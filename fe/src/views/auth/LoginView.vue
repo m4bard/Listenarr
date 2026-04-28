@@ -111,7 +111,7 @@ export default defineComponent({
         const { normalizeRedirect } = await import('@/utils/redirect')
         let queryRedirect = normalizeRedirect(rawQueryRedirect)
 
-          const startupConfigChecked = ref(false)
+        const startupConfigChecked = ref(false)
         if (!queryRedirect || queryRedirect === '/') {
           // On mount, fetch startup config ONCE and redirect if authentication is not required
           onMounted(async () => {
@@ -239,7 +239,10 @@ export default defineComponent({
   font-weight: 600;
   border-radius: 8px;
   text-align: center;
-  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
   transform: none;
 }
 

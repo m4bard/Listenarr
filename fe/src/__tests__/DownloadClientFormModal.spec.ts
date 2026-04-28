@@ -79,7 +79,11 @@ describe('DownloadClientFormModal', () => {
 
   it('test button on modal uses current input values and includes ID for existing client fallback', async () => {
     const api = await import('@/services/api')
-    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({ success: true, message: 'ok', client: config }))
+    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({
+      success: true,
+      message: 'ok',
+      client: config,
+    }))
 
     const wrapper = mount(DownloadClientFormModal, {
       global: { plugins: [createPinia()] },
@@ -112,7 +116,7 @@ describe('DownloadClientFormModal', () => {
     expect(testButton.exists()).toBe(true)
     await testButton.trigger('click')
 
-    expect((api.testDownloadClient as unknown)).toHaveBeenCalled()
+    expect(api.testDownloadClient as unknown).toHaveBeenCalled()
     const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
     expect(calledWith.host).toBe('edited.local')
     // Existing client id should be sent so backend can reuse saved credentials when needed.
@@ -121,7 +125,11 @@ describe('DownloadClientFormModal', () => {
 
   it('modal sends existing client ID when password is cleared so backend can pull saved password', async () => {
     const api = await import('@/services/api')
-    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({ success: true, message: 'ok', client: config }))
+    ;(api.testDownloadClient as unknown) = vi.fn(async (config: unknown) => ({
+      success: true,
+      message: 'ok',
+      client: config,
+    }))
 
     const wrapper = mount(DownloadClientFormModal, {
       global: { plugins: [createPinia()] },
@@ -158,7 +166,7 @@ describe('DownloadClientFormModal', () => {
     const testButton = wrapper.find('button.btn-info')
     await testButton.trigger('click')
 
-    expect((api.testDownloadClient as unknown)).toHaveBeenCalled()
+    expect(api.testDownloadClient as unknown).toHaveBeenCalled()
     const calledWith = (api.testDownloadClient as unknown).mock.calls[0][0]
     // We still send an empty password input, but include id so backend can reuse saved credentials.
     expect(calledWith.password).toBe('')

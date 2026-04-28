@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
- 
+
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import type { Mock } from 'vitest'
-import { mount, flushPromises } from '@vue/test-utils' 
+import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import AddNewView from '@/views/content/AddNewView.vue'
@@ -253,9 +253,7 @@ describe('AddNewView pagination', () => {
       defaultSearchRegion: 'de',
       defaultSearchLanguage: 'all',
     })
-    const advancedSearchSpy = vi
-      .spyOn(apiModule.apiService, 'advancedSearch')
-      .mockResolvedValue([])
+    const advancedSearchSpy = vi.spyOn(apiModule.apiService, 'advancedSearch').mockResolvedValue([])
 
     const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
@@ -346,7 +344,11 @@ describe('AddNewView pagination', () => {
 
     const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
-    const vm = wrapper.vm as unknown as { searchQuery?: string; performSearch?: () => Promise<void>; titleResults?: unknown[] }
+    const vm = wrapper.vm as unknown as {
+      searchQuery?: string
+      performSearch?: () => Promise<void>
+      titleResults?: unknown[]
+    }
 
     // Simulate entering a simple unprefixed query in the unified search
     vm.searchQuery = 'Dune Simple'
@@ -383,7 +385,11 @@ describe('AddNewView pagination', () => {
 
     const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
-    const vm = wrapper.vm as unknown as { searchQuery?: string; performAdvancedSearch?: () => Promise<void>; titleResults?: unknown[] }
+    const vm = wrapper.vm as unknown as {
+      searchQuery?: string
+      performAdvancedSearch?: () => Promise<void>
+      titleResults?: unknown[]
+    }
 
     // Simulate entering a simple unprefixed query in the unified search
     vm.searchQuery = 'Dune Simple'
@@ -403,7 +409,10 @@ describe('AddNewView pagination', () => {
 
     const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
-    const vm = wrapper.vm as unknown as { searchQuery?: string; performSearch?: () => Promise<void> }
+    const vm = wrapper.vm as unknown as {
+      searchQuery?: string
+      performSearch?: () => Promise<void>
+    }
 
     // Spy on window.scrollTo
     const scrollSpy = vi.spyOn(window, 'scrollTo').mockImplementation(() => {})
@@ -574,7 +583,10 @@ describe('AddNewView pagination', () => {
   it('does not label non-Audible URLs containing audible.com as Audible', async () => {
     const router = createTestRouter()
     const wrapper = mount(AddNewView, { global: { plugins: [createPinia(), router] } })
-    const vm = wrapper.vm as unknown as { searchType?: string; audibleResult?: Record<string, unknown> }
+    const vm = wrapper.vm as unknown as {
+      searchType?: string
+      audibleResult?: Record<string, unknown>
+    }
 
     vm.searchType = 'asin'
     ;(vm as unknown).audibleResult = {
@@ -592,7 +604,7 @@ describe('AddNewView pagination', () => {
     }
 
     // Also ensure fake hostnames are not treated as Audible
-    (vm as unknown).audibleResult.sourceLink = 'https://fakeaudible.com/pd/123'
+    ;(vm as unknown).audibleResult.sourceLink = 'https://fakeaudible.com/pd/123'
     await wrapper.vm.$nextTick()
     sourceLink = wrapper.find('.result-meta .source-link')
     if (sourceLink.text().includes('Audible')) {
@@ -623,7 +635,12 @@ describe('AddNewView pagination', () => {
 
     // ASIN result case
     vm.searchType = 'asin'
-    ;(vm as unknown).audibleResult = { asin: 'BAUD2', title: 'B', series: 'X', seriesList: ['X', 'Y'] }
+    ;(vm as unknown).audibleResult = {
+      asin: 'BAUD2',
+      title: 'B',
+      series: 'X',
+      seriesList: ['X', 'Y'],
+    }
     await wrapper.vm.$nextTick()
     const seriesBadgeAsin = wrapper.find('.search-results .title-result-card .series-badge[title]')
     expect(seriesBadgeAsin.exists()).toBe(true)

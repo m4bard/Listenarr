@@ -46,12 +46,16 @@ defineProps<{
   border-radius: 8px;
   padding: 1rem;
   margin-top: 0.75rem;
-  box-shadow: 0 6px 18px rgba(0,0,0,0.25);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.25);
 }
 
 /* Reduce spacing for first/last children inside the card to keep alignment */
-.section-card > *:first-child { margin-top: 0; }
-.section-card > *:last-child { margin-bottom: 0; }
+.section-card > *:first-child {
+  margin-top: 0;
+}
+.section-card > *:last-child {
+  margin-bottom: 0;
+}
 .form-section:last-of-type {
   margin-bottom: 0;
 }

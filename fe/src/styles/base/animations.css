@@ -28,7 +28,8 @@
 
 /* Pulse animation - used for active/loading indicators */
 @keyframes pulse {
-  0%, 100% {
+  0%,
+  100% {
     opacity: 1;
   }
   50% {
@@ -48,7 +49,8 @@
 
 /* Bounce animation - used for attention/emphasis */
 @keyframes bounce {
-  0%, 100% {
+  0%,
+  100% {
     transform: translateY(0);
   }
   50% {
@@ -70,7 +72,8 @@
 
 /* Highlight pulse animation - used for emphasis on new items */
 @keyframes highlightPulse {
-  0%, 100% {
+  0%,
+  100% {
     background-color: transparent;
   }
   50% {
@@ -152,7 +155,9 @@
 
 /* Lift effect - element rises on hover with shadow */
 .hover-lift {
-  transition: transform 0.2s, box-shadow 0.2s;
+  transition:
+    transform 0.2s,
+    box-shadow 0.2s;
 }
 
 .hover-lift:hover {

@@ -15,8 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
- 
- namespace Listenarr.Api.Services.Metadata
+
+namespace Listenarr.Api.Services.Metadata
 {
     /// <summary>
     /// Provides metadata retrieval and file tagging for audiobook files
@@ -36,7 +36,7 @@
             Download? download,
             Audiobook? audiobook,
             CancellationToken cancellationToken);
-        
+
         /// <summary>
         /// Gets metadata from online sources
         /// </summary>
