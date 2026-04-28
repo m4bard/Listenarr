@@ -119,7 +119,10 @@ public static class SecurityRequestUtils
         => !IsAuthenticationRequired(context) || IsAuthenticatedAdminOrApiKey(context);
 
     public static bool ShouldRedactSecretsForCaller(HttpContext? context)
-        => IsAuthenticationRequired(context) && !IsAuthenticatedAdminOrApiKey(context);
+        // *Arr standard trust model:
+        // - trusted local/private-network callers may receive non-redacted config payloads
+        // - public-network callers must authenticate as admin/API-key to receive secrets
+        => !IsLocalOrPrivateRequest(context) && !IsAuthenticatedAdminOrApiKey(context);
 
     public static string HashSecretForLog(string? secret, string prefix = "sha256")
     {

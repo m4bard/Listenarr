@@ -411,6 +411,79 @@ namespace Listenarr.Tests.Features.Api
         }
 
         [Fact]
+        public async Task ApiKeyEndpoint_RejectsApiKey_WhenAuthenticationEnabled()
+        {
+            const string apiKey = "server-api-key";
+            using var factory = CreateAuthEnabledFactory("true", apiKey);
+            var apiBase = TestHelpers.ResolveApiBasePath(factory.Services);
+
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false,
+                HandleCookies = false,
+            });
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{apiBase}/configuration/apikey");
+            request.Headers.Add("X-Api-Key", apiKey);
+            var resp = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+        }
+
+        [Fact]
+        public async Task RegenerateApiKey_RejectsApiKey_WhenAuthenticationEnabled()
+        {
+            const string apiKey = "server-api-key";
+            using var factory = CreateAuthEnabledFactory("true", apiKey);
+            var apiBase = TestHelpers.ResolveApiBasePath(factory.Services);
+
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false,
+                HandleCookies = false,
+            });
+
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{apiBase}/configuration/apikey/regenerate");
+            request.Headers.Add("X-Api-Key", apiKey);
+            var resp = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.Forbidden, resp.StatusCode);
+        }
+
+        [Fact]
+        public async Task RegenerateApiKey_AllowsAdminSession_WhenAuthenticationEnabled()
+        {
+            const string apiKey = "server-api-key";
+            using var factory = CreateAuthEnabledFactory("true", apiKey);
+            var apiBase = TestHelpers.ResolveApiBasePath(factory.Services);
+
+            string sessionToken;
+            using (var scope = factory.Services.CreateScope())
+            {
+                var sessionService = scope.ServiceProvider.GetRequiredService<ISessionService>();
+                sessionToken = await sessionService.CreateSessionAsync("admin-user", true, false);
+            }
+
+            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
+            {
+                AllowAutoRedirect = false,
+                HandleCookies = false,
+            });
+
+            var (csrfToken, antiforgeryCookie) = await GetAntiforgeryTokenAsync(client, apiBase, sessionToken);
+            using var request = new HttpRequestMessage(HttpMethod.Post, $"{apiBase}/configuration/apikey/regenerate");
+            request.Headers.Add("Cookie", $"listenarr_session={sessionToken}; {antiforgeryCookie}");
+            request.Headers.Add("X-XSRF-TOKEN", csrfToken);
+            var resp = await client.SendAsync(request);
+
+            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+            using var payload = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
+            var regeneratedApiKey = payload.RootElement.GetProperty("apiKey").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(regeneratedApiKey));
+            Assert.NotEqual(apiKey, regeneratedApiKey);
+        }
+
+        [Fact]
         public async Task ProwlarrCompatibility_RequiresApiKey_WhenAuthenticationEnabled()
         {
             const string apiKey = "prowlarr-api-key";
@@ -490,6 +563,29 @@ namespace Listenarr.Tests.Features.Api
                     });
                 });
             });
+        }
+
+        private static async Task<(string Token, string Cookie)> GetAntiforgeryTokenAsync(
+            HttpClient client,
+            string apiBase,
+            string sessionToken)
+        {
+            using var request = new HttpRequestMessage(HttpMethod.Get, $"{apiBase}/antiforgery/token");
+            request.Headers.Add("Cookie", $"listenarr_session={sessionToken}");
+            var response = await client.SendAsync(request);
+            response.EnsureSuccessStatusCode();
+
+            using var json = JsonDocument.Parse(await response.Content.ReadAsStringAsync());
+            var token = json.RootElement.GetProperty("token").GetString();
+            Assert.False(string.IsNullOrWhiteSpace(token));
+
+            Assert.True(response.Headers.TryGetValues("Set-Cookie", out var setCookieValues));
+            var antiforgeryCookie = setCookieValues
+                .Select(value => value.Split(';', 2)[0])
+                .FirstOrDefault(value => value.StartsWith(".AspNetCore.Antiforgery.", StringComparison.Ordinal));
+
+            Assert.False(string.IsNullOrWhiteSpace(antiforgeryCookie));
+            return (token!, antiforgeryCookie!);
         }
     }
 }

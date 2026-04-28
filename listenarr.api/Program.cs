@@ -629,8 +629,8 @@ builder.Services.AddSwaggerGen(options =>
         "   - Subsequent browser requests authenticate with that cookie.",
         "3. API key flow:",
         "   - API keys are intended for non-browser clients such as scripts, bots, and integrations.",
-        "   - Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
-        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled).",
+        "   - Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+        "   - Rotate the key with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
         "   - `POST /api/v{version}/configuration/apikey/generate-initial` is localhost bootstrap only and typically returns 409 after setup.",
         "   - Use `ApiKeyHeader` (`<apiKey>`) or `ApiKeyAuthorization` (`ApiKey <apiKey>`)."
     });
@@ -651,8 +651,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `X-Api-Key: <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled)."
         })
     });
 
@@ -665,8 +665,8 @@ builder.Services.AddSwaggerGen(options =>
         {
             "Use `Authorization: ApiKey <apiKey>`.",
             "API keys are auto-generated on first run.",
-            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator/API key access required when authentication is enabled).",
-            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator/API key access required when authentication is enabled)."
+            "Read the current key from `GET /api/v{version}/configuration/apikey` (Administrator session required when authentication is enabled; local/private-network access required when disabled).",
+            "Regenerate with `POST /api/v{version}/configuration/apikey/regenerate` (Administrator session required when authentication is enabled; local/private-network access required when disabled)."
         })
     });
 
