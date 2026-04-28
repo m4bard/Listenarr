@@ -1,9 +1,5 @@
-echo "Checking code formatting..."
+#!/usr/bin/env sh
+set -e
 
-dotnet format --no-restore --verify-no-changes || (
-  echo "--------------------------------------------------"
-  echo "⚠️  FORMATTING WARNING:"
-  echo "Files need formatting. Run 'dotnet format' locally."
-  echo "--------------------------------------------------"
-  exit 1
-)
+echo "Running staged lint and format checks..."
+npm run lint:staged
