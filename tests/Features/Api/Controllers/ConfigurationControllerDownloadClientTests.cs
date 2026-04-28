@@ -207,5 +207,71 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 Times.Once);
             configurationService.VerifyNoOtherCalls();
         }
+
+        [Fact]
+        public async Task GetApiKey_RemoteCaller_WhenAuthenticationDisabled_ReturnsForbidden()
+        {
+            var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
+            var downloadService = new Mock<IDownloadService>(MockBehavior.Strict);
+            var logger = NullLogger<ConfigurationController>.Instance;
+            var userService = Mock.Of<IUserService>();
+            var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
+
+            var controller = new ConfigurationController(
+                configurationService.Object,
+                logger,
+                userService,
+                settingsHub,
+                downloadService.Object,
+                null!);
+
+            var httpContext = new DefaultHttpContext();
+            httpContext.Connection.RemoteIpAddress = IPAddress.Parse("8.8.8.8");
+            controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+            var actionResult = await controller.GetApiKey();
+
+            var denied = Assert.IsType<ObjectResult>(actionResult.Result);
+            Assert.Equal(StatusCodes.Status403Forbidden, denied.StatusCode);
+            configurationService.VerifyNoOtherCalls();
+            downloadService.VerifyNoOtherCalls();
+        }
+
+        [Fact]
+        public async Task GetApiKey_PrivateNetworkCaller_WhenAuthenticationDisabled_ReturnsApiKey()
+        {
+            var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
+            var downloadService = new Mock<IDownloadService>(MockBehavior.Strict);
+            var logger = NullLogger<ConfigurationController>.Instance;
+            var userService = Mock.Of<IUserService>();
+            var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
+
+            configurationService
+                .Setup(x => x.GetStartupConfigAsync())
+                .ReturnsAsync(new StartupConfig { ApiKey = "server-api-key" });
+
+            var controller = new ConfigurationController(
+                configurationService.Object,
+                logger,
+                userService,
+                settingsHub,
+                downloadService.Object,
+                null!);
+
+            var httpContext = new DefaultHttpContext();
+            httpContext.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.23");
+            controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+
+            var actionResult = await controller.GetApiKey();
+
+            var ok = Assert.IsType<OkObjectResult>(actionResult.Result);
+            Assert.NotNull(ok.Value);
+            var apiKeyProp = ok.Value!.GetType().GetProperty("apiKey");
+            Assert.NotNull(apiKeyProp);
+            Assert.Equal("server-api-key", apiKeyProp!.GetValue(ok.Value)?.ToString());
+            configurationService.Verify(x => x.GetStartupConfigAsync(), Times.Once);
+            configurationService.VerifyNoOtherCalls();
+            downloadService.VerifyNoOtherCalls();
+        }
     }
 }

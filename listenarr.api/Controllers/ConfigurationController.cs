@@ -683,6 +683,34 @@ namespace Listenarr.Api.Controllers
             return !string.IsNullOrWhiteSpace(normalized);
         }
 
+        private ActionResult? RequireApiKeyManagementAccess()
+        {
+            if (SecurityRequestUtils.IsAuthenticationRequired(HttpContext))
+            {
+                var user = HttpContext?.User;
+                if (user?.Identity?.IsAuthenticated == true &&
+                    user.IsInRole("Administrator") &&
+                    !SecurityRequestUtils.IsApiKeyAuthenticated(HttpContext))
+                {
+                    return null;
+                }
+
+                return user?.Identity?.IsAuthenticated == true
+                    ? StatusCode(403, new { message = "Administrator session required" })
+                    : Unauthorized(new { message = "Authentication required" });
+            }
+
+            if (SecurityRequestUtils.IsLocalOrPrivateRequest(HttpContext))
+            {
+                return null;
+            }
+
+            return StatusCode(403, new
+            {
+                message = "API key management is only available from local or private-network clients when authentication is disabled"
+            });
+        }
+
         /// <summary>
         /// Get the current server API key.
         /// </summary>
@@ -697,6 +725,12 @@ namespace Listenarr.Api.Controllers
         {
             try
             {
+                var accessDenied = RequireApiKeyManagementAccess();
+                if (accessDenied != null)
+                {
+                    return accessDenied;
+                }
+
                 var cfg = await _configurationService.GetStartupConfigAsync() ?? new StartupConfig();
                 return Ok(new { apiKey = cfg.ApiKey ?? string.Empty });
             }
@@ -713,10 +747,17 @@ namespace Listenarr.Api.Controllers
         /// <returns>The newly generated API key.</returns>
         [Tags("Security")]
         [HttpPost("apikey/regenerate")]
+        [RequireAdministratorSessionWhenAuthenticationEnabled]
         public async Task<ActionResult<object>> RegenerateApiKey()
         {
             try
             {
+                var accessDenied = RequireApiKeyManagementAccess();
+                if (accessDenied != null)
+                {
+                    return accessDenied;
+                }
+
                 var cfg = await _configurationService.GetStartupConfigAsync();
                 var current = cfg ?? new StartupConfig();
                 // Generate a new API key (cryptographically secure)
