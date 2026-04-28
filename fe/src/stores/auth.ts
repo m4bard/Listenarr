@@ -143,13 +143,15 @@ export const useAuthStore = defineStore('auth', () => {
       }
 
       if (!token) {
+        if (context?.source === 'initial') {
+          return
+        }
+
         console.log('[AuthStore] Auth marker removed in another tab - clearing auth state')
         user.value = { authenticated: false }
         loaded.value = true
 
-        if (context?.source !== 'initial') {
-          void redirectToLoginIfRequired()
-        }
+        void redirectToLoginIfRequired()
       }
     })
   } catch {}
