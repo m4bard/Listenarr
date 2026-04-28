@@ -17,15 +17,19 @@
  */
 using System.Net;
 using System.Net.Http.Headers;
-using System.Text;
 using System.Text.Json;
+using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Mocks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
 using Xunit;
 
 namespace Listenarr.Tests.Features.Api
@@ -186,42 +190,56 @@ namespace Listenarr.Tests.Features.Api
         [Fact]
         public async Task Login_SetsSessionCookie_Without_ReturningReadableSessionSecrets()
         {
-            using var factory = CreateAuthEnabledFactory();
-            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
             var username = $"cookie-user-{Guid.NewGuid():N}";
-            const string password = "TestPassword!123";
+            const string sessionToken = "server-session-cookie-value";
 
-            using (var scope = factory.Services.CreateScope())
-            {
-                var userService = scope.ServiceProvider.GetRequiredService<IUserService>();
-                await userService.CreateUserAsync(username, password, isAdmin: true);
-            }
+            var userService = new Mock<IUserService>(MockBehavior.Strict);
+            userService
+                .Setup(x => x.ValidateCredentialsAsync(username, It.IsAny<string>()))
+                .ReturnsAsync(true);
+            userService
+                .Setup(x => x.GetByUsernameAsync(username))
+                .ReturnsAsync(new User { Username = username, IsAdmin = true });
 
-            using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
-            {
-                AllowAutoRedirect = false,
-                HandleCookies = false,
-            });
+            var rateLimiter = new Mock<ILoginRateLimiter>(MockBehavior.Strict);
+            rateLimiter.Setup(x => x.IsBlocked(It.IsAny<string>())).Returns(false);
+            rateLimiter.Setup(x => x.RecordSuccess(It.IsAny<string>()));
 
-            using var request = new HttpRequestMessage(HttpMethod.Post, $"{apiBase}/account/login")
+            var sessionService = new Mock<ISessionService>(MockBehavior.Strict);
+            sessionService
+                .Setup(x => x.CreateSessionAsync(username, true, false))
+                .ReturnsAsync(sessionToken);
+
+            var controller = new AccountController(
+                Mock.Of<IStartupConfigService>(),
+                NullLogger<AccountController>.Instance,
+                userService.Object,
+                rateLimiter.Object,
+                sessionService.Object)
             {
-                Content = new StringContent(
-                    $$"""{"username":"{{username}}","password":"{{password}}","rememberMe":false}""",
-                    Encoding.UTF8,
-                    "application/json")
+                ControllerContext = new ControllerContext { HttpContext = new DefaultHttpContext() }
             };
 
-            var resp = await client.SendAsync(request);
+            var result = await controller.Login(new LoginRequest
+            {
+                Username = username,
+                Password = "TestPassword!123",
+                RememberMe = false,
+            });
 
-            Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
-            Assert.Contains(resp.Headers.TryGetValues("Set-Cookie", out var setCookieValues) ? setCookieValues : Array.Empty<string>(),
+            var ok = Assert.IsType<OkObjectResult>(result);
+            Assert.Contains(controller.Response.Headers.SetCookie.ToArray(),
                 header => header.Contains("listenarr_session=", StringComparison.Ordinal));
 
-            var payload = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
-            Assert.Equal("session", payload.RootElement.GetProperty("authType").GetString());
-            Assert.False(payload.RootElement.TryGetProperty("sessionToken", out _));
-            Assert.False(payload.RootElement.TryGetProperty("imageToken", out _));
-            Assert.False(payload.RootElement.TryGetProperty("imageTokenExpiresAt", out _));
+            var payload = JsonSerializer.SerializeToElement(ok.Value);
+            Assert.Equal("session", payload.GetProperty("authType").GetString());
+            Assert.False(payload.TryGetProperty("sessionToken", out _));
+            Assert.False(payload.TryGetProperty("imageToken", out _));
+            Assert.False(payload.TryGetProperty("imageTokenExpiresAt", out _));
+
+            userService.VerifyAll();
+            rateLimiter.VerifyAll();
+            sessionService.VerifyAll();
         }
 
         [Fact]
@@ -415,7 +433,7 @@ namespace Listenarr.Tests.Features.Api
         {
             const string apiKey = "server-api-key";
             using var factory = CreateAuthEnabledFactory("true", apiKey);
-            var apiBase = TestHelpers.ResolveApiBasePath(factory.Services);
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
 
             using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
             {
@@ -435,7 +453,7 @@ namespace Listenarr.Tests.Features.Api
         {
             const string apiKey = "server-api-key";
             using var factory = CreateAuthEnabledFactory("true", apiKey);
-            var apiBase = TestHelpers.ResolveApiBasePath(factory.Services);
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
 
             using var client = factory.CreateClient(new WebApplicationFactoryClientOptions
             {
@@ -455,7 +473,7 @@ namespace Listenarr.Tests.Features.Api
         {
             const string apiKey = "server-api-key";
             using var factory = CreateAuthEnabledFactory("true", apiKey);
-            var apiBase = TestHelpers.ResolveApiBasePath(factory.Services);
+            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
 
             string sessionToken;
             using (var scope = factory.Services.CreateScope())
@@ -488,7 +506,6 @@ namespace Listenarr.Tests.Features.Api
         {
             const string apiKey = "prowlarr-api-key";
             using var factory = CreateAuthEnabledFactory("true", apiKey);
-            var apiBase = TestUtils.ResolveApiBasePath(factory.Services);
 
             string sessionToken;
             using (var scope = factory.Services.CreateScope())

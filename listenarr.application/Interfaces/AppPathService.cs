@@ -69,6 +69,11 @@ namespace Listenarr.Application.Interfaces
                     continue;
                 }
 
+                if (Path.IsPathRooted(segment))
+                {
+                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
+                }
+
                 current = Path.Combine(current, segment);
             }
 

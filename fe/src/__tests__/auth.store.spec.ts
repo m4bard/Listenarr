@@ -53,6 +53,7 @@ describe('auth store cross-tab sync', () => {
   beforeEach(async () => {
     setActivePinia(createPinia())
     getCurrentUserMock.mockReset()
+    getCurrentUserMock.mockResolvedValue({ authenticated: false })
     loginMock.mockReset()
     logoutMock.mockReset()
     getStartupConfigCachedMock.mockReset()
@@ -64,6 +65,7 @@ describe('auth store cross-tab sync', () => {
     sessionStorage.removeItem('listenarr_session_token')
     window.history.replaceState({}, '', '/login')
     await router.replace('/login')
+    getCurrentUserMock.mockClear()
   })
 
   afterEach(async () => {
@@ -97,11 +99,14 @@ describe('auth store cross-tab sync', () => {
   })
 
   it('does not redirect on initial empty auth marker state', async () => {
-    useAuthStore()
+    setActivePinia(createPinia())
+    const store = useAuthStore()
 
     await Promise.resolve()
 
     expect(router.currentRoute.value.name).toBe('login')
+    expect(store.loaded).toBe(false)
+    expect(getCurrentUserMock).not.toHaveBeenCalled()
   })
 
   it('redirects to login when another tab broadcasts a logout event while auth is required', async () => {
