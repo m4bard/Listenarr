@@ -95,7 +95,13 @@ public static class SecurityRequestUtils
     {
         try
         {
-            var startupConfigService = context?.RequestServices.GetService<IStartupConfigService>();
+            var requestServices = context?.RequestServices;
+            if (requestServices == null)
+            {
+                return false;
+            }
+
+            var startupConfigService = requestServices.GetService<IStartupConfigService>();
             var rawValue = startupConfigService?.GetConfig()?.AuthenticationRequired;
             if (string.IsNullOrWhiteSpace(rawValue))
             {
