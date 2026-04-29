@@ -46,7 +46,7 @@
   --brand-600: #1976d2;
   --brand-700: #0d47a1;
   --brand-focus: var(--brand-600);
-  --brand-rgb: 33,150,243; /* for rgba usages */
+  --brand-rgb: 33, 150, 243; /* for rgba usages */
 
   /* Status Colors */
   --success-500: #51cf66;
@@ -170,8 +170,8 @@
   --md-sys-color-on-surface: var(--text-color);
   --md-sys-color-surface-variant: #e7e0ec;
   --md-sys-color-on-surface-variant: #191b1e;
-  --md-sys-color-outline: rgba(0,0,0,0.12);
-  --md-sys-color-shadow: rgba(0,0,0,0.4);
+  --md-sys-color-outline: rgba(0, 0, 0, 0.12);
+  --md-sys-color-shadow: rgba(0, 0, 0, 0.4);
   --md-sys-color-inverse-surface: #2f3033;
   --md-sys-color-inverse-on-surface: #f6f7f8;
   --md-sys-color-inverse-primary: #9ccaff;
@@ -238,8 +238,8 @@
     --md-sys-color-on-surface: var(--text-color);
     --md-sys-color-surface-variant: #2b2a31;
     --md-sys-color-on-surface-variant: #d6d4db;
-    --md-sys-color-outline: rgba(255,255,255,0.08);
-    --md-sys-color-shadow: rgba(0,0,0,0.8);
+    --md-sys-color-outline: rgba(255, 255, 255, 0.08);
+    --md-sys-color-shadow: rgba(0, 0, 0, 0.8);
     --md-sys-color-inverse-surface: #f6f7f8;
     --md-sys-color-inverse-on-surface: #141414;
     --md-sys-color-inverse-primary: #175ecb;

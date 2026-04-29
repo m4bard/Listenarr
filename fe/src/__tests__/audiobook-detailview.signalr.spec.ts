@@ -41,10 +41,12 @@ describe('AudiobookDetailView SignalR integration', () => {
   it('updates displayed base path and files when an AudiobookUpdate arrives', async () => {
     // Capture registered callbacks
     const callbacks: Array<(a: Audiobook) => void> = []
-    const spy = vi.spyOn(signalRService, 'onAudiobookUpdate').mockImplementation((cb?: (...args: unknown[]) => void) => {
-      if (cb) callbacks.push(cb as (a: Audiobook) => void)
-      return () => {}
-    })
+    const spy = vi
+      .spyOn(signalRService, 'onAudiobookUpdate')
+      .mockImplementation((cb?: (...args: unknown[]) => void) => {
+        if (cb) callbacks.push(cb as (a: Audiobook) => void)
+        return () => {}
+      })
 
     // Ensure other signalR callbacks used by the component exist to avoid runtime errors
     ;(signalRService as unknown).onScanJobUpdate = (cb?: (...args: unknown[]) => void) => {

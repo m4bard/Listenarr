@@ -18,7 +18,11 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
-      <ModalHeader :title="`Manual Search - ${audiobook?.title || ''}`" :icon="PhMagnifyingGlass" @close="close" />
+      <ModalHeader
+        :title="`Manual Search - ${audiobook?.title || ''}`"
+        :icon="PhMagnifyingGlass"
+        @close="close"
+      />
     </template>
 
     <template #default>
@@ -160,16 +164,16 @@
                   <td class="col-age">{{ formatAge(result.publishedDate) }}</td>
                   <td class="col-title">
                     <div class="title-cell">
-                        <a
-                          v-if="result.id"
-                          :href="result.id"
-                          class="title-text"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        >
-                          {{ safeText(result.title) }}
-                        </a>
-                        <span v-else class="title-text">{{ safeText(result.title) }}</span>
+                      <a
+                        v-if="result.id"
+                        :href="result.id"
+                        class="title-text"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {{ safeText(result.title) }}
+                      </a>
+                      <span v-else class="title-text">{{ safeText(result.title) }}</span>
                     </div>
                   </td>
                   <td class="col-indexer">
@@ -210,7 +214,9 @@
                   <td v-if="anyHasQuality" class="col-quality">
                     <span v-if="result.quality" class="quality-badge">
                       {{ result.quality }}
-                      <small v-if="shouldShowFormatFallback(result)" class="format-fallback"> · {{ result.format }}</small>
+                      <small v-if="shouldShowFormatFallback(result)" class="format-fallback">
+                        · {{ result.format }}</small
+                      >
                     </span>
                     <span v-else-if="result.format" class="quality-badge format-only">
                       {{ result.format }}
@@ -458,7 +464,7 @@ async function search() {
     const searchPromises = enabledIndexers.map(async (indexer) => {
       try {
         // Map MyAnonamouse indexer options (if present on the indexer) to searchByApi opts so backend can apply them
-         
+
         let opts: Parameters<typeof apiService.searchByApi>[3] = undefined
         if (indexer.implementation === 'MyAnonamouse') {
           try {
@@ -485,7 +491,6 @@ async function search() {
           }
         }
 
-         
         const indexerResultsRaw: unknown[] = await apiService.searchByApi(
           indexer.id.toString(),
           query,
@@ -504,10 +509,30 @@ async function search() {
             id: String(dto.guid ?? dto.infoUrl ?? dto.fileName ?? Math.random()),
             title: String(dto.title ?? ''),
             size: typeof dto.size === 'string' ? Number(dto.size) || 0 : Number(dto.size ?? 0),
-            seeders: typeof dto.seeders === 'string' ? Number(dto.seeders) || 0 : typeof dto.seeders === 'number' ? dto.seeders : undefined,
-            leechers: typeof dto.leechers === 'string' ? Number(dto.leechers) || 0 : typeof dto.leechers === 'number' ? dto.leechers : undefined,
-            grabs: typeof dto.grabs === 'string' ? Number(dto.grabs) || 0 : typeof dto.grabs === 'number' ? dto.grabs : 0,
-            files: typeof dto.files === 'string' ? Number(dto.files) || 0 : typeof dto.files === 'number' ? dto.files : 0,
+            seeders:
+              typeof dto.seeders === 'string'
+                ? Number(dto.seeders) || 0
+                : typeof dto.seeders === 'number'
+                  ? dto.seeders
+                  : undefined,
+            leechers:
+              typeof dto.leechers === 'string'
+                ? Number(dto.leechers) || 0
+                : typeof dto.leechers === 'number'
+                  ? dto.leechers
+                  : undefined,
+            grabs:
+              typeof dto.grabs === 'string'
+                ? Number(dto.grabs) || 0
+                : typeof dto.grabs === 'number'
+                  ? dto.grabs
+                  : 0,
+            files:
+              typeof dto.files === 'string'
+                ? Number(dto.files) || 0
+                : typeof dto.files === 'number'
+                  ? dto.files
+                  : 0,
             magnetLink: '',
             torrentUrl: String(dto.downloadUrl ?? ''),
             nzbUrl: '',
@@ -520,7 +545,9 @@ async function search() {
             publisher: undefined,
             subtitle: undefined,
             publishYear: undefined,
-            language: normalizeLanguage(String(dto.language ?? dto.lang_code ?? dto.languageCode ?? '')),
+            language: normalizeLanguage(
+              String(dto.language ?? dto.lang_code ?? dto.languageCode ?? ''),
+            ),
             runtime: undefined,
             narrator: undefined,
             imageUrl: undefined,
@@ -536,7 +563,9 @@ async function search() {
             category: '',
             source: String(dto.indexer ?? indexer.name),
             sourceLink: String(dto.infoUrl ?? dto.guid ?? ''),
-            publishedDate: String(dto.PublishDate ?? dto.publishDate ?? dto.added ?? dto.publish_date ?? ''),
+            publishedDate: String(
+              dto.PublishDate ?? dto.publishDate ?? dto.added ?? dto.publish_date ?? '',
+            ),
             // Use filetype when available (MP3/M4B/etc), fallback to protocol (torrent/nzb)
             format: String(dto.filetype ?? dto.protocol ?? ''),
             score: 0,
@@ -1088,7 +1117,9 @@ function getScoreClass(score: number): string {
 
 .results-table tbody tr {
   border-bottom: 1px solid #2a2a2a;
-  transition: background-color 0.2s, box-shadow 0.2s;
+  transition:
+    background-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .results-table tbody tr:hover {

@@ -70,15 +70,27 @@
             <PhCaretDown />
           </button>
           <div v-if="showGroupMenu" class="group-menu">
-            <button class="menu-item" :class="{ active: groupBy === 'books' }" @click="setGroupBy('books')">
+            <button
+              class="menu-item"
+              :class="{ active: groupBy === 'books' }"
+              @click="setGroupBy('books')"
+            >
               <PhBook />
               Books
             </button>
-            <button class="menu-item" :class="{ active: groupBy === 'authors' }" @click="setGroupBy('authors')">
+            <button
+              class="menu-item"
+              :class="{ active: groupBy === 'authors' }"
+              @click="setGroupBy('authors')"
+            >
               <PhUser />
               Authors
             </button>
-            <button class="menu-item" :class="{ active: groupBy === 'series' }" @click="setGroupBy('series')">
+            <button
+              class="menu-item"
+              :class="{ active: groupBy === 'series' }"
+              @click="setGroupBy('series')"
+            >
               <PhBooks />
               Series
             </button>
@@ -159,7 +171,11 @@
     <EmptyState
       v-else-if="rawAudiobooksLength === 0"
       :title="!hasRootFolderConfigured ? 'Root Folder Not Configured' : 'No Audiobooks Yet'"
-      :message="!hasRootFolderConfigured ? 'Please configure a root folder for your audiobook library in settings before adding audiobooks.' : 'Your library is empty. Add audiobooks to get started!'"
+      :message="
+        !hasRootFolderConfigured
+          ? 'Please configure a root folder for your audiobook library in settings before adding audiobooks.'
+          : 'Your library is empty. Add audiobooks to get started!'
+      "
     >
       <template #icon>
         <PhBookOpen :size="48" />
@@ -199,7 +215,13 @@
         <div
           v-for="collection in groupedCollections || []"
           :key="collection.name"
-          :class="['collection-card', { 'author-collection': groupBy === 'authors', 'series-collection': groupBy === 'series' }]"
+          :class="[
+            'collection-card',
+            {
+              'author-collection': groupBy === 'authors',
+              'series-collection': groupBy === 'series',
+            },
+          ]"
           @click="navigateToCollection(collection)"
         >
           <div class="collection-cover">
@@ -236,9 +258,9 @@
                   <PhUser />
                 </div>
 
-                    <div class="status-overlay hover-overlay">
-                      <div class="audiobook-title">{{ collection.name }}</div>
-                    </div>
+                <div class="status-overlay hover-overlay">
+                  <div class="audiobook-title">{{ collection.name }}</div>
+                </div>
 
                 <div class="action-buttons">
                   <button
@@ -367,11 +389,7 @@
           class="audiobooks-grid"
           :style="{ transform: `translateY(${topPadding}px)` }"
         >
-          <div
-            v-for="audiobook in visibleAudiobooks"
-            :key="audiobook.id"
-            class="audiobook-wrapper"
-          >
+          <div v-for="audiobook in visibleAudiobooks" :key="audiobook.id" class="audiobook-wrapper">
             <div
               tabindex="0"
               @keydown.enter="navigateToDetail(audiobook.id)"
@@ -671,7 +689,11 @@
       :languages="availableLanguages"
       :years="availableYears"
       @save="handleSaveCustomFilterFromModal"
-      @close="() => { showCustomFilterModal = false }"
+      @close="
+        () => {
+          showCustomFilterModal = false
+        }
+      "
     />
 
     <DeleteConfirmationModal
@@ -688,8 +710,8 @@
           >?
         </p>
         <p class="warning-text">
-          This action cannot be undone. The audiobook data and cached images will be
-          permanently removed.
+          This action cannot be undone. The audiobook data and cached images will be permanently
+          removed.
         </p>
         <div class="delete-options">
           <div class="checkbox-row">
@@ -701,8 +723,13 @@
                 aria-label="Remove all files in the audiobook folder from disk"
               />
               <div class="checkbox-content">
-                <span class="checkbox-title">Remove all files in the audiobook folder from disk</span>
-                <small>Deletes every file inside the audiobook folder when it can be identified safely. Leave the folder itself unless you also choose the option below.</small>
+                <span class="checkbox-title"
+                  >Remove all files in the audiobook folder from disk</span
+                >
+                <small
+                  >Deletes every file inside the audiobook folder when it can be identified safely.
+                  Leave the folder itself unless you also choose the option below.</small
+                >
               </div>
             </label>
           </div>
@@ -717,7 +744,10 @@
               />
               <div class="checkbox-content">
                 <span class="checkbox-title">Also remove the audiobook folder</span>
-                <small>Deletes the audiobook folder itself when it is safe to do so. This also removes everything inside it.</small>
+                <small
+                  >Deletes the audiobook folder itself when it is safe to do so. This also removes
+                  everything inside it.</small
+                >
               </div>
             </label>
           </div>
@@ -1148,7 +1178,9 @@ function isPlaceholderCoverUrl(url: string | undefined): boolean {
   )
 }
 
-function getBookImageUrl(book: Pick<Audiobook, 'imageUrl' | 'asin'> | null | undefined): string | undefined {
+function getBookImageUrl(
+  book: Pick<Audiobook, 'imageUrl' | 'asin'> | null | undefined,
+): string | undefined {
   if (!book) return undefined
   const raw = (book.imageUrl || '').trim()
   if (raw && !isPlaceholderCoverUrl(raw)) return raw
@@ -1475,7 +1507,6 @@ const sortKeyProxy = computed<string>({
 
 // Raw library length (unfiltered) so we can show appropriate empty-state vs no-results
 const rawAudiobooksLength = computed(() => (libraryStore.audiobooks || []).length)
-
 
 function clearFilters() {
   // Reset toolbar sort for current group
@@ -1883,16 +1914,18 @@ function getQualityProfileName(profileId?: number): string | null {
   return profile?.name ?? null
 }
 
-function statusText(
-  status: AudiobookStatus,
-): string {
+function statusText(status: AudiobookStatus): string {
   return formatAudiobookStatus(status)
 }
 
 function openStatusDetails(audiobook: Audiobook) {
   try {
     // Navigate to audiobook detail page and open the history tab (legacy "downloads" intent)
-    void router.push({ path: `/audiobooks/${audiobook.id}`, query: { tab: 'history' }, hash: '#history' })
+    void router.push({
+      path: `/audiobooks/${audiobook.id}`,
+      query: { tab: 'history' },
+      hash: '#history',
+    })
   } catch (err) {
     errorTracking.captureException(err as Error, {
       component: 'AudiobooksView',
@@ -1985,7 +2018,13 @@ async function waitForImagesToLoad(timeoutMs = 5000) {
   const imgs: HTMLImageElement[] = []
   if (groupBy.value === 'books') {
     if (scrollContainer.value) {
-      imgs.push(...Array.from(scrollContainer.value.querySelectorAll<HTMLImageElement>('img.audiobook-poster, img.series-cover-image')))
+      imgs.push(
+        ...Array.from(
+          scrollContainer.value.querySelectorAll<HTMLImageElement>(
+            'img.audiobook-poster, img.series-cover-image',
+          ),
+        ),
+      )
     }
   } else {
     const grouped = document.querySelector('.grouped-grid')
@@ -2280,9 +2319,7 @@ defineExpose({
   --audiobooks-toolbar-offset: var(--audiobooks-toolbar-height);
   background-color: #1a1a1a;
   margin-top: var(--audiobooks-toolbar-offset); /* Space for fixed local toolbar */
-  min-height: calc(
-    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset)
-  );
+  min-height: calc(100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset));
   --legend-height: 44px;
   position: relative;
 }
@@ -2859,7 +2896,8 @@ defineExpose({
 
 .audiobooks-scroll-container {
   height: calc(
-    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset) - var(--legend-height) - 1px
+    100dvh - var(--app-top-offset, 60px) - var(--audiobooks-toolbar-offset) - var(--legend-height) -
+      1px
   );
   overflow-y: auto;
   overflow-x: hidden;

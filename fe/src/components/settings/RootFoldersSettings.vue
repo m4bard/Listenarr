@@ -99,12 +99,7 @@
       </div>
     </div>
 
-    <RootFolderFormModal
-      v-if="showForm"
-      :root="editingRoot"
-      @close="close"
-      @saved="onSaved"
-    />
+    <RootFolderFormModal v-if="showForm" :root="editingRoot" @close="close" @saved="onSaved" />
 
     <UnmatchedFilesModal
       :is-open="showUnmatchedModal"
@@ -113,11 +108,17 @@
     />
 
     <!-- Delete Root Folder Confirmation (shared) -->
-    <DeleteConfirmationModal :visible="!!folderToDelete" title="Delete Root Folder" @close="folderToDelete = null" @confirm="executeDeleteFolder">
+    <DeleteConfirmationModal
+      :visible="!!folderToDelete"
+      title="Delete Root Folder"
+      @close="folderToDelete = null"
+      @confirm="executeDeleteFolder"
+    >
       <template v-slot>
         <p>
           Are you sure you want to delete the root folder
-          <strong>{{ folderToDelete?.name }}</strong>?
+          <strong>{{ folderToDelete?.name }}</strong
+          >?
         </p>
         <p>This will only remove the reference and will not delete files from disk.</p>
       </template>
@@ -418,16 +419,26 @@ defineExpose({
 }
 
 /* Override global action ordering for folder cards */
-.folder-actions .action-scan { order: 1 }
-.folder-actions .action-secondary { order: 2 }
-.folder-actions .action-edit { order: 3 }
-.folder-actions .action-delete { order: 4 }
+.folder-actions .action-scan {
+  order: 1;
+}
+.folder-actions .action-secondary {
+  order: 2;
+}
+.folder-actions .action-edit {
+  order: 3;
+}
+.folder-actions .action-delete {
+  order: 4;
+}
 
 /* Use shared .icon-button in src/assets/buttons.css to avoid duplication */
 
 /* Button visuals are centralized in `src/assets/buttons.css`. Use `.btn` and `.btn-primary`.
    If a component needs a small override, use a component-scoped helper class like `.folder-btn`. */
-.folder-btn { padding: 0.5rem 1rem; } 
+.folder-btn {
+  padding: 0.5rem 1rem;
+}
 
 /* Modal styles are centralized in `modals.css` */
 
@@ -443,7 +454,11 @@ defineExpose({
 }
 
 /* modal-actions and modal delete-button styles are centralized in src/assets/modals.css */
-.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
+.modal-footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
 
 /* If this modal needs special sizing for delete buttons in future, add a small override here. */
 </style>

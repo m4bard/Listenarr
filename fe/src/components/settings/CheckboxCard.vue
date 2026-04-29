@@ -38,9 +38,25 @@ defineProps<{ modelValue?: boolean; title: string; description?: string }>()
 <style scoped>
 /* Reuse .checkbox-group styles from global.css; no extra styles needed here */
 /* Layout override so icon slot and text appear on one row within this card */
-.input-checkbox { align-items: center; }
-.input-checkbox .checkbox-label { align-items: center; }
-.input-checkbox .checkbox-label > span { display: flex; flex-direction: row; align-items: center; gap: 0.6rem; }
-.input-checkbox .checkbox-label .checkbox-text { display: flex; flex-direction: row; align-items: center; gap: 0.5rem; }
-.input-checkbox .checkbox-label .checkbox-text small { margin-left: 0.25rem; }
+.input-checkbox {
+  align-items: center;
+}
+.input-checkbox .checkbox-label {
+  align-items: center;
+}
+.input-checkbox .checkbox-label > span {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.6rem;
+}
+.input-checkbox .checkbox-label .checkbox-text {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 0.5rem;
+}
+.input-checkbox .checkbox-label .checkbox-text small {
+  margin-left: 0.25rem;
+}
 </style>

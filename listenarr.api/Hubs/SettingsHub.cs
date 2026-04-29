@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  *
@@ -33,7 +33,7 @@ namespace Listenarr.Api.Hubs
             _logger = logger;
         }
 
-            // Track connected clients for debugging/health checks
+        // Track connected clients for debugging/health checks
         private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _connectedClients = new();
 
         public static IReadOnlyCollection<string> ConnectedClientIds => _connectedClients.Keys.ToArray();

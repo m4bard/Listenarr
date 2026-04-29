@@ -57,7 +57,8 @@ namespace Listenarr.Api.Middleware
                             _logger.LogDebug("[SessionAuth] Session token invalid or expired for {Path} ({TokenHash})", path, tokenHash);
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogError(ex, "[SessionAuth] Error during session authentication for {Path}", path);
                     }
                 }
@@ -105,9 +106,10 @@ namespace Listenarr.Api.Middleware
                     }
                 }
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+            {
                 // ignore any query-parsing issues and fall through to null
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             // Fall back to session cookie for browser-initiated resource requests

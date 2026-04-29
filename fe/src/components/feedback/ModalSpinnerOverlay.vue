@@ -26,20 +26,33 @@
 
 <script setup lang="ts">
 import { PhSpinner } from '@phosphor-icons/vue'
-defineProps({ active: { type: Boolean, default: false }, message: { type: String, required: false } })
+defineProps({
+  active: { type: Boolean, default: false },
+  message: { type: String, required: false },
+})
 </script>
 
 <style scoped>
 .modal-spinner-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(0,0,0,0.55);
+  background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 30;
 }
-.spinner-wrap { display:flex; flex-direction:column; align-items:center; gap:0.75rem; }
-.ph-spin.big { width: 48px; height: 48px; }
-.spinner-message { color:#fff; }
+.spinner-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+.ph-spin.big {
+  width: 48px;
+  height: 48px;
+}
+.spinner-message {
+  color: #fff;
+}
 </style>

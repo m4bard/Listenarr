@@ -59,7 +59,8 @@ namespace Listenarr.Api.Services
                     // Use Regex.Replace with escaped secret for robust, case-insensitive replacement
                     redacted = Regex.Replace(redacted, Regex.Escape(s), "<redacted>", RegexOptions.IgnoreCase);
                 }
-                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                {
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
             }
@@ -99,7 +100,8 @@ namespace Listenarr.Api.Services
                     var v = Environment.GetEnvironmentVariable(k);
                     if (!string.IsNullOrEmpty(v)) vals.Add(v!);
                 }
-                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+                {
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
             }
@@ -120,7 +122,8 @@ namespace Listenarr.Api.Services
                 var portSuffix = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
                 return $"{uri.Scheme}://{uri.Host}{portSuffix}{uri.AbsolutePath}";
             }
-            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+            {
                 // If URL parsing fails, return sanitized placeholder
                 return "[invalid-url]";
             }
@@ -158,7 +161,8 @@ namespace Listenarr.Api.Services
             {
                 return System.IO.Path.GetFileName(path);
             }
-            catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
+            catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
+            {
                 return "[invalid-path]";
             }
         }

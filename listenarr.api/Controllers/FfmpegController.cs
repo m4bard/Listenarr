@@ -45,9 +45,10 @@ namespace Listenarr.Api.Controllers
             var gate = SensitiveEndpointAccessGuard.RequireLocalOrAdmin(HttpContext, _logger, "ffmpeg/info");
             if (gate != null) return gate;
 
-            return Ok(new {
-                ffprobePath = await _ffmpegService.GetFfprobePathAsync(), 
-                licenseNotice = await _ffmpegService.GetLicenseAsync() 
+            return Ok(new
+            {
+                ffprobePath = await _ffmpegService.GetFfprobePathAsync(),
+                licenseNotice = await _ffmpegService.GetLicenseAsync()
             });
         }
 
@@ -92,22 +93,28 @@ namespace Listenarr.Api.Controllers
             {
                 return NotFound(new { message = "File not found" });
             }
-            
+
             string? ffprobePath = await _ffmpegService.GetFfprobePathAsync();
             if (ffprobePath == null)
             {
                 _logger.LogWarning("IProcessRunner is not available; cannot run ffprobe for {File}", LogRedaction.SanitizeFilePath(filePath));
                 return StatusCode(500, new { message = "IProcessRunner service is not available to run external processes" });
             }
-            
+
             try
             {
                 object result = await _ffmpegService.RunFfprobeAsync(filePath);
                 return Ok(new { ffprobePath, result });
             }
-            catch(FfmpegException ex)
+            catch (FfmpegException ex)
             {
-                return StatusCode(500, new { message = ex.ToString(), error = ex });
+                _logger.LogWarning(ex, "ffprobe execution failed for {File}", LogRedaction.SanitizeFilePath(filePath));
+                return StatusCode(500, new { message = "ffprobe execution failed", error = ex.Message });
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
+                _logger.LogError(ex, "Error running ffprobe for {File}", LogRedaction.SanitizeFilePath(filePath));
+                return StatusCode(500, new { message = "Error running ffprobe", error = ex.Message });
             }
         }
     }

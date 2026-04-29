@@ -36,7 +36,7 @@ namespace Listenarr.Api.Services
         private readonly IServiceScopeFactory _serviceScopeFactory;
         private readonly ILogger<CompletedDownloadHandlingService> _logger;
         private TimeSpan _pollingInterval = TimeSpan.FromSeconds(10);
-        
+
         // Track downloads that are in the completion pipeline to avoid duplicate processing
         private readonly Dictionary<string, DateTime> _processingDownloads = new();
         private readonly Lock _processingLock = new();
@@ -52,7 +52,7 @@ namespace Listenarr.Api.Services
         public override async Task StartAsync(CancellationToken cancellationToken)
         {
             _logger.LogInformation("CompletedDownloadHandlingService starting");
-            
+
             // Load polling interval from settings
             try
             {
@@ -72,7 +72,8 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogWarning(ex, "CompletedDownloadHandlingService settings load canceled/timed out during startup; using default interval");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to load polling interval from settings, using default");
             }
 
@@ -103,7 +104,8 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogWarning(ex, "CompletedDownloadHandlingService cycle canceled/timed out; continuing");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogError(ex, "Error in CompletedDownloadHandlingService");
                 }
 
@@ -175,101 +177,103 @@ namespace Listenarr.Api.Services
 
                 if (completedDownloads.Count > 0)
                 {
-                _logger.LogInformation("CompletedDownloadHandlingService found {Count} completed downloads to process", completedDownloads.Count);
+                    _logger.LogInformation("CompletedDownloadHandlingService found {Count} completed downloads to process", completedDownloads.Count);
 
-                // Load configuration for stability window
-                var settings = await configService.GetApplicationSettingsAsync();
-                var stabilitySeconds = settings?.DownloadCompletionStabilitySeconds ?? 30;
-                var stabilityWindow = TimeSpan.FromSeconds(stabilitySeconds);
+                    // Load configuration for stability window
+                    var settings = await configService.GetApplicationSettingsAsync();
+                    var stabilitySeconds = settings?.DownloadCompletionStabilitySeconds ?? 30;
+                    var stabilityWindow = TimeSpan.FromSeconds(stabilitySeconds);
 
-                // Get the queue to check client status
-                var queue = await downloadService.GetQueueAsync();
-                var queueById = queue.ToDictionary(q => q.Id, q => q);
+                    // Get the queue to check client status
+                    var queue = await downloadService.GetQueueAsync();
+                    var queueById = queue.ToDictionary(q => q.Id, q => q);
 
-                foreach (var download in completedDownloads)
-                {
-                    try
+                    foreach (var download in completedDownloads)
                     {
-                        // Skip if already being processed
-                        lock (_processingLock)
-                        {
-                            if (_processingDownloads.TryGetValue(download.Id, out var firstSeen))
-                            {
-                                if (DateTime.UtcNow - firstSeen > TimeSpan.FromMinutes(5))
-                                {
-                                    // Been processing for too long, reset and retry
-                                    _logger.LogWarning("Download {DownloadId} has been processing for over 5 minutes, resetting", download.Id);
-                                    _processingDownloads.Remove(download.Id);
-                                }
-                                else
-                                {
-                                    _logger.LogDebug("Skipping download {DownloadId} - already being processed", download.Id);
-                                    continue;
-                                }
-                            }
-
-                            // Mark as processing
-                            _processingDownloads[download.Id] = DateTime.UtcNow;
-                        }
-
-                        _logger.LogInformation("Processing completed download {DownloadId}: {Title}", download.Id, download.Title);
-
-                        // Find the queue item for this download
-                        if (!queueById.TryGetValue(download.Id, out var queueItem))
-                        {
-                            _logger.LogWarning("Completed download {DownloadId} not found in queue, may have been removed from client", download.Id);
-                            lock (_processingLock)
-                            {
-                                _processingDownloads.Remove(download.Id);
-                            }
-                            continue;
-                        }
-
-                        // Check stability window - ensure download has been complete for minimum time
-                        // If CompletionTime is set, use it; otherwise use queue item's AddedAt as conservative estimate
-                        // (means download must exist in queue for stabilityWindow duration before processing)
-                        var completionTimeToCheck = queueItem.CompletionTime ?? queueItem.AddedAt;
-                        var timeSinceCompletion = DateTime.UtcNow - completionTimeToCheck;
-
-                        if (timeSinceCompletion < stabilityWindow)
-                        {
-                            _logger.LogDebug("Download {DownloadId} in stability window ({Elapsed:F1}s / {Stability}s remaining)",
-                                download.Id, timeSinceCompletion.TotalSeconds, stabilityWindow.TotalSeconds);
-                            lock (_processingLock)
-                            {
-                                _processingDownloads.Remove(download.Id);
-                            }
-                            continue;
-                        }
-
-                        _logger.LogInformation("Download {DownloadId} passed stability window ({Elapsed:F1}s), starting import process",
-                            download.Id, timeSinceCompletion.TotalSeconds);
-
-                        // Trigger the import pipeline via DownloadService
                         try
                         {
-                            var contentPath = queueItem.ContentPath ?? queueItem.LocalPath ?? queueItem.RemotePath ?? "";
-                            await downloadService.ProcessCompletedDownloadAsync(download.Id, contentPath);
-                            _logger.LogInformation("Successfully triggered import for completed download {DownloadId}", download.Id);
-                        }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                            _logger.LogError(ex, "Failed to process completed download {DownloadId}", download.Id);
-                        }
+                            // Skip if already being processed
+                            lock (_processingLock)
+                            {
+                                if (_processingDownloads.TryGetValue(download.Id, out var firstSeen))
+                                {
+                                    if (DateTime.UtcNow - firstSeen > TimeSpan.FromMinutes(5))
+                                    {
+                                        // Been processing for too long, reset and retry
+                                        _logger.LogWarning("Download {DownloadId} has been processing for over 5 minutes, resetting", download.Id);
+                                        _processingDownloads.Remove(download.Id);
+                                    }
+                                    else
+                                    {
+                                        _logger.LogDebug("Skipping download {DownloadId} - already being processed", download.Id);
+                                        continue;
+                                    }
+                                }
 
-                        lock (_processingLock)
-                        {
-                            _processingDownloads.Remove(download.Id);
+                                // Mark as processing
+                                _processingDownloads[download.Id] = DateTime.UtcNow;
+                            }
+
+                            _logger.LogInformation("Processing completed download {DownloadId}: {Title}", download.Id, download.Title);
+
+                            // Find the queue item for this download
+                            if (!queueById.TryGetValue(download.Id, out var queueItem))
+                            {
+                                _logger.LogWarning("Completed download {DownloadId} not found in queue, may have been removed from client", download.Id);
+                                lock (_processingLock)
+                                {
+                                    _processingDownloads.Remove(download.Id);
+                                }
+                                continue;
+                            }
+
+                            // Check stability window - ensure download has been complete for minimum time
+                            // If CompletionTime is set, use it; otherwise use queue item's AddedAt as conservative estimate
+                            // (means download must exist in queue for stabilityWindow duration before processing)
+                            var completionTimeToCheck = queueItem.CompletionTime ?? queueItem.AddedAt;
+                            var timeSinceCompletion = DateTime.UtcNow - completionTimeToCheck;
+
+                            if (timeSinceCompletion < stabilityWindow)
+                            {
+                                _logger.LogDebug("Download {DownloadId} in stability window ({Elapsed:F1}s / {Stability}s remaining)",
+                                    download.Id, timeSinceCompletion.TotalSeconds, stabilityWindow.TotalSeconds);
+                                lock (_processingLock)
+                                {
+                                    _processingDownloads.Remove(download.Id);
+                                }
+                                continue;
+                            }
+
+                            _logger.LogInformation("Download {DownloadId} passed stability window ({Elapsed:F1}s), starting import process",
+                                download.Id, timeSinceCompletion.TotalSeconds);
+
+                            // Trigger the import pipeline via DownloadService
+                            try
+                            {
+                                var contentPath = queueItem.ContentPath ?? queueItem.LocalPath ?? queueItem.RemotePath ?? "";
+                                await downloadService.ProcessCompletedDownloadAsync(download.Id, contentPath);
+                                _logger.LogInformation("Successfully triggered import for completed download {DownloadId}", download.Id);
+                            }
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                            {
+                                _logger.LogError(ex, "Failed to process completed download {DownloadId}", download.Id);
+                            }
+
+                            lock (_processingLock)
+                            {
+                                _processingDownloads.Remove(download.Id);
+                            }
                         }
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogError(ex, "Error processing completed download {DownloadId}", download.Id);
-                        lock (_processingLock)
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                         {
-                            _processingDownloads.Remove(download.Id);
+                            _logger.LogError(ex, "Error processing completed download {DownloadId}", download.Id);
+                            lock (_processingLock)
+                            {
+                                _processingDownloads.Remove(download.Id);
+                            }
                         }
                     }
                 }
-            }
             } // end if (completedDownloads.Count > 0)
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -279,7 +283,8 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogWarning(ex, "CompletedDownloadHandlingService processing canceled/timed out");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error in CompletedDownloadHandlingService");
             }
 

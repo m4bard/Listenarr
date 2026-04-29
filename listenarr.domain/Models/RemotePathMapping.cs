@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  * 
@@ -45,7 +45,8 @@ namespace Listenarr.Domain.Models
         /// The path as seen by the download client (e.g., "/downloads/listenarr/")
         /// </summary>
         [Required]
-        public string RemotePath {
+        public string RemotePath
+        {
             get
             {
                 // FIXME: Previous version did not save normalized paths
@@ -63,7 +64,8 @@ namespace Listenarr.Domain.Models
         /// The path as seen by Listenarr (e.g., "/server/downloads/complete/listenarr/")
         /// </summary>
         [Required]
-        public string LocalPath {
+        public string LocalPath
+        {
             get
             {
                 // FIXME: Previous version did not save normalized paths

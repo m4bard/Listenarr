@@ -52,7 +52,7 @@ namespace Listenarr.Api.Tests
                 Mock.Of<ITorrentFileDownloader>(),
                 NullLogger<TransmissionAdapter>.Instance);
         }
-        
+
         private sealed class TestHttpClientFactory : IHttpClientFactory
         {
             private readonly HttpClient _client;
@@ -282,13 +282,13 @@ namespace Listenarr.Api.Tests
                 ContentPath = FileUtils.GetAbsolutePath("UNKNOWN_YET"),
                 DownloadClientId = client.Id
             };
-            
+
             var provider = MockUtils.CreateServiceProvider();
             var downloadClientConfigurationRepository = provider.GetRequiredService<IDownloadClientConfigurationRepository>();
             var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
-            
+
             await downloadClientConfigurationRepository.SaveAsync(client);
-            
+
             await downloadRepository.AddAsync(download);
 
             var retrievedQeue = await CreateAdapter(provider).GetImportItemAsync(client, download, queueItem);

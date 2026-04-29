@@ -457,7 +457,7 @@ namespace Listenarr.Api.Tests
                 {
                     // CI environment may have restricted directories; fall through to check status instead
                 }
-                
+
                 if (movedFiles.Length > 0)
                 {
                     Assert.True(movedFiles.Length > 0, "File was moved by the queue callback");

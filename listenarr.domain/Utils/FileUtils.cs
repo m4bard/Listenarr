@@ -141,7 +141,7 @@ namespace Listenarr.Domain.Utils
 
             blacklistExtensions ??= [];
             blacklistExtensions = blacklistExtensions.Append(".tmp");
-            
+
             return blacklistExtensions != null && blacklistExtensions.ToHashSet().Contains(extension);
         }
 
@@ -326,7 +326,8 @@ namespace Listenarr.Domain.Utils
 
                 return candidate;
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+            {
                 return desiredPath;
             }
         }
@@ -354,7 +355,8 @@ namespace Listenarr.Domain.Utils
                     ? suffixed
                     : Path.Join(directory, suffixed);
             }
-            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+            {
                 return desiredPath;
             }
         }
@@ -379,7 +381,8 @@ namespace Listenarr.Domain.Utils
 
                 return normalizedChild.StartsWith(normalizedRoot, StringComparison.OrdinalIgnoreCase);
             }
-            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
+            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+            {
                 return false;
             }
         }
@@ -420,7 +423,8 @@ namespace Listenarr.Domain.Utils
 
                 return string.IsNullOrWhiteSpace(commonPath) ? directories[0] : commonPath;
             }
-            catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
+            catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
+            {
                 return null;
             }
         }
@@ -442,7 +446,8 @@ namespace Listenarr.Domain.Utils
 
                 TryDeleteDirectoryIfEmpty(rootPath);
             }
-            catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) {
+            catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException)
+            {
                 System.Diagnostics.Debug.WriteLine($"Suppressed empty-directory cleanup failure for '{rootPath}': {caughtEx_5.Message}");
             }
         }
@@ -504,7 +509,8 @@ namespace Listenarr.Domain.Utils
 
                 Directory.Delete(path, recursive: false);
             }
-            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) {
+            catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException)
+            {
                 System.Diagnostics.Debug.WriteLine($"Suppressed empty-directory delete failure for '{path}': {caughtEx_6.Message}");
             }
         }
@@ -686,7 +692,6 @@ namespace Listenarr.Domain.Utils
                 return candidatePath;
             }
 
-            
             var relativePath = candidatePath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             if (Path.IsPathRooted(relativePath))
             {

@@ -78,7 +78,11 @@ export function useProtectedImages() {
     }
   }
 
-  function getProtectedImageSrc(rawImageUrl: string | undefined, cacheKey: string, fallback = ''): string {
+  function getProtectedImageSrc(
+    rawImageUrl: string | undefined,
+    cacheKey: string,
+    fallback = '',
+  ): string {
     if (!rawImageUrl) return fallback
     const safeKey = (cacheKey || 'default').replace(/[^A-Za-z0-9._-]/g, '_')
 
@@ -190,21 +194,21 @@ export function useProtectedImages() {
     revokeProtectedImageUrl,
   }
 }
-  function isAuthRequiredByConfig(): boolean {
-    try {
-      const cfg = getCachedStartupConfig() as Record<string, unknown> | null
-      // If config is not loaded yet, default to protected mode to avoid
-      // issuing unauthenticated <img src="/api/..."> requests that can fail
-      // and get stuck on placeholders.
-      if (!cfg) return true
-      const raw = cfg.authenticationRequired ?? cfg.AuthenticationRequired
-      if (typeof raw === 'boolean') return raw
-      if (typeof raw === 'string') {
-        const normalized = raw.trim().toLowerCase()
-        return normalized === 'true' || normalized === 'enabled'
-      }
-      return true
-    } catch {
-      return true
+function isAuthRequiredByConfig(): boolean {
+  try {
+    const cfg = getCachedStartupConfig() as Record<string, unknown> | null
+    // If config is not loaded yet, default to protected mode to avoid
+    // issuing unauthenticated <img src="/api/..."> requests that can fail
+    // and get stuck on placeholders.
+    if (!cfg) return true
+    const raw = cfg.authenticationRequired ?? cfg.AuthenticationRequired
+    if (typeof raw === 'boolean') return raw
+    if (typeof raw === 'string') {
+      const normalized = raw.trim().toLowerCase()
+      return normalized === 'true' || normalized === 'enabled'
     }
+    return true
+  } catch {
+    return true
   }
+}

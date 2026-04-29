@@ -156,7 +156,9 @@
             >
               <div class="forecast-date-badge">
                 <div class="forecast-day">{{ new Date(item.date).getUTCDate() }}</div>
-                <div class="forecast-month">{{ monthNames[new Date(item.date).getUTCMonth()]?.slice(0, 3) }}</div>
+                <div class="forecast-month">
+                  {{ monthNames[new Date(item.date).getUTCMonth()]?.slice(0, 3) }}
+                </div>
               </div>
               <div class="forecast-content">
                 <h3>{{ item.title }}</h3>
@@ -269,7 +271,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { PhCalendar, PhCaretLeft, PhCaretRight, PhCaretDown, PhClock, PhInfo } from '@phosphor-icons/vue'
+import {
+  PhCalendar,
+  PhCaretLeft,
+  PhCaretRight,
+  PhCaretDown,
+  PhClock,
+  PhInfo,
+} from '@phosphor-icons/vue'
 import { useLibraryStore } from '@/stores/library'
 import type { Audiobook } from '@/types'
 
@@ -291,7 +300,20 @@ interface CalendarDate {
 
 const currentDate = ref(new Date())
 const weekDays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
-const monthNames = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const monthNames = [
+  'January',
+  'February',
+  'March',
+  'April',
+  'May',
+  'June',
+  'July',
+  'August',
+  'September',
+  'October',
+  'November',
+  'December',
+]
 const libraryStore = useLibraryStore()
 const router = useRouter()
 const viewMode = ref<'month' | 'week' | 'forecast' | 'day' | 'agenda'>('month')
@@ -361,7 +383,7 @@ onMounted(() => {
   if (!libraryStore.audiobooks.length) {
     void libraryStore.fetchLibrary()
   }
-  
+
   // Close picker on outside click
   if (typeof window !== 'undefined') {
     document.addEventListener('click', (e: Event) => {
@@ -463,7 +485,11 @@ const previousMonth = () => {
   } else if (viewMode.value === 'week') {
     currentDate.value = new Date(currentDate.value.getTime() - 7 * 24 * 60 * 60 * 1000)
   } else {
-    currentDate.value = new Date(currentDate.value.getFullYear(), currentDate.value.getMonth() - 1, 1)
+    currentDate.value = new Date(
+      currentDate.value.getFullYear(),
+      currentDate.value.getMonth() - 1,
+      1,
+    )
   }
 }
 
@@ -474,7 +500,11 @@ const nextMonth = () => {
   } else if (viewMode.value === 'week') {
     currentDate.value = new Date(currentDate.value.getTime() + 7 * 24 * 60 * 60 * 1000)
   } else {
-    currentDate.value = new Date(currentDate.value.getFullYear(), currentDate.value.getMonth() + 1, 1)
+    currentDate.value = new Date(
+      currentDate.value.getFullYear(),
+      currentDate.value.getMonth() + 1,
+      1,
+    )
   }
 }
 
@@ -490,9 +520,13 @@ const navigateToDetail = (id: number) => {
   void router.push(`/audiobooks/${id}`)
 }
 
-
 const formatDate = (date: Date): string => {
-  return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' })
+  return date.toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
 }
 
 // Week view computed properties
@@ -526,7 +560,7 @@ const forecastItems = computed(() => {
   const month = currentDate.value.getMonth()
   const items: CalendarItem[] = []
   const startDate = new Date(year, month, 1)
-  
+
   for (let i = 0; i < 30; i++) {
     const date = new Date(startDate)
     date.setDate(date.getDate() + i)
@@ -534,14 +568,19 @@ const forecastItems = computed(() => {
     const dayItems = itemsByDate.value.get(key) || []
     items.push(...dayItems)
   }
-  
+
   return items.sort((a, b) => a.date.getTime() - b.date.getTime())
 })
 
 // Day view (selected day - default today)
 const selectedDay = ref(new Date())
 const selectedDayFormatted = computed(() => {
-  return selectedDay.value.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })
+  return selectedDay.value.toLocaleDateString('en-US', {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
 })
 
 const selectedDayItems = computed(() => {
@@ -1282,7 +1321,7 @@ const allItemsSorted = computed(() => {
 }
 
 .agenda-item:hover {
-background-color: #2f2f2f;
+  background-color: #2f2f2f;
   border-color: rgba(77, 171, 247, 0.3);
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
   transform: translateX(2px);
@@ -1591,7 +1630,7 @@ background-color: #2f2f2f;
   .agenda-item {
     gap: 0.75rem;
     padding: 0.75rem;
-    border-left: 3px solid #4dabf7
+    border-left: 3px solid #4dabf7;
   }
 
   .agenda-date {

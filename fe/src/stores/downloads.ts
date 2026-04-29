@@ -142,11 +142,11 @@ export const useDownloadsStore = defineStore('downloads', () => {
       // Do not remove existing tracked downloads solely because they are missing
       // from a single queue snapshot. External clients can briefly report empty
       // queues, and terminal/queue-less states are persisted in DB.
-      
+
       // Update existing and add new items from queue
       queueItems.forEach((queueItem) => {
-        const existingIndex = downloads.value.findIndex(d => d.id === queueItem.id)
-        
+        const existingIndex = downloads.value.findIndex((d) => d.id === queueItem.id)
+
         // Map QueueItem to Download format
         const downloadItem: Download = {
           id: queueItem.id,
@@ -166,7 +166,7 @@ export const useDownloadsStore = defineStore('downloads', () => {
           downloadClientId: queueItem.downloadClientId,
           metadata: {},
         }
-        
+
         if (existingIndex !== -1) {
           if (queueOnlyIds.has(queueItem.id)) {
             downloads.value[existingIndex] = downloadItem
@@ -190,7 +190,7 @@ export const useDownloadsStore = defineStore('downloads', () => {
           queueOnlyIds.add(downloadItem.id)
         }
       })
-      
+
       triggerRef(downloads)
     })
 
@@ -218,7 +218,9 @@ export const useDownloadsStore = defineStore('downloads', () => {
   const activeDownloads = computed(() => {
     const active = downloads.value.filter((d) => {
       const status = (d.status || '').toString().toLowerCase()
-      const isActive = ['queued', 'downloading', 'paused', 'processing', 'importpending'].includes(status)
+      const isActive = ['queued', 'downloading', 'paused', 'processing', 'importpending'].includes(
+        status,
+      )
       return isActive
     })
     return active

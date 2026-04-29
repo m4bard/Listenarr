@@ -223,7 +223,9 @@ class SignalRService {
       dismissed?: boolean
     }) => void
   > = new Set()
-  private indexersUpdatedCallbacks: Set<(payload?: { created?: number; skipped?: number }) => void> = new Set()
+  private indexersUpdatedCallbacks: Set<
+    (payload?: { created?: number; skipped?: number }) => void
+  > = new Set()
   private unmatchedScanCompleteCallbacks: Set<
     (payload: { jobId: string; count: number; error?: string }) => void
   > = new Set()
@@ -524,7 +526,11 @@ class SignalRService {
 
       case 'IndexersUpdated':
         if (args && args[0]) {
-          const payload = args[0] as { created?: number; skipped?: number; indexers?: Array<{ id: number; name: string; baseUrl: string }> }
+          const payload = args[0] as {
+            created?: number
+            skipped?: number
+            indexers?: Array<{ id: number; name: string; baseUrl: string }>
+          }
           if (import.meta.env.DEV) console.info('[SignalR] IndexersUpdated payload:', payload)
           this.indexersUpdatedCallbacks.forEach((cb) => cb(payload))
         } else {
@@ -653,8 +659,15 @@ class SignalRService {
       } else {
         const sc = await getStartupConfigCached(2000)
         const apiKey = sc?.apiKey
-        const rawAuth = sc?.authenticationRequired ?? (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
-        const authEnabled = typeof rawAuth === 'boolean' ? rawAuth : typeof rawAuth === 'string' ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true' : false
+        const rawAuth =
+          sc?.authenticationRequired ??
+          (sc as unknown as Record<string, unknown>)?.AuthenticationRequired
+        const authEnabled =
+          typeof rawAuth === 'boolean'
+            ? rawAuth
+            : typeof rawAuth === 'string'
+              ? rawAuth.toLowerCase() === 'enabled' || rawAuth.toLowerCase() === 'true'
+              : false
         if (apiKey && !authEnabled) {
           const sep = hubUrl.includes('?') ? '&' : '?'
           hubUrl = `${hubUrl}${sep}access_token=${encodeURIComponent(apiKey)}`
@@ -844,7 +857,13 @@ class SignalRService {
   }
 
   // Subscribe to indexer updates (triggered when indexers are added/modified externally)
-  onIndexersUpdated(callback: (payload?: { created?: number; skipped?: number; indexers?: Array<{ id: number; name: string; baseUrl: string }>; }) => void): () => void {
+  onIndexersUpdated(
+    callback: (payload?: {
+      created?: number
+      skipped?: number
+      indexers?: Array<{ id: number; name: string; baseUrl: string }>
+    }) => void,
+  ): () => void {
     this.indexersUpdatedCallbacks.add(callback)
     return () => {
       this.indexersUpdatedCallbacks.delete(callback)

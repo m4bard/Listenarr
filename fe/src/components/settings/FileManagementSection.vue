@@ -17,13 +17,18 @@
 -->
 <template>
   <div class="form-section">
-    <h3>
-      <PhFolder /> File Management
-    </h3>
+    <h3><PhFolder /> File Management</h3>
     <div class="form-body">
       <FormRow label="Folder Naming Pattern" help="Pattern for organizing audiobook folders">
         <div class="input-group">
-          <input v-model="folderPattern" type="text" placeholder="{Author}/{Series}/{Title}" @change="e => updateField('folderNamingPattern', (e.target as HTMLInputElement).value)" />
+          <input
+            v-model="folderPattern"
+            type="text"
+            placeholder="{Author}/{Series}/{Title}"
+            @change="
+              (e) => updateField('folderNamingPattern', (e.target as HTMLInputElement).value)
+            "
+          />
           <button class="help-button" @click="openModal('folder')" title="View pattern help">
             <PhQuestion :size="18" />
           </button>
@@ -34,9 +39,17 @@
         </div>
       </FormRow>
 
-      <FormRow label="Single File Naming Pattern" help="Pattern for naming audiobooks as single files">
+      <FormRow
+        label="Single File Naming Pattern"
+        help="Pattern for naming audiobooks as single files"
+      >
         <div class="input-group">
-          <input v-model="filePatternSingleFile" type="text" placeholder="{Title}" @change="e => updateField('fileNamingPattern', (e.target as HTMLInputElement).value)" />
+          <input
+            v-model="filePatternSingleFile"
+            type="text"
+            placeholder="{Title}"
+            @change="(e) => updateField('fileNamingPattern', (e.target as HTMLInputElement).value)"
+          />
           <button class="help-button" @click="openModal('file')" title="View pattern help">
             <PhQuestion :size="18" />
           </button>
@@ -47,9 +60,19 @@
         </div>
       </FormRow>
 
-      <FormRow label="Multi-File Naming Pattern" help="Pattern for naming audiobooks split across multiple files">
+      <FormRow
+        label="Multi-File Naming Pattern"
+        help="Pattern for naming audiobooks split across multiple files"
+      >
         <div class="input-group">
-          <input v-model="filePatternMultiFile" type="text" placeholder="{Title}-{DiskNumber:00}" @change="e => updateField('multiFileNamingPattern', (e.target as HTMLInputElement).value)" />
+          <input
+            v-model="filePatternMultiFile"
+            type="text"
+            placeholder="{Title}-{DiskNumber:00}"
+            @change="
+              (e) => updateField('multiFileNamingPattern', (e.target as HTMLInputElement).value)
+            "
+          />
           <button class="help-button" @click="openModal('file')" title="View pattern help">
             <PhQuestion :size="18" />
           </button>
@@ -72,8 +95,14 @@
         <span>Estimated sample path length: {{ estimatedPathLength }} / 259 characters</span>
       </div>
 
-      <FormRow label="Completed File Action" help="Choose whether completed downloads should be moved into the library output path or copied and left in the client's folder.">
-        <select :value="settings.completedFileAction" @change="e => updateField('completedFileAction', (e.target as HTMLSelectElement).value)">
+      <FormRow
+        label="Completed File Action"
+        help="Choose whether completed downloads should be moved into the library output path or copied and left in the client's folder."
+      >
+        <select
+          :value="settings.completedFileAction"
+          @change="(e) => updateField('completedFileAction', (e.target as HTMLSelectElement).value)"
+        >
           <option value="Move">Move</option>
           <option value="Hardlink/Copy">Hardlink/Copy</option>
         </select>
@@ -88,7 +117,13 @@
           :value="formatExtensionList(settings.importBlacklistExtensions)"
           placeholder=".nfo&#10;.sfv&#10;.jpg"
           rows="4"
-          @change="e => updateField('importBlacklistExtensions', parseExtensionList((e.target as HTMLTextAreaElement).value))"
+          @change="
+            (e) =>
+              updateField(
+                'importBlacklistExtensions',
+                parseExtensionList((e.target as HTMLTextAreaElement).value),
+              )
+          "
         />
       </FormRow>
     </div>
@@ -119,7 +154,9 @@
               <li><code>{Year}</code> - Publication year</li>
             </ul>
             <p class="example"><strong>Example:</strong> <code>{Author}/{Series}/{Title}</code></p>
-            <p class="result"><strong>Result:</strong> <code>Stephen King/The Dark Tower/The Gunslinger</code></p>
+            <p class="result">
+              <strong>Result:</strong> <code>Stephen King/The Dark Tower/The Gunslinger</code>
+            </p>
           </div>
           <div v-else-if="activePatternType === 'file'" class="pattern-help">
             <p><strong>Available Variables:</strong></p>
@@ -134,13 +171,24 @@
               <li><code>{Language}</code> - Metadata language</li>
               <li><code>{Asin}</code> - Audible ASIN</li>
               <li><code>{SeriesNumber}</code> - Position in series</li>
-              <li><code>{DiskNumber}</code> or <code>{DiskNumber:00}</code> - Disk/part number (00 = zero-padded)</li>
-              <li><code>{ChapterNumber}</code> or <code>{ChapterNumber:00}</code> - Chapter number (00 = zero-padded)</li>
+              <li>
+                <code>{DiskNumber}</code> or <code>{DiskNumber:00}</code> - Disk/part number (00 =
+                zero-padded)
+              </li>
+              <li>
+                <code>{ChapterNumber}</code> or <code>{ChapterNumber:00}</code> - Chapter number (00
+                = zero-padded)
+              </li>
               <li><code>{Year}</code> - Publication year</li>
               <li><code>{Quality}</code> - Audio quality (bitrate or format)</li>
             </ul>
-            <p class="example"><strong>Example:</strong> <code>{Title} - {Edition} ({Language}) [{Asin}]</code></p>
-            <p class="result"><strong>Result:</strong> <code>The Gunslinger - Revised Edition (English) [B000FC1R84].m4b</code></p>
+            <p class="example">
+              <strong>Example:</strong> <code>{Title} - {Edition} ({Language}) [{Asin}]</code>
+            </p>
+            <p class="result">
+              <strong>Result:</strong>
+              <code>The Gunslinger - Revised Edition (English) [B000FC1R84].m4b</code>
+            </p>
           </div>
         </div>
       </div>
@@ -180,18 +228,22 @@ const sampleVariables = {
   Year: '1982',
   DiskNumber: '3',
   ChapterNumber: '3',
-  Quality: '128kbps'
+  Quality: '128kbps',
 }
 
-const modalTitle = computed(() => 
-  activePatternType.value === 'folder' ? 'Folder Naming Pattern Help' : 'File Naming Pattern Help'
+const modalTitle = computed(() =>
+  activePatternType.value === 'folder' ? 'Folder Naming Pattern Help' : 'File Naming Pattern Help',
 )
 
-function applyPattern(pattern: string, type: 'folder' | 'file' = 'folder', multiFile: boolean = false): string {
+function applyPattern(
+  pattern: string,
+  type: 'folder' | 'file' = 'folder',
+  multiFile: boolean = false,
+): string {
   if (!pattern) return ''
-  
+
   let result = pattern
-  
+
   // Replace all variables with sample values
   for (const [key, value] of Object.entries(sampleVariables)) {
     if (key === 'DiskNumber' || key === 'ChapterNumber') {
@@ -205,23 +257,23 @@ function applyPattern(pattern: string, type: 'folder' | 'file' = 'folder', multi
       result = result.replace(regex, value)
     }
   }
-  
+
   // For multi-file preview, show how files would be named
   if (type === 'file' && multiFile) {
     // Check if pattern includes DiskNumber or ChapterNumber for uniqueness
     const hasDiskNumber = pattern.includes('{DiskNumber')
     const hasChapterNumber = pattern.includes('{ChapterNumber')
-    
+
     if (!hasDiskNumber && !hasChapterNumber) {
       // Pattern doesn't differentiate files - show warning
       return `⚠️ ${result}.ext (all files would have the same name!)`
     }
-    
+
     // Generate unique filenames by simulating different disk/chapter numbers
     let file1 = result
     let file2 = result
     const file3 = result
-    
+
     // Replace DiskNumber variants
     if (hasDiskNumber) {
       const diskSample = sampleVariables.DiskNumber.toString().padStart(2, '0')
@@ -230,7 +282,7 @@ function applyPattern(pattern: string, type: 'folder' | 'file' = 'folder', multi
       file2 = file2.replace(diskRegex, '02')
       // file3 already contains the sample value for the third file — no-op replacement removed
     }
-    
+
     // Replace ChapterNumber variants
     if (hasChapterNumber) {
       const chapterSample = sampleVariables.ChapterNumber.toString().padStart(2, '0')
@@ -239,10 +291,10 @@ function applyPattern(pattern: string, type: 'folder' | 'file' = 'folder', multi
       file2 = file2.replace(chapterRegex, '02')
       // file3 already contains the sample value for the third file — no-op replacement removed
     }
-    
+
     return `${file1}.ext, ${file2}.ext, ${file3}.ext...`
   }
-  
+
   return result
 }
 
@@ -254,9 +306,9 @@ function updateField(field: keyof ApplicationSettings, value: unknown) {
 function parseExtensionList(value: string): string[] {
   return value
     .split(/[\r\n,;]+/)
-    .map(entry => entry.trim())
+    .map((entry) => entry.trim())
     .filter(Boolean)
-    .map(entry => (entry.startsWith('.') ? entry : `.${entry}`))
+    .map((entry) => (entry.startsWith('.') ? entry : `.${entry}`))
 }
 
 function formatExtensionList(value: string[] | undefined): string {
@@ -284,8 +336,10 @@ const pathLengthWarning = computed<string | null>(() => {
   if (len <= WINDOWS_MAX_PATH) return null
 
   const excess = len - WINDOWS_MAX_PATH
-  return `With the sample values, the generated path is ${len} characters — ${excess} over the Windows MAX_PATH limit. ` +
+  return (
+    `With the sample values, the generated path is ${len} characters — ${excess} over the Windows MAX_PATH limit. ` +
     'Long author names, series, or titles will be automatically truncated by the server, but shorter patterns are recommended to avoid surprises.'
+  )
 })
 
 function openModal(type: 'folder' | 'file') {
@@ -316,12 +370,12 @@ h3 svg {
   filter: drop-shadow(0 0 8px rgba(33, 150, 243, 0.3));
 }
 
-.form-body { 
-  padding: 1.25rem; 
-  border-radius: 6px; 
-  border: 1px solid #333; 
-  box-shadow: 0 4px 14px rgba(0,0,0,0.6); 
-  background-color: #232323; 
+.form-body {
+  padding: 1.25rem;
+  border-radius: 6px;
+  border: 1px solid #333;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  background-color: #232323;
 }
 
 .blacklist-textarea {
@@ -343,10 +397,18 @@ h3 svg {
   box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.08);
 }
 
-.form-group { margin-bottom: 1.25rem }
-.form-group:last-child { margin-bottom: 0 }
+.form-group {
+  margin-bottom: 1.25rem;
+}
+.form-group:last-child {
+  margin-bottom: 0;
+}
 
-.form-group label { margin-bottom: 0.5rem; font-weight: 500; color: #fff }
+.form-group label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #fff;
+}
 
 .input-group {
   display: flex;
@@ -356,23 +418,23 @@ h3 svg {
 
 .input-group input[type='text'] {
   flex: 1;
-  padding: 0.9rem 0.85rem; 
-  border: 1px solid #444; 
-  border-radius: 6px; 
-  background-color: #1a1a1a; 
-  color: #fff; 
-  font-size: 0.95rem; 
+  padding: 0.9rem 0.85rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background-color: #1a1a1a;
+  color: #fff;
+  font-size: 0.95rem;
   transition: all 0.12s;
 }
 
-.input-group input[type='text']::placeholder { 
-  color: #6c757d; 
+.input-group input[type='text']::placeholder {
+  color: #6c757d;
 }
 
 .input-group input[type='text']:focus {
-  outline: none; 
-  border-color: var(--brand-500); 
-  box-shadow: 0 0 0 3px rgba(77,171,247,0.1);
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
 }
 
 .help-button {
@@ -398,24 +460,24 @@ h3 svg {
 .help-button:focus {
   outline: none;
   border-color: var(--brand-500);
-  box-shadow: 0 0 0 3px rgba(77,171,247,0.1);
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
 }
 
 .form-group select {
-  width: 100%; 
-  padding: 0.9rem 0.85rem; 
-  border: 1px solid #444; 
-  border-radius: 6px; 
-  background-color: #1a1a1a; 
-  color: #fff; 
-  font-size: 0.95rem; 
+  width: 100%;
+  padding: 0.9rem 0.85rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background-color: #1a1a1a;
+  color: #fff;
+  font-size: 0.95rem;
   transition: all 0.12s;
 }
 
 .form-group select:focus {
-  outline: none; 
-  border-color: var(--brand-500); 
-  box-shadow: 0 0 0 3px rgba(77,171,247,0.1);
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.1);
 }
 
 /* Modal Styles */

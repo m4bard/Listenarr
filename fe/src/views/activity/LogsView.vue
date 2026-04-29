@@ -145,7 +145,9 @@
     <EmptyState
       v-else
       title="No logs found"
-      :message="searchQuery || selectedLevel ? 'Try adjusting your filters' : 'No log entries available'"
+      :message="
+        searchQuery || selectedLevel ? 'Try adjusting your filters' : 'No log entries available'
+      "
     >
       <template #icon>
         <PhFileText :size="48" />

@@ -95,17 +95,10 @@ const displaySize = computed(() => {
 <template>
   <div class="progress-wrapper" :class="variant">
     <label v-if="label" class="progress-label">{{ label }}</label>
-    <div
-      class="progress-container"
-      :class="`height-${height}`"
-      :data-variant="variant"
-    >
+    <div class="progress-container" :class="`height-${height}`" :data-variant="variant">
       <div
         class="progress-fill"
-        :class="[
-          `fill-${variant}`,
-          { animating: animating && variant === 'activity' }
-        ]"
+        :class="[`fill-${variant}`, { animating: animating && variant === 'activity' }]"
         :style="{ width: `${Math.max(0, Math.min(100, value))}%` }"
       ></div>
     </div>
@@ -212,7 +205,8 @@ const displaySize = computed(() => {
 }
 
 @keyframes progress-shimmer {
-  0%, 100% {
+  0%,
+  100% {
     background: linear-gradient(90deg, #1e88e5, #42a5f5);
   }
   50% {

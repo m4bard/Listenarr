@@ -46,18 +46,36 @@ describe('ApiService CSRF retry', () => {
       if (url.endsWith('/antiforgery/token')) {
         tokenFetchCount++
         const token = tokenFetchCount === 1 ? 'oldtoken' : 'freshtoken'
-        return Promise.resolve(new Response(JSON.stringify({ token }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+        return Promise.resolve(
+          new Response(JSON.stringify({ token }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          }),
+        )
       }
 
       // Our test POST endpoint: if it includes the fresh token header, succeed;
       // otherwise return 400 to trigger retry.
       if (url.endsWith('/some/test')) {
         const hdrs = (init && (init.headers as Record<string, string> | Headers)) || {}
-        const tokenInHdr = hdrs instanceof Headers ? hdrs.get('X-XSRF-TOKEN') : (hdrs as Record<string, string>)['X-XSRF-TOKEN']
+        const tokenInHdr =
+          hdrs instanceof Headers
+            ? hdrs.get('X-XSRF-TOKEN')
+            : (hdrs as Record<string, string>)['X-XSRF-TOKEN']
         if (tokenInHdr === 'freshtoken') {
-          return Promise.resolve(new Response(JSON.stringify({ success: true }), { status: 200, headers: { 'Content-Type': 'application/json' } }))
+          return Promise.resolve(
+            new Response(JSON.stringify({ success: true }), {
+              status: 200,
+              headers: { 'Content-Type': 'application/json' },
+            }),
+          )
         }
-        return Promise.resolve(new Response('Invalid or missing CSRF token', { status: 400, headers: { 'Content-Type': 'text/plain' } }))
+        return Promise.resolve(
+          new Response('Invalid or missing CSRF token', {
+            status: 400,
+            headers: { 'Content-Type': 'text/plain' },
+          }),
+        )
       }
 
       // Fallback - unexpected
@@ -95,7 +113,7 @@ describe('ApiService CSRF retry', () => {
     const tokenFetchCall = calls.find((c) => {
       const input = c[0]
       const init = c[1]
-      const url = typeof input === 'string' ? input : (input && input.url)
+      const url = typeof input === 'string' ? input : input && input.url
       if (!url || !url.endsWith('/antiforgery/token')) return false
       const hdrs = init && (init.headers as Record<string, string> | Headers)
       const apiKey = hdrs instanceof Headers ? hdrs.get('X-Api-Key') : hdrs && hdrs['X-Api-Key']
@@ -107,10 +125,11 @@ describe('ApiService CSRF retry', () => {
     const retryCall = calls.find((c) => {
       const input = c[0]
       const init = c[1]
-      const url = typeof input === 'string' ? input : (input && input.url)
+      const url = typeof input === 'string' ? input : input && input.url
       if (!url || !url.endsWith('/some/test')) return false
       const hdrs = init && (init.headers as Record<string, string> | Headers)
-      const token = hdrs instanceof Headers ? hdrs.get('X-XSRF-TOKEN') : hdrs && hdrs['X-XSRF-TOKEN']
+      const token =
+        hdrs instanceof Headers ? hdrs.get('X-XSRF-TOKEN') : hdrs && hdrs['X-XSRF-TOKEN']
       const apiKey = hdrs instanceof Headers ? hdrs.get('X-Api-Key') : hdrs && hdrs['X-Api-Key']
       return token === 'freshtoken' && apiKey === 'thekey'
     })

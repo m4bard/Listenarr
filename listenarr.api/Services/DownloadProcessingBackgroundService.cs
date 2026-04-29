@@ -59,7 +59,8 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogWarning(ex, "Download processing startup reset canceled/timed out; continuing");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to reset stuck jobs on startup");
             }
 
@@ -81,7 +82,8 @@ namespace Listenarr.Api.Services
                 {
                     _logger.LogWarning(ex, "Download processing cycle canceled/timed out; continuing");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogError(ex, "Error processing download queue");
                 }
 
@@ -135,7 +137,8 @@ namespace Listenarr.Api.Services
                     _logger.LogInformation("Job {JobId} for download {DownloadId} finished with status {Status}", job.Id, job.DownloadId, job.Status);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to process job {JobId} for download {DownloadId}: {Error}",
                     job.Id, job.DownloadId, ex.Message);
 
@@ -296,7 +299,8 @@ namespace Listenarr.Api.Services
                                     resolvedPath = translated;
                                 }
                             }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                            {
                                 _logger.LogDebug(ex, "Path mapping failed for {Path}", resolvedPath);
                             }
                         }
@@ -312,12 +316,14 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("Resolved path does not exist yet for download {DownloadId}: {Path}", dl.Id, resolvedPath);
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogDebug(ex, "Failed to consider completed download {DownloadId} for enqueue", dl.Id);
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Error while enqueuing completed downloads");
             }
         }
@@ -368,7 +374,8 @@ namespace Listenarr.Api.Services
                             job.SourcePath = localPath;
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         job.AddLogEntry($"Path mapping failed: {ex.Message}");
                     }
                 }
@@ -394,7 +401,7 @@ namespace Listenarr.Api.Services
             {
                 job.AddLogEntry($"Source is a directory, scanning for importable files: {job.SourcePath}");
                 var importableFiles = new List<string>();
-                
+
                 var download = await downloadRepository.GetByIdAsync(job.DownloadId);
                 if (download != null)
                 {
@@ -402,7 +409,7 @@ namespace Listenarr.Api.Services
                     {
                         importableFiles = await MatchLocalAndDownloadedFilesAsync(scope, download, job.SourcePath, settings.ImportBlacklistExtensions, _logger, cancellationToken);
                     }
-                    catch(DownloadProcessingException exception)
+                    catch (DownloadProcessingException exception)
                     {
                         // FIXME: Should we really still process unfiltered files in that case ?
                         _logger.LogWarning(exception, exception.Message);
@@ -464,7 +471,7 @@ namespace Listenarr.Api.Services
                     {
                         // We give a directory in which to import the files
                         completionPath = Path.GetDirectoryName(completionPath);
-                        
+
                         // The directory must exist
                         if (!string.IsNullOrWhiteSpace(completionPath))
                         {
@@ -518,7 +525,7 @@ namespace Listenarr.Api.Services
                     {
                         audiobook = await audiobookRepository.GetByIdAsync(download.AudiobookId.GetValueOrDefault());
                     }
-            
+
                     var metadata = await metadataService.FetchMetadataAsync(job, download, audiobook, cancellationToken);
 
                     // For processing jobs, compute the appropriate destination directory first.
@@ -585,7 +592,8 @@ namespace Listenarr.Api.Services
                                 }
                                 forcedFilename = sb.ToString();
                             }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                            {
                                 job.AddLogEntry($"Failed to sanitize forced filename: {ex.Message}");
                             }
 
@@ -630,7 +638,8 @@ namespace Listenarr.Api.Services
                             job.AddLogEntry($"Warning: destination dir is a root path: {destDirForCheck}");
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         job.AddLogEntry($"Failed to inspect destination directory: {ex.Message}");
                     }
                 }
@@ -688,7 +697,8 @@ namespace Listenarr.Api.Services
                                 sourceSize = new FileInfo(sourcePath).Length;
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             job.AddLogEntry($"Failed to read source file size: {ex.Message}");
                         }
 
@@ -730,17 +740,21 @@ namespace Listenarr.Api.Services
                                         var diagDestDir = Path.GetDirectoryName(uniqueDest) ?? string.Empty;
                                         job.AddLogEntry($"Copy destination dir exists={Directory.Exists(diagDestDir)} PathRoot={(string.IsNullOrEmpty(diagDestDir) ? "(n/a)" : Path.GetPathRoot(diagDestDir) ?? "(no-root)")}");
                                     }
-                                    catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException) { 
+                                    catch (Exception caughtEx_5) when (caughtEx_5 is not OperationCanceledException && caughtEx_5 is not OutOfMemoryException && caughtEx_5 is not StackOverflowException)
+                                    {
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                     }
-                                    try { _metrics?.Increment("processing.move_unauthorized"); } catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException) { 
+                                    try { _metrics?.Increment("processing.move_unauthorized"); }
+                                    catch (Exception caughtEx_6) when (caughtEx_6 is not OperationCanceledException && caughtEx_6 is not OutOfMemoryException && caughtEx_6 is not StackOverflowException)
+                                    {
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                     }
                                     try
                                     {
                                         job.AddLogEntry($"Process identity: {Environment.UserDomainName}\\{Environment.UserName}");
                                     }
-                                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException) { 
+                                    catch (Exception caughtEx_7) when (caughtEx_7 is not OperationCanceledException && caughtEx_7 is not OutOfMemoryException && caughtEx_7 is not StackOverflowException)
+                                    {
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                     }
                                     job.ErrorMessage = uae.Message;
@@ -753,7 +767,9 @@ namespace Listenarr.Api.Services
                                     if (msg.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 || ioex.HResult == unchecked((int)0x80070020))
                                     {
                                         job.AddLogEntry($"Copy failed due to sharing violation (file locked): {ioex.Message}");
-                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException) { 
+                                        try { _metrics?.Increment("processing.move_file_locked"); }
+                                        catch (Exception caughtEx_8) when (caughtEx_8 is not OperationCanceledException && caughtEx_8 is not OutOfMemoryException && caughtEx_8 is not StackOverflowException)
+                                        {
                                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                         }
                                         job.ErrorMessage = ioex.Message;
@@ -790,7 +806,8 @@ namespace Listenarr.Api.Services
                                             }
                                             job.AddLogEntry($"Hardlinked file: {sourcePath} -> {uniqueDest}");
                                         }
-                                        catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException) {
+                                        catch (Exception caughtEx_9) when (caughtEx_9 is not OperationCanceledException && caughtEx_9 is not OutOfMemoryException && caughtEx_9 is not StackOverflowException)
+                                        {
                                             File.Copy(sourcePath, uniqueDest, true);
                                             job.AddLogEntry($"Hardlink failed, copied file: {sourcePath} -> {uniqueDest}");
                                         }
@@ -817,7 +834,9 @@ namespace Listenarr.Api.Services
                                     if (msg.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 || ioex.HResult == unchecked((int)0x80070020))
                                     {
                                         job.AddLogEntry($"Hardlink failed due to sharing violation (file locked): {ioex.Message}");
-                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException) { 
+                                        try { _metrics?.Increment("processing.move_file_locked"); }
+                                        catch (Exception caughtEx_10) when (caughtEx_10 is not OperationCanceledException && caughtEx_10 is not OutOfMemoryException && caughtEx_10 is not StackOverflowException)
+                                        {
                                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                         }
                                         job.ErrorMessage = ioex.Message;
@@ -861,17 +880,21 @@ namespace Listenarr.Api.Services
                                         var diagDestDir = Path.GetDirectoryName(uniqueDest) ?? string.Empty;
                                         job.AddLogEntry($"Move destination dir exists={Directory.Exists(diagDestDir)} PathRoot={(string.IsNullOrEmpty(diagDestDir) ? "(n/a)" : Path.GetPathRoot(diagDestDir) ?? "(no-root)")}");
                                     }
-                                    catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException) { 
+                                    catch (Exception caughtEx_11) when (caughtEx_11 is not OperationCanceledException && caughtEx_11 is not OutOfMemoryException && caughtEx_11 is not StackOverflowException)
+                                    {
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                     }
-                                    try { _metrics?.Increment("processing.move_unauthorized"); } catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException) { 
+                                    try { _metrics?.Increment("processing.move_unauthorized"); }
+                                    catch (Exception caughtEx_12) when (caughtEx_12 is not OperationCanceledException && caughtEx_12 is not OutOfMemoryException && caughtEx_12 is not StackOverflowException)
+                                    {
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                     }
                                     try
                                     {
                                         job.AddLogEntry($"Process identity: {Environment.UserDomainName}\\{Environment.UserName}");
                                     }
-                                    catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException) { 
+                                    catch (Exception caughtEx_13) when (caughtEx_13 is not OperationCanceledException && caughtEx_13 is not OutOfMemoryException && caughtEx_13 is not StackOverflowException)
+                                    {
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                     }
                                     job.ErrorMessage = uae.Message;
@@ -884,7 +907,9 @@ namespace Listenarr.Api.Services
                                     if (msg.IndexOf("being used by another process", StringComparison.OrdinalIgnoreCase) >= 0 || ioex.HResult == unchecked((int)0x80070020))
                                     {
                                         job.AddLogEntry($"Move failed due to sharing violation (file locked): {ioex.Message}");
-                                        try { _metrics?.Increment("processing.move_file_locked"); } catch (Exception caughtEx_14) when (caughtEx_14 is not OperationCanceledException && caughtEx_14 is not OutOfMemoryException && caughtEx_14 is not StackOverflowException) { 
+                                        try { _metrics?.Increment("processing.move_file_locked"); }
+                                        catch (Exception caughtEx_14) when (caughtEx_14 is not OperationCanceledException && caughtEx_14 is not OutOfMemoryException && caughtEx_14 is not StackOverflowException)
+                                        {
                                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                         }
                                         job.ErrorMessage = ioex.Message;
@@ -918,7 +943,8 @@ namespace Listenarr.Api.Services
                                         throw new IOException("Destination size mismatch after file operation");
                                     }
                                 }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
                                     // If verifying size fails for any reason, record and surface the error
                                     job.AddLogEntry($"Failed to verify destination size: {ex.Message}");
                                     job.ErrorMessage = ex.Message;
@@ -929,7 +955,8 @@ namespace Listenarr.Api.Services
                             job.AddLogEntry($"Verified destination: {destinationPath} (size: {new FileInfo(destinationPath).Length})");
                             job.DestinationPath = destinationPath;
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             // Ensure the error is recorded on the job so it surfaces in the queue stats/logs
                             job.AddLogEntry($"File operation failed: {ex.Message}");
                             job.ErrorMessage = ex.Message;
@@ -1025,13 +1052,13 @@ namespace Listenarr.Api.Services
                 // Apply remote path mapping
                 var translationTasks = allowedFiles
                     .Select(path => remotePathMappingService.TranslatePathAsync(download.DownloadClientId, path));
-                    
+
                 var tranlatedAllowedFiles = await Task.WhenAll(translationTasks);
 
                 var filteredFiles = importableFiles
                     .Where(tranlatedAllowedFiles.Contains)
                     .ToList();
-                
+
                 if (filteredFiles.Count == 0)
                 {
                     logger.LogWarning(
@@ -1089,7 +1116,7 @@ namespace Listenarr.Api.Services
                 {
                     return;
                 }
-                
+
                 // Enqueue a scan using the audiobook's configured library path (null)
                 // rather than the download/destination path. The import process already
                 // hardlinks/copies files into the library folder, so the scanner should

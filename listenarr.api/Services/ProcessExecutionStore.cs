@@ -56,9 +56,10 @@ namespace Listenarr.Api.Services
 
                 await _logs.AddAsync(entity, cancellationToken);
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+            {
                 // Swallow errors here - persistence is best-effort to avoid disrupting process flows.
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
         }
     }

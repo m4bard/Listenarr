@@ -50,7 +50,8 @@ public class SearchProgressReporter
                 await _hubContext.Clients.All.SendAsync("SearchProgress", new { message, asin, type = "interactive" });
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogDebug(ex, "Failed to broadcast SearchProgress: {Message}", ex.Message);
         }
     }

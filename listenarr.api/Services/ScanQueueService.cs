@@ -39,7 +39,8 @@ namespace Listenarr.Api.Services
             // queued/processing/completed, return that job id instead of creating a duplicate.
             try
             {
-                var existing = _jobs.Values.FirstOrDefault(j => {
+                var existing = _jobs.Values.FirstOrDefault(j =>
+                {
                     if (j.AudiobookId != audiobook.Id) return false;
                     bool bothNull = j.Path == null && path == null;
                     bool bothMatch = j.Path != null && path != null && string.Equals(j.Path, path, StringComparison.OrdinalIgnoreCase);
@@ -57,7 +58,8 @@ namespace Listenarr.Api.Services
                     return existing.Id;
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 // If dedupe check fails for any reason, fall back to enqueueing a new job
                 _logger.LogWarning(ex, "Failed while checking existing scan jobs for dedupe; will enqueue new job");
             }

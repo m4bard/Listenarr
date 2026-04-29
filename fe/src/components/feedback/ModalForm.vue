@@ -38,5 +38,9 @@ function onSubmit() {
 </script>
 
 <style scoped>
-.modal-form { display:flex; flex-direction:column; min-height: 100%; }
+.modal-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+}
 </style>

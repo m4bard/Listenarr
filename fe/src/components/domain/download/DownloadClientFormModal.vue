@@ -16,9 +16,23 @@
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
 <template>
-  <Modal :visible="visible" :title="editingClient ? 'Edit Download Client' : 'Add Download Client'" :showClose="false" size="lg" @close="closeModal">
+  <Modal
+    :visible="visible"
+    :title="editingClient ? 'Edit Download Client' : 'Add Download Client'"
+    :showClose="false"
+    size="lg"
+    @close="closeModal"
+  >
     <template #header>
-      <ModalHeader :title="(editingClient ? 'Edit Download Client' : 'Add Download Client') + ' - ' + formData.type.toUpperCase()" :icon="PhDownload" @close="closeModal" />
+      <ModalHeader
+        :title="
+          (editingClient ? 'Edit Download Client' : 'Add Download Client') +
+          ' - ' +
+          formData.type.toUpperCase()
+        "
+        :icon="PhDownload"
+        @close="closeModal"
+      />
     </template>
 
     <template #default>
@@ -151,7 +165,9 @@
                 <PasswordInput
                   id="password"
                   v-model="formData.password"
-                  :placeholder="props.editingClient && !formData.password ? '(Saved password)' : '********'"
+                  :placeholder="
+                    props.editingClient && !formData.password ? '(Saved password)' : '********'
+                  "
                   :required="formData.type === 'nzbget'"
                   class="admin-input"
                 />
@@ -247,7 +263,11 @@
             </div>
           </FormSection>
 
-          <FormSection title="Advanced Settings" :icon="PhWrench" v-if="formData.type === 'qbittorrent'">
+          <FormSection
+            title="Advanced Settings"
+            :icon="PhWrench"
+            v-if="formData.type === 'qbittorrent'"
+          >
             <div class="form-group">
               <label for="initialState">Initial State</label>
               <select id="initialState" v-model="formData.initialState">
@@ -314,7 +334,9 @@
     <template #footer>
       <ModalFooter :showCancel="false">
         <template #left>
-          <button type="button" class="btn btn-danger" @click="handleDelete" v-if="editingClient"><PhTrash /> Delete</button>
+          <button type="button" class="btn btn-danger" @click="handleDelete" v-if="editingClient">
+            <PhTrash /> Delete
+          </button>
           <button type="button" class="cancel-button" @click="closeModal"><PhX /> Cancel</button>
         </template>
         <template #default>
@@ -336,7 +358,22 @@
 import { ref, computed, watch } from 'vue'
 import PasswordInput from '@/components/form/PasswordInput.vue'
 import { Modal, ModalHeader, ModalBody, ModalFooter } from '@/components/feedback'
-import { PhX, PhTrash, PhSpinner, PhGear, PhFloppyDisk, PhDownload, PhInfo, PhLock, PhTag, PhSortAscending, PhCheckSquare, PhWrench, PhFolder, PhToggleRight } from '@phosphor-icons/vue'
+import {
+  PhX,
+  PhTrash,
+  PhSpinner,
+  PhGear,
+  PhFloppyDisk,
+  PhDownload,
+  PhInfo,
+  PhLock,
+  PhTag,
+  PhSortAscending,
+  PhCheckSquare,
+  PhWrench,
+  PhFolder,
+  PhToggleRight,
+} from '@phosphor-icons/vue'
 import Checkbox from '@/components/form/Checkbox.vue'
 import FormSection from '@/components/settings/FormSection.vue'
 import type { DownloadClientConfiguration, DownloadClientSettings } from '@/types'
@@ -345,7 +382,6 @@ import { useConfigurationStore } from '@/stores/configuration'
 import { getRemotePathMappings, testDownloadClient } from '@/services/api'
 import { logger } from '@/utils/logger'
 import type { RemotePathMapping } from '@/types'
-
 
 interface Props {
   visible: boolean
@@ -451,7 +487,8 @@ const getPortPlaceholder = () => {
 
 const getPortHelpText = () => {
   const hints: Record<string, string> = {
-    transmission: 'RPC port (default: 9091). This is not the web UI port if you changed it separately.',
+    transmission:
+      'RPC port (default: 9091). This is not the web UI port if you changed it separately.',
     qbittorrent: 'Web UI port (default: 8080). Found in qBittorrent → Options → Web UI.',
     sabnzbd: 'Web interface port (default: 8080). Found in SABnzbd → Config → General.',
     nzbget: 'Web interface port (default: 6789). Found in NZBGet → Settings → Connection.',
@@ -727,11 +764,14 @@ const handleDelete = () => {
   font-size: 0.85rem;
 }
 
-
-
 /* Download client modal overrides */
-.checkbox-group label:hover { border-color: var(--brand-500); background-color: #222 }
-.checkbox-group label span { flex: 1 }
+.checkbox-group label:hover {
+  border-color: var(--brand-500);
+  background-color: #222;
+}
+.checkbox-group label span {
+  flex: 1;
+}
 
 /* modal-footer styles are centralized in src/assets/modals.css; this modal prefers space-between layout */
 .modal-footer {

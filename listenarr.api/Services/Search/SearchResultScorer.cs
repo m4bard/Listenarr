@@ -122,10 +122,10 @@ public class SearchResultScorer
 
         // Determine drop reason (if any)
         string dropReason = string.Empty;
-        
+
         // Filter logic is now handled by SearchResultFilterPipeline
         // Drop reasons here are for score-based filtering only
-        
+
         return new ScoredSearchResult(
             result,
             rawScore,
@@ -149,7 +149,8 @@ public class SearchResultScorer
             int matchedAuthor = queryTokens.Count(qt => artistTokens.Contains(qt));
             return Math.Min(1.0, (double)matchedAuthor / queryTokens.Count);
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogDebug(ex, "Failed to compute author match");
             return 0.0;
         }
@@ -172,7 +173,7 @@ public class SearchResultScorer
 
         var seriesTokens = new HashSet<string>(TokenizeAndNormalize(series));
         var qtoks = TokenizeAndNormalize(query);
-        
+
         if (!qtoks.Any())
             return 0.0;
 
@@ -185,7 +186,7 @@ public class SearchResultScorer
         if (string.IsNullOrWhiteSpace(text))
             return new List<string>();
 
-        return text.Split(new[] { ' ', '\t', '\n', '\r', '-', '_', '.', ',', ':', ';' }, 
+        return text.Split(new[] { ' ', '\t', '\n', '\r', '-', '_', '.', ',', ':', ';' },
                          StringSplitOptions.RemoveEmptyEntries)
                    .Select(t => t.Trim().ToLowerInvariant())
                    .Where(t => t.Length > 0)

@@ -18,7 +18,11 @@
 <template>
   <Modal :visible="visible" size="md" @close="closeModal">
     <template #header>
-      <ModalHeader :title="(editingMapping ? 'Edit' : 'Add') + ' Remote Path Mapping'" :icon="PhLink" @close="closeModal" />
+      <ModalHeader
+        :title="(editingMapping ? 'Edit' : 'Add') + ' Remote Path Mapping'"
+        :icon="PhLink"
+        @close="closeModal"
+      />
     </template>
 
     <template #default>
@@ -43,12 +47,15 @@
                 />
               </FormField>
 
-              <FormField
-                id="download-client"
-                label="Download Client"
-              >
-                <select id="download-client" v-model="formData.downloadClientId" class="form-control">
-                  <option v-for="c in downloadClients" :key="c.id" :value="c.id">{{ c.name }}</option>
+              <FormField id="download-client" label="Download Client">
+                <select
+                  id="download-client"
+                  v-model="formData.downloadClientId"
+                  class="form-control"
+                >
+                  <option v-for="c in downloadClients" :key="c.id" :value="c.id">
+                    {{ c.name }}
+                  </option>
                 </select>
               </FormField>
 
@@ -76,8 +83,18 @@
                 help="Path as seen by Listenarr (on this system where Listenarr is running)"
                 required
               >
-                <FolderBrowser v-model="formData.localPath" :inline="true" @open-modal="showBrowser = true" />
-                <FolderBrowserModal v-model:visible="showBrowser" v-model:modelValue="formData.localPath" :show-input="true" :show-files="false" @close="showBrowser = false" />
+                <FolderBrowser
+                  v-model="formData.localPath"
+                  :inline="true"
+                  @open-modal="showBrowser = true"
+                />
+                <FolderBrowserModal
+                  v-model:visible="showBrowser"
+                  v-model:modelValue="formData.localPath"
+                  :show-input="true"
+                  :show-files="false"
+                  @close="showBrowser = false"
+                />
               </FormField>
             </div>
           </div>
@@ -131,24 +148,28 @@ const formData = ref({
 const showBrowser = ref(false)
 
 // Watch for prop changes to populate form data
-watch(() => props.editingMapping, (newMapping) => {
-  if (newMapping) {
-    formData.value = {
-      name: newMapping.name || '',
-      downloadClientId: newMapping.downloadClientId || '',
-      remotePath: newMapping.remotePath || '',
-      localPath: newMapping.localPath || '',
+watch(
+  () => props.editingMapping,
+  (newMapping) => {
+    if (newMapping) {
+      formData.value = {
+        name: newMapping.name || '',
+        downloadClientId: newMapping.downloadClientId || '',
+        remotePath: newMapping.remotePath || '',
+        localPath: newMapping.localPath || '',
+      }
+    } else {
+      // Reset form for new mapping
+      formData.value = {
+        name: '',
+        downloadClientId: '',
+        remotePath: '',
+        localPath: '',
+      }
     }
-  } else {
-    // Reset form for new mapping
-    formData.value = {
-      name: '',
-      downloadClientId: '',
-      remotePath: '',
-      localPath: '',
-    }
-  }
-}, { immediate: true })
+  },
+  { immediate: true },
+)
 
 const handleSubmit = () => {
   emit('save', formData.value)

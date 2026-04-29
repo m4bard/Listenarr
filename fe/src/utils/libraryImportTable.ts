@@ -62,10 +62,7 @@ function getBookSortValue(item: LibraryImportSortableItem): string {
   return (item.detectedTitle ?? '').trim() || item.folderName
 }
 
-function compareOptionalText(
-  a: string | null | undefined,
-  b: string | null | undefined,
-): number {
+function compareOptionalText(a: string | null | undefined, b: string | null | undefined): number {
   const left = (a ?? '').trim()
   const right = (b ?? '').trim()
   if (!left && !right) return 0

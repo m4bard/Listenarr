@@ -60,7 +60,8 @@ namespace Listenarr.Api.Services
             {
                 return await _apiConfigRepository.GetAllAsync();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error loading API configurations from database");
                 return new List<ApiConfiguration>();
             }
@@ -72,7 +73,8 @@ namespace Listenarr.Api.Services
             {
                 return await _apiConfigRepository.GetByIdAsync(id);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error loading API configuration {Id} from database", id);
                 return null;
             }
@@ -85,7 +87,8 @@ namespace Listenarr.Api.Services
                 var saved = await _apiConfigRepository.SaveAsync(config);
                 return saved.Id;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error saving API configuration to database");
                 throw;
             }
@@ -97,7 +100,8 @@ namespace Listenarr.Api.Services
             {
                 return await _apiConfigRepository.DeleteAsync(id);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error deleting API configuration from database");
                 return false;
             }
@@ -110,7 +114,8 @@ namespace Listenarr.Api.Services
             {
                 return await _downloadClientRepository.GetAllAsync();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error loading download client configurations from database");
                 return new List<DownloadClientConfiguration>();
             }
@@ -122,7 +127,8 @@ namespace Listenarr.Api.Services
             {
                 return await _downloadClientRepository.GetByIdAsync(id);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error loading download client configuration {Id} from database", id);
                 return null;
             }
@@ -135,7 +141,8 @@ namespace Listenarr.Api.Services
                 var saved = await _downloadClientRepository.SaveAsync(config);
                 return saved.Id;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error saving download client configuration to database");
                 throw;
             }
@@ -147,7 +154,8 @@ namespace Listenarr.Api.Services
             {
                 return await _downloadClientRepository.DeleteAsync(id);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error deleting download client configuration from database");
                 return false;
             }
@@ -172,7 +180,8 @@ namespace Listenarr.Api.Services
 
                 return settings;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error loading application settings from database (no runtime ALTERs will be attempted)");
                 return new ApplicationSettings();
             }
@@ -254,11 +263,13 @@ namespace Listenarr.Api.Services
                         _logger.LogDebug("No admin credentials provided in settings update");
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogError(ex, "Failed to create or update admin user '{Username}' from application settings. Settings will still be saved.", settings.AdminUsername);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error saving application settings to database (no runtime ALTERs will be attempted)");
                 throw;
             }
@@ -380,7 +391,8 @@ namespace Listenarr.Api.Services
                 var config = _startupConfigService.GetConfig();
                 return Task.FromResult(config ?? new StartupConfig());
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving startup configuration");
                 return Task.FromResult(new StartupConfig());
             }
@@ -392,7 +404,8 @@ namespace Listenarr.Api.Services
             {
                 await _startupConfigService.SaveAsync(config);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error saving startup configuration");
                 throw;
             }
@@ -406,7 +419,8 @@ namespace Listenarr.Api.Services
                 var settings = await GetApplicationSettingsAsync();
                 return settings?.Webhooks ?? new List<WebhookConfiguration>();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving webhook configurations");
                 return new List<WebhookConfiguration>();
             }

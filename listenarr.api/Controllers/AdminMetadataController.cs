@@ -57,7 +57,8 @@ namespace Listenarr.Api.Controllers
             {
                 await _antiforgery.ValidateRequestAsync(HttpContext);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 return BadRequest(new { message = "Invalid or missing CSRF token", detail = ex.Message });
             }
 
@@ -74,7 +75,8 @@ namespace Listenarr.Api.Controllers
             {
                 meta = await _metadataService.ExtractFileMetadataAsync(path);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 return StatusCode(500, new { message = "Metadata extraction failed", detail = ex.Message });
             }
 
@@ -103,7 +105,8 @@ namespace Listenarr.Api.Controllers
             {
                 await _antiforgery.ValidateRequestAsync(HttpContext);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 return BadRequest(new { message = "Invalid or missing CSRF token", detail = ex.Message });
             }
 
@@ -128,7 +131,8 @@ namespace Listenarr.Api.Controllers
                         updated++;
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     // log and continue
                     HttpContext.RequestServices.GetRequiredService<ILogger<AdminMetadataController>>()
                         .LogWarning(ex, "Failed to re-extract for file id={Id} path={Path}", f.Id, f.Path);

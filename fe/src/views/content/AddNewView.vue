@@ -280,8 +280,12 @@
             <span v-else-if="searchType === 'asin'">Searching by ASIN</span>
             <span v-else-if="searchType === 'title'">
               <span v-if="searchQuery.toUpperCase().startsWith('TITLE:')">Searching by title</span>
-              <span v-else-if="searchQuery.toUpperCase().startsWith('AUTHOR:')">Searching by author</span>
-              <span v-else-if="searchQuery.toUpperCase().startsWith('SERIES:')">Searching by series</span>
+              <span v-else-if="searchQuery.toUpperCase().startsWith('AUTHOR:')"
+                >Searching by author</span
+              >
+              <span v-else-if="searchQuery.toUpperCase().startsWith('SERIES:')"
+                >Searching by series</span
+              >
               <span v-else>Searching by title</span>
             </span>
             <span v-else-if="searchType === 'isbn'">Searching by ISBN</span>
@@ -354,33 +358,68 @@
               </p>
 
               <div class="result-stats">
-                <span v-if="audibleResult.runtime || audibleResult.searchResult?.runtime || audibleResult.searchResult?.lengthMinutes" class="stat-item">
+                <span
+                  v-if="
+                    audibleResult.runtime ||
+                    audibleResult.searchResult?.runtime ||
+                    audibleResult.searchResult?.lengthMinutes
+                  "
+                  class="stat-item"
+                >
                   <PhClock />
-                  {{ formatRuntime((audibleResult.runtime ?? audibleResult.searchResult?.lengthMinutes ?? audibleResult.searchResult?.runtime ?? 0)!) }}
+                  {{
+                    formatRuntime(
+                      (audibleResult.runtime ??
+                        audibleResult.searchResult?.lengthMinutes ??
+                        audibleResult.searchResult?.runtime ??
+                        0)!,
+                    )
+                  }}
                 </span>
-                <span v-if="audibleResult.language || audibleResult.searchResult?.language" class="stat-item">
+                <span
+                  v-if="audibleResult.language || audibleResult.searchResult?.language"
+                  class="stat-item"
+                >
                   <PhGlobe />
-                  {{ capitalizeLanguage((audibleResult.language || audibleResult.searchResult?.language)!) }}
+                  {{
+                    capitalizeLanguage(
+                      (audibleResult.language || audibleResult.searchResult?.language)!,
+                    )
+                  }}
                 </span>
               </div>
 
               <!-- Series badges on separate line -->
               <div
-                v-if="audibleResult.seriesList?.length || audibleResult.series || audibleResult.searchResult?.series || audibleResult.searchResult?.seriesNumber"
+                v-if="
+                  audibleResult.seriesList?.length ||
+                  audibleResult.series ||
+                  audibleResult.searchResult?.series ||
+                  audibleResult.searchResult?.seriesNumber
+                "
                 class="result-series"
               >
                 <span
                   class="series-badge"
-                  :title="audibleResult.seriesList?.length
-                    ? audibleResult.seriesList.join(', ')
-                    : audibleResult.searchResult?.seriesList?.length
-                    ? audibleResult.searchResult.seriesList.join(', ')
-                    : (audibleResult.series || audibleResult.searchResult?.series) + (audibleResult.searchResult?.seriesNumber ? ` #${audibleResult.searchResult.seriesNumber}` : '')"
+                  :title="
+                    audibleResult.seriesList?.length
+                      ? audibleResult.seriesList.join(', ')
+                      : audibleResult.searchResult?.seriesList?.length
+                        ? audibleResult.searchResult.seriesList.join(', ')
+                        : (audibleResult.series || audibleResult.searchResult?.series) +
+                          (audibleResult.searchResult?.seriesNumber
+                            ? ` #${audibleResult.searchResult.seriesNumber}`
+                            : '')
+                  "
                 >
                   <PhBook />
-                  {{ safeText(audibleResult.series ?? audibleResult.searchResult?.series ?? (audibleResult.seriesList && audibleResult.seriesList[0])) }}<span
-                    v-if="audibleResult.searchResult?.seriesNumber"
-                  >
+                  {{
+                    safeText(
+                      audibleResult.series ??
+                        audibleResult.searchResult?.series ??
+                        (audibleResult.seriesList && audibleResult.seriesList[0]),
+                    )
+                  }}<span v-if="audibleResult.searchResult?.seriesNumber">
                     #{{ audibleResult.searchResult.seriesNumber }}</span
                   >
                 </span>
@@ -475,15 +514,18 @@
                     : 'btn-primary',
                 ]"
                 @click="addToLibrary(audibleResult)"
-                :disabled="!!(
-                  (
-                    audibleResult &&
-                    ((audibleResult.asin && addedAsins.has(audibleResult.asin)) ||
-                      (audibleResult.openLibraryId &&
-                        addedOpenLibraryIds.has(audibleResult.openLibraryId)))
-                  ) ||
-                  (audibleResult && audibleResult.metadataSource && audibleResult.metadataSource.toLowerCase().includes('openlibrary') && !canAddOpenLibraryResult)
-                )"
+                :disabled="
+                  !!(
+                    (audibleResult &&
+                      ((audibleResult.asin && addedAsins.has(audibleResult.asin)) ||
+                        (audibleResult.openLibraryId &&
+                          addedOpenLibraryIds.has(audibleResult.openLibraryId)))) ||
+                    (audibleResult &&
+                      audibleResult.metadataSource &&
+                      audibleResult.metadataSource.toLowerCase().includes('openlibrary') &&
+                      !canAddOpenLibraryResult)
+                  )
+                "
               >
                 <component
                   :is="
@@ -621,9 +663,16 @@
               </p>
 
               <div class="result-stats">
-                <span v-if="book.searchResult?.runtime || book.searchResult?.lengthMinutes" class="stat-item">
+                <span
+                  v-if="book.searchResult?.runtime || book.searchResult?.lengthMinutes"
+                  class="stat-item"
+                >
                   <PhClock />
-                  {{ formatRuntime((book.searchResult?.lengthMinutes ?? book.searchResult?.runtime ?? 0)) }}
+                  {{
+                    formatRuntime(
+                      book.searchResult?.lengthMinutes ?? book.searchResult?.runtime ?? 0,
+                    )
+                  }}
                 </span>
                 <span v-if="book.searchResult?.language" class="stat-item">
                   <PhGlobe />
@@ -634,25 +683,43 @@
               <!-- Series badges on separate line -->
               <div
                 v-if="
-                  (Array.isArray(book.searchResult?.seriesList) && book.searchResult.seriesList.some(s => typeof s === 'string' && s.trim().length > 0)) ||
-                  (typeof book.searchResult?.series === 'string' && book.searchResult.series.trim().length > 0)
+                  (Array.isArray(book.searchResult?.seriesList) &&
+                    book.searchResult.seriesList.some(
+                      (s) => typeof s === 'string' && s.trim().length > 0,
+                    )) ||
+                  (typeof book.searchResult?.series === 'string' &&
+                    book.searchResult.series.trim().length > 0)
                 "
                 class="result-series"
               >
                 <span
                   class="series-badge"
                   :title="
-                    Array.isArray(book.searchResult?.seriesList) && book.searchResult.seriesList.some(s => typeof s === 'string' && s.trim().length > 0)
-                      ? book.searchResult.seriesList.filter(s => typeof s === 'string' && s.trim().length > 0).join(', ')
+                    Array.isArray(book.searchResult?.seriesList) &&
+                    book.searchResult.seriesList.some(
+                      (s) => typeof s === 'string' && s.trim().length > 0,
+                    )
+                      ? book.searchResult.seriesList
+                          .filter((s) => typeof s === 'string' && s.trim().length > 0)
+                          .join(', ')
                       : `${book.searchResult?.series}${book.searchResult?.seriesNumber ? ` #${book.searchResult.seriesNumber}` : ''}`
                   "
                 >
                   <PhBook />
-                  {{ safeText(
-                    (Array.isArray(book.searchResult?.seriesList) && book.searchResult.seriesList.some(s => typeof s === 'string' && s.trim().length > 0))
-                      ? book.searchResult.seriesList.find(s => typeof s === 'string' && s.trim().length > 0)
-                      : book.searchResult?.series
-                  ) }}<span v-if="book.searchResult?.seriesNumber"> #{{ book.searchResult.seriesNumber }}</span>
+                  {{
+                    safeText(
+                      Array.isArray(book.searchResult?.seriesList) &&
+                        book.searchResult.seriesList.some(
+                          (s) => typeof s === 'string' && s.trim().length > 0,
+                        )
+                        ? book.searchResult.seriesList.find(
+                            (s) => typeof s === 'string' && s.trim().length > 0,
+                          )
+                        : book.searchResult?.series,
+                    )
+                  }}<span v-if="book.searchResult?.seriesNumber">
+                    #{{ book.searchResult.seriesNumber }}</span
+                  >
                 </span>
               </div>
 
@@ -696,8 +763,7 @@
                 >
                   <PhGlobe />
                   {{
-                    book.metadataSource &&
-                    book.metadataSource.toLowerCase().includes('audible')
+                    book.metadataSource && book.metadataSource.toLowerCase().includes('audible')
                       ? 'Audible'
                       : `Metadata: ${book.metadataSource}`
                   }}
@@ -794,7 +860,12 @@
       <template #action>
         <button
           class="btn btn-primary"
-          @click="searchQuery = ''; searchType = 'title'"
+          @click="
+            () => {
+              searchQuery = ''
+              searchType = 'title'
+            }
+          "
         >
           <PhMagnifyingGlass />
           Try Title Search
@@ -908,11 +979,7 @@ import { useSearch } from '@/composables/useSearch'
 import { useLibraryCheck } from '@/composables/useLibraryCheck'
 import { useAdvancedSearch } from '@/composables/useAdvancedSearch'
 import { EmptyState } from '@/components/base'
-import {
-  formatDate,
-  formatRuntime,
-  capitalizeLanguage,
-} from '@/utils/searchResultFormatting'
+import { formatDate, formatRuntime, capitalizeLanguage } from '@/utils/searchResultFormatting'
 import {
   extractAuthors,
   extractPublishedDate,
@@ -931,26 +998,26 @@ import {
 
 // Helper to normalize ISBN (strip hyphens/spaces, prefer ISBN-13 if present)
 function normalizeIsbn(input: unknown): string | undefined {
-  if (!input) return undefined;
+  if (!input) return undefined
   if (Array.isArray(input)) {
-    const norm = input.map(normalizeIsbn).find(Boolean);
-    return norm;
+    const norm = input.map(normalizeIsbn).find(Boolean)
+    return norm
   }
-  const isbn = String(input).replace(/[-\s]/g, '');
-  if (/^\d{13}$/.test(isbn)) return isbn;
+  const isbn = String(input).replace(/[-\s]/g, '')
+  if (/^\d{13}$/.test(isbn)) return isbn
   if (/^\d{9}[\dX]$/i.test(isbn)) {
     // Convert ISBN-10 to ISBN-13
-    const base = '978' + isbn.slice(0, 9);
-    let sum = 0;
+    const base = '978' + isbn.slice(0, 9)
+    let sum = 0
     for (let i = 0; i < 12; i++) {
-      const digit = parseInt(base.charAt(i), 10);
-      if (isNaN(digit)) return undefined;
-      sum += i % 2 === 0 ? digit : digit * 3;
+      const digit = parseInt(base.charAt(i), 10)
+      if (isNaN(digit)) return undefined
+      sum += i % 2 === 0 ? digit : digit * 3
     }
-    const check = (10 - (sum % 10)) % 10;
-    return base + String(check);
+    const check = (10 - (sum % 10)) % 10
+    return base + String(check)
   }
-  return undefined;
+  return undefined
 }
 
 // Extended type for title search results that includes search metadata
@@ -1020,11 +1087,7 @@ const {
   lastResults,
 } = useSearch()
 
-const {
-  addedAsins,
-  addedOpenLibraryIds,
-  checkExistingInLibrary,
-} = useLibraryCheck()
+const { addedAsins, addedOpenLibraryIds, checkExistingInLibrary } = useLibraryCheck()
 
 // Metadata sources are handled by the search composable; no local variable needed
 
@@ -1343,7 +1406,8 @@ const hasResults = computed(() => {
 const canAddOpenLibraryResult = computed(() => {
   try {
     // prefer the raw searchResult payload if present, otherwise the flattened audibleResult
-    const candidate = (audibleResult.value && (audibleResult.value.searchResult ?? audibleResult.value)) || null
+    const candidate =
+      (audibleResult.value && (audibleResult.value.searchResult ?? audibleResult.value)) || null
     return canAddOpenLibraryResultHelper(candidate)
   } catch {
     return false
@@ -1364,10 +1428,7 @@ const getResultLanguageKey = (result: Partial<SearchResult> | LooseResult): stri
   const candidate = result as LooseResult
   const nested = candidate.searchResult as LooseResult | undefined
   const rawLanguage =
-    candidate.language ??
-    candidate.Language ??
-    nested?.language ??
-    nested?.Language
+    candidate.language ?? candidate.Language ?? nested?.language ?? nested?.Language
 
   if (Array.isArray(rawLanguage)) {
     for (const entry of rawLanguage) {
@@ -1395,18 +1456,17 @@ const filterResultsBySelectedLanguage = <T extends Partial<SearchResult> | Loose
 }
 
 const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> | LooseResult>) => {
-    // Debug logging removed: avoid referencing undefined temporary variables
+  // Debug logging removed: avoid referencing undefined temporary variables
   const filteredResults = filterResultsBySelectedLanguage(results)
 
   // Convert search results to title results format
   titleResults.value = []
   audibleResult.value = null
   searchType.value = 'title'
-  allAudibleResults.value = filteredResults
-    .filter((result) => {
-      const rr = result as Record<string, unknown>
-      return Boolean(rr['asin'] ?? rr['Asin'] ?? rr['isEnriched'])
-    }) as unknown as AudibleSearchResult[]
+  allAudibleResults.value = filteredResults.filter((result) => {
+    const rr = result as Record<string, unknown>
+    return Boolean(rr['asin'] ?? rr['Asin'] ?? rr['isEnriched'])
+  }) as unknown as AudibleSearchResult[]
 
   if (!filteredResults.length) {
     totalTitleResultsCount.value = 0
@@ -1417,49 +1477,49 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
   }
 
   for (const result of filteredResults) {
-    const r = result as LooseResult;
-    const rr = r as Record<string, unknown>;
+    const r = result as LooseResult
+    const rr = r as Record<string, unknown>
 
     // Normalize all sources to standard TitleSearchResult
     // 1. Normalize ISBN
-    const normalizedIsbn = normalizeIsbn(rr['isbn'] ?? rr['ISBN'] ?? rr['isbns'] ?? rr['ISBNs']);
+    const normalizedIsbn = normalizeIsbn(rr['isbn'] ?? rr['ISBN'] ?? rr['isbns'] ?? rr['ISBNs'])
 
     // 2. Normalize authors
-    const authorsFromResult = extractAuthors(r);
+    const authorsFromResult = extractAuthors(r)
 
     // 3. Normalize publish year
-    const publishDateStr = extractPublishedDate(r);
-    const publishYear = publishDateStr ? parseInt(publishDateStr.substring(0, 4)) : undefined;
+    const publishDateStr = extractPublishedDate(r)
+    const publishYear = publishDateStr ? parseInt(publishDateStr.substring(0, 4)) : undefined
 
     // 4. Normalize source
-    let source = '';
+    let source = ''
     try {
-      source = normalizeSource(result.metadataSource ?? result.source) || '';
+      source = normalizeSource(result.metadataSource ?? result.source) || ''
     } catch {}
 
     // 5. Normalize publisher
-    let publisher: string[] | undefined = undefined;
+    let publisher: string[] | undefined = undefined
     if (Array.isArray(result.publisher)) {
-      publisher = result.publisher as string[];
+      publisher = result.publisher as string[]
     } else if (result.publisher) {
-      publisher = [String(result.publisher)];
+      publisher = [String(result.publisher)]
     }
 
     // 6. Normalize imageUrl
-    let imageUrl = result.imageUrl;
+    let imageUrl = result.imageUrl
     if (!imageUrl && rr['cover_i']) {
-      imageUrl = `https://covers.openlibrary.org/b/id/${rr['cover_i']}-L.jpg`;
+      imageUrl = `https://covers.openlibrary.org/b/id/${rr['cover_i']}-L.jpg`
     }
 
     // 7. Normalize key
-    const key = String(rr['asin'] ?? rr['id'] ?? rr['key'] ?? normalizedIsbn ?? '');
+    const key = String(rr['asin'] ?? rr['id'] ?? rr['key'] ?? normalizedIsbn ?? '')
 
     // 8. Normalize metadataSource
-    let metadataSource: string | undefined = undefined;
+    let metadataSource: string | undefined = undefined
     if (source) {
-      metadataSource = source;
+      metadataSource = source
     } else if (result.metadataSource) {
-      metadataSource = String(result.metadataSource);
+      metadataSource = String(result.metadataSource)
     }
 
     // 9. Compose TitleSearchResult
@@ -1467,7 +1527,12 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       title: result.title || '',
       author_name: authorsFromResult.length
         ? authorsFromResult
-        : [((result as Record<string, unknown>)['author'] ?? (result as Record<string, unknown>)['Artist'] ?? (result as Record<string, unknown>)['artist'] ?? '') as string],
+        : [
+            ((result as Record<string, unknown>)['author'] ??
+              (result as Record<string, unknown>)['Artist'] ??
+              (result as Record<string, unknown>)['artist'] ??
+              '') as string,
+          ],
       first_publish_year: publishYear,
       cover_i: rr['cover_i'] as number | undefined,
       key,
@@ -1476,27 +1541,36 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       metadataSource,
       publisher,
       isbn: normalizedIsbn,
-    };
+    }
 
     const looksLikeAudibleMetadata =
       (metadataSource && ['audible'].includes(String(metadataSource).toLowerCase())) ||
       Boolean(rr['isEnriched']) ||
       Boolean(rr['asin'])
- 
+
     if (looksLikeAudibleMetadata) {
       // Populate commonly used Audible-like fields (flattened to top-level)
       const tr = titleResult as unknown as Record<string, unknown>
       const rrRes = result as unknown as Record<string, unknown>
       const rr = result as unknown as Record<string, unknown>
-      tr['subtitle'] = rrRes['subtitles'] ?? rrRes['Subtitles'] ?? rrRes['subtitle'] ?? rrRes['Subtitle'] ?? undefined
+      tr['subtitle'] =
+        rrRes['subtitles'] ??
+        rrRes['Subtitles'] ??
+        rrRes['subtitle'] ??
+        rrRes['Subtitle'] ??
+        undefined
       // Always normalize ISBN for Audible/Audnexus/OpenLibrary results too
-      tr['isbn'] = normalizeIsbn(rrRes['isbn'] ?? rrRes['ISBN'] ?? rrRes['isbns'] ?? rrRes['ISBNs']);
+      tr['isbn'] = normalizeIsbn(rrRes['isbn'] ?? rrRes['ISBN'] ?? rrRes['isbns'] ?? rrRes['ISBNs'])
       tr['narrator'] = (() => {
-        const narr = rrRes['narrators'] ?? rrRes['Narrators'] ?? rrRes['narrator'] ?? rrRes['Narrator']
+        const narr =
+          rrRes['narrators'] ?? rrRes['Narrators'] ?? rrRes['narrator'] ?? rrRes['Narrator']
         if (Array.isArray(narr)) {
           return (narr as unknown[])
             .map((n: unknown) => {
-              if (typeof n === 'object' && n) return ((n as Record<string, unknown>)['name'] ?? (n as Record<string, unknown>)['Name'])
+              if (typeof n === 'object' && n)
+                return (
+                  (n as Record<string, unknown>)['name'] ?? (n as Record<string, unknown>)['Name']
+                )
               if (typeof n === 'string') return n
               return undefined
             })
@@ -1520,7 +1594,8 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
           if (!isNaN(m)) return Math.max(0, Math.round(m))
         }
 
-        const raw = rrRes['runtime'] ?? rrRes['Runtime'] ?? rrRes['RuntimeMinutes'] ?? rrRes['RuntimeSeconds']
+        const raw =
+          rrRes['runtime'] ?? rrRes['Runtime'] ?? rrRes['RuntimeMinutes'] ?? rrRes['RuntimeSeconds']
         if (raw === undefined || raw === null) return undefined
         const num = Number(raw)
         if (isNaN(num)) return undefined
@@ -1531,7 +1606,12 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
       if (tr['runtime']) {
         ;(tr['searchResult'] as Record<string, unknown>)['runtime'] = tr['runtime']
       }
-      tr['publishedDate'] = rrRes['releaseDate'] ?? rrRes['ReleaseDate'] ?? rrRes['publishedDate'] ?? rrRes['PublishedDate'] ?? undefined
+      tr['publishedDate'] =
+        rrRes['releaseDate'] ??
+        rrRes['ReleaseDate'] ??
+        rrRes['publishedDate'] ??
+        rrRes['PublishedDate'] ??
+        undefined
       tr['description'] = rrRes['description'] ?? rrRes['Description'] ?? undefined
       tr['asin'] = rrRes['asin'] ?? rrRes['Asin'] ?? undefined
       tr['id'] = rrRes['asin'] ?? rrRes['sku'] ?? rrRes['id'] ?? rrRes['title']
@@ -1617,7 +1697,11 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
         while (current && current !== document.documentElement) {
           const style = getComputedStyle(current)
           const overflowY = style.overflowY
-          if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) return current
+          if (
+            (overflowY === 'auto' || overflowY === 'scroll') &&
+            current.scrollHeight > current.clientHeight
+          )
+            return current
           current = current.parentElement
         }
         return window
@@ -1629,7 +1713,11 @@ const handleAdvancedSearchResults = async (results: Array<Partial<SearchResult> 
         window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
       } else {
         const anc = ancestor as HTMLElement
-        const top = anc.scrollTop + el.getBoundingClientRect().top - anc.getBoundingClientRect().top - navOffset
+        const top =
+          anc.scrollTop +
+          el.getBoundingClientRect().top -
+          anc.getBoundingClientRect().top -
+          navOffset
         anc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
       }
     }
@@ -1650,10 +1738,10 @@ const performAdvancedSearch = async () => {
     }
     const hasAny = Boolean(
       (p.title && p.title.trim()) ||
-        (p.author && p.author.trim()) ||
-        (p.series && p.series.trim()) ||
-        (p.isbn && p.isbn.trim()) ||
-        (p.asin && p.asin.trim()),
+      (p.author && p.author.trim()) ||
+      (p.series && p.series.trim()) ||
+      (p.isbn && p.isbn.trim()) ||
+      (p.asin && p.asin.trim()),
     )
     if (!hasAny) {
       advancedSearchError.value = 'Please enter a search term'
@@ -1664,9 +1752,9 @@ const performAdvancedSearch = async () => {
     isSearching.value = true
     searchError.value = ''
 
-  try {
-    const languageFilter = getPreferredSearchLanguageFilter(preferredSearchLanguage.value)
-    // Use the unified advanced search endpoint for all advanced queries.
+    try {
+      const languageFilter = getPreferredSearchLanguageFilter(preferredSearchLanguage.value)
+      // Use the unified advanced search endpoint for all advanced queries.
       // The backend returns enriched SearchResult objects which are mapped
       // into the UI by handleAdvancedSearchResults.
       isAudiblePaged.value = false
@@ -1711,20 +1799,31 @@ const performAdvancedSearch = async () => {
 
         const filtered = results.filter((r) => {
           try {
-            const sr = ((r as unknown as Record<string, unknown>)['searchResult'] as Partial<SearchResult> | undefined) ?? (r as Partial<SearchResult>)
+            const sr =
+              ((r as unknown as Record<string, unknown>)['searchResult'] as
+                | Partial<SearchResult>
+                | undefined) ?? (r as Partial<SearchResult>)
 
             // If searchResult.series is an array of objects with asin fields, check asin or name
             if (Array.isArray(sr.series) && sr.series.length) {
               for (const s of sr.series) {
                 const a =
-                  (s && ((s as Record<string, unknown>)['asin'] ?? (s as Record<string, unknown>)['Asin'] ?? (s as Record<string, unknown>)['ASIN'])) ?? (typeof s === 'string' ? s : undefined)
+                  (s &&
+                    ((s as Record<string, unknown>)['asin'] ??
+                      (s as Record<string, unknown>)['Asin'] ??
+                      (s as Record<string, unknown>)['ASIN'])) ??
+                  (typeof s === 'string' ? s : undefined)
                 if (
                   a &&
                   (String(a).toLowerCase().includes(seriesName.toLowerCase()) ||
                     String(a) === seriesName)
                 )
                   return true
-                const n = (s && ((s as Record<string, unknown>)['name'] ?? (s as Record<string, unknown>)['Name'])) ?? undefined
+                const n =
+                  (s &&
+                    ((s as Record<string, unknown>)['name'] ??
+                      (s as Record<string, unknown>)['Name'])) ??
+                  undefined
                 if (n && String(n).toLowerCase().includes(seriesName.toLowerCase())) return true
               }
             }
@@ -1869,8 +1968,14 @@ const changeAudiblePage = async (newPage: number) => {
       return {
         asin: (rr['asin'] ?? rr['Asin'] ?? '') as string,
         title: (rr['title'] ?? rr['Title'] ?? '') as string,
-        artist: ((rr['authors'] ?? rr['Authors']) as unknown[] | undefined ?? [])
-          .map((a: unknown) => (typeof a === 'object' && a ? ((a as Record<string, unknown>)['name'] ?? (a as Record<string, unknown>)['Name']) : typeof a === 'string' ? a : ''))
+        artist: (((rr['authors'] ?? rr['Authors']) as unknown[] | undefined) ?? [])
+          .map((a: unknown) =>
+            typeof a === 'object' && a
+              ? ((a as Record<string, unknown>)['name'] ?? (a as Record<string, unknown>)['Name'])
+              : typeof a === 'string'
+                ? a
+                : '',
+          )
           .filter(Boolean)
           .join(', '),
         imageUrl: (rr['imageUrl'] ?? rr['ImageUrl'] ?? '') as string,
@@ -1913,19 +2018,11 @@ const changeAudiblePage = async (newPage: number) => {
 
 // toggleAdvancedSearch is now provided by the useAdvancedSearch composable
 
-
-
-
-
 // Audible search functions removed
-
-
 
 // Lightweight raw fetch helper removed (debug helper)
 
 // searchByTitle helper removed in favor of `useSearch` composable implementation
-
-
 
 const loadMoreTitleResults = async () => {
   // Since backend search returns all Amazon/Audible results at once,
@@ -1952,7 +2049,11 @@ const getCoverUrl = (book: TitleSearchResult): string => {
   const key = book.key || JSON.stringify(book.title || '')
   // If we've already selected a best cover, return it (proxied)
   if (coverSelection.value[key]) {
-    return getProtectedImageSrc(coverSelection.value[key], `addnew-cover-${key}`, getPlaceholderUrl())
+    return getProtectedImageSrc(
+      coverSelection.value[key],
+      `addnew-cover-${key}`,
+      getPlaceholderUrl(),
+    )
   }
 
   // Start background evaluation once per key (non-blocking).
@@ -2135,7 +2236,8 @@ const resolveImageUrlForAspectRatio = async (
 
 const formatAuthors = (book: TitleSearchResult): string => {
   if (Array.isArray(book.author_name)) return book.author_name.join(', ')
-  if (typeof book.author_name === 'string' && book.author_name.trim()) return book.author_name.trim()
+  if (typeof book.author_name === 'string' && book.author_name.trim())
+    return book.author_name.trim()
   return book.searchResult?.artist || 'Unknown Author'
 }
 
@@ -2144,7 +2246,11 @@ const getAsin = (book: TitleSearchResult): string | null => {
 }
 
 const getMetadataSourceUrl = (book: TitleSearchResult): string | undefined => {
-  const source = book.metadataSource ?? ((book.searchResult as unknown as Record<string, unknown>)['metadataSource'] as string | undefined)
+  const source =
+    book.metadataSource ??
+    ((book.searchResult as unknown as Record<string, unknown>)['metadataSource'] as
+      | string
+      | undefined)
   if (!source) return undefined
 
   // OpenLibrary metadata does not require an ASIN; prefer resultUrl (JSON) then productUrl or OL work URL
@@ -2155,8 +2261,7 @@ const getMetadataSourceUrl = (book: TitleSearchResult): string | undefined => {
     if (book.searchResult?.productUrl) return book.searchResult.productUrl
     const olBook = book as OpenLibraryBook
     // Avoid using our local generated keys (they start with 'search-') — prefer real OL identifiers
-    const candidateKey =
-      (olBook.key || '').toString()
+    const candidateKey = (olBook.key || '').toString()
     const looksLikeLocalKey =
       candidateKey.startsWith('search-') || candidateKey.startsWith('search-unknown-')
     if (!looksLikeLocalKey) {
@@ -2178,7 +2283,11 @@ const getMetadataSourceUrl = (book: TitleSearchResult): string | undefined => {
 
       // If key is a work but we couldn't derive an edition, fallback to work search by title
       if (candidateKey.startsWith('/works') && book.title) {
-        const firstAuthor = Array.isArray(book.author_name) ? book.author_name[0] : (typeof book.author_name === 'string' ? book.author_name : '')
+        const firstAuthor = Array.isArray(book.author_name)
+          ? book.author_name[0]
+          : typeof book.author_name === 'string'
+            ? book.author_name
+            : ''
         const q = `${book.title}${firstAuthor ? ' ' + firstAuthor : ''}`
         return openLibraryService.getSearchUrl(q)
       }
@@ -2218,7 +2327,15 @@ const getSourceUrl = (book: TitleSearchResult): string | undefined => {
 
   // If metadata indicates Audible-backed metadata, link to the Audible product page when possible.
   const asin = getAsin(book)
-  const metaSource = (book.metadataSource ?? ((book.searchResult as unknown as Record<string, unknown>)['metadataSource'] as string | undefined) ?? '').toString().toLowerCase()
+  const metaSource = (
+    book.metadataSource ??
+    ((book.searchResult as unknown as Record<string, unknown>)['metadataSource'] as
+      | string
+      | undefined) ??
+    ''
+  )
+    .toString()
+    .toLowerCase()
   if (metaSource.includes('audible') && asin) {
     return buildAudibleProductUrl(asin)
   }
@@ -2333,7 +2450,9 @@ const attemptResolveAsinsForTitleResults = async (): Promise<void> => {
 ;(() => {
   try {
     if (titleResults.value && titleResults.value.length) {
-      attemptResolveAsinsForTitleResults().catch(() => logger.debug('ASIN resolution background job failed'))
+      attemptResolveAsinsForTitleResults().catch(() =>
+        logger.debug('ASIN resolution background job failed'),
+      )
     }
   } catch {}
 })()
@@ -2384,21 +2503,22 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       const response = await apiService.getAudibleMetadata<
         AudibleMetadataResponse | AudibleMetadataPayload
       >(asin, searchLanguage.value)
-      const responseObj = (response && typeof response === 'object')
-        ? (response as AudibleMetadataResponse | AudibleMetadataPayload)
-        : {}
-      const audibleData = (
+      const responseObj =
+        response && typeof response === 'object'
+          ? (response as AudibleMetadataResponse | AudibleMetadataPayload)
+          : {}
+      const audibleData =
         'metadata' in responseObj &&
-          responseObj.metadata &&
-          typeof responseObj.metadata === 'object'
-      )
-        ? responseObj.metadata
-        : (responseObj as AudibleMetadataPayload)
-      const metadataSource = (
-        'source' in responseObj && typeof responseObj.source === 'string'
+        responseObj.metadata &&
+        typeof responseObj.metadata === 'object'
+          ? responseObj.metadata
+          : (responseObj as AudibleMetadataPayload)
+      const metadataSource =
+        ('source' in responseObj && typeof responseObj.source === 'string'
           ? responseObj.source
-          : undefined
-      ) || book.metadataSource || 'configured metadata source'
+          : undefined) ||
+        book.metadataSource ||
+        'configured metadata source'
       logger.debug(`Metadata fetched from ${metadataSource}:`, audibleData)
 
       // Store the metadata source in the book object so it shows in the UI
@@ -2406,11 +2526,9 @@ const selectTitleResult = async (book: TitleSearchResult) => {
 
       const hasUsableMetadata = !!(
         audibleData &&
-        (
-          (typeof audibleData.title === 'string' && audibleData.title.trim()) ||
+        ((typeof audibleData.title === 'string' && audibleData.title.trim()) ||
           (typeof audibleData.asin === 'string' && audibleData.asin.trim()) ||
-          (Array.isArray(audibleData.authors) && audibleData.authors.length > 0)
-        )
+          (Array.isArray(audibleData.authors) && audibleData.authors.length > 0))
       )
 
       if (!hasUsableMetadata) {
@@ -2423,12 +2541,18 @@ const selectTitleResult = async (book: TitleSearchResult) => {
           asin: asin || '',
           title: result?.title || book.title || 'Unknown Title',
           subtitle: result?.subtitle,
-          authors: result?.artist ? [result.artist] : (Array.isArray(book.author_name)
-            ? book.author_name.filter((a): a is string => typeof a === 'string')
-            : (typeof book.author_name === 'string' ? [book.author_name] : [])),
+          authors: result?.artist
+            ? [result.artist]
+            : Array.isArray(book.author_name)
+              ? book.author_name.filter((a): a is string => typeof a === 'string')
+              : typeof book.author_name === 'string'
+                ? [book.author_name]
+                : [],
           narrators: result?.narrator ? [result.narrator] : [],
           publisher: result?.publisher,
-          publishedDate: result?.publishedDate || (book.first_publish_year ? String(book.first_publish_year) : undefined),
+          publishedDate:
+            result?.publishedDate ||
+            (book.first_publish_year ? String(book.first_publish_year) : undefined),
           description: result?.description,
           imageUrl: result?.imageUrl,
           runtime: result?.runtime || result?.lengthMinutes || undefined,
@@ -2448,7 +2572,8 @@ const selectTitleResult = async (book: TitleSearchResult) => {
 
       toast.success('Metadata retrieved', `Book details fetched from ${metadataSource}`)
 
-      const publishedDate = audibleData.releaseDate || audibleData.publishDate || audibleData.publishedDate
+      const publishedDate =
+        audibleData.releaseDate || audibleData.publishDate || audibleData.publishedDate
 
       const metadata: AudibleBookMetadata = {
         asin: audibleData.asin || asin || '',
@@ -2474,9 +2599,14 @@ const selectTitleResult = async (book: TitleSearchResult) => {
             ?.map((g: AudibleGenre) => g.name)
             .filter((n: string | undefined) => n) as string[]) || [],
         series: audibleData.series?.length
-          ? audibleData.series.map((s) => s.name).filter((n): n is string => !!n).join(', ')
+          ? audibleData.series
+              .map((s) => s.name)
+              .filter((n): n is string => !!n)
+              .join(', ')
           : undefined,
-        seriesList: (audibleData.series?.map((s) => s.name).filter((n): n is string => !!n) as string[]) || [],
+        seriesList:
+          (audibleData.series?.map((s) => s.name).filter((n): n is string => !!n) as string[]) ||
+          [],
         seriesNumber:
           audibleData.series?.[0]?.position !== undefined
             ? String(audibleData.series[0].position)
@@ -2497,10 +2627,16 @@ const selectTitleResult = async (book: TitleSearchResult) => {
 
     // Allow adding any book with a title and ISBN (relaxed, not just OpenLibrary)
     if (
-      book.title && book.title.trim() &&
-      book.isbn && Array.isArray(book.isbn) && book.isbn.length > 0 && typeof book.isbn[0] === 'string' && book.isbn[0].trim()
+      book.title &&
+      book.title.trim() &&
+      book.isbn &&
+      Array.isArray(book.isbn) &&
+      book.isbn.length > 0 &&
+      typeof book.isbn[0] === 'string' &&
+      book.isbn[0].trim()
     ) {
-      const getFirstString = (val: unknown) => Array.isArray(val) ? (val[0] || '').toString() : (val || '').toString()
+      const getFirstString = (val: unknown) =>
+        Array.isArray(val) ? (val[0] || '').toString() : (val || '').toString()
       const bookRecord = book as unknown as Record<string, unknown>
       const metadata: AudibleBookMetadata = {
         asin: '',
@@ -2508,15 +2644,24 @@ const selectTitleResult = async (book: TitleSearchResult) => {
         subtitle: getOptionalString((book as { subtitle?: unknown }).subtitle),
         authors: Array.isArray(book.author_name)
           ? book.author_name.filter((a): a is string => typeof a === 'string')
-          : (typeof book.author_name === 'string' ? [book.author_name] : []),
+          : typeof book.author_name === 'string'
+            ? [book.author_name]
+            : [],
         publisher: getFirstString(book.publisher),
         publishedDate: book.first_publish_year ? String(book.first_publish_year) : undefined,
         description: getOptionalString((book as { description?: unknown }).description),
-        imageUrl: book.cover_i ? `https://covers.openlibrary.org/b/id/${book.cover_i}-L.jpg` : undefined,
+        imageUrl: book.cover_i
+          ? `https://covers.openlibrary.org/b/id/${book.cover_i}-L.jpg`
+          : undefined,
         runtime: undefined,
         language: getFirstString(book.language),
-        genres: Array.isArray(book.subject) ? book.subject.filter((g): g is string => typeof g === 'string') : [],
-        series: Array.isArray(book.seriesList) && book.seriesList.length > 0 ? book.seriesList[0] : undefined,
+        genres: Array.isArray(book.subject)
+          ? book.subject.filter((g): g is string => typeof g === 'string')
+          : [],
+        series:
+          Array.isArray(book.seriesList) && book.seriesList.length > 0
+            ? book.seriesList[0]
+            : undefined,
         seriesNumber: undefined,
         isbn: getFirstString(book.isbn),
         source: book.metadataSource || 'Unknown',
@@ -2532,7 +2677,9 @@ const selectTitleResult = async (book: TitleSearchResult) => {
       return
     }
     // Otherwise, block as before
-    logger.error('No ASIN, enriched metadata, or OpenLibrary ISBN+title available for selected book')
+    logger.error(
+      'No ASIN, enriched metadata, or OpenLibrary ISBN+title available for selected book',
+    )
     toast.warning('Cannot add', 'Cannot add to library: No ASIN, metadata, or ISBN available')
   } catch (error) {
     logger.error('Failed to add audiobook:', error)
@@ -2618,8 +2765,10 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
     try {
       const rr = result as unknown as Record<string, unknown>
       // subtitles may be provided as `subtitle`, `Subtitle`, `Subtitles` or `subtitles`
-      rr['subtitles'] = rr['subtitles'] ?? rr['subtitle'] ?? rr['Subtitle'] ?? rr['Subtitles'] ?? undefined
-      rr['subtitle'] = rr['subtitle'] ?? rr['subtitles'] ?? rr['Subtitle'] ?? rr['Subtitles'] ?? undefined
+      rr['subtitles'] =
+        rr['subtitles'] ?? rr['subtitle'] ?? rr['Subtitle'] ?? rr['Subtitles'] ?? undefined
+      rr['subtitle'] =
+        rr['subtitle'] ?? rr['subtitles'] ?? rr['Subtitle'] ?? rr['Subtitles'] ?? undefined
 
       // narrators may be provided as array or single string
       if (!rr['narrator']) {
@@ -2627,7 +2776,10 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
         if (Array.isArray(narrArr) && narrArr.length) {
           rr['narrator'] = (narrArr as unknown[])
             .map((n: unknown) => {
-              if (typeof n === 'object' && n) return ((n as Record<string, unknown>)['name'] ?? (n as Record<string, unknown>)['Name'])
+              if (typeof n === 'object' && n)
+                return (
+                  (n as Record<string, unknown>)['name'] ?? (n as Record<string, unknown>)['Name']
+                )
               if (typeof n === 'string') return n
               return undefined
             })
@@ -2639,10 +2791,7 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
       }
 
       // Normalize legacy/current Audible-backed metadata source values for display.
-      if (
-        rr['metadataSource'] &&
-        String(rr['metadataSource']).toLowerCase().includes('audible')
-      ) {
+      if (rr['metadataSource'] && String(rr['metadataSource']).toLowerCase().includes('audible')) {
         rr['source'] = 'Audible'
       }
     } catch (e) {
@@ -2664,33 +2813,52 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
 
     const authorsFromResult = ((): string[] => {
       const rrec = result as unknown as Record<string, unknown>
-      const authorStr = typeof rrec['author'] === 'string' && (rrec['author'] as string).trim().length ? (rrec['author'] as string).trim() : undefined
+      const authorStr =
+        typeof rrec['author'] === 'string' && (rrec['author'] as string).trim().length
+          ? (rrec['author'] as string).trim()
+          : undefined
       if (authorStr) return [authorStr]
 
-      const artistStr = typeof rrec['Artist'] === 'string' && (rrec['Artist'] as string).trim().length ? (rrec['Artist'] as string).trim() : undefined
+      const artistStr =
+        typeof rrec['Artist'] === 'string' && (rrec['Artist'] as string).trim().length
+          ? (rrec['Artist'] as string).trim()
+          : undefined
       if (artistStr) return [artistStr]
 
-      if (typeof rrec['artist'] === 'string' && (rrec['artist'] as string).trim().length) return [(rrec['artist'] as string).trim()]
+      if (typeof rrec['artist'] === 'string' && (rrec['artist'] as string).trim().length)
+        return [(rrec['artist'] as string).trim()]
 
       const maybeAuthors = rrec['authors'] ?? rrec['Authors']
       if (Array.isArray(maybeAuthors) && maybeAuthors.length) {
         return (maybeAuthors as unknown[])
           .map((a: unknown) => {
             if (typeof a === 'string') return (a as string).trim()
-            if (typeof a === 'object' && a) return ((a as Record<string, unknown>)['name'] as string | undefined) ?? ((a as Record<string, unknown>)['Name'] as string | undefined) ?? ''
+            if (typeof a === 'object' && a)
+              return (
+                ((a as Record<string, unknown>)['name'] as string | undefined) ??
+                ((a as Record<string, unknown>)['Name'] as string | undefined) ??
+                ''
+              )
             return ''
           })
           .filter((n) => !!n) as string[]
       }
 
       // If the original searchResult contains authors, use those
-      const sr = (result as unknown as Record<string, unknown>)['searchResult'] as Record<string, unknown> | undefined
+      const sr = (result as unknown as Record<string, unknown>)['searchResult'] as
+        | Record<string, unknown>
+        | undefined
       const srAuthors = sr ? ((sr['authors'] ?? sr['Authors']) as unknown[] | undefined) : undefined
       if (Array.isArray(srAuthors) && srAuthors.length) {
         return (srAuthors as unknown[])
           .map((a: unknown) => {
             if (typeof a === 'string') return a.trim()
-            if (typeof a === 'object' && a) return ((a as Record<string, unknown>)['name'] as string | undefined) ?? ((a as Record<string, unknown>)['Name'] as string | undefined) ?? ''
+            if (typeof a === 'object' && a)
+              return (
+                ((a as Record<string, unknown>)['name'] as string | undefined) ??
+                ((a as Record<string, unknown>)['Name'] as string | undefined) ??
+                ''
+              )
             return String(a)
           })
           .filter((n) => !!n) as string[]
@@ -2712,7 +2880,12 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
       title: result.title || '',
       author_name: authorsFromResult.length
         ? authorsFromResult
-        : [((result as unknown as Record<string, unknown>)['author'] ?? (result as unknown as Record<string, unknown>)['Artist'] ?? (result as unknown as Record<string, unknown>)['artist'] ?? '') as string],
+        : [
+            ((result as unknown as Record<string, unknown>)['author'] ??
+              (result as unknown as Record<string, unknown>)['Artist'] ??
+              (result as unknown as Record<string, unknown>)['artist'] ??
+              '') as string,
+          ],
       first_publish_year: publishYear,
       cover_i: undefined,
       key: String(result.asin || result.id || ''),
@@ -2721,7 +2894,15 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
       // Prefer explicit metadataSource, but normalize Audible-backed results to a stable label.
       metadataSource: (looksLikeAudibleMetadata
         ? 'audible'
-        : result.metadataSource ?? ((result as unknown as Record<string, unknown>)['searchResult'] ? ((result as unknown as Record<string, unknown>)['searchResult'] as Record<string, unknown>)['metadataSource'] : undefined)) as string | undefined,
+        : (result.metadataSource ??
+          ((result as unknown as Record<string, unknown>)['searchResult']
+            ? (
+                (result as unknown as Record<string, unknown>)['searchResult'] as Record<
+                  string,
+                  unknown
+                >
+              )['metadataSource']
+            : undefined))) as string | undefined,
       // forward publisher into the top-level TitleSearchResult so template's publisher check works
       publisher: Array.isArray(result.publisher)
         ? result.publisher
@@ -2735,13 +2916,22 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
       const tr = titleResult as unknown as Record<string, unknown>
       const rrRes = result as unknown as Record<string, unknown>
       const rr = result as unknown as Record<string, unknown>
-      tr['subtitle'] = rrRes['subtitles'] ?? rrRes['Subtitles'] ?? rrRes['subtitle'] ?? rrRes['Subtitle'] ?? undefined
+      tr['subtitle'] =
+        rrRes['subtitles'] ??
+        rrRes['Subtitles'] ??
+        rrRes['subtitle'] ??
+        rrRes['Subtitle'] ??
+        undefined
       tr['narrator'] = (() => {
-        const narr = rrRes['narrators'] ?? rrRes['Narrators'] ?? rrRes['narrator'] ?? rrRes['Narrator']
+        const narr =
+          rrRes['narrators'] ?? rrRes['Narrators'] ?? rrRes['narrator'] ?? rrRes['Narrator']
         if (Array.isArray(narr)) {
           return (narr as unknown[])
             .map((n: unknown) => {
-              if (typeof n === 'object' && n) return ((n as Record<string, unknown>)['name'] ?? (n as Record<string, unknown>)['Name'])
+              if (typeof n === 'object' && n)
+                return (
+                  (n as Record<string, unknown>)['name'] ?? (n as Record<string, unknown>)['Name']
+                )
               if (typeof n === 'string') return n
               return undefined
             })
@@ -2752,7 +2942,15 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
         return undefined
       })()
       tr['runtime'] = (() => {
-        const raw = rrRes['runtimeLengthMin'] ?? rrRes['lengthMinutes'] ?? rrRes['runtimeMinutes'] ?? rrRes['RuntimeLengthMin'] ?? rrRes['runtime'] ?? rrRes['Runtime'] ?? rrRes['RuntimeMinutes'] ?? rrRes['RuntimeSeconds']
+        const raw =
+          rrRes['runtimeLengthMin'] ??
+          rrRes['lengthMinutes'] ??
+          rrRes['runtimeMinutes'] ??
+          rrRes['RuntimeLengthMin'] ??
+          rrRes['runtime'] ??
+          rrRes['Runtime'] ??
+          rrRes['RuntimeMinutes'] ??
+          rrRes['RuntimeSeconds']
         if (raw === undefined || raw === null) return undefined
         const num = Number(raw)
         if (isNaN(num)) return undefined
@@ -2763,7 +2961,12 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
       if (tr['runtime']) {
         ;(tr['searchResult'] as Record<string, unknown>)['runtime'] = tr['runtime']
       }
-      tr['publishedDate'] = rrRes['releaseDate'] ?? rrRes['ReleaseDate'] ?? rrRes['publishedDate'] ?? rrRes['PublishedDate'] ?? undefined
+      tr['publishedDate'] =
+        rrRes['releaseDate'] ??
+        rrRes['ReleaseDate'] ??
+        rrRes['publishedDate'] ??
+        rrRes['PublishedDate'] ??
+        undefined
       tr['description'] = rrRes['description'] ?? rrRes['Description'] ?? undefined
       tr['asin'] = rrRes['asin'] ?? rrRes['Asin'] ?? undefined
       tr['id'] = rrRes['asin'] ?? rrRes['sku'] ?? rrRes['id'] ?? rrRes['title']
@@ -2835,7 +3038,11 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
         while (current && current !== document.documentElement) {
           const style = getComputedStyle(current)
           const overflowY = style.overflowY
-          if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) return current
+          if (
+            (overflowY === 'auto' || overflowY === 'scroll') &&
+            current.scrollHeight > current.clientHeight
+          )
+            return current
           current = current.parentElement
         }
         return window
@@ -2847,7 +3054,11 @@ const handleSimpleSearchResults = async (results: SearchResult[]) => {
         window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
       } else {
         const anc = ancestor as HTMLElement
-        const top = anc.scrollTop + el.getBoundingClientRect().top - anc.getBoundingClientRect().top - navOffset
+        const top =
+          anc.scrollTop +
+          el.getBoundingClientRect().top -
+          anc.getBoundingClientRect().top -
+          navOffset
         anc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
       }
     }
@@ -3209,7 +3420,7 @@ onUnmounted(() => {
   align-items: center;
   gap: 0.75rem;
   color: #9ca3af;
-  font-size: 0.80rem;
+  font-size: 0.8rem;
   padding: 0.6rem 1rem;
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.04) 0%, rgba(255, 255, 255, 0.02) 100%);
   border: 1px solid rgba(255, 255, 255, 0.08);
@@ -3349,7 +3560,6 @@ onUnmounted(() => {
 }
 
 /* Keep a distinct select appearance only if the select explicitly opts into it via .form-select */
-
 
 select.form-input:focus {
   outline: none;

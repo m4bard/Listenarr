@@ -53,7 +53,7 @@ public class SearchResultFilterPipeline
             {
                 if (logFilteredResults)
                 {
-                    _logger.LogInformation("Filtered out result: {Title} (ASIN: {Asin}) - Reason: {Reason}", 
+                    _logger.LogInformation("Filtered out result: {Title} (ASIN: {Asin}) - Reason: {Reason}",
                         result.Title, result.Asin, filterReason);
                 }
             }

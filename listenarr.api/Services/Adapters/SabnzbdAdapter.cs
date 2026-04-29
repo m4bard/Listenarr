@@ -97,7 +97,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogDebug(tce, "SABnzbd TestConnection timed out");
                 return (false, "SABnzbd: connection timed out");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogDebug(ex, "SABnzbd TestConnection failed");
                 return (false, "SABnzbd: connection failed");
             }
@@ -211,7 +212,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogInformation("Successfully added NZB to SABnzbd with ID: {DownloadId}", LogRedaction.SanitizeText(downloadId));
                 return downloadId;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to send NZB to SABnzbd");
                 throw;
             }
@@ -260,7 +262,8 @@ namespace Listenarr.Api.Services.Adapters
                         }
                     }
                 }
-                catch (Exception queueEx) when (queueEx is not OperationCanceledException && queueEx is not OutOfMemoryException && queueEx is not StackOverflowException) {
+                catch (Exception queueEx) when (queueEx is not OperationCanceledException && queueEx is not OutOfMemoryException && queueEx is not StackOverflowException)
+                {
                     _logger.LogDebug(queueEx, "Could not remove {DownloadId} from SABnzbd queue (may not be in queue)", id);
                 }
 
@@ -282,14 +285,15 @@ namespace Listenarr.Api.Services.Adapters
                         }
                     }
                 }
-                catch (Exception historyEx) when (historyEx is not OperationCanceledException && historyEx is not OutOfMemoryException && historyEx is not StackOverflowException) {
+                catch (Exception historyEx) when (historyEx is not OperationCanceledException && historyEx is not OutOfMemoryException && historyEx is not StackOverflowException)
+                {
                     _logger.LogDebug(historyEx, "Could not remove {DownloadId} from SABnzbd history (may not be in history)", id);
                 }
 
                 var success = removedFromQueue || removedFromHistory;
                 if (success)
                 {
-                    _logger.LogInformation("Removed {DownloadId} from SABnzbd (queue: {Queue}, history: {History}, deleteFiles: {DeleteFiles})", 
+                    _logger.LogInformation("Removed {DownloadId} from SABnzbd (queue: {Queue}, history: {History}, deleteFiles: {DeleteFiles})",
                         LogRedaction.SanitizeText(id), removedFromQueue, removedFromHistory, deleteFiles);
                 }
                 else
@@ -299,7 +303,8 @@ namespace Listenarr.Api.Services.Adapters
 
                 return success;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error removing from SABnzbd: {DownloadId}", LogRedaction.SanitizeText(id));
                 return false;
             }
@@ -447,7 +452,8 @@ namespace Listenarr.Api.Services.Adapters
                             ContentPath = localContentPath
                         });
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogError(ex, "Error parsing SABnzbd queue item");
                     }
                 }
@@ -547,7 +553,8 @@ namespace Listenarr.Api.Services.Adapters
                     _logger.LogDebug(ex, "Failed to fetch SABnzbd history for queue enrichment (non-fatal)");
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error getting SABnzbd queue");
             }
 
@@ -588,7 +595,8 @@ namespace Listenarr.Api.Services.Adapters
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to fetch SABnzbd history (non-fatal)");
             }
 
@@ -738,14 +746,16 @@ namespace Listenarr.Api.Services.Adapters
                             )
                         });
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogError(ex, "Error parsing SABnzbd queue item");
                     }
                 }
 
                 _logger.LogInformation("Retrieved {Count} items from SABnzbd queue", items.Count);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error getting SABnzbd items");
             }
 
@@ -846,7 +856,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Download {NzoId} not found in SABnzbd history", item.DownloadId);
                 return result;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Error resolving import item for SABnzbd download {NzoId}", item.DownloadId);
                 return result;
             }
@@ -881,7 +892,8 @@ namespace Listenarr.Api.Services.Adapters
 
                 return totalSeconds;
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+            {
                 return 0;
             }
         }
@@ -907,7 +919,8 @@ namespace Listenarr.Api.Services.Adapters
                     _ => 0
                 };
             }
-            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) {
+            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+            {
                 return 0;
             }
         }
@@ -1009,7 +1022,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Download {NzoId} not found in SABnzbd history", queueItem.Id);
                 return result;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Error resolving import item for SABnzbd download {NzoId}", queueItem.Id);
                 return result;
             }

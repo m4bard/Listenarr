@@ -18,29 +18,45 @@
 <template>
   <Modal :visible="isOpen" size="lg" @close="close">
     <template #header>
-      <ModalHeader :title="`Edit Audiobook: ${audiobook?.title || 'Audiobook'}`" @close="close" :icon="PhPencil" />
+      <ModalHeader
+        :title="`Edit Audiobook: ${audiobook?.title || 'Audiobook'}`"
+        @close="close"
+        :icon="PhPencil"
+      />
     </template>
 
     <template #default>
       <ModalBody compact>
         <form @submit.prevent="handleSave" class="edit-form form-body">
           <!-- Monitored Status -->
-            <div class="form-group">
-              <label class="form-label">
-                <PhEye></PhEye>
-                Monitored Status
-              </label>
-              <div class="form-control-card">
-                <div class="radio-group">
-                  <RadioCard v-model="formData.monitored" :value="true" name="monitored" title="Monitored" description="Automatically search for and upgrade releases" />
-                  <RadioCard v-model="formData.monitored" :value="false" name="monitored" title="Unmonitored" description="Do not search for new releases" />
-                </div>
-                <p class="help-text">
-                  Monitored audiobooks will be automatically upgraded when better quality releases are
-                  found
-                </p>
+          <div class="form-group">
+            <label class="form-label">
+              <PhEye></PhEye>
+              Monitored Status
+            </label>
+            <div class="form-control-card">
+              <div class="radio-group">
+                <RadioCard
+                  v-model="formData.monitored"
+                  :value="true"
+                  name="monitored"
+                  title="Monitored"
+                  description="Automatically search for and upgrade releases"
+                />
+                <RadioCard
+                  v-model="formData.monitored"
+                  :value="false"
+                  name="monitored"
+                  title="Unmonitored"
+                  description="Do not search for new releases"
+                />
               </div>
+              <p class="help-text">
+                Monitored audiobooks will be automatically upgraded when better quality releases are
+                found
+              </p>
             </div>
+          </div>
 
           <!-- Metadata -->
           <div class="form-group">
@@ -74,9 +90,18 @@
                   <label class="field-label" for="metadata-authors">Authors</label>
                   <div class="tags-container author-tags-editor">
                     <div class="tags-list">
-                      <span v-for="(author, index) in formData.authors" :key="`${author}-${index}`" class="tag-item">
+                      <span
+                        v-for="(author, index) in formData.authors"
+                        :key="`${author}-${index}`"
+                        class="tag-item"
+                      >
                         {{ author }}
-                        <button type="button" class="tag-remove" @click="removeAuthor(index)" title="Remove author">
+                        <button
+                          type="button"
+                          class="tag-remove"
+                          @click="removeAuthor(index)"
+                          title="Remove author"
+                        >
                           <PhX :size="16" weight="bold"></PhX>
                         </button>
                       </span>
@@ -110,9 +135,18 @@
                   <label class="field-label" for="metadata-narrators">Narrators</label>
                   <div class="tags-container narrator-tags-editor">
                     <div class="tags-list">
-                      <span v-for="(narrator, index) in formData.narrators" :key="`${narrator}-${index}`" class="tag-item">
+                      <span
+                        v-for="(narrator, index) in formData.narrators"
+                        :key="`${narrator}-${index}`"
+                        class="tag-item"
+                      >
                         {{ narrator }}
-                        <button type="button" class="tag-remove" @click="removeNarrator(index)" title="Remove narrator">
+                        <button
+                          type="button"
+                          class="tag-remove"
+                          @click="removeNarrator(index)"
+                          title="Remove narrator"
+                        >
                           <PhX :size="16" weight="bold"></PhX>
                         </button>
                       </span>
@@ -193,7 +227,9 @@
                   />
                 </div>
                 <div class="metadata-field">
-                  <label class="field-label" for="metadata-runtime">Listening Length (minutes)</label>
+                  <label class="field-label" for="metadata-runtime"
+                    >Listening Length (minutes)</label
+                  >
                   <input
                     id="metadata-runtime"
                     v-model="formData.runtime"
@@ -213,8 +249,8 @@
                     placeholder="e.g. Revised Edition"
                   />
                   <p class="help-text">
-                    Optional user-defined label exposed as <code>{Edition}</code> in file and
-                    folder naming patterns.
+                    Optional user-defined label exposed as <code>{Edition}</code> in file and folder
+                    naming patterns.
                   </p>
                 </div>
                 <div class="metadata-field metadata-field--full">
@@ -239,7 +275,10 @@
                           />
                         </div>
                         <div class="series-membership-field series-membership-field--number">
-                          <label class="field-label sr-only" :for="`metadata-series-number-${index}`">
+                          <label
+                            class="field-label sr-only"
+                            :for="`metadata-series-number-${index}`"
+                          >
                             Number in series
                           </label>
                           <input
@@ -265,7 +304,11 @@
                           type="button"
                           class="icon-btn btn-secondary"
                           @click="removeSeriesMembership(index)"
-                          :disabled="formData.seriesMemberships.length === 1 && !membership.seriesName.trim() && !membership.seriesNumber.trim()"
+                          :disabled="
+                            formData.seriesMemberships.length === 1 &&
+                            !membership.seriesName.trim() &&
+                            !membership.seriesNumber.trim()
+                          "
                           title="Remove series membership"
                           aria-label="Remove series membership"
                         >
@@ -273,7 +316,10 @@
                         </button>
                       </div>
                     </div>
-                    <div v-if="formData.seriesMemberships.length === 0" class="series-memberships-empty">
+                    <div
+                      v-if="formData.seriesMemberships.length === 0"
+                      class="series-memberships-empty"
+                    >
                       No series memberships added yet
                     </div>
                     <button
@@ -294,9 +340,18 @@
                   <label class="field-label" for="metadata-genres">Genres</label>
                   <div class="tags-container genre-tags-editor">
                     <div class="tags-list">
-                      <span v-for="(genre, index) in formData.genres" :key="`${genre}-${index}`" class="tag-item">
+                      <span
+                        v-for="(genre, index) in formData.genres"
+                        :key="`${genre}-${index}`"
+                        class="tag-item"
+                      >
                         {{ genre }}
-                        <button type="button" class="tag-remove" @click="removeGenre(index)" title="Remove genre">
+                        <button
+                          type="button"
+                          class="tag-remove"
+                          @click="removeGenre(index)"
+                          title="Remove genre"
+                        >
                           <PhX :size="16" weight="bold"></PhX>
                         </button>
                       </span>
@@ -368,65 +423,113 @@
             </label>
             <div class="form-control-card">
               <div class="destination-display">
-              <!-- Read-only display mode -->
-              <div v-if="!editingDestination" class="destination-readonly">
-                <input type="text" :value="combinedBasePath() || 'No destination set'" class="form-input readonly-input"
-                  readonly disabled />
-                <button type="button" class="icon-btn btn-primary btn-edit-destination" @click="startEditingDestination"
-                  title="Edit destination" aria-label="Edit destination">
-                  <PhPencil :size="16"></PhPencil>
-                </button>
-              </div>
-              <!-- Edit mode -->
-              <div v-else class="destination-edit">
-                <div class="destination-row">
-                  <div class="root-select">
-                    <RootFolderSelect :hideLabel="true" :hideBrowse="!isUsingCustomPath" :autoFocusCustom="true"
-                      :externalCustom="true" :inline="true" v-model:rootId="selectedRootId" v-model:customPath="customRootPath"
-                      @open-browser="openCustomBrowser" />
-                  </div>
+                <!-- Read-only display mode -->
+                <div v-if="!editingDestination" class="destination-readonly">
+                  <input
+                    type="text"
+                    :value="combinedBasePath() || 'No destination set'"
+                    class="form-input readonly-input"
+                    readonly
+                    disabled
+                  />
+                  <button
+                    type="button"
+                    class="icon-btn btn-primary btn-edit-destination"
+                    @click="startEditingDestination"
+                    title="Edit destination"
+                    aria-label="Edit destination"
+                  >
+                    <PhPencil :size="16"></PhPencil>
+                  </button>
+                </div>
+                <!-- Edit mode -->
+                <div v-else class="destination-edit">
+                  <div class="destination-row">
+                    <div class="root-select">
+                      <RootFolderSelect
+                        :hideLabel="true"
+                        :hideBrowse="!isUsingCustomPath"
+                        :autoFocusCustom="true"
+                        :externalCustom="true"
+                        :inline="true"
+                        v-model:rootId="selectedRootId"
+                        v-model:customPath="customRootPath"
+                        @open-browser="openCustomBrowser"
+                      />
+                    </div>
 
-                  <!-- External inline custom path moved outside of the root-select -->
-                  <div v-if="isUsingCustomPath" class="custom-path inline-mode">
-                    <div class="custom-path-row">
-                      <input ref="externalCustomInput" type="text" class="form-input custom-input" placeholder="Absolute path (e.g. C:\\Audiobooks)" v-model="customRootPath" @input="onExternalCustomInput" @keydown.enter.prevent="onExternalCustomEnter" />
-                      <button type="button" class="icon-btn btn-secondary btn-inline-browse" @click="openCustomBrowser" title="Browse for folder" aria-label="Browse for folder">
-                        <PhFolder></PhFolder>
+                    <!-- External inline custom path moved outside of the root-select -->
+                    <div v-if="isUsingCustomPath" class="custom-path inline-mode">
+                      <div class="custom-path-row">
+                        <input
+                          ref="externalCustomInput"
+                          type="text"
+                          class="form-input custom-input"
+                          placeholder="Absolute path (e.g. C:\\Audiobooks)"
+                          v-model="customRootPath"
+                          @input="onExternalCustomInput"
+                          @keydown.enter.prevent="onExternalCustomEnter"
+                        />
+                        <button
+                          type="button"
+                          class="icon-btn btn-secondary btn-inline-browse"
+                          @click="openCustomBrowser"
+                          title="Browse for folder"
+                          aria-label="Browse for folder"
+                        >
+                          <PhFolder></PhFolder>
+                        </button>
+                      </div>
+                    </div>
+
+                    <input
+                      v-if="!isUsingCustomPath && selectedRootId !== 0"
+                      type="text"
+                      v-model="formData.relativePath"
+                      class="form-input relative-input"
+                      placeholder="e.g. Author/Title"
+                    />
+
+                    <div class="destination-actions">
+                      <button
+                        type="button"
+                        class="btn icon-btn btn-secondary btn-sm"
+                        @click="editingDestination = false"
+                        aria-label="Cancel destination edit"
+                        title="Cancel"
+                      >
+                        <PhX :size="16"></PhX>
+                      </button>
+                      <button
+                        type="button"
+                        class="btn icon-btn btn-primary btn-sm"
+                        @click="finishEditingDestination"
+                        aria-label="Save destination"
+                        title="Done"
+                      >
+                        <PhCheck :size="16"></PhCheck>
                       </button>
                     </div>
                   </div>
 
-                  <input v-if="!isUsingCustomPath && selectedRootId !== 0" type="text" v-model="formData.relativePath"
-                    class="form-input relative-input" placeholder="e.g. Author/Title" />
-
-                  <div class="destination-actions">
-                    <button type="button" class="btn icon-btn btn-secondary btn-sm" @click="editingDestination = false"
-                      aria-label="Cancel destination edit" title="Cancel">
-                      <PhX :size="16"></PhX>
-                    </button>
-                    <button type="button" class="btn icon-btn btn-primary btn-sm" @click="finishEditingDestination"
-                      aria-label="Save destination" title="Done">
-                      <PhCheck :size="16"></PhCheck>
-                    </button>
-                  </div>
+                  <!-- Custom path status removed for streamlined UI -->
                 </div>
-
-                <!-- Custom path status removed for streamlined UI -->
+                <p class="help-text">
+                  <span v-if="!editingDestination"
+                    >Click the edit button to change the destination folder.</span
+                  >
+                  <span v-else>
+                    <strong>Choose a root folder</strong> from the dropdown, or select
+                    <em>"Custom path"</em> to specify any location. The right field is for
+                    organizing within the selected root.
+                  </span>
+                </p>
+                <!-- Path length warning -->
+                <div v-if="destinationPathWarning" class="path-length-warning">
+                  <PhWarning :size="16" />
+                  <span>{{ destinationPathWarning }}</span>
+                </div>
               </div>
-              <p class="help-text">
-                <span v-if="!editingDestination">Click the edit button to change the destination folder.</span>
-                <span v-else>
-                  <strong>Choose a root folder</strong> from the dropdown, or select <em>"Custom path"</em> to specify
-                  any location.
-                  The right field is for organizing within the selected root.
-                </span>
-              </p>
-              <!-- Path length warning -->
-              <div v-if="destinationPathWarning" class="path-length-warning">
-                <PhWarning :size="16" />
-                <span>{{ destinationPathWarning }}</span>
-              </div>
-            </div>
             </div>
           </div>
 
@@ -441,7 +544,12 @@
                 <div class="tags-list">
                   <span v-for="(tag, index) in formData.tags" :key="index" class="tag-item">
                     {{ tag }}
-                    <button type="button" class="tag-remove" @click="removeTag(index)" title="Remove tag">
+                    <button
+                      type="button"
+                      class="tag-remove"
+                      @click="removeTag(index)"
+                      title="Remove tag"
+                    >
                       <PhX :size="16" weight="bold"></PhX>
                     </button>
                   </span>
@@ -450,9 +558,21 @@
                   </span>
                 </div>
                 <div class="tag-input-group">
-                  <input type="text" v-model="newTag" @keypress.enter.prevent="addTag" placeholder="Add a tag..."
-                    class="tag-input" />
-                  <button type="button" @click="addTag" class="icon-btn btn-primary btn-add-tag" :disabled="!newTag.trim()" title="Add tag" aria-label="Add tag">
+                  <input
+                    type="text"
+                    v-model="newTag"
+                    @keypress.enter.prevent="addTag"
+                    placeholder="Add a tag..."
+                    class="tag-input"
+                  />
+                  <button
+                    type="button"
+                    @click="addTag"
+                    class="icon-btn btn-primary btn-add-tag"
+                    :disabled="!newTag.trim()"
+                    title="Add tag"
+                    aria-label="Add tag"
+                  >
                     <PhPlus :size="16"></PhPlus>
                   </button>
                 </div>
@@ -535,11 +655,19 @@
               </div>
 
               <div class="identifier-actions">
-                <button type="button" class="btn btn-secondary btn-sm" @click="addIdentifier('Asin')">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  @click="addIdentifier('Asin')"
+                >
                   <PhPlus :size="14"></PhPlus>
                   Add ASIN
                 </button>
-                <button type="button" class="btn btn-secondary btn-sm" @click="addIdentifier('Isbn')">
+                <button
+                  type="button"
+                  class="btn btn-secondary btn-sm"
+                  @click="addIdentifier('Isbn')"
+                >
                   <PhPlus :size="14"></PhPlus>
                   Add ISBN
                 </button>
@@ -554,8 +682,8 @@
               </div>
 
               <p class="help-text">
-                Add alternate or corrected identifiers to improve metadata and cover lookup. ASINs may
-                include a region. Only one primary identifier is allowed per type.
+                Add alternate or corrected identifiers to improve metadata and cover lookup. ASINs
+                may include a region. Only one primary identifier is allowed per type.
               </p>
             </div>
           </div>
@@ -580,13 +708,19 @@
             </div>
           </div>
 
-          <button type="submit" style="display: none;" aria-hidden="true"></button>
+          <button type="submit" style="display: none" aria-hidden="true"></button>
         </form>
       </ModalBody>
     </template>
 
     <template #footer>
-      <button type="button" class="btn btn-secondary cancel-button" @click="close" title="Close" aria-label="Close">
+      <button
+        type="button"
+        class="btn btn-secondary cancel-button"
+        @click="close"
+        title="Close"
+        aria-label="Close"
+      >
         Close
       </button>
       <div v-if="moveJob" class="move-status">
@@ -597,7 +731,14 @@
           <small>Target: {{ moveJob.target }}</small>
         </div>
       </div>
-      <button type="button" class="btn btn-primary" @click="handleSave" :disabled="saving || !hasChanges" :title="saving ? 'Saving...' : 'Save'" :aria-label="saving ? 'Saving' : 'Save'">
+      <button
+        type="button"
+        class="btn btn-primary"
+        @click="handleSave"
+        :disabled="saving || !hasChanges"
+        :title="saving ? 'Saving...' : 'Save'"
+        :aria-label="saving ? 'Saving' : 'Save'"
+      >
         <span v-if="saving"><PhSpinner class="ph-spin"></PhSpinner> Saving...</span>
         <span v-else>Save</span>
       </button>
@@ -611,7 +752,6 @@
     :show-input="true"
     @close="closeCustomBrowser"
   />
-
 
   <MoveAudiobookModal
     :visible="showMoveConfirm"
@@ -741,7 +881,9 @@ const customRootPath = ref<string | undefined>(undefined)
 
 const isUsingCustomPath = computed(() => {
   // True when user has selected an explicit custom base path (0) or supplied an absolute path
-  return selectedRootId.value === 0 || (customRootPath.value != null && customRootPath.value.length > 0)
+  return (
+    selectedRootId.value === 0 || (customRootPath.value != null && customRootPath.value.length > 0)
+  )
 })
 const rootPath = ref<string | null>(null)
 const saving = ref(false)
@@ -781,7 +923,7 @@ const formData = ref<FormData>({
   abridged: false,
   explicit: false,
   basePath: null,
-  relativePath: ''
+  relativePath: '',
 })
 
 function normalizeStringList(values: string[] | null | undefined): string[] {
@@ -813,7 +955,8 @@ function normalizeSeriesMembershipRows(
       seriesNumber,
       seriesAsin: seriesAsin || null,
       isPrimary: Boolean(membership.isPrimary),
-      sortOrder: typeof membership.sortOrder === 'number' ? membership.sortOrder : normalized.length,
+      sortOrder:
+        typeof membership.sortOrder === 'number' ? membership.sortOrder : normalized.length,
     })
   }
 
@@ -840,7 +983,8 @@ function normalizeSeriesMembershipRows(
     .map((membership, index) => ({
       ...membership,
       sortOrder: index,
-      isPrimary: membership.isPrimary || index === 0 && !normalized.some((entry) => entry.isPrimary),
+      isPrimary:
+        membership.isPrimary || (index === 0 && !normalized.some((entry) => entry.isPrimary)),
     }))
 }
 
@@ -849,14 +993,17 @@ function serializeSeriesMembershipRows(
   legacySeries?: string | null,
   legacySeriesNumber?: string | null,
 ): string {
-  const normalized = normalizeSeriesMembershipRows(memberships, legacySeries, legacySeriesNumber)
-    .map((membership, index) => ({
-      seriesName: membership.seriesName,
-      seriesNumber: membership.seriesNumber,
-      seriesAsin: normalizeOptionalText(membership.seriesAsin),
-      isPrimary: Boolean(membership.isPrimary || index === 0),
-      sortOrder: index,
-    }))
+  const normalized = normalizeSeriesMembershipRows(
+    memberships,
+    legacySeries,
+    legacySeriesNumber,
+  ).map((membership, index) => ({
+    seriesName: membership.seriesName,
+    seriesNumber: membership.seriesNumber,
+    seriesAsin: normalizeOptionalText(membership.seriesAsin),
+    isPrimary: Boolean(membership.isPrimary || index === 0),
+    sortOrder: index,
+  }))
 
   return JSON.stringify(normalized)
 }
@@ -872,13 +1019,12 @@ function createEditableSeriesMembership(): EditableSeriesMembership {
   }
 }
 
-function derivePrimarySeriesMembership(
-  memberships: EditableSeriesMembership[],
-): { series: string; seriesNumber: string } {
+function derivePrimarySeriesMembership(memberships: EditableSeriesMembership[]): {
+  series: string
+  seriesNumber: string
+} {
   const normalized = normalizeSeriesMembershipRows(memberships)
-  const primary =
-    normalized.find((membership) => membership.isPrimary) ??
-    normalized[0]
+  const primary = normalized.find((membership) => membership.isPrimary) ?? normalized[0]
 
   return {
     series: primary?.seriesName || '',
@@ -1045,29 +1191,35 @@ onMounted(() => {
 // When the select switches to 'Custom path' we need to prefill the input
 // using the *previous* chosen root (old) because the new selectedRootId is already
 // set to 0 by the time this runs and combinedBasePath() would return empty.
-watch(() => selectedRootId.value, (v, old) => {
-  if (v === 0 && (customRootPath.value == null || customRootPath.value === '')) {
-    // Determine previous selected root path
-    let prevRoot: string | null = null
-    if (old && old > 0) {
-      const found = rootStore.folders.find((f) => f.id === old)
-      prevRoot = found?.path ?? rootPath.value ?? null
-    } else if (old === null) {
-      prevRoot = rootPath.value || null
-    } else if (old === 0 && customRootPath.value) {
-      prevRoot = customRootPath.value
-    }
+watch(
+  () => selectedRootId.value,
+  (v, old) => {
+    if (v === 0 && (customRootPath.value == null || customRootPath.value === '')) {
+      // Determine previous selected root path
+      let prevRoot: string | null = null
+      if (old && old > 0) {
+        const found = rootStore.folders.find((f) => f.id === old)
+        prevRoot = found?.path ?? rootPath.value ?? null
+      } else if (old === null) {
+        prevRoot = rootPath.value || null
+      } else if (old === 0 && customRootPath.value) {
+        prevRoot = customRootPath.value
+      }
 
-    if (prevRoot) {
-      // Prefill the custom input with the precise destination (basePath if available)
-      const base = (formData.value.basePath && formData.value.basePath.trim()) || baselineAudiobook.value?.basePath || prevRoot
-      customRootPath.value = base
+      if (prevRoot) {
+        // Prefill the custom input with the precise destination (basePath if available)
+        const base =
+          (formData.value.basePath && formData.value.basePath.trim()) ||
+          baselineAudiobook.value?.basePath ||
+          prevRoot
+        customRootPath.value = base
 
-      // Focus external custom input if it's visible
-      focusExternalInput()
+        // Focus external custom input if it's visible
+        focusExternalInput()
+      }
     }
-  }
-})
+  },
+)
 
 // When the folder browser closes, the path is set
 watch(
@@ -1118,7 +1270,7 @@ function confirmMove() {
       moveFiles: Boolean(modalMoveFiles.value),
       deleteEmptySource: Boolean(modalDeleteEmpty.value),
     })
-          
+
   moveConfirmResolver = null
   showMoveConfirm.value = false
   pendingMove.value = null
@@ -1143,7 +1295,8 @@ const hasChanges = computed(() => {
 
   const basePathChanged = (audiobook.basePath || '') !== (combinedBasePath() || '')
 
-  const identifiersChanged = serializeIdentifierRows(formData.value.identifiers) !==
+  const identifiersChanged =
+    serializeIdentifierRows(formData.value.identifiers) !==
     serializeIdentifierRows(originalIdentifierRows.value)
 
   const runtimeChanged = (() => {
@@ -1153,9 +1306,7 @@ const hasChanges = computed(() => {
   })()
 
   const seriesMembershipsChanged =
-    serializeSeriesMembershipRows(
-      formData.value.seriesMemberships,
-    ) !==
+    serializeSeriesMembershipRows(formData.value.seriesMemberships) !==
     serializeSeriesMembershipRows(
       audiobook.seriesMemberships,
       audiobook.series,
@@ -1169,11 +1320,15 @@ const hasChanges = computed(() => {
     normalizeOptionalText(formData.value.subtitle) !== normalizeOptionalText(audiobook.subtitle) ||
     serializeStringList(formData.value.authors) !== serializeStringList(audiobook.authors) ||
     serializeStringList(formData.value.narrators) !== serializeStringList(audiobook.narrators) ||
-    normalizeOptionalText(formData.value.description) !== normalizeOptionalText(audiobook.description) ||
-    normalizeOptionalText(formData.value.publisher) !== normalizeOptionalText(audiobook.publisher) ||
+    normalizeOptionalText(formData.value.description) !==
+      normalizeOptionalText(audiobook.description) ||
+    normalizeOptionalText(formData.value.publisher) !==
+      normalizeOptionalText(audiobook.publisher) ||
     normalizeLanguageText(formData.value.language) !== normalizeLanguageText(audiobook.language) ||
-    normalizeOptionalText(formData.value.publishedDate) !== normalizeOptionalText(audiobook.publishedDate) ||
-    normalizeOptionalText(formData.value.publishYear) !== normalizeOptionalText(audiobook.publishYear) ||
+    normalizeOptionalText(formData.value.publishedDate) !==
+      normalizeOptionalText(audiobook.publishedDate) ||
+    normalizeOptionalText(formData.value.publishYear) !==
+      normalizeOptionalText(audiobook.publishYear) ||
     runtimeChanged ||
     normalizeOptionalText(formData.value.edition) !== normalizeOptionalText(audiobook.edition) ||
     seriesMembershipsChanged ||
@@ -1238,7 +1393,6 @@ async function loadData() {
 }
 
 async function initializeForm(audiobook: Audiobook) {
-
   // Determine which root folder matches the existing basePath
   if (audiobook.basePath && rootStore.folders.length > 0) {
     // Check if basePath starts with any configured root folder
@@ -1246,8 +1400,10 @@ async function initializeForm(audiobook: Audiobook) {
       const normBase = toForward(audiobook.basePath!)
       const normRoot = toForward(folder.path)
       const rootWithSlash = normRoot.endsWith('/') ? normRoot : normRoot + '/'
-      return normBase.toLowerCase() === normRoot.toLowerCase()
-        || normBase.toLowerCase().startsWith(rootWithSlash.toLowerCase())
+      return (
+        normBase.toLowerCase() === normRoot.toLowerCase() ||
+        normBase.toLowerCase().startsWith(rootWithSlash.toLowerCase())
+      )
     })
 
     if (matchingRoot) {
@@ -1319,7 +1475,13 @@ async function initializeForm(audiobook: Audiobook) {
   await loadIdentifiers()
 }
 
-import { toForward, trimTrailingSlash, normalizeForCompare, isAbsolutePath, stripRootPrefix } from '@/utils/path'
+import {
+  toForward,
+  trimTrailingSlash,
+  normalizeForCompare,
+  isAbsolutePath,
+  stripRootPrefix,
+} from '@/utils/path'
 
 function focusExternalInput() {
   setTimeout(() => externalCustomInput.value?.focus(), 0)
@@ -1446,12 +1608,18 @@ function finishEditingDestination() {
       logger.debug('Failed to strip root from relative input:', err)
     }
 
-    const isAbsolute = isAbsolutePath((formData.value.relativePath || val) || '')
+    const isAbsolute = isAbsolutePath(formData.value.relativePath || val || '')
 
     // If user typed an absolute path or included the chosen root prefix, derive a relative path
-    const relOrVal = (formData.value.relativePath || val) || ''
-    if (isAbsolute || (relOrVal && normalizeForCompare(relOrVal).startsWith(normalizeForCompare(chosenRoot || '')))) {
-      formData.value.relativePath = deriveRelativeFromBase(relOrVal || formData.value.basePath || '', chosenRoot)
+    const relOrVal = formData.value.relativePath || val || ''
+    if (
+      isAbsolute ||
+      (relOrVal && normalizeForCompare(relOrVal).startsWith(normalizeForCompare(chosenRoot || '')))
+    ) {
+      formData.value.relativePath = deriveRelativeFromBase(
+        relOrVal || formData.value.basePath || '',
+        chosenRoot,
+      )
     } else {
       // Keep the value as-is (user provided a relative path)
       formData.value.relativePath = relOrVal
@@ -1480,11 +1648,14 @@ async function handleSave() {
 
   saving.value = true
   try {
-    const identifiersChanged = serializeIdentifierRows(formData.value.identifiers) !==
+    const identifiersChanged =
+      serializeIdentifierRows(formData.value.identifiers) !==
       serializeIdentifierRows(originalIdentifierRows.value)
 
     const parsedRuntime = parseRuntimeInput(formData.value.runtime)
-    const normalizedSeriesMemberships = normalizeSeriesMembershipRows(formData.value.seriesMemberships)
+    const normalizedSeriesMemberships = normalizeSeriesMembershipRows(
+      formData.value.seriesMemberships,
+    )
     const primarySeries = derivePrimarySeriesMembership(normalizedSeriesMemberships)
 
     // Build update payload with current form values
@@ -1523,13 +1694,13 @@ async function handleSave() {
 
     // If user changed destination/base path, include the combined root+relative value in updates
     if ((combined || '') !== (audiobook.basePath || '')) {
-      ; (updates as Partial<Audiobook>).basePath = combined ?? undefined
+      ;(updates as Partial<Audiobook>).basePath = combined ?? undefined
     }
 
     // If qualityProfileId is null, send -1 to signal "use default"
     // Otherwise send the actual ID
     if (formData.value.qualityProfileId === null) {
-      ; (updates as { qualityProfileId?: number }).qualityProfileId = -1 // -1 means "use default profile"
+      ;(updates as { qualityProfileId?: number }).qualityProfileId = -1 // -1 means "use default profile"
     } else {
       updates.qualityProfileId = formData.value.qualityProfileId
     }
@@ -1538,33 +1709,38 @@ async function handleSave() {
       formData.value.monitored !== Boolean(audiobook.monitored) ||
       formData.value.qualityProfileId !== (audiobook.qualityProfileId ?? null) ||
       normalizeOptionalText(formData.value.title) !== normalizeOptionalText(audiobook.title) ||
-      normalizeOptionalText(formData.value.subtitle) !== normalizeOptionalText(audiobook.subtitle) ||
+      normalizeOptionalText(formData.value.subtitle) !==
+        normalizeOptionalText(audiobook.subtitle) ||
       serializeStringList(formData.value.authors) !== serializeStringList(audiobook.authors) ||
       serializeStringList(formData.value.narrators) !== serializeStringList(audiobook.narrators) ||
-      normalizeOptionalText(formData.value.description) !== normalizeOptionalText(audiobook.description) ||
-      normalizeOptionalText(formData.value.publisher) !== normalizeOptionalText(audiobook.publisher) ||
-      normalizeLanguageText(formData.value.language) !== normalizeLanguageText(audiobook.language) ||
-      normalizeOptionalText(formData.value.publishedDate) !== normalizeOptionalText(audiobook.publishedDate) ||
-      normalizeOptionalText(formData.value.publishYear) !== normalizeOptionalText(audiobook.publishYear) ||
+      normalizeOptionalText(formData.value.description) !==
+        normalizeOptionalText(audiobook.description) ||
+      normalizeOptionalText(formData.value.publisher) !==
+        normalizeOptionalText(audiobook.publisher) ||
+      normalizeLanguageText(formData.value.language) !==
+        normalizeLanguageText(audiobook.language) ||
+      normalizeOptionalText(formData.value.publishedDate) !==
+        normalizeOptionalText(audiobook.publishedDate) ||
+      normalizeOptionalText(formData.value.publishYear) !==
+        normalizeOptionalText(audiobook.publishYear) ||
       (normalizeNumericInput(formData.value.runtime) !== '' &&
         normalizeNumericInput(formData.value.runtime) !==
           normalizeNumericInput(audiobook.runtime?.toString())) ||
       normalizeOptionalText(formData.value.edition) !== normalizeOptionalText(audiobook.edition) ||
-      serializeSeriesMembershipRows(
-        formData.value.seriesMemberships,
-      ) !==
+      serializeSeriesMembershipRows(formData.value.seriesMemberships) !==
         serializeSeriesMembershipRows(
           audiobook.seriesMemberships,
           audiobook.series,
           audiobook.seriesNumber,
         ) ||
       serializeStringList(formData.value.genres) !== serializeStringList(audiobook.genres) ||
-      normalizeOptionalText(formData.value.imageUrl) !== normalizeOptionalText(audiobook.imageUrl) ||
+      normalizeOptionalText(formData.value.imageUrl) !==
+        normalizeOptionalText(audiobook.imageUrl) ||
       JSON.stringify([...formData.value.tags].sort()) !==
         JSON.stringify([...(audiobook.tags || [])].sort()) ||
       formData.value.abridged !== Boolean(audiobook.abridged) ||
       formData.value.explicit !== Boolean(audiobook.explicit) ||
-      ((combined || '') !== (audiobook.basePath || ''))
+      (combined || '') !== (audiobook.basePath || '')
 
     if (hasNonIdentifierChanges) {
       await apiService.updateAudiobook(audiobook.id, updates)
@@ -1614,13 +1790,13 @@ async function handleSave() {
               toast.success('Move completed', `Files moved to ${job.target || combined}`)
               try {
                 if (moveUnsub.value) moveUnsub.value()
-              } catch { }
+              } catch {}
               moveUnsub.value = null
             } else if (job.status === 'Failed') {
               toast.error('Move failed', job.error || 'Move job failed. Check logs for details.')
               try {
                 if (moveUnsub.value) moveUnsub.value()
-              } catch { }
+              } catch {}
               moveUnsub.value = null
             } else if (job.status === 'Processing') {
               toast.info('Move in progress', `Moving files to ${job.target || combined}`)
@@ -1670,7 +1846,9 @@ function createIdentifierRow(type: AudiobookExternalIdentifierType): EditableIde
   }
 }
 
-function mapIdentifierToEditableRow(identifier: AudiobookExternalIdentifier): EditableIdentifierRow {
+function mapIdentifierToEditableRow(
+  identifier: AudiobookExternalIdentifier,
+): EditableIdentifierRow {
   return {
     localKey: `id-${identifier.id}`,
     type: identifier.type,
@@ -1738,7 +1916,7 @@ function toIdentifierWritePayload(row: EditableIdentifierRow): AudiobookExternal
   return {
     type: row.type,
     value: row.value,
-    region: row.type === 'Asin' ? (row.region || null) : null,
+    region: row.type === 'Asin' ? row.region || null : null,
     isPrimary: Boolean(row.isPrimary),
     source: row.source || 'Manual',
   }
@@ -1805,19 +1983,26 @@ function removeSeriesMembership(index: number) {
     formData.value.seriesMemberships[0].isPrimary = true
   }
 
-  formData.value.seriesMemberships = formData.value.seriesMemberships.map((membership, membershipIndex) => ({
-    ...membership,
-    sortOrder: membershipIndex,
-    isPrimary: membership.isPrimary || membershipIndex === 0 && !formData.value.seriesMemberships.some((entry) => entry.isPrimary),
-  }))
+  formData.value.seriesMemberships = formData.value.seriesMemberships.map(
+    (membership, membershipIndex) => ({
+      ...membership,
+      sortOrder: membershipIndex,
+      isPrimary:
+        membership.isPrimary ||
+        (membershipIndex === 0 &&
+          !formData.value.seriesMemberships.some((entry) => entry.isPrimary)),
+    }),
+  )
 }
 
 function setPrimarySeriesMembership(index: number) {
-  formData.value.seriesMemberships = formData.value.seriesMemberships.map((membership, membershipIndex) => ({
-    ...membership,
-    isPrimary: membershipIndex === index,
-    sortOrder: membershipIndex,
-  }))
+  formData.value.seriesMemberships = formData.value.seriesMemberships.map(
+    (membership, membershipIndex) => ({
+      ...membership,
+      isPrimary: membershipIndex === index,
+      sortOrder: membershipIndex,
+    }),
+  )
 }
 
 function close() {
@@ -1826,10 +2011,10 @@ function close() {
     if (moveUnsub.value) {
       try {
         moveUnsub.value()
-      } catch { }
+      } catch {}
       moveUnsub.value = null
     }
-  } catch { }
+  } catch {}
   moveJob.value = null
   emit('close')
 }
@@ -2240,7 +2425,7 @@ function close() {
   margin: 0;
 }
 
-.checkbox-row input[type="checkbox"] {
+.checkbox-row input[type='checkbox'] {
   margin-top: 0.125rem;
   width: 1rem;
   height: 1rem;
@@ -2254,8 +2439,6 @@ function close() {
   gap: 0.25rem;
   flex: 1;
 }
-
-
 
 .checkbox-label {
   color: #aaaaaa;
@@ -2391,7 +2574,7 @@ function close() {
   flex-wrap: wrap;
 }
 
-.modal-footer>.btn {
+.modal-footer > .btn {
   flex-shrink: 0;
 }
 
@@ -2908,20 +3091,29 @@ function close() {
 
 .muted-note {
   color: #999;
-  font-size: 0.95rem
+  font-size: 0.95rem;
 }
 
 .destination-actions {
   display: flex;
   gap: 0.5rem;
-  align-items: center
+  align-items: center;
 }
 
-.custom-path-row { display:flex; gap:0.5rem; align-items:center }
+.custom-path-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
 
 .custom-path {
   flex: 1;
 }
 
-.custom-input { min-width: 120px; flex: 1; width:100%; min-width:0 }
+.custom-input {
+  min-width: 120px;
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+}
 </style>

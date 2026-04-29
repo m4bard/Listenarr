@@ -514,7 +514,9 @@
 }
 
 .transition-colors {
-  transition: color var(--transition-normal), background-color var(--transition-normal);
+  transition:
+    color var(--transition-normal),
+    background-color var(--transition-normal);
 }
 
 .transition-transform {

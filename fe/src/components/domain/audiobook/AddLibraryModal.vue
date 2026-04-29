@@ -25,353 +25,412 @@
       <ModalBody>
         <div ref="modalRef" class="add-library-modal-content" tabindex="-1">
           <div class="book-layout">
-          <!-- Book Image -->
-          <div class="book-image">
-            <div class="image-viewport">
-              <img
-                v-if="imageSrc"
-                :src="imageSrc"
-                :alt="currentMetadata.title || 'Audiobook cover'"
-                loading="lazy"
-                @error="onImageError"
-                @load="onImageLoad"
-                :aria-hidden="!currentMetadata.title"
-              />
-              <div v-else class="placeholder-cover">
-                <PhImage />
-                <span>No Cover</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Book Details -->
-          <div class="book-details">
-            <div v-if="!showMetadataEditor" class="detail-section detail-header">
-              <div>
-              <h3>{{ currentMetadata.title }}</h3>
-              <p v-if="currentMetadata.authors?.length" class="authors">by {{ currentMetadata.authors.join(', ') }}</p>
-              <p v-if="currentMetadata.narrators?.length" class="narrators">
-                Narrated by {{ currentMetadata.narrators.join(', ') }}
-              </p>
-              </div>
-              <button
-                v-if="editableMetadata"
-                type="button"
-                class="btn btn-secondary metadata-toggle-btn"
-                @click="toggleMetadataEditor"
-              >
-                <PhPencilSimple />
-                Edit Metadata
-              </button>
-            </div>
-
-            <template v-if="!showMetadataEditor">
-            <div v-if="currentMetadata.description" class="detail-section">
-              <h4>Description</h4>
-              <div class="description">{{ stripHtmlAndNormalize(currentMetadata.description) }}</div>
-            </div>
-
-            <div class="detail-section" id="add-library-desc">
-              <h4>Publication Information</h4>
-              <div class="detail-grid">
-                <div v-if="currentMetadata.publisher" class="detail-item">
-                  <span class="label">Publisher:</span>
-                  <span class="value">{{ currentMetadata.publisher }}</span>
-                </div>
-                <div v-if="publishDate" class="detail-item">
-                  <span class="label">Release Date:</span>
-                  <span class="value">{{ formatDate(publishDate) }}</span>
-                </div>
-                <div v-else-if="publishYear" class="detail-item">
-                  <span class="label">Release Date:</span>
-                  <span class="value">{{ publishYear }}</span>
-                </div>
-                <div v-if="currentMetadata.language" class="detail-item">
-                  <span class="label">Language:</span>
-                  <span class="value">{{ capitalizeFirst(currentMetadata.language) }}</span>
-                </div>
-                <div v-if="currentMetadata.runtime" class="detail-item">
-                  <span class="label">Listening Length:</span>
-                  <span class="value">{{ formatRuntime(currentMetadata.runtime) }}</span>
-                </div>
-                <div v-if="currentMetadata.edition" class="detail-item">
-                  <span class="label">Edition:</span>
-                  <span class="value">{{ currentMetadata.edition }}</span>
-                </div>
-                <div v-if="currentMetadata.version" class="detail-item">
-                  <span class="label">Version:</span>
-                  <span class="value">{{ currentMetadata.version }}</span>
+            <!-- Book Image -->
+            <div class="book-image">
+              <div class="image-viewport">
+                <img
+                  v-if="imageSrc"
+                  :src="imageSrc"
+                  :alt="currentMetadata.title || 'Audiobook cover'"
+                  loading="lazy"
+                  @error="onImageError"
+                  @load="onImageLoad"
+                  :aria-hidden="!currentMetadata.title"
+                />
+                <div v-else class="placeholder-cover">
+                  <PhImage />
+                  <span>No Cover</span>
                 </div>
               </div>
             </div>
 
-            <div class="detail-section">
-              <h4>Identifiers</h4>
-              <div class="detail-grid">
-                <div v-if="normalizedSourceName" class="detail-item">
-                  <span class="label">Metadata Source:</span>
-                  <span class="value">
-                    <a
-                      v-if="audibleSourceUrl"
-                      :href="audibleSourceUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {{ normalizedSourceName }}
-                    </a>
-                    <span v-else>{{ normalizedSourceName }}</span>
-                  </span>
+            <!-- Book Details -->
+            <div class="book-details">
+              <div v-if="!showMetadataEditor" class="detail-section detail-header">
+                <div>
+                  <h3>{{ currentMetadata.title }}</h3>
+                  <p v-if="currentMetadata.authors?.length" class="authors">
+                    by {{ currentMetadata.authors.join(', ') }}
+                  </p>
+                  <p v-if="currentMetadata.narrators?.length" class="narrators">
+                    Narrated by {{ currentMetadata.narrators.join(', ') }}
+                  </p>
                 </div>
-                <div v-if="currentMetadata.asin" class="detail-item">
-                  <span class="label">ASIN:</span>
-                  <span class="value">
-                    <a
-                      :href="audibleProductUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {{ currentMetadata.asin }}
-                    </a>
-                  </span>
-                </div>
-                <div v-if="currentMetadata.isbn" class="detail-item">
-                  <span class="label">ISBN:</span>
-                  <span class="value">{{ currentMetadata.isbn }}</span>
-                </div>
-                <div v-if="currentMetadata.openLibraryId && openLibraryUrl" class="detail-item">
-                  <span class="label">OpenLibrary ID:</span>
-                  <span class="value">
-                    <a
-                      :href="openLibraryUrl"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    >
-                      {{ currentMetadata.openLibraryId }}
-                    </a>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="displaySeriesMemberships.length || displayGenres.length" class="detail-section">
-              <h4>Series & Genre Information</h4>
-              <div class="detail-grid">
-                <div v-if="displaySeriesMemberships.length" class="detail-item detail-item--wide">
-                  <span class="label">Series:</span>
-                  <div class="value series-membership-list">
-                    <span
-                      v-for="(membership, index) in displaySeriesMemberships"
-                      :key="`${membership.seriesName}-${membership.seriesNumber || index}`"
-                      class="series-membership-pill"
-                    >
-                      {{ membership.seriesName }}<span v-if="membership.seriesNumber"> #{{ membership.seriesNumber }}</span>
-                      <span v-if="membership.isPrimary" class="series-membership-primary">Primary</span>
-                    </span>
-                  </div>
-                </div>
-                <div v-if="displayGenres.length" class="detail-item">
-                  <span class="label">Genres:</span>
-                  <span class="value">{{ displayGenres.join(', ') }}</span>
-                </div>
-              </div>
-            </div>
-
-            <div v-if="hasFlags" class="detail-section">
-              <h4>Content Flags</h4>
-              <div class="flags">
-                <span v-if="currentMetadata.explicit" class="flag explicit">Explicit</span>
-                <span v-if="currentMetadata.abridged" class="flag abridged">Abridged</span>
-              </div>
-            </div>
-            </template>
-
-            <div v-if="editableMetadata && showMetadataEditor" class="detail-section metadata-editor">
-              <div class="metadata-editor-header">
-                <h4>Edit Metadata</h4>
                 <button
+                  v-if="editableMetadata"
                   type="button"
                   class="btn btn-secondary metadata-toggle-btn"
                   @click="toggleMetadataEditor"
                 >
-                  <PhEye />
-                  View Details
+                  <PhPencilSimple />
+                  Edit Metadata
                 </button>
               </div>
-              <div class="metadata-edit-grid">
-                <div class="detail-item detail-item--wide">
-                  <span class="label">Title</span>
-                  <input v-model="editableMetadata.title" type="text" class="form-input" />
+
+              <template v-if="!showMetadataEditor">
+                <div v-if="currentMetadata.description" class="detail-section">
+                  <h4>Description</h4>
+                  <div class="description">
+                    {{ stripHtmlAndNormalize(currentMetadata.description) }}
+                  </div>
                 </div>
-                <div class="detail-item detail-item--wide">
-                  <span class="label">Subtitle</span>
-                  <input v-model="editableMetadata.subtitle" type="text" class="form-input" />
+
+                <div class="detail-section" id="add-library-desc">
+                  <h4>Publication Information</h4>
+                  <div class="detail-grid">
+                    <div v-if="currentMetadata.publisher" class="detail-item">
+                      <span class="label">Publisher:</span>
+                      <span class="value">{{ currentMetadata.publisher }}</span>
+                    </div>
+                    <div v-if="publishDate" class="detail-item">
+                      <span class="label">Release Date:</span>
+                      <span class="value">{{ formatDate(publishDate) }}</span>
+                    </div>
+                    <div v-else-if="publishYear" class="detail-item">
+                      <span class="label">Release Date:</span>
+                      <span class="value">{{ publishYear }}</span>
+                    </div>
+                    <div v-if="currentMetadata.language" class="detail-item">
+                      <span class="label">Language:</span>
+                      <span class="value">{{ capitalizeFirst(currentMetadata.language) }}</span>
+                    </div>
+                    <div v-if="currentMetadata.runtime" class="detail-item">
+                      <span class="label">Listening Length:</span>
+                      <span class="value">{{ formatRuntime(currentMetadata.runtime) }}</span>
+                    </div>
+                    <div v-if="currentMetadata.edition" class="detail-item">
+                      <span class="label">Edition:</span>
+                      <span class="value">{{ currentMetadata.edition }}</span>
+                    </div>
+                    <div v-if="currentMetadata.version" class="detail-item">
+                      <span class="label">Version:</span>
+                      <span class="value">{{ currentMetadata.version }}</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="detail-item">
-                  <span class="label">Edition</span>
-                  <input v-model="editableMetadata.edition" type="text" class="form-input" placeholder="e.g. Revised Edition" />
+
+                <div class="detail-section">
+                  <h4>Identifiers</h4>
+                  <div class="detail-grid">
+                    <div v-if="normalizedSourceName" class="detail-item">
+                      <span class="label">Metadata Source:</span>
+                      <span class="value">
+                        <a
+                          v-if="audibleSourceUrl"
+                          :href="audibleSourceUrl"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {{ normalizedSourceName }}
+                        </a>
+                        <span v-else>{{ normalizedSourceName }}</span>
+                      </span>
+                    </div>
+                    <div v-if="currentMetadata.asin" class="detail-item">
+                      <span class="label">ASIN:</span>
+                      <span class="value">
+                        <a :href="audibleProductUrl" target="_blank" rel="noopener noreferrer">
+                          {{ currentMetadata.asin }}
+                        </a>
+                      </span>
+                    </div>
+                    <div v-if="currentMetadata.isbn" class="detail-item">
+                      <span class="label">ISBN:</span>
+                      <span class="value">{{ currentMetadata.isbn }}</span>
+                    </div>
+                    <div v-if="currentMetadata.openLibraryId && openLibraryUrl" class="detail-item">
+                      <span class="label">OpenLibrary ID:</span>
+                      <span class="value">
+                        <a :href="openLibraryUrl" target="_blank" rel="noopener noreferrer">
+                          {{ currentMetadata.openLibraryId }}
+                        </a>
+                      </span>
+                    </div>
+                  </div>
                 </div>
-                <div class="detail-item">
-                  <span class="label">Version</span>
-                  <input v-model="editableMetadata.version" type="text" class="form-input" placeholder="Source/version label" />
+
+                <div
+                  v-if="displaySeriesMemberships.length || displayGenres.length"
+                  class="detail-section"
+                >
+                  <h4>Series & Genre Information</h4>
+                  <div class="detail-grid">
+                    <div
+                      v-if="displaySeriesMemberships.length"
+                      class="detail-item detail-item--wide"
+                    >
+                      <span class="label">Series:</span>
+                      <div class="value series-membership-list">
+                        <span
+                          v-for="(membership, index) in displaySeriesMemberships"
+                          :key="`${membership.seriesName}-${membership.seriesNumber || index}`"
+                          class="series-membership-pill"
+                        >
+                          {{ membership.seriesName
+                          }}<span v-if="membership.seriesNumber">
+                            #{{ membership.seriesNumber }}</span
+                          >
+                          <span v-if="membership.isPrimary" class="series-membership-primary"
+                            >Primary</span
+                          >
+                        </span>
+                      </div>
+                    </div>
+                    <div v-if="displayGenres.length" class="detail-item">
+                      <span class="label">Genres:</span>
+                      <span class="value">{{ displayGenres.join(', ') }}</span>
+                    </div>
+                  </div>
                 </div>
-                <div class="detail-item detail-item--wide">
-                  <span class="label">Authors</span>
-                  <input v-model="authorsInput" type="text" class="form-input" placeholder="Comma-separated authors" />
+
+                <div v-if="hasFlags" class="detail-section">
+                  <h4>Content Flags</h4>
+                  <div class="flags">
+                    <span v-if="currentMetadata.explicit" class="flag explicit">Explicit</span>
+                    <span v-if="currentMetadata.abridged" class="flag abridged">Abridged</span>
+                  </div>
                 </div>
-                <div class="detail-item detail-item--wide">
-                  <span class="label">Narrators</span>
-                  <input v-model="narratorsInput" type="text" class="form-input" placeholder="Comma-separated narrators" />
+              </template>
+
+              <div
+                v-if="editableMetadata && showMetadataEditor"
+                class="detail-section metadata-editor"
+              >
+                <div class="metadata-editor-header">
+                  <h4>Edit Metadata</h4>
+                  <button
+                    type="button"
+                    class="btn btn-secondary metadata-toggle-btn"
+                    @click="toggleMetadataEditor"
+                  >
+                    <PhEye />
+                    View Details
+                  </button>
                 </div>
-                <div class="detail-item detail-item--full">
-                  <span class="label">Description</span>
-                  <textarea v-model="editableMetadata.description" rows="5" class="form-input metadata-textarea" />
+                <div class="metadata-edit-grid">
+                  <div class="detail-item detail-item--wide">
+                    <span class="label">Title</span>
+                    <input v-model="editableMetadata.title" type="text" class="form-input" />
+                  </div>
+                  <div class="detail-item detail-item--wide">
+                    <span class="label">Subtitle</span>
+                    <input v-model="editableMetadata.subtitle" type="text" class="form-input" />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Edition</span>
+                    <input
+                      v-model="editableMetadata.edition"
+                      type="text"
+                      class="form-input"
+                      placeholder="e.g. Revised Edition"
+                    />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Version</span>
+                    <input
+                      v-model="editableMetadata.version"
+                      type="text"
+                      class="form-input"
+                      placeholder="Source/version label"
+                    />
+                  </div>
+                  <div class="detail-item detail-item--wide">
+                    <span class="label">Authors</span>
+                    <input
+                      v-model="authorsInput"
+                      type="text"
+                      class="form-input"
+                      placeholder="Comma-separated authors"
+                    />
+                  </div>
+                  <div class="detail-item detail-item--wide">
+                    <span class="label">Narrators</span>
+                    <input
+                      v-model="narratorsInput"
+                      type="text"
+                      class="form-input"
+                      placeholder="Comma-separated narrators"
+                    />
+                  </div>
+                  <div class="detail-item detail-item--full">
+                    <span class="label">Description</span>
+                    <textarea
+                      v-model="editableMetadata.description"
+                      rows="5"
+                      class="form-input metadata-textarea"
+                    />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Publisher</span>
+                    <input v-model="editableMetadata.publisher" type="text" class="form-input" />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Language</span>
+                    <input v-model="editableMetadata.language" type="text" class="form-input" />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Release Date</span>
+                    <input
+                      v-model="editableMetadata.publishedDate"
+                      type="text"
+                      class="form-input"
+                      placeholder="YYYY-MM-DD"
+                    />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Publish Year</span>
+                    <input
+                      v-model="editableMetadata.publishYear"
+                      type="text"
+                      class="form-input"
+                      placeholder="YYYY"
+                    />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Listening Length (minutes)</span>
+                    <input
+                      v-model.number="editableMetadata.runtime"
+                      type="number"
+                      min="0"
+                      class="form-input"
+                    />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Series</span>
+                    <input v-model="editableMetadata.series" type="text" class="form-input" />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">Series Number</span>
+                    <input v-model="editableMetadata.seriesNumber" type="text" class="form-input" />
+                  </div>
+                  <div class="detail-item detail-item--wide">
+                    <span class="label">Genres</span>
+                    <input
+                      v-model="genresInput"
+                      type="text"
+                      class="form-input"
+                      placeholder="Comma-separated genres"
+                    />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">ASIN</span>
+                    <input v-model="editableMetadata.asin" type="text" class="form-input" />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">ISBN</span>
+                    <input v-model="editableMetadata.isbn" type="text" class="form-input" />
+                  </div>
+                  <div class="detail-item">
+                    <span class="label">OpenLibrary ID</span>
+                    <input
+                      v-model="editableMetadata.openLibraryId"
+                      type="text"
+                      class="form-input"
+                    />
+                  </div>
+                  <div class="detail-item detail-item--wide">
+                    <span class="label">Cover Image URL</span>
+                    <input v-model="editableMetadata.imageUrl" type="text" class="form-input" />
+                  </div>
                 </div>
-                <div class="detail-item">
-                  <span class="label">Publisher</span>
-                  <input v-model="editableMetadata.publisher" type="text" class="form-input" />
+                <div class="checkbox-group metadata-flags">
+                  <Checkbox v-model="editableMetadata.explicit">
+                    <strong>Explicit</strong>
+                    <small>Mark this release as explicit content</small>
+                  </Checkbox>
+                  <Checkbox v-model="editableMetadata.abridged">
+                    <strong>Abridged</strong>
+                    <small>Mark this release as abridged</small>
+                  </Checkbox>
                 </div>
-                <div class="detail-item">
-                  <span class="label">Language</span>
-                  <input v-model="editableMetadata.language" type="text" class="form-input" />
-                </div>
-                <div class="detail-item">
-                  <span class="label">Release Date</span>
-                  <input v-model="editableMetadata.publishedDate" type="text" class="form-input" placeholder="YYYY-MM-DD" />
-                </div>
-                <div class="detail-item">
-                  <span class="label">Publish Year</span>
-                  <input v-model="editableMetadata.publishYear" type="text" class="form-input" placeholder="YYYY" />
-                </div>
-                <div class="detail-item">
-                  <span class="label">Listening Length (minutes)</span>
-                  <input v-model.number="editableMetadata.runtime" type="number" min="0" class="form-input" />
-                </div>
-                <div class="detail-item">
-                  <span class="label">Series</span>
-                  <input v-model="editableMetadata.series" type="text" class="form-input" />
-                </div>
-                <div class="detail-item">
-                  <span class="label">Series Number</span>
-                  <input v-model="editableMetadata.seriesNumber" type="text" class="form-input" />
-                </div>
-                <div class="detail-item detail-item--wide">
-                  <span class="label">Genres</span>
-                  <input v-model="genresInput" type="text" class="form-input" placeholder="Comma-separated genres" />
-                </div>
-                <div class="detail-item">
-                  <span class="label">ASIN</span>
-                  <input v-model="editableMetadata.asin" type="text" class="form-input" />
-                </div>
-                <div class="detail-item">
-                  <span class="label">ISBN</span>
-                  <input v-model="editableMetadata.isbn" type="text" class="form-input" />
-                </div>
-                <div class="detail-item">
-                  <span class="label">OpenLibrary ID</span>
-                  <input v-model="editableMetadata.openLibraryId" type="text" class="form-input" />
-                </div>
-                <div class="detail-item detail-item--wide">
-                  <span class="label">Cover Image URL</span>
-                  <input v-model="editableMetadata.imageUrl" type="text" class="form-input" />
-                </div>
-              </div>
-              <div class="checkbox-group metadata-flags">
-                <Checkbox v-model="editableMetadata.explicit">
-                  <strong>Explicit</strong>
-                  <small>Mark this release as explicit content</small>
-                </Checkbox>
-                <Checkbox v-model="editableMetadata.abridged">
-                  <strong>Abridged</strong>
-                  <small>Mark this release as abridged</small>
-                </Checkbox>
               </div>
             </div>
-          </div>
           </div>
 
           <!-- Customization Options -->
           <div class="detail-section library-options">
-          <h4>Library Options</h4>
+            <h4>Library Options</h4>
 
-          <FormRow>
-            <div class="checkbox-group">
-              <Checkbox v-model="options.monitored">
-                <strong>Monitor for new releases</strong>
-                <small>Automatically search for better quality versions of this audiobook</small>
-              </Checkbox>
-            </div>
-          </FormRow>
+            <FormRow>
+              <div class="checkbox-group">
+                <Checkbox v-model="options.monitored">
+                  <strong>Monitor for new releases</strong>
+                  <small>Automatically search for better quality versions of this audiobook</small>
+                </Checkbox>
+              </div>
+            </FormRow>
 
-          <FormRow>
-            <div class="checkbox-group">
-              <Checkbox v-model="options.autoSearch">
-                <strong>Search for downloads immediately</strong>
-                <small>Start searching for available downloads right after adding to library</small>
-              </Checkbox>
-            </div>
-          </FormRow>
+            <FormRow>
+              <div class="checkbox-group">
+                <Checkbox v-model="options.autoSearch">
+                  <strong>Search for downloads immediately</strong>
+                  <small
+                    >Start searching for available downloads right after adding to library</small
+                  >
+                </Checkbox>
+              </div>
+            </FormRow>
 
-          <div class="option-group">
-            <label class="form-label">Destination</label>
-            <div class="form-control-card">
-              <div class="destination-display">
-                <div class="destination-row">
-                  <div class="root-select">
-                    <RootFolderSelect
-                      v-model:rootId="selectedRootId"
-                      v-model:customPath="customRootPath"
-                      hideLabel
+            <div class="option-group">
+              <label class="form-label">Destination</label>
+              <div class="form-control-card">
+                <div class="destination-display">
+                  <div class="destination-row">
+                    <div class="root-select">
+                      <RootFolderSelect
+                        v-model:rootId="selectedRootId"
+                        v-model:customPath="customRootPath"
+                        hideLabel
+                      />
+                    </div>
+                    <input
+                      v-if="selectedRootId === 0"
+                      type="text"
+                      v-model="customRootPath"
+                      class="form-input custom-path-input"
+                      placeholder="e.g. C:\\Audiobooks or /mnt/audiobooks"
+                    />
+                    <input
+                      v-else
+                      type="text"
+                      v-model="options.relativePath"
+                      class="form-input relative-input"
+                      placeholder="e.g. Author/Title"
+                      @input="onRelativePathInput"
                     />
                   </div>
-                  <input
-                    v-if="selectedRootId === 0"
-                    type="text"
-                    v-model="customRootPath"
-                    class="form-input custom-path-input"
-                    placeholder="e.g. C:\\Audiobooks or /mnt/audiobooks"
-                  />
-                  <input
-                    v-else
-                    type="text"
-                    v-model="options.relativePath"
-                    class="form-input relative-input"
-                    placeholder="e.g. Author/Title"
-                    @input="onRelativePathInput"
-                  />
-                </div>
-                <small class="form-help" v-if="selectedRootId === 0">
-                  Enter an absolute path where files will be stored
-                </small>
-                <small class="form-help" v-else>
-                  Select a named root (or custom path) and edit the path relative to it on the
-                  right.
-                </small>
-                <!-- Path length warning -->
-                <div v-if="destinationPathWarning" class="path-length-warning">
-                  <PhWarning :size="16" />
-                  <span>{{ destinationPathWarning }}</span>
+                  <small class="form-help" v-if="selectedRootId === 0">
+                    Enter an absolute path where files will be stored
+                  </small>
+                  <small class="form-help" v-else>
+                    Select a named root (or custom path) and edit the path relative to it on the
+                    right.
+                  </small>
+                  <!-- Path length warning -->
+                  <div v-if="destinationPathWarning" class="path-length-warning">
+                    <PhWarning :size="16" />
+                    <span>{{ destinationPathWarning }}</span>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
 
-          <div class="option-group">
-            <label class="form-label">Quality Profile</label>
-            <select v-model="options.qualityProfileId" class="form-select">
-              <option :value="null">Use Default Profile</option>
-              <option v-for="profile in qualityProfiles" :key="profile.id" :value="profile.id">
-                {{ profile.name }}{{ profile.isDefault ? ' (Default)' : '' }}
-              </option>
-            </select>
-            <small class="form-help">
-              Choose which quality profile to use for automatic downloads. Leave as "Use Default
-              Profile" to automatically use the default profile.
-            </small>
-          </div>
+            <div class="option-group">
+              <label class="form-label">Quality Profile</label>
+              <select v-model="options.qualityProfileId" class="form-select">
+                <option :value="null">Use Default Profile</option>
+                <option v-for="profile in qualityProfiles" :key="profile.id" :value="profile.id">
+                  {{ profile.name }}{{ profile.isDefault ? ' (Default)' : '' }}
+                </option>
+              </select>
+              <small class="form-help">
+                Choose which quality profile to use for automatic downloads. Leave as "Use Default
+                Profile" to automatically use the default profile.
+              </small>
+            </div>
           </div>
         </div>
       </ModalBody>
-
     </template>
 
     <template #footer>
@@ -405,8 +464,16 @@ import RootFolderSelect from '@/components/form/RootFolderSelect.vue'
 import Checkbox from '@/components/form/Checkbox.vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import { useRootFoldersStore } from '@/stores/rootFolders'
-import { PhX, PhSpinner, PhPlus, PhImage, PhWarning, PhPencilSimple, PhEye } from '@phosphor-icons/vue' 
-import { toForward, normalizeForCompare } from '@/utils/path' 
+import {
+  PhX,
+  PhSpinner,
+  PhPlus,
+  PhImage,
+  PhWarning,
+  PhPencilSimple,
+  PhEye,
+} from '@phosphor-icons/vue'
+import { toForward, normalizeForCompare } from '@/utils/path'
 import { formatDate } from '@/utils/searchResultFormatting'
 import { stripHtmlAndNormalize } from '@/utils/textUtils'
 import { usePathLengthCheck } from '@/composables/usePathLengthCheck'
@@ -597,7 +664,9 @@ function buildMetadataPayload(): AudibleBookMetadata {
     publisher: trimToUndefined(source?.publisher),
     language: trimToUndefined(source?.language),
     runtime:
-      typeof source?.runtime === 'number' && !Number.isNaN(source.runtime) ? source.runtime : undefined,
+      typeof source?.runtime === 'number' && !Number.isNaN(source.runtime)
+        ? source.runtime
+        : undefined,
     edition: trimToUndefined(source?.edition),
     version: trimToUndefined(source?.version),
     imageUrl: trimToUndefined(source?.imageUrl),
@@ -646,8 +715,7 @@ const publishYear = computed(() => {
 const normalizedSourceName = computed(() => {
   const source = (metadataSource.value || currentMetadata.value?.source || '').trim()
   if (!source) return ''
-  if (source.toLowerCase().includes('audible'))
-    return 'Audible'
+  if (source.toLowerCase().includes('audible')) return 'Audible'
   return source
 })
 
@@ -683,10 +751,13 @@ const openLibraryUrl = computed(() => {
   return `https://openlibrary.org/books/${olid}`
 })
 
-const hasFlags = computed(() => Boolean(currentMetadata.value?.explicit || currentMetadata.value?.abridged))
+const hasFlags = computed(() =>
+  Boolean(currentMetadata.value?.explicit || currentMetadata.value?.abridged),
+)
 
 const displayGenres = computed(() => {
-  if (currentMetadata.value?.genres && currentMetadata.value.genres.length) return currentMetadata.value.genres
+  if (currentMetadata.value?.genres && currentMetadata.value.genres.length)
+    return currentMetadata.value.genres
   return []
 })
 
@@ -831,9 +902,7 @@ const mapAudibleToAudible = (
     description: audible?.description || props.book?.description,
     imageUrl: audible?.imageUrl || props.book?.imageUrl,
     runtime:
-      typeof audible?.lengthMinutes === 'number'
-        ? audible.lengthMinutes
-        : props.book?.runtime,
+      typeof audible?.lengthMinutes === 'number' ? audible.lengthMinutes : props.book?.runtime,
     language: audible?.language || props.book?.language,
     edition: props.book?.edition,
     version: audible?.version || props.book?.version,
@@ -908,13 +977,14 @@ const seedPreview = async () => {
     if (props.book?.asin) {
       metadataLoading.value = true
       try {
-        const resp = await apiService.getAudibleMetadata<AudibleMetadataResponse | Partial<Audible>>(
-          props.book.asin,
-        )
+        const resp = await apiService.getAudibleMetadata<
+          AudibleMetadataResponse | Partial<Audible>
+        >(props.book.asin)
         const payload = (resp && typeof resp === 'object' ? resp : {}) as
           | AudibleMetadataResponse
           | Partial<Audible>
-        const source = 'source' in payload && typeof payload.source === 'string' ? payload.source : undefined
+        const source =
+          'source' in payload && typeof payload.source === 'string' ? payload.source : undefined
         const metadata =
           'metadata' in payload && payload.metadata && typeof payload.metadata === 'object'
             ? payload.metadata

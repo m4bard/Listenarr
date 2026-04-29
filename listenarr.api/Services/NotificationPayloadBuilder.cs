@@ -138,8 +138,8 @@ namespace Listenarr.Api.Services
                 embed["thumbnail"] = new JsonObject { ["url"] = Truncate(absoluteImageUrl, 2000) };
             }
 
-                        var embeds = new JsonArray();
-                        var fields = new JsonArray();
+            var embeds = new JsonArray();
+            var fields = new JsonArray();
 
             if (!string.IsNullOrWhiteSpace(author))
             {
@@ -396,7 +396,8 @@ namespace Listenarr.Api.Services
                         logInfo?.Invoke($"Failed to download image for notification: {absoluteImageUrl} - HTTP {imageResponse.StatusCode}");
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     logDebug?.Invoke(ex, $"Error downloading image for notification from {absoluteImageUrl}: {ex.Message}");
                 }
             }

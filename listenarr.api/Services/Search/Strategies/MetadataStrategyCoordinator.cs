@@ -59,12 +59,12 @@ public class MetadataStrategyCoordinator
         {
             try
             {
-                _logger.LogInformation("Attempting to fetch metadata from {SourceName} ({BaseUrl}) for ASIN {Asin}", 
+                _logger.LogInformation("Attempting to fetch metadata from {SourceName} ({BaseUrl}) for ASIN {Asin}",
                     source.Name, source.BaseUrl, asin);
 
                 // Find a strategy that can handle this source
                 var strategy = _strategies.FirstOrDefault(s => s.CanHandle(source));
-                
+
                 if (strategy == null)
                 {
                     _logger.LogWarning("No strategy found for metadata source: {BaseUrl}, skipping", source.BaseUrl);
@@ -72,14 +72,15 @@ public class MetadataStrategyCoordinator
                 }
 
                 var metadata = await strategy.FetchMetadataAsync(asin, source, originalSource);
-                
+
                 if (metadata != null)
                 {
                     return (metadata, source.Name);
                 }
             }
-            catch (Exception sourceEx) when (sourceEx is not OperationCanceledException && sourceEx is not OutOfMemoryException && sourceEx is not StackOverflowException) {
-                _logger.LogWarning(sourceEx, "Failed to fetch metadata from {SourceName} for ASIN {Asin}, trying next source", 
+            catch (Exception sourceEx) when (sourceEx is not OperationCanceledException && sourceEx is not OutOfMemoryException && sourceEx is not StackOverflowException)
+            {
+                _logger.LogWarning(sourceEx, "Failed to fetch metadata from {SourceName} for ASIN {Asin}, trying next source",
                     source.Name, asin);
                 continue; // Try next metadata source
             }

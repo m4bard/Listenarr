@@ -16,7 +16,10 @@
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
 <template>
-  <tr class="import-row" :class="{ selected: item.selected, 'no-match': item.hasSearched && !item.selectedMatch }">
+  <tr
+    class="import-row"
+    :class="{ selected: item.selected, 'no-match': item.hasSearched && !item.selectedMatch }"
+  >
     <td class="cell-check">
       <input
         type="checkbox"
@@ -30,7 +33,11 @@
       <span class="folder-name" :title="bookDisplayTitle">{{ bookDisplayTitle }}</span>
       <span class="folder-meta" v-if="bookMetaLine">{{ bookMetaLine }}</span>
       <span
-        v-if="item.detectedTitle && item.detectedTitle.trim() && item.detectedTitle.trim() !== item.folderName"
+        v-if="
+          item.detectedTitle &&
+          item.detectedTitle.trim() &&
+          item.detectedTitle.trim() !== item.folderName
+        "
         class="folder-origin"
         :title="item.folderName"
       >
@@ -45,12 +52,10 @@
           View grouped files ({{ item.sourceFiles.length }})
         </summary>
         <ul class="grouped-files-list">
-          <li
-            v-for="sourceFile in item.sourceFiles"
-            :key="sourceFile"
-            class="grouped-file-item"
-          >
-            <span class="grouped-file-label" :title="sourceFile">{{ formatGroupedFileLabel(sourceFile) }}</span>
+          <li v-for="sourceFile in item.sourceFiles" :key="sourceFile" class="grouped-file-item">
+            <span class="grouped-file-label" :title="sourceFile">{{
+              formatGroupedFileLabel(sourceFile)
+            }}</span>
             <span v-if="sourceFile === item.fullPath" class="grouped-file-badge">Row path</span>
           </li>
         </ul>
@@ -87,7 +92,9 @@
               {{ item.selectedMatch.authors[0]?.name }}
             </span>
           </div>
-          <button class="btn-clear-match" title="Clear match" @click="store.clearMatch(item.id)">x</button>
+          <button class="btn-clear-match" title="Clear match" @click="store.clearMatch(item.id)">
+            x
+          </button>
         </div>
 
         <div v-else-if="item.hasSearched" class="match-status no-match">
@@ -120,12 +127,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import {
-  PhSpinner,
-  PhCheckCircle,
-  PhWarningCircle,
-  PhMagnifyingGlass,
-} from '@phosphor-icons/vue'
+import { PhSpinner, PhCheckCircle, PhWarningCircle, PhMagnifyingGlass } from '@phosphor-icons/vue'
 import { useLibraryImportStore } from '@/stores/libraryImport'
 import type { LibraryImportItem } from '@/stores/libraryImport'
 import type { SearchResult } from '@/types'
@@ -138,10 +140,7 @@ const showSearchModal = ref(false)
 
 const bookDisplayTitle = computed(() => props.item.detectedTitle?.trim() || props.item.folderName)
 const bookMetaLine = computed(() =>
-  [
-    props.item.detectedAuthor,
-    props.item.detectedSeries,
-  ].filter(Boolean).join(' - '),
+  [props.item.detectedAuthor, props.item.detectedSeries].filter(Boolean).join(' - '),
 )
 
 function isAuthorMismatch(item: LibraryImportItem): boolean {

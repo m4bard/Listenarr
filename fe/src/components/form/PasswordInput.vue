@@ -18,7 +18,13 @@
 <template>
   <div class="password-input">
     <!-- Explicitly bind attributes only to the input and prevent automatic inheritance -->
-    <input v-bind="$attrs" class="password-field" :type="show ? 'text' : 'password'" :value="modelValue" @input="onInput" />
+    <input
+      v-bind="$attrs"
+      class="password-field"
+      :type="show ? 'text' : 'password'"
+      :value="modelValue"
+      @input="onInput"
+    />
     <button
       type="button"
       class="password-toggle"

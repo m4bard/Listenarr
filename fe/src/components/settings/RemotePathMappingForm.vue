@@ -31,20 +31,46 @@
       </div>
 
       <FormRow label="Name (Optional)" help="Friendly name to identify this mapping">
-        <input id="name" v-model="formData.name" type="text" placeholder="e.g., Docker to Host Mapping" class="form-control" />
+        <input
+          id="name"
+          v-model="formData.name"
+          type="text"
+          placeholder="e.g., Docker to Host Mapping"
+          class="form-control"
+        />
       </FormRow>
 
-      <FormRow label="Remote Path" help="Path as seen by the download client (in its Docker container or remote system)">
+      <FormRow
+        label="Remote Path"
+        help="Path as seen by the download client (in its Docker container or remote system)"
+      >
         <div class="input-with-icon">
           <PhDesktop />
-          <input id="remotePath" v-model="formData.remotePath" type="text" placeholder="/path/to/downloads" class="form-control" required />
+          <input
+            id="remotePath"
+            v-model="formData.remotePath"
+            type="text"
+            placeholder="/path/to/downloads"
+            class="form-control"
+            required
+          />
         </div>
       </FormRow>
 
-      <FormRow label="Local Path" help="Path as seen by Listenarr (on this system where Listenarr is running)">
+      <FormRow
+        label="Local Path"
+        help="Path as seen by Listenarr (on this system where Listenarr is running)"
+      >
         <div class="input-with-icon">
           <PhFolderOpen />
-          <input id="localPath" v-model="formData.localPath" type="text" placeholder="/mnt/media/audiobooks" class="form-control" required />
+          <input
+            id="localPath"
+            v-model="formData.localPath"
+            type="text"
+            placeholder="/mnt/media/audiobooks"
+            class="form-control"
+            required
+          />
         </div>
       </FormRow>
 
@@ -68,7 +94,16 @@
 import { ref, computed, watch } from 'vue'
 import FormRow from '@/components/settings/FormRow.vue'
 import type { RemotePathMapping } from '@/types'
-import { PhPencil, PhPlus, PhWarningCircle, PhDesktop, PhFolderOpen, PhX, PhSpinner, PhCheck } from '@phosphor-icons/vue' 
+import {
+  PhPencil,
+  PhPlus,
+  PhWarningCircle,
+  PhDesktop,
+  PhFolderOpen,
+  PhX,
+  PhSpinner,
+  PhCheck,
+} from '@phosphor-icons/vue'
 
 interface Props {
   downloadClientId: string

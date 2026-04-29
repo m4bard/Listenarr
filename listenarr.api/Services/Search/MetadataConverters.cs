@@ -235,7 +235,7 @@ public class MetadataConverters
             if (!string.IsNullOrWhiteSpace(fallbackImageUrl))
             {
                 imageUrl = fallbackImageUrl;
-                _logger.LogInformation("Using fallback image URL for ASIN {Asin}: {ImageUrl} (replaced {OriginalUrl})", 
+                _logger.LogInformation("Using fallback image URL for ASIN {Asin}: {ImageUrl} (replaced {OriginalUrl})",
                     asin, imageUrl, string.IsNullOrWhiteSpace(metadata.ImageUrl) ? "null" : "grey-pixel");
             }
             else if (string.IsNullOrWhiteSpace(imageUrl))
@@ -271,7 +271,8 @@ public class MetadataConverters
                     _logger.LogDebug("Started background image cache for ASIN {Asin}", asin);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", asin);
             }
         }
@@ -341,10 +342,10 @@ public class MetadataConverters
             Genres = genreList,
             ProductUrl = productUrl
         };
-        
-        _logger.LogInformation("SearchResult for ASIN {Asin}: PublishYear='{PublishYear}', PublishedDate={PublishedDate:yyyy-MM-dd}", 
+
+        _logger.LogInformation("SearchResult for ASIN {Asin}: PublishYear='{PublishYear}', PublishedDate={PublishedDate:yyyy-MM-dd}",
             asin, metadata.PublishYear, result.PublishedDate);
-        
+
         return result;
     }
 
@@ -381,7 +382,7 @@ public class MetadataConverters
             if (!string.IsNullOrWhiteSpace(fallbackImageUrl))
             {
                 imageUrl = fallbackImageUrl;
-                _logger.LogInformation("Using fallback image URL for ASIN {Asin}: {ImageUrl} (replaced {OriginalUrl})", 
+                _logger.LogInformation("Using fallback image URL for ASIN {Asin}: {ImageUrl} (replaced {OriginalUrl})",
                     asin, imageUrl, string.IsNullOrWhiteSpace(metadata.ImageUrl) ? "null" : "grey-pixel");
             }
             else if (string.IsNullOrWhiteSpace(imageUrl))
@@ -417,7 +418,8 @@ public class MetadataConverters
                     _logger.LogDebug("Started background image cache for ASIN {Asin}", asin);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to check/initiate image caching for ASIN {Asin}", asin);
             }
         }
@@ -476,10 +478,10 @@ public class MetadataConverters
             IsEnriched = true,
             MetadataSource = metadata.Source
         };
-        
-        _logger.LogInformation("MetadataSearchResult for ASIN {Asin}: PublishYear='{PublishYear}'", 
+
+        _logger.LogInformation("MetadataSearchResult for ASIN {Asin}: PublishYear='{PublishYear}'",
             asin, metadata.PublishYear);
-        
+
         return result;
     }
 }

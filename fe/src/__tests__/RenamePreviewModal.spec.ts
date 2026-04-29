@@ -59,7 +59,9 @@ describe('RenamePreviewModal', () => {
 
     expect(apiService.previewRename).toHaveBeenCalledWith([7])
     expect(wrapper.text()).toContain('1 of 1 audiobook(s) selected')
-    expect(wrapper.text()).toContain('Review the proposed folder and filename changes before organizing files on disk.')
+    expect(wrapper.text()).toContain(
+      'Review the proposed folder and filename changes before organizing files on disk.',
+    )
     expect(wrapper.text()).toContain('Folder + 1 file')
     expect(wrapper.findAll('.rename-path-value--current')).toHaveLength(2)
     expect(wrapper.findAll('.rename-path-value--new')).toHaveLength(2)

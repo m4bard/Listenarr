@@ -100,7 +100,7 @@ namespace Listenarr.Domain.Models
         // Tracks which metadata API was used to enrich this result
         public string? MetadataSource { get; set; }
         public string? Subtitles { get; set; }
-        
+
         // New indexer-derived properties
         public int Grabs { get; set; }
         public int Files { get; set; }

@@ -44,8 +44,10 @@ export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfi
           cfg && typeof cfg === 'object'
             ? (() => {
                 const cloned = { ...(cfg as Record<string, unknown>) }
-                if (typeof cloned.apiKey === 'string' && cloned.apiKey.length > 0) cloned.apiKey = 'redacted'
-                if (typeof cloned.ApiKey === 'string' && cloned.ApiKey.length > 0) cloned.ApiKey = 'redacted'
+                if (typeof cloned.apiKey === 'string' && cloned.apiKey.length > 0)
+                  cloned.apiKey = 'redacted'
+                if (typeof cloned.ApiKey === 'string' && cloned.ApiKey.length > 0)
+                  cloned.ApiKey = 'redacted'
                 return cloned
               })()
             : cfg

@@ -10,7 +10,7 @@ namespace Listenarr.Api.Tests
     {
         private readonly List<(HttpMethod? Method, Regex, Func<HttpRequestMessage, CancellationToken, Task<HttpResponseMessage>>)> _routes = new();
 
-        public RegexDelegatingHandlerMock(Action<string>? log = null) 
+        public RegexDelegatingHandlerMock(Action<string>? log = null)
             : base((req, ct) => Task.FromResult(new HttpResponseMessage(HttpStatusCode.NotFound)), log)
         {
         }

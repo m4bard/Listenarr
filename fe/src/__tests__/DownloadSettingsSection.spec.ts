@@ -24,7 +24,8 @@ describe('DownloadSettingsSection', () => {
   })
 
   it('emits update:settings when numerical inputs change', async () => {
-    const { default: DownloadSettingsSection } = await import('@/components/settings/DownloadSettingsSection.vue')
+    const { default: DownloadSettingsSection } =
+      await import('@/components/settings/DownloadSettingsSection.vue')
     const wrapper = mount(DownloadSettingsSection, {
       props: {
         settings: {
@@ -43,32 +44,38 @@ describe('DownloadSettingsSection', () => {
 
     // Max concurrent
     await inputs[0].setValue('4')
-    let last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    let last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.maxConcurrentDownloads).toBe(4)
 
     // Unmatched scan concurrency
     await inputs[1].setValue('3')
-    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.unmatchedScanConcurrency).toBe(3)
 
     // Polling interval
     await inputs[2].setValue('60')
-    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.pollingIntervalSeconds).toBe(60)
 
     // Stability
     await inputs[3].setValue('10')
-    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.downloadCompletionStabilitySeconds).toBe(10)
 
     // Missing-source delay
     await inputs[4].setValue('3')
-    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.missingSourceRetryInitialDelaySeconds).toBe(3)
 
     // Missing-source retries
     await inputs[5].setValue('5')
-    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.missingSourceMaxRetries).toBe(5)
   })
 })

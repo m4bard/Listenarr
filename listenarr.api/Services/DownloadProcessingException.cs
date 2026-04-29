@@ -15,10 +15,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
- 
- public class DownloadProcessingException : Exception
+
+public class DownloadProcessingException : Exception
 {
-    public DownloadProcessingException (string message, Exception? innerException = null) 
+    public DownloadProcessingException(string message, Exception? innerException = null)
         : base(message, innerException)
-    {}
+    { }
 }

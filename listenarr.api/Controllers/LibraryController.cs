@@ -242,7 +242,8 @@ namespace Listenarr.Api.Controllers
                         _logger.LogWarning("Could not parse PublishedDate as DateTime: {PublishedDate}", LogRedaction.SanitizeText(request.SearchResult.PublishedDate));
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to extract publish year from search result publishedDate");
                 }
             }
@@ -527,12 +528,14 @@ namespace Listenarr.Api.Controllers
                                         _logger.LogInformation("Cached author image for {Author} (ASIN: {Asin})", authorName, info.Asin);
                                     }
                                 }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
                                     _logger.LogWarning(ex, "Failed to cache author image for {Author}", authorName);
                                 }
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             _logger.LogWarning(ex, "Author lookup failed for {Author}", authorName);
                         }
                     }
@@ -542,12 +545,14 @@ namespace Listenarr.Api.Controllers
                     {
                         await _repo.UpdateAsync(audiobook);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Failed to persist author ASINs for audiobook '{Title}'", LogRedaction.SanitizeText(audiobook.Title));
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Error resolving author ASINs for audiobook '{Title}'", LogRedaction.SanitizeText(audiobook.Title));
             }
 
@@ -651,7 +656,8 @@ namespace Listenarr.Api.Controllers
 
                 return Ok(new { fullPath = full, relativePath = relative, root = root });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to compute preview path");
                 return StatusCode(500, new { message = "Failed to compute preview path" });
             }
@@ -744,16 +750,16 @@ namespace Listenarr.Api.Controllers
                     FileSize = a.FileSize,
                     FileCount = files?.Count ?? 0,
                     Quality = a.Quality,
-                     QualityProfileId = a.QualityProfileId,
-                     AuthorAsins = a.AuthorAsins?.ToArray(),
-                     Wanted = wanted,
-                     Status = AudiobookStatusEvaluator.ComputeStatus(
+                    QualityProfileId = a.QualityProfileId,
+                    AuthorAsins = a.AuthorAsins?.ToArray(),
+                    Wanted = wanted,
+                    Status = AudiobookStatusEvaluator.ComputeStatus(
                          activeDownloadAudiobookIdSet.Contains(a.Id),
                          hasAnyFile,
                          a.Quality,
                          qualityProfile,
                          files)
-                 };
+                };
             }).ToList();
 
             return Ok(dto);
@@ -1072,7 +1078,8 @@ namespace Listenarr.Api.Controllers
                 {
                     Response.Headers["Retry-After"] = retryAfterSeconds.ToString();
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogDebug(ex, "Failed to set Retry-After header for metadata rescan rate-limit response");
                 }
 
@@ -1151,7 +1158,8 @@ namespace Listenarr.Api.Controllers
                     {
                         rawResult = await metadataService.GetMetadataAsync(normalizedAsin, regionValue, cache: false);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(
                             ex,
                             "Metadata rescan lookup failed for audiobook {AudiobookId} ({Title}) ASIN {Asin} region {Region}",
@@ -1242,7 +1250,8 @@ namespace Listenarr.Api.Controllers
                             break;
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(
                             ex,
                             "Metadata rescan ASIN conversion failed for audiobook {AudiobookId} ISBN {Isbn}",
@@ -1542,12 +1551,14 @@ namespace Listenarr.Api.Controllers
                             }
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Failed to delete cached image based on stored ImageUrl for audiobook id {Id}", audiobook.Id);
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to delete cached image for audiobook id {Id}", audiobook.Id);
                 // Continue with deletion even if image cleanup fails
             }
@@ -2177,92 +2188,95 @@ namespace Listenarr.Api.Controllers
                     }
 
                     // Delete associated image from cache if it exists
+                    try
+                    {
+                        if (!string.IsNullOrEmpty(audiobook.Asin))
+                        {
+                            var imagePath = await _imageCacheService.GetCachedImagePathAsync(audiobook.Asin);
+                            if (imagePath != null)
+                            {
+                                var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
+                                if (System.IO.File.Exists(fullPath))
+                                {
+                                    System.IO.File.Delete(fullPath);
+                                    deletedImagesCount++;
+                                    _logger.LogInformation("Deleted cached image for ASIN {Asin}", LogRedaction.SanitizeText(audiobook.Asin));
+                                }
+                            }
+                        }
+                        else if (!string.IsNullOrEmpty(audiobook.ImageUrl))
+                        {
                             try
                             {
-                                if (!string.IsNullOrEmpty(audiobook.Asin))
+                                // Safely extract identifier from an internal library image URL
+                                const string __marker = "/config/cache/images/library/";
+                                var __url = audiobook.ImageUrl;
+                                var __idx = __url.IndexOf(__marker, StringComparison.OrdinalIgnoreCase);
+                                if (__idx >= 0)
                                 {
-                                    var imagePath = await _imageCacheService.GetCachedImagePathAsync(audiobook.Asin);
-                                    if (imagePath != null)
-                                    {
-                                        var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
-                                        if (System.IO.File.Exists(fullPath))
-                                        {
-                                            System.IO.File.Delete(fullPath);
-                                            deletedImagesCount++;
-                                            _logger.LogInformation("Deleted cached image for ASIN {Asin}", LogRedaction.SanitizeText(audiobook.Asin));
-                                        }
-                                    }
-                                }
-                                else if (!string.IsNullOrEmpty(audiobook.ImageUrl))
-                                {
-                                    try
-                                    {
-                                        // Safely extract identifier from an internal library image URL
-                                        const string __marker = "/config/cache/images/library/";
-                                        var __url = audiobook.ImageUrl;
-                                        var __idx = __url.IndexOf(__marker, StringComparison.OrdinalIgnoreCase);
-                                        if (__idx >= 0)
-                                        {
-                                            var filename = __url.Substring(__idx + __marker.Length);
-                                            filename = System.IO.Path.GetFileName(filename);
-                                            var identifier = System.IO.Path.GetFileNameWithoutExtension(filename);
+                                    var filename = __url.Substring(__idx + __marker.Length);
+                                    filename = System.IO.Path.GetFileName(filename);
+                                    var identifier = System.IO.Path.GetFileNameWithoutExtension(filename);
 
-                                            if (!string.IsNullOrEmpty(identifier) && System.Text.RegularExpressions.Regex.IsMatch(identifier, "^[A-Za-z0-9_\\-\\.]{1,128}$"))
+                                    if (!string.IsNullOrEmpty(identifier) && System.Text.RegularExpressions.Regex.IsMatch(identifier, "^[A-Za-z0-9_\\-\\.]{1,128}$"))
+                                    {
+                                        var imagePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
+                                        if (!string.IsNullOrEmpty(imagePath))
+                                        {
+                                            var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
+                                            if (System.IO.File.Exists(fullPath))
                                             {
-                                                var imagePath = await _imageCacheService.GetCachedImagePathAsync(identifier);
-                                                if (!string.IsNullOrEmpty(imagePath))
-                                                {
-                                                    var fullPath = ResolvePathWithOptionalBase(Directory.GetCurrentDirectory(), imagePath);
-                                                    if (System.IO.File.Exists(fullPath))
-                                                    {
-                                                        System.IO.File.Delete(fullPath);
-                                                        deletedImagesCount++;
-                                                        _logger.LogInformation("Deleted cached image for identifier (from ImageUrl): {Identifier}", LogRedaction.SanitizeText(identifier));
-                                                    }
-                                                }
-                                            }
-                                            else
-                                            {
-                                                _logger.LogWarning("Image identifier from ImageUrl for audiobook id {Id} is invalid: {Identifier}", audiobook.Id, LogRedaction.SanitizeText(identifier));
+                                                System.IO.File.Delete(fullPath);
+                                                deletedImagesCount++;
+                                                _logger.LogInformation("Deleted cached image for identifier (from ImageUrl): {Identifier}", LogRedaction.SanitizeText(identifier));
                                             }
                                         }
                                     }
-                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                        _logger.LogWarning(ex, "Failed to delete cached image based on stored ImageUrl for audiobook id {Id}", audiobook.Id);
+                                    else
+                                    {
+                                        _logger.LogWarning("Image identifier from ImageUrl for audiobook id {Id} is invalid: {Identifier}", audiobook.Id, LogRedaction.SanitizeText(identifier));
                                     }
                                 }
                             }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger.LogWarning(ex, "Failed to delete cached image for audiobook id {Id}", audiobook.Id);
-                                // Continue with deletion even if image cleanup fails
-                            }
-
-                            // Log history entry for the deleted audiobook
-                            var historyEntry = new History
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                             {
-                                AudiobookId = audiobook.Id,
-                                AudiobookTitle = audiobook.Title ?? "Unknown Title",
-                                EventType = "Deleted",
-                                Message = $"Audiobook '{audiobook.Title}' deleted via bulk operation",
-                                Source = "BulkDelete",
-                                Timestamp = DateTime.UtcNow
-                            };
-
-                            await _historyRepository.AddAsync(historyEntry);
-
-                            var deleted = await _repo.DeleteByIdAsync(id);
-                            if (deleted)
-                            {
-                                deletedCount++;
-                                deletedIds.Add(id);
-                                _logger.LogInformation("Deleted audiobook '{Title}' (ID: {Id}) via bulk operation", LogRedaction.SanitizeText(audiobook.Title), id);
+                                _logger.LogWarning(ex, "Failed to delete cached image based on stored ImageUrl for audiobook id {Id}", audiobook.Id);
                             }
-                            else
-                            {
-                                errors.Add($"Failed to delete audiobook with ID {id}");
-                            }
+                        }
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
+                        _logger.LogWarning(ex, "Failed to delete cached image for audiobook id {Id}", audiobook.Id);
+                        // Continue with deletion even if image cleanup fails
+                    }
+
+                    // Log history entry for the deleted audiobook
+                    var historyEntry = new History
+                    {
+                        AudiobookId = audiobook.Id,
+                        AudiobookTitle = audiobook.Title ?? "Unknown Title",
+                        EventType = "Deleted",
+                        Message = $"Audiobook '{audiobook.Title}' deleted via bulk operation",
+                        Source = "BulkDelete",
+                        Timestamp = DateTime.UtcNow
+                    };
+
+                    await _historyRepository.AddAsync(historyEntry);
+
+                    var deleted = await _repo.DeleteByIdAsync(id);
+                    if (deleted)
+                    {
+                        deletedCount++;
+                        deletedIds.Add(id);
+                        _logger.LogInformation("Deleted audiobook '{Title}' (ID: {Id}) via bulk operation", LogRedaction.SanitizeText(audiobook.Title), id);
+                    }
+                    else
+                    {
+                        errors.Add($"Failed to delete audiobook with ID {id}");
+                    }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogError(ex, "Error during bulk delete for ID {Id}: {Message}", id, ex.Message);
                     errors.Add($"Error deleting audiobook with ID {id}: {ex.Message}");
                 }
@@ -2315,7 +2329,8 @@ namespace Listenarr.Api.Controllers
                 var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
                 settings = await configService.GetApplicationSettingsAsync();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to load application settings while performing bulk update");
             }
 
@@ -2361,7 +2376,8 @@ namespace Listenarr.Api.Controllers
                                 Timestamp = DateTime.UtcNow
                             });
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             entryErrors.Add($"Invalid monitored value: {ex.Message}");
                         }
                     }
@@ -2389,7 +2405,8 @@ namespace Listenarr.Api.Controllers
                                 Timestamp = DateTime.UtcNow
                             });
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             entryErrors.Add($"Invalid qualityProfileId value: {ex.Message}");
                         }
                     }
@@ -2439,12 +2456,14 @@ namespace Listenarr.Api.Controllers
                                         Timestamp = DateTime.UtcNow
                                     });
                                 }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
                                     entryErrors.Add($"Failed to apply root folder for audiobook {id}: {ex.Message}");
                                 }
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             entryErrors.Add($"Invalid rootFolder value: {ex.Message}");
                         }
                     }
@@ -2459,7 +2478,8 @@ namespace Listenarr.Api.Controllers
                         entryErrors.Add("No valid updates provided for this audiobook");
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     entryErrors.Add($"Unhandled error: {ex.Message}");
                 }
 
@@ -2495,13 +2515,15 @@ namespace Listenarr.Api.Controllers
                         var job = new { jobId = jobId.ToString(), audiobookId = id, status = "Queued", enqueuedAt = DateTime.UtcNow };
                         await hub.Clients.All.SendAsync("ScanJobUpdate", job);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Failed to broadcast ScanJobUpdate for job {JobId}", jobId);
                     }
 
                     return Accepted(new { message = "Scan enqueued", jobId });
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogError(ex, "Failed to enqueue scan job for audiobook {AudiobookId}", id);
                     return StatusCode(500, new { message = "Failed to enqueue scan job", error = ex.Message });
                 }
@@ -2530,7 +2552,8 @@ namespace Listenarr.Api.Controllers
                     {
                         requestedFull = Path.GetFullPath(request.Path!);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Invalid requested scan path provided: {Path}", LogRedaction.SanitizeFilePath(request.Path));
                         return BadRequest(new { message = "Invalid scan path", path = request.Path });
                     }
@@ -2598,7 +2621,8 @@ namespace Listenarr.Api.Controllers
                     scanRoot = !string.IsNullOrEmpty(settings?.OutputPath) ? Path.GetFullPath(settings.OutputPath) : null;
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to read application settings for scan; cannot validate request path without configured roots");
                 // If BasePath exists prefer it; otherwise, we cannot determine a safe scan root
                 if (!string.IsNullOrEmpty(audiobook.BasePath))
@@ -2658,7 +2682,8 @@ namespace Listenarr.Api.Controllers
                                     continue;
                                 }
                             }
-                            catch (Exception innerFileEx) when (innerFileEx is not OperationCanceledException && innerFileEx is not OutOfMemoryException && innerFileEx is not StackOverflowException) {
+                            catch (Exception innerFileEx) when (innerFileEx is not OperationCanceledException && innerFileEx is not OutOfMemoryException && innerFileEx is not StackOverflowException)
+                            {
                                 _logger.LogDebug(innerFileEx, "Skipped file while scanning {Dir}", normalizedDir);
                                 continue;
                             }
@@ -2679,13 +2704,15 @@ namespace Listenarr.Api.Controllers
                         _logger.LogWarning(uaEx, "Access denied while enumerating directory during scan: {Dir}", dir);
                         continue;
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Unexpected error while enumerating directory during scan: {Dir}", dir);
                         continue;
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error while scanning filesystem for audiobook files");
                 return StatusCode(500, new { message = "Error scanning filesystem", error = ex.Message });
             }
@@ -2729,7 +2756,8 @@ namespace Listenarr.Api.Controllers
                         {
                             meta = await metadataService.ExtractFileMetadataAsync(filePath);
                         }
-                        catch (Exception mex) when (mex is not OperationCanceledException && mex is not OutOfMemoryException && mex is not StackOverflowException) {
+                        catch (Exception mex) when (mex is not OperationCanceledException && mex is not OutOfMemoryException && mex is not StackOverflowException)
+                        {
                             _logger.LogWarning(mex, "Failed to extract metadata for file {File}", filePath);
                         }
 
@@ -2751,7 +2779,8 @@ namespace Listenarr.Api.Controllers
                         await audioFileRepository.AddAsync(fileRecord);
                         created.Add(fileRecord);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Failed to create AudiobookFile for {File}", filePath);
                     }
                 }
@@ -2765,21 +2794,21 @@ namespace Listenarr.Api.Controllers
 
                 // Add history entries for newly scanned files
                 foreach (var historyEntry in created.Select(fileRecord => new History
-                         {
-                             AudiobookId = audiobook.Id,
-                             AudiobookTitle = audiobook.Title ?? "Unknown",
-                             EventType = "File Added",
-                             Message = $"File scanned and added: {Path.GetFileName(fileRecord.Path)}",
-                             Source = "Scan",
-                             Data = JsonSerializer.Serialize(new
-                             {
-                                 FilePath = fileRecord.Path,
-                                 FileSize = fileRecord.Size,
-                                 Format = fileRecord.Format,
-                                 Source = fileRecord.Source
-                             }),
-                             Timestamp = DateTime.UtcNow
-                         }))
+                {
+                    AudiobookId = audiobook.Id,
+                    AudiobookTitle = audiobook.Title ?? "Unknown",
+                    EventType = "File Added",
+                    Message = $"File scanned and added: {Path.GetFileName(fileRecord.Path)}",
+                    Source = "Scan",
+                    Data = JsonSerializer.Serialize(new
+                    {
+                        FilePath = fileRecord.Path,
+                        FileSize = fileRecord.Size,
+                        Format = fileRecord.Format,
+                        Source = fileRecord.Source
+                    }),
+                    Timestamp = DateTime.UtcNow
+                }))
                 {
                     await historyRepository.AddAsync(historyEntry);
                 }
@@ -2824,13 +2853,15 @@ namespace Listenarr.Api.Controllers
                                 };
                                 await historyRepository.AddAsync(historyEntry);
                             }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                            {
                                 _logger.LogWarning(ex, "Failed to remove AudiobookFile Id={Id} Path={Path}", rem.Id, rem.Path);
                             }
                         }
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to reconcile audiobook files after scan for audiobook {AudiobookId}", audiobook.Id);
                 }
 
@@ -2860,7 +2891,8 @@ namespace Listenarr.Api.Controllers
                                         created.Add(new AudiobookFile { Path = audiobook.FilePath }); // Add to created list for response
                                     }
                                 }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
                                     _logger.LogWarning(ex, "Failed to migrate legacy filePath for audiobook {AudiobookId}: {Path}", audiobook.Id, audiobook.FilePath);
                                 }
                             }
@@ -2897,7 +2929,8 @@ namespace Listenarr.Api.Controllers
                         await _repo.UpdateAsync(audiobook);
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to handle legacy filePath migration for audiobook {AudiobookId}", audiobook.Id);
                 }
 
@@ -2927,7 +2960,8 @@ namespace Listenarr.Api.Controllers
                         };
                         await _notificationService.SendNotificationAsync("book-available", availableData, settings.WebhookUrl, settings.EnabledNotificationTriggers);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Failed to send book-available notification for audiobook {AudiobookId}", audiobook.Id);
                     }
                 }
@@ -2995,7 +3029,8 @@ namespace Listenarr.Api.Controllers
                         _logger.LogInformation("Updated BasePath for audiobook {AudiobookId} without moving files: {BasePath}", id, final);
                         return Ok(new { message = "Destination updated" });
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogError(ex, "Failed to update BasePath for audiobook {AudiobookId}", id);
                         return StatusCode(500, new { message = "Failed to update BasePath", error = ex.Message });
                     }
@@ -3029,7 +3064,8 @@ namespace Listenarr.Api.Controllers
                 {
                     if (!Directory.Exists(targetParent)) Directory.CreateDirectory(targetParent);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to access or create target parent {TargetParent}", targetParent);
                     return BadRequest(new { message = "Target parent path is not writable or unavailable" });
                 }
@@ -3064,13 +3100,15 @@ namespace Listenarr.Api.Controllers
                     var job = new { jobId = jobId.ToString(), audiobookId = id, status = "Queued", enqueuedAt = DateTime.UtcNow };
                     await hub.Clients.All.SendAsync("MoveJobUpdate", job);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to broadcast MoveJobUpdate for job {JobId}", jobId);
                 }
 
                 return Accepted(new { message = "Move enqueued", jobId });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to enqueue move job for audiobook {AudiobookId}", id);
                 return StatusCode(500, new { message = "Failed to enqueue move job", error = ex.Message });
             }
@@ -3117,7 +3155,8 @@ namespace Listenarr.Api.Controllers
                 var job = new { jobId = newJobId.ToString(), status = "Queued", enqueuedAt = DateTime.UtcNow };
                 await hub.Clients.All.SendAsync("MoveJobUpdate", job);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to broadcast MoveJobUpdate for requeued job {JobId}", newJobId);
             }
 
@@ -3148,7 +3187,8 @@ namespace Listenarr.Api.Controllers
                 var job = new { jobId = newJobId.ToString(), status = "Queued", enqueuedAt = DateTime.UtcNow };
                 await hub.Clients.All.SendAsync("ScanJobUpdate", job);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to broadcast ScanJobUpdate for requeued job {JobId}", newJobId);
             }
 
@@ -3197,7 +3237,8 @@ namespace Listenarr.Api.Controllers
                 // Include a structured payload so clients can distinguish manual vs automatic searches
                 await hub.Clients.All.SendCoreAsync("SearchProgress", new object[] { new { message = $"Manual search query: {searchQuery}", details = new { rawCount = searchResults.Count, rawSamples = rawSummaries }, type = "interactive", audiobookId = audiobook.Id } });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogDebug(ex, "Failed to broadcast raw search results summary for manual search audiobook {Id}", audiobook.Id);
             }
 
@@ -3262,7 +3303,8 @@ namespace Listenarr.Api.Controllers
                 _logger.LogInformation("Queued download for audiobook '{Title}': {ResultTitle} (Score: {Score})",
                     audiobook.Title, topResult.SearchResult.Title, topResult.TotalScore);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to queue download for audiobook '{Title}': {ResultTitle}",
                     audiobook.Title, topResult.SearchResult.Title);
             }
@@ -3565,7 +3607,7 @@ namespace Listenarr.Api.Controllers
                     || jsonElementConvertEx is OverflowException)
                 {
                     // continue to other conversion attempts
-                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
             }
 

@@ -75,7 +75,9 @@ describe('AudiobookDetailView image recache behavior', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     expect(ensureImageCached).toHaveBeenCalled()
-    const ensureImageCachedMock = ensureImageCached as unknown as { mock: { calls: Array<[string]> } }
+    const ensureImageCachedMock = ensureImageCached as unknown as {
+      mock: { calls: Array<[string]> }
+    }
     expect(ensureImageCachedMock.mock.calls[0]?.[0]).toBe(imagePath)
   })
 

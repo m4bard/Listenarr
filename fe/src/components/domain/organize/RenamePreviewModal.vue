@@ -38,7 +38,10 @@
           <p>Organizing selected audiobooks…</p>
         </div>
 
-        <div v-else-if="loaded && changedPreviews.length === 0" class="organize-state organize-success">
+        <div
+          v-else-if="loaded && changedPreviews.length === 0"
+          class="organize-state organize-success"
+        >
           <PhCheckCircle class="organize-icon" />
           <p>Everything already matches the current naming pattern.</p>
         </div>
@@ -60,11 +63,24 @@
             <div class="form-control-card">
               <div class="organize-toolbar">
                 <p class="organize-toolbar-title">
-                  <strong>{{ selectedCount }}</strong> of {{ changedPreviews.length }} audiobook(s) selected
+                  <strong>{{ selectedCount }}</strong> of {{ changedPreviews.length }} audiobook(s)
+                  selected
                 </p>
                 <div class="toolbar-actions">
-                  <button type="button" class="btn btn-secondary organize-action-btn" @click="selectAll">Select All</button>
-                  <button type="button" class="btn btn-secondary organize-action-btn" @click="clearSelection">Clear</button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary organize-action-btn"
+                    @click="selectAll"
+                  >
+                    Select All
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-secondary organize-action-btn"
+                    @click="clearSelection"
+                  >
+                    Clear
+                  </button>
                 </div>
               </div>
             </div>
@@ -89,14 +105,19 @@
                       :checked="selected.has(preview.audiobookId)"
                       @change="toggleSelected(preview.audiobookId)"
                     />
-                    <span class="preview-title">{{ preview.audiobookTitle || `Audiobook #${preview.audiobookId}` }}</span>
+                    <span class="preview-title">{{
+                      preview.audiobookTitle || `Audiobook #${preview.audiobookId}`
+                    }}</span>
                   </span>
                   <span class="preview-meta">{{ previewChangeSummary(preview) }}</span>
                 </label>
 
                 <div v-if="preview.folderChanged" class="preview-section">
                   <span class="preview-label">Folder</span>
-                  <RenamePathDiff :old-path="preview.currentFolderPath" :new-path="preview.newFolderPath" />
+                  <RenamePathDiff
+                    :old-path="preview.currentFolderPath"
+                    :new-path="preview.newFolderPath"
+                  />
                 </div>
 
                 <div
@@ -124,7 +145,10 @@
               class="result-row"
               :class="{ success: result.success, error: !result.success }"
             >
-              <component :is="result.success ? PhCheckCircle : PhWarningCircle" class="result-icon" />
+              <component
+                :is="result.success ? PhCheckCircle : PhWarningCircle"
+                class="result-icon"
+              />
               <span class="result-title">{{ titleFor(result.audiobookId) }}</span>
               <span class="result-detail">
                 {{ result.success ? 'Organized successfully' : result.error || 'Organize failed' }}
@@ -167,19 +191,30 @@
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { PhCheckCircle, PhCheckSquare, PhFolderOpen, PhInfo, PhSpinner, PhWarningCircle, PhX } from '@phosphor-icons/vue'
+import {
+  PhCheckCircle,
+  PhCheckSquare,
+  PhFolderOpen,
+  PhInfo,
+  PhSpinner,
+  PhWarningCircle,
+  PhX,
+} from '@phosphor-icons/vue'
 import { Modal, ModalBody, ModalFooter, ModalHeader } from '@/components/feedback'
 import RenamePathDiff from './RenamePathDiff.vue'
 import { apiService } from '@/services/api'
 import type { RenameOperation, RenamePreview, RenameResult } from '@/types'
 
-const props = withDefaults(defineProps<{
-  visible?: boolean
-  audiobookIds?: number[]
-}>(), {
-  visible: false,
-  audiobookIds: () => [],
-})
+const props = withDefaults(
+  defineProps<{
+    visible?: boolean
+    audiobookIds?: number[]
+  }>(),
+  {
+    visible: false,
+    audiobookIds: () => [],
+  },
+)
 
 const emit = defineEmits<{
   close: []
@@ -196,7 +231,9 @@ const results = ref<RenameResult[]>([])
 const selected = ref<Set<number>>(new Set())
 
 const changedPreviews = computed(() => previews.value.filter((preview) => preview.hasChanges))
-const selectedCount = computed(() => changedPreviews.value.filter((preview) => selected.value.has(preview.audiobookId)).length)
+const selectedCount = computed(
+  () => changedPreviews.value.filter((preview) => selected.value.has(preview.audiobookId)).length,
+)
 
 watch(
   () => props.visible,
@@ -279,7 +316,10 @@ function toggleSelected(id: number) {
 }
 
 function titleFor(audiobookId: number) {
-  return previews.value.find((preview) => preview.audiobookId === audiobookId)?.audiobookTitle || `Audiobook #${audiobookId}`
+  return (
+    previews.value.find((preview) => preview.audiobookId === audiobookId)?.audiobookTitle ||
+    `Audiobook #${audiobookId}`
+  )
 }
 
 function previewChangeSummary(preview: RenamePreview) {

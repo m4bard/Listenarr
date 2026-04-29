@@ -65,7 +65,7 @@
         <div class="result-stats">
           <span v-if="book.searchResult?.runtime" class="stat-item">
             <PhClock />
-            {{ formatRuntime((book.searchResult?.lengthMinutes ?? book.searchResult?.runtime ?? 0)) }}
+            {{ formatRuntime(book.searchResult?.lengthMinutes ?? book.searchResult?.runtime ?? 0) }}
           </span>
           <span v-if="book.searchResult?.language" class="stat-item">
             <PhGlobe />
@@ -78,21 +78,40 @@
       <slot name="series">
         <div
           v-if="
-            (typeof book.searchResult?.series === 'string' && book.searchResult.series.trim().length > 0) ||
-            (Array.isArray(book.seriesList) && book.seriesList.some(s => typeof s === 'string' && s.trim().length > 0))
+            (typeof book.searchResult?.series === 'string' &&
+              book.searchResult.series.trim().length > 0) ||
+            (Array.isArray(book.seriesList) &&
+              book.seriesList.some((s) => typeof s === 'string' && s.trim().length > 0))
           "
           class="result-series"
         >
           <!-- Debug output: log series and seriesList values -->
-          <pre style="font-size:10px;color:#888;background:#f9f9f9;padding:2px 4px;margin-bottom:2px;">
-            series: {{ JSON.stringify(book.searchResult?.series) }} | seriesList: {{ JSON.stringify(book.seriesList) }}
+          <pre
+            style="
+              font-size: 10px;
+              color: #888;
+              background: #f9f9f9;
+              padding: 2px 4px;
+              margin-bottom: 2px;
+            "
+          >
+            series: {{ JSON.stringify(book.searchResult?.series) }} | seriesList: {{
+              JSON.stringify(book.seriesList)
+            }}
           </pre>
           <span
             class="series-badge"
-            :title="book.searchResult?.seriesList?.length ? book.searchResult.seriesList.join(', ') : `${book.searchResult?.series}${book.searchResult?.seriesNumber ? ` #${book.searchResult.seriesNumber}` : ''}`"
+            :title="
+              book.searchResult?.seriesList?.length
+                ? book.searchResult.seriesList.join(', ')
+                : `${book.searchResult?.series}${book.searchResult?.seriesNumber ? ` #${book.searchResult.seriesNumber}` : ''}`
+            "
           >
             <PhBook />
-            {{ safeText(book.searchResult?.series ?? (book.seriesList && book.seriesList[0])) }}<span v-if="book.searchResult?.seriesNumber"> #{{ book.searchResult.seriesNumber }}</span>
+            {{ safeText(book.searchResult?.series ?? (book.seriesList && book.seriesList[0]))
+            }}<span v-if="book.searchResult?.seriesNumber">
+              #{{ book.searchResult.seriesNumber }}</span
+            >
           </span>
         </div>
       </slot>
@@ -100,7 +119,7 @@
       <!-- Metadata Badges -->
       <slot name="metadata">
         <div class="metadata-badges">
-              <span v-if="book.publisher?.length" class="metadata-badge">
+          <span v-if="book.publisher?.length" class="metadata-badge">
             <PhBuilding />
             {{ safeText(book.publisher[0]) }}
           </span>
@@ -137,7 +156,11 @@
             <PhGlobe />
             {{ metadataSourceLabel }}
           </a>
-          <span v-else-if="book.metadataSource" class="metadata-source-badge" :data-source="book.metadataSource">
+          <span
+            v-else-if="book.metadataSource"
+            class="metadata-source-badge"
+            :data-source="book.metadataSource"
+          >
             <PhGlobe />
             {{ metadataSourceLabel }}
           </span>
@@ -164,12 +187,7 @@
     <div class="result-actions">
       <slot name="actions">
         <button
-          :class="[
-            'btn',
-            isAdded
-              ? 'btn-success'
-              : 'btn-primary',
-          ]"
+          :class="['btn', isAdded ? 'btn-success' : 'btn-primary']"
           @click="$emit('add')"
           :disabled="isAdded"
         >
@@ -225,7 +243,7 @@ const props = withDefaults(defineProps<SearchResultCardProps>(), {
 })
 
 defineEmits<{
-  'add': []
+  add: []
   'image-error': []
 }>()
 
@@ -238,7 +256,7 @@ const asin = computed(() => {
   const book = props.book as unknown as Record<string, unknown>
   return (
     (book['asin'] as string | undefined) ||
-    (props.book.searchResult?.asin) ||
+    props.book.searchResult?.asin ||
     (props.book.key && !props.book.key.startsWith('OL') ? props.book.key : undefined)
   )
 })
@@ -261,7 +279,8 @@ const formatAuthors = (book: typeof props.book): string => {
       if (book.author_name.length) return book.author_name.slice(0, 2).join(', ')
       return 'Unknown Author'
     }
-    if (typeof book.author_name === 'string' && book.author_name.trim()) return book.author_name.trim()
+    if (typeof book.author_name === 'string' && book.author_name.trim())
+      return book.author_name.trim()
   }
 
   // Fallback to searchResult authors when author_name was not explicitly provided
@@ -424,7 +443,7 @@ const sourceLabel = computed((): string => {
   gap: 4px;
   padding: 3px 8px;
   background-color: var(--color-series-bg, rgba(33, 150, 243, 0.1));
-  color: var(--color-series-text, #2196F3);
+  color: var(--color-series-text, #2196f3);
   border-radius: 12px;
   font-size: 11px;
   font-weight: 500;
@@ -473,14 +492,14 @@ const sourceLabel = computed((): string => {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  color: var(--color-link, #2196F3);
+  color: var(--color-link, #2196f3);
   text-decoration: none;
   transition: color 0.2s ease;
 }
 
 .metadata-source-link:hover,
 .source-link:hover {
-  color: var(--color-link-hover, #1976D2);
+  color: var(--color-link-hover, #1976d2);
   text-decoration: underline;
 }
 
@@ -533,20 +552,20 @@ const sourceLabel = computed((): string => {
 }
 
 .btn-primary {
-  background-color: var(--color-primary, #2196F3);
+  background-color: var(--color-primary, #2196f3);
   color: white;
-  border-color: var(--color-primary, #2196F3);
+  border-color: var(--color-primary, #2196f3);
 }
 
 .btn-primary:hover:not(:disabled) {
-  background-color: var(--color-primary-hover, #1976D2);
-  border-color: var(--color-primary-hover, #1976D2);
+  background-color: var(--color-primary-hover, #1976d2);
+  border-color: var(--color-primary-hover, #1976d2);
 }
 
 .btn-success {
-  background-color: var(--color-success, #4CAF50);
+  background-color: var(--color-success, #4caf50);
   color: white;
-  border-color: var(--color-success, #4CAF50);
+  border-color: var(--color-success, #4caf50);
 }
 
 .btn-secondary {

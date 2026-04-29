@@ -16,7 +16,14 @@
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
 <template>
-  <div data-modal-body="true" :class="['modal-body', { 'no-padding': noPadding, 'modal-body--compact': compact, 'modal-body--tight': tight }]" :style="maxHeightStyle">
+  <div
+    data-modal-body="true"
+    :class="[
+      'modal-body',
+      { 'no-padding': noPadding, 'modal-body--compact': compact, 'modal-body--tight': tight },
+    ]"
+    :style="maxHeightStyle"
+  >
     <slot />
   </div>
 </template>
@@ -31,7 +38,9 @@ const props = defineProps({
   maxHeight: { type: String, required: false },
 })
 
-const maxHeightStyle = props.maxHeight ? ({ maxHeight: props.maxHeight, overflowY: 'auto' } as CSSProperties) : undefined
+const maxHeightStyle = props.maxHeight
+  ? ({ maxHeight: props.maxHeight, overflowY: 'auto' } as CSSProperties)
+  : undefined
 </script>
 
 <style scoped>

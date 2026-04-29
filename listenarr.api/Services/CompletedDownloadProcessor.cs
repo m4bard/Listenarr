@@ -100,7 +100,8 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("Broadcasted QueueUpdate after marking {DownloadId} as Completed", downloadId);
                         }
                     }
-                    catch (Exception broadcastEx) when (broadcastEx is not OperationCanceledException && broadcastEx is not OutOfMemoryException && broadcastEx is not StackOverflowException) {
+                    catch (Exception broadcastEx) when (broadcastEx is not OperationCanceledException && broadcastEx is not OutOfMemoryException && broadcastEx is not StackOverflowException)
+                    {
                         _logger.LogDebug(broadcastEx, "Failed to broadcast after marking as Completed");
                     }
 
@@ -112,7 +113,8 @@ namespace Listenarr.Api.Services
                 {
                     settings = await _configurationService.GetApplicationSettingsAsync() ?? new ApplicationSettings();
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "ProcessCompletedDownloadAsync: Failed to load application settings, using defaults");
                     settings = new ApplicationSettings();
                 }
@@ -142,7 +144,7 @@ namespace Listenarr.Api.Services
                                     throw new DownloadProcessingException("No download avaiable for filtering");
                                 }
                             }
-                            catch(DownloadProcessingException exception)
+                            catch (DownloadProcessingException exception)
                             {
                                 _logger.LogWarning(exception, exception.Message);
                                 _logger.LogInformation("Falling back on intelligent audio file filtering");
@@ -150,10 +152,10 @@ namespace Listenarr.Api.Services
                                 files = [.. Directory.EnumerateFiles(finalPath, "*.*", SearchOption.AllDirectories)
                                     .Where(f => !FileUtils.IsBlacklistedFile(f, settings.ImportBlacklistExtensions))
                                     .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)];
-                                
+
                                 files = await FilterDirectoryAudioFilesAsync(download, files);
                             }
-                            
+
                             var archiveFiles = files.Where(f => _archiveExtractor.IsArchive(f)).ToList();
                             files = files
                                 .Where(f => !_archiveExtractor.IsArchive(f))
@@ -179,7 +181,7 @@ namespace Listenarr.Api.Services
                                         tracked.Status = DownloadStatus.Moved;
                                         await _downloadRepository.UpdateAsync(tracked);
                                         _logger.LogInformation("Updated download {DownloadId} FinalPath to directory import result: {FinalPath}", downloadId, finalFromDirectory);
-                                        
+
                                         // Record successful import in history for idempotency
                                         if (_downloadHistoryService != null && !string.IsNullOrEmpty(tracked.DownloadClientId))
                                         {
@@ -192,7 +194,8 @@ namespace Listenarr.Api.Services
                                                     audiobookId: null);  // Audiobook ID is int in Download, but Guid in DownloadHistory
                                                 _logger.LogInformation("Recorded successful import in history for download {DownloadId}", downloadId);
                                             }
-                                            catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
+                                            catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)
+                                            {
                                                 _logger.LogWarning(histEx, "Failed to record import in history for download {DownloadId} (non-critical)", downloadId);
                                             }
                                         }
@@ -200,7 +203,8 @@ namespace Listenarr.Api.Services
 
                                 }
                             }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                            {
                                 _logger.LogDebug(ex, "Failed to update FinalPath from directory import results (non-fatal)");
                             }
 
@@ -259,7 +263,8 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception bpEx) when (bpEx is not OperationCanceledException && bpEx is not OutOfMemoryException && bpEx is not StackOverflowException) {
+                            catch (Exception bpEx) when (bpEx is not OperationCanceledException && bpEx is not OutOfMemoryException && bpEx is not StackOverflowException)
+                            {
                                 _logger.LogDebug(bpEx, "Failed to update audiobook BasePath after directory import (non-fatal)");
                             }
 
@@ -292,7 +297,7 @@ namespace Listenarr.Api.Services
                                                         tracked.Status = DownloadStatus.Moved;
                                                         await _downloadRepository.UpdateAsync(tracked);
                                                         _logger.LogInformation("Updated download {DownloadId} FinalPath to extracted import result: {FinalPath}", downloadId, finalFromExtracted);
-                                                        
+
                                                         // Record successful import in history for idempotency
                                                         if (_downloadHistoryService != null && !string.IsNullOrEmpty(tracked.DownloadClientId))
                                                         {
@@ -305,7 +310,8 @@ namespace Listenarr.Api.Services
                                                                     audiobookId: null);
                                                                 _logger.LogInformation("Recorded successful import in history for download {DownloadId}", downloadId);
                                                             }
-                                                            catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
+                                                            catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)
+                                                            {
                                                                 _logger.LogWarning(histEx, "Failed to record import in history for download {DownloadId} (non-critical)", downloadId);
                                                             }
                                                         }
@@ -315,14 +321,17 @@ namespace Listenarr.Api.Services
                                             }
                                         }
                                     }
-                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                    {
                                         _logger.LogWarning(ex, "Failed to extract/import archive {Archive} for download {DownloadId}", archivePath, downloadId);
                                     }
                                     finally
                                     {
                                         if (!string.IsNullOrWhiteSpace(tempDirExtracted) && System.IO.Directory.Exists(tempDirExtracted))
                                         {
-                                            try { System.IO.Directory.Delete(tempDirExtracted, true); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                            try { System.IO.Directory.Delete(tempDirExtracted, true); }
+                                            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                                            {
                                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                             }
                                         }
@@ -334,7 +343,8 @@ namespace Listenarr.Api.Services
                                 _logger.LogInformation("ProcessCompletedDownloadAsync: directory {FinalPath} contains no files to import (DownloadId: {DownloadId})", finalPath, downloadId);
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             _logger.LogError(ex, "ProcessCompletedDownloadAsync: failed to import files from directory {FinalPath} for download {DownloadId}", finalPath, downloadId);
                         }
                     }
@@ -369,7 +379,7 @@ namespace Listenarr.Api.Services
                                                     tracked.Status = DownloadStatus.Moved;
                                                     await _downloadRepository.UpdateAsync(tracked);
                                                     _logger.LogInformation("Updated download {DownloadId} FinalPath to extracted import result: {FinalPath}", downloadId, finalFromExtracted);
-                                                    
+
                                                     // Record successful import in history for idempotency
                                                     if (_downloadHistoryService != null && !string.IsNullOrEmpty(tracked.DownloadClientId))
                                                     {
@@ -382,7 +392,8 @@ namespace Listenarr.Api.Services
                                                                 audiobookId: null);
                                                             _logger.LogInformation("Recorded successful import in history for download {DownloadId}", downloadId);
                                                         }
-                                                        catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
+                                                        catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)
+                                                        {
                                                             _logger.LogWarning(histEx, "Failed to record import in history for download {DownloadId} (non-critical)", downloadId);
                                                         }
                                                     }
@@ -392,14 +403,17 @@ namespace Listenarr.Api.Services
                                         }
                                     }
                                 }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
                                     _logger.LogError(ex, "Failed to extract/import archive {FinalPath} for download {DownloadId}", finalPath, downloadId);
                                 }
                                 finally
                                 {
                                     if (!string.IsNullOrWhiteSpace(tempExtractDir) && System.IO.Directory.Exists(tempExtractDir))
                                     {
-                                        try { System.IO.Directory.Delete(tempExtractDir, true); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                        try { System.IO.Directory.Delete(tempExtractDir, true); }
+                                        catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+                                        {
                                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                         }
                                     }
@@ -421,7 +435,7 @@ namespace Listenarr.Api.Services
                                             tracked.Status = DownloadStatus.Moved;
                                             await _downloadRepository.UpdateAsync(tracked);
                                             _logger.LogInformation("Updated download {DownloadId} FinalPath to import result: {FinalPath}", downloadId, importResult.FinalPath);
-                                            
+
                                             // Record successful import in history for idempotency
                                             if (_downloadHistoryService != null && !string.IsNullOrEmpty(tracked.DownloadClientId))
                                             {
@@ -434,14 +448,16 @@ namespace Listenarr.Api.Services
                                                         audiobookId: null);
                                                     _logger.LogInformation("Recorded successful import in history for download {DownloadId}", downloadId);
                                                 }
-                                                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
+                                                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)
+                                                {
                                                     _logger.LogWarning(histEx, "Failed to record import in history for download {DownloadId} (non-critical)", downloadId);
                                                 }
                                             }
                                         }
 
                                     }
-                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                    {
                                         _logger.LogWarning(ex, "Failed to update Download.FinalPath after import for {DownloadId}", downloadId);
                                     }
                                 }
@@ -463,7 +479,8 @@ namespace Listenarr.Api.Services
                                                 candidateBitrate = meta?.Bitrate;
                                             }
                                         }
-                                        catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) {
+                                        catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+                                        {
                                             candidateBitrate = null;
                                         }
 
@@ -480,7 +497,8 @@ namespace Listenarr.Api.Services
                                                 if (existing.Any()) maxExistingBitrate = existing.Max();
                                             }
                                         }
-                                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) {
+                                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
+                                        {
                                             maxExistingBitrate = null;
                                         }
 
@@ -508,13 +526,15 @@ namespace Listenarr.Api.Services
                                             }
                                         }
                                     }
-                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                    {
                                         _logger.LogWarning(ex, "ProcessCompletedDownloadAsync: failed to register imported single file to audiobook for download {DownloadId}", downloadId);
                                     }
                                 }
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             _logger.LogError(ex, "ProcessCompletedDownloadAsync: failed to import single file {FinalPath} for download {DownloadId}", finalPath, downloadId);
                         }
                     }
@@ -557,7 +577,7 @@ namespace Listenarr.Api.Services
                         using var historyScope = scopeFactoryToUse.CreateScope();
                         var historyRepository = historyScope.ServiceProvider.GetService<IHistoryRepository>();
                         var configService = historyScope.ServiceProvider.GetService<IConfigurationService>();
-                        
+
                         if (historyRepository != null)
                         {
                             // Determine client name if available
@@ -570,7 +590,7 @@ namespace Listenarr.Api.Services
                                     clientName = clientConfig.Name;
                                 }
                             }
-                            
+
                             var historyEntry = new History
                             {
                                 AudiobookId = downloadForHistory.AudiobookId,
@@ -580,7 +600,8 @@ namespace Listenarr.Api.Services
                                 Source = "AutoImport",
                                 Timestamp = DateTime.UtcNow,
                                 NotificationSent = false,
-                                Data = System.Text.Json.JsonSerializer.Serialize(new { 
+                                Data = System.Text.Json.JsonSerializer.Serialize(new
+                                {
                                     DownloadId = downloadForHistory.Id,
                                     ClientName = clientName,
                                     FinalPath = downloadForHistory.FinalPath
@@ -588,7 +609,7 @@ namespace Listenarr.Api.Services
                             };
                             await historyRepository.AddAsync(historyEntry);
                             _logger.LogInformation("Added history entry for automatic import of {DownloadId}", downloadId);
-                            
+
                             // Send notification
                             try
                             {
@@ -600,7 +621,8 @@ namespace Listenarr.Api.Services
                                     {
                                         await notificationService.SendNotificationAsync(
                                             "Imported",
-                                            new {
+                                            new
+                                            {
                                                 AudiobookTitle = downloadForHistory.Title,
                                                 DownloadClient = clientName,
                                                 FilePath = downloadForHistory.FinalPath,
@@ -610,16 +632,17 @@ namespace Listenarr.Api.Services
                                             webhook.Triggers
                                         );
                                     }
-                                    
+
                                     // Mark notification as sent
                                     historyEntry.NotificationSent = true;
                                     await historyRepository.UpdateAsync(historyEntry);
                                 }
                             }
-                            catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException) {
+                            catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException)
+                            {
                                 _logger.LogWarning(notifyEx, "Failed to send import notification for {DownloadId}", downloadId);
                             }
-                            
+
                             // Send toast notification for successful import
                             try
                             {
@@ -642,19 +665,20 @@ namespace Listenarr.Api.Services
                                                 }
                                             }
                                         }
-                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                        {
                                             _logger.LogDebug(ex, "Failed to fetch audiobook name for notification");
                                         }
                                     }
-                                    
+
                                     var downloadName = !string.IsNullOrEmpty(downloadForHistory.Title) ? downloadForHistory.Title : "Download";
                                     var message = $"{downloadName} has been imported into {audiobookName}";
-                                    
+
                                     if (!importToastSent)
                                     {
                                         await toastService.PublishToastAsync(
-                                            "success", 
-                                            "Import Complete", 
+                                            "success",
+                                            "Import Complete",
                                             message,
                                             timeoutMs: 5000);
                                         importToastSent = true;
@@ -662,13 +686,15 @@ namespace Listenarr.Api.Services
                                     }
                                 }
                             }
-                            catch (Exception toastEx) when (toastEx is not OperationCanceledException && toastEx is not OutOfMemoryException && toastEx is not StackOverflowException) {
+                            catch (Exception toastEx) when (toastEx is not OperationCanceledException && toastEx is not OutOfMemoryException && toastEx is not StackOverflowException)
+                            {
                                 _logger.LogDebug(toastEx, "Failed to send toast notification for {DownloadId}", downloadId);
                             }
                         }
                     }
                 }
-                catch (Exception historyEx) when (historyEx is not OperationCanceledException && historyEx is not OutOfMemoryException && historyEx is not StackOverflowException) {
+                catch (Exception historyEx) when (historyEx is not OperationCanceledException && historyEx is not OutOfMemoryException && historyEx is not StackOverflowException)
+                {
                     _logger.LogWarning(historyEx, "Failed to add history entry or send notifications for {DownloadId}", downloadId);
                 }
 
@@ -677,27 +703,27 @@ namespace Listenarr.Api.Services
                 {
                     // Reload download to ensure it wasn't deleted by concurrent operations
                     var downloadForCleanup = await _downloadRepository.FindAsync(downloadId);
-                    
-                    _logger.LogDebug("Cleanup section: download is {IsNull}, DownloadClientId={ClientId}", 
-                        downloadForCleanup == null ? "NULL" : "NOT NULL", 
+
+                    _logger.LogDebug("Cleanup section: download is {IsNull}, DownloadClientId={ClientId}",
+                        downloadForCleanup == null ? "NULL" : "NOT NULL",
                         downloadForCleanup?.DownloadClientId ?? "NULL");
-                        
+
                     if (downloadForCleanup != null && !string.IsNullOrWhiteSpace(downloadForCleanup.DownloadClientId))
                     {
                         var scopeFactoryToUse = (_importService as ImportService)?.ScopeFactory ?? _serviceScopeFactory;
                         using var cleanupScope = scopeFactoryToUse.CreateScope();
                         var configService = cleanupScope.ServiceProvider.GetService<IConfigurationService>();
                         var downloadClientGateway = cleanupScope.ServiceProvider.GetService<IDownloadClientGateway>();
-                        
-                        _logger.LogDebug("Cleanup: configService={ConfigService}, gateway={Gateway}", 
-                            configService == null ? "NULL" : "OK", 
+
+                        _logger.LogDebug("Cleanup: configService={ConfigService}, gateway={Gateway}",
+                            configService == null ? "NULL" : "OK",
                             downloadClientGateway == null ? "NULL" : "OK");
-                        
+
                         if (configService != null && downloadClientGateway != null)
                         {
                             var clientConfig = await configService.GetDownloadClientConfigurationAsync(downloadForCleanup.DownloadClientId);
-                            _logger.LogInformation("Cleanup: clientConfig={IsNull}, RemoveCompletedDownloads={Setting}", 
-                                clientConfig == null ? "NULL" : "Found", 
+                            _logger.LogInformation("Cleanup: clientConfig={IsNull}, RemoveCompletedDownloads={Setting}",
+                                clientConfig == null ? "NULL" : "Found",
                                 clientConfig?.RemoveCompletedDownloads ?? "NULL");
 
                             // Skip cleanup if the download client is disabled
@@ -706,7 +732,7 @@ namespace Listenarr.Api.Services
                                 _logger.LogDebug("Skipping post-import cleanup for download {DownloadId}: client {ClientName} is disabled",
                                     downloadForCleanup.Id, clientConfig.Name);
                             }
-                            else if (clientConfig != null && !string.IsNullOrEmpty(clientConfig.RemoveCompletedDownloads) && 
+                            else if (clientConfig != null && !string.IsNullOrEmpty(clientConfig.RemoveCompletedDownloads) &&
                                 clientConfig.RemoveCompletedDownloads != "none")
                             {
                                 // Sonarr parity: Mark item as imported (e.g., change torrent category) before removal.
@@ -744,202 +770,210 @@ namespace Listenarr.Api.Services
                                 }
                                 else
                                 {
-                                bool deleteFiles = clientConfig.RemoveCompletedDownloads == "remove_and_delete";
-                                
-                                // Get the actual client-specific ID (torrent hash for qBittorrent/Transmission, droneId for NZBGet, etc.)
-                                string clientId = downloadForCleanup.Id;
-                                
-                                if ((clientConfig.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase) ||
-                                     clientConfig.Type.Equals("transmission", StringComparison.OrdinalIgnoreCase)) && 
-                                    downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("TorrentHash", out var hashObj))
-                                {
-                                    var torrentHash = hashObj?.ToString();
-                                    if (!string.IsNullOrEmpty(torrentHash))
+                                    bool deleteFiles = clientConfig.RemoveCompletedDownloads == "remove_and_delete";
+
+                                    // Get the actual client-specific ID (torrent hash for qBittorrent/Transmission, droneId for NZBGet, etc.)
+                                    string clientId = downloadForCleanup.Id;
+
+                                    if ((clientConfig.Type.Equals("qbittorrent", StringComparison.OrdinalIgnoreCase) ||
+                                         clientConfig.Type.Equals("transmission", StringComparison.OrdinalIgnoreCase)) &&
+                                        downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("TorrentHash", out var hashObj))
                                     {
-                                        clientId = torrentHash;
-                                        _logger.LogDebug("Using torrent hash {Hash} instead of download ID for {ClientType} removal", torrentHash, clientConfig.Type);
-                                    }
-                                }
-                                else if (clientConfig.Type.Equals("nzbget", StringComparison.OrdinalIgnoreCase) &&
-                                         downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("TorrentHash", out var droneIdObj))
-                                {
-                                    // For NZBGet, TorrentHash actually contains the droneId (GUID)
-                                    var droneId = droneIdObj?.ToString();
-                                    if (!string.IsNullOrEmpty(droneId))
-                                    {
-                                        clientId = droneId;
-                                        _logger.LogDebug("Using droneId {DroneId} instead of download ID for NZBGet removal", droneId);
-                                    }
-                                }
-                                else if (clientConfig.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase) &&
-                                         downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("ClientDownloadId", out var sabIdObj))
-                                {
-                                    var sabId = sabIdObj?.ToString();
-                                    if (!string.IsNullOrEmpty(sabId))
-                                    {
-                                        clientId = sabId;
-                                        _logger.LogDebug("Using ClientDownloadId {NzoId} instead of download ID for SABnzbd removal", sabId);
-                                    }
-                                }
-                                
-                                var removed = await downloadClientGateway.RemoveAsync(clientConfig, clientId, deleteFiles);
-                                
-                                if (removed)
-                                {
-                                    _logger.LogInformation("Removed download {DownloadId} from client {ClientName} (deleteFiles={DeleteFiles})", 
-                                        downloadForCleanup.Id, clientConfig.Name, deleteFiles);
-                                    
-                                    // Log to history
-                                    var historyRepository = cleanupScope.ServiceProvider.GetService<IHistoryRepository>();
-                                    if (historyRepository != null)
-                                    {
-                                        var historyEntry = new History
+                                        var torrentHash = hashObj?.ToString();
+                                        if (!string.IsNullOrEmpty(torrentHash))
                                         {
-                                            AudiobookId = downloadForCleanup.AudiobookId,
-                                            AudiobookTitle = downloadForCleanup.Title,
-                                            EventType = "Imported",
-                                            Message = $"Automatically imported and removed from {clientConfig.Name}. Files deleted: {deleteFiles}",
-                                            Source = "AutoImport",
-                                            Timestamp = DateTime.UtcNow,
-                                            NotificationSent = false,
-                                            Data = System.Text.Json.JsonSerializer.Serialize(new { 
-                                                DownloadId = downloadForCleanup.Id,
-                                                ClientName = clientConfig.Name,
-                                                ClientType = clientConfig.Type,
-                                                FilesDeleted = deleteFiles,
-                                                FinalPath = downloadForCleanup.FinalPath
-                                            })
-                                        };
-                                        await historyRepository.AddAsync(historyEntry);
-                                        _logger.LogInformation("Added history entry for automatic import of {DownloadId}", downloadId);
-                                        
-                                        // Send notification
+                                            clientId = torrentHash;
+                                            _logger.LogDebug("Using torrent hash {Hash} instead of download ID for {ClientType} removal", torrentHash, clientConfig.Type);
+                                        }
+                                    }
+                                    else if (clientConfig.Type.Equals("nzbget", StringComparison.OrdinalIgnoreCase) &&
+                                             downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("TorrentHash", out var droneIdObj))
+                                    {
+                                        // For NZBGet, TorrentHash actually contains the droneId (GUID)
+                                        var droneId = droneIdObj?.ToString();
+                                        if (!string.IsNullOrEmpty(droneId))
+                                        {
+                                            clientId = droneId;
+                                            _logger.LogDebug("Using droneId {DroneId} instead of download ID for NZBGet removal", droneId);
+                                        }
+                                    }
+                                    else if (clientConfig.Type.Equals("sabnzbd", StringComparison.OrdinalIgnoreCase) &&
+                                             downloadForCleanup.Metadata != null && downloadForCleanup.Metadata.TryGetValue("ClientDownloadId", out var sabIdObj))
+                                    {
+                                        var sabId = sabIdObj?.ToString();
+                                        if (!string.IsNullOrEmpty(sabId))
+                                        {
+                                            clientId = sabId;
+                                            _logger.LogDebug("Using ClientDownloadId {NzoId} instead of download ID for SABnzbd removal", sabId);
+                                        }
+                                    }
+
+                                    var removed = await downloadClientGateway.RemoveAsync(clientConfig, clientId, deleteFiles);
+
+                                    if (removed)
+                                    {
+                                        _logger.LogInformation("Removed download {DownloadId} from client {ClientName} (deleteFiles={DeleteFiles})",
+                                            downloadForCleanup.Id, clientConfig.Name, deleteFiles);
+
+                                        // Log to history
+                                        var historyRepository = cleanupScope.ServiceProvider.GetService<IHistoryRepository>();
+                                        if (historyRepository != null)
+                                        {
+                                            var historyEntry = new History
+                                            {
+                                                AudiobookId = downloadForCleanup.AudiobookId,
+                                                AudiobookTitle = downloadForCleanup.Title,
+                                                EventType = "Imported",
+                                                Message = $"Automatically imported and removed from {clientConfig.Name}. Files deleted: {deleteFiles}",
+                                                Source = "AutoImport",
+                                                Timestamp = DateTime.UtcNow,
+                                                NotificationSent = false,
+                                                Data = System.Text.Json.JsonSerializer.Serialize(new
+                                                {
+                                                    DownloadId = downloadForCleanup.Id,
+                                                    ClientName = clientConfig.Name,
+                                                    ClientType = clientConfig.Type,
+                                                    FilesDeleted = deleteFiles,
+                                                    FinalPath = downloadForCleanup.FinalPath
+                                                })
+                                            };
+                                            await historyRepository.AddAsync(historyEntry);
+                                            _logger.LogInformation("Added history entry for automatic import of {DownloadId}", downloadId);
+
+                                            // Send notification
+                                            try
+                                            {
+                                                var notificationService = cleanupScope.ServiceProvider.GetService<INotificationService>();
+                                                if (notificationService != null)
+                                                {
+                                                    var webhooks = await configService.GetWebhookConfigurationsAsync();
+                                                    foreach (var webhook in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Imported")))
+                                                    {
+                                                        await notificationService.SendNotificationAsync(
+                                                            "Imported",
+                                                            new
+                                                            {
+                                                                AudiobookTitle = downloadForCleanup.Title,
+                                                                DownloadClient = clientConfig.Name,
+                                                                FilePath = downloadForCleanup.FinalPath,
+                                                                RemovedFromClient = true,
+                                                                FilesDeleted = deleteFiles,
+                                                                Timestamp = DateTime.UtcNow
+                                                            },
+                                                            webhook.Url,
+                                                            webhook.Triggers
+                                                        );
+                                                    }
+
+                                                    // Mark notification as sent
+                                                    historyEntry.NotificationSent = true;
+                                                    await historyRepository.UpdateAsync(historyEntry);
+                                                }
+                                            }
+                                            catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException)
+                                            {
+                                                _logger.LogWarning(notifyEx, "Failed to send import notification for {DownloadId}", downloadId);
+                                            }
+                                        }
+
+                                        // Send toast notification for successful import
                                         try
                                         {
-                                            var notificationService = cleanupScope.ServiceProvider.GetService<INotificationService>();
-                                            if (notificationService != null)
+                                            var toastService = cleanupScope.ServiceProvider.GetService<IToastService>();
+                                            if (toastService != null)
                                             {
-                                                var webhooks = await configService.GetWebhookConfigurationsAsync();
-                                                foreach (var webhook in webhooks.Where(w => w.IsEnabled && w.Triggers.Contains("Imported")))
+                                                // Get the actual audiobook name from the library
+                                                string audiobookName = "your library";
+                                                if (downloadForCleanup.AudiobookId.HasValue)
                                                 {
-                                                    await notificationService.SendNotificationAsync(
-                                                        "Imported",
-                                                        new {
-                                                            AudiobookTitle = downloadForCleanup.Title,
-                                                            DownloadClient = clientConfig.Name,
-                                                            FilePath = downloadForCleanup.FinalPath,
-                                                            RemovedFromClient = true,
-                                                            FilesDeleted = deleteFiles,
-                                                            Timestamp = DateTime.UtcNow
-                                                        },
-                                                        webhook.Url,
-                                                        webhook.Triggers
-                                                    );
-                                                }
-                                                
-                                                // Mark notification as sent
-                                                historyEntry.NotificationSent = true;
-                                                await historyRepository.UpdateAsync(historyEntry);
-                                            }
-                                        }
-                                        catch (Exception notifyEx) when (notifyEx is not OperationCanceledException && notifyEx is not OutOfMemoryException && notifyEx is not StackOverflowException) {
-                                            _logger.LogWarning(notifyEx, "Failed to send import notification for {DownloadId}", downloadId);
-                                        }
-                                    }
-                                    
-                                    // Send toast notification for successful import
-                                    try
-                                    {
-                                        var toastService = cleanupScope.ServiceProvider.GetService<IToastService>();
-                                        if (toastService != null)
-                                        {
-                                            // Get the actual audiobook name from the library
-                                            string audiobookName = "your library";
-                                            if (downloadForCleanup.AudiobookId.HasValue)
-                                            {
-                                                try
-                                                {
-                                                    var audiobookRepository = cleanupScope.ServiceProvider.GetService<IAudiobookRepository>();
-                                                    if (audiobookRepository != null)
+                                                    try
                                                     {
-                                                        var audiobook = await audiobookRepository.GetByIdAsync(downloadForCleanup.AudiobookId.Value);
-                                                        if (audiobook != null && !string.IsNullOrEmpty(audiobook.Title))
+                                                        var audiobookRepository = cleanupScope.ServiceProvider.GetService<IAudiobookRepository>();
+                                                        if (audiobookRepository != null)
                                                         {
-                                                            audiobookName = audiobook.Title;
+                                                            var audiobook = await audiobookRepository.GetByIdAsync(downloadForCleanup.AudiobookId.Value);
+                                                            if (audiobook != null && !string.IsNullOrEmpty(audiobook.Title))
+                                                            {
+                                                                audiobookName = audiobook.Title;
+                                                            }
                                                         }
                                                     }
-                                                }
-                                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                                    _logger.LogDebug(ex, "Failed to fetch audiobook name for notification");
-                                                }
-                                            }
-                                            
-                                            var downloadName = !string.IsNullOrEmpty(downloadForCleanup.Title) ? downloadForCleanup.Title : "Download";
-                                            var message = clientConfig.RemoveCompletedDownloads == "remove_and_delete" 
-                                                ? $"{downloadName} has been imported into {audiobookName} and files deleted"
-                                                : $"{downloadName} has been imported into {audiobookName}";
-                                            
-                                            if (!importToastSent)
-                                            {
-                                                await toastService.PublishToastAsync(
-                                                    "success",
-                                                    "Import Complete",
-                                                    message,
-                                                    timeoutMs: 5000); // Auto-dismiss after 5 seconds
-                                                _logger.LogDebug("Sent toast notification for imported download {DownloadId}", downloadId);
-                                            }
-                                        }
-                                    }
-                                    catch (Exception toastEx) when (toastEx is not OperationCanceledException && toastEx is not OutOfMemoryException && toastEx is not StackOverflowException) {
-                                        _logger.LogDebug(toastEx, "Failed to send toast notification for {DownloadId}", downloadId);
-                                    }
-                                    
-                                    // Delete the download record from database after successful cleanup
-                                    try
-                                    {
-                                        var downloadRepository = cleanupScope.ServiceProvider.GetService<IDownloadRepository>();
-                                        if (downloadRepository != null)
-                                        {
-                                            var downloadToDelete = await downloadRepository.FindAsync(downloadId);
-                                            if (downloadToDelete != null)
-                                            {
-                                                await downloadRepository.RemoveAsync(downloadId);
-                                                _logger.LogInformation("Deleted download {DownloadId} from database after successful cleanup", downloadId);
-                                                
-                                                // Small delay to ensure database changes are visible to other contexts
-                                                await Task.Delay(100);
-                                                
-                                                // Broadcast queue update after deletion so frontend sees the updated state
-                                                try
-                                                {
-                                                    var currentQueue = await _downloadQueueService.GetQueueSnapshotAsync();
-                                                    if (_hubBroadcaster != null)
+                                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                                                     {
-                                                        await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueue);
-                                                        _logger.LogDebug("Broadcasted QueueUpdate after deleting download {DownloadId}", downloadId);
+                                                        _logger.LogDebug(ex, "Failed to fetch audiobook name for notification");
                                                     }
                                                 }
-                                                catch (Exception broadcastEx) when (broadcastEx is not OperationCanceledException && broadcastEx is not OutOfMemoryException && broadcastEx is not StackOverflowException) {
-                                                    _logger.LogDebug(broadcastEx, "Failed to broadcast QueueUpdate after deletion");
+
+                                                var downloadName = !string.IsNullOrEmpty(downloadForCleanup.Title) ? downloadForCleanup.Title : "Download";
+                                                var message = clientConfig.RemoveCompletedDownloads == "remove_and_delete"
+                                                    ? $"{downloadName} has been imported into {audiobookName} and files deleted"
+                                                    : $"{downloadName} has been imported into {audiobookName}";
+
+                                                if (!importToastSent)
+                                                {
+                                                    await toastService.PublishToastAsync(
+                                                        "success",
+                                                        "Import Complete",
+                                                        message,
+                                                        timeoutMs: 5000); // Auto-dismiss after 5 seconds
+                                                    _logger.LogDebug("Sent toast notification for imported download {DownloadId}", downloadId);
                                                 }
                                             }
                                         }
+                                        catch (Exception toastEx) when (toastEx is not OperationCanceledException && toastEx is not OutOfMemoryException && toastEx is not StackOverflowException)
+                                        {
+                                            _logger.LogDebug(toastEx, "Failed to send toast notification for {DownloadId}", downloadId);
+                                        }
+
+                                        // Delete the download record from database after successful cleanup
+                                        try
+                                        {
+                                            var downloadRepository = cleanupScope.ServiceProvider.GetService<IDownloadRepository>();
+                                            if (downloadRepository != null)
+                                            {
+                                                var downloadToDelete = await downloadRepository.FindAsync(downloadId);
+                                                if (downloadToDelete != null)
+                                                {
+                                                    await downloadRepository.RemoveAsync(downloadId);
+                                                    _logger.LogInformation("Deleted download {DownloadId} from database after successful cleanup", downloadId);
+
+                                                    // Small delay to ensure database changes are visible to other contexts
+                                                    await Task.Delay(100);
+
+                                                    // Broadcast queue update after deletion so frontend sees the updated state
+                                                    try
+                                                    {
+                                                        var currentQueue = await _downloadQueueService.GetQueueSnapshotAsync();
+                                                        if (_hubBroadcaster != null)
+                                                        {
+                                                            await _hubBroadcaster.BroadcastQueueUpdateAsync(currentQueue);
+                                                            _logger.LogDebug("Broadcasted QueueUpdate after deleting download {DownloadId}", downloadId);
+                                                        }
+                                                    }
+                                                    catch (Exception broadcastEx) when (broadcastEx is not OperationCanceledException && broadcastEx is not OutOfMemoryException && broadcastEx is not StackOverflowException)
+                                                    {
+                                                        _logger.LogDebug(broadcastEx, "Failed to broadcast QueueUpdate after deletion");
+                                                    }
+                                                }
+                                            }
+                                        }
+                                        catch (Exception deleteEx) when (deleteEx is not OperationCanceledException && deleteEx is not OutOfMemoryException && deleteEx is not StackOverflowException)
+                                        {
+                                            _logger.LogWarning(deleteEx, "Failed to delete download {DownloadId} from database", downloadId);
+                                        }
                                     }
-                                    catch (Exception deleteEx) when (deleteEx is not OperationCanceledException && deleteEx is not OutOfMemoryException && deleteEx is not StackOverflowException) {
-                                        _logger.LogWarning(deleteEx, "Failed to delete download {DownloadId} from database", downloadId);
+                                    else
+                                    {
+                                        _logger.LogWarning("Failed to remove download {DownloadId} from client {ClientName}",
+                                            download!.Id, clientConfig.Name);
                                     }
-                                }
-                                else
-                                {
-                                    _logger.LogWarning("Failed to remove download {DownloadId} from client {ClientName}", 
-                                        download!.Id, clientConfig.Name);
-                                }
                                 } // end else (canBeRemoved)
                             }
                         }
                     }
                 }
-                catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException && cleanupEx is not OutOfMemoryException && cleanupEx is not StackOverflowException) {
+                catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException && cleanupEx is not OutOfMemoryException && cleanupEx is not StackOverflowException)
+                {
                     _logger.LogError(cleanupEx, "Error during post-import cleanup for {DownloadId}", downloadId);
                 }
 
@@ -962,18 +996,21 @@ namespace Listenarr.Api.Services
                                 await clientProxy.SendCoreAsync("QueueUpdate", new object[] { currentQueue }, System.Threading.CancellationToken.None);
                             }
                         }
-                        catch (Exception exInner) when (exInner is not OperationCanceledException && exInner is not OutOfMemoryException && exInner is not StackOverflowException) {
+                        catch (Exception exInner) when (exInner is not OperationCanceledException && exInner is not OutOfMemoryException && exInner is not StackOverflowException)
+                        {
                             _logger.LogDebug(exInner, "Direct SendCoreAsync for QueueUpdate failed (non-fatal)");
                         }
 
                         _logger.LogInformation("Broadcasted QueueUpdate after processing download {DownloadId}", downloadId);
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to broadcast QueueUpdate after processing download {DownloadId}", downloadId);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Unexpected error in ProcessCompletedDownloadAsync for {DownloadId}", downloadId);
 
                 await MarkImportFailureAsync(

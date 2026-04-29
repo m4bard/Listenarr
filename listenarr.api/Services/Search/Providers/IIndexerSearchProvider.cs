@@ -40,9 +40,9 @@ namespace Listenarr.Api.Services.Search.Providers
         /// <param name="request">Optional additional request context.</param>
         /// <returns>List of search results from the indexer.</returns>
         Task<List<IndexerSearchResult>> SearchAsync(
-            Indexer indexer, 
-            string query, 
-            string? category = null, 
+            Indexer indexer,
+            string query,
+            string? category = null,
             SearchRequest? request = null);
     }
 }

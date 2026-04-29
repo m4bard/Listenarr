@@ -20,7 +20,7 @@ namespace Listenarr.Api.Tests.Services
             {
                 Directory.Delete(ffmpegDirectory, true);
             }
-            catch(DirectoryNotFoundException)
+            catch (DirectoryNotFoundException)
             {
             }
 
@@ -29,16 +29,16 @@ namespace Listenarr.Api.Tests.Services
             var provider = MockUtils.CreateServiceProvider();
 
             var ffmpegService = new FfmpegService(
-                new Mock<ILogger<FfmpegService>>().Object, 
+                new Mock<ILogger<FfmpegService>>().Object,
                 provider.GetRequiredService<IStartupConfigService>(),
                 provider.GetRequiredService<IProcessRunner>());
 
             var ffprobePath = await ffmpegService.EnsureFfprobeInstalledAsync();
-            
+
             Assert.NotNull(ffprobePath);
             Assert.True(Path.Exists(ffprobePath));
             Assert.True(Path.Exists(ffmpegDirectory));
-            
+
             // Cleanup
             Directory.Delete(ffmpegDirectory, true);
             Assert.False(Path.Exists(ffmpegDirectory));

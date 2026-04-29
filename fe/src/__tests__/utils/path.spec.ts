@@ -16,7 +16,13 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 import { describe, it, expect } from 'vitest'
-import { toForward, trimTrailingSlash, normalizeForCompare, isAbsolutePath, stripRootPrefix } from '@/utils/path'
+import {
+  toForward,
+  trimTrailingSlash,
+  normalizeForCompare,
+  isAbsolutePath,
+  stripRootPrefix,
+} from '@/utils/path'
 
 describe('path utils', () => {
   it('toForward converts backslashes to forward', () => {

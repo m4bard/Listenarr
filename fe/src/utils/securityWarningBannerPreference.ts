@@ -16,7 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 export const SECURITY_WARNING_BANNER_PREF_KEY = 'listenarr.hideNoAuthSecurityBanner'
-export const SECURITY_WARNING_BANNER_PREF_EVENT = 'listenarr:security-warning-banner-preference-changed'
+export const SECURITY_WARNING_BANNER_PREF_EVENT =
+  'listenarr:security-warning-banner-preference-changed'
 
 export function getSecurityWarningBannerHiddenPreference(): boolean {
   try {
@@ -43,4 +44,3 @@ export function setSecurityWarningBannerHiddenPreference(hidden: boolean): void 
     // Ignore dispatch failures
   }
 }
-

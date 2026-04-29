@@ -47,11 +47,25 @@ const NULL_VALUE = '__null__'
 const CUSTOM_VALUE = '__custom__'
 
 const props = withDefaults(
-  defineProps<{ rootId?: number | null; customPath?: string | null; hideLabel?: boolean; hideBrowse?: boolean; autoFocusCustom?: boolean; inline?: boolean; externalCustom?: boolean }>(),
-  { rootId: null, customPath: null, hideLabel: false, hideBrowse: false, autoFocusCustom: false, inline: false, externalCustom: false },
+  defineProps<{
+    rootId?: number | null
+    customPath?: string | null
+    hideLabel?: boolean
+    hideBrowse?: boolean
+    autoFocusCustom?: boolean
+    inline?: boolean
+    externalCustom?: boolean
+  }>(),
+  {
+    rootId: null,
+    customPath: null,
+    hideLabel: false,
+    hideBrowse: false,
+    autoFocusCustom: false,
+    inline: false,
+    externalCustom: false,
+  },
 )
-
-
 
 const emit = defineEmits(['update:rootId', 'update:customPath', 'open-browser', 'custom-selected'])
 
@@ -79,7 +93,7 @@ watch(
       emit('custom-selected')
     }
   },
-) 
+)
 
 const selectValue = selectValueComputed
 
@@ -110,13 +124,17 @@ function onChange(e: Event) {
   flex-direction: column;
   gap: 0.5rem;
 }
-.root-select-content.inline { display:flex; gap:0.5rem; align-items:center; flex-wrap:wrap; width:100% }
+.root-select-content.inline {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  flex-wrap: wrap;
+  width: 100%;
+}
 
-
-
-.recent-paths { width:100% }
-
-
+.recent-paths {
+  width: 100%;
+}
 
 .form-select {
   padding: 0.75rem 1rem;
@@ -135,7 +153,7 @@ function onChange(e: Event) {
   outline: none;
   border-color: var(--brand-focus);
   box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.2);
-}  
+}
 
 .form-input {
   padding: 0.6rem 0.75rem;

@@ -186,7 +186,7 @@ export function useSearch() {
         const params: Record<string, unknown> = {
           isbn: isbnMatch[1].trim(),
           region: searchLanguage.value,
-          pagination: { page: 1, limit: 50 }
+          pagination: { page: 1, limit: 50 },
         }
         if (languageFilter) params.language = languageFilter
         try {
@@ -220,7 +220,11 @@ export function useSearch() {
       let match: RegExpExecArray | null
       while ((match = regex.exec(query)) !== null) {
         if (match && match[1]) {
-          matches.push({ key: match[1].toUpperCase().replace(':', ''), index: match.index ?? 0, len: match[1].length })
+          matches.push({
+            key: match[1].toUpperCase().replace(':', ''),
+            index: match.index ?? 0,
+            len: match[1].length,
+          })
         }
       }
       let foundAny = false
@@ -282,7 +286,8 @@ export function useSearch() {
     // Validate ASIN using the same strict pattern as detection.
     // Matches: 'B' + 9 alphanumerics OR 10-digit numeric ASIN (ISBN-10 format)
     if (!/^(B[0-9A-Z]{9}|\d{9}(?:X|\d))$/.test(cleanAsin.toUpperCase())) {
-      searchError.value = 'Invalid ASIN format. Expected an Amazon ASIN like B08G9PRS1K or 1980006520'
+      searchError.value =
+        'Invalid ASIN format. Expected an Amazon ASIN like B08G9PRS1K or 1980006520'
       return
     }
 

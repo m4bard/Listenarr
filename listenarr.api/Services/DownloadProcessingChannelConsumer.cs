@@ -60,7 +60,8 @@ namespace Listenarr.Api.Services
                     {
                         _logger.LogWarning(ex, "Channel consumer canceled/timed out while handling job {JobId}", jobId);
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Failed to handle channel job {JobId}", jobId);
                     }
                 }

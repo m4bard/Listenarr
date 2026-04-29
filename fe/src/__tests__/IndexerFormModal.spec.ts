@@ -28,13 +28,13 @@ describe('IndexerFormModal', () => {
     })
 
     await wrapper.setProps({
-      editingIndexer: ({
+      editingIndexer: {
         id: 1,
         name: 'Test Indexer',
         implementation: 'Newznab',
         url: 'https://example.test',
         apiKey: 'secret',
-      } as unknown),
+      } as unknown,
     })
     await wrapper.vm.$nextTick()
 

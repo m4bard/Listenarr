@@ -31,7 +31,12 @@
 
     <div class="modal-header-actions">
       <slot name="actions">
-        <button v-if="showClose" class="close-btn" @click="$emit('close')" :aria-label="closeAriaLabel">
+        <button
+          v-if="showClose"
+          class="close-btn"
+          @click="$emit('close')"
+          :aria-label="closeAriaLabel"
+        >
           <PhX />
         </button>
       </slot>

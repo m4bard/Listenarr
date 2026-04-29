@@ -88,7 +88,7 @@ namespace Listenarr.Api.Tests
             });
 
             // Provide a no-op IIndexerRepository so DownloadService can be resolved without explicit registration.
-            // Always use a mock — injecting a DbContext into a singleton factory causes lifetime violations.
+            // Always use a mock â€” injecting a DbContext into a singleton factory causes lifetime violations.
             services.AddSingleton<IIndexerRepository>(sp =>
             {
                 var mock = new Mock<IIndexerRepository>();

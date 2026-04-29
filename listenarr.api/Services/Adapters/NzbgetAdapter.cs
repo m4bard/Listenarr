@@ -99,7 +99,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogDebug(tce, "NZBGet test timed out for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, "NZBGet: connection timed out");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogDebug(ex, "NZBGet test failed for client {ClientId}", LogRedaction.SanitizeText(client.Id ?? client.Name ?? client.Type));
                 return (false, "NZBGet: connection failed");
             }
@@ -108,14 +109,14 @@ namespace Listenarr.Api.Services.Adapters
         private static bool IsVersion25OrNewer(string version)
         {
             if (string.IsNullOrWhiteSpace(version)) return false;
-            
+
             // Version format: "25.4" or "25.4-testing"
             var parts = version.Split(new[] { '.', '-' }, StringSplitOptions.RemoveEmptyEntries);
             if (parts.Length > 0 && int.TryParse(parts[0], out var major))
             {
                 return major >= 25;
             }
-            
+
             return false;
         }
 
@@ -136,65 +137,65 @@ namespace Listenarr.Api.Services.Adapters
         }
 
         private async Task<string?> AddViaRestApiAsync(
-            DownloadClientConfiguration client, 
-            SearchResult result, 
-            string nzbUrl, 
-            string? indexerApiKey, 
+            DownloadClientConfiguration client,
+            SearchResult result,
+            string nzbUrl,
+            string? indexerApiKey,
             CancellationToken ct)
         {
             var category = ResolveCategory(client);
             var priority = ResolvePriority(client);
             var droneId = Guid.NewGuid().ToString().Replace("-", string.Empty);
-            
+
             // Download NZB content
             var nzbBytes = await DownloadNzbAsync(nzbUrl, indexerApiKey, ct);
             var nzbFileName = BuildNzbFileName(result);
 
             var uploadUrl = DownloadClientUriBuilder.BuildUri(client, "/api/v2/nzb");
-            
+
             using var httpClient = _httpClientFactory.CreateClient();
             using var content = new MultipartFormDataContent();
-            
+
             // Add NZB file
             content.Add(new ByteArrayContent(nzbBytes), "file", nzbFileName);
-            
+
             // Add metadata
             if (!string.IsNullOrWhiteSpace(category))
             {
                 content.Add(new StringContent(category), "Category");
             }
-            
+
             if (priority != 0)
             {
                 content.Add(new StringContent(priority.ToString()), "Priority");
             }
-            
+
             // Add drone tracking parameter
             content.Add(new StringContent($"drone={droneId}"), "PPParameters");
-            
+
             using var request = new HttpRequestMessage(HttpMethod.Post, uploadUrl)
             {
                 Content = content
             };
-            
+
             // Add Basic Auth (NZBGet v25 REST API accepts Basic Auth)
             var authHeader = BuildAuthHeader(client);
             if (authHeader != null)
             {
                 request.Headers.Authorization = authHeader;
             }
-            
+
             _logger.LogDebug("NZBGet REST API POST to {Url} with file {FileName}", LogRedaction.SanitizeUrl(uploadUrl.ToString()), LogRedaction.SanitizeText(nzbFileName));
-            
+
             using var response = await httpClient.SendAsync(request, ct);
             var responseBody = await response.Content.ReadAsStringAsync(ct);
-            
+
             if (!response.IsSuccessStatusCode)
             {
                 _logger.LogError("NZBGet REST API upload failed: {StatusCode} - {Body}", response.StatusCode, responseBody);
                 throw new Exception($"NZBGet REST API upload error: {response.StatusCode} - {responseBody}");
             }
-            
+
             // Parse response JSON to get queue ID
             var jsonResponse = JsonSerializer.Deserialize<JsonElement>(responseBody);
             if (jsonResponse.TryGetProperty("nzbId", out var nzbIdProp))
@@ -203,22 +204,22 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogInformation("NZBGet REST API added '{Title}' with queue ID {QueueId}", LogRedaction.SanitizeText(result.Title), queueId);
                 return queueId.ToString();
             }
-            
+
             _logger.LogWarning("NZBGet REST API response missing nzbId: {Body}", responseBody);
             return null;
         }
 
         private async Task<string?> AddViaJsonRpcAsync(
-            DownloadClientConfiguration client, 
-            SearchResult result, 
-            string nzbUrl, 
-            string? indexerApiKey, 
+            DownloadClientConfiguration client,
+            SearchResult result,
+            string nzbUrl,
+            string? indexerApiKey,
             CancellationToken ct)
         {
             var category = ResolveCategory(client);
             var priority = ResolvePriority(client);
             var droneId = Guid.NewGuid().ToString().Replace("-", string.Empty);
-            
+
             // Download and base64-encode the NZB content
             var nzbBytes = await DownloadNzbAsync(nzbUrl, indexerApiKey, ct);
             var nzbContentBase64 = Convert.ToBase64String(nzbBytes);
@@ -233,7 +234,7 @@ namespace Listenarr.Api.Services.Adapters
                     { "Value", droneId }
                 }
             };
-            
+
             try
             {
                 // Call append via XML-RPC
@@ -263,7 +264,8 @@ namespace Listenarr.Api.Services.Adapters
                 // Return the NZBID so it can be stored and used for removal later
                 return queueId.ToString();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to add NZB via XML-RPC");
                 throw;
             }
@@ -276,22 +278,22 @@ namespace Listenarr.Api.Services.Adapters
 
             // First try to parse as numeric NZBID (for queue removal)
             var numericId = TryParseId(id);
-            
+
             // If it's not a numeric ID, it might be a droneId (GUID from Listenarr)
             // Try to find it in history first
             if (!numericId.HasValue)
             {
                 _logger.LogInformation("ID {Id} is not numeric, searching NZBGet history for matching download", LogRedaction.SanitizeText(id));
-                
+
                 try
                 {
                     // Get history to find the NZBID by matching droneId
                     var historyResult = await CallXmlRpcAsync(client, "history", false);
                     var arrayData = historyResult.Element("array")?.Element("data");
-                    
+
                     var historyCount = arrayData?.Elements("value").Count() ?? 0;
                     _logger.LogInformation("NZBGet history contains {Count} entries", historyCount);
-                    
+
                     if (arrayData != null)
                     {
                         foreach (var members in arrayData.Elements("value")
@@ -349,7 +351,8 @@ namespace Listenarr.Api.Services.Adapters
                         }
                     }
                 }
-                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
+                catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)
+                {
                     _logger.LogDebug(histEx, "Failed to search NZBGet history for download {Id}", LogRedaction.SanitizeText(id));
                 }
             }
@@ -365,14 +368,15 @@ namespace Listenarr.Api.Services.Adapters
             {
                 var historyDeleteResult = await CallXmlRpcAsync(client, "editqueue", "HistoryDelete", 0, string.Empty, new[] { numericId.Value });
                 var historySuccess = historyDeleteResult.Element("boolean")?.Value == "1";
-                
+
                 if (historySuccess)
                 {
                     _logger.LogInformation("Removed NZB {Id} from NZBGet history (deleteFiles={DeleteFiles})", LogRedaction.SanitizeText(id), deleteFiles);
                     return true;
                 }
             }
-            catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException) {
+            catch (Exception histEx) when (histEx is not OperationCanceledException && histEx is not OutOfMemoryException && histEx is not StackOverflowException)
+            {
                 _logger.LogDebug(histEx, "Could not remove {Id} from NZBGet history (may not be in history)", LogRedaction.SanitizeText(id));
             }
 
@@ -382,7 +386,7 @@ namespace Listenarr.Api.Services.Adapters
                 var command = deleteFiles ? "GroupDeleteFinal" : "GroupDelete";
                 var editResult = await CallXmlRpcAsync(client, "editqueue", command, 0, string.Empty, new[] { numericId.Value });
                 var success = editResult.Element("boolean")?.Value == "1";
-                
+
                 if (success)
                 {
                     _logger.LogInformation("Removed NZB {Id} from NZBGet queue (deleteFiles={DeleteFiles})", LogRedaction.SanitizeText(id), deleteFiles);
@@ -392,7 +396,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("NZBGet reported failure when removing {Id} from both history and queue", LogRedaction.SanitizeText(id));
                 return false;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error removing NZB {Id} from NZBGet", LogRedaction.SanitizeText(id));
                 return false;
             }
@@ -409,7 +414,7 @@ namespace Listenarr.Api.Services.Adapters
             {
                 var listResult = await CallXmlRpcAsync(client, "listgroups");
                 var arrayData = listResult.Element("array")?.Element("data");
-                
+
                 if (arrayData == null)
                 {
                     return items;
@@ -435,7 +440,8 @@ namespace Listenarr.Api.Services.Adapters
                             items.Add(queueItem);
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogDebug(ex, "Failed to map NZBGet queue item (non-fatal)");
                     }
                 }
@@ -444,7 +450,8 @@ namespace Listenarr.Api.Services.Adapters
             {
                 _logger.LogWarning("NZBGet authentication failed for client {ClientName} — check username/password", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to retrieve NZBGet queue for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -460,7 +467,7 @@ namespace Listenarr.Api.Services.Adapters
             {
                 var historyResult = await CallXmlRpcAsync(client, "history", false);
                 var arrayData = historyResult.Element("array")?.Element("data");
-                
+
                 if (arrayData == null)
                 {
                     return history;
@@ -470,7 +477,7 @@ namespace Listenarr.Api.Services.Adapters
                 foreach (var valueElement in arrayData.Elements("value"))
                 {
                     if (count >= limit) break;
-                    
+
                     var structElement = valueElement.Element("struct");
                     if (structElement != null)
                     {
@@ -478,10 +485,10 @@ namespace Listenarr.Api.Services.Adapters
                             m => m.Element("name")?.Value ?? string.Empty,
                             m => m.Element("value")?.Elements().FirstOrDefault()?.Value ?? string.Empty
                         );
-                        
+
                         var entryId = members.GetValueOrDefault("ID", string.Empty);
                         var entryName = members.GetValueOrDefault("NZBName", string.Empty);
-                        
+
                         if (!string.IsNullOrEmpty(entryId) && !string.IsNullOrEmpty(entryName))
                         {
                             history.Add((entryId, entryName));
@@ -490,7 +497,8 @@ namespace Listenarr.Api.Services.Adapters
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogDebug(ex, "Failed to fetch NZBGet history for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -511,7 +519,7 @@ namespace Listenarr.Api.Services.Adapters
             {
                 var listResult = await CallXmlRpcAsync(client, "listgroups");
                 var arrayData = listResult.Element("array")?.Element("data");
-                
+
                 if (arrayData == null)
                 {
                     return items;
@@ -537,12 +545,14 @@ namespace Listenarr.Api.Services.Adapters
                             items.Add(downloadClientItem);
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogDebug(ex, "Failed to map NZBGet queue item (non-fatal)");
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to retrieve NZBGet items for client {ClientName}", LogRedaction.SanitizeText(client.Name ?? client.Id));
             }
 
@@ -577,7 +587,7 @@ namespace Listenarr.Api.Services.Adapters
                 // Query NZBGet history for the download
                 var historyResult = await CallXmlRpcAsync(client, "history", false);
                 var arrayData = historyResult.Element("array")?.Element("data");
-                
+
                 if (arrayData == null)
                 {
                     _logger.LogWarning("Invalid NZBGet history response format");
@@ -618,7 +628,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Download {Id} not found in NZBGet history", item.DownloadId);
                 return result;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Error resolving import item for NZBGet download {Id}", item.DownloadId);
                 return result;
             }
@@ -760,7 +771,8 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     localPath = _pathMappingService.TranslatePathAsync(client.Id, destDir).GetAwaiter().GetResult();
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogDebug(ex, "Failed to translate NZBGet path '{Path}' for client {ClientName}", LogRedaction.SanitizeFilePath(destDir), LogRedaction.SanitizeText(client.Name ?? client.Id));
                 }
             }
@@ -962,47 +974,48 @@ namespace Listenarr.Api.Services.Adapters
             try
             {
                 _logger.LogDebug("Downloading NZB from {Url}", LogRedaction.SanitizeUrl(nzbUrl));
-                
+
                 var httpClient = _httpClientFactory.CreateClient();
                 using var request = new HttpRequestMessage(HttpMethod.Get, nzbUrl);
 
                 // Note: Newznab/Torznab APIs include the API key in the URL query string (e.g., &apikey=xxx)
                 // We should NOT add an X-Api-Key header as it may conflict with URL-based authentication
                 // and cause the API to return error responses instead of the actual NZB file
-                
+
                 // Set User-Agent header - many indexers require this and will reject requests without it
                 request.Headers.Add("User-Agent", "Listenarr/1.0.0.0");
 
                 using var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct);
-                
+
                 _logger.LogDebug("NZB download response: StatusCode={StatusCode}, ContentType={ContentType}, ContentLength={ContentLength}",
                     response.StatusCode,
                     response.Content.Headers.ContentType?.ToString() ?? "null",
                     response.Content.Headers.ContentLength?.ToString() ?? "unknown");
-                
+
                 response.EnsureSuccessStatusCode();
 
                 var contentBytes = await response.Content.ReadAsByteArrayAsync(ct);
-                
+
                 _logger.LogInformation("Downloaded NZB content: {Size} bytes", contentBytes.Length);
-                
+
                 // If the content is suspiciously small, log it to see if it's an error message
                 if (contentBytes.Length > 0 && contentBytes.Length < 500)
                 {
                     var contentText = System.Text.Encoding.UTF8.GetString(contentBytes);
-                    _logger.LogWarning("NZB content is suspiciously small ({Size} bytes). Content: {Content}", 
+                    _logger.LogWarning("NZB content is suspiciously small ({Size} bytes). Content: {Content}",
                         contentBytes.Length, contentText);
                 }
-                
+
                 if (contentBytes.Length == 0)
                 {
                     _logger.LogError("Downloaded NZB file is empty (0 bytes) from {Url}", LogRedaction.SanitizeUrl(nzbUrl));
                     throw new InvalidOperationException($"Downloaded NZB file is empty from {nzbUrl}");
                 }
-                
+
                 return contentBytes;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to download NZB content from {Url}", LogRedaction.SanitizeUrl(nzbUrl));
                 throw new InvalidOperationException($"Unable to retrieve NZB content from {nzbUrl}");
             }
@@ -1105,7 +1118,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogWarning("Download {NzbId} not found in NZBGet history", queueItem.Id);
                 return result;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Error resolving import item for NZBGet download {NzbId}", queueItem.Id);
                 return result;
             }

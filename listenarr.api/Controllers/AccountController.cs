@@ -171,7 +171,8 @@ namespace Listenarr.Api.Controllers
                 var responseAuthType = authEnabled ? "session" : "none";
                 return Ok(new { message = "Logged out successfully", authType = responseAuthType });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error during logout for user: {Username} (AuthType: {AuthType})", username, authType);
                 return StatusCode(500, new { message = "Error during logout", error = ex.Message });
             }

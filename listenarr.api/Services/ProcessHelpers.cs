@@ -37,7 +37,8 @@ namespace Listenarr.Api.Services
                     var candidateNoExt = Path.Join(dir, name);
                     if (File.Exists(candidateNoExt)) return candidateNoExt;
                 }
-                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                {
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
             }
@@ -62,7 +63,8 @@ namespace Listenarr.Api.Services
                         if (!string.IsNullOrEmpty(outp) && File.Exists(outp)) return outp;
                     }
                 }
-                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+                {
                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                 }
             }
@@ -70,4 +72,4 @@ namespace Listenarr.Api.Services
             return null;
         }
     }
-} 
+}

@@ -116,7 +116,8 @@ namespace Listenarr.Api.Services
                         _logger.LogInformation("Passing LISTENARR_API_KEY to bot process (present=true)");
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to read startup config for API key passthrough");
                 }
 
@@ -159,7 +160,8 @@ namespace Listenarr.Api.Services
                             _logger.LogDebug("Detected node: {Out}", LogRedaction.RedactText(check.Stdout, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { _botApiKey ?? string.Empty }))?.Trim());
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogDebug(ex, "node --version pre-flight check failed (node may not be available in PATH)");
                     }
                 }
@@ -184,7 +186,8 @@ namespace Listenarr.Api.Services
                         {
                             _botProcess.EnableRaisingEvents = true;
                         }
-                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                        {
                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                         }
 
@@ -198,12 +201,14 @@ namespace Listenarr.Api.Services
                                     {
                                         _logger.LogInformation("Discord bot process exited with code: {ExitCode}", exitedProc.ExitCode);
                                     }
-                                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                    catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+                                    {
                                         System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                     }
                                 }
                             }
-                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+                            {
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
 
@@ -233,7 +238,8 @@ namespace Listenarr.Api.Services
 
                 return await IsBotRunningAsync();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to start Discord bot");
                 return false;
             }
@@ -274,7 +280,8 @@ namespace Listenarr.Api.Services
                     return url;
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to construct URL from HTTP context");
             }
 
@@ -298,7 +305,8 @@ namespace Listenarr.Api.Services
                     return url;
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to construct URL from startup config");
             }
 
@@ -342,7 +350,8 @@ namespace Listenarr.Api.Services
                 {
                     proc.Kill(true); // Kill entire process tree
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Error killing bot process (may have exited already)");
                 }
 
@@ -364,7 +373,8 @@ namespace Listenarr.Api.Services
 
                 return true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to stop Discord bot");
                 return false;
             }
@@ -411,7 +421,8 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error reading bot stdout");
             }
         }
@@ -430,7 +441,8 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error reading bot stderr");
             }
         }

@@ -90,7 +90,8 @@ namespace Listenarr.Api.Services
 
                 _logger.LogDebug("Handled pushed download {DownloadId} and cached for {Ttl}s", download.Id, _recentPushTtl.TotalSeconds);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error handling pushed download {DownloadId}", download.Id);
             }
         }

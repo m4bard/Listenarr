@@ -122,7 +122,8 @@ namespace Listenarr.Api.Controllers
                         _logger.LogInformation("Downloaded image on demand for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to download image on demand for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                 }
             }
@@ -158,7 +159,8 @@ namespace Listenarr.Api.Controllers
                             }
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Pre-validation move attempt failed for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                     }
                 }
@@ -178,120 +180,125 @@ namespace Listenarr.Api.Controllers
                     }
                     else
                     {
-                    _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(relativePath));
-                    try
-                    {
-                        var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath));
-                        var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
-                        var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
-                        var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
-
-                        // Use Path.GetRelativePath to reliably determine whether candidateFull
-                        // is inside one of the allowed roots. This works across separator styles.
-                        bool insideImagesRoot = !Path.GetRelativePath(imagesRoot, candidateFull).StartsWith("..", StringComparison.Ordinal);
-                        bool insideImagesRootConfig = !Path.GetRelativePath(imagesRootConfig, candidateFull).StartsWith("..", StringComparison.Ordinal);
-                        bool insideWwwroot = !Path.GetRelativePath(wwwroot, candidateFull).StartsWith("..", StringComparison.Ordinal);
-
-                        if (!insideImagesRoot && !insideImagesRootConfig && !insideWwwroot)
+                        _logger.LogDebug("ImagesController: initial relativePath for {Identifier}: {RelativePath}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(relativePath));
+                        try
                         {
-                            _logger.LogWarning("Resolved image path outside permitted directories for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateFull));
-                            relativePath = null;
-                        }
-                        else
-                        {
-                            try
+                            var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath));
+                            var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
+                            var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
+                            var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
+
+                            // Use Path.GetRelativePath to reliably determine whether candidateFull
+                            // is inside one of the allowed roots. This works across separator styles.
+                            bool insideImagesRoot = !Path.GetRelativePath(imagesRoot, candidateFull).StartsWith("..", StringComparison.Ordinal);
+                            bool insideImagesRootConfig = !Path.GetRelativePath(imagesRootConfig, candidateFull).StartsWith("..", StringComparison.Ordinal);
+                            bool insideWwwroot = !Path.GetRelativePath(wwwroot, candidateFull).StartsWith("..", StringComparison.Ordinal);
+
+                            if (!insideImagesRoot && !insideImagesRootConfig && !insideWwwroot)
                             {
-                                // Defend against symlink/reparse-point escapes
-                                if (System.IO.File.Exists(candidateFull))
-                                {
-                                    var attrs = System.IO.File.GetAttributes(candidateFull);
-                                    if ((attrs & System.IO.FileAttributes.ReparsePoint) != 0)
-                                    {
-                                        _logger.LogWarning("Rejected reparse-point (symlink) image path for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateFull));
-                                        relativePath = null;
-                                    }
-                                }
-                            }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                _logger.LogWarning(ex, "Failed to inspect candidate image attributes for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
+                                _logger.LogWarning("Resolved image path outside permitted directories for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateFull));
                                 relativePath = null;
                             }
+                            else
+                            {
+                                try
+                                {
+                                    // Defend against symlink/reparse-point escapes
+                                    if (System.IO.File.Exists(candidateFull))
+                                    {
+                                        var attrs = System.IO.File.GetAttributes(candidateFull);
+                                        if ((attrs & System.IO.FileAttributes.ReparsePoint) != 0)
+                                        {
+                                            _logger.LogWarning("Rejected reparse-point (symlink) image path for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateFull));
+                                            relativePath = null;
+                                        }
+                                    }
+                                }
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
+                                    _logger.LogWarning(ex, "Failed to inspect candidate image attributes for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
+                                    relativePath = null;
+                                }
+                            }
                         }
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "Failed to validate image path for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
-                        relativePath = null;
-                    }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            _logger.LogWarning(ex, "Failed to validate image path for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
+                            relativePath = null;
+                        }
                     }
                 }
 
                 // If we found a temp cached image but the identifier corresponds to an audiobook in the library,
                 // attempt to move it into permanent library storage so library images don't live in /temp.
-                    if (!string.IsNullOrWhiteSpace(relativePath))
+                if (!string.IsNullOrWhiteSpace(relativePath))
                 {
                     var normalizedRelative = relativePath.Replace('/', Path.DirectorySeparatorChar).Replace('\\', Path.DirectorySeparatorChar);
                     _logger.LogDebug("ImagesController: normalizedRelative for {Identifier}: {Normalized}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(normalizedRelative));
                     if (!movedAttempted && normalizedRelative.Contains(Path.Join("cache", "images", "temp")))
                     {
-                    try
-                    {
-                        var book = await _audiobookRepository.GetByAsinAsync(identifier);
-                        if (book != null)
+                        try
                         {
-                            _logger.LogInformation("Found temp cached image for library audiobook {Identifier}, attempting move to library storage", LogRedaction.SanitizeText(identifier));
-                            var moved = await _imageCacheService.MoveToLibraryStorageAsync(identifier, null);
-                            if (!string.IsNullOrWhiteSpace(moved))
+                            var book = await _audiobookRepository.GetByAsinAsync(identifier);
+                            if (book != null)
                             {
-                                // Prefer the moved library path when serving the image
-                                // Validate moved path as well
-                                try
+                                _logger.LogInformation("Found temp cached image for library audiobook {Identifier}, attempting move to library storage", LogRedaction.SanitizeText(identifier));
+                                var moved = await _imageCacheService.MoveToLibraryStorageAsync(identifier, null);
+                                if (!string.IsNullOrWhiteSpace(moved))
                                 {
-                                    var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, moved));
-                                    var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
-                                    var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
-                                    var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
-
-                                    if (movedFull.StartsWith(imagesRoot, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(imagesRootConfig, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(wwwroot, StringComparison.OrdinalIgnoreCase))
+                                    // Prefer the moved library path when serving the image
+                                    // Validate moved path as well
+                                    try
                                     {
-                                        try
+                                        var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, moved));
+                                        var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
+                                        var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
+                                        var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
+
+                                        if (movedFull.StartsWith(imagesRoot, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(imagesRootConfig, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(wwwroot, StringComparison.OrdinalIgnoreCase))
                                         {
-                                            if (System.IO.File.Exists(movedFull))
+                                            try
                                             {
-                                                var matt = System.IO.File.GetAttributes(movedFull);
-                                                if ((matt & System.IO.FileAttributes.ReparsePoint) != 0)
+                                                if (System.IO.File.Exists(movedFull))
                                                 {
-                                                    _logger.LogWarning("Rejected moved reparse-point (symlink) image path for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
+                                                    var matt = System.IO.File.GetAttributes(movedFull);
+                                                    if ((matt & System.IO.FileAttributes.ReparsePoint) != 0)
+                                                    {
+                                                        _logger.LogWarning("Rejected moved reparse-point (symlink) image path for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
+                                                    }
+                                                    else
+                                                    {
+                                                        relativePath = moved;
+                                                    }
                                                 }
                                                 else
                                                 {
-                                                    relativePath = moved;
+                                                    // If file doesn't yet exist, conservatively reject the moved path
+                                                    _logger.LogWarning("Moved image file does not exist for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
                                                 }
                                             }
-                                            else
+                                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                                             {
-                                                // If file doesn't yet exist, conservatively reject the moved path
-                                                _logger.LogWarning("Moved image file does not exist for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
+                                                _logger.LogWarning(ex, "Failed to inspect moved image attributes for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                                             }
                                         }
-                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                            _logger.LogWarning(ex, "Failed to inspect moved image attributes for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
+                                        else
+                                        {
+                                            _logger.LogWarning("Moved image path outside permitted directories for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
                                         }
                                     }
-                                    else
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                                     {
-                                        _logger.LogWarning("Moved image path outside permitted directories for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(movedFull));
+                                        _logger.LogWarning(ex, "Failed to validate moved image path for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                                     }
-                                }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                    _logger.LogWarning(ex, "Failed to validate moved image path for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
                                 }
                             }
                         }
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
+                            _logger.LogWarning(ex, "Failed to move temp image to library for {Identifier}", LogRedaction.SanitizeText(identifier));
+                        }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                        _logger.LogWarning(ex, "Failed to move temp image to library for {Identifier}", LogRedaction.SanitizeText(identifier));
-                    }
-                }
 
                 }
 
@@ -466,61 +473,30 @@ namespace Listenarr.Api.Controllers
 
                         if (string.IsNullOrWhiteSpace(relativePath))
                         {
-                        var audible = await _audiobookMetadataService.GetAudibleMetadataAsync(identifier, region, cache: true);
+                            var audible = await _audiobookMetadataService.GetAudibleMetadataAsync(identifier, region, cache: true);
 
-                        if (audible != null)
-                        {
-                            AddCandidateUrl(audible.ImageUrl, "Audible");
-                            if (!string.IsNullOrWhiteSpace(audible.Isbn))
+                            if (audible != null)
                             {
-                                candidateIsbn = NormalizeIsbn(audible.Isbn);
-                            }
-                        }
-
-                        // Try Audnexus for ASINs as an additional candidate source even when
-                        // Audible returned an image (Audible images can be placeholders or stale).
-                        if (LooksLikeAsin(identifier))
-                        {
-                            try
-                            {
-                                var audnexus = await _audnexusService.GetBookMetadataAsync(identifier, region, seedAuthors: true, update: false);
-                                if (audnexus != null)
+                                AddCandidateUrl(audible.ImageUrl, "Audible");
+                                if (!string.IsNullOrWhiteSpace(audible.Isbn))
                                 {
-                                    AddCandidateUrl(audnexus.Image, "AudnexusBook");
-                                    if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(audnexus.Isbn))
-                                    {
-                                        candidateIsbn = NormalizeIsbn(audnexus.Isbn);
-                                    }
+                                    candidateIsbn = NormalizeIsbn(audible.Isbn);
                                 }
                             }
-                            catch (OperationCanceledException)
-                            {
-                                throw;
-                            }
-                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                            {
-                                _logger.LogDebug(ex, "Audnexus ASIN lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
-                            }
-                        }
 
-                        // Try alternate stored ASIN identifiers for this audiobook when the requested
-                        // ASIN is region-limited or missing from providers.
-                        if (LooksLikeAsin(identifier) && localAsinCandidates.Count > 0)
-                        {
-                            foreach (var altAsin in localAsinCandidates
-                                .Where(a => !string.Equals(a, identifier, StringComparison.OrdinalIgnoreCase))
-                                .Distinct(StringComparer.OrdinalIgnoreCase)
-                                .Take(3))
+                            // Try Audnexus for ASINs as an additional candidate source even when
+                            // Audible returned an image (Audible images can be placeholders or stale).
+                            if (LooksLikeAsin(identifier))
                             {
                                 try
                                 {
-                                    var altAudible = await _audiobookMetadataService.GetAudibleMetadataAsync(altAsin, region, cache: true);
-                                    if (altAudible != null)
+                                    var audnexus = await _audnexusService.GetBookMetadataAsync(identifier, region, seedAuthors: true, update: false);
+                                    if (audnexus != null)
                                     {
-                                        AddCandidateUrl(altAudible.ImageUrl, "AudibleAltAsin");
-                                        if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(altAudible.Isbn))
+                                        AddCandidateUrl(audnexus.Image, "AudnexusBook");
+                                        if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(audnexus.Isbn))
                                         {
-                                            candidateIsbn = NormalizeIsbn(altAudible.Isbn);
+                                            candidateIsbn = NormalizeIsbn(audnexus.Isbn);
                                         }
                                     }
                                 }
@@ -530,214 +506,212 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogDebug(ex, "Audible alternate ASIN lookup failed for {Identifier} via {AltAsin}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(altAsin));
-                                }
-
-                                try
-                                {
-                                    var altAudnexus = await _audnexusService.GetBookMetadataAsync(altAsin, region, seedAuthors: true, update: false);
-                                    if (altAudnexus != null)
-                                    {
-                                        AddCandidateUrl(altAudnexus.Image, "AudnexusBookAltAsin");
-                                        if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(altAudnexus.Isbn))
-                                        {
-                                            candidateIsbn = NormalizeIsbn(altAudnexus.Isbn);
-                                        }
-                                    }
-                                }
-                                catch (OperationCanceledException)
-                                {
-                                    throw;
-                                }
-                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                                {
-                                    _logger.LogDebug(ex, "Audnexus alternate ASIN lookup failed for {Identifier} via {AltAsin}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(altAsin));
+                                    _logger.LogDebug(ex, "Audnexus ASIN lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                                 }
                             }
-                        }
 
-                        // Build an OpenLibrary ISBN candidate when we have an ISBN (identifier or metadata/local record).
-                        if (string.IsNullOrWhiteSpace(candidateIsbn) && LooksLikeIsbn(identifier))
-                        {
-                            candidateIsbn = NormalizeIsbn(identifier);
-                        }
-                        if (!string.IsNullOrWhiteSpace(candidateIsbn))
-                        {
-                            var olIsbnCandidate = $"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(candidateIsbn)}-L.jpg";
-                            AddCandidateUrl(olIsbnCandidate, "OpenLibraryIsbn");
-                            if (candidateUrls.Count == 1)
+                            // Try alternate stored ASIN identifiers for this audiobook when the requested
+                            // ASIN is region-limited or missing from providers.
+                            if (LooksLikeAsin(identifier) && localAsinCandidates.Count > 0)
                             {
-                                _logger.LogInformation("Using OpenLibrary ISBN cover candidate for {Identifier}: ISBN={Isbn}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateIsbn));
-                            }
-                        }
-
-                        foreach (var localIsbnCandidate in localIsbnCandidates)
-                        {
-                            AddCandidateUrl(
-                                $"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(localIsbnCandidate)}-L.jpg",
-                                "OpenLibraryIsbnLocalIdentifier");
-                        }
-
-                        // Legacy fallback path through configured source envelope for compatibility.
-                        if (string.IsNullOrWhiteSpace(candidateUrl) || string.IsNullOrWhiteSpace(candidateIsbn))
-                        {
-                            _logger.LogDebug("No image found in audible, attempting fallback GetMetadataAsync for {Identifier}", LogRedaction.SanitizeText(identifier));
-                            try
-                            {
-                                var metadataEnvelope = await _audiobookMetadataService.GetMetadataAsync(identifier, region, cache: true);
-                                if (metadataEnvelope != null)
+                                foreach (var altAsin in localAsinCandidates
+                                    .Where(a => !string.Equals(a, identifier, StringComparison.OrdinalIgnoreCase))
+                                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                                    .Take(3))
                                 {
                                     try
                                     {
-                                        // If the service returned an AudibleBookResponse directly
-                                        if (metadataEnvelope is AudibleBookResponse directMeta)
+                                        var altAudible = await _audiobookMetadataService.GetAudibleMetadataAsync(altAsin, region, cache: true);
+                                        if (altAudible != null)
                                         {
-                                            AddCandidateUrl(directMeta.ImageUrl, "MetadataEnvelopeDirect");
-                                        }
-                                        else
-                                        {
-                                            // Try dynamic access
-                                            dynamic env = metadataEnvelope;
-                                            object? mdObj = env.metadata;
-
-                                            // If it's already the Audible type, use it
-                                            if (mdObj is AudibleBookResponse mdMeta)
+                                            AddCandidateUrl(altAudible.ImageUrl, "AudibleAltAsin");
+                                            if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(altAudible.Isbn))
                                             {
-                                                AddCandidateUrl(mdMeta.ImageUrl, "MetadataEnvelopeAudible");
-                                            }
-                                            else if (mdObj != null)
-                                            {
-                                                // Try reflection for common property names
-                                                var t = mdObj.GetType();
-                                                var prop = t.GetProperty("ImageUrl") ?? t.GetProperty("Image") ?? t.GetProperty("image") ?? t.GetProperty("imageUrl");
-                                                if (prop != null)
-                                                {
-                                                    var v = prop.GetValue(mdObj)?.ToString();
-                                                    AddCandidateUrl(v, "MetadataEnvelopeReflection");
-                                                }
-
-                                                if (string.IsNullOrWhiteSpace(candidateIsbn))
-                                                {
-                                                    var isbnProp = t.GetProperty("Isbn") ?? t.GetProperty("ISBN") ?? t.GetProperty("isbn");
-                                                    var isbnVal = isbnProp?.GetValue(mdObj)?.ToString();
-                                                    if (!string.IsNullOrWhiteSpace(isbnVal))
-                                                    {
-                                                        candidateIsbn = NormalizeIsbn(isbnVal);
-                                                    }
-                                                }
+                                                candidateIsbn = NormalizeIsbn(altAudible.Isbn);
                                             }
                                         }
-
-                                        if (!string.IsNullOrWhiteSpace(candidateUrl))
-                                        {
-                                            _logger.LogInformation("Found image URL in fallback metadata source for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
-                                        }
-                                        else
-                                        {
-                                            _logger.LogDebug("Fallback metadata returned no image URL for {Identifier}", LogRedaction.SanitizeText(identifier));
-                                        }
+                                    }
+                                    catch (OperationCanceledException)
+                                    {
+                                        throw;
                                     }
                                     catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                     {
-                                        _logger.LogDebug(ex, "Failed to parse fallback metadata envelope for {Identifier}", LogRedaction.SanitizeText(identifier));
+                                        _logger.LogDebug(ex, "Audible alternate ASIN lookup failed for {Identifier} via {AltAsin}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(altAsin));
                                     }
-                                }
-                                else
-                                {
-                                    _logger.LogDebug("GetMetadataAsync returned null for {Identifier}", LogRedaction.SanitizeText(identifier));
-                                }
-                            }
-                            catch (OperationCanceledException)
-                            {
-                                throw;
-                            }
-                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                            {
-                                _logger.LogDebug(ex, "Fallback metadata lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
-                            }
-                        }
 
-                        // If metadata envelope yielded ISBN, queue OpenLibrary cover as a fallback candidate.
-                        if (!string.IsNullOrWhiteSpace(candidateIsbn))
-                        {
-                            AddCandidateUrl($"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(candidateIsbn)}-L.jpg", "OpenLibraryIsbnPostMetadata");
-                        }
-
-                        // Final OpenLibrary fallback via persisted OLID (if available and ISBN path
-                        // wasn't usable).
-                        if (!string.IsNullOrWhiteSpace(localOpenLibraryId))
-                        {
-                            AddCandidateUrl($"https://covers.openlibrary.org/b/olid/{Uri.EscapeDataString(localOpenLibraryId)}-L.jpg", "OpenLibraryOlid");
-                        }
-                        foreach (var localOlid in localOpenLibraryIds)
-                        {
-                            AddCandidateUrl($"https://covers.openlibrary.org/b/olid/{Uri.EscapeDataString(localOlid)}-L.jpg", "OpenLibraryOlidLocalIdentifier");
-                        }
-
-                        // Final ISBN discovery fallback for ASIN requests: use local title/author to
-                        // search OpenLibrary when providers/local metadata do not include ISBN/OLID.
-                        if (string.IsNullOrWhiteSpace(candidateIsbn) &&
-                            _openLibraryService != null &&
-                            LooksLikeAsin(identifier) &&
-                            !string.IsNullOrWhiteSpace(localTitle))
-                        {
-                            try
-                            {
-                                var titleIsbns = await _openLibraryService.GetIsbnsForTitleAsync(localTitle!, localAuthor);
-                                var normalizedTitleIsbns = titleIsbns
-                                    .Select(NormalizeIsbn)
-                                    .Where(v => !string.IsNullOrWhiteSpace(v) && LooksLikeIsbn(v))
-                                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                                    .Take(5)
-                                    .ToList();
-
-                                if (normalizedTitleIsbns.Count > 0)
-                                {
-                                    _logger.LogInformation(
-                                        "Derived {Count} OpenLibrary ISBN candidate(s) from local title/author for {Identifier}: Title={Title}, Author={Author}",
-                                        normalizedTitleIsbns.Count,
-                                        LogRedaction.SanitizeText(identifier),
-                                        LogRedaction.SanitizeText(localTitle),
-                                        LogRedaction.SanitizeText(localAuthor));
-
-                                    foreach (var titleIsbn in normalizedTitleIsbns)
+                                    try
                                     {
-                                        AddCandidateUrl(
-                                            $"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(titleIsbn)}-L.jpg",
-                                            "OpenLibraryTitleAuthorSearch");
+                                        var altAudnexus = await _audnexusService.GetBookMetadataAsync(altAsin, region, seedAuthors: true, update: false);
+                                        if (altAudnexus != null)
+                                        {
+                                            AddCandidateUrl(altAudnexus.Image, "AudnexusBookAltAsin");
+                                            if (string.IsNullOrWhiteSpace(candidateIsbn) && !string.IsNullOrWhiteSpace(altAudnexus.Isbn))
+                                            {
+                                                candidateIsbn = NormalizeIsbn(altAudnexus.Isbn);
+                                            }
+                                        }
+                                    }
+                                    catch (OperationCanceledException)
+                                    {
+                                        throw;
+                                    }
+                                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                    {
+                                        _logger.LogDebug(ex, "Audnexus alternate ASIN lookup failed for {Identifier} via {AltAsin}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(altAsin));
                                     }
                                 }
                             }
-                            catch (OperationCanceledException)
-                            {
-                                throw;
-                            }
-                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                            {
-                                _logger.LogDebug(ex, "OpenLibrary title/author ISBN fallback failed for {Identifier}", LogRedaction.SanitizeText(identifier));
-                            }
-                        }
 
-                        // If no image found from book metadata, attempt author lookups (treating identifier as author name/asin)
-                        if (string.IsNullOrWhiteSpace(candidateUrl))
-                        {
-                            try
+                            // Build an OpenLibrary ISBN candidate when we have an ISBN (identifier or metadata/local record).
+                            if (string.IsNullOrWhiteSpace(candidateIsbn) && LooksLikeIsbn(identifier))
                             {
-                                // First: try to find a stored author ASIN in the DB and serve its cached image if available
+                                candidateIsbn = NormalizeIsbn(identifier);
+                            }
+                            if (!string.IsNullOrWhiteSpace(candidateIsbn))
+                            {
+                                var olIsbnCandidate = $"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(candidateIsbn)}-L.jpg";
+                                AddCandidateUrl(olIsbnCandidate, "OpenLibraryIsbn");
+                                if (candidateUrls.Count == 1)
+                                {
+                                    _logger.LogInformation("Using OpenLibrary ISBN cover candidate for {Identifier}: ISBN={Isbn}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateIsbn));
+                                }
+                            }
+
+                            foreach (var localIsbnCandidate in localIsbnCandidates)
+                            {
+                                AddCandidateUrl(
+                                    $"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(localIsbnCandidate)}-L.jpg",
+                                    "OpenLibraryIsbnLocalIdentifier");
+                            }
+
+                            // Legacy fallback path through configured source envelope for compatibility.
+                            if (string.IsNullOrWhiteSpace(candidateUrl) || string.IsNullOrWhiteSpace(candidateIsbn))
+                            {
+                                _logger.LogDebug("No image found in audible, attempting fallback GetMetadataAsync for {Identifier}", LogRedaction.SanitizeText(identifier));
                                 try
                                 {
-                                    if (!string.IsNullOrWhiteSpace(identifier))
+                                    var metadataEnvelope = await _audiobookMetadataService.GetMetadataAsync(identifier, region, cache: true);
+                                    if (metadataEnvelope != null)
                                     {
-                                        var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(identifier);
-                                        if (!string.IsNullOrWhiteSpace(authorAsin))
+                                        try
                                         {
-                                            var diskPath = await _imageCacheService.GetCachedImagePathAsync(authorAsin);
-                                            if (!string.IsNullOrWhiteSpace(diskPath))
+                                            // If the service returned an AudibleBookResponse directly
+                                            if (metadataEnvelope is AudibleBookResponse directMeta)
                                             {
-                                                // Use cached author image by ASIN (prefer authors storage path)
-                                                relativePath = "/" + diskPath.TrimStart('/');
-                                                _logger.LogInformation("Found cached author image for identifier {Identifier} via stored ASIN {Asin}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(authorAsin), LogRedaction.SanitizeText(relativePath));
+                                                AddCandidateUrl(directMeta.ImageUrl, "MetadataEnvelopeDirect");
                                             }
+                                            else
+                                            {
+                                                // Try dynamic access
+                                                dynamic env = metadataEnvelope;
+                                                object? mdObj = env.metadata;
+
+                                                // If it's already the Audible type, use it
+                                                if (mdObj is AudibleBookResponse mdMeta)
+                                                {
+                                                    AddCandidateUrl(mdMeta.ImageUrl, "MetadataEnvelopeAudible");
+                                                }
+                                                else if (mdObj != null)
+                                                {
+                                                    // Try reflection for common property names
+                                                    var t = mdObj.GetType();
+                                                    var prop = t.GetProperty("ImageUrl") ?? t.GetProperty("Image") ?? t.GetProperty("image") ?? t.GetProperty("imageUrl");
+                                                    if (prop != null)
+                                                    {
+                                                        var v = prop.GetValue(mdObj)?.ToString();
+                                                        AddCandidateUrl(v, "MetadataEnvelopeReflection");
+                                                    }
+
+                                                    if (string.IsNullOrWhiteSpace(candidateIsbn))
+                                                    {
+                                                        var isbnProp = t.GetProperty("Isbn") ?? t.GetProperty("ISBN") ?? t.GetProperty("isbn");
+                                                        var isbnVal = isbnProp?.GetValue(mdObj)?.ToString();
+                                                        if (!string.IsNullOrWhiteSpace(isbnVal))
+                                                        {
+                                                            candidateIsbn = NormalizeIsbn(isbnVal);
+                                                        }
+                                                    }
+                                                }
+                                            }
+
+                                            if (!string.IsNullOrWhiteSpace(candidateUrl))
+                                            {
+                                                _logger.LogInformation("Found image URL in fallback metadata source for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
+                                            }
+                                            else
+                                            {
+                                                _logger.LogDebug("Fallback metadata returned no image URL for {Identifier}", LogRedaction.SanitizeText(identifier));
+                                            }
+                                        }
+                                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                        {
+                                            _logger.LogDebug(ex, "Failed to parse fallback metadata envelope for {Identifier}", LogRedaction.SanitizeText(identifier));
+                                        }
+                                    }
+                                    else
+                                    {
+                                        _logger.LogDebug("GetMetadataAsync returned null for {Identifier}", LogRedaction.SanitizeText(identifier));
+                                    }
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                {
+                                    _logger.LogDebug(ex, "Fallback metadata lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
+                                }
+                            }
+
+                            // If metadata envelope yielded ISBN, queue OpenLibrary cover as a fallback candidate.
+                            if (!string.IsNullOrWhiteSpace(candidateIsbn))
+                            {
+                                AddCandidateUrl($"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(candidateIsbn)}-L.jpg", "OpenLibraryIsbnPostMetadata");
+                            }
+
+                            // Final OpenLibrary fallback via persisted OLID (if available and ISBN path
+                            // wasn't usable).
+                            if (!string.IsNullOrWhiteSpace(localOpenLibraryId))
+                            {
+                                AddCandidateUrl($"https://covers.openlibrary.org/b/olid/{Uri.EscapeDataString(localOpenLibraryId)}-L.jpg", "OpenLibraryOlid");
+                            }
+                            foreach (var localOlid in localOpenLibraryIds)
+                            {
+                                AddCandidateUrl($"https://covers.openlibrary.org/b/olid/{Uri.EscapeDataString(localOlid)}-L.jpg", "OpenLibraryOlidLocalIdentifier");
+                            }
+
+                            // Final ISBN discovery fallback for ASIN requests: use local title/author to
+                            // search OpenLibrary when providers/local metadata do not include ISBN/OLID.
+                            if (string.IsNullOrWhiteSpace(candidateIsbn) &&
+                                _openLibraryService != null &&
+                                LooksLikeAsin(identifier) &&
+                                !string.IsNullOrWhiteSpace(localTitle))
+                            {
+                                try
+                                {
+                                    var titleIsbns = await _openLibraryService.GetIsbnsForTitleAsync(localTitle!, localAuthor);
+                                    var normalizedTitleIsbns = titleIsbns
+                                        .Select(NormalizeIsbn)
+                                        .Where(v => !string.IsNullOrWhiteSpace(v) && LooksLikeIsbn(v))
+                                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                                        .Take(5)
+                                        .ToList();
+
+                                    if (normalizedTitleIsbns.Count > 0)
+                                    {
+                                        _logger.LogInformation(
+                                            "Derived {Count} OpenLibrary ISBN candidate(s) from local title/author for {Identifier}: Title={Title}, Author={Author}",
+                                            normalizedTitleIsbns.Count,
+                                            LogRedaction.SanitizeText(identifier),
+                                            LogRedaction.SanitizeText(localTitle),
+                                            LogRedaction.SanitizeText(localAuthor));
+
+                                        foreach (var titleIsbn in normalizedTitleIsbns)
+                                        {
+                                            AddCandidateUrl(
+                                                $"https://covers.openlibrary.org/b/isbn/{Uri.EscapeDataString(titleIsbn)}-L.jpg",
+                                                "OpenLibraryTitleAuthorSearch");
                                         }
                                     }
                                 }
@@ -747,150 +721,183 @@ namespace Listenarr.Api.Controllers
                                 }
                                 catch (Exception ex) when (IsRecoverableImageLookupException(ex))
                                 {
-                                    _logger.LogDebug(ex, "Failed to lookup stored author ASIN for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
-                                }
-
-                                // If we didn't find a cached author image via stored ASIN, fallback to Audible lookup by name
-                                if (string.IsNullOrWhiteSpace(relativePath))
-                                {
-                                    var authorLookup = await _audibleService.LookupAuthorAsync(identifier, region);
-                                    if (authorLookup != null && !string.IsNullOrWhiteSpace(authorLookup.Image) && (authorLookup.Image.StartsWith("http://") || authorLookup.Image.StartsWith("https://")))
-                                    {
-                                        AddCandidateUrl(authorLookup.Image, "AudibleAuthor");
-                                        _logger.LogInformation("Found author image from Audible for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
-                                    }
+                                    _logger.LogDebug(ex, "OpenLibrary title/author ISBN fallback failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                                 }
                             }
-                            catch (OperationCanceledException)
-                            {
-                                throw;
-                            }
-                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                            {
-                                _logger.LogDebug(ex, "Audible author lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
-                            }
 
-                            // 2) Audnexus author search fallback
+                            // If no image found from book metadata, attempt author lookups (treating identifier as author name/asin)
                             if (string.IsNullOrWhiteSpace(candidateUrl))
                             {
                                 try
                                 {
-                                    // If identifier looks like an ASIN, prefer GetAuthorAsync to fetch the author directly
-                                    if (identifier != null && identifier.Length >= 10 && (identifier.StartsWith("B", StringComparison.OrdinalIgnoreCase) || identifier.All(char.IsLetterOrDigit)))
+                                    // First: try to find a stored author ASIN in the DB and serve its cached image if available
+                                    try
                                     {
-                                        try
+                                        if (!string.IsNullOrWhiteSpace(identifier))
                                         {
-                                            var authorResp = await _audnexusService.GetAuthorAsync(identifier, region, update: false);
-                                            if (authorResp != null && !string.IsNullOrWhiteSpace(authorResp.Image) && (authorResp.Image.StartsWith("http://") || authorResp.Image.StartsWith("https://")))
+                                            var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(identifier);
+                                            if (!string.IsNullOrWhiteSpace(authorAsin))
                                             {
-                                                AddCandidateUrl(authorResp.Image, "AudnexusAuthorByAsin");
-                                                _logger.LogInformation("Found author image from Audnexus (by ASIN) for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
-                                            }
-                                        }
-                                        catch (OperationCanceledException)
-                                        {
-                                            throw;
-                                        }
-                                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                                        {
-                                            _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Identifier}", LogRedaction.SanitizeText(identifier));
-                                        }
-                                    }
-
-                                    // If still not found, fallback to searching by name
-                                    if (string.IsNullOrWhiteSpace(candidateUrl))
-                                    {
-                                        // Try to find stored author ASIN in database (match by author name) and prefer direct GET
-                                        try
-                                        {
-                                            if (!string.IsNullOrWhiteSpace(identifier))
-                                            {
-                                                var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(identifier);
-                                                if (!string.IsNullOrWhiteSpace(authorAsin))
+                                                var diskPath = await _imageCacheService.GetCachedImagePathAsync(authorAsin);
+                                                if (!string.IsNullOrWhiteSpace(diskPath))
                                                 {
-                                                    try
-                                                    {
-                                                        var authorResp = await _audnexusService.GetAuthorAsync(authorAsin, region, update: false);
-                                                        if (authorResp != null && !string.IsNullOrWhiteSpace(authorResp.Image) && (authorResp.Image.StartsWith("http://") || authorResp.Image.StartsWith("https://")))
-                                                        {
-                                                            AddCandidateUrl(authorResp.Image, "AudnexusAuthorByStoredAsin");
-                                                            _logger.LogInformation("Found author image from Audnexus by stored ASIN {Asin} for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(authorAsin), LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
-                                                        }
-                                                    }
-                                                    catch (OperationCanceledException)
-                                                    {
-                                                        throw;
-                                                    }
-                                                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                                                    {
-                                                        _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Asin}", LogRedaction.SanitizeText(authorAsin));
-                                                    }
+                                                    // Use cached author image by ASIN (prefer authors storage path)
+                                                    relativePath = "/" + diskPath.TrimStart('/');
+                                                    _logger.LogInformation("Found cached author image for identifier {Identifier} via stored ASIN {Asin}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(authorAsin), LogRedaction.SanitizeText(relativePath));
                                                 }
                                             }
                                         }
-                                        catch (OperationCanceledException)
+                                    }
+                                    catch (OperationCanceledException)
+                                    {
+                                        throw;
+                                    }
+                                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                    {
+                                        _logger.LogDebug(ex, "Failed to lookup stored author ASIN for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
+                                    }
+
+                                    // If we didn't find a cached author image via stored ASIN, fallback to Audible lookup by name
+                                    if (string.IsNullOrWhiteSpace(relativePath))
+                                    {
+                                        var authorLookup = await _audibleService.LookupAuthorAsync(identifier, region);
+                                        if (authorLookup != null && !string.IsNullOrWhiteSpace(authorLookup.Image) && (authorLookup.Image.StartsWith("http://") || authorLookup.Image.StartsWith("https://")))
                                         {
-                                            throw;
+                                            AddCandidateUrl(authorLookup.Image, "AudibleAuthor");
+                                            _logger.LogInformation("Found author image from Audible for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
                                         }
-                                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                    }
+                                }
+                                catch (OperationCanceledException)
+                                {
+                                    throw;
+                                }
+                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                {
+                                    _logger.LogDebug(ex, "Audible author lookup failed for {Identifier}", LogRedaction.SanitizeText(identifier));
+                                }
+
+                                // 2) Audnexus author search fallback
+                                if (string.IsNullOrWhiteSpace(candidateUrl))
+                                {
+                                    try
+                                    {
+                                        // If identifier looks like an ASIN, prefer GetAuthorAsync to fetch the author directly
+                                        if (identifier != null && identifier.Length >= 10 && (identifier.StartsWith("B", StringComparison.OrdinalIgnoreCase) || identifier.All(char.IsLetterOrDigit)))
                                         {
-                                            _logger.LogDebug(ex, "Failed to lookup author ASINs in database for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
+                                            try
+                                            {
+                                                var authorResp = await _audnexusService.GetAuthorAsync(identifier, region, update: false);
+                                                if (authorResp != null && !string.IsNullOrWhiteSpace(authorResp.Image) && (authorResp.Image.StartsWith("http://") || authorResp.Image.StartsWith("https://")))
+                                                {
+                                                    AddCandidateUrl(authorResp.Image, "AudnexusAuthorByAsin");
+                                                    _logger.LogInformation("Found author image from Audnexus (by ASIN) for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
+                                                }
+                                            }
+                                            catch (OperationCanceledException)
+                                            {
+                                                throw;
+                                            }
+                                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                            {
+                                                _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Identifier}", LogRedaction.SanitizeText(identifier));
+                                            }
                                         }
 
                                         // If still not found, fallback to searching by name
                                         if (string.IsNullOrWhiteSpace(candidateUrl))
                                         {
-                                            var authors = await _audnexusService.SearchAuthorsAsync(identifier!, region);
-                                            var first = authors?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.Image));
-                                            if (first != null && !string.IsNullOrWhiteSpace(first.Image) && (first.Image.StartsWith("http://") || first.Image.StartsWith("https://")))
+                                            // Try to find stored author ASIN in database (match by author name) and prefer direct GET
+                                            try
                                             {
-                                                AddCandidateUrl(first.Image, "AudnexusAuthorSearch");
-                                                _logger.LogInformation("Found author image from Audnexus (search) for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
+                                                if (!string.IsNullOrWhiteSpace(identifier))
+                                                {
+                                                    var authorAsin = await _audiobookRepository.GetAuthorAsinByNameAsync(identifier);
+                                                    if (!string.IsNullOrWhiteSpace(authorAsin))
+                                                    {
+                                                        try
+                                                        {
+                                                            var authorResp = await _audnexusService.GetAuthorAsync(authorAsin, region, update: false);
+                                                            if (authorResp != null && !string.IsNullOrWhiteSpace(authorResp.Image) && (authorResp.Image.StartsWith("http://") || authorResp.Image.StartsWith("https://")))
+                                                            {
+                                                                AddCandidateUrl(authorResp.Image, "AudnexusAuthorByStoredAsin");
+                                                                _logger.LogInformation("Found author image from Audnexus by stored ASIN {Asin} for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(authorAsin), LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
+                                                            }
+                                                        }
+                                                        catch (OperationCanceledException)
+                                                        {
+                                                            throw;
+                                                        }
+                                                        catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                                        {
+                                                            _logger.LogDebug(ex, "Audnexus GetAuthorAsync failed for ASIN {Asin}", LogRedaction.SanitizeText(authorAsin));
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                            catch (OperationCanceledException)
+                                            {
+                                                throw;
+                                            }
+                                            catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                            {
+                                                _logger.LogDebug(ex, "Failed to lookup author ASINs in database for identifier {Identifier}", LogRedaction.SanitizeText(identifier));
+                                            }
+
+                                            // If still not found, fallback to searching by name
+                                            if (string.IsNullOrWhiteSpace(candidateUrl))
+                                            {
+                                                var authors = await _audnexusService.SearchAuthorsAsync(identifier!, region);
+                                                var first = authors?.FirstOrDefault(a => !string.IsNullOrWhiteSpace(a.Image));
+                                                if (first != null && !string.IsNullOrWhiteSpace(first.Image) && (first.Image.StartsWith("http://") || first.Image.StartsWith("https://")))
+                                                {
+                                                    AddCandidateUrl(first.Image, "AudnexusAuthorSearch");
+                                                    _logger.LogInformation("Found author image from Audnexus (search) for identifier {Identifier}: {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateUrl));
+                                                }
                                             }
                                         }
                                     }
-                                }
-                                catch (OperationCanceledException)
-                                {
-                                    throw;
-                                }
-                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                                {
-                                    _logger.LogDebug(ex, "Audnexus author search failed for {Identifier}", LogRedaction.SanitizeText(identifier));
-                                }
-                            }
-                        }
-
-                        if (candidateUrls.Count > 0)
-                        {
-                            foreach (var urlCandidate in candidateUrls)
-                            {
-                                _logger.LogInformation("Attempting metadata-driven image download for identifier {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
-                                try
-                                {
-                                    _logger.LogDebug("Calling DownloadAndCacheImageAsync for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
-                                    var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(urlCandidate, identifier!);
-                                    if (!string.IsNullOrWhiteSpace(downloaded))
+                                    catch (OperationCanceledException)
                                     {
-                                        _logger.LogInformation("Downloaded metadata image for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
-                                        // Re-check cache
-                                        relativePath = await _imageCacheService.GetCachedImagePathAsync(identifier!);
-                                        if (!string.IsNullOrWhiteSpace(relativePath))
-                                        {
-                                            break;
-                                        }
+                                        throw;
+                                    }
+                                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                    {
+                                        _logger.LogDebug(ex, "Audnexus author search failed for {Identifier}", LogRedaction.SanitizeText(identifier));
                                     }
                                 }
-                                catch (OperationCanceledException)
+                            }
+
+                            if (candidateUrls.Count > 0)
+                            {
+                                foreach (var urlCandidate in candidateUrls)
                                 {
-                                    throw;
-                                }
-                                catch (Exception ex) when (IsRecoverableImageLookupException(ex))
-                                {
-                                    _logger.LogWarning(ex, "Failed to download metadata-driven image for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
+                                    _logger.LogInformation("Attempting metadata-driven image download for identifier {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
+                                    try
+                                    {
+                                        _logger.LogDebug("Calling DownloadAndCacheImageAsync for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
+                                        var downloaded = await _imageCacheService.DownloadAndCacheImageAsync(urlCandidate, identifier!);
+                                        if (!string.IsNullOrWhiteSpace(downloaded))
+                                        {
+                                            _logger.LogInformation("Downloaded metadata image for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
+                                            // Re-check cache
+                                            relativePath = await _imageCacheService.GetCachedImagePathAsync(identifier!);
+                                            if (!string.IsNullOrWhiteSpace(relativePath))
+                                            {
+                                                break;
+                                            }
+                                        }
+                                    }
+                                    catch (OperationCanceledException)
+                                    {
+                                        throw;
+                                    }
+                                    catch (Exception ex) when (IsRecoverableImageLookupException(ex))
+                                    {
+                                        _logger.LogWarning(ex, "Failed to download metadata-driven image for {Identifier} from {Url}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(urlCandidate));
+                                    }
                                 }
                             }
-                        }
                         }
                     }
                     catch (OperationCanceledException)
@@ -949,7 +956,8 @@ namespace Listenarr.Api.Controllers
                 // Return the image with caching headers
                 return PhysicalFile(fullPath, contentType, enableRangeProcessing: true);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error retrieving image for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                 return StatusCode(500, new { message = "Error retrieving image" });
             }
@@ -1310,7 +1318,8 @@ namespace Listenarr.Api.Controllers
 
                 return NotFound(new { message = "Image file not found" });
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error deleting image for identifier: {Identifier}", LogRedaction.SanitizeText(identifier));
                 return StatusCode(500, new { message = "Error deleting image" });
             }

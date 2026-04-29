@@ -109,7 +109,7 @@ app.use(router)
 
       // Resolve route and prefer the route name for preloading
       const resolved = router.resolve(path)
-      const key = (resolved && resolved.name) ? String(resolved.name) : path
+      const key = resolved && resolved.name ? String(resolved.name) : path
       if (seen.has(key)) return
       seen.add(key)
 
