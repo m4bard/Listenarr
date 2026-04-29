@@ -107,9 +107,10 @@ namespace Listenarr.Infrastructure.Repositories
                     audiobook.BasePath = existing.BasePath;
                 }
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+            {
                 // If anything goes wrong reading existing record, fall back to update behavior
-                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
 
             _db.Audiobooks.Update(audiobook);

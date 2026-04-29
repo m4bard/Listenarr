@@ -68,7 +68,7 @@ namespace Listenarr.Api.Tests
                 // simulate duplicate path error
                 if (Store.Exists(s => string.Equals(s.Path, root.Path, StringComparison.OrdinalIgnoreCase)))
                     throw new ArgumentException("A root with the same path already exists")
-;                root.Id = Store.Count + 1;
+; root.Id = Store.Count + 1;
                 Store.Add(root);
                 return Task.FromResult(root);
             }

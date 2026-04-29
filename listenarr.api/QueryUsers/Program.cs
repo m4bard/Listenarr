@@ -1,4 +1,4 @@
-﻿// See https://aka.ms/new-console-template for more information
+// See https://aka.ms/new-console-template for more information
 using System;
 using Microsoft.Data.Sqlite;
 using Serilog;
@@ -23,7 +23,8 @@ partial class Program
                         .CreateLogger();
                 }
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+            {
                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
             }
         }

@@ -23,7 +23,11 @@
       </div>
 
       <div class="form-section">
-        <CheckboxCard v-model="settings.discordBotEnabled" title="Enable Discord Bot Integration" description="Allow an external Discord bot to read these settings and register slash commands." />
+        <CheckboxCard
+          v-model="settings.discordBotEnabled"
+          title="Enable Discord Bot Integration"
+          description="Allow an external Discord bot to read these settings and register slash commands."
+        />
 
         <FormRow label="Discord Application ID">
           <input
@@ -31,7 +35,10 @@
             type="text"
             placeholder="Discord Application ID (client id)"
           />
-          <span class="form-help">Used to register application commands. For per-guild testing, set a Guild ID below.</span>
+          <span class="form-help"
+            >Used to register application commands. For per-guild testing, set a Guild ID
+            below.</span
+          >
         </FormRow>
 
         <FormRow label="Discord Guild ID (optional)">
@@ -40,7 +47,10 @@
             type="text"
             placeholder="Optional guild id for testing"
           />
-          <span class="form-help">If provided, commands will be registered to this guild for faster updates (useful for development).</span>
+          <span class="form-help"
+            >If provided, commands will be registered to this guild for faster updates (useful for
+            development).</span
+          >
         </FormRow>
 
         <FormRow label="Discord Channel ID (optional)">
@@ -49,14 +59,19 @@
             type="text"
             placeholder="Optional channel id to restrict commands"
           />
-          <span class="form-help">If provided, the bot will only accept request commands from this channel. You can also set this via the bot using the <code>/request-config set-channel</code> command.</span>
+          <span class="form-help"
+            >If provided, the bot will only accept request commands from this channel. You can also
+            set this via the bot using the <code>/request-config set-channel</code> command.</span
+          >
         </FormRow>
 
         <!-- Invite / Register Controls -->
         <FormRow v-if="settings.discordApplicationId" label="Invite Bot to Server">
-          <label style="display:none">Invite Bot to Server</label>
+          <label style="display: none">Invite Bot to Server</label>
           <div class="invite-controls">
-            <button @click="openInviteLink" class="invite-button btn btn-primary">Open Invite</button>
+            <button @click="openInviteLink" class="invite-button btn btn-primary">
+              Open Invite
+            </button>
             <button @click="copyInviteLink" class="icon-button">Copy Invite Link</button>
             <button @click="checkDiscordStatus" class="icon-button" :disabled="checkingDiscord">
               Check Install
@@ -124,7 +139,9 @@
               </template>
             </button>
           </div>
-          <span class="form-help">The bot process will use this token to login. Be careful with this value.</span>
+          <span class="form-help"
+            >The bot process will use this token to login. Be careful with this value.</span
+          >
         </FormRow>
 
         <FormRow label="Command Group Name">
@@ -138,7 +155,10 @@
             type="text"
             placeholder="audiobook"
           />
-          <span class="form-help">Subcommand for audiobooks (e.g. <code>audiobook</code>) — results in <code>/request audiobook &lt;title&gt;</code></span>
+          <span class="form-help"
+            >Subcommand for audiobooks (e.g. <code>audiobook</code>) — results in
+            <code>/request audiobook &lt;title&gt;</code></span
+          >
         </FormRow>
 
         <FormRow label="Bot Username (optional)">
@@ -147,7 +167,10 @@
             type="text"
             placeholder="Custom bot username"
           />
-          <span class="form-help">Optional custom username for the bot. Leave empty to use the default username from Discord.</span>
+          <span class="form-help"
+            >Optional custom username for the bot. Leave empty to use the default username from
+            Discord.</span
+          >
         </FormRow>
 
         <FormRow label="Bot Avatar URL (optional)">
@@ -156,7 +179,10 @@
             type="url"
             placeholder="https://example.com/avatar.png"
           />
-          <span class="form-help">Optional avatar image URL for the bot. Leave empty to use the default avatar from Discord.</span>
+          <span class="form-help"
+            >Optional avatar image URL for the bot. Leave empty to use the default avatar from
+            Discord.</span
+          >
         </FormRow>
       </div>
 

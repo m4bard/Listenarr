@@ -278,12 +278,13 @@ namespace Listenarr.Api.Tests
             await File.WriteAllTextAsync(disc2, "disc2");
 
             var repoMock = GetRepoMock(book);
-            
+
             var expectedScanPath = Path.Join(outputRoot, "Roger Zelazny", "Jack of Shadows");
             var scanMock = new Mock<IScanQueueService>();
             scanMock.Setup(s => s.EnqueueScanAsync(book, expectedScanPath)).ReturnsAsync(Guid.NewGuid());
 
-            var controller = GetController(book, new ApplicationSettings {
+            var controller = GetController(book, new ApplicationSettings
+            {
                 OutputPath = outputRoot,
                 FolderNamingPattern = "{Author}/{Title}",
                 FileNamingPattern = "{Title}",
@@ -326,7 +327,8 @@ namespace Listenarr.Api.Tests
             await File.WriteAllTextAsync(coverFile, "cover");
             await File.WriteAllTextAsync(notesFile, "notes");
 
-            var controller = GetController(book, new ApplicationSettings {
+            var controller = GetController(book, new ApplicationSettings
+            {
                 OutputPath = destinationRoot,
                 FolderNamingPattern = "",
                 FileNamingPattern = "{Title}",
@@ -369,7 +371,7 @@ namespace Listenarr.Api.Tests
             await File.WriteAllTextAsync(selectedAudio, "selected");
             await File.WriteAllTextAsync(foreignAudio, "foreign");
             await File.WriteAllTextAsync(coverFile, "cover");
-                
+
             var controller = GetController(book, new ApplicationSettings
             {
                 OutputPath = destinationRoot,
@@ -397,7 +399,7 @@ namespace Listenarr.Api.Tests
             Assert.True(File.Exists(Path.Join(destinationRoot, "cover.jpg")));
             Assert.False(File.Exists(Path.Join(destinationRoot, "Different Book.mp3")));
         }
-        
+
 
         [Fact]
         public async Task InteractiveManualImport_DontMoveAnything_DontRenameAnything()

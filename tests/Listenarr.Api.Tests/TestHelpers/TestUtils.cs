@@ -12,7 +12,7 @@ namespace Listenarr.Api.Tests
         public static DownloadProcessingBackgroundService GetDownloadProcessingBackgroundService()
         {
             return new DownloadProcessingBackgroundService(
-                new Mock<IServiceScopeFactory>().Object, 
+                new Mock<IServiceScopeFactory>().Object,
                 new Mock<ILogger<DownloadProcessingBackgroundService>>().Object,
                 new Mock<IAppMetricsService>().Object);
         }

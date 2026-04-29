@@ -21,7 +21,7 @@ namespace Listenarr.Api.Tests.Services
             var sourceDirectory = GetTempDirectory("FetchMetadataAsync");
             var filePath = await GetFileAsync(sourceDirectory, "03 - Seconde Fondation Isaac Asimov.mp3");
             var ffprobePath = await GetFileAsync(sourceDirectory, "ffprobefake");
-            
+
             var download = new Download
             {
                 Id = DOWNLOAD_ID,
@@ -32,7 +32,7 @@ namespace Listenarr.Api.Tests.Services
                     ["Protocol"] = DownloadProtocol.Torrent,
                 }
             };
-            
+
             var audiobook = new Audiobook
             {
                 Id = AUDIOBOOK_ID,
@@ -48,7 +48,7 @@ namespace Listenarr.Api.Tests.Services
             {
                 SourcePath = filePath
             };
-            
+
             var ffmpegServiceMock = new Mock<IFfmpegService>();
             ffmpegServiceMock.Setup(s => s.GetFfprobePathAsync()).ReturnsAsync(ffprobePath);
             ffmpegServiceMock.Setup(s => s.RunFfprobeAsync(filePath))
@@ -64,11 +64,11 @@ namespace Listenarr.Api.Tests.Services
 
             var provider = MockUtils.CreateServiceProvider();
             var metadataService = new MetadataService(
-                new Mock<HttpClient>().Object, 
-                provider.GetRequiredService<IConfigurationService>(), 
-                new Mock<ILogger<MetadataService>>().Object, 
+                new Mock<HttpClient>().Object,
+                provider.GetRequiredService<IConfigurationService>(),
+                new Mock<ILogger<MetadataService>>().Object,
                 ffmpegServiceMock.Object);
-                
+
             var audiobookRepository = provider.GetRequiredService<IAudiobookRepository>();
             var downloadRepository = provider.GetRequiredService<IDownloadRepository>();
 

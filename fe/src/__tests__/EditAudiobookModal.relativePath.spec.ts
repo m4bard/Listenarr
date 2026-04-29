@@ -59,13 +59,15 @@ describe('EditAudiobookModal relative path calculation', () => {
     await new Promise((r) => setTimeout(r, 10))
 
     // Primary assertion: combined path should match expected (normalize slashes)
-    expect(((wrapper.vm as unknown).combinedBasePath() || '').replace(/\\/g, '/')).toBe('C:/root/Some Author/Some Title')
+    expect(((wrapper.vm as unknown).combinedBasePath() || '').replace(/\\/g, '/')).toBe(
+      'C:/root/Some Author/Some Title',
+    )
 
     // If the readonly input exists in this environment, also assert its value
     const readonlyInput = wrapper.find('.readonly-input')
     const readonlyValue = (
       readonlyInput.exists()
-        ? ((readonlyInput.element as HTMLInputElement).value || '')
+        ? (readonlyInput.element as HTMLInputElement).value || ''
         : 'C:\\root\\Some Author\\Some Title'
     ).replace(/\\/g, '/')
     expect(readonlyValue).toBe('C:/root/Some Author/Some Title')
@@ -178,7 +180,9 @@ describe('EditAudiobookModal relative path calculation', () => {
     await nextTick()
 
     // customRootPath should be prefilled to the full base path (normalize slashes)
-    expect(((wrapper.vm as unknown).customRootPath || '').replace(/\\/g, '/')).toBe('C:/root/Some Author/Some Title')
+    expect(((wrapper.vm as unknown).customRootPath || '').replace(/\\/g, '/')).toBe(
+      'C:/root/Some Author/Some Title',
+    )
   })
 
   it('does not duplicate relative part when saving a Custom path', async () => {

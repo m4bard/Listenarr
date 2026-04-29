@@ -24,12 +24,12 @@ import { buildLibraryImportSearchParams } from '@/utils/libraryImportSearch'
 import type { SearchResult, AudibleBookMetadata, UnmatchedFileItem } from '@/types'
 
 export interface LibraryImportItem {
-  id: string            // = fullPath (unique key)
-  fullPath: string      // path to audio file
+  id: string // = fullPath (unique key)
+  fullPath: string // path to audio file
   sourceFiles: string[] // all source files represented by this row
-  folderPath: string    // bookFolder (parent directory)
-  relativePath: string  // relative to root folder
-  folderName: string    // search term: last non-empty path segment
+  folderPath: string // bookFolder (parent directory)
+  relativePath: string // relative to root folder
+  folderName: string // search term: last non-empty path segment
   // Detected from file scan
   detectedTitle?: string
   detectedAuthor?: string
@@ -39,8 +39,8 @@ export interface LibraryImportItem {
   fileCount: number
   // Match state
   selectedMatch: SearchResult | null
-  hasSearched: boolean  // true once auto-search was attempted
-  isSearching: boolean  // currently in-flight
+  hasSearched: boolean // true once auto-search was attempted
+  isSearching: boolean // currently in-flight
   // Selection
   selected: boolean
 }
@@ -67,14 +67,17 @@ function pickBestMatch(results: SearchResult[], detectedAuthor?: string): Search
 
 function normalizeGenres(genres: unknown): string[] | undefined {
   if (!Array.isArray(genres)) return genres as string[] | undefined
-  return genres.map((g) => (typeof g === 'string' ? g : (g as { name?: string })?.name ?? '')).filter(Boolean)
+  return genres
+    .map((g) => (typeof g === 'string' ? g : ((g as { name?: string })?.name ?? '')))
+    .filter(Boolean)
 }
 
 function unmatchedToImportItem(item: UnmatchedFileItem): LibraryImportItem {
   return {
     id: item.fullPath,
     fullPath: item.fullPath,
-    sourceFiles: item.sourceFiles && item.sourceFiles.length > 0 ? item.sourceFiles : [item.fullPath],
+    sourceFiles:
+      item.sourceFiles && item.sourceFiles.length > 0 ? item.sourceFiles : [item.fullPath],
     folderPath: item.bookFolder,
     relativePath: item.relativePath,
     folderName: extractFolderName(item.relativePath),
@@ -163,9 +166,21 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         const existing = items.value[item.fullPath]
         const p = persisted[item.fullPath]
         if (existing) {
-          newItems[item.fullPath] = { ...unmatchedToImportItem(item), selectedMatch: existing.selectedMatch, hasSearched: existing.hasSearched, isSearching: false, selected: existing.selected }
+          newItems[item.fullPath] = {
+            ...unmatchedToImportItem(item),
+            selectedMatch: existing.selectedMatch,
+            hasSearched: existing.hasSearched,
+            isSearching: false,
+            selected: existing.selected,
+          }
         } else if (p) {
-          newItems[item.fullPath] = { ...unmatchedToImportItem(item), selectedMatch: p.selectedMatch, hasSearched: p.hasSearched, isSearching: false, selected: p.selected }
+          newItems[item.fullPath] = {
+            ...unmatchedToImportItem(item),
+            selectedMatch: p.selectedMatch,
+            hasSearched: p.hasSearched,
+            isSearching: false,
+            selected: p.selected,
+          }
         } else {
           newItems[item.fullPath] = unmatchedToImportItem(item)
         }
@@ -181,7 +196,11 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     rootFolderId.value = id
     scanStatus.value = 'scanning'
     scanError.value = null
-    try { localStorage.removeItem(_storageKey(id)) } catch { /* non-fatal */ }
+    try {
+      localStorage.removeItem(_storageKey(id))
+    } catch {
+      /* non-fatal */
+    }
 
     let jobId = ''
     let settled = false
@@ -190,7 +209,10 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
     function cleanUp() {
       offSignalR?.()
-      if (pollInterval) { clearInterval(pollInterval); pollInterval = null }
+      if (pollInterval) {
+        clearInterval(pollInterval)
+        pollInterval = null
+      }
     }
 
     async function onComplete(completedJobId: string) {
@@ -221,14 +243,17 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     // Allow the event if jobId is not yet assigned (jobId === '') — it must be ours.
     offSignalR = signalRService.onUnmatchedScanComplete(async (payload) => {
       if (!jobId || payload.jobId !== jobId) return
-      if (payload.error) { onFailed(payload.error); return }
+      if (payload.error) {
+        onFailed(payload.error)
+        return
+      }
       await onComplete(payload.jobId)
     })
 
     try {
       const result = await apiService.scanUnmatchedFiles(id)
       jobId = result.jobId
-      if (settled) return  // SignalR already handled it before this line
+      if (settled) return // SignalR already handled it before this line
       // Poll once immediately — handles fast scans
       const check = await apiService.getUnmatchedResults(jobId)
       if (check.status === 'Completed') {
@@ -243,7 +268,9 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
             const poll = await apiService.getUnmatchedResults(jobId)
             if (poll.status === 'Completed') await onComplete(jobId)
             else if (poll.status === 'Failed') onFailed(poll.error)
-          } catch { /* ignore transient errors, keep polling */ }
+          } catch {
+            /* ignore transient errors, keep polling */
+          }
         }, 2500)
       }
     } catch (e) {
@@ -257,7 +284,12 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
       const existing = items.value[item.fullPath]
       const fresh = unmatchedToImportItem(item)
       newItems[item.fullPath] = existing
-        ? { ...fresh, selectedMatch: existing.selectedMatch, hasSearched: existing.hasSearched, selected: existing.selected }
+        ? {
+            ...fresh,
+            selectedMatch: existing.selectedMatch,
+            hasSearched: existing.hasSearched,
+            selected: existing.selected,
+          }
         : fresh
     }
     items.value = newItems
@@ -265,7 +297,11 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
 
   // ─── localStorage persistence ──────────────────────────────────────────────
 
-  type PersistedEntry = { selectedMatch: SearchResult | null; hasSearched: boolean; selected: boolean }
+  type PersistedEntry = {
+    selectedMatch: SearchResult | null
+    hasSearched: boolean
+    selected: boolean
+  }
 
   function _storageKey(folderId: number): string {
     return `listenarr-import-matches-${folderId}`
@@ -275,11 +311,17 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     if (!rootFolderId.value) return
     const state: Record<string, PersistedEntry> = {}
     for (const [path, item] of Object.entries(items.value)) {
-      state[path] = { selectedMatch: item.selectedMatch, hasSearched: item.hasSearched, selected: item.selected }
+      state[path] = {
+        selectedMatch: item.selectedMatch,
+        hasSearched: item.hasSearched,
+        selected: item.selected,
+      }
     }
     try {
       localStorage.setItem(_storageKey(rootFolderId.value), JSON.stringify(state))
-    } catch { /* non-fatal */ }
+    } catch {
+      /* non-fatal */
+    }
   }
 
   function _loadPersistedMatches(folderId: number): Record<string, PersistedEntry> {
@@ -335,12 +377,22 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
         const current = items.value[id]!
         items.value = {
           ...items.value,
-          [id]: { ...current, isSearching: false, hasSearched: true, selectedMatch: first, selected: first !== null },
+          [id]: {
+            ...current,
+            isSearching: false,
+            hasSearched: true,
+            selectedMatch: first,
+            selected: first !== null,
+          },
         }
         _persistMatches()
       } catch {
         const current = items.value[id]
-        if (current) items.value = { ...items.value, [id]: { ...current, isSearching: false, hasSearched: true } }
+        if (current)
+          items.value = {
+            ...items.value,
+            [id]: { ...current, isSearching: false, hasSearched: true },
+          }
       }
     }
     isProcessing.value = false
@@ -431,7 +483,9 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     }
   }
 
-  async function importSelected(rootFolderPath: string): Promise<{ imported: number; errors: string[] }> {
+  async function importSelected(
+    rootFolderPath: string,
+  ): Promise<{ imported: number; errors: string[] }> {
     const toImport = itemList.value.filter((i) => i.selected && i.selectedMatch)
     importErrors.value = []
     let imported = 0
@@ -538,4 +592,3 @@ export const useLibraryImportStore = defineStore('libraryImport', () => {
     importSelected,
   }
 })
-

@@ -65,7 +65,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                             collection = parsedCollection;
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to parse Internet Archive settings, using default collection");
                 }
             }
@@ -93,7 +94,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
             _logger.LogInformation("Internet Archive returned {Count} results", searchResults.Count);
             return searchResults;
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error searching Internet Archive indexer {Name}", indexer.Name);
             return new List<IndexerSearchResult>();
         }
@@ -208,18 +210,21 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
                         var detectedLang = ParseLanguageFromText(title);
                         if (!string.IsNullOrEmpty(detectedLang)) iaResult.Language = detectedLang;
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogDebug(ex, "Failed to parse language from title: {Title}", title);
                     }
 
                     results.Add(iaResult);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogError(ex, "Error processing Internet Archive item");
                 }
             }
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error parsing Internet Archive response");
         }
 
@@ -297,7 +302,8 @@ public class InternetArchiveSearchProvider : IIndexerSearchProvider
             // Return the highest priority (lowest priority number) audio file
             return audioFiles.OrderBy(f => f.Priority).ThenByDescending(f => f.Size).FirstOrDefault();
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error parsing Internet Archive metadata for {Identifier}", identifier);
             return null;
         }

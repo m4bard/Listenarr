@@ -108,7 +108,6 @@
           {{ error }}
         </div>
       </ModalBody>
-
     </template>
 
     <template #footer>
@@ -218,8 +217,6 @@ const performSearch = async () => {
 </script>
 
 <style scoped>
-
-
 .modal-header {
   display: flex;
   justify-content: space-between;
@@ -323,7 +320,11 @@ select.form-input option {
 }
 
 /* modal-footer styles are centralized in src/assets/modals.css; no local overrides required */
-.modal-footer { display:flex; gap:0.75rem; justify-content:flex-end }
+.modal-footer {
+  display: flex;
+  gap: 0.75rem;
+  justify-content: flex-end;
+}
 
 /* Buttons are centralized in `src/assets/buttons.css` and modal color variants are in `src/assets/modals.css`. Use `.btn` / `.btn-primary` here to avoid duplication. */
 

@@ -130,7 +130,12 @@
 
     <template #footer>
       <button type="button" class="cancel-button btn" @click="close"><PhX /> Cancel</button>
-      <button type="button" class="btn btn-primary" :disabled="saving || !hasChanges" @click="handleSave">
+      <button
+        type="button"
+        class="btn btn-primary"
+        :disabled="saving || !hasChanges"
+        @click="handleSave"
+      >
         <PhSpinner v-if="saving" class="ph-spin" />
         <PhCheck v-else /> {{ saving ? 'Saving...' : 'Save Changes' }}
       </button>
@@ -143,7 +148,12 @@
     v-model:moveFiles="modalMoveFiles"
     v-model:deleteEmpty="modalDeleteEmpty"
     @cancel="cancelMoveConfirm"
-    @confirm="(payload) => { if (payload?.moveFiles) confirmMove(); else confirmChangeWithoutMoving(); }"
+    @confirm="
+      (payload) => {
+        if (payload?.moveFiles) confirmMove()
+        else confirmChangeWithoutMoving()
+      }
+    "
   />
 </template>
 
@@ -305,7 +315,16 @@ function confirmMove() {
 }
 
 import { logger } from '@/utils/logger'
-import { PhX, PhSpinner, PhCheck, PhPencil, PhInfo, PhEye, PhStar, PhFolder } from '@phosphor-icons/vue'  
+import {
+  PhX,
+  PhSpinner,
+  PhCheck,
+  PhPencil,
+  PhInfo,
+  PhEye,
+  PhStar,
+  PhFolder,
+} from '@phosphor-icons/vue'
 
 async function handleSave() {
   if (!hasChanges.value) return
@@ -330,7 +349,7 @@ async function handleSave() {
 
     // Store original basePaths before updating if we're changing root folders
     const originalBasePaths = new Map<number, string>()
-    
+
     if (formData.value.rootChangeEnabled === true) {
       // Resolve chosen root path: named root, custom path or default
       if (formData.value.rootId === 0) {
@@ -403,52 +422,54 @@ async function handleSave() {
 
     // If user wants to move files, enqueue move jobs for each audiobook
     if (userWantsMove && newRootPath) {
-      console.log('[BulkEditModal] Starting move job enqueue process', { 
-        userWantsMove, 
-        newRootPath, 
+      console.log('[BulkEditModal] Starting move job enqueue process', {
+        userWantsMove,
+        newRootPath,
         totalIds: ids.length,
-        originalBasePathsSize: originalBasePaths.size 
+        originalBasePathsSize: originalBasePaths.size,
       })
-      
+
       let moveCount = 0
       for (const id of ids) {
         // Only enqueue move for audiobooks that were successfully updated
         const result = results.value.find((r) => r.id === id)
-        console.log(`[BulkEditModal] Processing audiobook ${id}`, { 
-          hasResult: !!result, 
-          success: result?.success 
+        console.log(`[BulkEditModal] Processing audiobook ${id}`, {
+          hasResult: !!result,
+          success: result?.success,
         })
-        
+
         if (result && result.success) {
           try {
             // Get the ORIGINAL basePath (before update) and the NEW basePath (after update)
             const originalBasePath = originalBasePaths.get(id)
             const audiobook = await apiService.getAudiobook(id)
             const newBasePath = audiobook?.basePath
-            
+
             console.log(`[BulkEditModal] Audiobook ${id} paths:`, {
               originalBasePath,
               newBasePath,
-              pathsAreDifferent: originalBasePath !== newBasePath
+              pathsAreDifferent: originalBasePath !== newBasePath,
             })
-            
+
             if (originalBasePath && newBasePath && originalBasePath !== newBasePath) {
               console.log(`[BulkEditModal] Enqueueing move for audiobook ${id}`, {
                 destination: newBasePath,
                 source: originalBasePath,
-                deleteEmpty: userWantsDeleteEmpty
+                deleteEmpty: userWantsDeleteEmpty,
               })
-              
+
               const moveResult = await apiService.moveAudiobook(id, newBasePath, {
                 sourcePath: originalBasePath,
                 moveFiles: true,
                 deleteEmptySource: userWantsDeleteEmpty,
               })
-              
+
               console.log(`[BulkEditModal] Move enqueued for audiobook ${id}:`, moveResult)
               moveCount++
             } else {
-              console.warn(`[BulkEditModal] Skipping move for audiobook ${id} - invalid paths or paths are the same`)
+              console.warn(
+                `[BulkEditModal] Skipping move for audiobook ${id} - invalid paths or paths are the same`,
+              )
             }
           } catch (moveErr) {
             console.error(`Failed to enqueue move for audiobook ${id}:`, moveErr)
@@ -458,9 +479,12 @@ async function handleSave() {
       }
 
       console.log(`[BulkEditModal] Finished move enqueue process. Queued ${moveCount} moves.`)
-      
+
       if (moveCount > 0) {
-        toast.info('Move jobs queued', `Queued ${moveCount} move job(s). Files will be moved in the background.`)
+        toast.info(
+          'Move jobs queued',
+          `Queued ${moveCount} move job(s). Files will be moved in the background.`,
+        )
       } else {
         console.warn('[BulkEditModal] No move jobs were queued!')
       }
@@ -474,7 +498,7 @@ async function handleSave() {
 
     // Notify parent that changes were saved
     emit('saved')
-    
+
     // Close the modal after successful operation
     close()
   } catch (error) {
@@ -764,7 +788,7 @@ function close() {
 .btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-} 
+}
 
 /* Button color variants are centralized in `src/assets/modals.css` - use `.btn` / `.btn-primary`. */
 
@@ -967,7 +991,6 @@ function close() {
 }
 
 /* Local confirm action button variants are centralized in `src/assets/modals.css`. Use `.btn-primary` for confirm actions. */
-
 
 /* Mobile responsive adjustments */
 @media (max-width: 640px) {

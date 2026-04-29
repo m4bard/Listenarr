@@ -70,7 +70,8 @@ namespace Listenarr.Api.Services
                     Directory.Move(sourceDir, destDir);
                     return true;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Directory.Move attempt {Attempt} failed: {Source} -> {Dest}", attempt + 1, sourceDir, destDir);
                     try
                     {
@@ -115,7 +116,8 @@ namespace Listenarr.Api.Services
                 }
                 return true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Copy+delete fallback failed for directory {Source} -> {Dest}", sourceDir, destDir);
 
                 // On Windows attempt robocopy as a final-resort atomic-ish fallback
@@ -146,7 +148,8 @@ namespace Listenarr.Api.Services
                         _logger.LogWarning("Robocopy fallback failed or returned non-success code: {Code}. Stderr: {Err}", pr.ExitCode, LogRedaction.RedactText(Truncate(pr.Stderr, 2000), LogRedaction.GetSensitiveValuesFromEnvironment()));
                     }
                 }
-                catch (Exception rex) when (rex is not OperationCanceledException && rex is not OutOfMemoryException && rex is not StackOverflowException) {
+                catch (Exception rex) when (rex is not OperationCanceledException && rex is not OutOfMemoryException && rex is not StackOverflowException)
+                {
                     _logger.LogWarning(rex, "Robocopy fallback threw an exception");
                 }
 
@@ -166,7 +169,8 @@ namespace Listenarr.Api.Services
                     File.Move(sourceFile, destFile, true);
                     return true;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "File.Move attempt {Attempt} failed: {Source} -> {Dest}", attempt + 1, sourceFile, destFile);
                     try
                     {
@@ -211,7 +215,8 @@ namespace Listenarr.Api.Services
                 }
                 return true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Copy+delete fallback failed for file {Source} -> {Dest}", sourceFile, destFile);
 
                 // On Windows attempt robocopy for single-file move as a last resort
@@ -246,7 +251,8 @@ namespace Listenarr.Api.Services
                         _logger.LogWarning("Robocopy fallback failed or returned non-success code: {Code}. Stderr: {Err}", pr.ExitCode, LogRedaction.RedactText(Truncate(pr.Stderr, 2000), LogRedaction.GetSensitiveValuesFromEnvironment()));
                     }
                 }
-                catch (Exception rex) when (rex is not OperationCanceledException && rex is not OutOfMemoryException && rex is not StackOverflowException) {
+                catch (Exception rex) when (rex is not OperationCanceledException && rex is not OutOfMemoryException && rex is not StackOverflowException)
+                {
                     _logger.LogWarning(rex, "Robocopy fallback threw an exception");
                 }
 
@@ -261,7 +267,8 @@ namespace Listenarr.Api.Services
                 CopyDirRecursive(sourceDir, destDir);
                 return Task.FromResult(true);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Copy directory failed: {Source} -> {Dest}", sourceDir, destDir);
                 return Task.FromResult(false);
             }
@@ -274,7 +281,8 @@ namespace Listenarr.Api.Services
                 File.Copy(sourceFile, destFile, true);
                 return Task.FromResult(true);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Copy file failed: {Source} -> {Dest}", sourceFile, destFile);
                 return Task.FromResult(false);
             }
@@ -319,12 +327,13 @@ namespace Listenarr.Api.Services
                         }
                     }
 
-                    // Hardlink succeeded — atomically replace destination
+                    // Hardlink succeeded â€” atomically replace destination
                     File.Move(tempDest, destFile, overwrite: true);
                     _logger.LogInformation("Hardlinked file: {Source} -> {Dest}", sourceFile, destFile);
                     return Task.FromResult(true);
                 }
-                catch (Exception linkEx) when (linkEx is not OperationCanceledException && linkEx is not OutOfMemoryException && linkEx is not StackOverflowException) {
+                catch (Exception linkEx) when (linkEx is not OperationCanceledException && linkEx is not OutOfMemoryException && linkEx is not StackOverflowException)
+                {
                     // Clean up temp file if hardlink left one behind
                     try { if (File.Exists(tempDest)) File.Delete(tempDest); }
                     catch (Exception cleanupEx) when (cleanupEx is not OperationCanceledException
@@ -344,7 +353,7 @@ namespace Listenarr.Api.Services
                     else
                         _logger.LogWarning(linkEx, "Hardlink failed, falling back to copy: {Source} -> {Dest}", sourceFile, destFile);
 
-                    // Fallback to copy — copy to a temp file first, then atomically rename onto destination
+                    // Fallback to copy â€” copy to a temp file first, then atomically rename onto destination
                     // so the existing file is never overwritten until a complete replacement is confirmed.
                     // Use Path.GetFileName to strip any separators from GetRandomFileName (satisfies static analysis).
                     // Use Path.Join (not Path.Combine) to prevent rooted second arg from silently discarding destDir.
@@ -370,7 +379,8 @@ namespace Listenarr.Api.Services
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Hardlink/Copy failed: {Source} -> {Dest}", sourceFile, destFile);
                 return Task.FromResult(false);
             }
@@ -438,7 +448,8 @@ namespace Listenarr.Api.Services
                     return null;
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Exception while running robocopy");
                 return null;
             }
@@ -481,7 +492,7 @@ namespace Listenarr.Api.Services
             [JsonPropertyName("hardlink/copy")]
             HardlinkCopy
         }
-        
+
         public async Task PerformActionOn(FileAction action, string source, string? destination = null, HashSet<string>? usedDestinations = null)
         {
             if (action == FileAction.None || destination == null) return;
@@ -499,23 +510,23 @@ namespace Listenarr.Api.Services
             }
 
             destination = FileUtils.GetUniqueDestinationPath(destination, System.IO.File.Exists, usedDestinations);
-            
+
             try
             {
-                switch(action)
+                switch (action)
                 {
                     case FileAction.Move:
                         System.IO.File.Move(source, destination, overwrite: false);
                         break;
                     case FileAction.HardlinkCopy:
-                        if(!await HardlinkFileAsync(source, destination))
+                        if (!await HardlinkFileAsync(source, destination))
                             throw new IOException($"HardlinkFileAsync failed: {source} -> {destination}");
                         break;
                     case FileAction.Copy:
                         System.IO.File.Copy(source, destination, overwrite: false);
                         break;
                 }
-            
+
                 usedDestinations.Add(destination);
             }
             catch (IOException exception)

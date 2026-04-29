@@ -173,7 +173,8 @@ namespace Listenarr.Api.Services
 
                 return true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex,
                     "Failed to record state transition for {DownloadId}: {CurrentState} → {NewState}",
                     downloadId, currentState, newState);

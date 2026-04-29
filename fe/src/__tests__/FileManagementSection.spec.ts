@@ -24,7 +24,8 @@ describe('FileManagementSection', () => {
   })
 
   it('emits update:settings on pattern and select changes', async () => {
-    const { default: FileManagementSection } = await import('@/components/settings/FileManagementSection.vue')
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
     const wrapper = mount(FileManagementSection, {
       props: {
         settings: {
@@ -38,34 +39,39 @@ describe('FileManagementSection', () => {
 
     const folderInput = wrapper.find('input[placeholder="{Author}/{Series}/{Title}"]')
     await folderInput.setValue('{Author}/{Title}')
-    let last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    let last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.folderNamingPattern).toBe('{Author}/{Title}')
 
     const fileInput = wrapper.find('input[placeholder="{Title}"]')
     await fileInput.setValue('{Title}-{DiskNumber}')
-    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.fileNamingPattern).toBe('{Title}-{DiskNumber}')
 
     const sel = wrapper.find('select')
     await sel.setValue('Hardlink/Copy')
-    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.completedFileAction).toBe('Hardlink/Copy')
 
     const textarea = wrapper.find('textarea')
     await textarea.setValue('.nfo\njpg')
     await textarea.trigger('change')
-    last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.importBlacklistExtensions).toEqual(['.nfo', '.jpg'])
   })
 
   it('shows preview for multi-file pattern with chapter numbers', async () => {
-    const { default: FileManagementSection } = await import('@/components/settings/FileManagementSection.vue')
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
     const wrapper = mount(FileManagementSection, {
       props: {
         settings: {
-          multiFileNamingPattern: '{Title}-Ch{ChapterNumber:00}'
-        }
-      }
+          multiFileNamingPattern: '{Title}-Ch{ChapterNumber:00}',
+        },
+      },
     })
 
     // Preview should show simulated chapter numbers 01/02/03
@@ -77,10 +83,12 @@ describe('FileManagementSection', () => {
   })
 
   it('shows path length warning when combined pattern exceeds 259 characters', async () => {
-    const { default: FileManagementSection } = await import('@/components/settings/FileManagementSection.vue')
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
     // Use highly nested folder pattern that definitely exceeds 259 chars with sample values
     // Each {Author}/{Series}/{Title} expands to ~48 chars; six repetitions + output path + file will exceed 259
-    const longPattern = '{Author}/{Series}/{Title}/{Author}/{Series}/{Title}/{Author}/{Series}/{Title}/{Author}/{Series}/{Title}/{Author}/{Series}/{Title}/{Author}/{Series}/{Title}'
+    const longPattern =
+      '{Author}/{Series}/{Title}/{Author}/{Series}/{Title}/{Author}/{Series}/{Title}/{Author}/{Series}/{Title}/{Author}/{Series}/{Title}/{Author}/{Series}/{Title}'
     const wrapper = mount(FileManagementSection, {
       props: {
         settings: {
@@ -97,7 +105,8 @@ describe('FileManagementSection', () => {
   })
 
   it('does not show path length warning when combined pattern is short', async () => {
-    const { default: FileManagementSection } = await import('@/components/settings/FileManagementSection.vue')
+    const { default: FileManagementSection } =
+      await import('@/components/settings/FileManagementSection.vue')
     const wrapper = mount(FileManagementSection, {
       props: {
         settings: {

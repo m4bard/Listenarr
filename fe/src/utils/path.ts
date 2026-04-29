@@ -51,7 +51,9 @@ export function stripRootPrefix(root: string, value: string): string | null {
 
     if (nval.includes(nroot)) {
       const idx = nval.indexOf(nroot)
-      const rel = toForward(value).slice(idx + nroot.length).replace(/^\/+/, '')
+      const rel = toForward(value)
+        .slice(idx + nroot.length)
+        .replace(/^\/+/, '')
       const useBackslash = root.includes('\\')
       return useBackslash ? rel.replace(/\//g, '\\') : rel
     }
@@ -62,7 +64,9 @@ export function stripRootPrefix(root: string, value: string): string | null {
       const two = segs.slice(i, i + 2).join('/')
       if (two && nval.includes(two)) {
         const idx = nval.indexOf(two)
-        const rel = toForward(value).slice(idx + two.length).replace(/^\/+/, '')
+        const rel = toForward(value)
+          .slice(idx + two.length)
+          .replace(/^\/+/, '')
         const useBackslash = root.includes('\\')
         return useBackslash ? rel.replace(/\//g, '\\\\') : rel
       }
@@ -74,7 +78,10 @@ export function stripRootPrefix(root: string, value: string): string | null {
   return null
 }
 
-export function joinPaths(root: string | null | undefined, relative: string | null | undefined): string {
+export function joinPaths(
+  root: string | null | undefined,
+  relative: string | null | undefined,
+): string {
   if (!root) return relative || ''
   const useBackslash = root.includes('\\')
   const r = trimTrailingSlash(toForward(root))

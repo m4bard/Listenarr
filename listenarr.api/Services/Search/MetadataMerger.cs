@@ -37,9 +37,9 @@ public class MetadataMerger
     /// </summary>
     public void MergeMetadata(AudibleBookMetadata source, AudibleBookMetadata target)
     {
-        _logger.LogInformation("Merging metadata: source.PublishYear={SourceYear}, target.PublishYear={TargetYear}, target.Asin={Asin}", 
+        _logger.LogInformation("Merging metadata: source.PublishYear={SourceYear}, target.PublishYear={TargetYear}, target.Asin={Asin}",
             source.PublishYear, target.PublishYear, target.Asin);
-            
+
         // Only merge fields that are missing in target
         if (string.IsNullOrEmpty(target.Title)) target.Title = source.Title;
         if (target.Authors == null || !target.Authors.Any()) target.Authors = source.Authors;
@@ -52,7 +52,7 @@ public class MetadataMerger
         if (!target.Runtime.HasValue && source.Runtime.HasValue) target.Runtime = source.Runtime;
         if (string.IsNullOrEmpty(target.PublishYear)) target.PublishYear = source.PublishYear;
         if (string.IsNullOrEmpty(target.Subtitle)) target.Subtitle = source.Subtitle;
-        
+
         _logger.LogInformation("After merge: target.PublishYear={TargetYear}, target.Asin={Asin}", target.PublishYear, target.Asin);
     }
 

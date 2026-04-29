@@ -67,7 +67,8 @@ namespace Listenarr.Api.Tests
             var initial = db.Indexers.First(i => i.Id == indexer.Id);
             Assert.Contains("old_mam", initial.AdditionalSettings);
             Uri? capturedUri = null;
-            var handler = new DelegatingHandlerMock((req, ct) => {
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
                 capturedUri = req.RequestUri;
                 return Task.FromResult(CreateResponse(
                     HttpStatusCode.OK,
@@ -85,7 +86,8 @@ namespace Listenarr.Api.Tests
             Assert.Contains("new_mam", updated.AdditionalSettings);
 
             // Verify injected HttpClient received the cookie on subsequent calls when BaseAddress differs
-            var handler2 = new DelegatingHandlerMock((req, ct) => {
+            var handler2 = new DelegatingHandlerMock((req, ct) =>
+            {
                 // Ensure the request includes a Cookie header with the new mam_id
                 Assert.True(req.Headers.Contains("Cookie") && req.Headers.GetValues("Cookie").Any(v => v.Contains("mam_id=new_mam")), "Expected Cookie header with new mam_id");
                 return Task.FromResult(CreateResponse(HttpStatusCode.OK, new StringContent("[]")));
@@ -110,7 +112,8 @@ namespace Listenarr.Api.Tests
             db.SaveChanges();
 
             HttpRequestMessage? capturedRequest = null;
-            var handler = new DelegatingHandlerMock((req, ct) => {
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
                 capturedRequest = req;
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes("dummy-torrent"));
                 content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "file.torrent" };
@@ -123,7 +126,8 @@ namespace Listenarr.Api.Tests
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
             // Build a minimal service provider for dependencies
-            var provider = TestServiceFactory.BuildServiceProvider(services => {
+            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
                 services.AddSingleton<IHttpClientFactory>(httpFactory);
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 // Provide a minimal HubContext and memory cache for DownloadService construction
@@ -169,7 +173,7 @@ namespace Listenarr.Api.Tests
                 completedProc,
                 metricsSvc,
                 notificationSvc,
-                hubBroadcaster );
+                hubBroadcaster);
 
             // Build a SearchResult that references the indexer and uses a different host for torrent URL
             var sr = new SearchResult
@@ -209,7 +213,8 @@ namespace Listenarr.Api.Tests
             db.SaveChanges();
 
             HttpRequestMessage? capturedRequest = null;
-            var handler = new DelegatingHandlerMock((req, ct) => {
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
                 capturedRequest = req;
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes("dummy-torrent"));
                 content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "file.torrent" };
@@ -222,7 +227,8 @@ namespace Listenarr.Api.Tests
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
             // Build a minimal service provider for dependencies
-            var provider = TestServiceFactory.BuildServiceProvider(services => {
+            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
                 services.AddSingleton<IHttpClientFactory>(httpFactory);
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
@@ -265,7 +271,7 @@ namespace Listenarr.Api.Tests
                 completedProc,
                 metricsSvc,
                 notificationSvc,
-                hubBroadcaster );
+                hubBroadcaster);
 
             // Build a SearchResult that references the indexer and uses a different host for torrent URL
             var sr = new SearchResult
@@ -302,7 +308,8 @@ namespace Listenarr.Api.Tests
 
             HttpRequestMessage? capturedRequest = null;
             int callCount = 0;
-            var handler = new DelegatingHandlerMock((req, ct) => {
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
                 callCount++;
                 if (callCount == 1)
                 {
@@ -325,7 +332,8 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient(handler);
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
-            var provider = TestServiceFactory.BuildServiceProvider(services => {
+            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
                 services.AddSingleton<IHttpClientFactory>(httpFactory);
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
@@ -368,7 +376,7 @@ namespace Listenarr.Api.Tests
                 completedProc,
                 metricsSvc,
                 notificationSvc,
-                hubBroadcaster );
+                hubBroadcaster);
 
             var sr = new SearchResult
             {
@@ -409,7 +417,8 @@ namespace Listenarr.Api.Tests
             db.SaveChanges();
 
             HttpRequestMessage? capturedRequest = null;
-            var handler = new DelegatingHandlerMock((req, ct) => {
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
                 capturedRequest = req;
                 var html = "<html><body>Unrecognized host/PassKey</body></html>";
                 var content = new StringContent(html, Encoding.UTF8, "text/html");
@@ -419,7 +428,8 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient(handler);
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
-            var provider = TestServiceFactory.BuildServiceProvider(services => {
+            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
                 services.AddSingleton<IHttpClientFactory>(httpFactory);
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
@@ -462,7 +472,7 @@ namespace Listenarr.Api.Tests
                 completedProc,
                 metricsSvc,
                 notificationSvc,
-                hubBroadcaster );
+                hubBroadcaster);
 
             var sr = new SearchResult
             {
@@ -495,7 +505,8 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(idx);
             db.SaveChanges();
 
-            var handler = new DelegatingHandlerMock((req, ct) => {
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes("dummy-torrent-bytes"));
                 content.Headers.ContentDisposition = new System.Net.Http.Headers.ContentDispositionHeaderValue("attachment") { FileName = "file.torrent" };
                 return Task.FromResult(CreateResponse(HttpStatusCode.OK, content));
@@ -504,7 +515,8 @@ namespace Listenarr.Api.Tests
             using var httpClient = new HttpClient(handler);
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
-            var provider = TestServiceFactory.BuildServiceProvider(services => {
+            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
                 services.AddSingleton<IHttpClientFactory>(httpFactory);
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
@@ -547,7 +559,7 @@ namespace Listenarr.Api.Tests
                 completedProc,
                 metricsSvc,
                 notificationSvc,
-                hubBroadcaster );
+                hubBroadcaster);
 
             var sr = new SearchResult
             {
@@ -594,7 +606,8 @@ namespace Listenarr.Api.Tests
             sb.Append("8:announce82:https://www.myanonamouse.net/tracker.php/mGDjyetAEBGCaneLZNS9OHawTo1upcwU/announce");
             sb.Append("e");
 
-            var handler = new DelegatingHandlerMock((req, ct) => {
+            var handler = new DelegatingHandlerMock((req, ct) =>
+            {
                 capturedUri = req.RequestUri;
                 var content = new ByteArrayContent(Encoding.UTF8.GetBytes(sb.ToString()));
                 return Task.FromResult(CreateResponse(HttpStatusCode.OK, content));
@@ -604,7 +617,8 @@ namespace Listenarr.Api.Tests
             var httpFactory = new SimpleHttpClientFactory(httpClient);
 
             // Build a minimal service provider for dependencies (reusing test helpers)
-            var provider = TestServiceFactory.BuildServiceProvider(services => {
+            var provider = TestServiceFactory.BuildServiceProvider(services =>
+            {
                 services.AddSingleton<IHttpClientFactory>(httpFactory);
                 services.AddSingleton<IDbContextFactory<ListenArrDbContext>>(sp => new TestDbFactory(options));
                 services.AddSingleton<IHubContext<DownloadHub>>(new TestHubContext());
@@ -647,7 +661,7 @@ namespace Listenarr.Api.Tests
                 completedProc,
                 metricsSvc,
                 notificationSvc,
-                hubBroadcaster );
+                hubBroadcaster);
 
             var sr = new SearchResult
             {
@@ -735,7 +749,7 @@ namespace Listenarr.Api.Tests
             public Task AddAsync(Audiobook audiobook) { _store.Add(audiobook); return Task.CompletedTask; }
             public Task<int> DeleteBulkAsync(List<int> ids) { var c = _store.RemoveAll(a => ids.Contains(a.Id)); return Task.FromResult(c); }
             public Task<bool> DeleteAsync(Audiobook audiobook) { return Task.FromResult(_store.Remove(audiobook)); }
-            public Task<bool> DeleteByIdAsync(int id) { var a = _store.FirstOrDefault(x => x.Id == id); if (a==null) return Task.FromResult(false); _store.Remove(a); return Task.FromResult(true); }
+            public Task<bool> DeleteByIdAsync(int id) { var a = _store.FirstOrDefault(x => x.Id == id); if (a == null) return Task.FromResult(false); _store.Remove(a); return Task.FromResult(true); }
             public Task<List<Audiobook>> GetAllAsync() => Task.FromResult(_store.ToList());
             public Task<Audiobook?> GetByAsinAsync(string asin) => Task.FromResult(_store.FirstOrDefault(a => a.Asin == asin));
             public Task<Audiobook?> GetByIdAsync(int id) => Task.FromResult(_store.FirstOrDefault(a => a.Id == id));
@@ -746,7 +760,7 @@ namespace Listenarr.Api.Tests
             public Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region) => Task.FromResult<SeriesCacheEntry?>(null);
             public Task<SeriesCacheEntry?> GetCachedSeriesByAsinAsync(string asin, string region) => Task.FromResult<SeriesCacheEntry?>(null);
             public Task<SeriesCacheEntry> UpsertCachedSeriesAsync(SeriesCacheEntry seriesCacheEntry) => Task.FromResult(seriesCacheEntry);
-            public Task<bool> UpdateAsync(Audiobook audiobook) { var idx = _store.FindIndex(a => a.Id == audiobook.Id); if (idx<0) return Task.FromResult(false); _store[idx]=audiobook; return Task.FromResult(true); }
+            public Task<bool> UpdateAsync(Audiobook audiobook) { var idx = _store.FindIndex(a => a.Id == audiobook.Id); if (idx < 0) return Task.FromResult(false); _store[idx] = audiobook; return Task.FromResult(true); }
             public Task<List<Audiobook>> GetByIdsWithFilesAsync(IEnumerable<int> ids, System.Threading.CancellationToken ct = default) { var s = ids.ToHashSet(); return Task.FromResult(_store.Where(a => s.Contains(a.Id)).ToList()); }
             public Task SaveChangesAsync(System.Threading.CancellationToken ct = default) => Task.CompletedTask;
             public Task<List<Audiobook>> GetMonitoredAudiobooksForSearchAsync(DateTime cutoff, System.Threading.CancellationToken ct = default) => Task.FromResult(new List<Audiobook>());

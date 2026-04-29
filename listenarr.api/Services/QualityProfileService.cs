@@ -216,7 +216,8 @@ namespace Listenarr.Api.Services
                 score.SmartScore = composite.Total;
                 score.SmartScoreBreakdown = composite.Breakdown.ToDictionary(kv => kv.Key, kv => (int)Math.Round(kv.Value));
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to compute composite smart score for search result {Id}", searchResult.Id);
             }
 
@@ -224,9 +225,9 @@ namespace Listenarr.Api.Services
         }
 
 
-            // For NZB indexers we may be able to detect format and language from the title when not provided
-            // If NZB and format is missing, attempt to detect a format token in the title
-            
+        // For NZB indexers we may be able to detect format and language from the title when not provided
+        // If NZB and format is missing, attempt to detect a format token in the title
+
 
 
 

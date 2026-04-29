@@ -24,7 +24,8 @@ describe('ExternalRequestsSection', () => {
   })
 
   it('renders the External Requests section', async () => {
-    const { default: ExternalRequestsSection } = await import('@/components/settings/ExternalRequestsSection.vue')
+    const { default: ExternalRequestsSection } =
+      await import('@/components/settings/ExternalRequestsSection.vue')
     const wrapper = mount(ExternalRequestsSection, {
       props: { settings: {} },
     })
@@ -33,4 +34,3 @@ describe('ExternalRequestsSection', () => {
     expect(heading.text()).toContain('External Requests')
   })
 })
-

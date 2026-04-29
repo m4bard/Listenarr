@@ -459,7 +459,6 @@ describe('CollectionView', () => {
     const toolbar = wrapper.find('.toolbar')
     expect(toolbar.exists()).toBe(true)
 
-
     // Back button should be present and search should be removed
     expect(toolbar.find('.toolbar-btn').exists()).toBe(true)
     expect(toolbar.find('.toolbar-search').exists()).toBe(false)
@@ -758,7 +757,9 @@ describe('CollectionView', () => {
       books: [],
     })
 
-    let resolveNextLookup: ((value: import('@/types').AuthorLookupResponse | null) => void) | undefined
+    let resolveNextLookup:
+      | ((value: import('@/types').AuthorLookupResponse | null) => void)
+      | undefined
     mockGetAuthorLookup.mockImplementationOnce(
       () =>
         new Promise((resolve) => {

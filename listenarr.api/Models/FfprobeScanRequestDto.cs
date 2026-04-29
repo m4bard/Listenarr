@@ -1,7 +1,7 @@
 namespace Listenarr.Api.Models
 {
-    public class FfprobeScanRequest 
+    public class FfprobeScanRequest
     {
-        public string? FilePath { get; set; } 
+        public string? FilePath { get; set; }
     }
 }

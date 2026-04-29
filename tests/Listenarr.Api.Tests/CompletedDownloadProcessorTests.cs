@@ -690,7 +690,7 @@ namespace Listenarr.Api.Tests
             System.IO.File.WriteAllText(foreignAudioPath, "foreign");
             System.IO.File.WriteAllText(coverPath, "cover");
 
-            
+
             var importResolverMock = new Mock<IImportItemResolutionService>();
             var provider = MockUtils.CreateServiceProvider(importResolverMock.Object, "");
             var repo = provider.GetRequiredService<IDownloadRepository>();
@@ -815,7 +815,7 @@ namespace Listenarr.Api.Tests
             hubClientsMock.Setup(c => c.All).Returns(clientProxyMock.Object);
             var hubContextMock = new Mock<IHubContext<Listenarr.Api.Hubs.DownloadHub>>();
             hubContextMock.Setup(h => h.Clients).Returns(hubClientsMock.Object);
-            
+
             var provider = MockUtils.CreateServiceProvider(importResolverMock.Object, "");
             await InitDB(provider);
 
@@ -1192,7 +1192,7 @@ namespace Listenarr.Api.Tests
             var completeDownloadProcessor = MockUtils.CreateCompletedDownloadProcessor(provider);
 
             await completeDownloadProcessor.ProcessCompletedDownloadAsync(download.Id, localSource);
-            
+
             var audiobook = await audiobookRepository.GetByIdAsync(AUDIOBOOK_ID);
             var files = await audiobookFileRepository.GetAllAsync();
 

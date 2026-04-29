@@ -117,7 +117,8 @@ namespace Listenarr.Api.Services.Metadata
                                 // Cancellation requested - ignore and let the service shutdown gracefully
                                 _logger.LogDebug("Metadata rescan cancelled for file id={Id}", candidate.Id);
                             }
-                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                            {
                                 _logger.LogWarning(ex, "Failed to rescan metadata for file id={Id} path={Path}", candidate.Id, LogRedaction.SanitizeFilePath(candidate.Path));
                             }
                         }));
@@ -133,7 +134,8 @@ namespace Listenarr.Api.Services.Metadata
                 {
                     _logger.LogWarning(ex, "Metadata rescan cycle canceled/timed out; continuing");
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogError(ex, "Error while running metadata rescan");
                 }
 

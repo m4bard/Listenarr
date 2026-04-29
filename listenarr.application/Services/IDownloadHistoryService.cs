@@ -56,33 +56,33 @@ namespace Listenarr.Application.Services
         /// Record that a download was grabbed from a source.
         /// Called when we first detect a download in the client.
         /// </summary>
-        Task RecordGrabbedAsync(string downloadId, string clientId, string title, 
+        Task RecordGrabbedAsync(string downloadId, string clientId, string title,
             DownloadProtocol protocol, Guid? audiobookId = null);
 
         /// <summary>
         /// Record that a download completed successfully.
         /// </summary>
-        Task RecordDownloadCompleteAsync(string downloadId, string clientId, string title, 
+        Task RecordDownloadCompleteAsync(string downloadId, string clientId, string title,
             string? outputPath = null);
 
         /// <summary>
         /// Record that a download failed.
         /// </summary>
-        Task RecordDownloadFailedAsync(string downloadId, string clientId, string title, 
+        Task RecordDownloadFailedAsync(string downloadId, string clientId, string title,
             string? errorMessage = null);
 
         /// <summary>
         /// Record that a download was imported successfully.
         /// Sets the WasImported flag for idempotency checking.
         /// </summary>
-        Task RecordImportedAsync(string downloadId, string clientId, string title, 
+        Task RecordImportedAsync(string downloadId, string clientId, string title,
             Guid? audiobookId = null);
 
         /// <summary>
         /// Record that an import failed and why.
         /// Used to populate import error details for user visibility.
         /// </summary>
-        Task RecordImportFailedAsync(string downloadId, string clientId, string title, 
+        Task RecordImportFailedAsync(string downloadId, string clientId, string title,
             string? errorMessage = null);
 
         /// <summary>

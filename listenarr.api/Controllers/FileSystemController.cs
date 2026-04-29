@@ -1,4 +1,4 @@
-﻿/*
+/*
  * Listenarr - Audiobook Management System
  * Copyright (C) 2024-2026 Listenarr Contributors
  * 
@@ -65,7 +65,7 @@ public class FileSystemController : ControllerBase
             {
                 // Get directories and files in the current path
                 var dirInfo = new DirectoryInfo(normalizedPath);
-                
+
                 // Add directories
                 foreach (var dir in dirInfo.GetDirectories())
                 {
@@ -116,7 +116,8 @@ public class FileSystemController : ControllerBase
                 Items = directories.OrderByDescending(d => d.IsDirectory).ThenBy(d => d.Name).ToList()
             };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error browsing directory: {Path}", LogRedaction.SanitizeFilePath(path));
             return StatusCode(500, new { error = "Error browsing directory" });
         }
@@ -155,7 +156,8 @@ public class FileSystemController : ControllerBase
                     System.IO.File.Delete(testFile);
                     isWritable = true;
                 }
-                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                {
                     isWritable = false;
                 }
             }
@@ -170,7 +172,8 @@ public class FileSystemController : ControllerBase
                          "Directory is valid"
             };
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error validating path: {Path}", LogRedaction.SanitizeFilePath(path));
             return new FileSystemValidateResponse
             {
@@ -260,12 +263,13 @@ public class FileSystemController : ControllerBase
                 WillBreakHardlinks = !sameVolume,
                 SourceVolume = sourceRoot,
                 DestVolume = destRoot,
-                Message = sameVolume 
-                    ? "Paths are on the same volume" 
+                Message = sameVolume
+                    ? "Paths are on the same volume"
                     : "âš ï¸ Moving across volumes will break hardlinks and create independent copies"
             });
         }
-        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+        {
             _logger.LogError(ex, "Error checking volume for paths: {Source} -> {Dest}", LogRedaction.SanitizeFilePath(sourcePath), LogRedaction.SanitizeFilePath(destPath));
             return Ok(new VolumeCheckResponse
             {

@@ -119,7 +119,8 @@ namespace Listenarr.Api.Middleware
                                 cookiePrefix = cookieVal.Length <= 8 ? cookieVal : cookieVal.Substring(0, 8);
                             }
                         }
-                        catch (Exception cookieEx) when (cookieEx is not OperationCanceledException && cookieEx is not OutOfMemoryException && cookieEx is not StackOverflowException) {
+                        catch (Exception cookieEx) when (cookieEx is not OperationCanceledException && cookieEx is not OutOfMemoryException && cookieEx is not StackOverflowException)
+                        {
                             _logger?.LogDebug(cookieEx, "Failed reading antiforgery cookie prefix for diagnostics");
                         }
 
@@ -147,13 +148,15 @@ namespace Listenarr.Api.Middleware
                                 if (!string.IsNullOrEmpty(pname)) principalNameMask = pname.Length <= 8 ? pname : pname.Substring(0, 8);
                             }
                         }
-                        catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException) {
+                        catch (Exception ex2) when (ex2 is not OperationCanceledException && ex2 is not OutOfMemoryException && ex2 is not StackOverflowException)
+                        {
                             _logger?.LogDebug(ex2, "Failed capturing principal diagnostics during antiforgery validation failure");
                         }
 
                         _logger?.LogWarning(ex, "Antiforgery validation failed. Method={Method}, Path={Path}, HeaderLength={HeaderLength}, CookieNames={CookieNames}, HeaderPrefix={HeaderPrefix}, CookiePrefix={CookiePrefix}, PrefixesEqual={PrefixesEqual}, PrincipalAuthenticated={PrincipalAuthenticated}, PrincipalNameMask={PrincipalNameMask}, PrincipalClaims={PrincipalClaims}, HasAuthorizationHeader={HasAuthorizationHeader}", method, path, hdrLen, cookieNames, headerPrefix, cookiePrefix, equalPrefixes, principalAuthenticated, principalNameMask, principalClaims, hasAuthorizationHeader);
                     }
-                    catch (Exception logEx) when (logEx is not OperationCanceledException && logEx is not OutOfMemoryException && logEx is not StackOverflowException) {
+                    catch (Exception logEx) when (logEx is not OperationCanceledException && logEx is not OutOfMemoryException && logEx is not StackOverflowException)
+                    {
                         System.Diagnostics.Debug.WriteLine($"AntiforgeryValidationMiddleware logging failed: {logEx.Message}");
                     }
 

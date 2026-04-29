@@ -33,9 +33,17 @@
   justify-content: space-between;
   gap: 1rem;
 }
-.modal-actions-left { display:flex; gap:0.75rem; }
-.modal-actions-right { display:flex; gap:0.75rem; }
-@media (max-width:480px) {
-  .modal-actions { flex-direction: column-reverse; }
+.modal-actions-left {
+  display: flex;
+  gap: 0.75rem;
+}
+.modal-actions-right {
+  display: flex;
+  gap: 0.75rem;
+}
+@media (max-width: 480px) {
+  .modal-actions {
+    flex-direction: column-reverse;
+  }
 }
 </style>

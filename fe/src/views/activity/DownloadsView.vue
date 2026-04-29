@@ -19,7 +19,11 @@
   <div class="downloads-page">
     <div class="downloads-header">
       <h2>Downloads</h2>
-      <button @click="refreshDownloads" :disabled="downloadsStore.isLoading" class="refresh-button btn">
+      <button
+        @click="refreshDownloads"
+        :disabled="downloadsStore.isLoading"
+        class="refresh-button btn"
+      >
         {{ downloadsStore.isLoading ? 'Refreshing...' : 'Refresh' }}
       </button>
     </div>
@@ -81,7 +85,9 @@
         >
           <div
             :class="['downloads-list', { 'is-static': !useVirtualDownloadsList }]"
-            :style="useVirtualDownloadsList ? { transform: `translateY(${topPadding}px)` } : undefined"
+            :style="
+              useVirtualDownloadsList ? { transform: `translateY(${topPadding}px)` } : undefined
+            "
           >
             <div
               v-for="download in visibleDownloads"
@@ -329,7 +335,6 @@ const closeInspect = () => {
   inspectState.value.loading = false
 }
 
- 
 const retryDownload = async () => {
   // For now, just show a message. In a real implementation,
   // you would restart the download

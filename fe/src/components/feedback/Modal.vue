@@ -132,8 +132,12 @@ function vnodeHasDataAttr(nodes: readonly VNode[] | undefined, attr: string): bo
   return false
 }
 
-const hasCustomBody = computed(() => vnodeHasDataAttr(slots.default ? slots.default() : undefined, 'data-modal-body'))
-const hasCustomFooter = computed(() => vnodeHasDataAttr(slots.footer ? slots.footer() : undefined, 'data-modal-footer'))
+const hasCustomBody = computed(() =>
+  vnodeHasDataAttr(slots.default ? slots.default() : undefined, 'data-modal-body'),
+)
+const hasCustomFooter = computed(() =>
+  vnodeHasDataAttr(slots.footer ? slots.footer() : undefined, 'data-modal-footer'),
+)
 
 function detectCustomRegions() {
   const el = contentRef.value
@@ -181,12 +185,16 @@ onUnmounted(() => {
   }
 })
 
-watch(() => props.visible, (v) => {
-  if (v) nextTick().then(() => {
-    ensureHeaderLabel()
-    detectCustomRegions()
-  })
-})
+watch(
+  () => props.visible,
+  (v) => {
+    if (v)
+      nextTick().then(() => {
+        ensureHeaderLabel()
+        detectCustomRegions()
+      })
+  },
+)
 </script>
 
 <style scoped>
@@ -196,7 +204,13 @@ watch(() => props.visible, (v) => {
 .modal-content {
   max-width: 700px; /* default; overridden by global classes */
 }
-.modal-sm { max-width: 420px }
-.modal-md { max-width: 700px }
-.modal-lg { max-width: 1000px }
+.modal-sm {
+  max-width: 420px;
+}
+.modal-md {
+  max-width: 700px;
+}
+.modal-lg {
+  max-width: 1000px;
+}
 </style>

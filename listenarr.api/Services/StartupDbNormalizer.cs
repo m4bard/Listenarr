@@ -59,7 +59,8 @@ namespace Listenarr.Api.Services
             {
                 _logger.LogWarning(ex, "StartupDbNormalizer: operation canceled/timed out; skipping normalization pass");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "StartupDbNormalizer: unexpected error while running normalization");
             }
         }

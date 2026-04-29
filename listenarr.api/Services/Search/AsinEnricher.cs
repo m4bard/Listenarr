@@ -130,7 +130,8 @@ public class AsinEnricher
                                 asinsNeedingFallback.Add(asin);
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             _logger.LogWarning(ex, "Failed to convert OpenLibrary metadata for ASIN {Asin}", asin);
                         }
 
@@ -160,7 +161,9 @@ public class AsinEnricher
                     {
                         asinsNeedingFallback.Add(asin);
                         // Note that this ASIN has no metadata yet
-                        try { candidateDropReasons[asin] = "queued_for_fallback_no_metadata"; } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                        try { candidateDropReasons[asin] = "queued_for_fallback_no_metadata"; }
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                        {
                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                         }
                     }
@@ -187,17 +190,21 @@ public class AsinEnricher
                         // Filter out Kindle Edition ebooks - these are not audiobooks
                         if (_filterPipeline.WouldFilter(enrichedResult, out string? filterReason))
                         {
-                            _logger.LogInformation("Filtering out result: {Title} (ASIN: {Asin}) - Reason: {Reason}", 
+                            _logger.LogInformation("Filtering out result: {Title} (ASIN: {Asin}) - Reason: {Reason}",
                                 enrichedResult.Title, asin, filterReason);
                             await _searchProgressReporter.BroadcastAsync($"Filtered out: {enrichedResult.Title}", asin);
-                            try { candidateDropReasons[asin] = filterReason ?? "filtered"; } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                            try { candidateDropReasons[asin] = filterReason ?? "filtered"; }
+                            catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+                            {
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
                         }
                         else
                         {
                             enriched.Add(enrichedResult);
-                            try { candidateDropReasons[asin] = "enriched_from_metadata"; } catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                            try { candidateDropReasons[asin] = "enriched_from_metadata"; }
+                            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+                            {
                                 System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                             }
                         }
@@ -205,7 +212,9 @@ public class AsinEnricher
                     else
                     {
                         _logger.LogWarning("✗ No metadata obtained for ASIN {Asin} after trying all sources and scraping", asin);
-                        try { candidateDropReasons[asin] = "no_metadata_after_sources"; } catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException) { 
+                        try { candidateDropReasons[asin] = "no_metadata_after_sources"; }
+                        catch (Exception caughtEx_4) when (caughtEx_4 is not OperationCanceledException && caughtEx_4 is not OutOfMemoryException && caughtEx_4 is not StackOverflowException)
+                        {
                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                         }
                     }
@@ -215,7 +224,8 @@ public class AsinEnricher
                     _logger.LogInformation("Metadata enrichment cancelled for ASIN {Asin}", asin);
                     throw;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Metadata enrichment failed for ASIN {Asin}", asin);
                 }
             }));

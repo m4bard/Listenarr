@@ -71,11 +71,11 @@ namespace Listenarr.Api.Tests
             var file1 = Path.Join(_sourceDir, "track1.m4b");
             await File.WriteAllTextAsync(file1, "audio data");
 
-            var settings = new ApplicationSettings 
-            { 
-                OutputPath = _outputRoot, 
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _outputRoot,
                 CompletedFileAction = "Hardlink/Copy",
-                EnableMetadataProcessing = false 
+                EnableMetadataProcessing = false
             };
 
             var provider = BuildImportServiceProvider();
@@ -86,7 +86,7 @@ namespace Listenarr.Api.Tests
 
             // Assert
             Assert.True(results.Any(r => r.Success), "Import should succeed");
-            
+
             var successResult = results.First(r => r.Success);
             Assert.True(File.Exists(successResult.FinalPath), "Destination file should exist");
             Assert.True(File.Exists(file1), "Source file should still exist (hardlink/copy preserves source)");
@@ -99,11 +99,11 @@ namespace Listenarr.Api.Tests
             var file1 = Path.Join(_sourceDir, "track1.m4b");
             await File.WriteAllTextAsync(file1, "audio data");
 
-            var settings = new ApplicationSettings 
-            { 
-                OutputPath = _outputRoot, 
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _outputRoot,
                 CompletedFileAction = "Move",
-                EnableMetadataProcessing = false 
+                EnableMetadataProcessing = false
             };
 
             var provider = BuildImportServiceProvider();
@@ -114,7 +114,7 @@ namespace Listenarr.Api.Tests
 
             // Assert
             Assert.True(results.Any(r => r.Success), "Import should succeed");
-            
+
             var successResult = results.First(r => r.Success);
             Assert.True(File.Exists(successResult.FinalPath), "Destination file should exist");
             Assert.False(File.Exists(file1), "Source file should be removed (moved)");
@@ -127,11 +127,11 @@ namespace Listenarr.Api.Tests
             var file1 = Path.Join(_sourceDir, "track1.m4b");
             await File.WriteAllTextAsync(file1, "audio data");
 
-            var settings = new ApplicationSettings 
-            { 
-                OutputPath = _outputRoot, 
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _outputRoot,
                 CompletedFileAction = "Copy",
-                EnableMetadataProcessing = false 
+                EnableMetadataProcessing = false
             };
 
             var provider = BuildImportServiceProvider();
@@ -142,7 +142,7 @@ namespace Listenarr.Api.Tests
 
             // Assert
             Assert.True(results.Any(r => r.Success), "Import should succeed");
-            
+
             var successResult = results.First(r => r.Success);
             Assert.True(File.Exists(successResult.FinalPath), "Destination file should exist");
             Assert.True(File.Exists(file1), "Source file should still exist (copy preserves source)");
@@ -155,11 +155,11 @@ namespace Listenarr.Api.Tests
             var sourceFile = Path.Join(_sourceDir, "audiobook.m4b");
             await File.WriteAllTextAsync(sourceFile, "single file audio");
 
-            var settings = new ApplicationSettings 
-            { 
-                OutputPath = _outputRoot, 
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _outputRoot,
                 CompletedFileAction = "Hardlink/Copy",
-                EnableMetadataProcessing = false 
+                EnableMetadataProcessing = false
             };
 
             var provider = BuildImportServiceProvider();
@@ -181,11 +181,11 @@ namespace Listenarr.Api.Tests
             var sourceFile = Path.Join(_sourceDir, "audiobook.m4b");
             await File.WriteAllTextAsync(sourceFile, "single file audio");
 
-            var settings = new ApplicationSettings 
-            { 
-                OutputPath = _outputRoot, 
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _outputRoot,
                 CompletedFileAction = "Move",
-                EnableMetadataProcessing = false 
+                EnableMetadataProcessing = false
             };
 
             var provider = BuildImportServiceProvider();
@@ -211,11 +211,11 @@ namespace Listenarr.Api.Tests
             await File.WriteAllTextAsync(file2, "audio2");
             await File.WriteAllTextAsync(file3, "audio3");
 
-            var settings = new ApplicationSettings 
-            { 
-                OutputPath = _outputRoot, 
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _outputRoot,
                 CompletedFileAction = "Hardlink/Copy",
-                EnableMetadataProcessing = false 
+                EnableMetadataProcessing = false
             };
 
             var provider = BuildImportServiceProvider();
@@ -227,7 +227,7 @@ namespace Listenarr.Api.Tests
             // Assert
             var successResults = results.Where(r => r.Success).ToList();
             Assert.True(successResults.Count >= 2, "At least 2 files should import successfully");
-            
+
             foreach (var result in successResults)
             {
                 Assert.True(File.Exists(result.FinalPath), $"Destination {result.FinalPath} should exist");
@@ -246,11 +246,11 @@ namespace Listenarr.Api.Tests
             var file1 = Path.Join(_sourceDir, "track1.m4b");
             await File.WriteAllTextAsync(file1, "audio data");
 
-            var settings = new ApplicationSettings 
-            { 
-                OutputPath = _outputRoot, 
+            var settings = new ApplicationSettings
+            {
+                OutputPath = _outputRoot,
                 CompletedFileAction = "Hardlink/Copy",
-                EnableMetadataProcessing = false 
+                EnableMetadataProcessing = false
             };
 
             var provider = BuildImportServiceProvider();

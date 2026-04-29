@@ -81,7 +81,11 @@
             </span>
           </div>
           <div class="mapping-actions">
-            <button class="btn btn-icon action-edit" title="Edit mapping" @click="handleEdit(mapping)">
+            <button
+              class="btn btn-icon action-edit"
+              title="Edit mapping"
+              @click="handleEdit(mapping)"
+            >
               <PhPencil />
             </button>
             <button
@@ -188,7 +192,22 @@
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { PhWarningCircle, PhX, PhCheckCircle, PhSpinner, PhPlus, PhPencil, PhTrash, PhDesktop, PhArrowDown, PhFolderOpen, PhFlask, PhPlay, PhArrowRight, PhInfo } from '@phosphor-icons/vue'
+import {
+  PhWarningCircle,
+  PhX,
+  PhCheckCircle,
+  PhSpinner,
+  PhPlus,
+  PhPencil,
+  PhTrash,
+  PhDesktop,
+  PhArrowDown,
+  PhFolderOpen,
+  PhFlask,
+  PhPlay,
+  PhArrowRight,
+  PhInfo,
+} from '@phosphor-icons/vue'
 import RemotePathMappingForm from './RemotePathMappingForm.vue'
 import { showConfirm } from '@/composables/useConfirm'
 import type { RemotePathMapping, TranslatePathResponse } from '@/types'
@@ -696,7 +715,7 @@ onMounted(() => {
 .btn-primary:hover:not(:disabled) {
   background-color: var(--brand-700);
   transform: translateY(-1px);
-} 
+}
 
 /* Button color variants centralized in `src/assets/modals.css` */
 

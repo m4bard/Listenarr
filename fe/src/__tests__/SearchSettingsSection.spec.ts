@@ -25,7 +25,8 @@ describe('SearchSettingsSection', () => {
   })
 
   it('emits update:settings for checkboxes and numeric inputs', async () => {
-    const { default: SearchSettingsSection } = await import('@/components/settings/SearchSettingsSection.vue')
+    const { default: SearchSettingsSection } =
+      await import('@/components/settings/SearchSettingsSection.vue')
     const wrapper = mount(SearchSettingsSection, {
       props: { settings: { enableOpenLibrarySearch: false } },
       global: { components: { Checkbox } },
@@ -33,8 +34,8 @@ describe('SearchSettingsSection', () => {
 
     const checks = wrapper.findAll('input[type="checkbox"]')
     await checks[0].setValue(true)
-    const last = wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
+    const last =
+      wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
     expect(last.enableOpenLibrarySearch).toBe(true)
-
   })
 })

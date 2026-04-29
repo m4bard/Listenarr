@@ -77,11 +77,7 @@
           :class="['wanted-body', { 'is-static': !useVirtualWantedList }]"
           :style="useVirtualWantedList ? { transform: `translateY(${topPadding}px)` } : undefined"
         >
-          <div
-            v-for="item in visibleWanted"
-            :key="item.id"
-            class="wanted-row"
-          >
+          <div v-for="item in visibleWanted" :key="item.id" class="wanted-row">
             <div class="col-poster">
               <img
                 class="row-poster"
@@ -97,20 +93,30 @@
                 <span v-if="hasActiveDownload(item)" class="download-indicator" title="Downloading">
                   <PhDownloadSimple :size="14" weight="fill" />
                 </span>
-                <RouterLink :to="`/audiobooks/${item.id}`" class="title-link">{{ safeText(item.title) }}</RouterLink>
+                <RouterLink :to="`/audiobooks/${item.id}`" class="title-link">{{
+                  safeText(item.title)
+                }}</RouterLink>
               </div>
             </div>
             <div class="col-author">
               <template v-if="item.authors?.length">
                 <template v-for="(a, i) in item.authors" :key="a">
-                  <RouterLink :to="`/collection/author/${encodeURIComponent(a)}`" class="author-link">{{ safeText(a) }}</RouterLink><span v-if="i < item.authors.length - 1">, </span>
+                  <RouterLink
+                    :to="`/collection/author/${encodeURIComponent(a)}`"
+                    class="author-link"
+                    >{{ safeText(a) }}</RouterLink
+                  ><span v-if="i < item.authors.length - 1">, </span>
                 </template>
               </template>
               <span v-else class="author-text">-</span>
             </div>
             <div class="col-series">
               <span v-if="item.series" class="series-text">
-                <RouterLink :to="`/collection/series/${encodeURIComponent(item.series)}`" class="series-link">{{ safeText(item.series) }}</RouterLink><span v-if="item.seriesNumber"> #{{ item.seriesNumber }}</span>
+                <RouterLink
+                  :to="`/collection/series/${encodeURIComponent(item.series)}`"
+                  class="series-link"
+                  >{{ safeText(item.series) }}</RouterLink
+                ><span v-if="item.seriesNumber"> #{{ item.seriesNumber }}</span>
               </span>
               <span v-else class="muted">-</span>
             </div>
@@ -160,7 +166,11 @@
     <EmptyState
       v-else
       :title="filterText ? 'No Matching Audiobooks' : 'No Wanted Audiobooks'"
-      :message="filterText ? 'No wanted audiobooks match your filter.' : 'All your monitored audiobooks have files!'"
+      :message="
+        filterText
+          ? 'No wanted audiobooks match your filter.'
+          : 'All your monitored audiobooks have files!'
+      "
     >
       <template #icon>
         <PhCheckCircle :size="48" />
@@ -587,7 +597,9 @@ const markAsSkipped = async (item: Audiobook) => {
   padding: 0.5rem 2rem 0.5rem 2.25rem;
   font-size: 0.875rem;
   width: 220px;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
 }
 
 .filter-input::placeholder {
@@ -643,7 +655,9 @@ const markAsSkipped = async (item: Audiobook) => {
 .wanted-header,
 .wanted-row {
   display: grid;
-  grid-template-columns: 48px minmax(0, 28fr) minmax(0, 20fr) minmax(0, 18fr) minmax(0, 10fr) minmax(0, 12fr) minmax(0, 12fr);
+  grid-template-columns:
+    48px minmax(0, 28fr) minmax(0, 20fr) minmax(0, 18fr) minmax(0, 10fr)
+    minmax(0, 12fr) minmax(0, 12fr);
   align-items: center;
 }
 
@@ -755,8 +769,13 @@ const markAsSkipped = async (item: Audiobook) => {
 }
 
 @keyframes bounce {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-2px); }
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2px);
+  }
 }
 
 /* Author cell */
@@ -834,8 +853,13 @@ const markAsSkipped = async (item: Audiobook) => {
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 .status-badge.failed {
@@ -857,8 +881,12 @@ const markAsSkipped = async (item: Audiobook) => {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* Actions cell */

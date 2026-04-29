@@ -19,7 +19,9 @@
   <div class="rename-path-diff">
     <div class="rename-path-item">
       <span class="rename-path-label">Current</span>
-      <span class="rename-path-value rename-path-value--current">{{ oldPath || 'No current path' }}</span>
+      <span class="rename-path-value rename-path-value--current">{{
+        oldPath || 'No current path'
+      }}</span>
     </div>
 
     <div class="rename-path-item rename-path-item--arrow" aria-hidden="true">

@@ -138,7 +138,7 @@ UPDATE QualityProfiles SET PreferredLanguages_migr =
     ELSE '[' || char(34) || replace(replace(PreferredLanguages, '||', '|'), '|', char(34) || ',' || char(34)) || char(34) || ']'
   END
 WHERE PreferredLanguages IS NOT NULL AND json_valid(PreferredLanguages)=0;
-" );
+");
 
             // Ensure staging columns are non-null so EF materialization doesn't encounter NULLs
             // after we rename staging columns to the originals. This sets empty JSON arrays
@@ -150,7 +150,7 @@ UPDATE QualityProfiles SET PreferredWords_migr = '[]' WHERE PreferredWords_migr 
 UPDATE QualityProfiles SET MustNotContain_migr = '[]' WHERE MustNotContain_migr IS NULL;
 UPDATE QualityProfiles SET MustContain_migr = '[]' WHERE MustContain_migr IS NULL;
 UPDATE QualityProfiles SET PreferredLanguages_migr = '[]' WHERE PreferredLanguages_migr IS NULL;
-" );
+");
 
             // Use raw ALTER TABLE statements to drop original columns and rename staging columns.
             // This issues direct SQL so the SQLite engine performs the operations (requires
@@ -181,17 +181,17 @@ ALTER TABLE QualityProfiles RENAME COLUMN PreferredWords_migr TO PreferredWords;
 ALTER TABLE QualityProfiles RENAME COLUMN MustNotContain_migr TO MustNotContain;
 ALTER TABLE QualityProfiles RENAME COLUMN MustContain_migr TO MustContain;
 ALTER TABLE QualityProfiles RENAME COLUMN PreferredLanguages_migr TO PreferredLanguages;
-" );
+");
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-          // Down is intentionally left empty because the Up migration performs non-destructive
-          // in-place updates for SQLite (staging columns are left in place). Reverting this
-          // operation reliably would require recreating original column contents from backups
-          // or dropping/renaming columns which SQLite migrations do not support via EF.
-          // If you need a reversible path, restore from a DB backup before applying this migration.
+            // Down is intentionally left empty because the Up migration performs non-destructive
+            // in-place updates for SQLite (staging columns are left in place). Reverting this
+            // operation reliably would require recreating original column contents from backups
+            // or dropping/renaming columns which SQLite migrations do not support via EF.
+            // If you need a reversible path, restore from a DB backup before applying this migration.
         }
     }
 }

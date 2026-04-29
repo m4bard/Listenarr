@@ -208,7 +208,7 @@ namespace Listenarr.Api.Tests
                     PublishedDate = "2010-01-21T00:05:36Z",
                     DownloadType = "Torrent"
                 }
-            });            var logger = Mock.Of<ILogger<SearchController>>();
+            }); var logger = Mock.Of<ILogger<SearchController>>();
             var mockAudibleService = new FakeAudibleService(new Listenarr.Api.Services.AudibleSearchResponse
             {
                 Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudibleSearchResult>
@@ -237,7 +237,8 @@ namespace Listenarr.Api.Tests
 
             // Additional test: SearchByApi returns Prowlarr-like DTO for MyAnonamouse
             var mockService2 = new Mock<ISearchService>();
-            var mamResult = new Listenarr.Domain.Models.IndexerSearchResult {
+            var mamResult = new Listenarr.Domain.Models.IndexerSearchResult
+            {
                 Id = "28972",
                 Title = "Frank Herbert - Collection by Frank Herbert [ENG / MP3] [VIP]",
                 Size = 3972844800,
@@ -382,7 +383,7 @@ namespace Listenarr.Api.Tests
                 Results = new System.Collections.Generic.List<Listenarr.Api.Services.AudibleSearchResult>
                 {
                     new Listenarr.Api.Services.AudibleSearchResult { Asin = "BHP1", Title = "Harry Potter and the Test", Language = "english" },
-                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "BHP2", Title = "Harry Potter en Français", Language = "french" }
+                    new Listenarr.Api.Services.AudibleSearchResult { Asin = "BHP2", Title = "Harry Potter en FranÃ§ais", Language = "french" }
                 },
                 TotalResults = 2
             };
@@ -556,7 +557,7 @@ namespace Listenarr.Api.Tests
             mockAudibleService.Setup(a => a.SearchBooksAsync(It.IsAny<string>(), It.IsAny<int>(), It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string?>())).ReturnsAsync(sampleResponse);
 
             var mockMetadataService = new Mock<IAudiobookMetadataService>();
-            
+
 
             var controller = new SearchController(mockService.Object, logger, mockAudibleService.Object, mockMetadataService.Object);
             controller.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };

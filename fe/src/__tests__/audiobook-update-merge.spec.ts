@@ -28,7 +28,8 @@ describe('AudiobookUpdate SignalR merge', () => {
 
   test('merges server-provided audiobook DTO into store item', async () => {
     const callbacks: Array<(a: Audiobook) => void> = []
-    const spy = vi.spyOn(signalRService, 'onAudiobookUpdate')
+    const spy = vi
+      .spyOn(signalRService, 'onAudiobookUpdate')
       .mockImplementation((cb?: (...args: unknown[]) => void) => {
         if (cb) callbacks.push(cb as (a: Audiobook) => void)
         return () => {}
@@ -36,7 +37,12 @@ describe('AudiobookUpdate SignalR merge', () => {
 
     const store = useLibraryStore()
     store.audiobooks = [
-      { id: 1, title: 'Local', basePath: '/old/path', files: [{ id: 10, path: '/old/path/file.m4b' }] },
+      {
+        id: 1,
+        title: 'Local',
+        basePath: '/old/path',
+        files: [{ id: 10, path: '/old/path/file.m4b' }],
+      },
     ] as Audiobook[]
 
     // Simulate server pushing a DTO with new basePath and files

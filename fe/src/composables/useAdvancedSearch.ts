@@ -74,10 +74,10 @@ export const useAdvancedSearch = () => {
     const p = advancedSearchParams.value
     return Boolean(
       (p.title && p.title.trim()) ||
-        (p.author && p.author.trim()) ||
-        (p.series && p.series.trim()) ||
-        (p.isbn && p.isbn.trim()) ||
-        (p.asin && p.asin.trim()),
+      (p.author && p.author.trim()) ||
+      (p.series && p.series.trim()) ||
+      (p.isbn && p.isbn.trim()) ||
+      (p.asin && p.asin.trim()),
     )
   })
 

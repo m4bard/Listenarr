@@ -28,8 +28,7 @@ if (!(apiService as unknown as Record<string, unknown>).getEnabledIndexers) {
     async () => []
 }
 if (!(apiService as unknown as Record<string, unknown>).searchByApi) {
-  ;(apiService as unknown as { searchByApi: () => Promise<unknown[]> }).searchByApi = async () =>
-    []
+  ;(apiService as unknown as { searchByApi: () => Promise<unknown[]> }).searchByApi = async () => []
 }
 if (!(apiService as unknown as Record<string, unknown>).getDefaultQualityProfile) {
   ;(
@@ -133,7 +132,7 @@ describe('ManualSearchModal.vue', () => {
     await nextTick()
 
     // Debug: show rendered HTML to investigate missing anchor
-     
+
     console.log(wrapper.html())
     const anchor = wrapper.find('a.title-text')
     expect(anchor.exists()).toBe(true)

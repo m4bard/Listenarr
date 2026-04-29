@@ -49,7 +49,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
-            
+
             var metadata = new AudioMetadata
             {
                 Title = "The Martian",
@@ -85,7 +85,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
-            
+
             var metadata = new AudioMetadata
             {
                 Title = "The Stand",
@@ -131,9 +131,10 @@ namespace Listenarr.Api.Tests
                     });
 
                 var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
-                
+
                 var metadata = new AudioMetadata
-                {  Title = "The Gunslinger",
+                {
+                    Title = "The Gunslinger",
                     Artist = "Stephen King",
                     Series = "The Dark Tower",
                     SeriesPosition = 1
@@ -146,21 +147,21 @@ namespace Listenarr.Api.Tests
                     metadata.DiscNumber = i;
                     var path = await service.GenerateFilePathAsync(metadata, ".m4b");
                     paths.Add(path);
-                    
+
                     // Create the actual directory structure to verify it's valid
                     var directory = Path.GetDirectoryName(path);
                     if (!string.IsNullOrEmpty(directory))
                     {
                         Directory.CreateDirectory(directory);
                     }
-                    
+
                     // Write a test file
                     await File.WriteAllTextAsync(path, $"Test content for disk {i}");
                 }
 
                 // Assert - verify filesystem was created correctly
                 Assert.Equal(3, paths.Count);
-                
+
                 // All files should exist
                 foreach (var path in paths)
                 {
@@ -203,7 +204,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
-            
+
             var metadata = new AudioMetadata
             {
                 Title = "Foundation",
@@ -236,7 +237,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
-            
+
             var metadata = new AudioMetadata
             {
                 Title = "The Way of Kings",
@@ -272,7 +273,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
-            
+
             var metadata = new AudioMetadata
             {
                 Title = "Dune",
@@ -306,7 +307,7 @@ namespace Listenarr.Api.Tests
                 });
 
             var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
-            
+
             var metadata = new AudioMetadata
             {
                 Title = "The Lord of the Rings",

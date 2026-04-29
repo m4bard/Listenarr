@@ -58,33 +58,33 @@ namespace Listenarr.Api.Services.Adapters
             {
                 var baseUrl = DownloadClientUriBuilder.BuildAuthority(client);
 
-                    // Prefer the IHttpClientFactory-created client so unit tests can inject
-                    // a DelegatingHandler mock. Fall back to a local cookie-enabled client
-                    // only when required for real-world qBittorrent auth flows.
-                    HttpClient? http = null;
-                    bool disposeHttp = false;
-                    try
+                // Prefer the IHttpClientFactory-created client so unit tests can inject
+                // a DelegatingHandler mock. Fall back to a local cookie-enabled client
+                // only when required for real-world qBittorrent auth flows.
+                HttpClient? http = null;
+                bool disposeHttp = false;
+                try
+                {
+                    http = _httpFactory?.CreateClient(client.Id ?? "qbittorrent");
+                    if (http == null)
                     {
-                        http = _httpFactory?.CreateClient(client.Id ?? "qbittorrent");
-                        if (http == null)
+                        var cookieJar = new CookieContainer();
+                        var handler = new HttpClientHandler
                         {
-                            var cookieJar = new CookieContainer();
-                            var handler = new HttpClientHandler
-                            {
-                                CookieContainer = cookieJar,
-                                UseCookies = true,
-                                AutomaticDecompression = DecompressionMethods.All
-                            };
-                            http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
-                            disposeHttp = true;
-                        }
-                        else
-                        {
-                            // ensure a reasonable timeout for factory clients
-                            http.Timeout = TimeSpan.FromSeconds(30);
-                        }
+                            CookieContainer = cookieJar,
+                            UseCookies = true,
+                            AutomaticDecompression = DecompressionMethods.All
+                        };
+                        http = new HttpClient(handler) { Timeout = TimeSpan.FromSeconds(30) };
+                        disposeHttp = true;
+                    }
+                    else
+                    {
+                        // ensure a reasonable timeout for factory clients
+                        http.Timeout = TimeSpan.FromSeconds(30);
+                    }
 
-                        using var resp = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                    using var resp = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
                     if (resp.IsSuccessStatusCode)
                         return (true, "Successfully connected to qBittorrent.");
 
@@ -118,82 +118,87 @@ namespace Listenarr.Api.Services.Adapters
                             }
                             using (loginResp)
                             {
-                            if (loginResp.IsSuccessStatusCode)
-                            {
-                                // Try to detect cookies via Set-Cookie header when using factory clients
-                                try
+                                if (loginResp.IsSuccessStatusCode)
                                 {
-                                    if (loginResp.Headers.TryGetValues("Set-Cookie", out var cookieHeaders))
-                                    {
-                                        _logger.LogDebug("qBittorrent TestConnection: login returned Set-Cookie header for client {ClientId}", LogRedaction.SanitizeText(client.Id));
-                                    }
-                                    else
-                                    {
-                                        _logger.LogDebug("qBittorrent TestConnection: login succeeded but no Set-Cookie header present for client {ClientId}", LogRedaction.SanitizeText(client.Id));
-                                    }
-                                }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                    _logger.LogDebug(ex, "qBittorrent TestConnection: unable to inspect login response headers for client {ClientId}", LogRedaction.SanitizeText(client.Id));
-                                }
-
-                                // Retry using the same client first (this covers unit tests which
-                                // simulate stateful behavior on the mocked handler). If the retry
-                                // fails and we created a factory client that doesn't handle cookies,
-                                // fall back to a local cookie-enabled client attempt.
-                                using var retry = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
-                                if (retry.IsSuccessStatusCode)
-                                    return (true, "Successfully connected to qBittorrent.");
-
-                                _logger.LogWarning("qBittorrent TestConnection: authenticated but subsequent request returned {Status} for client {ClientId}", retry.StatusCode, LogRedaction.SanitizeText(client.Id));
-
-                                // If we used a factory client, try a cookie-enabled HttpClient as a last resort
-                                if (!disposeHttp)
-                                {
+                                    // Try to detect cookies via Set-Cookie header when using factory clients
                                     try
                                     {
-                                        var cookieJar2 = new CookieContainer();
-                                        var handler2 = new HttpClientHandler
+                                        if (loginResp.Headers.TryGetValues("Set-Cookie", out var cookieHeaders))
                                         {
-                                            CookieContainer = cookieJar2,
-                                            UseCookies = true,
-                                            AutomaticDecompression = DecompressionMethods.All
-                                        };
+                                            _logger.LogDebug("qBittorrent TestConnection: login returned Set-Cookie header for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                                        }
+                                        else
+                                        {
+                                            _logger.LogDebug("qBittorrent TestConnection: login succeeded but no Set-Cookie header present for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                                        }
+                                    }
+                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                    {
+                                        _logger.LogDebug(ex, "qBittorrent TestConnection: unable to inspect login response headers for client {ClientId}", LogRedaction.SanitizeText(client.Id));
+                                    }
 
-                                        using var local = new HttpClient(handler2) { Timeout = TimeSpan.FromSeconds(30) };
-                                        using var localLoginContent = new FormUrlEncodedContent(new[]
+                                    // Retry using the same client first (this covers unit tests which
+                                    // simulate stateful behavior on the mocked handler). If the retry
+                                    // fails and we created a factory client that doesn't handle cookies,
+                                    // fall back to a local cookie-enabled client attempt.
+                                    using var retry = await http.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                                    if (retry.IsSuccessStatusCode)
+                                        return (true, "Successfully connected to qBittorrent.");
+
+                                    _logger.LogWarning("qBittorrent TestConnection: authenticated but subsequent request returned {Status} for client {ClientId}", retry.StatusCode, LogRedaction.SanitizeText(client.Id));
+
+                                    // If we used a factory client, try a cookie-enabled HttpClient as a last resort
+                                    if (!disposeHttp)
+                                    {
+                                        try
                                         {
+                                            var cookieJar2 = new CookieContainer();
+                                            var handler2 = new HttpClientHandler
+                                            {
+                                                CookieContainer = cookieJar2,
+                                                UseCookies = true,
+                                                AutomaticDecompression = DecompressionMethods.All
+                                            };
+
+                                            using var local = new HttpClient(handler2) { Timeout = TimeSpan.FromSeconds(30) };
+                                            using var localLoginContent = new FormUrlEncodedContent(new[]
+                                            {
                                             new KeyValuePair<string, string>("username", client.Username),
                                             new KeyValuePair<string, string>("password", client.Password)
                                         });
 
-                                        using var localLogin = await local.PostAsync($"{baseUrl}/api/v2/auth/login", localLoginContent, ct);
-                                        if (localLogin.IsSuccessStatusCode)
+                                            using var localLogin = await local.PostAsync($"{baseUrl}/api/v2/auth/login", localLoginContent, ct);
+                                            if (localLogin.IsSuccessStatusCode)
+                                            {
+                                                using var final = await local.GetAsync($"{baseUrl}/api/v2/app/version", ct);
+                                                if (final.IsSuccessStatusCode)
+                                                    return (true, "Successfully connected to qBittorrent.");
+                                            }
+                                        }
+                                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
                                         {
-                                            using var final = await local.GetAsync($"{baseUrl}/api/v2/app/version", ct);
-                                            if (final.IsSuccessStatusCode)
-                                                return (true, "Successfully connected to qBittorrent.");
+                                            _logger.LogDebug(ex, "qBittorrent TestConnection: fallback local login attempt failed for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                                         }
                                     }
-                                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
-                                        _logger.LogDebug(ex, "qBittorrent TestConnection: fallback local login attempt failed for client {ClientId}", LogRedaction.SanitizeText(client.Id));
-                                    }
-                                }
 
-                                return (false, "qBittorrent: Connection to download client successful but could not authenticate. Please check username/password.");
-                            }
-                            else
-                            {
-                                var body = string.Empty;
-                                try { body = await loginResp.Content.ReadAsStringAsync(ct); } catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
-                                    System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    return (false, "qBittorrent: Connection to download client successful but could not authenticate. Please check username/password.");
                                 }
-                                var redacted = LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
-                                _logger.LogWarning("qBittorrent TestConnection: login failed with status {Status} for client {ClientId} - {Body}", loginResp.StatusCode, LogRedaction.SanitizeText(client.Id), redacted);
-                                return (false, "qBittorrent: Connection to download client successful but could not authenticate. Please check username/password.");
-                            }
+                                else
+                                {
+                                    var body = string.Empty;
+                                    try { body = await loginResp.Content.ReadAsStringAsync(ct); }
+                                    catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                                    {
+                                        System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
+                                    }
+                                    var redacted = LogRedaction.RedactText(body, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { client.Password ?? string.Empty }));
+                                    _logger.LogWarning("qBittorrent TestConnection: login failed with status {Status} for client {ClientId} - {Body}", loginResp.StatusCode, LogRedaction.SanitizeText(client.Id), redacted);
+                                    return (false, "qBittorrent: Connection to download client successful but could not authenticate. Please check username/password.");
+                                }
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             _logger.LogDebug(ex, "qBittorrent TestConnection login attempt failed");
                             return (false, "Connection failed.");
                         }
@@ -214,23 +219,26 @@ namespace Listenarr.Api.Services.Adapters
                     }
 
                     return (false, $"qBittorrent: network error ({resp.StatusCode})");
-                    }
-                    finally
+                }
+                finally
+                {
+                    if (disposeHttp)
                     {
-                        if (disposeHttp)
+                        try { http?.Dispose(); }
+                        catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
                         {
-                            try { http?.Dispose(); } catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
-                                System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
-                            }
+                            System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                         }
                     }
                 }
+            }
             catch (TaskCanceledException tce)
             {
                 _logger.LogDebug(tce, "qBittorrent TestConnection timed out");
                 return (false, "Connection timed out.");
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogDebug(ex, "qBittorrent TestConnection failed");
                 return (false, "Connection failed.");
             }
@@ -313,7 +321,8 @@ namespace Listenarr.Api.Services.Adapters
                                 }
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             _logger.LogDebug(ex, "Failed to parse qBittorrent 'before' torrents list (non-fatal)");
                         }
                     }
@@ -433,7 +442,8 @@ namespace Listenarr.Api.Services.Adapters
                                 }
                             }
                         }
-                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                        catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                        {
                             _logger.LogDebug(ex, "Failed to parse qBittorrent 'after' torrents list (non-fatal)");
                         }
                     }
@@ -482,7 +492,8 @@ namespace Listenarr.Api.Services.Adapters
 
                 return detectedHash;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "qBittorrent AddAsync failed for client {ClientId}", LogRedaction.SanitizeText(client.Id));
                 throw;
             }
@@ -650,7 +661,8 @@ namespace Listenarr.Api.Services.Adapters
                 _logger.LogInformation("Removed torrent {Id} from qBittorrent (deleteFiles={DeleteFiles})", LogRedaction.SanitizeText(id), deleteFiles);
                 return true;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error removing torrent from qBittorrent: {Id}", LogRedaction.SanitizeText(id));
                 return false;
             }
@@ -791,7 +803,8 @@ namespace Listenarr.Api.Services.Adapters
                     });
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Error getting qBittorrent queue - client may be unreachable");
             }
 
@@ -992,7 +1005,8 @@ namespace Listenarr.Api.Services.Adapters
                     });
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Error getting qBittorrent items - client may be unreachable");
             }
 
@@ -1162,10 +1176,11 @@ namespace Listenarr.Api.Services.Adapters
 
                 // Apply remote path mapping
                 result.OutputPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
-                
+
                 _logger.LogInformation("Resolved import path for {Hash}: {Path}", hash, result.OutputPath);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error resolving import item for torrent {Hash}", hash);
             }
 
@@ -1289,10 +1304,11 @@ namespace Listenarr.Api.Services.Adapters
                 {
                     result.ContentPath = await _pathMappingService.TranslatePathAsync(client.Id, outputPath);
                 }
-                
+
                 _logger.LogInformation("Resolved import path for {Hash}: {Path}", hash, result.ContentPath);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error resolving import item for torrent {Hash}", hash);
             }
 

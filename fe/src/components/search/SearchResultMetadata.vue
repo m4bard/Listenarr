@@ -71,7 +71,12 @@ const props = withDefaults(defineProps<Props>(), {
 const hasAnyMetadata = computed(() => {
   // Check if any metadata is present
   return (
-    props.publisher || props.publishedDate || props.publishYear || props.asin || props.isbn || props.openLibraryId
+    props.publisher ||
+    props.publishedDate ||
+    props.publishYear ||
+    props.asin ||
+    props.isbn ||
+    props.openLibraryId
   )
 })
 </script>

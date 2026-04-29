@@ -60,6 +60,14 @@ function select() {
 
 <style scoped>
 /* Visuals moved to global modal stylesheet to ensure consistency across modals. Keep minimal layout helpers here. */
-.radio-group { display: flex; flex-direction: column; }
-.radio-content { display:flex; flex-direction:column; gap:0.25rem; flex:1 }
+.radio-group {
+  display: flex;
+  flex-direction: column;
+}
+.radio-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  flex: 1;
+}
 </style>

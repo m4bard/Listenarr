@@ -23,13 +23,21 @@ export interface LibraryImportSearchCandidate {
   detectedAsin?: string
 }
 
-export function buildLibraryImportFallbackTitle(item: Pick<LibraryImportSearchCandidate, 'fullPath' | 'folderName'>): string {
-  const filenameStem = item.fullPath.replace(/\\/g, '/').split('/').pop()?.replace(/\.[^.]+$/, '') ?? ''
+export function buildLibraryImportFallbackTitle(
+  item: Pick<LibraryImportSearchCandidate, 'fullPath' | 'folderName'>,
+): string {
+  const filenameStem =
+    item.fullPath
+      .replace(/\\/g, '/')
+      .split('/')
+      .pop()
+      ?.replace(/\.[^.]+$/, '') ?? ''
   const numericMatch = /\((\d+)\)\s*$/.exec(filenameStem)
   const stemBase = filenameStem.replace(/\s*\(\d+\)\s*$/, '').trim()
-  const base = stemBase && stemBase.toLowerCase() !== item.folderName.toLowerCase()
-    ? filenameStem
-    : item.folderName
+  const base =
+    stemBase && stemBase.toLowerCase() !== item.folderName.toLowerCase()
+      ? filenameStem
+      : item.folderName
 
   if (numericMatch) {
     return `${base.replace(/\s*\(\d+\)\s*$/, '').trim()} ${numericMatch[1]}`

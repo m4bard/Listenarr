@@ -39,48 +39,48 @@ namespace Listenarr.Api.Tests
 {
     public class IndexersNewznabParsingTests
     {
-      private static SearchService CreateSearchService(HttpClient? httpClient = null)
-      {
-        var client = httpClient ?? new HttpClient();
-        var configuration = Mock.Of<IConfigurationService>();
-        var logger = NullLogger<SearchService>.Instance;
-        var openLibraryService = Mock.Of<IOpenLibraryService>();
-        var imageCache = Mock.Of<IImageCacheService>();
-        var hubContext = Mock.Of<IHubContext<DownloadHub>>();
-        var audible = new AudibleService(new HttpClient(), NullLogger<AudibleService>.Instance);
-        var audnexus = new AudnexusService(new HttpClient(), NullLogger<AudnexusService>.Instance);
-        var converters = new MetadataConverters(imageCache, NullLogger<MetadataConverters>.Instance);
-        var merger = new MetadataMerger(NullLogger<MetadataMerger>.Instance);
-        var progress = new SearchProgressReporter(null, NullLogger<SearchProgressReporter>.Instance);
-        var pipeline = new SearchResultFilterPipeline(Enumerable.Empty<ISearchResultFilter>(), NullLogger<SearchResultFilterPipeline>.Instance);
-        var coordinator = new MetadataStrategyCoordinator(Enumerable.Empty<IMetadataStrategy>(), NullLogger<MetadataStrategyCoordinator>.Instance);
-        var collector = new AsinCandidateCollector(NullLogger<AsinCandidateCollector>.Instance, openLibraryService, converters, progress);
-        var enricher = new AsinEnricher(NullLogger<AsinEnricher>.Instance, coordinator, converters, pipeline, progress);
-        var scorer = new SearchResultScorer(NullLogger<SearchResultScorer>.Instance);
-        var handler = new AsinSearchHandler(NullLogger<AsinSearchHandler>.Instance, configuration, audible, Mock.Of<IAudnexusService>(), converters, progress);
+        private static SearchService CreateSearchService(HttpClient? httpClient = null)
+        {
+            var client = httpClient ?? new HttpClient();
+            var configuration = Mock.Of<IConfigurationService>();
+            var logger = NullLogger<SearchService>.Instance;
+            var openLibraryService = Mock.Of<IOpenLibraryService>();
+            var imageCache = Mock.Of<IImageCacheService>();
+            var hubContext = Mock.Of<IHubContext<DownloadHub>>();
+            var audible = new AudibleService(new HttpClient(), NullLogger<AudibleService>.Instance);
+            var audnexus = new AudnexusService(new HttpClient(), NullLogger<AudnexusService>.Instance);
+            var converters = new MetadataConverters(imageCache, NullLogger<MetadataConverters>.Instance);
+            var merger = new MetadataMerger(NullLogger<MetadataMerger>.Instance);
+            var progress = new SearchProgressReporter(null, NullLogger<SearchProgressReporter>.Instance);
+            var pipeline = new SearchResultFilterPipeline(Enumerable.Empty<ISearchResultFilter>(), NullLogger<SearchResultFilterPipeline>.Instance);
+            var coordinator = new MetadataStrategyCoordinator(Enumerable.Empty<IMetadataStrategy>(), NullLogger<MetadataStrategyCoordinator>.Instance);
+            var collector = new AsinCandidateCollector(NullLogger<AsinCandidateCollector>.Instance, openLibraryService, converters, progress);
+            var enricher = new AsinEnricher(NullLogger<AsinEnricher>.Instance, coordinator, converters, pipeline, progress);
+            var scorer = new SearchResultScorer(NullLogger<SearchResultScorer>.Instance);
+            var handler = new AsinSearchHandler(NullLogger<AsinSearchHandler>.Instance, configuration, audible, Mock.Of<IAudnexusService>(), converters, progress);
 
-        return new SearchService(
-          client,
-          configuration,
-          logger,
-          openLibraryService,
-          imageCache,
-          Mock.Of<IIndexerRepository>(),
-          Mock.Of<IApiConfigurationRepository>(),
-          hubContext,
-          audible,
-          audnexus,
-          converters,
-          merger,
-          progress,
-          pipeline,
-          coordinator,
-          collector,
-          enricher,
-          scorer,
-          handler,
-          Enumerable.Empty<IIndexerSearchProvider>());
-      }
+            return new SearchService(
+              client,
+              configuration,
+              logger,
+              openLibraryService,
+              imageCache,
+              Mock.Of<IIndexerRepository>(),
+              Mock.Of<IApiConfigurationRepository>(),
+              hubContext,
+              audible,
+              audnexus,
+              converters,
+              merger,
+              progress,
+              pipeline,
+              coordinator,
+              collector,
+              enricher,
+              scorer,
+              handler,
+              Enumerable.Empty<IIndexerSearchProvider>());
+        }
 
         [Fact]
         public async Task ParseTorznabResponse_Parses_Filetype_And_Language_Attributes()
@@ -249,7 +249,8 @@ namespace Listenarr.Api.Tests
             db.Indexers.Add(new Indexer { Name = "altHUB2", Url = "https://api.althub.co.za", Implementation = "torznab", Type = "Torrent", IsEnabled = true, EnableInteractiveSearch = true });
             db.SaveChanges();
 
-            var handler = new DelegatingHandlerStub(req => {
+            var handler = new DelegatingHandlerStub(req =>
+            {
                 var rss = "<rss><channel></channel></rss>";
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent(rss) };
             });
@@ -282,7 +283,8 @@ namespace Listenarr.Api.Tests
             db.SaveChanges();
 
             Uri? capturedUri = null;
-            var handler = new DelegatingHandlerStub(req => {
+            var handler = new DelegatingHandlerStub(req =>
+            {
                 capturedUri = req.RequestUri;
                 return new HttpResponseMessage(HttpStatusCode.OK) { Content = new StringContent("[]") };
             });
@@ -526,7 +528,7 @@ namespace Listenarr.Api.Tests
     ""age"": ""3"",
     ""title"": ""Hourly Age Test""
   }
-]"; 
+]";
 
             var indexer = new Indexer { Name = "MyAnonamouse", Url = "https://www.myanonamouse.net", Type = "Torrent", Implementation = "MyAnonamouse" };
             var service = CreateSearchService();
@@ -551,7 +553,7 @@ namespace Listenarr.Api.Tests
     ""snatched"": ""12"",
     ""title"": ""Snatched Test""
   }
-]"; 
+]";
 
             var indexer = new Indexer { Name = "MyAnonamouse", Url = "https://www.myanonamouse.net", Type = "Torrent", Implementation = "MyAnonamouse" };
             var service = CreateSearchService();
@@ -685,12 +687,13 @@ namespace Listenarr.Api.Tests
     ""title"": ""Enrich Test"",
     ""size"": ""1234""
   }
-]"; 
+]";
 
             var indexer = new Indexer { Name = "MyAnonamouse", Url = "https://www.myanonamouse.net", Type = "Torrent", Implementation = "MyAnonamouse", IsEnabled = true, EnableInteractiveSearch = true, AdditionalSettings = "{ \"mam_id\": \"test_mam\", \"mam_options\": { \"enrichResults\": true, \"enrichTopResults\": 1 } }" };
 
             Uri? captured = null;
-            var handler = new DelegatingHandlerStub(req => {
+            var handler = new DelegatingHandlerStub(req =>
+            {
                 captured = req.RequestUri;
                 var path = req.RequestUri?.AbsolutePath ?? string.Empty;
                 if (path.Contains("loadSearchJSONbasic"))

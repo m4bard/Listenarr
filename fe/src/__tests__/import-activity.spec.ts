@@ -31,7 +31,11 @@ describe('import checks', () => {
       const desc = parsed.descriptor
       if (desc.template && desc.template.content) {
         try {
-          compiler.compileTemplate({ source: desc.template.content, filename: 'ActivityView.vue', id: 'ActivityView' })
+          compiler.compileTemplate({
+            source: desc.template.content,
+            filename: 'ActivityView.vue',
+            id: 'ActivityView',
+          })
         } catch (tplErr) {
           console.error('[TEST] template compile error for ActivityView.vue', tplErr)
           throw tplErr

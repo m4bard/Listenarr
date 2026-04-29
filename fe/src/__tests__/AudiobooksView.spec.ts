@@ -327,7 +327,16 @@ describe('AudiobooksView Grouping', () => {
 
     store.fetchLibrary = vi.fn(async () => undefined)
     const wrapper = mount(AudiobooksView, {
-      global: { plugins: [pinia, router], stubs: ['BulkEditModal', 'EditAudiobookModal', 'CustomFilterModal', 'FiltersDropdown', 'CustomSelect'] },
+      global: {
+        plugins: [pinia, router],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'CustomSelect',
+        ],
+      },
     })
     await new Promise((r) => setTimeout(r, 0))
 
@@ -471,7 +480,13 @@ describe('AudiobooksView Grouping', () => {
     const wrapper = mount(AudiobooksView, {
       global: {
         plugins: [pinia, router],
-        stubs: ['BulkEditModal', 'EditAudiobookModal', 'CustomFilterModal', 'FiltersDropdown', 'CustomSelect'],
+        stubs: [
+          'BulkEditModal',
+          'EditAudiobookModal',
+          'CustomFilterModal',
+          'FiltersDropdown',
+          'CustomSelect',
+        ],
       },
     })
 

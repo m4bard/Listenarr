@@ -45,7 +45,7 @@ namespace Listenarr.Api.Services
 
                 // Send toast message (appears as popup)
                 await _hub.Clients.All.SendAsync("ToastMessage", payload);
-                
+
                 // Also send as notification (appears in dropdown/bell icon)
                 var notification = new
                 {
@@ -58,7 +58,8 @@ namespace Listenarr.Api.Services
                 };
                 await _hub.Clients.All.SendAsync("Notification", notification);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to publish toast message: {Title}", title);
             }
         }
@@ -79,7 +80,8 @@ namespace Listenarr.Api.Services
 
                 await _hub.Clients.All.SendAsync("Notification", notification);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to publish notification: {Title}", title);
             }
         }

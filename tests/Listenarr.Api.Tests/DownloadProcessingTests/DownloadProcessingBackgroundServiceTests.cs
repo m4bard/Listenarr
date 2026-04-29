@@ -25,7 +25,7 @@ namespace Listenarr.Api.Tests
             {
                 return;
             }
-            
+
             var remoteSource = GetTempDirectory("dl-remote-source ");
             var localSource = GetTempDirectory("dl-local-source /");
             var localDestination = GetTempDirectory("dl-destination");
@@ -41,7 +41,7 @@ namespace Listenarr.Api.Tests
             var localChapter3 = await GetFileAsync(localSource, "03 - Seconde Fondation Isaac Asimov.mp3");
             var localChapter4 = await GetFileAsync(localSource, "04 - Seconde Fondation Isaac Asimov.mp3");
             var localCompanion = await GetFileAsync(localSource, "Seconde Fondation Isaac Asimov.nfo");
-            
+
             var client = new DownloadClientConfiguration
             {
                 Id = CLIENT_CONFIG_ID,
@@ -64,7 +64,7 @@ namespace Listenarr.Api.Tests
                 },
                 Status = DownloadStatus.Completed
             };
-            
+
             var importItemResolutionServiceMock = new Mock<IImportItemResolutionService>();
             importItemResolutionServiceMock
                 .Setup(r => r.ResolveImportItemAsync(
@@ -104,8 +104,8 @@ namespace Listenarr.Api.Tests
             });
 
             var downloadProcessingBackgroundService = new DownloadProcessingBackgroundService(
-                provider.GetRequiredService<IServiceScopeFactory>(), 
-                new Mock<ILogger<DownloadProcessingBackgroundService>>().Object, 
+                provider.GetRequiredService<IServiceScopeFactory>(),
+                new Mock<ILogger<DownloadProcessingBackgroundService>>().Object,
                 provider.GetRequiredService<IAppMetricsService>());
 
             var method = typeof(DownloadProcessingBackgroundService).GetMethod("EnqueueCompletedDownloadsAsync", BindingFlags.Instance | BindingFlags.NonPublic);

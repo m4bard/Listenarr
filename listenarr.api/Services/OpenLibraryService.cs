@@ -97,7 +97,8 @@ namespace Listenarr.Api.Services
 
                 return isbns.Distinct().ToList();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error getting ISBNs for title: {Title}", title);
                 return new List<string>();
             }
@@ -159,7 +160,8 @@ namespace Listenarr.Api.Services
 
                 return searchResponse ?? new OpenLibrarySearchResponse();
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error searching OpenLibrary for title: {Title}, author: {Author}", LogRedaction.SanitizeText(title), LogRedaction.SanitizeText(author));
                 return new OpenLibrarySearchResponse();
             }

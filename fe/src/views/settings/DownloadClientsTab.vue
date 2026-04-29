@@ -25,7 +25,10 @@
         </h3>
       </div>
 
-      <LoadingState v-if="configStore.isLoading && configStore.downloadClientConfigurations.length === 0" message="Loading download clients..." />
+      <LoadingState
+        v-if="configStore.isLoading && configStore.downloadClientConfigurations.length === 0"
+        message="Loading download clients..."
+      />
 
       <div v-else-if="configStore.downloadClientConfigurations.length === 0" class="empty-state">
         <PhDownloadSimple />
@@ -45,32 +48,32 @@
           <div class="indexer-header">
             <div class="indexer-info">
               <h4>{{ client.name }}</h4>
-              <img 
+              <img
                 v-if="client.type === 'qbittorrent'"
-                src="@/assets/icons/clients/qbittorrent.svg" 
-                alt="qBittorrent" 
-                class="client-type-icon" 
+                src="@/assets/icons/clients/qbittorrent.svg"
+                alt="qBittorrent"
+                class="client-type-icon"
                 title="qBittorrent"
               />
-              <img 
+              <img
                 v-else-if="client.type === 'transmission'"
-                src="@/assets/icons/clients/transmission.svg" 
-                alt="Transmission" 
-                class="client-type-icon" 
+                src="@/assets/icons/clients/transmission.svg"
+                alt="Transmission"
+                class="client-type-icon"
                 title="Transmission"
               />
-              <img 
+              <img
                 v-else-if="client.type === 'sabnzbd'"
-                src="@/assets/icons/clients/sabnzbd.svg" 
-                alt="SABnzbd" 
-                class="client-type-icon" 
+                src="@/assets/icons/clients/sabnzbd.svg"
+                alt="SABnzbd"
+                class="client-type-icon"
                 title="SABnzbd"
               />
-              <img 
+              <img
                 v-else-if="client.type === 'nzbget'"
-                src="@/assets/icons/clients/nzbget.svg" 
-                alt="NZBGet" 
-                class="client-type-icon" 
+                src="@/assets/icons/clients/nzbget.svg"
+                alt="NZBGet"
+                class="client-type-icon"
                 title="NZBGet"
               />
             </div>
@@ -93,7 +96,7 @@
                 class="icon-button action-secondary"
                 :class="{
                   'test-success': lastClientTestResults[client.id] === 'success',
-                  'test-fail': lastClientTestResults[client.id] === 'fail'
+                  'test-fail': lastClientTestResults[client.id] === 'fail',
                 }"
                 title="Test"
                 :disabled="testingClient === client.id"
@@ -106,17 +109,23 @@
                 </template>
                 <template v-else-if="lastClientTestResults[client.id] === 'fail'">
                   <PhXCircle />
-                </template>                <!-- Fall back to persisted client.lastTestSuccessful if available -->
+                </template>
+                <!-- Fall back to persisted client.lastTestSuccessful if available -->
                 <template v-else-if="client.lastTestSuccessful === true">
                   <PhCheckCircle />
                 </template>
                 <template v-else-if="client.lastTestSuccessful === false">
                   <PhXCircle />
-                </template>                <template v-else>
+                </template>
+                <template v-else>
                   <PhCheckCircle />
                 </template>
               </button>
-              <button @click="editClientConfig(client)" class="icon-button action-edit" title="Edit">
+              <button
+                @click="editClientConfig(client)"
+                class="icon-button action-edit"
+                title="Edit"
+              >
                 <PhPencil />
               </button>
               <button
@@ -158,11 +167,7 @@
               <PhLinkSimple />
               <span class="detail-label">Mappings:</span>
               <div class="feature-badges">
-                <Pill
-                  variant="primary"
-                  v-for="m in getMappingsForClient(client)"
-                  :key="m.id"
-                >
+                <Pill variant="primary" v-for="m in getMappingsForClient(client)" :key="m.id">
                   <PhLink />
                   {{ m.name || m.remotePath }}
                 </Pill>
@@ -228,15 +233,29 @@
       <DownloadClientFormModal
         :visible="showClientForm"
         :editing-client="editingClient"
-        @close="showClientForm = false; editingClient = null"
+        @close="
+          () => {
+            showClientForm = false
+            editingClient = null
+          }
+        "
         @saved="configStore.loadDownloadClientConfigurations()"
         @delete="executeDeleteClient"
       />
 
       <!-- Delete Client Confirmation Modal (shared) -->
-      <DeleteConfirmationModal :visible="!!clientToDelete" title="Delete Download Client" @close="clientToDelete = null" @confirm="executeDeleteClient">
+      <DeleteConfirmationModal
+        :visible="!!clientToDelete"
+        title="Delete Download Client"
+        @close="clientToDelete = null"
+        @confirm="executeDeleteClient"
+      >
         <template v-slot>
-          <p>Are you sure you want to delete the download client <strong>{{ clientToDelete?.name }}</strong>?</p>
+          <p>
+            Are you sure you want to delete the download client
+            <strong>{{ clientToDelete?.name }}</strong
+            >?
+          </p>
           <p>This action cannot be undone.</p>
         </template>
       </DeleteConfirmationModal>
@@ -251,11 +270,17 @@
       />
 
       <!-- Delete Remote Path Mapping Confirmation (shared) -->
-      <DeleteConfirmationModal :visible="!!mappingToDelete" title="Delete Remote Path Mapping" @close="mappingToDelete = null" @confirm="executeDeleteMapping">
+      <DeleteConfirmationModal
+        :visible="!!mappingToDelete"
+        title="Delete Remote Path Mapping"
+        @close="mappingToDelete = null"
+        @confirm="executeDeleteMapping"
+      >
         <template v-slot>
           <p>
             Are you sure you want to delete the remote path mapping
-            <strong>{{ mappingToDelete?.name || mappingToDelete?.remotePath }}</strong>?
+            <strong>{{ mappingToDelete?.name || mappingToDelete?.remotePath }}</strong
+            >?
           </p>
           <p>This action cannot be undone.</p>
         </template>
@@ -390,7 +415,11 @@ const testClient = async (client: DownloadClientConfiguration) => {
         configStore.downloadClientConfigurations[index] = result.client
       }
       lastClientTestResults[client.id] = 'success'
-      console.debug('DownloadClientsTab: lastClientTestResults set', client.id, lastClientTestResults[client.id])
+      console.debug(
+        'DownloadClientsTab: lastClientTestResults set',
+        client.id,
+        lastClientTestResults[client.id],
+      )
       await nextTick()
     } else {
       const errorMessage = formatApiError({ response: { data: result.message } })
@@ -400,7 +429,11 @@ const testClient = async (client: DownloadClientConfiguration) => {
         configStore.downloadClientConfigurations[index] = result.client
       }
       lastClientTestResults[client.id] = 'fail'
-      console.debug('DownloadClientsTab: lastClientTestResults set', client.id, lastClientTestResults[client.id])
+      console.debug(
+        'DownloadClientsTab: lastClientTestResults set',
+        client.id,
+        lastClientTestResults[client.id],
+      )
       await nextTick()
     }
   } catch (error) {
@@ -411,7 +444,11 @@ const testClient = async (client: DownloadClientConfiguration) => {
     const errorMessage = formatApiError(error)
     toast.error('Download client test failed', errorMessage)
     lastClientTestResults[client.id] = 'fail'
-    console.debug('DownloadClientsTab: lastClientTestResults set', client.id, lastClientTestResults[client.id])
+    console.debug(
+      'DownloadClientsTab: lastClientTestResults set',
+      client.id,
+      lastClientTestResults[client.id],
+    )
     await nextTick()
   } finally {
     testingClient.value = null
@@ -468,7 +505,9 @@ const closeMappingForm = () => {
   mappingToEdit.value = null
 }
 
-const handleSaveMapping = async (mappingData: Omit<RemotePathMapping, 'id' | 'createdAt' | 'updatedAt'>) => {
+const handleSaveMapping = async (
+  mappingData: Omit<RemotePathMapping, 'id' | 'createdAt' | 'updatedAt'>,
+) => {
   try {
     if (mappingToEdit.value && mappingToEdit.value.id) {
       const updated = await updateRemotePathMapping(mappingToEdit.value.id, mappingData)
@@ -815,8 +854,6 @@ defineExpose({
 /* `.edit-button` and `.delete-button` centralized in `src/assets/buttons.css` */
 
 /* Modal-specific styling moved to shared `modals.css` */
-
-
 
 .btn.btn-primary {
   /* Use centralized primary button styles; per-component overrides removed */

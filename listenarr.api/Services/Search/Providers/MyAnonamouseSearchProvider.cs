@@ -188,61 +188,64 @@ namespace Listenarr.Api.Services.Search.Providers
                     mamRequest.Headers.Add("Cookie", $"mam_id={mamId}");
                 }
 
-                    _logger.LogDebug("MyAnonamouse API URL: {Url}", LogRedaction.RedactText(url, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
+                _logger.LogDebug("MyAnonamouse API URL: {Url}", LogRedaction.RedactText(url, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
 
-                    using var response = await httpClientToUse.SendAsync(mamRequest);
-                    if (!response.IsSuccessStatusCode)
-                    {
-                        _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
-                        var errorContent = await response.Content.ReadAsStringAsync();
-                        _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
-                        return new List<IndexerSearchResult>();
-                    }
+                using var response = await httpClientToUse.SendAsync(mamRequest);
+                if (!response.IsSuccessStatusCode)
+                {
+                    _logger.LogWarning("MyAnonamouse returned status {Status}", response.StatusCode);
+                    var errorContent = await response.Content.ReadAsStringAsync();
+                    _logger.LogWarning("MyAnonamouse error response: {Content}", LogRedaction.RedactText(errorContent, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { indexer.ApiKey ?? string.Empty })));
+                    return new List<IndexerSearchResult>();
+                }
 
-                    // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
-                    try
+                // Capture and persist an updated mam_id cookie if the tracker provided one in Set-Cookie
+                try
+                {
+                    var newMam = MyAnonamouseHelper.TryExtractMamIdFromResponse(response);
+                    if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
                     {
-                        var newMam = MyAnonamouseHelper.TryExtractMamIdFromResponse(response);
-                        if (!string.IsNullOrEmpty(newMam) && !string.Equals(newMam, mamId, StringComparison.Ordinal))
+                        _logger.LogInformation("MyAnonamouse: received updated mam_id from response for indexer {Name}", indexer.Name);
+                        var idx = await _indexerRepository.GetByIdAsync(indexer.Id);
+                        if (idx != null)
                         {
-                            _logger.LogInformation("MyAnonamouse: received updated mam_id from response for indexer {Name}", indexer.Name);
-                            var idx = await _indexerRepository.GetByIdAsync(indexer.Id);
-                            if (idx != null)
-                            {
-                                idx.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(idx.AdditionalSettings, newMam);
-                                await _indexerRepository.UpdateAsync(idx);
-                                mamId = newMam;
-                            }
+                            idx.AdditionalSettings = MyAnonamouseHelper.UpdateMamIdInAdditionalSettings(idx.AdditionalSettings, newMam);
+                            await _indexerRepository.UpdateAsync(idx);
+                            mamId = newMam;
                         }
                     }
-                    catch (Exception exMam) when (exMam is not OperationCanceledException && exMam is not OutOfMemoryException && exMam is not StackOverflowException) {
-                        _logger.LogDebug(exMam, "Failed to persist updated mam_id from MyAnonamouse response");
-                    }
+                }
+                catch (Exception exMam) when (exMam is not OperationCanceledException && exMam is not OutOfMemoryException && exMam is not StackOverflowException)
+                {
+                    _logger.LogDebug(exMam, "Failed to persist updated mam_id from MyAnonamouse response");
+                }
 
-                    var jsonResponse = await response.Content.ReadAsStringAsync();
-                    _logger.LogDebug("MyAnonamouse raw response: {Response}", jsonResponse);
-                    results = ParseMyAnonamouseResponse(jsonResponse, indexer);
+                var jsonResponse = await response.Content.ReadAsStringAsync();
+                _logger.LogDebug("MyAnonamouse raw response: {Response}", jsonResponse);
+                results = ParseMyAnonamouseResponse(jsonResponse, indexer);
 
-                    // Optional per-result enrichment: fetch individual item pages to populate missing fields
-                    try
+                // Optional per-result enrichment: fetch individual item pages to populate missing fields
+                try
+                {
+                    // Respect global IncludeEnrichment and per-indexer MyAnonamouse options
+                    var mamRequestOptions = request?.MyAnonamouse;
+                    var shouldEnrich = request?.IncludeEnrichment == true && mamRequestOptions?.EnrichResults == true;
+                    if (shouldEnrich)
                     {
-                        // Respect global IncludeEnrichment and per-indexer MyAnonamouse options
-                        var mamRequestOptions = request?.MyAnonamouse;
-                        var shouldEnrich = request?.IncludeEnrichment == true && mamRequestOptions?.EnrichResults == true;
-                        if (shouldEnrich)
-                        {
-                            var enrichTop = mamRequestOptions!.EnrichTopResults ?? 3;
-                            await EnrichMyAnonamouseResultsAsync(indexer, results, enrichTop, mamId, httpClientToUse);
-                        }
+                        var enrichTop = mamRequestOptions!.EnrichTopResults ?? 3;
+                        await EnrichMyAnonamouseResultsAsync(indexer, results, enrichTop, mamId, httpClientToUse);
                     }
-                    catch (Exception exEnrich) when (exEnrich is not OperationCanceledException && exEnrich is not OutOfMemoryException && exEnrich is not StackOverflowException) {
-                        _logger.LogWarning(exEnrich, "MyAnonamouse enrichment step failed");
-                    }
+                }
+                catch (Exception exEnrich) when (exEnrich is not OperationCanceledException && exEnrich is not OutOfMemoryException && exEnrich is not StackOverflowException)
+                {
+                    _logger.LogWarning(exEnrich, "MyAnonamouse enrichment step failed");
+                }
 
                 _logger.LogInformation("MyAnonamouse returned {Count} results", results.Count);
                 return results;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error searching MyAnonamouse indexer {Name}", indexer.Name);
                 return new List<IndexerSearchResult>();
             }
@@ -270,7 +273,8 @@ namespace Listenarr.Api.Services.Search.Providers
                 {
                     doc = JsonDocument.Parse(jsonResponse);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     // Attempt to extract a JSON array from an HTML-wrapped response or stray text
                     var start = jsonResponse.IndexOf('[');
                     var end = jsonResponse.LastIndexOf(']');
@@ -281,7 +285,8 @@ namespace Listenarr.Api.Services.Search.Providers
                         {
                             doc = JsonDocument.Parse(sub);
                         }
-                        catch (Exception parseEx) when (parseEx is not OperationCanceledException && parseEx is not OutOfMemoryException && parseEx is not StackOverflowException) {
+                        catch (Exception parseEx) when (parseEx is not OperationCanceledException && parseEx is not OutOfMemoryException && parseEx is not StackOverflowException)
+                        {
                             _logger.LogWarning(parseEx, "Failed to parse extracted JSON array from MyAnonamouse response");
                             return results;
                         }
@@ -344,7 +349,7 @@ namespace Listenarr.Api.Services.Search.Providers
                 }
 
                 _logger.LogDebug("Found {Count} MyAnonamouse results", dataArrayElement.GetArrayLength());
-                
+
                 int _mamDebugIndex = 0;
                 foreach (var item in dataArrayElement.EnumerateArray())
                 {
@@ -358,7 +363,8 @@ namespace Listenarr.Api.Services.Search.Providers
                                 var propertyNames = item.EnumerateObject().Select(p => p.Name).ToList();
                                 _logger.LogInformation("MyAnonamouse result #{Index} has properties: {Properties}", _mamDebugIndex, string.Join(", ", propertyNames));
                             }
-                            catch (Exception exNames) when (exNames is not OperationCanceledException && exNames is not OutOfMemoryException && exNames is not StackOverflowException) {
+                            catch (Exception exNames) when (exNames is not OperationCanceledException && exNames is not OutOfMemoryException && exNames is not StackOverflowException)
+                            {
                                 _logger.LogDebug(exNames, "Failed to enumerate property names for MyAnonamouse result #{Index}", _mamDebugIndex);
                             }
                         }
@@ -377,7 +383,7 @@ namespace Listenarr.Api.Services.Search.Providers
                         {
                             title = titleElem.ValueKind == JsonValueKind.String ? titleElem.GetString() ?? "" : titleElem.ToString();
                         }
-                        
+
                         var sizeStr = "";
                         if (item.TryGetProperty("size", out var sizeElem))
                         {
@@ -394,23 +400,23 @@ namespace Listenarr.Api.Services.Search.Providers
                                 sizeStr = "0";
                             }
                         }
-                        
+
                         var seeders = item.TryGetProperty("seeders", out var seedElem) ? seedElem.GetInt32() : 0;
                         var leechers = item.TryGetProperty("leechers", out var leechElem) ? leechElem.GetInt32() : 0;
-                        
+
                         string dlHash = string.Empty;
                         if (item.TryGetProperty("dl", out var dlElem))
                         {
                             dlHash = dlElem.ValueKind == JsonValueKind.String ? dlElem.GetString() ?? string.Empty : dlElem.ToString();
                         }
-                        
+
                         // Get torrent ID for download URL fallback (note: 'id' already parsed above as variable 'id')
                         string torrentId = id;
-                        
+
                         // Debug logging for first result
                         if (_mamDebugIndex == 0)
                         {
-                            _logger.LogInformation("MyAnonamouse first result - Title: '{Title}', Size: '{Size}', Seeders: {Seeders}, DlHash: '{DlHash}', TorrentId: '{TorrentId}'", 
+                            _logger.LogInformation("MyAnonamouse first result - Title: '{Title}', Size: '{Size}', Seeders: {Seeders}, DlHash: '{DlHash}', TorrentId: '{TorrentId}'",
                                 title, sizeStr, seeders, dlHash, torrentId);
                         }
 
@@ -516,7 +522,7 @@ namespace Listenarr.Api.Services.Search.Providers
                                 _logger.LogDebug("Parsed size for MyAnonamouse result '{Title}': {Size} bytes (numeric) from size field '{SizeStr}'", title, size, sizeStr);
                             }
                         }
-                        
+
                         // If still no size, try to extract from description
                         if (size == 0)
                         {
@@ -548,7 +554,8 @@ namespace Listenarr.Api.Services.Search.Providers
                                     }
                                     author = string.Join(", ", authors.Where(a => !string.IsNullOrEmpty(a)));
                                 }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
                                     _logger.LogWarning(ex, "Failed to parse author JSON for search result");
                                 }
                             }
@@ -571,7 +578,8 @@ namespace Listenarr.Api.Services.Search.Providers
                                     }
                                     narrator = string.Join(", ", narrators.Where(n => !string.IsNullOrEmpty(n)));
                                 }
-                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                                {
                                     _logger.LogWarning(ex, "Failed to parse narrator JSON for search result");
                                 }
                             }
@@ -590,7 +598,7 @@ namespace Listenarr.Api.Services.Search.Providers
 
                         var qualityFromTags = DetectQualityFromTags(tags ?? "");
                         var qualityFromFormat = !string.IsNullOrEmpty(rawFormatField) ? DetectQualityFromFormat(rawFormatField) : "Unknown";
-                        
+
                         // Prefer bitrate from tags over format-based quality
                         var finalQuality = qualityFromTags != "Unknown" ? qualityFromTags : qualityFromFormat;
 
@@ -612,7 +620,7 @@ namespace Listenarr.Api.Services.Search.Providers
 
                         // Build download URL
                         var downloadUrl = "";
-                        
+
                         // First priority: use explicit downloadUrl field if provided
                         if (!string.IsNullOrEmpty(downloadUrlField))
                         {
@@ -631,7 +639,8 @@ namespace Listenarr.Api.Services.Search.Providers
                                 {
                                     mamIdLocal = Uri.UnescapeDataString(mamIdLocal);
                                 }
-                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                                catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                                {
                                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                 }
                                 downloadUrl += $"?mam_id={Uri.EscapeDataString(mamIdLocal)}";
@@ -649,7 +658,8 @@ namespace Listenarr.Api.Services.Search.Providers
                                 {
                                     mamIdLocal = Uri.UnescapeDataString(mamIdLocal);
                                 }
-                                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+                                {
                                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                 }
                                 downloadUrl = $"{baseUrl}/tor/download.php?tid={torrentId}&mam_id={Uri.EscapeDataString(mamIdLocal)}";
@@ -664,7 +674,7 @@ namespace Listenarr.Api.Services.Search.Providers
                         {
                             _logger.LogWarning("No download URL available for MyAnonamouse result '{Title}' - missing downloadUrl field, dlHash, and torrent ID", title);
                         }
-                        
+
                         _mamDebugIndex++;
 
                         // Language parsing
@@ -721,19 +731,21 @@ namespace Listenarr.Api.Services.Search.Providers
                         // Log critical fields for debugging
                         if (_mamDebugIndex < 3)
                         {
-                            _logger.LogInformation("MAM Result #{Index}: Title='{Title}', Size={Size} bytes, Seeders={Seeders}, TorrentUrl='{TorrentUrl}', DownloadType='{DownloadType}'", 
+                            _logger.LogInformation("MAM Result #{Index}: Title='{Title}', Size={Size} bytes, Seeders={Seeders}, TorrentUrl='{TorrentUrl}', DownloadType='{DownloadType}'",
                                 _mamDebugIndex, result.Title, result.Size, result.Seeders, result.TorrentUrl, result.DownloadType);
                         }
 
                         results.Add(result);
                         _mamDebugIndex++;
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogWarning(ex, "Failed to parse MyAnonamouse result item");
                     }
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Failed to parse MyAnonamouse response");
             }
 
@@ -779,7 +791,7 @@ namespace Listenarr.Api.Services.Search.Providers
                     {
                         using var detailDocument = JsonDocument.Parse(json);
                         var detail = detailDocument.RootElement;
-                        
+
                         if (detail.TryGetProperty("data", out var dataProp) && dataProp.ValueKind == JsonValueKind.Object)
                         {
                             detail = dataProp;
@@ -788,7 +800,7 @@ namespace Listenarr.Api.Services.Search.Providers
                         {
                             detail = respProp;
                         }
-                        
+
                         var grabs = 0;
                         var grabKeys = new[] { "grabs", "snatches", "snatched", "snatched_count", "snatches_count", "numgrabs", "num_grabs", "grab_count", "times_completed", "time_completed", "downloaded", "times_downloaded", "completed" };
                         foreach (var gEl in grabKeys.Where(key => detail.TryGetProperty(key, out _)).Select(key => detail.GetProperty(key)))
@@ -804,19 +816,19 @@ namespace Listenarr.Api.Services.Search.Providers
                                 break;
                             }
                         }
-                        
+
                         var files = 0;
                         if (detail.TryGetProperty("files", out var filesElem) && filesElem.ValueKind == JsonValueKind.Number)
                         {
                             files = filesElem.GetInt32();
                         }
-                        
+
                         var format = "";
                         if (detail.TryGetProperty("filetype", out var formatElem) && formatElem.ValueKind == JsonValueKind.String)
                         {
                             format = formatElem.GetString() ?? "";
                         }
-                        
+
                         var langCode = "";
                         if (detail.TryGetProperty("lang_code", out var langElem) && langElem.ValueKind == JsonValueKind.String)
                         {
@@ -828,14 +840,16 @@ namespace Listenarr.Api.Services.Search.Providers
                         if (files > 0) r.Files = files;
                         if (!string.IsNullOrEmpty(format) && string.IsNullOrEmpty(r.Format)) r.Format = format.ToUpper();
                         if (!string.IsNullOrEmpty(langCode) && string.IsNullOrEmpty(r.Language)) r.Language = ParseLanguageFromCode(langCode);
-                        
+
                         _logger.LogDebug("Enriched MyAnonamouse result {Id}: grabs={Grabs}, files={Files}, format={Format}, language={Language}", r.Id, r.Grabs, r.Files, r.Format, r.Language);
                     }
-                    catch (Exception exParse) when (exParse is not OperationCanceledException && exParse is not OutOfMemoryException && exParse is not StackOverflowException) {
+                    catch (Exception exParse) when (exParse is not OperationCanceledException && exParse is not OutOfMemoryException && exParse is not StackOverflowException)
+                    {
                         _logger.LogDebug(exParse, "Failed to parse MyAnonamouse detail JSON for {Id}", r.Id);
                     }
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogDebug(ex, "Failed to enrich MyAnonamouse result {Id}", r.Id);
                 }
             }).ToArray();
@@ -939,7 +953,7 @@ namespace Listenarr.Api.Services.Search.Providers
             if (string.IsNullOrEmpty(format)) return "Unknown";
 
             var upper = format.ToUpperInvariant();
-            
+
             // Try to extract bitrate from format string first (e.g., "M4B 64kbps", "MP3 128kbps")
             var bitrateMatch = Regex.Match(format, @"(\d+)\s*kbps", RegexOptions.IgnoreCase);
             if (bitrateMatch.Success)
@@ -949,7 +963,7 @@ namespace Listenarr.Api.Services.Search.Providers
 
             // Check for lossless formats
             if (upper.Contains("FLAC")) return "Lossless";
-            
+
             // For variable bitrate formats, try to indicate the format at least
             if (upper.Contains("M4B")) return "M4B";
             if (upper.Contains("M4A")) return "M4A";

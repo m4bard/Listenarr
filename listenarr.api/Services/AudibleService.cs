@@ -198,7 +198,8 @@ namespace Listenarr.Api.Services
                     TotalResults = collectedAsins.Distinct(StringComparer.OrdinalIgnoreCase).Count()
                 };
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error fetching books for author ASIN {AuthorAsin}", LogRedaction.SanitizeText(authorAsin));
                 return null;
             }
@@ -211,7 +212,8 @@ namespace Listenarr.Api.Services
             {
                 return await LookupSeriesItemsAsync(name, region);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error searching Audible series for name {Name}", LogRedaction.SanitizeText(name));
                 return null;
             }
@@ -279,7 +281,8 @@ namespace Listenarr.Api.Services
             {
                 return await GetTypedBooksBySeriesAsinAsync(seriesAsin, region);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error fetching Audible series books for ASIN {Asin}", LogRedaction.SanitizeText(seriesAsin));
                 return null;
             }
@@ -387,7 +390,8 @@ namespace Listenarr.Api.Services
 
                 return result;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error fetching metadata from Audible for ASIN {Asin}", LogRedaction.SanitizeText(asin));
                 return null;
             }
@@ -519,7 +523,8 @@ namespace Listenarr.Api.Services
                                 matched.Add(c);
                             }
                         }
-                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) { 
+                        catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+                        {
                             System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                         }
                     }
@@ -537,7 +542,8 @@ namespace Listenarr.Api.Services
                 var finalList = filtered.ToList();
                 return new AudibleSearchResponse { Results = finalList, TotalResults = finalList.Count };
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error executing author-based search for: {Title} / {Author}", title, author);
                 return null;
             }
@@ -623,7 +629,8 @@ namespace Listenarr.Api.Services
 
                 return candidate;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to lookup author {Author}", LogRedaction.SanitizeText(author));
                 return null;
             }
@@ -1990,7 +1997,8 @@ namespace Listenarr.Api.Services
                                     var entries = dropped.Select(r => string.Format("{0} :: {1} :: {2}", r.Asin ?? "<no-asin>", r.Title ?? "<no-title>", GetPodcastFilterReason(r) ?? "podcast_detected")).ToList();
                                     _logger.LogInformation("Audible search removed {Count} items due to podcast heuristics: {Entries}", dropped.Count, string.Join(" | ", entries));
                                 }
-                                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException) { 
+                                catch (Exception caughtEx_2) when (caughtEx_2 is not OperationCanceledException && caughtEx_2 is not OutOfMemoryException && caughtEx_2 is not StackOverflowException)
+                                {
                                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                 }
                             }
@@ -2024,7 +2032,8 @@ namespace Listenarr.Api.Services
                                     var entries = dropped.Select(r => string.Format("{0} :: {1} :: {2}", r.Asin ?? "<no-asin>", r.Title ?? "<no-title>", GetPodcastFilterReason(r) ?? "podcast_detected")).ToList();
                                     _logger.LogInformation("Audible search removed {Count} items due to podcast heuristics: {Entries}", dropped.Count, string.Join(" | ", entries));
                                 }
-                                catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException) { 
+                                catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
+                                {
                                     System.Diagnostics.Debug.WriteLine("Suppressed non-fatal exception in catch block.");
                                 }
                             }
@@ -2062,7 +2071,8 @@ namespace Listenarr.Api.Services
 
                 return null;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error searching the Audible catalog for: {SearchTerm}", searchTerm);
                 return null;
             }
@@ -2081,7 +2091,8 @@ namespace Listenarr.Api.Services
                 _logger.LogWarning(ex, "Audible request timed out for URL: {Url}", url);
                 return null;
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogError(ex, "Error performing Audible HTTP request for URL: {Url}", url);
                 return null;
             }
@@ -2185,7 +2196,7 @@ namespace Listenarr.Api.Services
 
     public class AudibleSearchResponse { public List<AudibleSearchResult>? Results { get; set; } public int? TotalResults { get; set; } }
 
-    
+
 
     public class AudibleSearchResult
     {

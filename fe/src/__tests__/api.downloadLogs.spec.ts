@@ -40,13 +40,15 @@ describe('ApiService.downloadLogs', () => {
     const clickSpy = vi.spyOn(anchor, 'click').mockImplementation(() => {})
     const appendSpy = vi.spyOn(document.body, 'appendChild')
     const removeSpy = vi.spyOn(document.body, 'removeChild')
-    const createElementSpy = vi.spyOn(document, 'createElement').mockImplementation((tagName: string) => {
-      if (tagName.toLowerCase() === 'a') {
-        return anchor
-      }
+    const createElementSpy = vi
+      .spyOn(document, 'createElement')
+      .mockImplementation((tagName: string) => {
+        if (tagName.toLowerCase() === 'a') {
+          return anchor
+        }
 
-      return originalCreateElement(tagName)
-    })
+        return originalCreateElement(tagName)
+      })
 
     const createObjectUrlSpy = vi
       .spyOn(URL, 'createObjectURL')

@@ -17,7 +17,12 @@
 -->
 <template>
   <teleport to="body" v-if="!inline">
-    <div :class="['folder-browser browser-modal', { 'no-inner-card': !props.useInnerCard }]" ref="root" role="dialog" aria-label="Folder Browser">
+    <div
+      :class="['folder-browser browser-modal', { 'no-inner-card': !props.useInnerCard }]"
+      ref="root"
+      role="dialog"
+      aria-label="Folder Browser"
+    >
       <div class="folder-browser-backdrop" @click="closeBrowser" aria-hidden="true"></div>
       <div class="browser-wrapper">
         <div class="browser-content" role="region">
@@ -29,7 +34,13 @@
     </div>
   </teleport>
 
-  <div v-else :class="['folder-browser browser-inline', { 'no-inner-card': !props.useInnerCard }]" ref="root" role="dialog" aria-label="Folder Browser">
+  <div
+    v-else
+    :class="['folder-browser browser-inline', { 'no-inner-card': !props.useInnerCard }]"
+    ref="root"
+    role="dialog"
+    aria-label="Folder Browser"
+  >
     <div v-if="showInput" class="browser-input-group">
       <input
         v-model="localPath"
@@ -39,7 +50,15 @@
         @keydown.enter.prevent="browseDirectory(localPath)"
         aria-label="Path"
       />
-      <button type="button" class="icon-btn btn-secondary btn-inline-browse" @click="openBrowser" title="Browse folders" aria-label="Browse folders"><PhFolder /></button>
+      <button
+        type="button"
+        class="icon-btn btn-secondary btn-inline-browse"
+        @click="openBrowser"
+        title="Browse folders"
+        aria-label="Browse folders"
+      >
+        <PhFolder />
+      </button>
     </div>
 
     <div v-if="validationMessage" :class="['validation-message', isValid ? 'success' : 'error']">
@@ -48,8 +67,18 @@
 
     <div v-if="isOpen" class="browser-content" role="region">
       <div class="browser-body">
-        <div v-if="breadcrumbs.length" class="breadcrumbs" role="navigation" aria-label="Breadcrumb">
-          <button class="breadcrumb-item breadcrumb-home" @click="browseDirectory()" title="Root" aria-label="Go to root">
+        <div
+          v-if="breadcrumbs.length"
+          class="breadcrumbs"
+          role="navigation"
+          aria-label="Breadcrumb"
+        >
+          <button
+            class="breadcrumb-item breadcrumb-home"
+            @click="browseDirectory()"
+            title="Root"
+            aria-label="Go to root"
+          >
             <PhHouse class="breadcrumb-icon" />
           </button>
           <span class="breadcrumb-separator">/</span>
@@ -90,12 +119,31 @@
             </div>
           </div>
 
-          <div v-if="items.length === 0" class="empty-state"><PhFolderOpen class="empty-icon" /><div>No items found</div></div>
+          <div v-if="items.length === 0" class="empty-state">
+            <PhFolderOpen class="empty-icon" />
+            <div>No items found</div>
+          </div>
 
-          <div v-else-if="filteredItems.length === 0" class="empty-state"><PhMagnifyingGlass class="empty-icon" /><div>No matches found</div></div>
+          <div v-else-if="filteredItems.length === 0" class="empty-state">
+            <PhMagnifyingGlass class="empty-icon" />
+            <div>No matches found</div>
+          </div>
 
-          <transition-group name="list" tag="div" class="directory-list" role="list" tabindex="0" @keydown="handleKeydown">
-            <div v-if="parentPath && !searchQuery" key="parent" class="directory-item parent-item" role="listitem" @click="selectParentPath">
+          <transition-group
+            name="list"
+            tag="div"
+            class="directory-list"
+            role="list"
+            tabindex="0"
+            @keydown="handleKeydown"
+          >
+            <div
+              v-if="parentPath && !searchQuery"
+              key="parent"
+              class="directory-item parent-item"
+              role="listitem"
+              @click="selectParentPath"
+            >
               <div class="item-icon">⬆</div>
               <div class="directory-item-main">.. <span class="muted">(parent)</span></div>
             </div>
@@ -103,13 +151,23 @@
             <div
               v-for="(it, index) in filteredItems"
               :key="it.path"
-              :class="['directory-item', it.isDirectory ? '' : 'file-item', { selected: selectedIndex === index }]"
+              :class="[
+                'directory-item',
+                it.isDirectory ? '' : 'file-item',
+                { selected: selectedIndex === index },
+              ]"
               role="listitem"
               @click="handleItemClick(it)"
               @mouseenter="selectedIndex = index"
-              :title="it.isDirectory ? `Open folder: ${it.name}` : `File: ${it.name} (${formatSize(it.size)})`"
+              :title="
+                it.isDirectory
+                  ? `Open folder: ${it.name}`
+                  : `File: ${it.name} (${formatSize(it.size)})`
+              "
             >
-              <div class="item-icon" :aria-hidden="true"><PhFolder v-if="it.isDirectory" style="color: #ffc857" /><PhFile v-else /></div>
+              <div class="item-icon" :aria-hidden="true">
+                <PhFolder v-if="it.isDirectory" style="color: #ffc857" /><PhFile v-else />
+              </div>
               <div class="directory-item-main">
                 <div class="item-name">{{ it.name }}</div>
                 <small v-if="it.size" class="item-meta">{{ formatSize(it.size) }}</small>
@@ -161,14 +219,16 @@ const emit = defineEmits<{
   (e: 'open-modal'): void
 }>()
 
-
 const root = ref<HTMLElement | null>(null)
 const localPath = ref(props.modelValue ?? '')
 
 // Emit drafts when the input changes so parent modal can pick up typed path
-watch(() => localPath.value, (v) => {
-  emit('path-draft', v ?? '')
-})
+watch(
+  () => localPath.value,
+  (v) => {
+    emit('path-draft', v ?? '')
+  },
+)
 
 const currentPath = ref<string | null>(null)
 const parentPath = ref<string | null>(null)
@@ -182,14 +242,14 @@ const searchQuery = ref('')
 const filteredItems = computed(() => {
   if (!searchQuery.value) return items.value
   const query = searchQuery.value.toLowerCase()
-  return items.value.filter(item => item.name.toLowerCase().includes(query))
+  return items.value.filter((item) => item.name.toLowerCase().includes(query))
 })
 
 const breadcrumbs = computed(() => {
   if (!currentPath.value) return []
   const raw = currentPath.value
   const separator = raw.includes('\\') ? '\\' : '/' // keep as JS string
-  const parts = raw.split(/[/\\]/).filter(p => p)
+  const parts = raw.split(/[/\\]/).filter((p) => p)
   const crumbs = []
   let path = ''
   const isUNC = raw.startsWith('\\\\')
@@ -375,7 +435,6 @@ watch(
   },
 )
 
-
 onMounted(() => {
   if (props.modelValue) localPath.value = props.modelValue
   // initial browse for convenience (only when open)
@@ -385,113 +444,294 @@ onMounted(() => {
 })
 
 // Keep in sync when the parent updates the modelValue (e.g., recent folder selection)
-watch(() => props.modelValue, (v) => {
-  localPath.value = v ?? ''
-  // Validate the incoming path so the parent sees validation feedback immediately
-  if (localPath.value) validatePath()
-})
+watch(
+  () => props.modelValue,
+  (v) => {
+    localPath.value = v ?? ''
+    // Validate the incoming path so the parent sees validation feedback immediately
+    if (localPath.value) validatePath()
+  },
+)
 </script>
 
 <style scoped>
 /* Align with centralized modal palette */
-.folder-browser { display:flex; flex-direction:column; gap:0.75rem; width:100% }
-.browser-input-group { display:flex; gap:0.5rem }
+.folder-browser {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  width: 100%;
+}
+.browser-input-group {
+  display: flex;
+  gap: 0.5rem;
+}
 .browser-input {
-  flex:1;
-  padding:0.6rem 0.75rem;
+  flex: 1;
+  padding: 0.6rem 0.75rem;
   background: #1a1a1a; /* match modal form inputs */
   border: 1px solid #444;
-  border-radius:6px;
-  color:#eef2f8;
-  font-size:0.95rem;
-} 
+  border-radius: 6px;
+  color: #eef2f8;
+  font-size: 0.95rem;
+}
 
 /* Compact browse button to sit next to the input */
 
-
-
 .browser-content {
-  background:#2a2a2a; /* modal-content background */
-  border:1px solid #444; /* modal border */
-  border-radius:8px;
-  width:100%;
+  background: #2a2a2a; /* modal-content background */
+  border: 1px solid #444; /* modal border */
+  border-radius: 8px;
+  width: 100%;
   overflow: hidden;
-  display:flex;
-  flex-direction:column; /* contain header/search and list */
+  display: flex;
+  flex-direction: column; /* contain header/search and list */
   max-height: 70vh; /* ensure a definite constraint for flex children */
 }
 
 .browser-header {
-  display:flex; justify-content:space-between; align-items:center; padding:0.8rem 1rem; border-bottom:1px solid #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.8rem 1rem;
+  border-bottom: 1px solid #444;
 }
-.browser-header .title { display:flex; align-items:center; gap:0.5rem; color:#fff; font-weight: 500 }
-.header-actions { display:flex; gap:0.5rem }
+.browser-header .title {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: #fff;
+  font-weight: 500;
+}
+.header-actions {
+  display: flex;
+  gap: 0.5rem;
+}
 
-
-.browser-body { padding:1rem; display:flex; flex-direction:column; gap:0.75rem; flex:1 1 auto; min-height:0 }
-.breadcrumbs { display:flex; align-items:center; gap:0.5rem; margin-bottom:0; flex-wrap:wrap; padding:0; background:transparent; border-radius:6px; }
-.breadcrumb-item { background: transparent; border: 1px solid rgba(255,255,255,0.03); color:#aaa; cursor:pointer; padding:0.2rem 0.45rem; border-radius:6px; font-size:0.9rem; transition: all 0.12s ease; font-weight:500 }
-.breadcrumb-item:hover { background: rgba(255,255,255,0.02); color:#fff }
-.breadcrumb-item.current { color:var(--brand-600); font-weight: 500; cursor:default; background: rgba(var(--brand-rgb),0.08); border-color: rgba(var(--brand-rgb),0.12) }
-.breadcrumb-home { padding:0.25rem; display:flex; align-items:center; justify-content:center; background:transparent; border-radius:6px; border: 1px solid rgba(255,255,255,0.02) }
-.breadcrumb-home:hover { background: rgba(255,255,255,0.02) }
-.breadcrumb-icon { width:16px; height:16px; color:#ccc }
-.breadcrumb-separator { color:#666; font-weight:400; margin:0 0.25rem }
-.loading-state { display:flex; flex-direction:column; gap:0.75rem; align-items:center; justify-content:center; color:#fff; padding:3rem 0; min-height:200px }
-.spinner-container { position:relative; display:flex; align-items:center; justify-content:center; width:64px; height:64px }
-.spinner-icon { width:24px; height:24px; color:#2196f3; animation: pulse 2s ease-in-out infinite }
+.browser-body {
+  padding: 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 0;
+  flex-wrap: wrap;
+  padding: 0;
+  background: transparent;
+  border-radius: 6px;
+}
+.breadcrumb-item {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  color: #aaa;
+  cursor: pointer;
+  padding: 0.2rem 0.45rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+  transition: all 0.12s ease;
+  font-weight: 500;
+}
+.breadcrumb-item:hover {
+  background: rgba(255, 255, 255, 0.02);
+  color: #fff;
+}
+.breadcrumb-item.current {
+  color: var(--brand-600);
+  font-weight: 500;
+  cursor: default;
+  background: rgba(var(--brand-rgb), 0.08);
+  border-color: rgba(var(--brand-rgb), 0.12);
+}
+.breadcrumb-home {
+  padding: 0.25rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+}
+.breadcrumb-home:hover {
+  background: rgba(255, 255, 255, 0.02);
+}
+.breadcrumb-icon {
+  width: 16px;
+  height: 16px;
+  color: #ccc;
+}
+.breadcrumb-separator {
+  color: #666;
+  font-weight: 400;
+  margin: 0 0.25rem;
+}
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  padding: 3rem 0;
+  min-height: 200px;
+}
+.spinner-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 64px;
+  height: 64px;
+}
+.spinner-icon {
+  width: 24px;
+  height: 24px;
+  color: #2196f3;
+  animation: pulse 2s ease-in-out infinite;
+}
 .spinner-ring {
-  position:absolute;
-  width:100%;
-  height:100%;
-  border:3px solid #333;
-  border-top:3px solid #2196f3;
-  border-radius:50%;
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  border: 3px solid #333;
+  border-top: 3px solid #2196f3;
+  border-radius: 50%;
   animation: spin 1.5s linear infinite;
 }
-@keyframes spin { 0% { transform:rotate(0deg) } 100% { transform:rotate(360deg) } }
-@keyframes pulse { 0%, 100% { opacity:1 } 50% { opacity:0.5 } }
-@keyframes fadeInOut { 0%, 100% { opacity:0.7 } 50% { opacity:1 } }
+@keyframes spin {
+  0% {
+    transform: rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg);
+  }
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+@keyframes fadeInOut {
+  0%,
+  100% {
+    opacity: 0.7;
+  }
+  50% {
+    opacity: 1;
+  }
+}
 /* @keyframes modalSlideIn and backdropFadeIn are centralized in src/assets/animations.css */
 
-.list-enter-active, .list-leave-active { transition: all 0.3s ease }
-.list-enter-from { opacity:0; transform:translateY(10px) }
-.list-leave-to { opacity:0; transform:translateY(-10px) }
-.list-move { transition: transform 0.3s ease }
-.loading-text { font-size:1rem; font-weight:500; color:#ccc; animation: fadeInOut 2s ease-in-out infinite }
-
-.fade-enter-active, .fade-leave-active { transition: opacity 0.3s ease }
-.fade-enter-from, .fade-leave-to { opacity:0 }
-.empty-state { display:flex; flex-direction:column; gap:0.75rem; align-items:center; justify-content:center; color:#999; padding:2rem 0 }
-.empty-icon { color:#868e96; width:48px; height:48px }
-.empty-state div { font-size:1.1rem; font-weight:500 }
-
-.search-group { margin-bottom:1rem }
-.search-input-wrapper { position:relative; display:flex; align-items:center }
-.search-icon { position:absolute; left:0.65rem; width:18px; height:18px; color:#7a7a7a; pointer-events:none; z-index:1 }
-.search-input {
-  width:100%;
-  padding:0.6rem 0.75rem 0.6rem 2.2rem;
-  background:var(--modal-input-bg, #161616);
-  border:1px solid rgba(255,255,255,0.04);
-  border-radius:6px;
-  color:#e6eef8;
-  font-size:0.92rem;
-  transition: box-shadow 0.12s ease, border-color 0.12s ease;
+.list-enter-active,
+.list-leave-active {
+  transition: all 0.3s ease;
 }
-.search-input:focus { outline:none; border-color:var(--brand-focus); box-shadow:0 0 0 3px rgba(var(--brand-rgb), 0.08); background:#1b1b1b }
+.list-enter-from {
+  opacity: 0;
+  transform: translateY(10px);
+}
+.list-leave-to {
+  opacity: 0;
+  transform: translateY(-10px);
+}
+.list-move {
+  transition: transform 0.3s ease;
+}
+.loading-text {
+  font-size: 1rem;
+  font-weight: 500;
+  color: #ccc;
+  animation: fadeInOut 2s ease-in-out infinite;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  align-items: center;
+  justify-content: center;
+  color: #999;
+  padding: 2rem 0;
+}
+.empty-icon {
+  color: #868e96;
+  width: 48px;
+  height: 48px;
+}
+.empty-state div {
+  font-size: 1.1rem;
+  font-weight: 500;
+}
+
+.search-group {
+  margin-bottom: 1rem;
+}
+.search-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+.search-icon {
+  position: absolute;
+  left: 0.65rem;
+  width: 18px;
+  height: 18px;
+  color: #7a7a7a;
+  pointer-events: none;
+  z-index: 1;
+}
+.search-input {
+  width: 100%;
+  padding: 0.6rem 0.75rem 0.6rem 2.2rem;
+  background: var(--modal-input-bg, #161616);
+  border: 1px solid rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+  color: #e6eef8;
+  font-size: 0.92rem;
+  transition:
+    box-shadow 0.12s ease,
+    border-color 0.12s ease;
+}
+.search-input:focus {
+  outline: none;
+  border-color: var(--brand-focus);
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.08);
+  background: #1b1b1b;
+}
 /* Directory list scrolling - use flex so list fills remaining body space and scrolls */
 .directory-list {
-  display:flex;
-  flex-direction:column;
-  gap:0.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
   flex: 1 1 auto;
   min-height: 0; /* allow flex children to shrink and enable overflow */
   overflow: auto;
-  padding-right:0.25rem;
+  padding-right: 0.25rem;
 }
-.directory-list::-webkit-scrollbar { width:10px }
-.directory-list::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.04); border-radius:6px }
+.directory-list::-webkit-scrollbar {
+  width: 10px;
+}
+.directory-list::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 6px;
+}
 
 /* Inline usage: cap height when not in a modal so it doesn't grow too tall */
 .folder-browser.browser-inline .directory-list {
@@ -504,22 +744,88 @@ watch(() => props.modelValue, (v) => {
   max-height: none; /* let flex sizing take over */
 }
 
-.directory-item { display:flex; gap:0.5rem; align-items:center; padding:0.45rem 0.6rem; background:transparent; border:1px solid rgba(255,255,255,0.02); border-radius:6px; color:#fff; cursor:pointer; transition: box-shadow 0.12s ease, transform 0.12s ease; transform: translateY(0); }
-.directory-item:hover { transform:translateY(-1px); box-shadow:0 4px 10px rgba(0,0,0,0.32); background:rgba(255,255,255,0.01); border-color:rgba(255,255,255,0.03) }
-.directory-item:focus { outline: none; box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.06); border-color: rgba(var(--brand-rgb), 0.1) }
-.directory-item:active { transform:translateY(0); transition-duration: 0.08s }
-.directory-item .item-icon { width:32px; height:32px; display:inline-flex; align-items:center; justify-content:center; border-radius:6px; background:rgba(255,255,255,0.03); color:#fff; font-size:16px; flex-shrink:0 }
-.directory-item .item-name { font-weight: 500; font-size:0.95rem }
-.directory-item .item-meta { color:#9aa0a6; display:block; margin-top:2px; font-size:0.8rem; font-weight:400 }
-.directory-item.selected { background: rgba(var(--brand-rgb), 0.06); border-color: rgba(var(--brand-rgb), 0.12); box-shadow: none; border-left: 4px solid var(--brand-600); padding-left: calc(0.75rem - 2px) }
+.directory-item {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  padding: 0.45rem 0.6rem;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.02);
+  border-radius: 6px;
+  color: #fff;
+  cursor: pointer;
+  transition:
+    box-shadow 0.12s ease,
+    transform 0.12s ease;
+  transform: translateY(0);
+}
+.directory-item:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.32);
+  background: rgba(255, 255, 255, 0.01);
+  border-color: rgba(255, 255, 255, 0.03);
+}
+.directory-item:focus {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.06);
+  border-color: rgba(var(--brand-rgb), 0.1);
+}
+.directory-item:active {
+  transform: translateY(0);
+  transition-duration: 0.08s;
+}
+.directory-item .item-icon {
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+  color: #fff;
+  font-size: 16px;
+  flex-shrink: 0;
+}
+.directory-item .item-name {
+  font-weight: 500;
+  font-size: 0.95rem;
+}
+.directory-item .item-meta {
+  color: #9aa0a6;
+  display: block;
+  margin-top: 2px;
+  font-size: 0.8rem;
+  font-weight: 400;
+}
+.directory-item.selected {
+  background: rgba(var(--brand-rgb), 0.06);
+  border-color: rgba(var(--brand-rgb), 0.12);
+  box-shadow: none;
+  border-left: 4px solid var(--brand-600);
+  padding-left: calc(0.75rem - 2px);
+}
 
-.validation-message { padding:0.5rem; border-radius:6px; font-size:0.9rem }
-.validation-message.error { background:rgba(231,76,60,0.1); color:#e74c3c }
-.validation-message.success { background:rgba(46,204,113,0.08); color:#2ecc71 }
+.validation-message {
+  padding: 0.5rem;
+  border-radius: 6px;
+  font-size: 0.9rem;
+}
+.validation-message.error {
+  background: rgba(231, 76, 60, 0.1);
+  color: #e74c3c;
+}
+.validation-message.success {
+  background: rgba(46, 204, 113, 0.08);
+  color: #2ecc71;
+}
 
-@media (max-width:720px) {
-  .browser-content { max-width:100%; }
-  .directory-list { max-height:220px }
+@media (max-width: 720px) {
+  .browser-content {
+    max-width: 100%;
+  }
+  .directory-list {
+    max-height: 220px;
+  }
 }
 
 /* When used as a modal (not inline), center and float above other overlays */
@@ -540,7 +846,7 @@ watch(() => props.modelValue, (v) => {
 .folder-browser-backdrop {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.6);
+  background: rgba(0, 0, 0, 0.6);
   z-index: 2000;
   animation: backdropFadeIn 0.3s ease;
 }
@@ -551,13 +857,13 @@ watch(() => props.modelValue, (v) => {
   overflow: visible;
 }
 .folder-browser.browser-modal .browser-content {
-  box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
   max-height: 70vh;
   overflow: hidden;
   border-radius: 8px;
   margin: 12px; /* create breathing room around content */
   background: #242424;
-  border: 1px solid rgba(255,255,255,0.04);
+  border: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 /* inner content scroll area */
@@ -570,7 +876,7 @@ watch(() => props.modelValue, (v) => {
 .folder-browser.browser-modal .browser-input-group {
   padding: 1rem 1.5rem 0 1.5rem;
 }
-.folder-browser.browser-modal .browser-input { width: calc(100% - 120px); }
-
-
+.folder-browser.browser-modal .browser-input {
+  width: calc(100% - 120px);
+}
 </style>

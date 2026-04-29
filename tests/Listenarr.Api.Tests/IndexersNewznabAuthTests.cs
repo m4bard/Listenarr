@@ -214,7 +214,7 @@ namespace Listenarr.Api.Tests
         </item>
     </channel>
 </rss>";
-            
+
             var resp = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(validXml, System.Text.Encoding.UTF8, "application/xml")
@@ -240,7 +240,7 @@ namespace Listenarr.Api.Tests
             var uri = handler.LastRequest!.RequestUri!.ToString();
             Assert.Contains("t=search", uri, StringComparison.OrdinalIgnoreCase);
             Assert.Contains("apikey=test_key", uri, StringComparison.OrdinalIgnoreCase);
-            
+
             // Should succeed
             Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(result);
             Assert.True(indexer.LastTestSuccessful);
@@ -252,7 +252,7 @@ namespace Listenarr.Api.Tests
             // Arrange - Newznab/Torznab typically returns 200 OK with error XML when API key is invalid
             var errorXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <error code=""100"" description=""Invalid API Key"" />";
-            
+
             var resp = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(errorXml, System.Text.Encoding.UTF8, "application/xml")
@@ -285,7 +285,7 @@ namespace Listenarr.Api.Tests
             // Arrange - Error with "unauthorized" in description
             var errorXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <error code=""101"" description=""Unauthorized access"" />";
-            
+
             var resp = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(errorXml, System.Text.Encoding.UTF8, "application/xml")
@@ -376,7 +376,7 @@ namespace Listenarr.Api.Tests
         <title>Test Torznab</title>
     </channel>
 </rss>";
-            
+
             var resp = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(validXml, System.Text.Encoding.UTF8, "application/xml")
@@ -411,13 +411,13 @@ namespace Listenarr.Api.Tests
             // Arrange - Create a persisted indexer in database
             var errorXml = @"<?xml version=""1.0"" encoding=""UTF-8""?>
 <error code=""100"" description=""Invalid API Key"" />";
-            
+
             var resp = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(errorXml, System.Text.Encoding.UTF8, "application/xml")
             };
             var handler = new CaptureHandler(resp);
-            
+
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;
@@ -464,13 +464,13 @@ namespace Listenarr.Api.Tests
         <title>Test Indexer</title>
     </channel>
 </rss>";
-            
+
             var resp = new HttpResponseMessage(HttpStatusCode.OK)
             {
                 Content = new StringContent(validXml, System.Text.Encoding.UTF8, "application/xml")
             };
             var handler = new CaptureHandler(resp);
-            
+
             var options = new DbContextOptionsBuilder<ListenArrDbContext>()
                 .UseInMemoryDatabase(Guid.NewGuid().ToString())
                 .Options;

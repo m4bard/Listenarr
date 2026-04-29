@@ -18,18 +18,31 @@
 <template>
   <Modal :visible="true" size="md" @close="close">
     <template #header>
-      <ModalHeader :title="root?.id ? 'Edit Root Folder' : 'Add Root Folder'" :icon="PhFolder" @close="close" />
+      <ModalHeader
+        :title="root?.id ? 'Edit Root Folder' : 'Add Root Folder'"
+        :icon="PhFolder"
+        @close="close"
+      />
     </template>
 
     <template #default>
       <FormSection title="Basic Configuration" :icon="PhFolder">
         <FormRow label="Name">
-          <input v-model="form.name" class="form-input" placeholder="Enter a name for this root folder" />
+          <input
+            v-model="form.name"
+            class="form-input"
+            placeholder="Enter a name for this root folder"
+          />
         </FormRow>
 
         <FormRow label="Path" labelFor="root-path">
           <div class="path-input-row">
-            <input id="root-path" v-model="form.path" class="form-input" placeholder="Select or enter a path..." />
+            <input
+              id="root-path"
+              v-model="form.path"
+              class="form-input"
+              placeholder="Select or enter a path..."
+            />
             <button
               type="button"
               class="icon-btn btn-secondary btn-inline-browse"
@@ -42,7 +55,12 @@
           </div>
 
           <!-- Folder browser modal (opens in a centered modal) -->
-          <FolderBrowserModal v-model:visible="showBrowser" v-model:modelValue="form.path" :show-input="false" @close="closeBrowser" />
+          <FolderBrowserModal
+            v-model:visible="showBrowser"
+            v-model:modelValue="form.path"
+            :show-input="false"
+            @close="closeBrowser"
+          />
         </FormRow>
 
         <CheckboxCard v-model="form.isDefault" title="Set as default root folder" />
@@ -51,18 +69,25 @@
 
     <template #footer>
       <!-- Use ModalFooter props for consistent button styles and behavior -->
-      <ModalFooter :showCancel="true" :showSave="true" @cancel="close" @save="save" :saveLabel="'Save'" :showTest="false" />
-    </template>
-  </Modal> 
-
-      <MoveAudiobookModal
-        :visible="showConfirm"
-        :pendingRootPath="form.path"
-        v-model:moveFiles="modalMoveFiles"
-        v-model:deleteEmpty="modalDeleteEmpty"
-        @cancel="showConfirm = false"
-        @confirm="(payload) => confirmChange(Boolean(payload?.moveFiles))"
+      <ModalFooter
+        :showCancel="true"
+        :showSave="true"
+        @cancel="close"
+        @save="save"
+        :saveLabel="'Save'"
+        :showTest="false"
       />
+    </template>
+  </Modal>
+
+  <MoveAudiobookModal
+    :visible="showConfirm"
+    :pendingRootPath="form.path"
+    v-model:moveFiles="modalMoveFiles"
+    v-model:deleteEmpty="modalDeleteEmpty"
+    @cancel="showConfirm = false"
+    @confirm="(payload) => confirmChange(Boolean(payload?.moveFiles))"
+  />
 </template>
 
 <script setup lang="ts">
@@ -113,7 +138,7 @@ async function save() {
     return
   }
   try {
-    let newRoot;
+    let newRoot
     if (root?.id) {
       // If path changed, show confirmation to choose whether to move files
       if (form.value.path !== root.path) {
@@ -169,9 +194,17 @@ async function confirmChange(moveFiles: boolean) {
 
 <style scoped>
 /* Modal-specific styling is now provided by shared `modals.css` */
-.path-row .path-input-row { display:flex; gap:0.5rem; align-items:center }
-.path-row input#root-path { flex:1 }
-.folder-browser-overlay { margin-top:0.75rem }
+.path-row .path-input-row {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+}
+.path-row input#root-path {
+  flex: 1;
+}
+.folder-browser-overlay {
+  margin-top: 0.75rem;
+}
 
 .modal-close {
   background: none;
@@ -272,7 +305,7 @@ async function confirmChange(moveFiles: boolean) {
 .checkbox-label input[type='checkbox']:focus {
   outline: 2px solid rgba(var(--brand-rgb), 0.3);
   outline-offset: 2px;
-} 
+}
 
 .checkbox-label span {
   line-height: 1.4;
@@ -316,7 +349,9 @@ async function confirmChange(moveFiles: boolean) {
   outline: none;
   box-shadow: 0 0 0 3px rgba(var(--brand-rgb), 0.12);
 }
-.path-row .btn-inline-browse { align-self: center; }
+.path-row .btn-inline-browse {
+  align-self: center;
+}
 
 /* modal-footer base styles are centralized in src/assets/modals.css; keep modal-specific background and spacing */
 .modal-footer {

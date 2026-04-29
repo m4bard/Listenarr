@@ -20,7 +20,7 @@ const DEFAULT_API_VERSION = '1'
 const API_PREFIX_REGEX = /^\/api(?:\/v\d+(?:\.\d+)?)?/i
 const API_BASE_TEMPLATE = import.meta.env.DEV
   ? DEFAULT_API_ROOT
-  : (import.meta.env.VITE_API_BASE_URL || DEFAULT_API_ROOT)
+  : import.meta.env.VITE_API_BASE_URL || DEFAULT_API_ROOT
 
 const trimTrailingSlash = (value: string): string => value.replace(/\/+$/, '')
 
@@ -72,7 +72,8 @@ const normalizeEndpoint = (endpoint: string): string => {
 export let API_VERSION = normalizeApiVersion(import.meta.env.VITE_API_VERSION)
 export let API_VERSION_SEGMENT = `v${API_VERSION}`
 
-const computeApiBaseUrl = (): string => buildVersionedApiBase(API_BASE_TEMPLATE, API_VERSION_SEGMENT)
+const computeApiBaseUrl = (): string =>
+  buildVersionedApiBase(API_BASE_TEMPLATE, API_VERSION_SEGMENT)
 const computeApiBasePath = (): string => toPath(API_BASE_URL)
 const computeEffectiveApiBase = (): string =>
   typeof window === 'undefined' && API_BASE_URL.startsWith('/')
@@ -123,7 +124,8 @@ export const applyApiVersionFromStartupConfig = (startupConfig: unknown): boolea
   return setApiVersion(value)
 }
 
-export const buildApiPath = (endpoint: string): string => `${API_BASE_PATH}${normalizeEndpoint(endpoint)}`
+export const buildApiPath = (endpoint: string): string =>
+  `${API_BASE_PATH}${normalizeEndpoint(endpoint)}`
 
 export const isApiImagesUrl = (url: string): boolean =>
   /\/api(?:\/v\d+(?:\.\d+)?)?\/images\//i.test(url || '')

@@ -18,7 +18,7 @@
 import { mount } from '@vue/test-utils'
 import { nextTick } from 'vue'
 import { describe, it, expect, vi, afterEach } from 'vitest'
- 
+
 import ManualSearchModal from '@/components/domain/search/ManualSearchModal.vue'
 import * as apiModule from '@/services/api'
 const { apiService } = apiModule
@@ -77,7 +77,7 @@ describe('ManualSearchModal - grabs sorting', () => {
       { id: 1, name: 'Test', implementation: 'Test', additionalSettings: null } as unknown,
     ])
     vi.spyOn(apiService, 'searchByApi').mockResolvedValue([
-      ({
+      {
         guid: '1',
         title: 'A',
         grabs: 100,
@@ -85,8 +85,8 @@ describe('ManualSearchModal - grabs sorting', () => {
         publishDate: new Date().toISOString(),
         indexer: 'Test',
         indexerId: 1,
-      } as unknown),
-      ({
+      } as unknown,
+      {
         guid: '2',
         title: 'B',
         grabs: 10,
@@ -94,8 +94,8 @@ describe('ManualSearchModal - grabs sorting', () => {
         publishDate: new Date().toISOString(),
         indexer: 'Test',
         indexerId: 1,
-      } as unknown),
-      ({
+      } as unknown,
+      {
         guid: '3',
         title: 'C',
         grabs: 50,
@@ -103,10 +103,10 @@ describe('ManualSearchModal - grabs sorting', () => {
         publishDate: new Date().toISOString(),
         indexer: 'Test',
         indexerId: 1,
-      } as unknown),
+      } as unknown,
     ] as unknown)
     vi.spyOn(apiService, 'getDefaultQualityProfile').mockResolvedValue({ id: 1 } as unknown)
-    vi.spyOn(apiService, 'scoreSearchResults').mockResolvedValue([] as unknown) 
+    vi.spyOn(apiService, 'scoreSearchResults').mockResolvedValue([] as unknown)
 
     const wrapper = mount(ManualSearchModal, {
       props: { isOpen: false, audiobook: { id: 1, title: 'Test', authors: [] } },
@@ -156,7 +156,7 @@ describe('ManualSearchModal - grabs sorting', () => {
       { id: 1, name: 'Test', implementation: 'Test', additionalSettings: null } as unknown,
     ])
     vi.spyOn(apiService, 'searchByApi').mockResolvedValue([
-      ({
+      {
         guid: '1',
         title: 'A',
         grabs: 0,
@@ -165,8 +165,8 @@ describe('ManualSearchModal - grabs sorting', () => {
         language: 'Spanish',
         indexer: 'Test',
         indexerId: 1,
-      } as unknown),
-      ({
+      } as unknown,
+      {
         guid: '2',
         title: 'B',
         grabs: 0,
@@ -175,8 +175,8 @@ describe('ManualSearchModal - grabs sorting', () => {
         language: 'English',
         indexer: 'Test',
         indexerId: 1,
-      } as unknown),
-      ({
+      } as unknown,
+      {
         guid: '3',
         title: 'C',
         grabs: 0,
@@ -185,10 +185,10 @@ describe('ManualSearchModal - grabs sorting', () => {
         language: 'French',
         indexer: 'Test',
         indexerId: 1,
-      } as unknown),
+      } as unknown,
     ] as unknown)
     vi.spyOn(apiService, 'getDefaultQualityProfile').mockResolvedValue({ id: 1 } as unknown)
-    vi.spyOn(apiService, 'scoreSearchResults').mockResolvedValue([] as unknown) 
+    vi.spyOn(apiService, 'scoreSearchResults').mockResolvedValue([] as unknown)
 
     const wrapper = mount(ManualSearchModal, {
       props: { isOpen: false, audiobook: { id: 1, title: 'Test', authors: [] } },

@@ -24,10 +24,7 @@
 
     <!-- Quick raw-fetch debug control -->
     <div class="mb-md">
-      <button
-        @click="fetchRawDebug(searchQuery || 'Harry')"
-        class="search-button bg-secondary"
-      >
+      <button @click="fetchRawDebug(searchQuery || 'Harry')" class="search-button bg-secondary">
         Fetch Raw API Results (apiService)
       </button>
       <button
@@ -44,15 +41,11 @@
       class="debug-results bg-white border p-md rounded mt-md"
     >
       <strong>Debug: raw searchStore.searchResults</strong>
-      <pre class="debug-pre">{{
-        JSON.stringify(searchStore.searchResults, null, 2)
-      }}</pre>
+      <pre class="debug-pre">{{ JSON.stringify(searchStore.searchResults, null, 2) }}</pre>
       <div class="mt-sm">
         <strong>Raw debug fetch results (window.rawDebugResults):</strong>
         <div>Count: {{ rawDebugResults ? rawDebugResults.length : 0 }}</div>
-        <pre class="debug-pre">{{
-          JSON.stringify(rawDebugResults, null, 2)
-        }}</pre>
+        <pre class="debug-pre">{{ JSON.stringify(rawDebugResults, null, 2) }}</pre>
       </div>
     </div>
 
@@ -179,7 +172,11 @@
           <div class="result-actions">
             <button
               @click="addToLibrary(result)"
-              :class="['add-button','btn', { added: addedResults.has(result.id), 'btn-primary': !addedResults.has(result.id) }]"
+              :class="[
+                'add-button',
+                'btn',
+                { added: addedResults.has(result.id), 'btn-primary': !addedResults.has(result.id) },
+              ]"
               :disabled="isAddingToLibrary || addedResults.has(result.id)"
             >
               <template v-if="addedResults.has(result.id)">
@@ -353,7 +350,11 @@ const performSearch = async () => {
             while (current && current !== document.documentElement) {
               const style = getComputedStyle(current)
               const overflowY = style.overflowY
-              if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) return current
+              if (
+                (overflowY === 'auto' || overflowY === 'scroll') &&
+                current.scrollHeight > current.clientHeight
+              )
+                return current
               current = current.parentElement
             }
             return window
@@ -365,7 +366,11 @@ const performSearch = async () => {
             window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
           } else {
             const anc = ancestor as HTMLElement
-            const top = anc.scrollTop + el.getBoundingClientRect().top - anc.getBoundingClientRect().top - navOffset
+            const top =
+              anc.scrollTop +
+              el.getBoundingClientRect().top -
+              anc.getBoundingClientRect().top -
+              navOffset
             anc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
           }
         }
@@ -386,7 +391,11 @@ const performSearch = async () => {
             while (current && current !== document.documentElement) {
               const style = getComputedStyle(current)
               const overflowY = style.overflowY
-              if ((overflowY === 'auto' || overflowY === 'scroll') && current.scrollHeight > current.clientHeight) return current
+              if (
+                (overflowY === 'auto' || overflowY === 'scroll') &&
+                current.scrollHeight > current.clientHeight
+              )
+                return current
               current = current.parentElement
             }
             return window
@@ -398,7 +407,11 @@ const performSearch = async () => {
             window.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
           } else {
             const anc = ancestor as HTMLElement
-            const top = anc.scrollTop + elNo.getBoundingClientRect().top - anc.getBoundingClientRect().top - navOffset
+            const top =
+              anc.scrollTop +
+              elNo.getBoundingClientRect().top -
+              anc.getBoundingClientRect().top -
+              navOffset
             anc.scrollTo({ top: Math.max(0, top), behavior: 'smooth' })
           }
         }

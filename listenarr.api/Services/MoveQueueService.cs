@@ -64,7 +64,8 @@ namespace Listenarr.Api.Services
                     return existingDb.Id;
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed during dedupe check for move job; will enqueue new job");
             }
 
@@ -76,7 +77,8 @@ namespace Listenarr.Api.Services
                 var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
                 await moveJobRepository.AddAsync(job);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to persist move job to database; proceeding with in-memory job");
             }
 
@@ -97,7 +99,8 @@ namespace Listenarr.Api.Services
                 if (job != null) _jobs[id] = job;
                 return job != null;
             }
-            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException) {
+            catch (Exception caughtEx_1) when (caughtEx_1 is not OperationCanceledException && caughtEx_1 is not OutOfMemoryException && caughtEx_1 is not StackOverflowException)
+            {
                 job = null;
                 return false;
             }
@@ -130,7 +133,8 @@ namespace Listenarr.Api.Services
                 try
                 {
                     var hub = scope.ServiceProvider.GetRequiredService<IHubContext<DownloadHub>>();
-                    var payload = new {
+                    var payload = new
+                    {
                         jobId = id.ToString(),
                         audiobookId = dbJob?.AudiobookId ?? (job != null ? job.AudiobookId : (int?)null),
                         status = status,
@@ -141,11 +145,13 @@ namespace Listenarr.Api.Services
                     // Fire and forget but block briefly to surface errors during development
                     hub.Clients.All.SendAsync("MoveJobUpdate", payload).GetAwaiter().GetResult();
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to broadcast MoveJobUpdate for job {JobId}", id);
                 }
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to persist move job status change for {JobId}", id);
             }
 
@@ -171,7 +177,8 @@ namespace Listenarr.Api.Services
                     var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
                     job = await moveJobRepository.GetByIdAsync(jobId);
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                {
                     _logger.LogWarning(ex, "Failed to read move job from DB while requeueing {JobId}", jobId);
                 }
 
@@ -195,7 +202,8 @@ namespace Listenarr.Api.Services
                 var moveJobRepository = scope.ServiceProvider.GetRequiredService<IMoveJobRepository>();
                 await moveJobRepository.AddAsync(newJob);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+            catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+            {
                 _logger.LogWarning(ex, "Failed to persist requeued move job to database; proceeding with in-memory job");
             }
 

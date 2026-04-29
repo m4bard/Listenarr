@@ -71,7 +71,6 @@ defineProps({
   saveLabel: { type: String, default: 'Save' },
   saveLabelLoading: { type: String, default: 'Saving...' },
 })
-
 </script>
 
 <style scoped>
@@ -114,6 +113,8 @@ defineProps({
     gap: 0.5rem;
     justify-content: stretch;
   }
-  .modal-footer-actions .btn { width: 100%; }
+  .modal-footer-actions .btn {
+    width: 100%;
+  }
 }
 </style>

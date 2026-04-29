@@ -17,9 +17,7 @@
 -->
 <template>
   <div class="form-section">
-    <h3>
-      <PhMagnifyingGlass /> Search Settings
-    </h3>
+    <h3><PhMagnifyingGlass /> Search Settings</h3>
     <div class="form-body">
       <div class="form-row">
         <div class="form-group">
@@ -30,17 +28,12 @@
             class="form-select"
             @change="updateDefaultSearchRegion"
           >
-            <option
-              v-for="option in searchRegionOptions"
-              :key="option.value"
-              :value="option.value"
-            >
+            <option v-for="option in searchRegionOptions" :key="option.value" :value="option.value">
               {{ option.label }}
             </option>
           </select>
           <small class="form-help">
-            Used as the default market in Add New searches. You can still change it per
-            search.
+            Used as the default market in Add New searches. You can still change it per search.
           </small>
         </div>
 
@@ -61,14 +54,18 @@
             </option>
           </select>
           <small class="form-help">
-            Used as the default language filter for Add New searches. Choose All to
-            disable language filtering.
+            Used as the default language filter for Add New searches. Choose All to disable language
+            filtering.
           </small>
         </div>
       </div>
 
-      <CheckboxCard :modelValue="settings.enableOpenLibrarySearch" @update:modelValue="updateEnableOpenLibrarySearch" title="Enable OpenLibrary Searching" description="Include OpenLibrary title augmentation and lookups when performing intelligent searches." />
-
+      <CheckboxCard
+        :modelValue="settings.enableOpenLibrarySearch"
+        @update:modelValue="updateEnableOpenLibrarySearch"
+        title="Enable OpenLibrary Searching"
+        description="Include OpenLibrary title augmentation and lookups when performing intelligent searches."
+      />
     </div>
   </div>
 </template>
@@ -130,20 +127,62 @@ h3 {
 }
 
 /* Modal-like search settings */
-.form-body { padding: 1.25rem; border-radius: 6px; border: 1px solid #333; box-shadow: 0 4px 14px rgba(0,0,0,0.6); background-color: #232323; }
+.form-body {
+  padding: 1.25rem;
+  border-radius: 6px;
+  border: 1px solid #333;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  background-color: #232323;
+}
 
-.form-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1.5rem; }
+.form-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 1.5rem;
+}
 
-.form-group label { margin-bottom: 0.5rem; font-weight: 500; color: #fff }
+.form-group label {
+  margin-bottom: 0.5rem;
+  font-weight: 500;
+  color: #fff;
+}
 
-.form-group input[type='number'] { width: 100%; padding: 0.9rem 0.85rem; border: 1px solid #444; border-radius: 6px; background-color: #1a1a1a; color: #fff; font-size: 0.95rem }
+.form-group input[type='number'] {
+  width: 100%;
+  padding: 0.9rem 0.85rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background-color: #1a1a1a;
+  color: #fff;
+  font-size: 0.95rem;
+}
 
 .form-group select,
-.form-group input[type='number'] { width: 100%; padding: 0.9rem 0.85rem; border: 1px solid #444; border-radius: 6px; background-color: #1a1a1a; color: #fff; font-size: 0.95rem }
+.form-group input[type='number'] {
+  width: 100%;
+  padding: 0.9rem 0.85rem;
+  border: 1px solid #444;
+  border-radius: 6px;
+  background-color: #1a1a1a;
+  color: #fff;
+  font-size: 0.95rem;
+}
 
 .form-group input:focus,
-.form-group select:focus { outline:none; border-color:var(--brand-500); box-shadow:0 0 0 3px rgba(77,171,247,0.08); }
-.form-group input::placeholder { color: #6c757d }
+.form-group select:focus {
+  outline: none;
+  border-color: var(--brand-500);
+  box-shadow: 0 0 0 3px rgba(77, 171, 247, 0.08);
+}
+.form-group input::placeholder {
+  color: #6c757d;
+}
 
-.form-help { display:block; margin-top:0.5rem; font-size:0.85rem; color:#adb5bd; line-height:1.5 }
+.form-help {
+  display: block;
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: #adb5bd;
+  line-height: 1.5;
+}
 </style>
