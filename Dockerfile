@@ -14,7 +14,12 @@ EXPOSE 4545
 
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
+COPY ["Directory.Build.props", "./"]
+COPY ["Directory.Packages.props", "./"]
 COPY ["listenarr.api/Listenarr.Api.csproj", "listenarr.api/"]
+COPY ["listenarr.domain/Listenarr.Domain.csproj", "listenarr.domain/"]
+COPY ["listenarr.application/Listenarr.Application.csproj", "listenarr.application/"]
+COPY ["listenarr.infrastructure/Listenarr.Infrastructure.csproj", "listenarr.infrastructure/"]
 RUN dotnet restore "listenarr.api/Listenarr.Api.csproj"
 COPY . .
 WORKDIR "/src/listenarr.api"
