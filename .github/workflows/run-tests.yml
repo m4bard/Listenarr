@@ -39,6 +39,9 @@ jobs:
       - name: Restore
         run: dotnet restore listenarr.slnx
 
+      - name: Backend format check
+        run: npm run --silent format:backend:check
+
       - name: Enforce layering rules
         run: |
           set -e
