@@ -55,7 +55,7 @@ describe('NotificationsTab', () => {
       })
 
       // Open the webhook form and select NTFY type
-      const vm = wrapper.vm as any
+      const vm = wrapper.vm as unknown as { openWebhookForm: () => void }
       vm.openWebhookForm()
       await wrapper.vm.$nextTick()
 
