@@ -150,7 +150,10 @@
               <li><code>{Publisher}</code> - Publisher name</li>
               <li><code>{Language}</code> - Metadata language</li>
               <li><code>{Asin}</code> - Audible ASIN</li>
-              <li><code>{SeriesNumber}</code> - Position in series</li>
+              <li>
+                <code>{SeriesNumber}</code> or <code>{SeriesNumber:00}</code> - Position in series (00 =
+                zero-padded)
+              </li>
               <li><code>{Year}</code> - Publication year</li>
             </ul>
             <p class="example"><strong>Example:</strong> <code>{Author}/{Series}/{Title}</code></p>
@@ -170,7 +173,10 @@
               <li><code>{Publisher}</code> - Publisher name</li>
               <li><code>{Language}</code> - Metadata language</li>
               <li><code>{Asin}</code> - Audible ASIN</li>
-              <li><code>{SeriesNumber}</code> - Position in series</li>
+              <li>
+                <code>{SeriesNumber}</code> or <code>{SeriesNumber:00}</code> - Position in series (00 =
+                zero-padded)
+              </li>
               <li>
                 <code>{DiskNumber}</code> or <code>{DiskNumber:00}</code> - Disk/part number (00 =
                 zero-padded)
@@ -246,7 +252,7 @@ function applyPattern(
 
   // Replace all variables with sample values
   for (const [key, value] of Object.entries(sampleVariables)) {
-    if (key === 'DiskNumber' || key === 'ChapterNumber') {
+    if (key === 'DiskNumber' || key === 'ChapterNumber' || key === 'SeriesNumber') {
       // Handle zero-padding for disk and chapter numbers using the sample value
       const paddedRegex = new RegExp(`\\{${key}:00\\}`, 'g')
       const paddedSample = value.toString().padStart(2, '0')
