@@ -1017,10 +1017,7 @@ const capitalizeFirst = (str: string | undefined): string => {
 
 // Computed property for cover image URL
 const coverImageUrl = computed(() => {
-  return getProtectedImageSrc(
-    audiobook.value?.imageUrl,
-    getPlaceholderUrl(),
-  )
+  return getProtectedImageSrc(audiobook.value?.imageUrl, getPlaceholderUrl())
 })
 
 // Show a base path even when no files exist yet by falling back to configured default root folder

@@ -16,13 +16,11 @@
   along with this program. If not, see <https://www.gnu.org/licenses/>.
 -->
 <template>
-    <div class="collection-view">
-      <!-- Top Navigation Bar -->
+  <div class="collection-view">
+    <!-- Top Navigation Bar -->
     <div v-if="!isMetadataCollection" class="top-nav">
       <div class="nav-title">
-        <h1>
-          <PhBooks /> {{ name }}
-        </h1>
+        <h1><PhBooks /> {{ name }}</h1>
       </div>
     </div>
 
@@ -48,9 +46,7 @@
               <PhGlobe />
               {{ authorMonitoringContextLabel }}
             </span>
-            <span v-if="authorHeroAsin" class="author-hero-asin">
-              ASIN {{ authorHeroAsin }}
-            </span>
+            <span v-if="authorHeroAsin" class="author-hero-asin"> ASIN {{ authorHeroAsin }} </span>
           </div>
 
           <div class="status-badges author-hero-badges">
@@ -58,9 +54,7 @@
               <component :is="isCurrentAuthorMonitored ? PhEye : PhEyeSlash" />
               {{ isCurrentAuthorMonitored ? 'Monitoring Author' : 'Not Monitored' }}
             </Pill>
-            <Pill variant="success">
-              {{ authorLibraryCount }} in library
-            </Pill>
+            <Pill variant="success"> {{ authorLibraryCount }} in library </Pill>
             <Pill v-if="authorNotAddedCount > 0" variant="warning">
               {{ authorNotAddedCount }} ready to add
             </Pill>
@@ -70,7 +64,10 @@
           </div>
 
           <div v-if="authorHeroBiography" class="description author-hero-description">
-            <div class="description-content author-hero-description-content" :class="{ expanded: showFullAuthorDescription }">
+            <div
+              class="description-content author-hero-description-content"
+              :class="{ expanded: showFullAuthorDescription }"
+            >
               {{ authorHeroDescriptionText }}
             </div>
             <button
@@ -114,10 +111,7 @@
                 >
                   <img
                     :src="
-                      getProtectedImageSrc(
-                        seriesHeroSinglePosterBook.imageUrl,
-                        getPlaceholderUrl(),
-                      )
+                      getProtectedImageSrc(seriesHeroSinglePosterBook.imageUrl, getPlaceholderUrl())
                     "
                     :alt="`${seriesHeroSinglePosterBook.title} cover`"
                     class="series-hero-cover-image centered"
@@ -136,12 +130,7 @@
                   :style="getSeriesHeroCoverStyle(index, seriesHeroPosterBooks.length)"
                 >
                   <img
-                    :src="
-                      getProtectedImageSrc(
-                        book.imageUrl,
-                        getPlaceholderUrl(),
-                      )
-                    "
+                    :src="getProtectedImageSrc(book.imageUrl, getPlaceholderUrl())"
                     :alt="`${book.title} cover`"
                     class="series-hero-cover-image"
                     loading="lazy"
@@ -174,9 +163,7 @@
               <PhGlobe />
               {{ seriesMetadataContextLabel }}
             </span>
-            <span v-if="seriesHeroAsin" class="author-hero-asin">
-              ASIN {{ seriesHeroAsin }}
-            </span>
+            <span v-if="seriesHeroAsin" class="author-hero-asin"> ASIN {{ seriesHeroAsin }} </span>
           </div>
 
           <div class="status-badges author-hero-badges">
@@ -184,15 +171,11 @@
               <component :is="isCurrentSeriesMonitored ? PhEye : PhEyeSlash" />
               {{ isCurrentSeriesMonitored ? 'Monitoring Series' : 'Not Monitored' }}
             </Pill>
-            <Pill variant="success">
-              {{ seriesLibraryCount }} in library
-            </Pill>
+            <Pill variant="success"> {{ seriesLibraryCount }} in library </Pill>
             <Pill v-if="seriesNotAddedCount > 0" variant="warning">
               {{ seriesNotAddedCount }} ready to add
             </Pill>
-            <Pill variant="primary">
-              {{ seriesCatalogTotalCount }} total books
-            </Pill>
+            <Pill variant="primary"> {{ seriesCatalogTotalCount }} total books </Pill>
             <Pill variant="info">
               {{ seriesLanguageLabel }}
             </Pill>
@@ -293,7 +276,9 @@
               :class="{ active: isCurrentAuthorMonitored }"
               :disabled="authorMonitoringBusy || authorMetadataRefreshBusy"
               @click="toggleAuthorMonitoring"
-              :title="isCurrentAuthorMonitored ? 'Stop monitoring this author' : 'Monitor this author'"
+              :title="
+                isCurrentAuthorMonitored ? 'Stop monitoring this author' : 'Monitor this author'
+              "
             >
               <PhArrowClockwise v-if="authorMonitoringBusy" class="spin-icon" />
               <component v-else :is="isCurrentAuthorMonitored ? PhEye : PhPlus" />
@@ -318,7 +303,9 @@
               :class="{ active: isCurrentSeriesMonitored }"
               :disabled="seriesMonitoringBusy || seriesMetadataRefreshBusy"
               @click="toggleSeriesMonitoring"
-              :title="isCurrentSeriesMonitored ? 'Stop monitoring this series' : 'Monitor this series'"
+              :title="
+                isCurrentSeriesMonitored ? 'Stop monitoring this series' : 'Monitor this series'
+              "
             >
               <PhArrowClockwise v-if="seriesMonitoringBusy" class="spin-icon" />
               <component v-else :is="isCurrentSeriesMonitored ? PhEye : PhPlus" />
@@ -386,133 +373,133 @@
           <div
             v-for="audiobook in section.items"
             :key="`${section.key}-${audiobook.key}`"
-          tabindex="0"
-          @keydown.enter="handleRowClick(audiobook)"
-          class="audiobook-list-item"
-          :class="{
-            selected: audiobook.inLibrary && isSelected(audiobook.id),
-            'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
-            'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
-            'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
-            'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
-            'not-in-library': !audiobook.inLibrary,
-          }"
-          @click="handleRowClick(audiobook)"
-        >
-          <div
-            v-if="audiobook.inLibrary"
-            class="selection-checkbox"
-            @click.stop="handleCheckboxClick(audiobook, $event)"
-            @mousedown.prevent
+            tabindex="0"
+            @keydown.enter="handleRowClick(audiobook)"
+            class="audiobook-list-item"
+            :class="{
+              selected: audiobook.inLibrary && isSelected(audiobook.id),
+              'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
+              'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
+              'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
+              'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
+              'not-in-library': !audiobook.inLibrary,
+            }"
+            @click="handleRowClick(audiobook)"
           >
-            <input
-              type="checkbox"
-              :checked="isSelected(audiobook.id)"
-              @change="onCheckboxChange(audiobook, $event)"
-              @keydown.space.prevent="
-                handleCheckboxKeydown && handleCheckboxKeydown(audiobook, $event)
-              "
-            />
-          </div>
-          <div v-else class="selection-checkbox-spacer" aria-hidden="true"></div>
-
-          <img
-            class="list-thumb"
-            :src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
-            :alt="audiobook.title"
-            loading="lazy"
-            decoding="async"
-            @error="handleImageError"
-          />
-
-          <div class="list-details">
-            <div class="audiobook-title">{{ safeText(audiobook.title) }}</div>
-            <div class="audiobook-author">
-              {{
-                audiobook.authors
-                  ?.map((author) => safeText(author))
-                  .slice(0, 2)
-                  .join(', ') || 'Unknown Author'
-              }}
+            <div
+              v-if="audiobook.inLibrary"
+              class="selection-checkbox"
+              @click.stop="handleCheckboxClick(audiobook, $event)"
+              @mousedown.prevent
+            >
+              <input
+                type="checkbox"
+                :checked="isSelected(audiobook.id)"
+                @change="onCheckboxChange(audiobook, $event)"
+                @keydown.space.prevent="
+                  handleCheckboxKeydown && handleCheckboxKeydown(audiobook, $event)
+                "
+              />
             </div>
-            <div v-if="showItemDetails" class="list-extra-details">
-              <div class="detail-line small">
+            <div v-else class="selection-checkbox-spacer" aria-hidden="true"></div>
+
+            <img
+              class="list-thumb"
+              :src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
+              :alt="audiobook.title"
+              loading="lazy"
+              decoding="async"
+              @error="handleImageError"
+            />
+
+            <div class="list-details">
+              <div class="audiobook-title">{{ safeText(audiobook.title) }}</div>
+              <div class="audiobook-author">
                 {{
-                  (audiobook.narrators || [])
-                    .slice(0, 1)
-                    .map((n) => safeText(n))
-                    .join(', ') || ''
+                  audiobook.authors
+                    ?.map((author) => safeText(author))
+                    .slice(0, 2)
+                    .join(', ') || 'Unknown Author'
                 }}
-                <span
-                  v-if="
-                    audiobook.narrators &&
-                    audiobook.narrators.length &&
-                    (audiobook.publisher || audiobook.publishYear)
-                  "
-                >
-                  •
-                </span>
-                {{ safeText(audiobook.publisher)
-                }}<span v-if="audiobook.publishYear">
-                  • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
-                >
+              </div>
+              <div v-if="showItemDetails" class="list-extra-details">
+                <div class="detail-line small">
+                  {{
+                    (audiobook.narrators || [])
+                      .slice(0, 1)
+                      .map((n) => safeText(n))
+                      .join(', ') || ''
+                  }}
+                  <span
+                    v-if="
+                      audiobook.narrators &&
+                      audiobook.narrators.length &&
+                      (audiobook.publisher || audiobook.publishYear)
+                    "
+                  >
+                    •
+                  </span>
+                  {{ safeText(audiobook.publisher)
+                  }}<span v-if="audiobook.publishYear">
+                    • {{ safeText(audiobook.publishYear?.toString?.() ?? '') }}</span
+                  >
+                </div>
               </div>
             </div>
-          </div>
 
-          <div class="list-badges">
-            <div
-              class="status-badge"
-              :class="getAudiobookStatus(audiobook)"
-              role="button"
-              tabindex="0"
-              @click.stop="() => {}"
-              :aria-label="`Status for ${audiobook.title}`"
-            >
-              {{ statusText(getAudiobookStatus(audiobook)) }}
+            <div class="list-badges">
+              <div
+                class="status-badge"
+                :class="getAudiobookStatus(audiobook)"
+                role="button"
+                tabindex="0"
+                @click.stop="() => {}"
+                :aria-label="`Status for ${audiobook.title}`"
+              >
+                {{ statusText(getAudiobookStatus(audiobook)) }}
+              </div>
+              <div
+                v-if="audiobook.inLibrary && getQualityProfileName(audiobook.qualityProfileId)"
+                class="quality-profile-badge"
+              >
+                <PhStar />
+                {{ getQualityProfileName(audiobook.qualityProfileId) }}
+              </div>
+              <div
+                class="monitored-badge"
+                :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+              >
+                <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
+                {{ getMonitoringLabel(audiobook) }}
+              </div>
             </div>
-            <div
-              v-if="audiobook.inLibrary && getQualityProfileName(audiobook.qualityProfileId)"
-              class="quality-profile-badge"
-            >
-              <PhStar />
-              {{ getQualityProfileName(audiobook.qualityProfileId) }}
-            </div>
-            <div
-              class="monitored-badge"
-              :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
-            >
-              <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
-              {{ getMonitoringLabel(audiobook) }}
-            </div>
-          </div>
 
-          <div class="list-actions">
-            <button
-              v-if="audiobook.inLibrary"
-              class="action-btn edit-btn-small"
-              @click.stop="editAudiobook(audiobook)"
-              title="Edit"
-            >
-              <PhPencil />
-            </button>
-            <button
-              v-if="audiobook.inLibrary"
-              class="action-btn delete-btn-small"
-              @click.stop="deleteAudiobook(audiobook)"
-              title="Delete"
-            >
-              <PhTrash />
-            </button>
-            <button
-              v-else
-              class="action-btn add-btn-small"
-              @click.stop="openAddToLibrary(audiobook)"
-              title="Add to Library"
-            >
-              <PhPlus />
-            </button>
-          </div>
+            <div class="list-actions">
+              <button
+                v-if="audiobook.inLibrary"
+                class="action-btn edit-btn-small"
+                @click.stop="editAudiobook(audiobook)"
+                title="Edit"
+              >
+                <PhPencil />
+              </button>
+              <button
+                v-if="audiobook.inLibrary"
+                class="action-btn delete-btn-small"
+                @click.stop="deleteAudiobook(audiobook)"
+                title="Delete"
+              >
+                <PhTrash />
+              </button>
+              <button
+                v-else
+                class="action-btn add-btn-small"
+                @click.stop="openAddToLibrary(audiobook)"
+                title="Add to Library"
+              >
+                <PhPlus />
+              </button>
+            </div>
           </div>
         </template>
       </div>
@@ -537,106 +524,108 @@
             <div
               v-for="audiobook in section.items"
               :key="`${section.key}-${audiobook.key}`"
-          class="collection-card"
-          :class="{
-            selected: audiobook.inLibrary && isSelected(audiobook.id),
-            'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
-            'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
-            'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
-            'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
-            'not-in-library': !audiobook.inLibrary,
-          }"
-          @click="handleCardClick(audiobook)"
-        >
-          <div
-            v-if="audiobook.inLibrary"
-            class="selection-checkbox"
-            @click.stop="handleCheckboxClick(audiobook, $event)"
-            @mousedown.prevent
-          >
-            <input
-              type="checkbox"
-              :checked="isSelected(audiobook.id)"
-              @change="onCheckboxChange(audiobook, $event)"
-              @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
-            />
-          </div>
-          <div class="collection-cover">
-            <img
-              v-if="audiobook.imageUrl"
-              :src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
-              :alt="audiobook.title"
-              loading="lazy"
-              decoding="async"
-              @error="handleImageError"
-              class="collection-image"
-            />
-            <div v-else class="no-cover">
-              <PhBookOpen />
-            </div>
-            <div class="status-overlay">
-              <div v-if="!showItemDetails" class="audiobook-title collection-title">
-                {{ safeText(audiobook.title) }}
-              </div>
-              <div v-if="!showItemDetails" class="audiobook-author collection-author">
-                {{
-                  audiobook.authors?.map((author) => safeText(author)).join(', ') ||
-                  'Unknown Author'
-                }}
-              </div>
+              class="collection-card"
+              :class="{
+                selected: audiobook.inLibrary && isSelected(audiobook.id),
+                'status-no-file': getAudiobookStatus(audiobook) === 'no-file',
+                'status-downloading': getAudiobookStatus(audiobook) === 'downloading',
+                'status-quality-mismatch': getAudiobookStatus(audiobook) === 'quality-mismatch',
+                'status-quality-match': getAudiobookStatus(audiobook) === 'quality-match',
+                'not-in-library': !audiobook.inLibrary,
+              }"
+              @click="handleCardClick(audiobook)"
+            >
               <div
-                v-if="audiobook.inLibrary && getQualityProfileName(audiobook.qualityProfileId)"
-                class="quality-profile-badge"
+                v-if="audiobook.inLibrary"
+                class="selection-checkbox"
+                @click.stop="handleCheckboxClick(audiobook, $event)"
+                @mousedown.prevent
               >
-                <PhStar />
-                {{ getQualityProfileName(audiobook.qualityProfileId) }}
+                <input
+                  type="checkbox"
+                  :checked="isSelected(audiobook.id)"
+                  @change="onCheckboxChange(audiobook, $event)"
+                  @keydown.space.prevent="handleCheckboxKeydown(audiobook, $event)"
+                />
               </div>
-              <div
-                class="monitored-badge"
-                :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
-              >
-                <component :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash" />
-                {{ getMonitoringLabel(audiobook) }}
+              <div class="collection-cover">
+                <img
+                  v-if="audiobook.imageUrl"
+                  :src="getProtectedImageSrc(audiobook.imageUrl, getPlaceholderUrl())"
+                  :alt="audiobook.title"
+                  loading="lazy"
+                  decoding="async"
+                  @error="handleImageError"
+                  class="collection-image"
+                />
+                <div v-else class="no-cover">
+                  <PhBookOpen />
+                </div>
+                <div class="status-overlay">
+                  <div v-if="!showItemDetails" class="audiobook-title collection-title">
+                    {{ safeText(audiobook.title) }}
+                  </div>
+                  <div v-if="!showItemDetails" class="audiobook-author collection-author">
+                    {{
+                      audiobook.authors?.map((author) => safeText(author)).join(', ') ||
+                      'Unknown Author'
+                    }}
+                  </div>
+                  <div
+                    v-if="audiobook.inLibrary && getQualityProfileName(audiobook.qualityProfileId)"
+                    class="quality-profile-badge"
+                  >
+                    <PhStar />
+                    {{ getQualityProfileName(audiobook.qualityProfileId) }}
+                  </div>
+                  <div
+                    class="monitored-badge"
+                    :class="{ unmonitored: !audiobook.inLibrary || !audiobook.monitored }"
+                  >
+                    <component
+                      :is="audiobook.inLibrary && audiobook.monitored ? PhEye : PhEyeSlash"
+                    />
+                    {{ getMonitoringLabel(audiobook) }}
+                  </div>
+                </div>
               </div>
-            </div>
-          </div>
-          <!-- Bottom placard (only show when item details are enabled) -->
-          <div v-if="showItemDetails" class="series-bottom-placard">
-            <div class="series-bottom-content">
-              <p class="series-bottom-title">{{ safeText(audiobook.title) }}</p>
-              <p class="series-bottom-author" v-if="audiobook.authors?.[0]">
-                {{ audiobook.authors[0] }}
-              </p>
-              <p class="series-bottom-meta">{{ statusText(getAudiobookStatus(audiobook)) }}</p>
-            </div>
-          </div>
-          <!-- Action buttons -->
-          <div class="action-buttons">
-            <button
-              v-if="audiobook.inLibrary"
-              class="action-btn edit-btn-small"
-              @click.stop="editAudiobook(audiobook)"
-              title="Edit"
-            >
-              <PhPencil />
-            </button>
-            <button
-              v-if="audiobook.inLibrary"
-              class="action-btn delete-btn-small"
-              @click.stop="deleteAudiobook(audiobook)"
-              title="Delete"
-            >
-              <PhTrash />
-            </button>
-            <button
-              v-else
-              class="action-btn add-btn-small"
-              @click.stop="openAddToLibrary(audiobook)"
-              title="Add to Library"
-            >
-              <PhPlus />
-            </button>
-          </div>
+              <!-- Bottom placard (only show when item details are enabled) -->
+              <div v-if="showItemDetails" class="series-bottom-placard">
+                <div class="series-bottom-content">
+                  <p class="series-bottom-title">{{ safeText(audiobook.title) }}</p>
+                  <p class="series-bottom-author" v-if="audiobook.authors?.[0]">
+                    {{ audiobook.authors[0] }}
+                  </p>
+                  <p class="series-bottom-meta">{{ statusText(getAudiobookStatus(audiobook)) }}</p>
+                </div>
+              </div>
+              <!-- Action buttons -->
+              <div class="action-buttons">
+                <button
+                  v-if="audiobook.inLibrary"
+                  class="action-btn edit-btn-small"
+                  @click.stop="editAudiobook(audiobook)"
+                  title="Edit"
+                >
+                  <PhPencil />
+                </button>
+                <button
+                  v-if="audiobook.inLibrary"
+                  class="action-btn delete-btn-small"
+                  @click.stop="deleteAudiobook(audiobook)"
+                  title="Delete"
+                >
+                  <PhTrash />
+                </button>
+                <button
+                  v-else
+                  class="action-btn add-btn-small"
+                  @click.stop="openAddToLibrary(audiobook)"
+                  title="Add to Library"
+                >
+                  <PhPlus />
+                </button>
+              </div>
             </div>
           </div>
         </section>
@@ -700,8 +689,8 @@
           >?
         </p>
         <p class="warning-text">
-          This action cannot be undone. The audiobook data and cached images will be
-          permanently removed.
+          This action cannot be undone. The audiobook data and cached images will be permanently
+          removed.
         </p>
         <div class="delete-options">
           <div class="checkbox-row">
@@ -713,8 +702,13 @@
                 aria-label="Remove all files in the audiobook folder from disk"
               />
               <div class="checkbox-content">
-                <span class="checkbox-title">Remove all files in the audiobook folder from disk</span>
-                <small>Deletes every file inside the audiobook folder when it can be identified safely. Leave the folder itself unless you also choose the option below.</small>
+                <span class="checkbox-title"
+                  >Remove all files in the audiobook folder from disk</span
+                >
+                <small
+                  >Deletes every file inside the audiobook folder when it can be identified safely.
+                  Leave the folder itself unless you also choose the option below.</small
+                >
               </div>
             </label>
           </div>
@@ -729,7 +723,10 @@
               />
               <div class="checkbox-content">
                 <span class="checkbox-title">Also remove the audiobook folder</span>
-                <small>Deletes the audiobook folder itself when it is safe to do so. This also removes everything inside it.</small>
+                <small
+                  >Deletes the audiobook folder itself when it is safe to do so. This also removes
+                  everything inside it.</small
+                >
               </div>
             </label>
           </div>
@@ -890,7 +887,9 @@ const authorRegionLabel = computed(
     authorCatalogRegion.value.toUpperCase(),
 )
 const preferredAuthorMonitoringLanguage = computed(() =>
-  normalizePreferredSearchLanguage(configStore.applicationSettings?.defaultSearchLanguage ?? 'english'),
+  normalizePreferredSearchLanguage(
+    configStore.applicationSettings?.defaultSearchLanguage ?? 'english',
+  ),
 )
 const preferredAuthorCatalogLanguageFilter = computed(() =>
   getPreferredSearchLanguageFilter(configStore.applicationSettings?.defaultSearchLanguage),
@@ -1020,7 +1019,10 @@ function buildCatalogMetadata(book: RemoteCatalogBook): AudibleBookMetadata {
   }
 }
 
-function mapCatalogItem(book: RemoteCatalogBook, sourcePrefix: 'author-catalog' | 'series-catalog'): CollectionDisplayItem {
+function mapCatalogItem(
+  book: RemoteCatalogBook,
+  sourcePrefix: 'author-catalog' | 'series-catalog',
+): CollectionDisplayItem {
   const authors = (book.authors || []).filter(Boolean)
   const syntheticKey = book.asin || buildTitleAuthorKey(book.title, authors) || book.title
 
@@ -1048,7 +1050,10 @@ function mapCatalogItem(book: RemoteCatalogBook, sourcePrefix: 'author-catalog' 
   }
 }
 
-function findLibraryMatch(book: RemoteCatalogBook, libraryBooks: Audiobook[]): Audiobook | undefined {
+function findLibraryMatch(
+  book: RemoteCatalogBook,
+  libraryBooks: Audiobook[],
+): Audiobook | undefined {
   const asin = normalizeIdentifier(book.asin)
   if (asin) {
     const asinMatch = libraryBooks.find((candidate) => normalizeIdentifier(candidate.asin) === asin)
@@ -1230,18 +1235,23 @@ const seriesLibraryCount = computed(() => totalAddedAudiobooks.value.length)
 const seriesNotAddedCount = computed(() => totalNotAddedAudiobooks.value.length)
 const seriesVisibleBookCount = computed(() => audiobooks.value.length)
 const seriesCatalogTotalCount = computed(
-  () => seriesCatalog.value?.totalBooks ?? seriesLookup.value?.totalBooks ?? seriesVisibleBookCount.value,
+  () =>
+    seriesCatalog.value?.totalBooks ??
+    seriesLookup.value?.totalBooks ??
+    seriesVisibleBookCount.value,
 )
 
 const authorHeroName = computed(
-  () => safeText(authorCatalog.value?.author?.name || authorLookup.value?.name || name.value) || name.value,
+  () =>
+    safeText(authorCatalog.value?.author?.name || authorLookup.value?.name || name.value) ||
+    name.value,
 )
 const authorHeroAsin = computed(
   () =>
     safeText(
       authorLookup.value?.asin ||
         authorCatalog.value?.author?.asin ||
-      authorMonitoringStatus.value?.authorAsin ||
+        authorMonitoringStatus.value?.authorAsin ||
         '',
     ) || '',
 )
@@ -1279,7 +1289,9 @@ const authorSimilarAuthors = computed<RelatedAuthorItem[]>(() =>
   ),
 )
 const seriesHeroName = computed(
-  () => safeText(seriesCatalog.value?.series?.name || seriesLookup.value?.name || name.value) || name.value,
+  () =>
+    safeText(seriesCatalog.value?.series?.name || seriesLookup.value?.name || name.value) ||
+    name.value,
 )
 const seriesHeroAsin = computed(
   () => safeText(seriesLookup.value?.asin || seriesCatalog.value?.series?.asin || '') || '',
@@ -1315,12 +1327,10 @@ const seriesHeroPosterBooks = computed(() =>
 )
 const seriesHeroSinglePosterBook = computed(() => seriesHeroPosterBooks.value[0] ?? null)
 const seriesHeroSingleBackgroundStyle = computed(() => ({
-  backgroundImage: `url(${
-    getProtectedImageSrc(
-      seriesHeroSinglePosterBook.value?.imageUrl,
-      getPlaceholderUrl(),
-    )
-  })`,
+  backgroundImage: `url(${getProtectedImageSrc(
+    seriesHeroSinglePosterBook.value?.imageUrl,
+    getPlaceholderUrl(),
+  )})`,
 }))
 
 function getSeriesHeroCoverStyle(index: number, count: number) {
@@ -1457,7 +1467,11 @@ async function loadAuthorCatalog(refresh = false): Promise<AuthorCatalogResponse
   authorCatalogError.value = null
 
   try {
-    const response = await apiService.getAuthorCatalog(name.value, authorCatalogRegion.value, refresh)
+    const response = await apiService.getAuthorCatalog(
+      name.value,
+      authorCatalogRegion.value,
+      refresh,
+    )
     if (requestId !== authorCatalogRequestId.value) return null
 
     if (!response) {
@@ -1552,7 +1566,11 @@ async function loadSeriesCatalog(refresh = false): Promise<SeriesCatalogResponse
   seriesCatalogError.value = null
 
   try {
-    const response = await apiService.getSeriesCatalog(name.value, seriesCatalogRegion.value, refresh)
+    const response = await apiService.getSeriesCatalog(
+      name.value,
+      seriesCatalogRegion.value,
+      refresh,
+    )
     if (requestId !== seriesCatalogRequestId.value) return null
 
     if (!response) {
@@ -1808,8 +1826,7 @@ async function refreshAuthorMetadata() {
       'Updated the author image, description, related authors, and catalog.',
     )
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : 'Failed to refresh author metadata.'
+    const message = err instanceof Error ? err.message : 'Failed to refresh author metadata.'
     toast.error('Author metadata refresh failed', message)
     errorTracking.captureException(err as Error, {
       component: 'CollectionView',

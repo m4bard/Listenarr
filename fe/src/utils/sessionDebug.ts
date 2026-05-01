@@ -39,10 +39,7 @@ export const logSessionState = (context: string = 'Unknown') => {
 
     // Check localStorage/sessionStorage for the cross-tab auth marker.
     const storedToken = localStorage.getItem('listenarr_session_token')
-    console.log(
-      'Stored auth marker:',
-      storedToken ? `${storedToken.substring(0, 10)}...` : 'None',
-    )
+    console.log('Stored auth marker:', storedToken ? `${storedToken.substring(0, 10)}...` : 'None')
 
     // Check sessionTokenManager
     const managerToken = sessionTokenManager.getToken()

@@ -40,7 +40,11 @@
     </div>
 
     <!-- Top Navigation Bar -->
-    <header v-if="!hideLayout" class="top-nav" :class="{ 'auth-warning-visible': showSecurityWarningBanner }">
+    <header
+      v-if="!hideLayout"
+      class="top-nav"
+      :class="{ 'auth-warning-visible': showSecurityWarningBanner }"
+    >
       <!-- Mobile menu button -->
       <button
         class="nav-btn mobile-menu-btn"
@@ -228,18 +232,15 @@
             <RouterLink
               :to="{ path: '/audiobooks', query: { group: 'books' } }"
               class="nav-item"
-              :class="{ 'router-link-active': route.name === 'home' || route.name === 'audiobooks' }"
-              @mouseenter="preload('home'); onNavMouseEnter('audiobooks')"
+              :class="{
+                'router-link-active': route.name === 'home' || route.name === 'audiobooks',
+              }"
+              @mouseenter="onPrimaryNavMouseEnter('home', 'audiobooks')"
               @mouseleave="onNavMouseLeave('audiobooks')"
-              @focus="preload('home'); onNavFocus('audiobooks')"
+              @focus="onPrimaryNavFocus('home', 'audiobooks')"
               @blur="onNavBlur('audiobooks')"
               @touchstart.passive="preload('home')"
-              @click="
-                () => {
-                  onNavClick('audiobooks')
-                  closeMobileMenu()
-                }
-              "
+              @click="onPrimaryNavClick('audiobooks')"
             >
               <PhBooks />
               <span>Audiobooks</span>
@@ -296,7 +297,7 @@
               <PhPlus />
               <span>Add New</span>
             </RouterLink>
-                        <RouterLink
+            <RouterLink
               to="/calendar"
               class="nav-item"
               @mouseenter="preload('calendar')"
@@ -351,17 +352,12 @@
             <RouterLink
               to="/settings"
               class="nav-item"
-              @mouseenter="preload('settings'); onNavMouseEnter('settings')"
+              @mouseenter="onPrimaryNavMouseEnter('settings', 'settings')"
               @mouseleave="onNavMouseLeave('settings')"
-              @focus="preload('settings'); onNavFocus('settings')"
+              @focus="onPrimaryNavFocus('settings', 'settings')"
               @blur="onNavBlur('settings')"
               @touchstart.passive="preload('settings')"
-              @click="
-                () => {
-                  onNavClick('settings')
-                  closeMobileMenu()
-                }
-              "
+              @click="onPrimaryNavClick('settings')"
             >
               <PhGear />
               <span>Settings</span>
@@ -450,7 +446,6 @@
               <Pill variant="error" v-if="systemIssues > 0">{{ systemIssues }}</Pill>
             </RouterLink>
           </div>
-
         </nav>
         <div v-if="version && version.length > 0" class="sidebar-footer">
           <span class="sidebar-version-text">v{{ version }}</span>
@@ -462,13 +457,26 @@
             title="Source code (AGPLv3)"
             aria-label="Source code on GitHub (AGPLv3)"
           >
-            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true">
-              <path d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"/>
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              viewBox="0 0 24 24"
+              width="16"
+              height="16"
+              aria-hidden="true"
+            >
+              <path
+                d="M12 0C5.37 0 0 5.37 0 12c0 5.31 3.435 9.795 8.205 11.385.6.105.825-.255.825-.57 0-.285-.015-1.23-.015-2.235-3.015.555-3.795-.735-4.035-1.41-.135-.345-.72-1.41-1.23-1.695-.42-.225-1.02-.78-.015-.795.945-.015 1.62.87 1.845 1.23 1.08 1.815 2.805 1.305 3.495.99.105-.78.42-1.305.765-1.605-2.67-.3-5.46-1.335-5.46-5.925 0-1.305.465-2.385 1.23-3.225-.12-.3-.54-1.53.12-3.18 0 0 1.005-.315 3.3 1.23.96-.27 1.98-.405 3-.405s2.04.135 3 .405c2.295-1.56 3.3-1.23 3.3-1.23.66 1.65.24 2.88.12 3.18.765.84 1.23 1.905 1.23 3.225 0 4.605-2.805 5.625-5.475 5.925.435.375.81 1.095.81 2.22 0 1.605-.015 2.895-.015 3.3 0 .315.225.69.825.57A12.02 12.02 0 0 0 24 12c0-6.63-5.37-12-12-12z"
+              />
             </svg>
           </a>
         </div>
       </aside>
-      <div v-if="mobileMenuOpen" class="sidebar-backdrop" @click="closeMobileMenu" aria-hidden="true"></div>
+      <div
+        v-if="mobileMenuOpen"
+        class="sidebar-backdrop"
+        @click="closeMobileMenu"
+        aria-hidden="true"
+      ></div>
 
       <!-- Main Content Area -->
       <main :class="['main-content', { 'full-page': hideLayout }]">
@@ -579,6 +587,21 @@ const sidebarRef = ref<HTMLElement | null>(null)
 const hoverSupported = ref(false)
 const isTouchDevice = ref(false)
 
+function onPrimaryNavMouseEnter(routeName: string, navName: string) {
+  preload(routeName)
+  onNavMouseEnter(navName)
+}
+
+function onPrimaryNavFocus(routeName: string, navName: string) {
+  preload(routeName)
+  onNavFocus(navName)
+}
+
+function onPrimaryNavClick(navName: string) {
+  onNavClick(navName)
+  closeMobileMenu()
+}
+
 onMounted(() => {
   try {
     hoverSupported.value = !!(
@@ -589,7 +612,8 @@ onMounted(() => {
   }
   try {
     isTouchDevice.value =
-      'ontouchstart' in window || (((navigator as unknown) as { maxTouchPoints?: number }).maxTouchPoints ?? 0) > 0
+      'ontouchstart' in window ||
+      ((navigator as unknown as { maxTouchPoints?: number }).maxTouchPoints ?? 0) > 0
   } catch {
     isTouchDevice.value = false
   }
@@ -747,7 +771,9 @@ const closeMobileMenu = () => {
 // Reactive state for badges and counters
 const notificationCount = computed(() => recentNotifications.filter((n) => !n.dismissed).length)
 const queueItems = ref<QueueItem[]>([])
-const wantedCount = computed(() => libraryStore.audiobooks.filter((book) => book.wanted === true).length)
+const wantedCount = computed(
+  () => libraryStore.audiobooks.filter((book) => book.wanted === true).length,
+)
 const systemIssues = ref(0)
 
 // Activity count: Optimized with memoized intermediate computations
@@ -778,8 +804,8 @@ const activeQueueCount = computed(
 // Treat downloadClientId case-insensitively to be robust against lower/upper-cased values
 const ddlDownloadsCount = computed(
   () =>
-    activeDownloads.value.filter((d) =>
-      ((d && d.downloadClientId) || '').toString().toUpperCase() === 'DDL',
+    activeDownloads.value.filter(
+      (d) => ((d && d.downloadClientId) || '').toString().toUpperCase() === 'DDL',
     ).length,
 )
 
@@ -1230,7 +1256,9 @@ onMounted(async () => {
       const fallbackSnapshot = normalizeQueueSnapshot(fallbackQueue)
       if (fallbackSnapshot.items.length > 0) {
         queueItems.value = fallbackSnapshot.items
-        logger.debug('Fallback fetched initial queue items', { count: fallbackSnapshot.items.length })
+        logger.debug('Fallback fetched initial queue items', {
+          count: fallbackSnapshot.items.length,
+        })
       }
     }
   } catch (err) {
@@ -1476,7 +1504,9 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
 .brand-logo {
   width: 40px;
   height: 40px;
-  transition: transform 220ms cubic-bezier(.2,.8,.2,1), filter 220ms;
+  transition:
+    transform 220ms cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 220ms;
   transform-origin: center center;
   filter: brightness(0) saturate(100%) invert(51%) sepia(56%) saturate(3237%) hue-rotate(184deg)
     brightness(97%) contrast(97%);

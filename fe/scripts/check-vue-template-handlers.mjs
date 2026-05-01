@@ -6,6 +6,7 @@ const root = process.cwd()
 const inputPaths = process.argv.slice(2)
 const targets = inputPaths.length > 0 ? inputPaths : ['src']
 const failures = []
+const parseFailures = []
 
 const isVueFile = (file) => file.endsWith('.vue')
 
@@ -92,6 +93,10 @@ for (const file of targets.flatMap((target) => collectVueFiles(target))) {
   const result = parse(source, { filename: file })
 
   if (result.errors.length > 0) {
+    parseFailures.push({
+      file,
+      errors: result.errors,
+    })
     continue
   }
 
@@ -121,14 +126,36 @@ for (const file of targets.flatMap((target) => collectVueFiles(target))) {
   })
 }
 
+if (parseFailures.length > 0) {
+  console.error('Found Vue SFC parse errors.')
+
+  for (const failure of parseFailures) {
+    const relative = path.relative(root, failure.file)
+
+    for (const error of failure.errors) {
+      const location =
+        error.loc?.start?.line && error.loc?.start?.column
+          ? `${error.loc.start.line}:${error.loc.start.column}`
+          : 'unknown location'
+      const message = error.message || String(error)
+
+      console.error(`- ${relative}:${location} ${message}`)
+    }
+  }
+}
+
 if (failures.length > 0) {
   console.error('Found multi-line Vue event handlers that are not single expressions.')
-  console.error('Wrap multi-statement handlers in an arrow function or move them into named methods.')
+  console.error(
+    'Wrap multi-statement handlers in an arrow function or move them into named methods.',
+  )
 
   for (const failure of failures) {
     const relative = path.relative(root, failure.file)
     console.error(`- ${relative}:${failure.line}:${failure.column} ${failure.event}`)
   }
+}
 
+if (parseFailures.length > 0 || failures.length > 0) {
   process.exit(1)
 }

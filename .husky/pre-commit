@@ -2,4 +2,4 @@
 set -e
 
 echo "Running staged lint and format checks..."
-npm run lint:staged
+node scripts/lint-staged.mjs

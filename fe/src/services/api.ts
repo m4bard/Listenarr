@@ -99,84 +99,88 @@ const buildApiRequestUrl = (endpoint: string): string => {
 type ErrorWithStatus = Error & { status?: number; body?: string; retryAfter?: number }
 
 class ApiService {
-  private antiforgeryToken: string | null = null;
-  private antiforgeryTokenSession: string | null = null;
-  private tokenReadyPromise: Promise<void> | null = null;
+  private antiforgeryToken: string | null = null
+  private antiforgeryTokenSession: string | null = null
+  private tokenReadyPromise: Promise<void> | null = null
   // Placeholder URL helper moved to '@/utils/placeholder' - import and use that utility instead
 
   private buildAuthHeaders(): Record<string, string> {
     return {}
   }
 
-
   private async request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
     // Await tokenReadyPromise before any unsafe request to guarantee fresh token
-    const method = (options.method || 'GET').toString().toUpperCase();
-    if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && this.tokenReadyPromise) {
-      logger.debug('[ApiService] Awaiting tokenReadyPromise before unsafe request');
-      await this.tokenReadyPromise;
-      this.tokenReadyPromise = null;
+    const method = (options.method || 'GET').toString().toUpperCase()
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) && this.tokenReadyPromise) {
+      logger.debug('[ApiService] Awaiting tokenReadyPromise before unsafe request')
+      await this.tokenReadyPromise
+      this.tokenReadyPromise = null
     }
-    const url = buildApiRequestUrl(endpoint);
+    const url = buildApiRequestUrl(endpoint)
 
     // Build headers
     const headers: Record<string, string> = {
       ...(options.headers ? (options.headers as Record<string, string>) : {}),
-    };
+    }
 
     // Attach API-key auth when the app is running in no-auth mode.
-    Object.assign(headers, this.buildAuthHeaders());
+    Object.assign(headers, this.buildAuthHeaders())
 
     // Attach antiforgery token for unsafe requests
-    if (["POST", "PUT", "DELETE", "PATCH"].includes(method)) {
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
       if (this.antiforgeryToken) {
-        headers['X-XSRF-TOKEN'] = this.antiforgeryToken;
+        headers['X-XSRF-TOKEN'] = this.antiforgeryToken
       }
     }
 
     // Always send JSON for POST/PUT unless overridden
-    if (["POST", "PUT", "PATCH"].includes(method) && !headers['Content-Type'] && options.body && typeof options.body === 'string') {
-      headers['Content-Type'] = 'application/json';
+    if (
+      ['POST', 'PUT', 'PATCH'].includes(method) &&
+      !headers['Content-Type'] &&
+      options.body &&
+      typeof options.body === 'string'
+    ) {
+      headers['Content-Type'] = 'application/json'
     }
 
     const config: RequestInit = {
       ...options,
       headers,
       credentials: 'include',
-    };
+    }
 
-    let resp: Response;
+    let resp: Response
     try {
-      resp = await fetch(url, config);
+      resp = await fetch(url, config)
     } catch (err) {
-      logger.error('[ApiService] Network error', err);
-      throw new Error('Network error');
+      logger.error('[ApiService] Network error', err)
+      throw new Error('Network error')
     }
 
     if (resp.status === 401) {
       // Unauthorized: clear the browser auth marker and cached antiforgery token.
-      sessionTokenManager.clearToken();
-      this.antiforgeryToken = null;
-      this.antiforgeryTokenSession = null;
-      this.tokenReadyPromise = null;
+      sessionTokenManager.clearToken()
+      this.antiforgeryToken = null
+      this.antiforgeryTokenSession = null
+      this.tokenReadyPromise = null
       // Optionally, trigger a global logout or redirect
-      throw Object.assign(new Error('Unauthorized'), { status: 401 });
+      throw Object.assign(new Error('Unauthorized'), { status: 401 })
     }
 
     if (resp.status === 429) {
       // Too many requests
-      const body = await resp.json().catch(() => ({}));
-      const retryAfter = body?.retryAfterSeconds ?? parseInt(resp.headers.get('Retry-After') || '0');
-      const err: ErrorWithStatus = new Error('Too many requests');
-      err.status = 429;
-      err.retryAfter = retryAfter;
-      throw err;
+      const body = await resp.json().catch(() => ({}))
+      const retryAfter = body?.retryAfterSeconds ?? parseInt(resp.headers.get('Retry-After') || '0')
+      const err: ErrorWithStatus = new Error('Too many requests')
+      err.status = 429
+      err.retryAfter = retryAfter
+      throw err
     }
 
     // If an unsafe request failed with a CSRF error, fetch a fresh antiforgery
     // token and retry. We allow two refresh attempts to handle stale cached
     // tokens that were issued for a prior auth principal.
-    if (["POST", "PUT", "DELETE", "PATCH"].includes(method) && resp.status === 400) {
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method) && resp.status === 400) {
       let text = await resp.text().catch(() => '')
       const looksLikeCsrfFailure = /csrf|xsrf|antiforgery/i.test(text)
       if (looksLikeCsrfFailure) {
@@ -205,20 +209,21 @@ class ApiService {
           }
 
           if (resp.status === 401) {
-            sessionTokenManager.clearToken();
-            this.antiforgeryToken = null;
-            this.antiforgeryTokenSession = null;
-            this.tokenReadyPromise = null;
-            throw Object.assign(new Error('Unauthorized'), { status: 401 });
+            sessionTokenManager.clearToken()
+            this.antiforgeryToken = null
+            this.antiforgeryTokenSession = null
+            this.tokenReadyPromise = null
+            throw Object.assign(new Error('Unauthorized'), { status: 401 })
           }
 
           if (resp.status === 429) {
-            const body = await resp.json().catch(() => ({}));
-            const retryAfter = body?.retryAfterSeconds ?? parseInt(resp.headers.get('Retry-After') || '0');
-            const err: ErrorWithStatus = new Error('Too many requests');
-            err.status = 429;
-            err.retryAfter = retryAfter;
-            throw err;
+            const body = await resp.json().catch(() => ({}))
+            const retryAfter =
+              body?.retryAfterSeconds ?? parseInt(resp.headers.get('Retry-After') || '0')
+            const err: ErrorWithStatus = new Error('Too many requests')
+            err.status = 429
+            err.retryAfter = retryAfter
+            throw err
           }
 
           if (resp.ok) {
@@ -236,35 +241,35 @@ class ApiService {
         }
 
         if (!resp.ok) {
-          const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
-          err.status = resp.status;
-          err.body = text;
-          throw err;
+          const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`)
+          err.status = resp.status
+          err.body = text
+          throw err
         }
       } else {
-        const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
-        err.status = resp.status;
-        err.body = text;
-        throw err;
+        const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`)
+        err.status = resp.status
+        err.body = text
+        throw err
       }
     }
 
     if (!resp.ok) {
-      const text = await resp.text().catch(() => '');
-      const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`);
-      err.status = resp.status;
-      err.body = text;
-      throw err;
+      const text = await resp.text().catch(() => '')
+      const err: ErrorWithStatus = new Error(`API error: ${resp.status} ${text}`)
+      err.status = resp.status
+      err.body = text
+      throw err
     }
 
     // Try to parse JSON, fallback to text if not JSON
-    const contentType = resp.headers.get('content-type') || '';
+    const contentType = resp.headers.get('content-type') || ''
     if (contentType.includes('application/json')) {
-      return await resp.json();
+      return await resp.json()
     } else if (contentType.startsWith('text/')) {
-      return (await resp.text()) as unknown as T;
+      return (await resp.text()) as unknown as T
     } else {
-      return (await resp.blob()) as unknown as T;
+      return (await resp.blob()) as unknown as T
     }
   }
 
@@ -393,8 +398,6 @@ class ApiService {
     return resp ?? { totalResults: 0, results: [] }
   }
 
-
-
   async getAuthorLookup(
     name: string,
     region: string = 'us',
@@ -431,7 +434,9 @@ class ApiService {
       }
 
       const params = new URLSearchParams({ name, region })
-      return await this.request<AuthorCatalogResponse>(`/metadata/author/books?${params.toString()}`)
+      return await this.request<AuthorCatalogResponse>(
+        `/metadata/author/books?${params.toString()}`,
+      )
     } catch {
       return null
     }
@@ -473,7 +478,9 @@ class ApiService {
       }
 
       const params = new URLSearchParams({ name, region })
-      return await this.request<SeriesCatalogResponse>(`/metadata/series/books?${params.toString()}`)
+      return await this.request<SeriesCatalogResponse>(
+        `/metadata/series/books?${params.toString()}`,
+      )
     } catch {
       return null
     }
@@ -537,8 +544,6 @@ class ApiService {
     })
   }
 
-
-
   async searchByTitle(
     query: string,
     options?: RequestInit & { region?: string; language?: string },
@@ -576,7 +581,8 @@ class ApiService {
     if (params.isbn) (body as Record<string, unknown>).isbn = params.isbn
     if (params.series) (body as Record<string, unknown>).series = params.series
     if (params.asin) (body as Record<string, unknown>).asin = params.asin
-    const region = params.region || (params.language ? getRegionFromLanguage(params.language) : undefined)
+    const region =
+      params.region || (params.language ? getRegionFromLanguage(params.language) : undefined)
     if (region) (body as Record<string, unknown>).region = region
     if (params.language) (body as Record<string, unknown>).language = params.language
     if (params.pagination) (body as Record<string, unknown>).pagination = params.pagination
@@ -978,7 +984,7 @@ class ApiService {
     const resp = await fetch(`${API_BASE_URL}/configuration/startupconfig`, {
       method: 'GET',
       credentials: 'include',
-    });
+    })
     if (!resp.ok) {
       const body = await resp.text().catch(() => '')
       const err: ErrorWithStatus = new Error(`Failed to fetch startup config: ${resp.status}`)
@@ -995,20 +1001,23 @@ class ApiService {
     return this.request<{ apiKey: string }>('/configuration/apikey')
   }
 
-    /**
-     * Save the startup configuration to the backend.
-     * @param config The StartupConfig object to save
-     */
-    async saveStartupConfig(config: import('@/types').StartupConfig): Promise<{ success: boolean; message?: string }> {
-      const result = await this.request<{ success: boolean; message?: string }>('/configuration/startupconfig', {
+  /**
+   * Save the startup configuration to the backend.
+   * @param config The StartupConfig object to save
+   */
+  async saveStartupConfig(
+    config: import('@/types').StartupConfig,
+  ): Promise<{ success: boolean; message?: string }> {
+    const result = await this.request<{ success: boolean; message?: string }>(
+      '/configuration/startupconfig',
+      {
         method: 'POST',
         body: JSON.stringify(config),
-      });
-      await this.refreshStartupConfigCache()
-      return result
-    }
-
-
+      },
+    )
+    await this.refreshStartupConfigCache()
+    return result
+  }
 
   // Regenerate server-side API key. Returns the new API key in the response.
   async regenerateApiKey(): Promise<{ apiKey: string }> {
@@ -1160,15 +1169,22 @@ class ApiService {
     })
   }
 
-  async rescanAudiobookMetadata(
-    id: number,
-  ): Promise<{ message: string; audiobookId: number; source?: string; asin?: string; region?: string }> {
-    return this.request<{ message: string; audiobookId: number; source?: string; asin?: string; region?: string }>(
-      `/library/${id}/rescan-metadata`,
-      {
-        method: 'POST',
-      },
-    )
+  async rescanAudiobookMetadata(id: number): Promise<{
+    message: string
+    audiobookId: number
+    source?: string
+    asin?: string
+    region?: string
+  }> {
+    return this.request<{
+      message: string
+      audiobookId: number
+      source?: string
+      asin?: string
+      region?: string
+    }>(`/library/${id}/rescan-metadata`, {
+      method: 'POST',
+    })
   }
 
   async scanAudiobook(
@@ -1306,7 +1322,10 @@ class ApiService {
     return this.request(`/filesystem/validate?path=${encodeURIComponent(path)}`)
   }
 
-  async checkVolume(sourcePath: string, destPath: string): Promise<{
+  async checkVolume(
+    sourcePath: string,
+    destPath: string,
+  ): Promise<{
     sameVolume: boolean
     willBreakHardlinks: boolean
     sourceVolume?: string
@@ -1698,7 +1717,10 @@ class ApiService {
       let message = `API error: ${resp.status}`
 
       if (contentType.includes('application/json')) {
-        const body = await resp.json().catch(() => null) as { message?: string; error?: string } | null
+        const body = (await resp.json().catch(() => null)) as {
+          message?: string
+          error?: string
+        } | null
         const detail = body?.message || body?.error
         if (detail) {
           message = detail
@@ -1815,8 +1837,8 @@ class ApiService {
         tokenLength: token ? token.length : 0,
       })
       // Cache the token in memory for the current session
-      this.antiforgeryToken = token;
-      this.antiforgeryTokenSession = sessionTokenManager.getToken() || null;
+      this.antiforgeryToken = token
+      this.antiforgeryTokenSession = sessionTokenManager.getToken() || null
       return token
     } catch {
       return null
@@ -1862,49 +1884,51 @@ class ApiService {
     const responseData = await resp.json()
     if (responseData.authType === 'session') {
       // Clear antiforgery token cache before storing the browser auth marker.
-      this.antiforgeryToken = null;
-      this.antiforgeryTokenSession = null;
-      sessionTokenManager.setAuthenticated({ persistent: rememberMe });
-      logger.debug('[ApiService] Session cookie received; auth marker stored');
+      this.antiforgeryToken = null
+      this.antiforgeryTokenSession = null
+      sessionTokenManager.setAuthenticated({ persistent: rememberMe })
+      logger.debug('[ApiService] Session cookie received; auth marker stored')
       if (typeof window !== 'undefined') {
-        try { window.localStorage.removeItem('listenarr_csrf_token'); } catch {}
+        try {
+          window.localStorage.removeItem('listenarr_csrf_token')
+        } catch {}
       }
       // Set tokenReadyPromise and resolve after token is fetched
       this.tokenReadyPromise = (async () => {
         try {
-          await new Promise(resolve => setTimeout(resolve, 10));
-          const token = await this.fetchAntiforgeryToken();
+          await new Promise((resolve) => setTimeout(resolve, 10))
+          const token = await this.fetchAntiforgeryToken()
           logger.debug('[ApiService] Fetched antiforgery token after login', {
             tokenExists: !!token,
             tokenLength: token ? token.length : 0,
-          });
+          })
         } catch (e) {
-          logger.debug('[ApiService] Failed to fetch antiforgery token after login', e);
+          logger.debug('[ApiService] Failed to fetch antiforgery token after login', e)
         }
-      })();
-      await this.tokenReadyPromise;
-      this.tokenReadyPromise = null;
+      })()
+      await this.tokenReadyPromise
+      this.tokenReadyPromise = null
     } else if (responseData.authType === 'none') {
-      sessionTokenManager.clearToken();
-      this.antiforgeryToken = null;
-      this.antiforgeryTokenSession = null;
-      this.tokenReadyPromise = null;
-      logger.debug('[ApiService] Authentication not required - no session token needed');
+      sessionTokenManager.clearToken()
+      this.antiforgeryToken = null
+      this.antiforgeryTokenSession = null
+      this.tokenReadyPromise = null
+      logger.debug('[ApiService] Authentication not required - no session token needed')
       this.tokenReadyPromise = (async () => {
         try {
-          const token = await this.fetchAntiforgeryToken();
+          const token = await this.fetchAntiforgeryToken()
           logger.debug('[ApiService] Fetched antiforgery token after anonymous login', {
             tokenExists: !!token,
             tokenLength: token ? token.length : 0,
-          });
+          })
         } catch (e) {
-          logger.debug('[ApiService] Failed to fetch antiforgery token after anonymous login', e);
+          logger.debug('[ApiService] Failed to fetch antiforgery token after anonymous login', e)
         }
-      })();
-      await this.tokenReadyPromise;
-      this.tokenReadyPromise = null;
+      })()
+      await this.tokenReadyPromise
+      this.tokenReadyPromise = null
     } else {
-      throw new Error('Login succeeded but expected auth type was not received');
+      throw new Error('Login succeeded but expected auth type was not received')
     }
 
     await this.refreshStartupConfigCache()
@@ -1940,9 +1964,9 @@ class ApiService {
     } finally {
       // Always clear the browser auth marker and antiforgery token on logout.
       sessionTokenManager.clearToken()
-      this.antiforgeryToken = null;
-      this.antiforgeryTokenSession = null;
-      this.tokenReadyPromise = null;
+      this.antiforgeryToken = null
+      this.antiforgeryTokenSession = null
+      this.tokenReadyPromise = null
       logger.debug('[ApiService] Browser auth marker cleared')
       await this.refreshStartupConfigCache()
       // Prefetch antiforgery token for anonymous principal after logout
@@ -1968,7 +1992,7 @@ class ApiService {
 export const apiService = new ApiService()
 
 // Compatibility export for legacy code expecting apiService.search
-export const search = apiService.advancedSearch.bind(apiService);
+export const search = apiService.advancedSearch.bind(apiService)
 
 // Export individual indexer functions for convenience
 export const getIndexers = () => apiService.getIndexers()
@@ -1984,8 +2008,13 @@ export const testIndexerDraft = (indexer: Omit<Indexer, 'id' | 'createdAt' | 'up
 export const toggleIndexer = (id: number) => apiService.toggleIndexer(id)
 export const getEnabledIndexers = () => apiService.getEnabledIndexers()
 export const getProwlarrImportSettings = () => apiService.getProwlarrImportSettings()
-export const importProwlarrIndexers = (payload: { url: string; port?: number; clearPort?: boolean; apiKey?: string; tagFilter?: string }) =>
-  apiService.importProwlarrIndexers(payload)
+export const importProwlarrIndexers = (payload: {
+  url: string
+  port?: number
+  clearPort?: boolean
+  apiKey?: string
+  tagFilter?: string
+}) => apiService.importProwlarrIndexers(payload)
 
 // Export individual remote path mapping functions for convenience
 export const getRemotePathMappings = () => apiService.getRemotePathMappings()
@@ -2026,4 +2055,4 @@ export const testDownloadClient = (config: Partial<DownloadClientConfiguration>)
 // Audible helpers
 // ...existing code...
 // ...existing code...
-export const ensureImageCached = apiService.ensureImageCached.bind(apiService);
+export const ensureImageCached = apiService.ensureImageCached.bind(apiService)

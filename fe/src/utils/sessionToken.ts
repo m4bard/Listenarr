@@ -50,10 +50,7 @@ class SessionTokenManager {
         this.persistence = 'session'
         try {
           if (sessionToken !== SessionTokenManager.AUTH_MARKER) {
-            sessionStorage.setItem(
-              SessionTokenManager.STORAGE_KEY,
-              SessionTokenManager.AUTH_MARKER,
-            )
+            sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, SessionTokenManager.AUTH_MARKER)
           }
           localStorage.setItem(SessionTokenManager.PERSISTENCE_MODE_KEY, 'session')
         } catch {}
@@ -66,10 +63,7 @@ class SessionTokenManager {
         this.persistence = 'local'
         try {
           if (persistedToken !== SessionTokenManager.AUTH_MARKER) {
-            localStorage.setItem(
-              SessionTokenManager.STORAGE_KEY,
-              SessionTokenManager.AUTH_MARKER,
-            )
+            localStorage.setItem(SessionTokenManager.STORAGE_KEY, SessionTokenManager.AUTH_MARKER)
           }
           localStorage.setItem(SessionTokenManager.PERSISTENCE_MODE_KEY, 'local')
         } catch {}
@@ -192,10 +186,7 @@ class SessionTokenManager {
           this.token = sessionToken ? SessionTokenManager.AUTH_MARKER : null
           this.persistence = 'session'
           if (sessionToken && sessionToken !== SessionTokenManager.AUTH_MARKER) {
-            sessionStorage.setItem(
-              SessionTokenManager.STORAGE_KEY,
-              SessionTokenManager.AUTH_MARKER,
-            )
+            sessionStorage.setItem(SessionTokenManager.STORAGE_KEY, SessionTokenManager.AUTH_MARKER)
           }
         }
       } catch {

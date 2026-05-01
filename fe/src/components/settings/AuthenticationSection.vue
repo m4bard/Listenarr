@@ -17,12 +17,14 @@
 -->
 <template>
   <div class="form-section">
-    <h3>
-      <PhUserCircle /> Authentication
-    </h3>
+    <h3><PhUserCircle /> Authentication</h3>
     <div class="form-body">
       <div class="form-group checkbox-group">
-        <CheckboxCard v-model="authEnabledComputed" title="Enable login screen" description="Toggle to enable the login screen. This setting reflects the server's AuthenticationRequired value from config.json. Changes here are local and will not modify server files — edit config/config.json on the host to persist." />
+        <CheckboxCard
+          v-model="authEnabledComputed"
+          title="Enable login screen"
+          description="Toggle to enable the login screen. This setting reflects the server's AuthenticationRequired value from config.json. Changes here are local and will not modify server files — edit config/config.json on the host to persist."
+        />
       </div>
 
       <div class="form-group checkbox-group">
@@ -33,14 +35,31 @@
         />
       </div>
 
-      <FormRow v-if="authEnabledComputed" label="Admin Account Management" help="To set or change the admin password, enter a new password and save settings. The username and password are configured in config/config.json.">
+      <FormRow
+        v-if="authEnabledComputed"
+        label="Admin Account Management"
+        help="To set or change the admin password, enter a new password and save settings. The username and password are configured in config/config.json."
+      >
         <div class="admin-credentials">
-          <input :value="settings.adminUsername" @input="e => updateField('adminUsername', (e.target as HTMLInputElement).value)" type="text" placeholder="Admin username" class="admin-input" />
-          <PasswordInput :modelValue="settings.adminPassword" @update:modelValue="v => updateField('adminPassword', v)" placeholder="New admin password (to update)" />
+          <input
+            :value="settings.adminUsername"
+            @input="(e) => updateField('adminUsername', (e.target as HTMLInputElement).value)"
+            type="text"
+            placeholder="Admin username"
+            class="admin-input"
+          />
+          <PasswordInput
+            :modelValue="settings.adminPassword"
+            @update:modelValue="(v) => updateField('adminPassword', v)"
+            placeholder="New admin password (to update)"
+          />
         </div>
       </FormRow>
 
-      <FormRow label="API Key (Server)" help="API key for authenticating external applications. Generate a new key if needed. Copy it to use with API clients.">
+      <FormRow
+        label="API Key (Server)"
+        help="API key for authenticating external applications. Generate a new key if needed. Copy it to use with API clients."
+      >
         <ApiKeyControl :apiKey="apiKey" :disabled="false" @update:apiKey="onApiKeyUpdated" />
       </FormRow>
     </div>
@@ -108,7 +127,13 @@ h3 {
   color: #fff;
 }
 
-.form-body { padding: 1.25rem; border-radius: 6px; border: 1px solid #333; box-shadow: 0 4px 14px rgba(0,0,0,0.6); background-color: #232323; }
+.form-body {
+  padding: 1.25rem;
+  border-radius: 6px;
+  border: 1px solid #333;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6);
+  background-color: #232323;
+}
 .admin-credentials {
   display: flex;
   flex-direction: column;
@@ -128,5 +153,4 @@ h3 {
 :deep(.password-input) {
   width: 100%;
 }
-
 </style>

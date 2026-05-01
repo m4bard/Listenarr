@@ -64,7 +64,12 @@
               <span class="result-title">{{ result.title }}</span>
               <span class="result-meta">
                 {{ result.authors?.[0]?.name }}
-                <span v-if="result.series"> · {{ Array.isArray(result.series) ? (result.series as any)[0]?.name : result.series }}</span>
+                <span v-if="result.series">
+                  ·
+                  {{
+                    Array.isArray(result.series) ? (result.series as any)[0]?.name : result.series
+                  }}</span
+                >
                 <span v-if="result.asin" class="result-asin"> · {{ result.asin }}</span>
               </span>
             </div>
@@ -90,7 +95,10 @@ import { Modal, ModalHeader, ModalBody } from '@/components/feedback'
 import { apiService } from '@/services/api'
 import { useProtectedImages } from '@/composables/useProtectedImages'
 import type { LibraryImportItem } from '@/stores/libraryImport'
-import { buildLibraryImportInitialAuthor, buildLibraryImportInitialQuery } from '@/utils/libraryImportSearch'
+import {
+  buildLibraryImportInitialAuthor,
+  buildLibraryImportInitialQuery,
+} from '@/utils/libraryImportSearch'
 import { getPlaceholderUrl } from '@/utils/placeholder'
 import type { SearchResult } from '@/types'
 

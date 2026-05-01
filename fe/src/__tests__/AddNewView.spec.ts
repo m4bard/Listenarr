@@ -426,7 +426,14 @@ describe('AddNewView pagination', () => {
 
     expect(wrapper.findAll('button.simple-search-button')).toHaveLength(1)
     expect(wrapper.find('form.advanced-search-form[role="search"]').exists()).toBe(true)
-    for (const id of ['adv-title', 'adv-author', 'adv-series', 'adv-isbn', 'adv-asin', 'adv-language']) {
+    for (const id of [
+      'adv-title',
+      'adv-author',
+      'adv-series',
+      'adv-isbn',
+      'adv-asin',
+      'adv-language',
+    ]) {
       expect(wrapper.find(`label[for="${id}"]`).exists()).toBe(true)
       expect(wrapper.find(`#${id}`).attributes('tabindex')).not.toBe('-1')
     }

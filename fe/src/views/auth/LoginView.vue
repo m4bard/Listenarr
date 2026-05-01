@@ -236,7 +236,10 @@ export default defineComponent({
   font-weight: 600;
   border-radius: 8px;
   text-align: center;
-  transition: background-color 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  transition:
+    background-color 0.18s ease,
+    border-color 0.18s ease,
+    box-shadow 0.18s ease;
   transform: none;
 }
 

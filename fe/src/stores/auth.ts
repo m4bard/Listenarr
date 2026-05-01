@@ -43,7 +43,12 @@ export const useAuthStore = defineStore('auth', () => {
 
       if (typeof raw === 'string') {
         const normalized = raw.toLowerCase().trim()
-        return normalized === 'enabled' || normalized === 'true' || normalized === 'yes' || normalized === '1'
+        return (
+          normalized === 'enabled' ||
+          normalized === 'true' ||
+          normalized === 'yes' ||
+          normalized === '1'
+        )
       }
     } catch {}
 
@@ -94,7 +99,9 @@ export const useAuthStore = defineStore('auth', () => {
         loaded.value = true
 
         if (!u.authenticated && sessionTokenManager.hasToken()) {
-          console.log('[AuthStore] Clearing stale browser auth marker after unauthenticated /account/me response')
+          console.log(
+            '[AuthStore] Clearing stale browser auth marker after unauthenticated /account/me response',
+          )
           sessionTokenManager.clearToken()
         }
       } catch (error) {

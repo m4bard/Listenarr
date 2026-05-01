@@ -30,19 +30,38 @@
       </div>
 
       <div v-if="props.settings" class="settings-form">
-        <FileManagementSection :settings="localSettings" @update:settings="val => Object.assign(localSettings, val)"></FileManagementSection>
-          <DownloadSettingsSection :settings="localSettings" @update:settings="val => Object.assign(localSettings, val)"></DownloadSettingsSection>
+        <FileManagementSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></FileManagementSection>
+        <DownloadSettingsSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></DownloadSettingsSection>
 
-          <FeaturesSection :settings="localSettings" @update:settings="val => Object.assign(localSettings, val)"></FeaturesSection>
+        <FeaturesSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></FeaturesSection>
 
+        <SearchSettingsSection
+          :settings="localSettings"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+        ></SearchSettingsSection>
 
-            <SearchSettingsSection :settings="localSettings" @update:settings="val => Object.assign(localSettings, val)"></SearchSettingsSection>
-
-              <AuthenticationSection :settings="localSettings" :apiKey="props.apiKey" v-model:authEnabled="authEnabled" @update:settings="val => Object.assign(localSettings, val)" @update:apiKey="val => emit('update:apiKey', val)"></AuthenticationSection>
-
-          </div> <!-- settings-form -->
-    </div> <!-- general-settings-tab -->
-  </div> <!-- tab-content -->
+        <AuthenticationSection
+          :settings="localSettings"
+          :apiKey="props.apiKey"
+          v-model:authEnabled="authEnabled"
+          @update:settings="(val) => Object.assign(localSettings, val)"
+          @update:apiKey="(val) => emit('update:apiKey', val)"
+        ></AuthenticationSection>
+      </div>
+      <!-- settings-form -->
+    </div>
+    <!-- general-settings-tab -->
+  </div>
+  <!-- tab-content -->
 </template>
 
 <script setup lang="ts">
@@ -71,11 +90,9 @@ const emit = defineEmits<{
   'update:settings': [value: ApplicationSettings | null]
 }>()
 
-
 // Local reactive copy of settings to avoid mutating incoming prop directly
 import { reactive, watch, nextTick } from 'vue'
 const localSettings = reactive<ApplicationSettings>({} as ApplicationSettings)
-
 
 // Prevent recursive update loops: when syncing from parent props we set this flag to
 // avoid emitting update:settings during the sync process.
@@ -133,8 +150,6 @@ const validationErrors = computed(() => {
   if (!localSettings) return errs
   return errs
 })
-
-
 
 // proxy config removed; nothing to expose here
 </script>
@@ -212,7 +227,7 @@ const validationErrors = computed(() => {
 }
 
 .form-section > :deep(h3) {
-  margin: 0 0 .75rem 0 !important;
+  margin: 0 0 0.75rem 0 !important;
   padding: 0;
   font-size: 1.1rem;
   font-weight: 500;
@@ -233,7 +248,7 @@ const validationErrors = computed(() => {
 
 /* Checkbox-related styles have been moved to component-scoped styles in the individual settings components */
 
-.form-section .form-body .form-group+.form-group {
+.form-section .form-body .form-group + .form-group {
   margin-top: 0.85rem;
 }
 

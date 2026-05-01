@@ -37,13 +37,16 @@ describe('ApiService.ensureImageCached', () => {
   })
 
   it('fetches the provided image endpoint so url parameters can populate the cache', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const s = String(input)
-      if (s.includes(`${imageBasePath}/ASIN000001?url=`) && s.includes('audible.covers')) {
-        return { ok: true, status: 200 }
-      }
-      return { ok: false, status: 404 }
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const s = String(input)
+        if (s.includes(`${imageBasePath}/ASIN000001?url=`) && s.includes('audible.covers')) {
+          return { ok: true, status: 200 }
+        }
+        return { ok: false, status: 404 }
+      }),
+    )
 
     const ok = await svc.ensureImageCached(
       `${imageBasePath}/ASIN000001?url=${encodeURIComponent('https://audible.covers/cover1.jpg')}`,
@@ -51,17 +54,22 @@ describe('ApiService.ensureImageCached', () => {
 
     expect(ok).toBe(true)
     const fetchCalls = (globalThis.fetch as unknown as FetchLikeMock).mock.calls
-    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000001?url=`))).toBe(true)
+    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000001?url=`))).toBe(
+      true,
+    )
   })
 
   it('checks the base image endpoint when no source url is provided', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const s = String(input)
-      if (s.endsWith(`${imageBasePath}/ASIN000002`)) {
-        return { ok: true, status: 200 }
-      }
-      return { ok: false, status: 404 }
-    }))
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const s = String(input)
+        if (s.endsWith(`${imageBasePath}/ASIN000002`)) {
+          return { ok: true, status: 200 }
+        }
+        return { ok: false, status: 404 }
+      }),
+    )
 
     const ok = await svc.ensureImageCached(`${imageBasePath}/ASIN000002`)
 
@@ -71,16 +79,19 @@ describe('ApiService.ensureImageCached', () => {
   })
 
   it('falls back to the base image endpoint when the provided endpoint fails', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const s = String(input)
-      if (s.includes(`${imageBasePath}/ASIN000003?url=`)) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const s = String(input)
+        if (s.includes(`${imageBasePath}/ASIN000003?url=`)) {
+          return { ok: false, status: 404 }
+        }
+        if (s.endsWith(`${imageBasePath}/ASIN000003`)) {
+          return { ok: true, status: 200 }
+        }
         return { ok: false, status: 404 }
-      }
-      if (s.endsWith(`${imageBasePath}/ASIN000003`)) {
-        return { ok: true, status: 200 }
-      }
-      return { ok: false, status: 404 }
-    }))
+      }),
+    )
 
     const ok = await svc.ensureImageCached(
       `${imageBasePath}/ASIN000003?url=${encodeURIComponent('https://cached.example/cover3.jpg')}`,
@@ -88,21 +99,26 @@ describe('ApiService.ensureImageCached', () => {
 
     expect(ok).toBe(true)
     const fetchCalls = (globalThis.fetch as unknown as FetchLikeMock).mock.calls
-    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000003?url=`))).toBe(true)
+    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000003?url=`))).toBe(
+      true,
+    )
     expect(fetchCalls.some((c) => String(c[0]).endsWith(`${imageBasePath}/ASIN000003`))).toBe(true)
   })
 
   it('returns false when provided and base endpoints both fail', async () => {
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      const s = String(input)
-      if (s.includes(`${imageBasePath}/ASIN000004?url=`)) {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const s = String(input)
+        if (s.includes(`${imageBasePath}/ASIN000004?url=`)) {
+          return { ok: false, status: 404 }
+        }
+        if (s.endsWith(`${imageBasePath}/ASIN000004`)) {
+          return { ok: false, status: 404 }
+        }
         return { ok: false, status: 404 }
-      }
-      if (s.endsWith(`${imageBasePath}/ASIN000004`)) {
-        return { ok: false, status: 404 }
-      }
-      return { ok: false, status: 404 }
-    }))
+      }),
+    )
 
     const ok = await svc.ensureImageCached(
       `${imageBasePath}/ASIN000004?url=${encodeURIComponent('https://cached.example/cover4.jpg')}`,
@@ -110,7 +126,9 @@ describe('ApiService.ensureImageCached', () => {
 
     expect(ok).toBe(false)
     const fetchCalls = (globalThis.fetch as unknown as FetchLikeMock).mock.calls
-    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000004?url=`))).toBe(true)
+    expect(fetchCalls.some((c) => String(c[0]).includes(`${imageBasePath}/ASIN000004?url=`))).toBe(
+      true,
+    )
     expect(fetchCalls.some((c) => String(c[0]).endsWith(`${imageBasePath}/ASIN000004`))).toBe(true)
   })
 })

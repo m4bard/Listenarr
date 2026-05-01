@@ -239,12 +239,7 @@
                 <img
                   class="audiobook-poster author-cover"
                   :class="{ loaded: authorImageLoaded[collection.name] }"
-                  :src="
-                    getProtectedImageSrc(
-                      getAuthorImageUrl(collection),
-                      getPlaceholderUrl(),
-                    )
-                  "
+                  :src="getProtectedImageSrc(getAuthorImageUrl(collection), getPlaceholderUrl())"
                   :alt="collection.name"
                   loading="lazy"
                   decoding="async"
@@ -283,12 +278,7 @@
                   <template v-if="collection.coverUrls.length === 1">
                     <img
                       class="series-single-bg"
-                      :src="
-                        getProtectedImageSrc(
-                          collection.coverUrls[0],
-                          getPlaceholderUrl(),
-                        )
-                      "
+                      :src="getProtectedImageSrc(collection.coverUrls[0], getPlaceholderUrl())"
                       alt=""
                       loading="lazy"
                       decoding="async"
@@ -302,26 +292,29 @@
                       <div
                         class="audiobook-image-placeholder"
                         :class="{
-                          loaded: isImageLoaded(getSeriesImageKey(collection.name, 0, collection.coverUrls[0])),
+                          loaded: isImageLoaded(
+                            getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
+                          ),
                         }"
                       >
                         <PhBookOpen class="audiobook-placeholder-icon" />
                       </div>
                       <img
-                        :src="
-                          getProtectedImageSrc(
-                            collection.coverUrls[0],
-                            getPlaceholderUrl(),
-                          )
-                        "
+                        :src="getProtectedImageSrc(collection.coverUrls[0], getPlaceholderUrl())"
                         :alt="`${collection.name} Cover`"
                         class="series-cover-image centered cover-loading-image"
                         :class="{
-                          loaded: isImageLoaded(getSeriesImageKey(collection.name, 0, collection.coverUrls[0])),
+                          loaded: isImageLoaded(
+                            getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
+                          ),
                         }"
                         loading="lazy"
                         decoding="async"
-                        @load="markImageLoaded(getSeriesImageKey(collection.name, 0, collection.coverUrls[0]))"
+                        @load="
+                          markImageLoaded(
+                            getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
+                          )
+                        "
                         @error="
                           handleLazyImageError(
                             getSeriesImageKey(collection.name, 0, collection.coverUrls[0]),
@@ -341,24 +334,32 @@
                     >
                       <div
                         class="audiobook-image-placeholder"
-                        :class="{ loaded: isImageLoaded(getSeriesImageKey(collection.name, index, coverUrl)) }"
+                        :class="{
+                          loaded: isImageLoaded(
+                            getSeriesImageKey(collection.name, index, coverUrl),
+                          ),
+                        }"
                       >
                         <PhBookOpen class="audiobook-placeholder-icon" />
                       </div>
                       <img
-                        :src="
-                          getProtectedImageSrc(
-                            coverUrl,
-                            getPlaceholderUrl(),
-                          )
-                        "
+                        :src="getProtectedImageSrc(coverUrl, getPlaceholderUrl())"
                         :alt="`${collection.name} Cover`"
                         class="series-cover-image cover-loading-image"
-                        :class="{ loaded: isImageLoaded(getSeriesImageKey(collection.name, index, coverUrl)) }"
+                        :class="{
+                          loaded: isImageLoaded(
+                            getSeriesImageKey(collection.name, index, coverUrl),
+                          ),
+                        }"
                         loading="lazy"
                         decoding="async"
                         @load="markImageLoaded(getSeriesImageKey(collection.name, index, coverUrl))"
-                        @error="handleLazyImageError(getSeriesImageKey(collection.name, index, coverUrl), $event)"
+                        @error="
+                          handleLazyImageError(
+                            getSeriesImageKey(collection.name, index, coverUrl),
+                            $event,
+                          )
+                        "
                       />
                     </div>
                   </template>
@@ -446,12 +447,7 @@
                   <PhBookOpen class="audiobook-placeholder-icon" />
                 </div>
                 <img
-                  :src="
-                    getProtectedImageSrc(
-                      getBookImageUrl(audiobook),
-                      getPlaceholderUrl(),
-                    )
-                  "
+                  :src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
                   :alt="audiobook.title"
                   class="audiobook-poster cover-loading-image"
                   :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
@@ -578,12 +574,7 @@
               <img
                 class="list-thumb cover-loading-image"
                 :class="{ loaded: isImageLoaded(getBookImageKey(audiobook)) }"
-                :src="
-                  getProtectedImageSrc(
-                    getBookImageUrl(audiobook),
-                    getPlaceholderUrl(),
-                  )
-                "
+                :src="getProtectedImageSrc(getBookImageUrl(audiobook), getPlaceholderUrl())"
                 :alt="audiobook.title"
                 loading="lazy"
                 decoding="async"
@@ -1230,7 +1221,11 @@ function getBookImageKey(book: Pick<Audiobook, 'id' | 'imageUrl' | 'asin'>): str
   return `book:${book.id}:${getBookImageUrl(book) || ''}`
 }
 
-function getSeriesImageKey(seriesName: string, index: number, coverUrl: string | undefined): string {
+function getSeriesImageKey(
+  seriesName: string,
+  index: number,
+  coverUrl: string | undefined,
+): string {
   return `series:${seriesName}:${index}:${coverUrl || ''}`
 }
 
