@@ -1,5 +1,10 @@
 #!/usr/bin/env sh
 set -e
 
+# Some Windows Git clients launch hooks with a reduced PATH that omits Node.
+if ! command -v node >/dev/null 2>&1 && [ -d "/c/Program Files/nodejs" ]; then
+  export PATH="/c/Program Files/nodejs:$PATH"
+fi
+
 echo "Running staged lint and format checks..."
 node scripts/lint-staged.mjs

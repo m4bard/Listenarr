@@ -11,7 +11,7 @@ const run = (command, args, options = {}) => {
   })
 
   if (result.error) {
-    console.error(result.error.message)
+    console.error(`Failed to run "${command}": ${result.error.message}`)
     process.exit(1)
   }
 
