@@ -175,7 +175,7 @@ namespace Listenarr.Api.Controllers
 
                 // Determine response auth type based on configuration
                 var config = _startupConfigService.GetConfig();
-                var authEnabled = config?.AuthenticationRequired?.ToLowerInvariant() is "true" or "yes" or "1" or "enabled";
+                var authEnabled = config?.IsAuthenticationEnabled() == true;
                 var responseAuthType = authEnabled ? "session" : "none";
                 return Ok(new { message = "Logged out successfully", authType = responseAuthType });
             }

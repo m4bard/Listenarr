@@ -20,6 +20,7 @@ using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
@@ -91,7 +92,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IQualityProfileRepository>().Object,
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
-                mockFileNaming.Object);
+                mockFileNaming.Object,
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
 
             var updatedAudiobook = new Audiobook
             {

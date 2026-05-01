@@ -18,7 +18,6 @@
 
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -26,42 +25,56 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace Listenarr.Api.Filters
 {
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-    public sealed class RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute : TypeFilterAttribute
+    public sealed class RequireApiKeyManagementAccessAttribute : TypeFilterAttribute
     {
-        public RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute()
-            : base(typeof(RequireAdminOrApiKeyWhenAuthenticationEnabledFilter))
+        public RequireApiKeyManagementAccessAttribute()
+            : base(typeof(RequireApiKeyManagementAccessFilter))
         {
         }
     }
 
-    public sealed class RequireAdminOrApiKeyWhenAuthenticationEnabledFilter : IAsyncActionFilter
+    public sealed class RequireApiKeyManagementAccessFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;
 
-        public RequireAdminOrApiKeyWhenAuthenticationEnabledFilter(IAuthenticationRequirementService authenticationRequirementService)
+        public RequireApiKeyManagementAccessFilter(IAuthenticationRequirementService authenticationRequirementService)
         {
             _authenticationRequirementService = authenticationRequirementService;
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            var endpoint = context.HttpContext.GetEndpoint();
-            if (endpoint?.Metadata?.GetMetadata<AllowAnonymousAttribute>() != null)
+            var httpContext = context.HttpContext;
+            if (_authenticationRequirementService.IsAuthenticationRequired())
+            {
+                var user = httpContext.User;
+                if (user?.Identity?.IsAuthenticated == true &&
+                    user.IsInRole("Administrator") &&
+                    !SecurityRequestUtils.IsApiKeyAuthenticated(httpContext))
+                {
+                    await next();
+                    return;
+                }
+
+                context.Result = user?.Identity?.IsAuthenticated == true
+                    ? new ObjectResult(new { message = "Administrator session required" }) { StatusCode = StatusCodes.Status403Forbidden }
+                    : new UnauthorizedObjectResult(new { message = "Authentication required" });
+                return;
+            }
+
+            if (SecurityRequestUtils.IsLocalOrPrivateRequest(httpContext))
             {
                 await next();
                 return;
             }
 
-            if (!_authenticationRequirementService.IsAuthenticationRequired() ||
-                SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context.HttpContext))
+            context.Result = new ObjectResult(new
             {
-                await next();
-                return;
-            }
-
-            context.Result = context.HttpContext.User?.Identity?.IsAuthenticated == true
-                ? new StatusCodeResult(StatusCodes.Status403Forbidden)
-                : new UnauthorizedResult();
+                message = "API key management is only available from local or private-network clients when authentication is disabled"
+            })
+            {
+                StatusCode = StatusCodes.Status403Forbidden
+            };
         }
     }
 }

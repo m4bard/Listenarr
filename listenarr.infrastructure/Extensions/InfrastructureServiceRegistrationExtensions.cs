@@ -18,8 +18,10 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Application.Interfaces.Repositories;
+using Listenarr.Domain.Services;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Infrastructure.Services;
 
 namespace Listenarr.Infrastructure.Extensions
 {
@@ -37,7 +39,8 @@ namespace Listenarr.Infrastructure.Extensions
         /// </summary>
         public static IServiceCollection AddListenarrInfrastructure(
             this IServiceCollection services,
-            Action<DbContextOptionsBuilder>? configureDb = null)
+            Action<DbContextOptionsBuilder>? configureDb = null,
+            string? contentRootPath = null)
         {
             if (configureDb != null)
             {
@@ -68,6 +71,7 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IDownloadProcessingJobRepository, EfDownloadProcessingJobRepository>();
             services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();
             services.AddScoped<IDownloadHistoryRepository, DownloadHistoryRepository>();
+            services.AddSingleton<IApplicationPathService>(_ => new ApplicationPathService(contentRootPath));
 
             return services;
         }

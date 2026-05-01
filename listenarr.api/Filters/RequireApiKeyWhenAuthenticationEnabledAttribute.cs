@@ -18,7 +18,6 @@
 
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -26,34 +25,32 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace Listenarr.Api.Filters
 {
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-    public sealed class RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute : TypeFilterAttribute
+    public sealed class RequireApiKeyWhenAuthenticationEnabledAttribute : TypeFilterAttribute
     {
-        public RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute()
-            : base(typeof(RequireAdminOrApiKeyWhenAuthenticationEnabledFilter))
+        public RequireApiKeyWhenAuthenticationEnabledAttribute()
+            : base(typeof(RequireApiKeyWhenAuthenticationEnabledFilter))
         {
         }
     }
 
-    public sealed class RequireAdminOrApiKeyWhenAuthenticationEnabledFilter : IAsyncActionFilter
+    public sealed class RequireApiKeyWhenAuthenticationEnabledFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;
 
-        public RequireAdminOrApiKeyWhenAuthenticationEnabledFilter(IAuthenticationRequirementService authenticationRequirementService)
+        public RequireApiKeyWhenAuthenticationEnabledFilter(IAuthenticationRequirementService authenticationRequirementService)
         {
             _authenticationRequirementService = authenticationRequirementService;
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            var endpoint = context.HttpContext.GetEndpoint();
-            if (endpoint?.Metadata?.GetMetadata<AllowAnonymousAttribute>() != null)
+            if (!_authenticationRequirementService.IsAuthenticationRequired())
             {
                 await next();
                 return;
             }
 
-            if (!_authenticationRequirementService.IsAuthenticationRequired() ||
-                SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context.HttpContext))
+            if (SecurityRequestUtils.IsApiKeyAuthenticated(context.HttpContext))
             {
                 await next();
                 return;

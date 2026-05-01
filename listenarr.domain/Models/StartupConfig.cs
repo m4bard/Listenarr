@@ -46,6 +46,24 @@ namespace Listenarr.Domain.Models
 
         // FFmpeg/ffprobe installer configuration
         public FfmpegConfig? Ffmpeg { get; set; }
+
+        public bool IsAuthenticationEnabled()
+            => IsAuthenticationRequiredValue(AuthenticationRequired);
+
+        public static bool IsAuthenticationRequiredValue(string? value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            if (bool.TryParse(value, out var parsed))
+            {
+                return parsed;
+            }
+
+            return value.Trim().ToLowerInvariant() is "enabled" or "true" or "yes" or "1";
+        }
     }
 
     public class FfmpegConfig
@@ -63,4 +81,3 @@ namespace Listenarr.Domain.Models
         public string? Arch { get; set; }
     }
 }
-

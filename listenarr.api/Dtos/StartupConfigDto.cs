@@ -16,9 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-namespace Listenarr.Domain.Models
+namespace Listenarr.Api.Models
 {
-    public sealed class StartupBootstrapConfig
+    public sealed class StartupConfigDto
     {
         public bool AuthenticationRequired { get; set; }
 

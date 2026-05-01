@@ -19,6 +19,8 @@ using Listenarr.Api.Attributes;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
+using Listenarr.Domain.Models;
+using Listenarr.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using System.Text.Json;
 
@@ -35,7 +37,7 @@ namespace Listenarr.Api.Controllers
         private readonly ILogger<DiscordController> _logger;
         private readonly IDiscordBotService _botService;
         private readonly IProcessRunner _processRunner;
-        private readonly IAppPathService? _appPathService;
+        private readonly IApplicationPathService _applicationPathService;
 
         public DiscordController(
             IConfigurationService configurationService,
@@ -43,14 +45,14 @@ namespace Listenarr.Api.Controllers
             ILogger<DiscordController> logger,
             IDiscordBotService botService,
             IProcessRunner processRunner,
-            IAppPathService? appPathService = null)
+            IApplicationPathService applicationPathService)
         {
             _configurationService = configurationService;
             _httpClientFactory = httpClientFactory;
             _logger = logger;
             _botService = botService;
             _processRunner = processRunner;
-            _appPathService = appPathService;
+            _applicationPathService = applicationPathService;
         }
 
         /// <summary>
@@ -398,10 +400,8 @@ namespace Listenarr.Api.Controllers
         {
             try
             {
-                var contentRoot = _appPathService?.ContentRootPath
-                    ?? Path.GetFullPath(Directory.GetCurrentDirectory());
-                var botDirectory = _appPathService?.ResolveFromContentRoot("tools", "discord-bot")
-                    ?? System.IO.Path.Join(contentRoot, "tools", "discord-bot");
+                var contentRoot = _applicationPathService.ContentRootPath;
+                var botDirectory = _applicationPathService.ResolveFromContentRoot("tools", "discord-bot");
                 var indexJsPath = System.IO.Path.Join(botDirectory, "index.js");
 
                 var botDirExists = System.IO.Directory.Exists(botDirectory);

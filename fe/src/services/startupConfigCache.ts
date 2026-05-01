@@ -19,15 +19,15 @@ import { apiService } from './api'
 import { logger } from '@/utils/logger'
 import { applyApiVersionFromStartupConfig } from './apiBase'
 
-type StartupBootstrapConfig = import('@/types').StartupBootstrapConfig
+type StartupConfigDto = import('@/types').StartupConfigDto
 
-let _cache: StartupBootstrapConfig | null = null
+let _cache: StartupConfigDto | null = null
 let _cacheTs = 0
-let _inflight: Promise<StartupBootstrapConfig | null> | null = null
+let _inflight: Promise<StartupConfigDto | null> | null = null
 // Expose a simple counter for diagnostics/tests
 export let fetchCount = 0
 
-export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupBootstrapConfig | null> {
+export async function getStartupConfigCached(ttlMs = 5000): Promise<StartupConfigDto | null> {
   const now = Date.now()
   if (_cacheTs !== 0 && now - _cacheTs <= ttlMs) return _cache
 
@@ -64,6 +64,6 @@ export function resetCache() {
 }
 
 // Synchronous access to the cached startup config (may be null)
-export function getCachedStartupConfig(): StartupBootstrapConfig | null {
+export function getCachedStartupConfig(): StartupConfigDto | null {
   return _cache
 }

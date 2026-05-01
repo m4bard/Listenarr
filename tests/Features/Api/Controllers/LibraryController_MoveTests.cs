@@ -29,6 +29,8 @@ using Listenarr.Domain.Models.Configurations;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Application.Common;
 using Listenarr.Application.Notification;
+using Listenarr.Domain.Utils;
+using Listenarr.Domain.Services;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -102,9 +104,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
-                null,
-                mockMoveQueue.Object,
-                null);
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                moveQueueService: mockMoveQueue.Object);
 
             var request = new LibraryController.MoveRequest { DestinationPath = Path.Join(Path.GetTempPath(), "target") };
 
@@ -173,9 +174,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
-                null,
-                mockMoveQueue.Object,
-                null);
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                moveQueueService: mockMoveQueue.Object);
 
             var target = Path.Join(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
             var request = new LibraryController.MoveRequest { DestinationPath = target };
@@ -242,9 +242,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
-                null,
-                mockMoveQueue.Object,
-                null);
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                moveQueueService: mockMoveQueue.Object);
 
             var target = Path.Join(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
             var request = new LibraryController.MoveRequest { DestinationPath = target, MoveFiles = false };
@@ -259,7 +258,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
 
             // Ensure DB was updated
             var updated = await dbContext.Audiobooks.FindAsync(ab.Id);
-            Assert.Equal(target, updated.BasePath);
+            Assert.Equal(FileUtils.NormalizeStoredPath(target), updated.BasePath);
 
             // Ensure move queue was NOT enqueued
             mockMoveQueue.Verify(m => m.EnqueueMoveAsync(It.IsAny<int>(), It.IsAny<string>(), It.IsAny<string>()), Times.Never);

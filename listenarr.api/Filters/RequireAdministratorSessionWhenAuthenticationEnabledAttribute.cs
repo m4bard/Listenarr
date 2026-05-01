@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Api.Services;
+using Listenarr.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -34,9 +34,16 @@ namespace Listenarr.Api.Filters
 
     public sealed class RequireAdministratorSessionWhenAuthenticationEnabledFilter : IAsyncActionFilter
     {
+        private readonly IAuthenticationRequirementService _authenticationRequirementService;
+
+        public RequireAdministratorSessionWhenAuthenticationEnabledFilter(IAuthenticationRequirementService authenticationRequirementService)
+        {
+            _authenticationRequirementService = authenticationRequirementService;
+        }
+
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            if (!SecurityRequestUtils.IsAuthenticationRequired(context.HttpContext))
+            if (!_authenticationRequirementService.IsAuthenticationRequired())
             {
                 await next();
                 return;

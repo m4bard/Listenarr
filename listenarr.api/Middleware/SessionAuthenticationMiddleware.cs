@@ -41,7 +41,7 @@ namespace Listenarr.Api.Middleware
             if (!isAlreadyAuthenticated)
             {
                 var sessionToken = ExtractSessionToken(context);
-                if (!string.IsNullOrEmpty(sessionToken))
+                if (sessionToken is { Length: > 0 })
                 {
                     var tokenHash = SecurityRequestUtils.HashSecretForLog(sessionToken);
                     _logger.LogDebug("[SessionAuth] Incoming session token for {Path} ({TokenHash})", path, tokenHash);
@@ -58,16 +58,17 @@ namespace Listenarr.Api.Middleware
                             _logger.LogDebug("[SessionAuth] Session token invalid or expired for {Path} ({TokenHash})", path, tokenHash);
                         }
                     }
-                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException) {
+                    catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
+                    {
                         _logger.LogError(ex, "[SessionAuth] Error during session authentication for {Path}", path);
                     }
                 }
-                if (!(context.User.Identity?.IsAuthenticated ?? false) && path.Contains("startupconfig"))
+                else if (IsStartupConfigPath(path))
                 {
                     _logger.LogDebug("[SessionAuth] No session token found for {Path}. HeaderCount={HeaderCount}", path, context.Request.Headers.Count);
                 }
             }
-            else if (path.Contains("startupconfig"))
+            else if (IsStartupConfigPath(path))
             {
                 _logger.LogDebug("[SessionAuth] User already authenticated for {Path}. Identity: {Identity}, Name: {Name}", path, context.User.Identity?.AuthenticationType, context.User.Identity?.Name);
             }
@@ -88,6 +89,7 @@ namespace Listenarr.Api.Middleware
             return null;
         }
 
+        private static bool IsStartupConfigPath(string path)
+            => path.Contains("startupconfig", StringComparison.OrdinalIgnoreCase);
     }
 }
-

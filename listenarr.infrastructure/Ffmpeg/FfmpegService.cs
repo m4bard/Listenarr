@@ -25,6 +25,7 @@ using System.Text.Json;
 using Listenarr.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Services;
 using Listenarr.Application.Security;
 
 namespace Listenarr.Infrastructure.Ffmpeg
@@ -44,8 +45,8 @@ namespace Listenarr.Infrastructure.Ffmpeg
         public FfmpegService(
             ILogger<FfmpegService> logger,
             IStartupConfigService startupConfigService,
-            IProcessRunner? processRunner = null,
-            IAppPathService? appPathService = null)
+            IProcessRunner processRunner,
+            IApplicationPathService applicationPathService)
         {
             _logger = logger;
             _httpClient = new HttpClient();
@@ -63,7 +64,8 @@ namespace Listenarr.Infrastructure.Ffmpeg
             _autoInstall = Environment.GetEnvironmentVariable("LISTENARR_AUTO_INSTALL_FFPROBE")?.ToLower() != "false"; // default true
             _startupConfigService = startupConfigService;
             _processRunner = processRunner;
-            _baseDir = appPathService?.FfmpegRootPath ?? Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
+
+            _baseDir = applicationPathService.FfmpegRootPath;
             _ffprobeName = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? "ffprobe.exe" : "ffprobe";
             _ffprobePath = Path.Join(_baseDir, _ffprobeName);
         }

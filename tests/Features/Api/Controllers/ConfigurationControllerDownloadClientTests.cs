@@ -17,13 +17,18 @@
  */
 using System.Net;
 using Listenarr.Api.Controllers;
+using Listenarr.Api.Filters;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -73,6 +78,9 @@ namespace Listenarr.Tests.Features.Api.Controllers
 
             var httpContext = new DefaultHttpContext();
             httpContext.Connection.RemoteIpAddress = IPAddress.Parse("8.8.8.8");
+            httpContext.RequestServices = new ServiceCollection()
+                .AddSingleton<IStartupConfigService>(new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "false" }))
+                .BuildServiceProvider();
             controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
 
             var request = new DownloadClientConfiguration
@@ -209,32 +217,32 @@ namespace Listenarr.Tests.Features.Api.Controllers
         }
 
         [Fact]
-        public async Task GetApiKey_RemoteCaller_WhenAuthenticationDisabled_ReturnsForbidden()
+        public async Task ApiKeyManagementFilter_RemoteCaller_WhenAuthenticationDisabled_ReturnsForbidden()
         {
-            var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
-            var downloadService = new Mock<IDownloadService>(MockBehavior.Strict);
-            var logger = NullLogger<ConfigurationController>.Instance;
-            var userService = Mock.Of<IUserService>();
-            var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
-
-            var controller = new ConfigurationController(
-                configurationService.Object,
-                logger,
-                userService,
-                settingsHub,
-                downloadService.Object,
-                null!);
-
             var httpContext = new DefaultHttpContext();
             httpContext.Connection.RemoteIpAddress = IPAddress.Parse("8.8.8.8");
-            controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
+            var actionContext = new ActionContext(httpContext, new RouteData(), new ActionDescriptor());
+            var filterContext = new ActionExecutingContext(
+                actionContext,
+                new List<IFilterMetadata>(),
+                new Dictionary<string, object?>(),
+                controller: null);
 
-            var actionResult = await controller.GetApiKey();
+            var nextWasCalled = false;
+            var authenticationRequirementService = Mock.Of<IAuthenticationRequirementService>(service =>
+                service.IsAuthenticationRequired() == false);
 
-            var denied = Assert.IsType<ObjectResult>(actionResult.Result);
+            await new RequireApiKeyManagementAccessFilter(authenticationRequirementService).OnActionExecutionAsync(
+                filterContext,
+                () =>
+                {
+                    nextWasCalled = true;
+                    return Task.FromResult(new ActionExecutedContext(actionContext, new List<IFilterMetadata>(), controller: null));
+                });
+
+            Assert.False(nextWasCalled);
+            var denied = Assert.IsType<ObjectResult>(filterContext.Result);
             Assert.Equal(StatusCodes.Status403Forbidden, denied.StatusCode);
-            configurationService.VerifyNoOtherCalls();
-            downloadService.VerifyNoOtherCalls();
         }
 
         [Fact]
@@ -260,6 +268,9 @@ namespace Listenarr.Tests.Features.Api.Controllers
 
             var httpContext = new DefaultHttpContext();
             httpContext.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.23");
+            httpContext.RequestServices = new ServiceCollection()
+                .AddSingleton<IStartupConfigService>(new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "false" }))
+                .BuildServiceProvider();
             controller.ControllerContext = new ControllerContext { HttpContext = httpContext };
 
             var actionResult = await controller.GetApiKey();

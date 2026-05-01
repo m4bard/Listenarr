@@ -21,6 +21,7 @@ using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Services;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -86,7 +87,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 Mock.Of<IQualityProfileRepository>(),
                 mockDownloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
-                Mock.Of<IFileNamingService>());
+                Mock.Of<IFileNamingService>(),
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
 
             var actionResult = await controller.GetAll();
             var ok = Assert.IsType<OkObjectResult>(actionResult);
@@ -145,7 +147,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 Mock.Of<IQualityProfileRepository>(),
                 mockDownloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
-                Mock.Of<IFileNamingService>());
+                Mock.Of<IFileNamingService>(),
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
 
             var actionResult = await controller.GetAll();
             var ok = Assert.IsType<OkObjectResult>(actionResult);

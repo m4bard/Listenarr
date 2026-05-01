@@ -399,7 +399,7 @@ export interface StartupConfig {
   sslCertPassword?: string
 }
 
-export interface StartupBootstrapConfig {
+export interface StartupConfigDto {
   authenticationRequired?: string | boolean
   AuthenticationRequired?: string | boolean
   apiVersion?: string | number

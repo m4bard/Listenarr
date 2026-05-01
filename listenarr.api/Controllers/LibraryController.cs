@@ -18,6 +18,12 @@
 
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
+using Listenarr.Domain.Models;
+using Listenarr.Domain.Services;
+using Listenarr.Api.Models;
+using System.Collections.Generic;
+using System.Linq;
+using System;
 using System.Text.Json;
 using System.Reflection;
 using System.Text.RegularExpressions;
@@ -92,7 +98,7 @@ namespace Listenarr.Api.Controllers
         /// <param name="rootFolderService">Optional root folder service for managing and enumerating configured root folders used for validating explicit scan paths.</param>
         /// <param name="libraryAddService">Optional shared add-to-library service used by runtime requests and background syncs.</param>
         /// <param name="renameService">Optional organize/rename service used for previewing and executing library file organization.</param>
-        /// <param name="appPathService">Optional app path service used to resolve content-root-relative cache files.</param>
+        /// <param name="applicationPathService">Application path service used to resolve content-root-relative cache files.</param>
         public LibraryController(
             IAudiobookRepository repo,
             IImageCacheService imageCacheService,
@@ -104,13 +110,13 @@ namespace Listenarr.Api.Controllers
             IDownloadRepository downloadRepository,
             IRootFolderRepository rootFolderRepository,
             IFileNamingService fileNamingService,
+            IApplicationPathService applicationPathService,
             IScanQueueService? scanQueueService = null,
             IMoveQueueService? moveQueueService = null,
             NotificationService? notificationService = null,
             IRootFolderService? rootFolderService = null,
             ILibraryAddService? libraryAddService = null,
-            IRenameService? renameService = null,
-            IAppPathService? appPathService = null)
+            IRenameService? renameService = null)
         {
             _repo = repo;
             _imageCacheService = imageCacheService;
@@ -128,8 +134,7 @@ namespace Listenarr.Api.Controllers
             _rootFolderService = rootFolderService;
             _libraryAddService = libraryAddService;
             _renameService = renameService;
-            _contentRootPath = appPathService?.ContentRootPath
-                ?? Path.GetFullPath(Directory.GetCurrentDirectory());
+            _contentRootPath = (applicationPathService ?? throw new ArgumentNullException(nameof(applicationPathService))).ContentRootPath;
         }
 
         private static bool ComputeWantedFlag(Audiobook audiobook)
@@ -2964,12 +2969,13 @@ namespace Listenarr.Api.Controllers
                 var configService = scope.ServiceProvider.GetRequiredService<IConfigurationService>();
                 var settings = await configService.GetApplicationSettingsAsync();
 
-                var final = request.DestinationPath!;
+                var final = request.DestinationPath!.Trim();
                 if (!Path.IsPathRooted(final))
                 {
                     var root = settings.OutputPath ?? string.Empty;
                     final = Path.Join(root, final.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar));
                 }
+                final = FileUtils.NormalizeStoredPath(final);
 
                 // If caller explicitly asked to change the DB without moving files, update the BasePath and return early.
                 if (request.MoveFiles == false)

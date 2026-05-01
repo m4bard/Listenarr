@@ -16,21 +16,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-namespace Listenarr.Application.Interfaces
-{
-    public interface IAppPathService
-    {
-        string ContentRootPath { get; }
-        string ConfigRootPath { get; }
-        string LogsRootPath { get; }
-        string FfmpegRootPath { get; }
-        string ToolsRootPath { get; }
-        string WwwRootPath { get; }
-        string ResolveFromContentRoot(params string[] segments);
-        string ResolveFromConfig(params string[] segments);
-    }
+using Listenarr.Domain.Services;
 
-    public sealed class AppPathService : IAppPathService
+namespace Listenarr.Infrastructure.Services
+{
+    public sealed class ApplicationPathService : IApplicationPathService
     {
         public string ContentRootPath { get; }
         public string ConfigRootPath { get; }
@@ -39,11 +29,11 @@ namespace Listenarr.Application.Interfaces
         public string ToolsRootPath { get; }
         public string WwwRootPath { get; }
 
-        public AppPathService(IHostEnvironment hostEnvironment)
+        public ApplicationPathService(string? contentRootPath)
         {
-            var contentRoot = string.IsNullOrWhiteSpace(hostEnvironment.ContentRootPath)
+            var contentRoot = string.IsNullOrWhiteSpace(contentRootPath)
                 ? AppContext.BaseDirectory
-                : hostEnvironment.ContentRootPath;
+                : contentRootPath;
 
             ContentRootPath = Path.GetFullPath(contentRoot);
             ConfigRootPath = ResolveFromContentRoot("config");

@@ -956,7 +956,7 @@ class ApiService {
   }
 
   // Startup configuration (read + write) — backend exposes under /configuration/startupconfig
-  async getBootstrapConfig(): Promise<import('@/types').StartupBootstrapConfig> {
+  async getBootstrapConfig(): Promise<import('@/types').StartupConfigDto> {
     const resp = await fetch(`${API_BASE_URL}/configuration/bootstrap`, {
       method: 'GET',
       credentials: 'include',

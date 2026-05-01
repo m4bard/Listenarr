@@ -22,6 +22,7 @@ using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using System.Net;
 using System.Net.Sockets;
+using Listenarr.Domain.Services;
 
 namespace Listenarr.Application.Common
 {
@@ -33,6 +34,16 @@ namespace Listenarr.Application.Common
         Task<string?> MoveToSeriesLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false);
         Task<string?> GetCachedImagePathAsync(string identifier);
         Task ClearTempCacheAsync();
+    }
+
+    public sealed class ImageCacheNoRedirectHttpClient
+    {
+        public ImageCacheNoRedirectHttpClient(HttpClient client)
+        {
+            Client = client;
+        }
+
+        public HttpClient Client { get; }
     }
 
     public class ImageCacheService : IImageCacheService, IDisposable
@@ -56,6 +67,15 @@ namespace Listenarr.Application.Common
             ".gif",
         };
 
+        private static readonly IReadOnlyDictionary<string, string> ImageExtensionsByMediaType =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["image/jpeg"] = ".jpg",
+                ["image/png"] = ".png",
+                ["image/webp"] = ".webp",
+                ["image/gif"] = ".gif",
+            };
+
         private readonly ILogger<ImageCacheService> _logger;
         private readonly HttpClient _httpClientNoRedirect;
         private readonly string _tempCachePath;
@@ -63,19 +83,27 @@ namespace Listenarr.Application.Common
         private readonly string _authorImagePath;
         private readonly string _seriesImagePath;
         private readonly string _contentRootPath;
+        private readonly bool _disposeNoRedirectClient;
         private readonly AsyncKeyedLocker<string> _downloadLocks = new();
 
+        public ImageCacheService(
+            ILogger<ImageCacheService> logger,
+            ImageCacheNoRedirectHttpClient noRedirectHttpClient,
+            IApplicationPathService applicationPathService)
+            : this(logger, noRedirectHttpClient.Client, applicationPathService.ContentRootPath, disposeNoRedirectClient: false)
+        {
+        }
+
         public ImageCacheService(ILogger<ImageCacheService> logger, IHttpClientFactory httpClientFactory, string contentRootPath)
+            : this(logger, CreateNoRedirectClient(httpClientFactory), contentRootPath, disposeNoRedirectClient: true)
+        {
+        }
+
+        private ImageCacheService(ILogger<ImageCacheService> logger, HttpClient noRedirectHttpClient, string contentRootPath, bool disposeNoRedirectClient)
         {
             _logger = logger;
-            using var httpClient = httpClientFactory.CreateClient();
-            _httpClientNoRedirect = new HttpClient(new HttpClientHandler
-            {
-                AllowAutoRedirect = false
-            })
-            {
-                Timeout = httpClient.Timeout
-            };
+            _httpClientNoRedirect = noRedirectHttpClient;
+            _disposeNoRedirectClient = disposeNoRedirectClient;
             _contentRootPath = ResolveEffectiveContentRoot(contentRootPath);
 
             // Set up cache directories relative to content root
@@ -90,6 +118,18 @@ namespace Listenarr.Application.Common
             Directory.CreateDirectory(_libraryImagePath);
             Directory.CreateDirectory(_authorImagePath);
             Directory.CreateDirectory(_seriesImagePath);
+        }
+
+        private static HttpClient CreateNoRedirectClient(IHttpClientFactory httpClientFactory)
+        {
+            using var httpClient = httpClientFactory.CreateClient();
+            return new HttpClient(new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            })
+            {
+                Timeout = httpClient.Timeout
+            };
         }
 
         private string ResolveEffectiveContentRoot(string? contentRootPath)
@@ -792,10 +832,10 @@ namespace Listenarr.Application.Common
             // Try to get extension from content type
             if (!string.IsNullOrEmpty(contentType))
             {
-                if (contentType.Equals("image/jpeg", StringComparison.OrdinalIgnoreCase)) return ".jpg";
-                if (contentType.Equals("image/png", StringComparison.OrdinalIgnoreCase)) return ".png";
-                if (contentType.Equals("image/webp", StringComparison.OrdinalIgnoreCase)) return ".webp";
-                if (contentType.Equals("image/gif", StringComparison.OrdinalIgnoreCase)) return ".gif";
+                if (ImageExtensionsByMediaType.TryGetValue(contentType, out var mappedExtension))
+                {
+                    return mappedExtension;
+                }
             }
 
             // Try to get extension from URL
@@ -1093,6 +1133,11 @@ namespace Listenarr.Application.Common
 
         public void Dispose()
         {
+            if (!_disposeNoRedirectClient)
+            {
+                return;
+            }
+
             try
             {
                 _httpClientNoRedirect.Dispose();
@@ -1104,4 +1149,3 @@ namespace Listenarr.Application.Common
         }
     }
 }
-

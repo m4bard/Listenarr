@@ -25,6 +25,7 @@ using Listenarr.Domain.Models;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Common;
+using Listenarr.Domain.Services;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -81,7 +82,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNamingService.Object,
-                mockScanQueue.Object);
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                scanQueueService: mockScanQueue.Object);
 
             // Get the private method using reflection
             var method = typeof(LibraryController).GetMethod("ComputeAudiobookBaseDirectoryFromPattern",
@@ -146,7 +148,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNamingService.Object,
-                mockScanQueue.Object);
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                scanQueueService: mockScanQueue.Object);
 
             // Get the private method using reflection
             var method = typeof(LibraryController).GetMethod("ComputeAudiobookBaseDirectoryFromPattern",

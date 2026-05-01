@@ -20,7 +20,6 @@ using System.Security.Cryptography;
 using System.Text;
 using Listenarr.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace Listenarr.Application.Security;
 
@@ -90,43 +89,6 @@ public static class SecurityRequestUtils
         return !string.IsNullOrWhiteSpace(authMethod) &&
                string.Equals(authMethod, "ApiKey", StringComparison.Ordinal);
     }
-
-    public static bool IsAuthenticationRequired(HttpContext? context)
-    {
-        try
-        {
-            var requestServices = context?.RequestServices;
-            if (requestServices == null)
-            {
-                return false;
-            }
-
-            var startupConfigService = requestServices.GetService<IStartupConfigService>();
-            var rawValue = startupConfigService?.GetConfig()?.AuthenticationRequired;
-            if (string.IsNullOrWhiteSpace(rawValue))
-            {
-                return false;
-            }
-
-            if (bool.TryParse(rawValue, out var parsed))
-            {
-                return parsed;
-            }
-
-            return rawValue.Trim().ToLowerInvariant() is "enabled" or "true" or "yes" or "1";
-        }
-        catch (ObjectDisposedException)
-        {
-            return false;
-        }
-        catch (InvalidOperationException)
-        {
-            return false;
-        }
-    }
-
-    public static bool IsAdminOrApiKeyOrAuthenticationDisabled(HttpContext? context)
-        => !IsAuthenticationRequired(context) || IsAuthenticatedAdminOrApiKey(context);
 
     public static bool ShouldRedactSecretsForCaller(HttpContext? context)
         // *Arr standard trust model:

@@ -20,6 +20,7 @@ using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Services;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
@@ -396,10 +397,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 CreateRootFolderRepo(dbContext),
                 fileNaming.Object,
-                scanQueueService: null,
-                moveQueueService: null,
-                notificationService: null,
-                rootFolderService: null);
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
         }
 
         private static IRootFolderRepository CreateRootFolderRepo(ListenArrDbContext dbContext)

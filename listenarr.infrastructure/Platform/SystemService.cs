@@ -22,6 +22,7 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Services;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Platform
@@ -30,18 +31,18 @@ namespace Listenarr.Infrastructure.Platform
     {
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SystemService> _logger;
-        private readonly IAppPathService _appPathService;
+        private readonly IApplicationPathService _applicationPathService;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
         public SystemService(
             IConfigurationService configurationService,
             ILogger<SystemService> logger,
-            IAppPathService appPathService)
+            IApplicationPathService applicationPathService)
         {
             _configurationService = configurationService;
             _logger = logger;
-            _appPathService = appPathService;
+            _applicationPathService = applicationPathService;
             _startTime = DateTime.UtcNow;
         }
 
@@ -94,7 +95,7 @@ namespace Listenarr.Infrastructure.Platform
             try
             {
                 // Get the drive where the application is running
-                var appPath = _appPathService.ContentRootPath;
+                var appPath = _applicationPathService.ContentRootPath;
                 var driveInfo = new DriveInfo(Path.GetPathRoot(appPath) ?? "C:\\");
 
                 if (!driveInfo.IsReady)
@@ -501,7 +502,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             // Use the host content root so local development lands in
             // listenarr.api/config/logs and production stays under the deployed root.
-            var logsDir = _appPathService.LogsRootPath;
+            var logsDir = _applicationPathService.LogsRootPath;
 
             // Ensure the directory exists
             if (!Directory.Exists(logsDir))
@@ -593,6 +594,3 @@ namespace Listenarr.Infrastructure.Platform
         }
     }
 }
-
-
-

@@ -53,7 +53,8 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IConfigurationService, ConfigurationService>();
             // Startup config: read config.json (optional) and expose via IStartupConfigService
             services.AddSingleton<IStartupConfigService, StartupConfigService>();
-            services.AddSingleton<IAppPathService, AppPathService>();
+            services.AddSingleton<IAuthenticationRequirementService, AuthenticationRequirementService>();
+
             // Register indexer search providers
             services.AddScoped<IIndexerSearchProvider, InternetArchiveSearchProvider>();
             services.AddScoped<IIndexerSearchProvider, TorznabNewznabSearchProvider>();
@@ -92,11 +93,12 @@ namespace Listenarr.Infrastructure.Extensions
             // Queue service extracted from DownloadService to encapsulate queue-building and filtering
             services.AddScoped<IDownloadQueueService, DownloadQueueService>();
             services.AddScoped<IOpenLibraryService, OpenLibraryService>();
-            services.AddSingleton<IImageCacheService>(sp => new ImageCacheService(
-                sp.GetRequiredService<ILogger<ImageCacheService>>(),
-                sp.GetRequiredService<IHttpClientFactory>(),
-                sp.GetRequiredService<IWebHostEnvironment>().ContentRootPath
-            ));
+            services.AddHttpClient<ImageCacheNoRedirectHttpClient>()
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+                {
+                    AllowAutoRedirect = false
+                });
+            services.AddSingleton<IImageCacheService, ImageCacheService>();
             services.AddScoped<IFileNamingService, FileNamingService>();
             services.AddScoped<IRenameService, RenameService>();
             // Centralized import service: handles moving/copying, naming and audiobook registration

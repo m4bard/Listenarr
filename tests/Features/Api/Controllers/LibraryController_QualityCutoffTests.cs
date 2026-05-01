@@ -21,6 +21,7 @@ using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Services;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Moq;
@@ -72,7 +73,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 Mock.Of<IQualityProfileRepository>(),
                 downloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
-                Mock.Of<IFileNamingService>());
+                Mock.Of<IFileNamingService>(),
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
 
             var method = typeof(LibraryController).GetMethod(
                 "IsQualityCutoffMetAsync",

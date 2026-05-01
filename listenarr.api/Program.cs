@@ -19,9 +19,11 @@
 using System.Net;
 using Asp.Versioning;
 using Asp.Versioning.ApiExplorer;
+using Microsoft.AspNetCore.Diagnostics;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.OpenApi;
 using Serilog;
 using Serilog.Events;
@@ -542,7 +544,8 @@ builder.Services.AddListenarrAdapters(builder.Configuration);
 // Register infrastructure implementations (DB wiring + repositories live in the Infrastructure project)
 builder.Services.AddListenarrInfrastructure(options =>
     options.UseSqlite($"Data Source={sqliteDbPath}", sqliteOptions =>
-        sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name)));
+        sqliteOptions.MigrationsAssembly(typeof(QualityProfileRepository).Assembly.GetName().Name)),
+    builder.Environment.ContentRootPath);
 // Register application-level services (moved from Program.cs to keep startup focused)
 builder.Services.AddListenarrAppServices(builder.Configuration);
 // Register hosted/background services (moved from Program.cs). Allow tests to disable these.
@@ -826,6 +829,29 @@ if (app.Environment.IsDevelopment())
 
 // Use forwarded headers middleware (must be early in pipeline).
 // Options are configured in DI to trust common private proxy networks.
+app.UseExceptionHandler(exceptionApp =>
+{
+    exceptionApp.Run(async context =>
+    {
+        var exceptionFeature = context.Features.Get<IExceptionHandlerFeature>();
+        var exception = exceptionFeature?.Error;
+        Log.Logger.Error(exception, "Unhandled API exception for {Method} {Path}", context.Request.Method, context.Request.Path);
+
+        context.Response.StatusCode = StatusCodes.Status500InternalServerError;
+        context.Response.ContentType = "application/problem+json";
+
+        var problem = new ProblemDetails
+        {
+            Status = StatusCodes.Status500InternalServerError,
+            Title = "Internal server error",
+            Detail = app.Environment.IsDevelopment() ? exception?.Message : null,
+            Instance = context.Request.Path,
+        };
+
+        await context.Response.WriteAsJsonAsync(problem);
+    });
+});
+
 app.UseForwardedHeaders();
 
 // Note: HTTPS redirection is handled by the reverse proxy, not by this application
