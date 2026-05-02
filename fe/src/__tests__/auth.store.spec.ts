@@ -112,6 +112,7 @@ describe('auth store cross-tab sync', () => {
   it('redirects to login when another tab broadcasts a logout event while auth is required', async () => {
     const store = useAuthStore()
     store.user = { authenticated: true, name: 'cross-tab-user' }
+    store.loaded = true // prevent router guard from re-calling loadCurrentUser() and resetting auth state
     await router.replace('/settings')
 
     const logoutEvent = new Event('storage')
