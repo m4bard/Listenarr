@@ -628,7 +628,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var allAudiobooks = await _repo.GetAllAsync();
+            var allAudiobooks = await _repo.GetAllNoFilesAsync();
             var audiobooks = allAudiobooks
                 .OrderBy(a => a.Title)
                 .ToList();
@@ -638,20 +638,26 @@ namespace Listenarr.Api.Controllers
                 return Ok(Array.Empty<LibraryAudiobookListItemDto>());
             }
 
-            // Because this endpoint already loads the entire audiobook table, fetch file
-            // summaries directly instead of expanding a large in-memory ID list into SQL.
-            var allFiles = await _audioFileRepository.GetAllAsync();
-            var fileSummaries = allFiles.Select(f => new AudiobookFileStatusInfo
-            {
-                AudiobookId = f.AudiobookId,
-                Path = f.Path,
-                Format = f.Format,
-                Container = f.Container,
-                Codec = f.Codec,
-                Bitrate = f.Bitrate
-            }).ToList();
+            // Fetch one representative file row per (AudiobookId, Format, Codec, Container)
+            // using a SQL GROUP BY so that audiobooks with thousands of chapter files don't
+            // materialise every row just to determine quality status.
+            // EfDownloadRepository uses IDbContextFactory so it can run concurrently.
+            var fileSummaryTask = _audioFileRepository.GetFormatSummariesAsync();
+            var fileCountTask = _audioFileRepository.GetCountsByAudiobookIdAsync();
+            var activeDownloadTask = _downloadRepository.GetActiveAudiobookIdsAsync(ActiveLibraryDownloadStatuses);
 
-            var filesByAudiobookId = fileSummaries
+            var fileSummaryRows = await fileSummaryTask;
+            var fileCountById = await fileCountTask;
+            var filesByAudiobookId = fileSummaryRows
+                .Select(f => new AudiobookFileStatusInfo
+                {
+                    AudiobookId = f.AudiobookId,
+                    Path = f.Path,
+                    Format = f.Format,
+                    Container = f.Container,
+                    Codec = f.Codec,
+                    Bitrate = f.Bitrate
+                })
                 .GroupBy(f => f.AudiobookId)
                 .ToDictionary(g => g.Key, g => (IReadOnlyList<AudiobookFileStatusInfo>)g.ToList());
 
@@ -668,8 +674,7 @@ namespace Listenarr.Api.Controllers
 
             var qualityProfilesById = qualityProfiles.ToDictionary(q => q.Id);
 
-            var activeDownloadAudiobookIds = await _downloadRepository.GetActiveAudiobookIdsAsync(ActiveLibraryDownloadStatuses);
-
+            var activeDownloadAudiobookIds = await activeDownloadTask;
             var activeDownloadAudiobookIdSet = activeDownloadAudiobookIds.ToHashSet();
 
             var dto = audiobooks.Select(a =>
@@ -707,7 +712,7 @@ namespace Listenarr.Api.Controllers
                     BasePath = a.BasePath,
                     FilePath = a.FilePath,
                     FileSize = a.FileSize,
-                    FileCount = files?.Count ?? 0,
+                    FileCount = fileCountById.TryGetValue(a.Id, out var trueCount) ? trueCount : 0,
                     Quality = a.Quality,
                     QualityProfileId = a.QualityProfileId,
                     AuthorAsins = a.AuthorAsins?.ToArray(),

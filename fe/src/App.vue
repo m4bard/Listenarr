@@ -227,13 +227,17 @@
         :class="{ open: mobileMenuOpen, 'auth-warning-visible': showSecurityWarningBanner }"
         ref="sidebarRef"
       >
-        <nav class="sidebar-nav">
+        <nav class="sidebar-nav" @click.capture="onNavCapture">
           <div class="nav-section">
             <RouterLink
               :to="{ path: '/audiobooks', query: { group: 'books' } }"
               class="nav-item"
               :class="{
-                'router-link-active': route.name === 'home' || route.name === 'audiobooks',
+                'router-link-active':
+                  route.name === 'home' ||
+                  route.name === 'audiobooks' ||
+                  pendingNavPath?.startsWith('/audiobooks') ||
+                  pendingNavPath === '/',
               }"
               @mouseenter="onPrimaryNavMouseEnter('home', 'audiobooks')"
               @mouseleave="onNavMouseLeave('audiobooks')"
@@ -289,6 +293,7 @@
             <RouterLink
               to="/add-new"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/add-new' }"
               @mouseenter="preload('add-new')"
               @focus="preload('add-new')"
               @touchstart.passive="preload('add-new')"
@@ -300,6 +305,7 @@
             <RouterLink
               to="/calendar"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/calendar' }"
               @mouseenter="preload('calendar')"
               @focus="preload('calendar')"
               @touchstart.passive="preload('calendar')"
@@ -311,6 +317,7 @@
             <RouterLink
               to="/library-import"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/library-import' }"
               @mouseenter="preload('library-import')"
               @focus="preload('library-import')"
               @touchstart.passive="preload('library-import')"
@@ -325,6 +332,7 @@
             <RouterLink
               to="/activity"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/activity' }"
               @mouseenter="preload('activity')"
               @focus="preload('activity')"
               @touchstart.passive="preload('activity')"
@@ -337,6 +345,7 @@
             <RouterLink
               to="/wanted"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/wanted' }"
               @mouseenter="preload('wanted')"
               @focus="preload('wanted')"
               @touchstart.passive="preload('wanted')"
@@ -352,6 +361,7 @@
             <RouterLink
               to="/settings"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/settings' }"
               @mouseenter="onPrimaryNavMouseEnter('settings', 'settings')"
               @mouseleave="onNavMouseLeave('settings')"
               @focus="onPrimaryNavFocus('settings', 'settings')"
@@ -436,6 +446,7 @@
             <RouterLink
               to="/system"
               class="nav-item"
+              :class="{ 'router-link-active': pendingNavPath === '/system' }"
               @mouseenter="preload('system')"
               @focus="preload('system')"
               @touchstart.passive="preload('system')"
@@ -483,9 +494,11 @@
         <div v-if="hideLayout" class="fullpage-wrapper">
           <RouterView />
         </div>
-        <div v-else>
-          <RouterView />
-        </div>
+        <RouterView v-else v-slot="{ Component }">
+          <Transition name="page-fade">
+            <component :is="Component" :key="route.name as string" />
+          </Transition>
+        </RouterView>
       </main>
     </div>
 
@@ -581,6 +594,8 @@ const securityWarningPermanentlyHidden = ref(getSecurityWarningBannerHiddenPrefe
 // Hover and persistence state for sidebar subnavs
 const hoverNav = ref<string | null>(null)
 const persistentNav = ref<string | null>(null)
+// Optimistic active state: set immediately on click, cleared after navigation resolves
+const pendingNavPath = ref<string | null>(null)
 const hoverTimeout = ref<number | null>(null)
 const HOVER_CLOSE_DELAY = 200
 const sidebarRef = ref<HTMLElement | null>(null)
@@ -659,6 +674,15 @@ function onNavClick(name: string) {
   // Toggle persistent open state
   persistentNav.value = persistentNav.value === name ? null : name
   hoverNav.value = persistentNav.value || null
+}
+
+// Capture nav-item clicks at the nav level to set an optimistic active state immediately,
+// before the router guard (which may await async work) resolves.
+function onNavCapture(e: MouseEvent) {
+  const link = (e.target as HTMLElement).closest('a.nav-item') as HTMLAnchorElement | null
+  if (link) {
+    pendingNavPath.value = new URL(link.href, window.location.origin).pathname
+  }
 }
 
 // Close persistent nav when clicking outside sidebar
@@ -921,6 +945,10 @@ const syncLibrarySnapshot = async () => {
 
 // --- Header search implementation ---
 const router = useRouter()
+// Clear the optimistic pending nav state once navigation fully resolves
+router.afterEach(() => {
+  pendingNavPath.value = null
+})
 const searchQuery = vueRef('')
 const suggestions = vueRef<
   Array<{ id: number; title: string; author?: string; imageUrl?: string }>
@@ -1848,6 +1876,19 @@ these are not present, the Google Fonts import in `fe/index.html` will be used a
   align-items: center;
   justify-content: center;
   z-index: 10;
+}
+
+/* Page transition: new view fades in; old view leaves instantly to avoid blank flash */
+.page-fade-enter-active {
+  transition: opacity 150ms ease;
+}
+.page-fade-enter-from {
+  opacity: 0;
+}
+.page-fade-leave-active {
+  position: absolute;
+  transition: none;
+  opacity: 0;
 }
 
 /* Main Content */

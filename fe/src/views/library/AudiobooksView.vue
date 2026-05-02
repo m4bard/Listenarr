@@ -1309,23 +1309,36 @@ async function ensureAuthorCover(authorName: string) {
 
 // Grouping mode
 const GROUP_BY_KEY = 'listenarr.groupBy'
+const GROUP_BY_MODES = ['books', 'authors', 'series'] as const
+type GroupByMode = (typeof GROUP_BY_MODES)[number]
+const DEFAULT_VISIBLE_RANGE_END = 20
 const groupBy = ref<'books' | 'authors' | 'series'>('books')
 const showGroupMenu = ref(false)
+
+function normalizeGroupBy(value: unknown): GroupByMode | null {
+  if (value === 'audiobooks') return 'books'
+  return typeof value === 'string' && GROUP_BY_MODES.includes(value as GroupByMode)
+    ? (value as GroupByMode)
+    : null
+}
 
 // --- GroupBy and SortKey Initialization ---
 try {
   // Start with any stored preference
   const stored = localStorage.getItem(GROUP_BY_KEY)
-  if (stored && ['books', 'authors', 'series'].includes(stored)) {
-    groupBy.value = stored as 'books' | 'authors' | 'series'
+  const storedGroup = normalizeGroupBy(stored)
+  if (storedGroup) {
+    groupBy.value = storedGroup
   }
-  const initialQ = route.query.group as string | undefined
-  if (initialQ && ['books', 'authors', 'series'].includes(initialQ) && initialQ !== groupBy.value) {
-    groupBy.value = initialQ as 'books' | 'authors' | 'series'
+  const initialGroup = normalizeGroupBy(route.query.group)
+  if (initialGroup && initialGroup !== groupBy.value) {
+    groupBy.value = initialGroup
   }
   // No need to set sortKey/order here; handled per-group below
-  if (!initialQ) {
+  if (!initialGroup) {
     router.replace({ path: '/audiobooks', query: { group: groupBy.value } })
+  } else if (route.query.group !== initialGroup) {
+    router.replace({ path: '/audiobooks', query: { ...(route.query || {}), group: initialGroup } })
   }
 } catch {}
 
@@ -1603,11 +1616,23 @@ const VIEWMODE_KEY = 'listenarr.viewMode'
 
 const viewMode = ref<'grid' | 'list'>('grid')
 
-const visibleRange = ref({ start: 0, end: 20 }) // Initially show first 20 items
+const visibleRange = ref({ start: 0, end: DEFAULT_VISIBLE_RANGE_END })
 
 const visibleAudiobooks = computed(() => {
   return audiobooks.value.slice(visibleRange.value.start, visibleRange.value.end)
 })
+
+function recalcItemsPerRow() {
+  if (!scrollContainer.value) return
+  const minItemWidth = 180
+  const gap = 20
+  const containerWidth = scrollContainer.value.clientWidth - 40 // Subtract padding
+  const newItems =
+    viewMode.value === 'list' ? 1 : Math.floor((containerWidth + gap) / (minItemWidth + gap)) || 1
+  if (newItems !== ITEMS_PER_ROW.value) {
+    ITEMS_PER_ROW.value = newItems
+  }
+}
 
 // Option: show extra details under each audiobook poster in grid view
 const SHOW_ITEM_DETAILS_KEY = 'listenarr.showItemDetails'
@@ -1635,15 +1660,13 @@ watch(
   () => route.query.group,
   (g) => {
     try {
-      const q = g as string | undefined
-      const mode =
-        q && ['books', 'authors', 'series'].includes(q)
-          ? (q as 'books' | 'authors' | 'series')
-          : 'books'
+      const mode = normalizeGroupBy(g) ?? 'books'
       // If the route changed the group, use setGroupBy so we run the same DOM/update/observer logic
       if (mode !== groupBy.value) {
         // fire-and-forget async to avoid blocking the router navigation
         void setGroupBy(mode)
+      } else if (g !== mode) {
+        void router.replace({ path: '/audiobooks', query: { ...(route.query || {}), group: mode } })
       }
     } catch {}
   },
@@ -1726,7 +1749,7 @@ const updateVisibleRange = () => {
   const endRow = Math.min(firstVisibleRow + visibleRowCount + BUFFER_ROWS, totalRows)
 
   // Convert to item indices
-  const startIndex = startRow * ITEMS_PER_ROW.value
+  const startIndex = Math.max(0, startRow * ITEMS_PER_ROW.value)
   const endIndex = Math.min(endRow * ITEMS_PER_ROW.value, audiobooks.value.length)
 
   visibleRange.value = { start: startIndex, end: endIndex }
@@ -1798,59 +1821,32 @@ let stopVisibleRangeWatch: (() => void) | null = null
 let stopViewModeWatch: (() => void) | null = null
 let stopPersistViewModeWatch: (() => void) | null = null
 
-onMounted(async () => {
-  document.addEventListener('click', handleClickOutside)
-  await Promise.all([
-    libraryStore.fetchLibrary(),
-    configStore.loadApplicationSettings(),
-    loadQualityProfiles(),
-  ])
+async function initializeVirtualScroller() {
+  if (!scrollContainer.value) return
 
-  // Calculate items per row based on container width
-  if (scrollContainer.value) {
-    const minItemWidth = 180
-    const gap = 20
-
-    const recalcItemsPerRow = () => {
+  if (!resizeObserver) {
+    resizeObserver = new ResizeObserver(() => {
       if (!scrollContainer.value) return
-      const containerWidth = scrollContainer.value.clientWidth - 40 // Subtract padding
-      const newItems =
-        viewMode.value === 'list'
-          ? 1
-          : Math.floor((containerWidth + gap) / (minItemWidth + gap)) || 1
-      if (newItems !== ITEMS_PER_ROW.value) {
-        ITEMS_PER_ROW.value = newItems
-      }
-    }
-
-    // Load persisted view mode (if available) before layout calc
-    try {
-      const stored = localStorage.getItem(VIEWMODE_KEY)
-      if (stored === 'list' || stored === 'grid') {
-        viewMode.value = stored as 'grid' | 'list'
-      }
-    } catch {
-      // ignore localStorage errors (e.g., privacy mode)
-    }
-
-    // Initial calculation
-    recalcItemsPerRow()
-    // Initialize visible range
-    updateVisibleRange()
-
-    if (groupBy.value === 'authors') {
-      try {
-        await nextTick()
-        observeAuthorCards()
-      } catch {}
-    }
-
-    await nextTick()
-    if (syncMeasuredRowHeight()) {
+      measuredRowHeight.value = null
+      recalcItemsPerRow()
       updateVisibleRange()
-      await nextTick()
-    }
+    })
+  }
 
+  try {
+    resizeObserver.observe(scrollContainer.value)
+  } catch {}
+
+  recalcItemsPerRow()
+  updateVisibleRange()
+
+  await nextTick()
+  if (syncMeasuredRowHeight()) {
+    updateVisibleRange()
+    await nextTick()
+  }
+
+  if (!stopVisibleRangeWatch) {
     stopVisibleRangeWatch = watch(
       () => visibleRange.value,
       async () => {
@@ -1861,28 +1857,19 @@ onMounted(async () => {
         }
       },
     )
+  }
 
-    // Add resize observer to recalculate on window resize
-    resizeObserver = new ResizeObserver(() => {
-      // Guard against null - element may be unmounted during navigation
-      if (!scrollContainer.value) return
-      measuredRowHeight.value = null
-      recalcItemsPerRow()
-      updateVisibleRange()
-    })
-    resizeObserver.observe(scrollContainer.value)
-
-    // Watch for view mode changes to recalc item layout
+  if (!stopViewModeWatch) {
     stopViewModeWatch = watch(viewMode, async () => {
       measuredRowHeight.value = null
       recalcItemsPerRow()
-      // wait a tick for layout to update then recalc range
       await nextTick()
       syncMeasuredRowHeight()
       updateVisibleRange()
     })
+  }
 
-    // Persist view mode whenever it changes
+  if (!stopPersistViewModeWatch) {
     stopPersistViewModeWatch = watch(viewMode, (v) => {
       try {
         localStorage.setItem(VIEWMODE_KEY, v)
@@ -1890,6 +1877,34 @@ onMounted(async () => {
         /* ignore */
       }
     })
+  }
+}
+
+onMounted(async () => {
+  document.addEventListener('click', handleClickOutside)
+  await Promise.all([
+    libraryStore.fetchLibrary(),
+    configStore.loadApplicationSettings(),
+    loadQualityProfiles(),
+  ])
+
+  // Load persisted view mode (if available) before layout calc
+  try {
+    const stored = localStorage.getItem(VIEWMODE_KEY)
+    if (stored === 'list' || stored === 'grid') {
+      viewMode.value = stored as 'grid' | 'list'
+    }
+  } catch {
+    // ignore localStorage errors (e.g., privacy mode)
+  }
+
+  await initializeVirtualScroller()
+
+  if (groupBy.value === 'authors') {
+    try {
+      await nextTick()
+      observeAuthorCards()
+    } catch {}
   }
 })
 
@@ -1963,9 +1978,21 @@ function toggleViewMode() {
   viewMode.value = viewMode.value === 'grid' ? 'list' : 'grid'
 }
 
-async function setGroupBy(mode: 'books' | 'authors' | 'series') {
+function resetVirtualScroller() {
+  measuredRowHeight.value = null
+  visibleRange.value = { start: 0, end: DEFAULT_VISIBLE_RANGE_END }
+  if (scrollContainer.value) {
+    scrollContainer.value.scrollTop = 0
+  }
+}
+
+async function setGroupBy(mode: GroupByMode) {
+  const changed = mode !== groupBy.value
   groupBy.value = mode
   showGroupMenu.value = false
+  if (changed) {
+    resetVirtualScroller()
+  }
   if (mode !== 'authors') {
     try {
       authorCardObserver?.disconnect()
@@ -1991,6 +2018,9 @@ async function setGroupBy(mode: 'books' | 'authors' | 'series') {
   // Ensure DOM settles and recalc visible range for the virtual scroller
   try {
     await nextTick()
+    if (changed) {
+      resetVirtualScroller()
+    }
     try {
       updateVisibleRange()
     } catch (e: unknown) {
@@ -2006,6 +2036,8 @@ async function setGroupBy(mode: 'books' | 'authors' | 'series') {
       observeAuthorCards()
       return
     }
+
+    await initializeVirtualScroller()
 
     // Wait for visible images to finish loading (or timeout)
     try {

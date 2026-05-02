@@ -125,14 +125,14 @@ try
     var dir = Path.GetDirectoryName(externalConfigAbsolute) ?? string.Empty;
     if (!Directory.Exists(dir)) Directory.CreateDirectory(dir);
 
-        if (!File.Exists(externalConfigAbsolute))
-        {
-            // Minimal, safe default configuration (non-sensitive)
-            var defaultJson = "{\n  \"Serilog\": {\n    \"MinimumLevel\": {\n      \"Default\": \"Information\",\n      \"Override\": {\n        \"Microsoft\": \"Warning\",\n        \"System\": \"Warning\"\n      }\n    }\n  }\n}";
-            File.WriteAllText(externalConfigAbsolute, defaultJson);
-            // Log the absolute path so it's clear where the file was created
-            Console.WriteLine($"[Listenarr] Created default configuration at '{externalConfigAbsolute}'. Edit this file to customize app settings.");
-        }
+    if (!File.Exists(externalConfigAbsolute))
+    {
+        // Minimal, safe default configuration (non-sensitive)
+        var defaultJson = "{\n  \"Serilog\": {\n    \"MinimumLevel\": {\n      \"Default\": \"Information\",\n      \"Override\": {\n        \"Microsoft\": \"Warning\",\n        \"System\": \"Warning\"\n      }\n    }\n  }\n}";
+        File.WriteAllText(externalConfigAbsolute, defaultJson);
+        // Log the absolute path so it's clear where the file was created
+        Console.WriteLine($"[Listenarr] Created default configuration at '{externalConfigAbsolute}'. Edit this file to customize app settings.");
+    }
 }
 catch (Exception ex) when (
     ex is IOException

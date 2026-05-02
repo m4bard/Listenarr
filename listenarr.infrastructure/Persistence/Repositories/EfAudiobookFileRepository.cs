@@ -107,5 +107,42 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .AsNoTracking()
                 .ToListAsync(ct);
         }
+
+        public async Task<List<AudiobookFile>> GetFormatSummariesAsync(CancellationToken ct = default)
+        {
+            // One row per (AudiobookId, Format, Codec, Container) — avoids materialising chapter-level rows
+            var rows = await _db.AudiobookFiles
+                .AsNoTracking()
+                .GroupBy(f => new { f.AudiobookId, f.Format, f.Codec, f.Container })
+                .Select(g => new
+                {
+                    g.Key.AudiobookId,
+                    g.Key.Format,
+                    g.Key.Codec,
+                    g.Key.Container,
+                    Bitrate = g.Max(f => f.Bitrate),
+                    Path = g.Min(f => f.Path),
+                })
+                .ToListAsync(ct);
+
+            return rows.Select(r => new AudiobookFile
+            {
+                AudiobookId = r.AudiobookId,
+                Format = r.Format,
+                Codec = r.Codec,
+                Container = r.Container,
+                Bitrate = r.Bitrate,
+                Path = r.Path,
+            }).ToList();
+        }
+
+        public async Task<Dictionary<int, int>> GetCountsByAudiobookIdAsync(CancellationToken ct = default)
+        {
+            return await _db.AudiobookFiles
+                .AsNoTracking()
+                .GroupBy(f => f.AudiobookId)
+                .Select(g => new { AudiobookId = g.Key, Count = g.Count() })
+                .ToDictionaryAsync(r => r.AudiobookId, r => r.Count, ct);
+        }
     }
 }

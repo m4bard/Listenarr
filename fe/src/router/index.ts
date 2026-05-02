@@ -179,8 +179,10 @@ router.beforeEach(async (to, from) => {
     } catch {}
   }
 
-  // Always fetch the latest startup config (no cache)
-  const startupConfig = await getStartupConfigCached(0)
+  // Fetch startup config with a short cache window so rapid navigations do not each
+  // block on a network round-trip. Auth settings rarely change mid-session; 30 s is
+  // conservative enough to stay in sync while avoiding per-navigation latency.
+  const startupConfig = await getStartupConfigCached(30_000)
   const startupConfigMissing = !startupConfig
   logger.debug('[router] startupConfigMissing', startupConfigMissing)
   logger.debug('[router] startupConfig', redactStartupConfigForLog(startupConfig))
