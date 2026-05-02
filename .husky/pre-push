@@ -6,7 +6,14 @@ if ! command -v node >/dev/null 2>&1 && [ -d "/c/Program Files/nodejs" ]; then
   export PATH="/c/Program Files/nodejs:$PATH"
 fi
 
-echo "Running test suite..."
+echo "Syncing version..."
 node scripts/sync-fe-version-from-csproj.mjs
-dotnet test
-(cd fe && node node_modules/vitest/vitest.mjs)
+
+echo "Checking backend format..."
+npm run --silent format:backend:check
+
+echo "Running frontend type check..."
+(cd fe && npm run type-check --silent)
+
+echo "Running frontend tests..."
+(cd fe && node node_modules/vitest/vitest.mjs run)
