@@ -581,64 +581,6 @@ describe('AudiobooksView Grouping', () => {
     expect((wrapper.vm as unknown as { groupBy: string }).groupBy).toBe('books')
   })
 
-  it('normalizes group=audiobooks to books on initial load', async () => {
-    if (
-      typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'
-    ) {
-      ;(globalThis as unknown as Record<string, unknown>).ResizeObserver = class {
-        observe() {}
-        disconnect() {}
-      }
-    }
-    if (typeof (globalThis as unknown as { WebSocket?: unknown }).WebSocket === 'undefined') {
-      ;(globalThis as unknown as Record<string, unknown>).WebSocket = function () {
-        /* noop */
-      }
-    }
-
-    const pinia = createPinia()
-    setActivePinia(pinia)
-    const router = createRouter({
-      history: createMemoryHistory(),
-      routes: [
-        { path: '/', name: 'home', component: { template: '<div />' } },
-        { path: '/audiobooks', name: 'audiobooks', component: AudiobooksView },
-      ],
-    })
-    localStorage.setItem('listenarr.groupBy', 'authors')
-    await router.push({ path: '/audiobooks', query: { group: 'audiobooks' } })
-    await router.isReady().catch(() => {})
-
-    const store = useLibraryStore()
-    store.audiobooks = [
-      {
-        id: 1,
-        title: 'Book 1',
-        authors: ['Author A'],
-        imageUrl: 'cover1.jpg',
-        files: [],
-      },
-    ] as unknown as import('@/types').Audiobook[]
-
-    store.fetchLibrary = vi.fn(async () => undefined)
-    const wrapper = mount(AudiobooksView, {
-      global: {
-        plugins: [pinia, router],
-        stubs: [
-          'BulkEditModal',
-          'EditAudiobookModal',
-          'CustomFilterModal',
-          'FiltersDropdown',
-          'CustomSelect',
-        ],
-      },
-    })
-    await new Promise((r) => setTimeout(r, 0))
-
-    expect(getVm(wrapper).groupBy).toBe('books')
-    expect(router.currentRoute.value.query.group).toBe('books')
-  })
-
   it('resets the virtual range when returning to books grouping', async () => {
     if (
       typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined'

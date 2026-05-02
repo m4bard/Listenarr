@@ -1316,7 +1316,6 @@ const groupBy = ref<'books' | 'authors' | 'series'>('books')
 const showGroupMenu = ref(false)
 
 function normalizeGroupBy(value: unknown): GroupByMode | null {
-  if (value === 'audiobooks') return 'books'
   return typeof value === 'string' && GROUP_BY_MODES.includes(value as GroupByMode)
     ? (value as GroupByMode)
     : null
