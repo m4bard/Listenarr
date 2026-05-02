@@ -10,10 +10,10 @@ echo "Syncing version..."
 node scripts/sync-fe-version-from-csproj.mjs
 
 echo "Checking backend format..."
-npm run --silent format:backend:check
+dotnet format listenarr.slnx --no-restore --verify-no-changes --verbosity minimal
 
 echo "Running frontend type check..."
-(cd fe && npm run type-check --silent)
+(cd fe && node node_modules/vue-tsc/bin/vue-tsc.js --build tsconfig.app.json)
 
 echo "Running frontend tests..."
 (cd fe && node node_modules/vitest/vitest.mjs run)
