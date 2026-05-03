@@ -152,7 +152,7 @@
               <li><code>{Asin}</code> - Audible ASIN</li>
               <li>
                 <code>{SeriesNumber}</code> or <code>{SeriesNumber:00}</code> - Position in series (00 =
-                zero-padded)
+                zero-padded; decimal positions like 4.5 are not padded)
               </li>
               <li><code>{Year}</code> - Publication year</li>
             </ul>
@@ -175,7 +175,7 @@
               <li><code>{Asin}</code> - Audible ASIN</li>
               <li>
                 <code>{SeriesNumber}</code> or <code>{SeriesNumber:00}</code> - Position in series (00 =
-                zero-padded)
+                zero-padded; decimal positions like 4.5 are not padded)
               </li>
               <li>
                 <code>{DiskNumber}</code> or <code>{DiskNumber:00}</code> - Disk/part number (00 =
@@ -253,7 +253,7 @@ function applyPattern(
   // Replace all variables with sample values
   for (const [key, value] of Object.entries(sampleVariables)) {
     if (key === 'DiskNumber' || key === 'ChapterNumber' || key === 'SeriesNumber') {
-      // Handle zero-padding for disk and chapter numbers using the sample value
+      // Handle zero-padding for disk, chapter, and series numbers using the sample value
       const paddedRegex = new RegExp(`\\{${key}:00\\}`, 'g')
       const paddedSample = value.toString().padStart(2, '0')
       result = result.replace(paddedRegex, paddedSample)

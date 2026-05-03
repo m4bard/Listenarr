@@ -443,6 +443,7 @@ namespace Listenarr.Tests.Features.Api.Services
             // Assert - no series number, so the variable and surrounding separator should be cleaned up
             Assert.Contains("Standalone Book", result);
             Assert.DoesNotContain("00", result);
+            Assert.DoesNotContain(" - .", result);
         }
 
         [Fact]
