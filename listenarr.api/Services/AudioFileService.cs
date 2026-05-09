@@ -15,13 +15,9 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Microsoft.Extensions.Logging;
 using Microsoft.EntityFrameworkCore;
-using Listenarr.Domain.Models;
-using Listenarr.Application.Repositories;
 using Microsoft.Extensions.Caching.Memory;
 using System.Text.Json;
-using System.IO;
 using Listenarr.Domain.Utils;
 using Listenarr.Api.Services.Metadata;
 
@@ -215,7 +211,7 @@ namespace Listenarr.Api.Services
                     Format = meta?.Format,
                     Container = meta?.Container,
                     Codec = meta?.Codec,
-                    Bitrate = meta?.Bitrate,
+                    Bitrate = meta?.BitRate,
                     SampleRate = meta?.SampleRate,
                     Channels = meta?.Channels
                 };

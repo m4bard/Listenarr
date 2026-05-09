@@ -15,9 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Collections.Generic;
-using System.Threading;
-using System.Threading.Tasks;
 using Listenarr.Domain.Models;
 
 namespace Listenarr.Application.Repositories
@@ -38,7 +35,7 @@ namespace Listenarr.Application.Repositories
         Task<SeriesCacheEntry?> GetCachedSeriesByNameAsync(string name, string region);
         Task<SeriesCacheEntry?> GetCachedSeriesByAsinAsync(string asin, string region);
         Task<SeriesCacheEntry> UpsertCachedSeriesAsync(SeriesCacheEntry seriesCacheEntry);
-        Task AddAsync(Audiobook audiobook);
+        Task<Audiobook> AddAsync(Audiobook audiobook);
         Task<bool> UpdateAsync(Audiobook audiobook);
         Task<bool> DeleteAsync(Audiobook audiobook);
         Task<bool> DeleteByIdAsync(int id);

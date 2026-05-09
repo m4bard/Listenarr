@@ -15,7 +15,6 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Threading;
 using Microsoft.EntityFrameworkCore;
 using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
@@ -90,10 +89,11 @@ namespace Listenarr.Infrastructure.Repositories
                 .ToListAsync(ct);
         }
 
-        public async Task AddAsync(Audiobook audiobook)
+        public async Task<Audiobook> AddAsync(Audiobook audiobook)
         {
             _db.Audiobooks.Add(audiobook);
             await _db.SaveChangesAsync();
+            return audiobook;
         }
 
         public async Task<bool> UpdateAsync(Audiobook audiobook)

@@ -16,11 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Text.Json;
-using Listenarr.Application.Repositories;
-using Listenarr.Application.Services;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Caching.Memory;
-using Microsoft.EntityFrameworkCore;
 using Listenarr.Domain.Utils;
 using Listenarr.Api.Services.Metadata;
 
@@ -476,7 +472,7 @@ namespace Listenarr.Api.Services
                                             if (metadataSvc != null)
                                             {
                                                 var meta = await metadataSvc.ExtractFileMetadataAsync(importResult.FinalPath);
-                                                candidateBitrate = meta?.Bitrate;
+                                                candidateBitrate = meta?.BitRate;
                                             }
                                         }
                                         catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)

@@ -15,18 +15,9 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using Listenarr.Application.Repositories;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Net.Http;
 using System.Text.Json;
 using System.Text.RegularExpressions;
-using System.Threading.Tasks;
 using AsyncKeyedLock;
-using Listenarr.Api.Models;
-using Listenarr.Domain.Models;
-using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services.Search.Providers
 {
@@ -174,6 +165,7 @@ namespace Listenarr.Api.Services.Search.Providers
                 mamRequest.Headers.AcceptLanguage.ParseAdd("en-US,en;q=0.9");
                 mamRequest.Headers.Referrer = new Uri("https://www.myanonamouse.net/");
 
+                // FIXME: Test driven logic should not be here
                 // Prefer using the injected HttpClient in tests (so DelegatingHandler stubs can capture requests)
                 using var disposableClient = _httpClient.BaseAddress == null
                     ? MyAnonamouseHelper.CreateAuthenticatedHttpClient(mamId, indexer.Url)

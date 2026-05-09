@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using AsyncKeyedLock;
-using Listenarr.Application.Repositories;
 using Listenarr.Domain.Utils;
 
 namespace Listenarr.Api.Services.Metadata
@@ -104,7 +103,7 @@ namespace Listenarr.Api.Services.Metadata
                                     file.Size = fi.Exists ? fi.Length : file.Size;
                                     file.DurationSeconds = meta.Duration.TotalSeconds != 0 ? meta.Duration.TotalSeconds : file.DurationSeconds;
                                     file.Format = !string.IsNullOrEmpty(meta.Format) ? meta.Format : file.Format;
-                                    file.Bitrate = meta.Bitrate != 0 ? meta.Bitrate : file.Bitrate;
+                                    file.Bitrate = meta.BitRate != 0 ? meta.BitRate : file.Bitrate;
                                     file.SampleRate = meta.SampleRate != 0 ? meta.SampleRate : file.SampleRate;
                                     file.Channels = meta.Channels != 0 ? meta.Channels : file.Channels;
 

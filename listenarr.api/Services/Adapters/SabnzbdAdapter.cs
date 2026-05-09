@@ -15,17 +15,8 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net;
-using System.Net.Http;
 using System.Text.Json;
-using System.Threading;
-using System.Threading.Tasks;
-using Listenarr.Api.Services;
-using Listenarr.Domain.Models;
-using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Api.Services.Adapters
 {
@@ -67,7 +58,7 @@ namespace Listenarr.Api.Services.Adapters
                     return (false, "SABnzbd API key not configured in client settings");
 
                 var url = $"{baseUrl}?mode=version&output=json&apikey={Uri.EscapeDataString(apiKey)}";
-                var http = _httpFactory.CreateClient("DownloadClient");
+                var http = _httpFactory.CreateClient(ClientType);
                 var resp = await http.GetAsync(url, ct);
                 if (!resp.IsSuccessStatusCode)
                 {
@@ -171,7 +162,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 _logger.LogDebug("SABnzbd request URL: {Url}", LogRedaction.RedactText(requestUrl, sensitiveValues));
 
-                var http = _httpFactory.CreateClient("DownloadClient");
+                var http = _httpFactory.CreateClient(ClientType);
                 var response = await http.GetAsync(requestUrl, ct);
                 var responseContent = await response.Content.ReadAsStringAsync(ct);
 
@@ -240,7 +231,7 @@ namespace Listenarr.Api.Services.Adapters
                     return false;
                 }
 
-                var http = _httpFactory.CreateClient("DownloadClient");
+                var http = _httpFactory.CreateClient(ClientType);
                 bool removedFromQueue = false;
                 bool removedFromHistory = false;
 
@@ -335,7 +326,7 @@ namespace Listenarr.Api.Services.Adapters
                 var requestUrl = $"{baseUrl}?mode=queue&output=json&apikey={Uri.EscapeDataString(apiKey)}";
                 _logger.LogDebug("SABnzbd queue request (redacted): {Url}", LogRedaction.RedactText(requestUrl, LogRedaction.GetSensitiveValuesFromEnvironment().Concat(new[] { apiKey })));
 
-                var http = _httpFactory.CreateClient("DownloadClient");
+                var http = _httpFactory.CreateClient(ClientType);
                 var response = await http.GetAsync(requestUrl, ct);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -577,7 +568,7 @@ namespace Listenarr.Api.Services.Adapters
                 if (string.IsNullOrEmpty(apiKey)) return result;
 
                 var historyUrl = $"{baseUrl}?mode=history&output=json&limit={limit}&apikey={Uri.EscapeDataString(apiKey)}";
-                var http = _httpFactory.CreateClient("DownloadClient");
+                var http = _httpFactory.CreateClient(ClientType);
                 var historyResp = await http.GetAsync(historyUrl, ct);
                 if (!historyResp.IsSuccessStatusCode) return result;
 
@@ -628,7 +619,7 @@ namespace Listenarr.Api.Services.Adapters
                 }
 
                 var requestUrl = $"{baseUrl}?mode=queue&output=json&apikey={Uri.EscapeDataString(apiKey)}";
-                var http = _httpFactory.CreateClient("DownloadClient");
+                var http = _httpFactory.CreateClient(ClientType);
                 var response = await http.GetAsync(requestUrl, ct);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -803,7 +794,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 // Query history with nzo_id filter
                 var historyUrl = $"{baseUrl}?mode=history&output=json&apikey={Uri.EscapeDataString(apiKey)}";
-                var http = _httpFactory.CreateClient("DownloadClient");
+                var http = _httpFactory.CreateClient(ClientType);
                 var historyResp = await http.GetAsync(historyUrl, ct);
 
                 if (!historyResp.IsSuccessStatusCode)
@@ -969,7 +960,7 @@ namespace Listenarr.Api.Services.Adapters
 
                 // Query history with nzo_id filter
                 var historyUrl = $"{baseUrl}?mode=history&output=json&apikey={Uri.EscapeDataString(apiKey)}";
-                var http = _httpFactory.CreateClient("DownloadClient");
+                var http = _httpFactory.CreateClient(ClientType);
                 var historyResp = await http.GetAsync(historyUrl, ct);
 
                 if (!historyResp.IsSuccessStatusCode)

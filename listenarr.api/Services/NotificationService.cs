@@ -15,15 +15,10 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Net.Http;
-using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
-using System.Linq;
-using System.Collections.Generic;
-using Microsoft.AspNetCore.Http;
 
 namespace Listenarr.Api.Services
 {
@@ -268,8 +263,6 @@ namespace Listenarr.Api.Services
                         logDebug: (ex, msg) => _logger.LogDebug(ex, msg),
                         apiVersion: ApiVersionPathBuilder.ResolveApiVersion(_httpContextAccessor?.HttpContext, startup?.ApiVersion)
                     );
-
-                    Console.WriteLine($"DEBUG: NotificationService received attachment? {attachment != null}");
 
                     _logger.LogDebug("Discord payload attachment present? {HasAttachment}", attachment != null);
                     if (attachment != null)
