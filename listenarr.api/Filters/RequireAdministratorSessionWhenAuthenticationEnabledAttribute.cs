@@ -17,7 +17,7 @@
  */
 
 using Listenarr.Application.Interfaces;
-using Microsoft.AspNetCore.Http;
+using Listenarr.Application.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 

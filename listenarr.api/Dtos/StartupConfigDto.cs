@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-namespace Listenarr.Api.Models
+namespace Listenarr.Api.Dtos
 {
     public sealed class StartupConfigDto
     {

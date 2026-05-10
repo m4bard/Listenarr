@@ -34,10 +34,8 @@ using Listenarr.Infrastructure.Search.Providers;
 using Listenarr.Infrastructure.Security;
 using Listenarr.Infrastructure.Services;
 using Listenarr.Infrastructure.SignalR;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Extensions
 {

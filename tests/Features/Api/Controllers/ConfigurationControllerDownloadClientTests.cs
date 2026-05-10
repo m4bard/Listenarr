@@ -22,6 +22,7 @@ using Listenarr.Application.Interfaces;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
+using Listenarr.Tests.Mocks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
@@ -249,7 +250,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
         public async Task GetApiKey_PrivateNetworkCaller_WhenAuthenticationDisabled_ReturnsApiKey()
         {
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
-            var downloadService = new Mock<IDownloadService>(MockBehavior.Strict);
+            var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
             var logger = NullLogger<ConfigurationController>.Instance;
             var userService = Mock.Of<IUserService>();
             var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
@@ -263,7 +264,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 logger,
                 userService,
                 settingsHub,
-                downloadService.Object,
+                downloadClientGateway.Object,
                 null!);
 
             var httpContext = new DefaultHttpContext();
@@ -282,7 +283,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             Assert.Equal("server-api-key", apiKeyProp!.GetValue(ok.Value)?.ToString());
             configurationService.Verify(x => x.GetStartupConfigAsync(), Times.Once);
             configurationService.VerifyNoOtherCalls();
-            downloadService.VerifyNoOtherCalls();
+            downloadClientGateway.VerifyNoOtherCalls();
         }
     }
 }

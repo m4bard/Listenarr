@@ -29,9 +29,9 @@ using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Domain.Models.Configurations;
+using Listenarr.Domain.Common;
 using Listenarr.Application.Common;
 using Listenarr.Infrastructure.Persistence.Repositories;
-using Listenarr.Domain.Utils;
 using Listenarr.Domain.Services;
 
 namespace Listenarr.Tests.Features.Api.Controllers

@@ -18,6 +18,7 @@
 
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Listenarr.Api.Controllers

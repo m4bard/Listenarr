@@ -18,7 +18,6 @@
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
-using Listenarr.Application.Interfaces;
 using Microsoft.AspNetCore.Http;
 
 namespace Listenarr.Application.Security;

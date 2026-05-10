@@ -26,7 +26,6 @@ using Microsoft.AspNetCore.SignalR;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Api.Attributes;
-using System.Linq;
 using Listenarr.Api.Filters;
 
 namespace Listenarr.Api.Controllers
@@ -204,8 +203,6 @@ namespace Listenarr.Api.Controllers
         [Produces("application/json")]
         public IActionResult PostDebugTest()
         {
-            var authGuard = RequireApiKeyIfEnabled();
-            if (authGuard != null) return authGuard;
             Response.ContentType = "application/json";
             return Ok(new { ok = true });
         }
