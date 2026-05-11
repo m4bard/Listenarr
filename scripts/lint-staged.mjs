@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 
-const npxCommand = process.platform === 'win32' ? 'npx.cmd' : 'npx'
+const nodeCommand = process.execPath
 
 const run = (command, args, options = {}) => {
   const result = spawnSync(command, args, {
@@ -71,7 +71,7 @@ if (backendFiles.length > 0) {
 
 if (frontendLintFiles.length > 0) {
   console.log('Checking staged frontend lint rules...')
-  run(npxCommand, ['eslint', ...frontendLintFiles], { cwd: 'fe' })
+  run(nodeCommand, ['node_modules/eslint/bin/eslint.js', ...frontendLintFiles], { cwd: 'fe' })
 }
 
 if (frontendVueFiles.length > 0) {
@@ -81,5 +81,7 @@ if (frontendVueFiles.length > 0) {
 
 if (frontendFormatFiles.length > 0) {
   console.log('Checking staged frontend formatting...')
-  run(npxCommand, ['prettier', '--check', ...frontendFormatFiles], { cwd: 'fe' })
+  run(nodeCommand, ['node_modules/prettier/bin/prettier.cjs', '--check', ...frontendFormatFiles], {
+    cwd: 'fe',
+  })
 }
