@@ -20,11 +20,12 @@ import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, beforeEach, expect, vi } from 'vitest'
 import { API_BASE_PATH } from '@/services/apiBase'
 import { useLibraryStore } from '@/stores/library'
-import { useConfigurationStore } from '@/stores/configuration'
 import { useRootFoldersStore } from '@/stores/rootFolders'
 import { ensureImageCached } from '@/services/api'
+import type { AudibleBookMetadata } from '@/types'
 import AudiobookDetailViewCmp from '@/views/library/AudiobookDetailView.vue'
 const routerPushMock = vi.fn()
+const previewLibraryPathMock = vi.hoisted(() => vi.fn())
 // Mock useRoute to provide params for the detail view
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: { id: '5' } }),
@@ -37,6 +38,7 @@ vi.mock('@/services/api', () => ({
     getImageUrl: vi.fn((url: string) => url || 'https://via.placeholder.com/300x450?text=No+Image'),
     getQualityProfiles: vi.fn(async () => []),
     getLibrary: vi.fn(async () => []),
+    previewLibraryPath: previewLibraryPathMock,
   },
   ensureImageCached: vi.fn(async () => true),
 }))
@@ -60,6 +62,22 @@ describe('AudiobookDetailView image recache behavior', () => {
     const pinia = createPinia()
     setActivePinia(pinia)
     vi.clearAllMocks()
+    previewLibraryPathMock.mockImplementation(
+      async (metadata: AudibleBookMetadata, destinationRoot?: string) => {
+        const root = destinationRoot || '/library'
+        const relativeParts = [
+          metadata.authors?.[0] || 'Unknown Author',
+          metadata.subtitle,
+          metadata.title || 'Unknown Title',
+        ].filter(Boolean)
+
+        return {
+          fullPath: `${root}/${relativeParts.join('/')}`,
+          relativePath: relativeParts.join('/'),
+          root,
+        }
+      },
+    )
   })
 
   it('calls ensureImageCached for the audiobook cover on load', async () => {
@@ -186,7 +204,7 @@ describe('AudiobookDetailView image recache behavior', () => {
     expect(wrapper.find('.edit-audiobook-modal-stub').attributes('data-open')).toBe('true')
   })
 
-  it('replaces subtitle in the estimated base path', async () => {
+  it('shows the backend preview path with subtitle metadata', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -202,20 +220,6 @@ describe('AudiobookDetailView image recache behavior', () => {
     ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
     store.fetchLibrary = vi.fn(async () => undefined)
 
-    const configStore = useConfigurationStore()
-    configStore.applicationSettings = {
-      outputPath: '/legacy',
-      folderNamingPattern: '{Author}/{Subtitle}/{Title}',
-      fileNamingPattern: '{Title}',
-      multiFileNamingPattern: '{Title}-{DiskNumber:00}',
-      enableMetadataProcessing: true,
-      enableCoverArtDownload: true,
-      audnexusApiUrl: '',
-      maxConcurrentDownloads: 1,
-      enableNotifications: false,
-      allowedFileExtensions: [],
-    }
-
     const rootFoldersStore = useRootFoldersStore()
     rootFoldersStore.folders = [
       {
@@ -228,15 +232,19 @@ describe('AudiobookDetailView image recache behavior', () => {
     ]
 
     const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
-    await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 20))
 
     const filePath = wrapper.find('.file-path')
     expect(filePath.exists()).toBe(true)
     expect(filePath.text()).toBe('/library/Author One/A Useful Subtitle/Detail Book')
     expect(filePath.text()).not.toContain('{Subtitle}')
+    expect(previewLibraryPathMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Detail Book', subtitle: 'A Useful Subtitle' }),
+      '/library',
+    )
   })
 
-  it('removes empty optional tokens from the estimated base path', async () => {
+  it('uses the backend preview path when optional metadata is empty', async () => {
     const pinia = createPinia()
     setActivePinia(pinia)
 
@@ -251,20 +259,6 @@ describe('AudiobookDetailView image recache behavior', () => {
     ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
     store.fetchLibrary = vi.fn(async () => undefined)
 
-    const configStore = useConfigurationStore()
-    configStore.applicationSettings = {
-      outputPath: '/legacy',
-      folderNamingPattern: '{Author}/{Subtitle}/{Title}',
-      fileNamingPattern: '{Title}',
-      multiFileNamingPattern: '{Title}-{DiskNumber:00}',
-      enableMetadataProcessing: true,
-      enableCoverArtDownload: true,
-      audnexusApiUrl: '',
-      maxConcurrentDownloads: 1,
-      enableNotifications: false,
-      allowedFileExtensions: [],
-    }
-
     const rootFoldersStore = useRootFoldersStore()
     rootFoldersStore.folders = [
       {
@@ -277,12 +271,16 @@ describe('AudiobookDetailView image recache behavior', () => {
     ]
 
     const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
-    await new Promise((r) => setTimeout(r, 10))
+    await new Promise((r) => setTimeout(r, 20))
 
     const filePath = wrapper.find('.file-path')
     expect(filePath.exists()).toBe(true)
     expect(filePath.text()).toBe('/library/Author One/Detail Book')
     expect(filePath.text()).not.toContain('Unknown')
     expect(filePath.text()).not.toContain('{Subtitle}')
+    expect(previewLibraryPathMock).toHaveBeenCalledWith(
+      expect.objectContaining({ title: 'Detail Book', subtitle: undefined }),
+      '/library',
+    )
   })
 })
