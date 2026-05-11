@@ -20,6 +20,8 @@ import { setActivePinia, createPinia } from 'pinia'
 import { describe, it, beforeEach, expect, vi } from 'vitest'
 import { API_BASE_PATH } from '@/services/apiBase'
 import { useLibraryStore } from '@/stores/library'
+import { useConfigurationStore } from '@/stores/configuration'
+import { useRootFoldersStore } from '@/stores/rootFolders'
 import { ensureImageCached } from '@/services/api'
 import AudiobookDetailViewCmp from '@/views/library/AudiobookDetailView.vue'
 const routerPushMock = vi.fn()
@@ -182,5 +184,55 @@ describe('AudiobookDetailView image recache behavior', () => {
     await new Promise((r) => setTimeout(r, 0))
 
     expect(wrapper.find('.edit-audiobook-modal-stub').attributes('data-open')).toBe('true')
+  })
+
+  it('replaces subtitle in the estimated base path', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Detail Book',
+        subtitle: 'A Useful Subtitle',
+        authors: ['Author One'],
+        files: [],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const configStore = useConfigurationStore()
+    configStore.applicationSettings = {
+      outputPath: '/legacy',
+      folderNamingPattern: '{Author}/{Subtitle}/{Title}',
+      fileNamingPattern: '{Title}',
+      multiFileNamingPattern: '{Title}-{DiskNumber:00}',
+      enableMetadataProcessing: true,
+      enableCoverArtDownload: true,
+      audnexusApiUrl: '',
+      maxConcurrentDownloads: 1,
+      enableNotifications: false,
+      allowedFileExtensions: [],
+    }
+
+    const rootFoldersStore = useRootFoldersStore()
+    rootFoldersStore.folders = [
+      {
+        id: 1,
+        name: 'Library',
+        path: '/library',
+        isDefault: true,
+        createdAt: '2026-05-11T00:00:00Z',
+      },
+    ]
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const filePath = wrapper.find('.file-path')
+    expect(filePath.exists()).toBe(true)
+    expect(filePath.text()).toContain('A Useful Subtitle')
+    expect(filePath.text()).not.toContain('{Subtitle}')
   })
 })

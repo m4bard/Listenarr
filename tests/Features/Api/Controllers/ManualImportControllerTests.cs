@@ -218,6 +218,105 @@ namespace Listenarr.Tests.Features.Api.Controllers
         }
 
         [Fact]
+        public async Task InteractiveManualImport_TitleOnlyPattern_DoesNotAppendSubtitle()
+        {
+            var basePath = CreateTempDirectory("listenarr-manual-title-only");
+            var srcDir = CreateTempDirectory("listenarr-manual-title-only-src");
+
+            var book = new Audiobook
+            {
+                Id = 85,
+                Title = "Example",
+                Subtitle = "Yup",
+                BasePath = basePath
+            };
+
+            var source = Path.Join(srcDir, "source.mp3");
+            await File.WriteAllTextAsync(source, "audio");
+
+            var request = new ManualImportRequestDto
+            {
+                Path = srcDir,
+                Mode = "interactive",
+                Action = FileMover.FileAction.Copy,
+                Items = new System.Collections.Generic.List<ManualImportItemDto>
+                {
+                    new ManualImportItemDto { FullPath = source, MatchedAudiobookId = book.Id }
+                }
+            };
+
+            var controller = GetController(book, new ApplicationSettings
+            {
+                OutputPath = basePath,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+            });
+
+            var action = await controller.Start(request);
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+
+            var diskFiles = Directory.GetFiles(basePath, "*", SearchOption.AllDirectories)
+                .Select(Path.GetFileName)
+                .ToList();
+
+            Assert.Contains("Example.mp3", diskFiles);
+            Assert.DoesNotContain("Example - Yup.mp3", diskFiles, StringComparer.OrdinalIgnoreCase);
+            Assert.DoesNotContain(diskFiles, file => file?.Contains("Yup", StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        [Fact]
+        public async Task InteractiveManualImport_MultiFileTitleOnlyPattern_DoesNotAppendSubtitle()
+        {
+            var basePath = CreateTempDirectory("listenarr-manual-multi-title-only");
+            var srcDir = CreateTempDirectory("listenarr-manual-multi-title-only-src");
+
+            var book = new Audiobook
+            {
+                Id = 86,
+                Title = "Example",
+                Subtitle = "Yup",
+                BasePath = basePath
+            };
+
+            var part1 = Path.Join(srcDir, "Part 1.mp3");
+            var part2 = Path.Join(srcDir, "Part 2.mp3");
+            await File.WriteAllTextAsync(part1, "one");
+            await File.WriteAllTextAsync(part2, "two");
+
+            var request = new ManualImportRequestDto
+            {
+                Path = srcDir,
+                Mode = "interactive",
+                Action = FileMover.FileAction.Copy,
+                Items = new System.Collections.Generic.List<ManualImportItemDto>
+                {
+                    new ManualImportItemDto { FullPath = part1, MatchedAudiobookId = book.Id },
+                    new ManualImportItemDto { FullPath = part2, MatchedAudiobookId = book.Id }
+                }
+            };
+
+            var controller = GetController(book, new ApplicationSettings
+            {
+                OutputPath = basePath,
+                FolderNamingPattern = "",
+                FileNamingPattern = "{Title}",
+                MultiFileNamingPattern = "{Title}"
+            });
+
+            var action = await controller.Start(request);
+            Assert.IsType<Microsoft.AspNetCore.Mvc.OkObjectResult>(action.Result);
+
+            var diskFiles = Directory.GetFiles(basePath, "*", SearchOption.AllDirectories)
+                .Select(Path.GetFileName)
+                .ToList();
+
+            Assert.Contains("Example-01.mp3", diskFiles);
+            Assert.Contains("Example-02.mp3", diskFiles);
+            Assert.DoesNotContain(diskFiles, file => file?.Contains("Yup", StringComparison.OrdinalIgnoreCase) == true);
+        }
+
+        [Fact]
         public async Task InteractiveManualImport_ForewordAndChapterOne_AvoidsDuplicateNumberedNames()
         {
             var basePath = CreateTempDirectory("listenarr-manual-foreword");
@@ -461,4 +560,3 @@ namespace Listenarr.Tests.Features.Api.Controllers
         }
     }
 }
-

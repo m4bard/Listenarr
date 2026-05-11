@@ -1046,22 +1046,35 @@ const displayBasePath = computed(() => {
       : 'Unknown Author'
   const series = audiobook.value?.series || ''
   const title = audiobook.value?.title || 'Unknown Title'
+  const subtitle = audiobook.value?.subtitle || ''
+  const edition = audiobook.value?.edition || ''
+  const narrator = audiobook.value?.narrators?.filter(Boolean).join(', ') || ''
+  const publisher = audiobook.value?.publisher || ''
+  const language = audiobook.value?.language || ''
+  const asin = audiobook.value?.asin || ''
   const year = audiobook.value?.publishYear || ''
   const seriesNumber = audiobook.value?.seriesNumber || ''
+  const quality = audiobook.value?.quality || ''
 
   // Basic variable replacement mirroring server pattern keys
   let relative = pattern
     .replace(/\{Author(?::[^}]+)?\}/gi, sanitizePathComponent(author))
+    .replace(/\{Narrator(?::[^}]+)?\}/gi, sanitizePathComponent(narrator))
     .replace(/\{Series(?::[^}]+)?\}/gi, sanitizePathComponent(series))
     .replace(/\{Title(?::[^}]+)?\}/gi, sanitizePathComponent(title))
+    .replace(/\{Subtitle(?::[^}]+)?\}/gi, sanitizePathComponent(subtitle))
+    .replace(/\{Edition(?::[^}]+)?\}/gi, sanitizePathComponent(edition))
+    .replace(/\{Publisher(?::[^}]+)?\}/gi, sanitizePathComponent(publisher))
+    .replace(/\{Language(?::[^}]+)?\}/gi, sanitizePathComponent(language))
+    .replace(/\{Asin(?::[^}]+)?\}/gi, sanitizePathComponent(asin))
     .replace(/\{Year(?::[^}]+)?\}/gi, year)
     .replace(/\{SeriesNumber(?::[^}]+)?\}/gi, seriesNumber)
+    .replace(/\{Quality(?::[^}]+)?\}/gi, sanitizePathComponent(quality))
 
-  // Remove file-level variables (Disk/Chapter/Quality) if present
+  // Remove file-level variables (Disk/Chapter) if present
   relative = relative
     .replace(/\{DiskNumber(?::[^}]+)?\}/gi, '')
     .replace(/\{ChapterNumber(?::[^}]+)?\}/gi, '')
-    .replace(/\{Quality(?::[^}]+)?\}/gi, '')
 
   // Normalize repeated slashes and trim
   relative = relative.replace(/[\\/]{2,}/g, '/').replace(/^\/+|\/+$/g, '')
