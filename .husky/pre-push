@@ -6,14 +6,22 @@ if ! command -v node >/dev/null 2>&1 && [ -d "/c/Program Files/nodejs" ]; then
   export PATH="/c/Program Files/nodejs:$PATH"
 fi
 
-echo "Verifying version metadata..."
-node scripts/sync-fe-version-from-csproj.mjs --check
+resolve_node() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return
+  fi
 
-echo "Checking backend format..."
-dotnet format listenarr.slnx --no-restore --verify-no-changes --verbosity minimal
+  if [ -x "/c/Program Files/nodejs/node.exe" ]; then
+    echo "/c/Program Files/nodejs/node.exe"
+    return
+  fi
 
-echo "Running frontend type check..."
-(cd fe && node node_modules/vue-tsc/bin/vue-tsc.js --build tsconfig.app.json)
+  echo "node command not found" >&2
+  exit 127
+}
 
-echo "Running frontend tests..."
-(cd fe && node node_modules/vitest/vitest.mjs run)
+NODE_CMD="$(resolve_node)"
+
+echo "Running pre-push checks..."
+"$NODE_CMD" scripts/run-hook-check.mjs pre-push

@@ -6,24 +6,22 @@ if ! command -v node >/dev/null 2>&1 && [ -d "/c/Program Files/nodejs" ]; then
   export PATH="/c/Program Files/nodejs:$PATH"
 fi
 
-echo "Running staged lint and format checks..."
-node scripts/lint-staged.mjs
+resolve_node() {
+  if command -v node >/dev/null 2>&1; then
+    command -v node
+    return
+  fi
 
-echo "Checking layering rules and async void..."
-VIOLATIONS=0
-if git grep -n --no-color "listenarr.infrastructure" -- "listenarr.api/**/*.cs" ":(exclude)listenarr.api/Program.cs" ":(exclude)listenarr.api/GlobalUsings.cs" || git grep -n --no-color "Listenarr.Infrastructure" -- "listenarr.api/**/*.cs" ":(exclude)listenarr.api/Program.cs" ":(exclude)listenarr.api/GlobalUsings.cs"; then
-  echo "Layering violation: listenarr.api references listenarr.infrastructure." >&2
-  VIOLATIONS=$((VIOLATIONS + 1))
-fi
-if git grep -n --no-color "listenarr.infrastructure" -- "listenarr.application/**/*.cs" || git grep -n --no-color "Listenarr.Infrastructure" -- "listenarr.application/**/*.cs"; then
-  echo "Layering violation: listenarr.application references listenarr.infrastructure." >&2
-  VIOLATIONS=$((VIOLATIONS + 1))
-fi
-if git grep -n --no-color "async void" -- "listenarr.api/**/*.cs" "listenarr.application/**/*.cs" "listenarr.infrastructure/**/*.cs" "listenarr.domain/**/*.cs"; then
-  echo "async void found in production code — use async Task instead." >&2
-  VIOLATIONS=$((VIOLATIONS + 1))
-fi
-if [ "$VIOLATIONS" -gt 0 ]; then
-  echo "$VIOLATIONS enforcement check(s) failed." >&2
-  exit 1
-fi
+  if [ -x "/c/Program Files/nodejs/node.exe" ]; then
+    echo "/c/Program Files/nodejs/node.exe"
+    return
+  fi
+
+  echo "node command not found" >&2
+  exit 127
+}
+
+NODE_CMD="$(resolve_node)"
+
+echo "Running pre-commit checks..."
+"$NODE_CMD" scripts/run-hook-check.mjs pre-commit
