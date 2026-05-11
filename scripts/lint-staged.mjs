@@ -76,7 +76,7 @@ if (frontendLintFiles.length > 0) {
 
 if (frontendVueFiles.length > 0) {
   console.log('Checking staged Vue template handlers...')
-  run('node', ['scripts/check-vue-template-handlers.mjs', ...frontendVueFiles], { cwd: 'fe' })
+  run(nodeCommand, ['scripts/check-vue-template-handlers.mjs', ...frontendVueFiles], { cwd: 'fe' })
 }
 
 if (frontendFormatFiles.length > 0) {

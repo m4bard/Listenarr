@@ -11,7 +11,7 @@ node scripts/lint-staged.mjs
 
 echo "Checking layering rules and async void..."
 VIOLATIONS=0
-if git grep -n --no-color "listenarr.infrastructure" -- "listenarr.api/**/*.cs" ":(exclude)listenarr.api/Program.cs" || git grep -n --no-color "Listenarr.Infrastructure" -- "listenarr.api/**/*.cs" ":(exclude)listenarr.api/Program.cs"; then
+if git grep -n --no-color "listenarr.infrastructure" -- "listenarr.api/**/*.cs" ":(exclude)listenarr.api/Program.cs" ":(exclude)listenarr.api/GlobalUsings.cs" || git grep -n --no-color "Listenarr.Infrastructure" -- "listenarr.api/**/*.cs" ":(exclude)listenarr.api/Program.cs" ":(exclude)listenarr.api/GlobalUsings.cs"; then
   echo "Layering violation: listenarr.api references listenarr.infrastructure." >&2
   VIOLATIONS=$((VIOLATIONS + 1))
 fi

@@ -6,8 +6,8 @@ if ! command -v node >/dev/null 2>&1 && [ -d "/c/Program Files/nodejs" ]; then
   export PATH="/c/Program Files/nodejs:$PATH"
 fi
 
-echo "Syncing version..."
-node scripts/sync-fe-version-from-csproj.mjs
+echo "Verifying version metadata..."
+node scripts/sync-fe-version-from-csproj.mjs --check
 
 echo "Checking backend format..."
 dotnet format listenarr.slnx --no-restore --verify-no-changes --verbosity minimal
