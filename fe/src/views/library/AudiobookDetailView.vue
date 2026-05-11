@@ -1037,7 +1037,9 @@ const displayBasePath = computed(() => {
   // Use default root folder path, fallback to legacy outputPath
   const defaultRoot = rootFoldersStore.defaultFolder
   const root = (defaultRoot?.path || settings.outputPath || '').trim()
-  const pattern = (settings.folderNamingPattern || settings.fileNamingPattern || '').trim()
+  const folderPattern = (settings.folderNamingPattern || '').trim()
+  const filePattern = (settings.fileNamingPattern || '').trim()
+  const pattern = folderPattern || filePattern
   if (!root || !pattern) return root || ''
 
   const author =
@@ -1057,29 +1059,27 @@ const displayBasePath = computed(() => {
   const quality = audiobook.value?.quality || ''
 
   // Basic variable replacement mirroring server pattern keys
-  let relative = pattern
-    .replace(/\{Author(?::[^}]+)?\}/gi, sanitizePathComponent(author))
-    .replace(/\{Narrator(?::[^}]+)?\}/gi, sanitizePathComponent(narrator))
-    .replace(/\{Series(?::[^}]+)?\}/gi, sanitizePathComponent(series))
-    .replace(/\{Title(?::[^}]+)?\}/gi, sanitizePathComponent(title))
-    .replace(/\{Subtitle(?::[^}]+)?\}/gi, sanitizePathComponent(subtitle))
-    .replace(/\{Edition(?::[^}]+)?\}/gi, sanitizePathComponent(edition))
-    .replace(/\{Publisher(?::[^}]+)?\}/gi, sanitizePathComponent(publisher))
-    .replace(/\{Language(?::[^}]+)?\}/gi, sanitizePathComponent(language))
-    .replace(/\{Asin(?::[^}]+)?\}/gi, sanitizePathComponent(asin))
-    .replace(/\{Year(?::[^}]+)?\}/gi, year)
-    .replace(/\{SeriesNumber(?::[^}]+)?\}/gi, seriesNumber)
-    .replace(/\{Quality(?::[^}]+)?\}/gi, sanitizePathComponent(quality))
-
-  // Remove file-level variables (Disk/Chapter) if present
-  relative = relative
-    .replace(/\{DiskNumber(?::[^}]+)?\}/gi, '')
-    .replace(/\{ChapterNumber(?::[^}]+)?\}/gi, '')
+  let relative = replacePatternVariable(pattern, 'Author', author, true)
+  relative = replacePatternVariable(relative, 'Narrator', narrator)
+  relative = replacePatternVariable(relative, 'Series', series)
+  relative = replacePatternVariable(relative, 'Title', title, true)
+  relative = replacePatternVariable(relative, 'Subtitle', subtitle)
+  relative = replacePatternVariable(relative, 'Edition', edition)
+  relative = replacePatternVariable(relative, 'Publisher', publisher)
+  relative = replacePatternVariable(relative, 'Language', language)
+  relative = replacePatternVariable(relative, 'Asin', asin)
+  relative = replacePatternVariable(relative, 'Year', year)
+  relative = replacePatternVariable(relative, 'SeriesNumber', seriesNumber)
+  relative = replacePatternVariable(relative, 'Quality', quality)
+  relative = replacePatternVariable(relative, 'DiskNumber', '')
+  relative = replacePatternVariable(relative, 'ChapterNumber', '')
 
   // Normalize repeated slashes and trim
-  relative = relative.replace(/[\\/]{2,}/g, '/').replace(/^\/+|\/+$/g, '')
+  relative = cleanupEmptyPatternVariables(relative)
 
   const combined = joinPaths(root, relative)
+  if (folderPattern) return combined
+
   // Base path should be the directory containing the files -> strip the last segment
   const parts = combined.split(/[/\\]+/).filter(Boolean)
   if (parts.length <= 1) return combined
@@ -1091,6 +1091,41 @@ function sanitizePathComponent(s?: string): string {
   if (!s) return 'Unknown'
   // Replace invalid filename chars with underscore
   return s.replace(/[\\/:*?"<>|]/g, '_').trim() || 'Unknown'
+}
+
+const emptyPatternVariable = '__EMPTY_PATTERN_VARIABLE__'
+
+function replacePatternVariable(
+  pattern: string,
+  variableName: string,
+  value: string,
+  required = false,
+): string {
+  const replacement = required ? sanitizePathComponent(value) : sanitizeOptionalPathComponent(value)
+  return pattern.replace(
+    new RegExp(`\\{${variableName}(?::[^}]+)?\\}`, 'gi'),
+    replacement || emptyPatternVariable,
+  )
+}
+
+function sanitizeOptionalPathComponent(s?: string): string {
+  if (!s || !s.trim()) return ''
+  return s.replace(/[\\/:*?"<>|]/g, '_').trim()
+}
+
+function cleanupEmptyPatternVariables(pattern: string): string {
+  let result = pattern
+  result = result.replace(
+    new RegExp(`[\\(\\[\\{]\\s*${emptyPatternVariable}\\s*[\\)\\]\\}]`, 'g'),
+    '',
+  )
+  result = result.replace(new RegExp(`\\s*[-–—:_]\\s*${emptyPatternVariable}`, 'g'), '')
+  result = result.replace(new RegExp(`${emptyPatternVariable}\\s*[-–—:_]\\s*`, 'g'), '')
+  result = result.replace(new RegExp(`[\\\\/]?${emptyPatternVariable}[\\\\/]?`, 'g'), '/')
+  result = result.replaceAll(emptyPatternVariable, '')
+  result = result.replace(/[\\/]{2,}/g, '/')
+  result = result.replace(/\s{2,}/g, ' ')
+  return result.replace(/^\/+|\/+$/g, '').trim()
 }
 
 function getLegacyIsbnValues(raw: unknown): string[] {

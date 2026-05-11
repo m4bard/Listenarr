@@ -232,7 +232,57 @@ describe('AudiobookDetailView image recache behavior', () => {
 
     const filePath = wrapper.find('.file-path')
     expect(filePath.exists()).toBe(true)
-    expect(filePath.text()).toContain('A Useful Subtitle')
+    expect(filePath.text()).toBe('/library/Author One/A Useful Subtitle/Detail Book')
+    expect(filePath.text()).not.toContain('{Subtitle}')
+  })
+
+  it('removes empty optional tokens from the estimated base path', async () => {
+    const pinia = createPinia()
+    setActivePinia(pinia)
+
+    const store = useLibraryStore()
+    store.audiobooks = [
+      {
+        id: 5,
+        title: 'Detail Book',
+        authors: ['Author One'],
+        files: [],
+      },
+    ] as unknown as ReturnType<typeof useLibraryStore>['audiobooks']
+    store.fetchLibrary = vi.fn(async () => undefined)
+
+    const configStore = useConfigurationStore()
+    configStore.applicationSettings = {
+      outputPath: '/legacy',
+      folderNamingPattern: '{Author}/{Subtitle}/{Title}',
+      fileNamingPattern: '{Title}',
+      multiFileNamingPattern: '{Title}-{DiskNumber:00}',
+      enableMetadataProcessing: true,
+      enableCoverArtDownload: true,
+      audnexusApiUrl: '',
+      maxConcurrentDownloads: 1,
+      enableNotifications: false,
+      allowedFileExtensions: [],
+    }
+
+    const rootFoldersStore = useRootFoldersStore()
+    rootFoldersStore.folders = [
+      {
+        id: 1,
+        name: 'Library',
+        path: '/library',
+        isDefault: true,
+        createdAt: '2026-05-11T00:00:00Z',
+      },
+    ]
+
+    const wrapper = mount(AudiobookDetailViewCmp, { global: { plugins: [pinia] } })
+    await new Promise((r) => setTimeout(r, 10))
+
+    const filePath = wrapper.find('.file-path')
+    expect(filePath.exists()).toBe(true)
+    expect(filePath.text()).toBe('/library/Author One/Detail Book')
+    expect(filePath.text()).not.toContain('Unknown')
     expect(filePath.text()).not.toContain('{Subtitle}')
   })
 })
