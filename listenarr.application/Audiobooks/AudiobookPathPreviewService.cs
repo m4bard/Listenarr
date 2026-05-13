@@ -1,7 +1,8 @@
 using System.Text.RegularExpressions;
-using Listenarr.Application.Naming;
+using Listenarr.Application.Interfaces;
 using Listenarr.Application.Repositories;
 using Listenarr.Domain.Models;
+using Listenarr.Domain.Utils;
 
 namespace Listenarr.Application.Audiobooks
 {
@@ -19,9 +20,7 @@ namespace Listenarr.Application.Audiobooks
                 ? destinationRoot
                 : settings.OutputPath;
 
-            var namingPattern = !string.IsNullOrWhiteSpace(settings.FolderNamingPattern)
-                ? settings.FolderNamingPattern
-                : settings.FileNamingPattern;
+            var namingPattern = settings.FolderNamingPattern;
 
             var full = ComputeBaseDirectoryFromPattern(audiobook, root ?? string.Empty, namingPattern);
             var relative = full;
@@ -38,114 +37,34 @@ namespace Listenarr.Application.Audiobooks
         private string ComputeBaseDirectoryFromPattern(
             Audiobook audiobook,
             string rootPath,
-            string fileNamingPattern)
+            string folderNamingPattern)
         {
-            var directoryPattern = BuildDirectoryPattern(fileNamingPattern, audiobook);
+            var directoryPattern = NormalizeFolderPattern(folderNamingPattern);
+            var relative = namingPatternService.ApplyAudiobookNamingPattern(directoryPattern, audiobook);
 
-            var variables = new Dictionary<string, object>
+            if (string.IsNullOrWhiteSpace(relative))
             {
-                { "Author", namingPatternService.SanitizePathComponent(audiobook.Authors?.FirstOrDefault() ?? "Unknown Author") },
-                { "Series", SanitizeOptional(audiobook.Series) },
-                { "Title", namingPatternService.SanitizePathComponent(audiobook.Title ?? "Unknown Title") },
-                { "Subtitle", SanitizeOptional(audiobook.Subtitle) },
-                { "Edition", SanitizeOptional(audiobook.Edition) },
-                { "Narrator", SanitizeOptional((audiobook.Narrators != null && audiobook.Narrators.Any()) ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n))) : string.Empty) },
-                { "Publisher", SanitizeOptional(audiobook.Publisher) },
-                { "Language", SanitizeOptional(audiobook.Language) },
-                { "Asin", SanitizeOptional(audiobook.Asin) },
-                { "SeriesNumber", audiobook.SeriesNumber ?? string.Empty },
-                { "Year", audiobook.PublishYear ?? string.Empty },
-                { "Quality", string.Empty },
-                { "DiskNumber", string.Empty },
-                { "ChapterNumber", string.Empty }
-            };
+                return rootPath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            }
 
-            var relative = namingPatternService.ApplyNamingPattern(directoryPattern, variables);
-            return ResolvePathWithOptionalBase(rootPath, relative);
+            return FileUtils.CombineWithOptionalBase(rootPath, relative);
         }
 
-        private string SanitizeOptional(string? value)
+        private static string NormalizeFolderPattern(string folderNamingPattern)
         {
-            return string.IsNullOrWhiteSpace(value)
-                ? string.Empty
-                : namingPatternService.SanitizePathComponent(value);
-        }
-
-        private static string BuildDirectoryPattern(string fileNamingPattern, Audiobook audiobook)
-        {
-            string directoryPattern;
-            if (!string.IsNullOrWhiteSpace(fileNamingPattern))
+            if (string.IsNullOrWhiteSpace(folderNamingPattern))
             {
-                directoryPattern = fileNamingPattern;
-                directoryPattern = Regex.Replace(directoryPattern, @"\{DiskNumber[^}]*\}", string.Empty, RegexOptions.IgnoreCase);
-                directoryPattern = Regex.Replace(directoryPattern, @"\{ChapterNumber[^}]*\}", string.Empty, RegexOptions.IgnoreCase);
-                directoryPattern = Regex.Replace(directoryPattern, @"[\\/]\s*[\\/]", "/");
-                directoryPattern = Regex.Replace(directoryPattern, @"^\s*[\\/]", string.Empty);
-                directoryPattern = Regex.Replace(directoryPattern, @"[\\/]\s*$", string.Empty);
-
-                if (string.IsNullOrWhiteSpace(directoryPattern) || !directoryPattern.Contains('/'))
-                {
-                    directoryPattern = "{Author}/{Title}";
-                }
-            }
-            else
-            {
-                directoryPattern = "{Author}/{Title}";
+                return string.Empty;
             }
 
-            if (!string.IsNullOrWhiteSpace(audiobook.Series) && !directoryPattern.Contains("{Series}"))
-            {
-                if (directoryPattern.Contains("{Author}/{Title}"))
-                {
-                    directoryPattern = directoryPattern.Replace("{Author}/{Title}", "{Author}/{Series}/{Title}");
-                }
-                else if (directoryPattern.Contains("{Author}/"))
-                {
-                    directoryPattern = directoryPattern.Replace("{Author}/", "{Author}/{Series}/");
-                }
-            }
-
-            if (string.IsNullOrWhiteSpace(audiobook.Series))
-            {
-                directoryPattern = Regex.Replace(directoryPattern, @"\{Series[^}]*\}", string.Empty, RegexOptions.IgnoreCase);
-                directoryPattern = Regex.Replace(directoryPattern, @"[\\/]\s*[\\/]", "/");
-                directoryPattern = Regex.Replace(directoryPattern, @"^\s*[\\/]", string.Empty);
-                directoryPattern = Regex.Replace(directoryPattern, @"[\\/]\s*$", string.Empty);
-            }
+            var directoryPattern = folderNamingPattern;
+            directoryPattern = Regex.Replace(directoryPattern, @"\{DiskNumber[^}]*\}", string.Empty, RegexOptions.IgnoreCase);
+            directoryPattern = Regex.Replace(directoryPattern, @"\{ChapterNumber[^}]*\}", string.Empty, RegexOptions.IgnoreCase);
+            directoryPattern = Regex.Replace(directoryPattern, @"[\\/]\s*[\\/]", "/");
+            directoryPattern = Regex.Replace(directoryPattern, @"^\s*[\\/]", string.Empty);
+            directoryPattern = Regex.Replace(directoryPattern, @"[\\/]\s*$", string.Empty);
 
             return directoryPattern;
-        }
-
-        private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
-        {
-            var normalizedPath = candidatePath.Trim();
-
-            if (string.IsNullOrEmpty(normalizedPath))
-            {
-                return normalizedPath;
-            }
-
-            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
-            {
-                return normalizedPath;
-            }
-
-            var relativePath = normalizedPath.TrimStart(
-                Path.DirectorySeparatorChar,
-                Path.AltDirectorySeparatorChar);
-
-            if (Path.IsPathRooted(relativePath))
-            {
-                return relativePath;
-            }
-
-            var normalizedBasePath = basePath.TrimEnd(
-                Path.DirectorySeparatorChar,
-                Path.AltDirectorySeparatorChar);
-
-            return string.IsNullOrEmpty(normalizedBasePath)
-                ? relativePath
-                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
         }
     }
 }

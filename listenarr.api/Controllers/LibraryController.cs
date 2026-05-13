@@ -23,7 +23,7 @@ using System.Reflection;
 using System.Text.RegularExpressions;
 using System.Security.Cryptography;
 using System.Text;
-using Listenarr.Application.Audiobooks;
+using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Utils;
 using Listenarr.Api.Services.Metadata;
 

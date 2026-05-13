@@ -16,7 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Runtime.InteropServices;
-using Listenarr.Application.Naming;
+using Listenarr.Application.Common;
+using Listenarr.Application.Interfaces;
 
 namespace Listenarr.Api.Services
 {
@@ -159,30 +160,22 @@ namespace Listenarr.Api.Services
             return _namingPatternService.ApplyNamingPattern(pattern, variables, treatAsFilename);
         }
 
-        /// <summary>
-        /// Remove invalid characters from path components
-        /// </summary>
-        private string SanitizePathComponent(string pathComponent)
-        {
-            return _namingPatternService.SanitizePathComponent(pathComponent);
-        }
-
         private Dictionary<string, object> BuildVariables(AudioMetadata metadata)
         {
             return new Dictionary<string, object>
             {
                 // Keep multi-word author names as a single folder name (e.g. "Jane Austen")
-                { "Author", SanitizePathComponent(FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author")) },
+                { "Author", FirstNonEmpty(ChooseAuthor(metadata), "Unknown Author") },
                 // For Series we must not fallback to Album or Title - when Series is blank we want
                 // the variable to be empty so ApplyNamingPattern can remove any adjacent separators
-                { "Series", string.IsNullOrWhiteSpace(metadata.Series) ? string.Empty : SanitizePathComponent(metadata.Series) },
-                { "Title", SanitizePathComponent(FirstNonEmpty(metadata.Title, "Unknown Title")) },
-                { "Subtitle", string.IsNullOrWhiteSpace(metadata.Subtitle) ? string.Empty : SanitizePathComponent(metadata.Subtitle) },
-                { "Edition", string.IsNullOrWhiteSpace(metadata.Edition) ? string.Empty : SanitizePathComponent(metadata.Edition) },
-                { "Narrator", string.IsNullOrWhiteSpace(metadata.Narrator) ? string.Empty : SanitizePathComponent(metadata.Narrator) },
-                { "Publisher", string.IsNullOrWhiteSpace(metadata.Publisher) ? string.Empty : SanitizePathComponent(metadata.Publisher) },
-                { "Language", string.IsNullOrWhiteSpace(metadata.Language) ? string.Empty : SanitizePathComponent(metadata.Language) },
-                { "Asin", string.IsNullOrWhiteSpace(metadata.Asin) ? string.Empty : SanitizePathComponent(metadata.Asin) },
+                { "Series", metadata.Series ?? string.Empty },
+                { "Title", FirstNonEmpty(metadata.Title, "Unknown Title") },
+                { "Subtitle", metadata.Subtitle ?? string.Empty },
+                { "Edition", metadata.Edition ?? string.Empty },
+                { "Narrator", metadata.Narrator ?? string.Empty },
+                { "Publisher", metadata.Publisher ?? string.Empty },
+                { "Language", metadata.Language ?? string.Empty },
+                { "Asin", metadata.Asin ?? string.Empty },
                 { "SeriesNumber", FirstNonEmpty(metadata.SeriesPosition?.ToString(), metadata.TrackNumber?.ToString()) },
                 { "Year", FirstNonEmpty(metadata.Year?.ToString()) },
                 { "Quality", FirstNonEmpty(metadata.BitRate.HasValue ? metadata.BitRate + "kbps" : null, metadata.Format) },

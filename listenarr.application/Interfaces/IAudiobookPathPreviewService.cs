@@ -1,6 +1,7 @@
 using Listenarr.Domain.Models;
+using Listenarr.Application.Audiobooks;
 
-namespace Listenarr.Application.Audiobooks
+namespace Listenarr.Application.Interfaces
 {
     public interface IAudiobookPathPreviewService
     {

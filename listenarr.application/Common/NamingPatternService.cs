@@ -1,7 +1,9 @@
 using System.Text;
 using System.Text.RegularExpressions;
+using Listenarr.Application.Interfaces;
+using Listenarr.Domain.Models;
 
-namespace Listenarr.Application.Naming
+namespace Listenarr.Application.Common
 {
     public class NamingPatternService : INamingPatternService
     {
@@ -20,7 +22,7 @@ namespace Listenarr.Application.Naming
         {
             if (string.IsNullOrWhiteSpace(pattern))
             {
-                return "Unknown";
+                return string.Empty;
             }
 
             var result = pattern;
@@ -102,7 +104,38 @@ namespace Listenarr.Application.Naming
                 parts.Select(SanitizePathComponent));
         }
 
-        public string SanitizePathComponent(string pathComponent)
+        public string ApplyAudiobookNamingPattern(
+            string pattern,
+            Audiobook audiobook,
+            bool treatAsFilename = false)
+        {
+            return ApplyNamingPattern(pattern, BuildAudiobookVariables(audiobook), treatAsFilename);
+        }
+
+        private Dictionary<string, object> BuildAudiobookVariables(Audiobook audiobook)
+        {
+            return new Dictionary<string, object>
+            {
+                { "Author", audiobook.Authors?.FirstOrDefault() ?? "Unknown Author" },
+                { "Series", audiobook.Series ?? string.Empty },
+                { "Title", audiobook.Title ?? "Unknown Title" },
+                { "Subtitle", audiobook.Subtitle ?? string.Empty },
+                { "Edition", audiobook.Edition ?? string.Empty },
+                { "Narrator", audiobook.Narrators != null && audiobook.Narrators.Any()
+                    ? string.Join(", ", audiobook.Narrators.Where(n => !string.IsNullOrWhiteSpace(n)))
+                    : string.Empty },
+                { "Publisher", audiobook.Publisher ?? string.Empty },
+                { "Language", audiobook.Language ?? string.Empty },
+                { "Asin", audiobook.Asin ?? string.Empty },
+                { "SeriesNumber", audiobook.SeriesNumber ?? string.Empty },
+                { "Year", audiobook.PublishYear ?? string.Empty },
+                { "Quality", string.Empty },
+                { "DiskNumber", string.Empty },
+                { "ChapterNumber", string.Empty }
+            };
+        }
+
+        private string SanitizePathComponent(string pathComponent)
         {
             if (string.IsNullOrWhiteSpace(pathComponent))
             {

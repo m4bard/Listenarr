@@ -4,8 +4,11 @@ namespace Listenarr.Tests.Builders
 {
     public class QualityProfileBuilder
     {
+        private static int IdCounter = 0;
+
         private readonly QualityProfile _qualityProfile = new()
         {
+            Id = ++IdCounter,
             Name = "Test Profile",
             Qualities = [],
             PreferredFormats = [],

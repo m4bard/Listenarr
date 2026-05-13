@@ -91,5 +91,49 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var histories = await _historyRepository.GetByAudiobookIdAsync(audiobook.Id);
             Assert.NotEmpty(histories);
         }
+
+        /// <summary>
+        /// Bulk root changes should persist the same base path that preview reports for empty folder patterns.
+        /// </summary>
+        [Fact]
+        public async Task BulkUpdate_EmptyFolderPattern_SetsBasePathToRootFolder()
+        {
+            var outputRoot = FileService.GetTempDirectory("listenarr-bulk-empty-folder-pattern");
+            await _applicationSettingsRepository.SaveAsync(new ApplicationSettingsBuilder()
+                .WithOutputPath(outputRoot)
+                .WithFolderNamingPattern(string.Empty)
+                .WithFileNamingPattern("{Title}")
+                .Build());
+
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Book A")
+                .WithAuthor("Author A")
+                .Build());
+
+            var request = new LibraryController.BulkUpdateRequest
+            {
+                Ids = [audiobook.Id],
+                Updates = new Dictionary<string, object>
+                {
+                    { "rootFolder", outputRoot }
+                }
+            };
+
+            var controller = _provider.GetRequiredService<LibraryController>();
+            var actionResult = await controller.BulkUpdateAudiobooks(request);
+
+            var ok = Assert.IsType<OkObjectResult>(actionResult);
+            var json = JsonSerializer.Serialize(ok.Value);
+            using var doc = JsonDocument.Parse(json);
+            var result = Assert.Single(doc.RootElement.GetProperty("results").EnumerateArray());
+            Assert.True(result.GetProperty("success").GetBoolean(), json);
+
+            var stored = await _audiobookRepository.GetByIdAsync(audiobook.Id);
+            Assert.NotNull(stored);
+            Assert.Equal(outputRoot, stored.BasePath);
+            Assert.DoesNotContain("Unknown", stored.BasePath, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Book A", stored.BasePath, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotContain("Author A", stored.BasePath, StringComparison.OrdinalIgnoreCase);
+        }
     }
 }

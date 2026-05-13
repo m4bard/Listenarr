@@ -17,7 +17,8 @@
  */
 // csharp
 using Listenarr.Application.Audiobooks;
-using Listenarr.Application.Naming;
+using Listenarr.Application.Common;
+using Listenarr.Application.Interfaces;
 using Listenarr.Api.Services.Metadata;
 
 namespace Listenarr.Api.Extensions
