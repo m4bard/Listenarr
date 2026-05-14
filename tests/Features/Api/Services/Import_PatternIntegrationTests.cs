@@ -318,5 +318,164 @@ namespace Listenarr.Tests.Features.Api.Services
             Assert.Contains("D02", result);
             Assert.Contains("C05", result);
         }
+
+        [Fact]
+        public async Task FileNamingService_SeriesNumberWithZeroPadding_PadsCorrectly()
+        {
+            // Arrange
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings
+                {
+                    OutputPath = "/audiobooks",
+                    FolderNamingPattern = "{Author}/{Series}",
+                    FileNamingPattern = "{Series} - {SeriesNumber:00} - {Title}",
+                    MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+                });
+
+            var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
+
+            var metadata = new AudioMetadata
+            {
+                Title = "The Gunslinger",
+                Artist = "Stephen King",
+                Series = "The Dark Tower",
+                SeriesPosition = 1
+            };
+
+            // Act - single file audiobook with zero-padded series number
+            var result = await service.GenerateFilePathAsync(metadata, ".m4b");
+
+            // Assert - SeriesNumber should be zero-padded to "01"
+            Assert.Contains("The Dark Tower - 01 - The Gunslinger", result);
+        }
+
+        [Fact]
+        public async Task FileNamingService_SeriesNumberWithZeroPadding_TwoDigitNumberUnchanged()
+        {
+            // Arrange
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings
+                {
+                    OutputPath = "/audiobooks",
+                    FolderNamingPattern = "{Author}/{Series}",
+                    FileNamingPattern = "{Series} - {SeriesNumber:00} - {Title}",
+                    MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+                });
+
+            var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
+
+            var metadata = new AudioMetadata
+            {
+                Title = "Wizard and Glass",
+                Artist = "Stephen King",
+                Series = "The Dark Tower",
+                SeriesPosition = 14
+            };
+
+            // Act
+            var result = await service.GenerateFilePathAsync(metadata, ".m4b");
+
+            // Assert - two-digit number should remain "14"
+            Assert.Contains("The Dark Tower - 14 - Wizard and Glass", result);
+        }
+
+        [Fact]
+        public async Task FileNamingService_SeriesNumberWithZeroPadding_DecimalPositionNotTruncated()
+        {
+            // Arrange
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings
+                {
+                    OutputPath = "/audiobooks",
+                    FolderNamingPattern = "{Author}/{Series}",
+                    FileNamingPattern = "{Series} - {SeriesNumber:00} - {Title}",
+                    MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+                });
+
+            var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
+
+            var metadata = new AudioMetadata
+            {
+                Title = "The Wind Through the Keyhole",
+                Artist = "Stephen King",
+                Series = "The Dark Tower",
+                SeriesPosition = 4.5m
+            };
+
+            // Act
+            var result = await service.GenerateFilePathAsync(metadata, ".m4b");
+
+            // Assert - decimal position can't be int-parsed, so format is ignored and raw value used
+            Assert.Contains("4.5", result);
+            Assert.Contains("The Wind Through the Keyhole", result);
+        }
+
+        [Fact]
+        public async Task FileNamingService_SeriesNumberWithZeroPadding_NullPositionOmitted()
+        {
+            // Arrange
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings
+                {
+                    OutputPath = "/audiobooks",
+                    FolderNamingPattern = "{Author}",
+                    FileNamingPattern = "{Title} - {SeriesNumber:00}",
+                    MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+                });
+
+            var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
+
+            var metadata = new AudioMetadata
+            {
+                Title = "Standalone Book",
+                Artist = "Some Author",
+                Series = null,
+                SeriesPosition = null
+            };
+
+            // Act
+            var result = await service.GenerateFilePathAsync(metadata, ".m4b");
+
+            // Assert - no series number, so the variable and surrounding separator should be cleaned up
+            Assert.Contains("Standalone Book", result);
+            Assert.DoesNotContain("00", result);
+            Assert.DoesNotContain(" - .", result);
+        }
+
+        [Fact]
+        public async Task FileNamingService_SeriesNumberWithoutFormat_NoZeroPadding()
+        {
+            // Arrange
+            var mockConfig = new Mock<IConfigurationService>();
+            mockConfig.Setup(c => c.GetApplicationSettingsAsync())
+                .ReturnsAsync(new ApplicationSettings
+                {
+                    OutputPath = "/audiobooks",
+                    FolderNamingPattern = "{Author}/{Series}",
+                    FileNamingPattern = "{Series} - {SeriesNumber} - {Title}",
+                    MultiFileNamingPattern = "{Title}-{DiskNumber:00}"
+                });
+
+            var service = new FileNamingService(mockConfig.Object, Mock.Of<ILogger<FileNamingService>>());
+
+            var metadata = new AudioMetadata
+            {
+                Title = "The Gunslinger",
+                Artist = "Stephen King",
+                Series = "The Dark Tower",
+                SeriesPosition = 1
+            };
+
+            // Act
+            var result = await service.GenerateFilePathAsync(metadata, ".m4b");
+
+            // Assert - without :00 format, should use raw value "1" not "01"
+            Assert.Contains("The Dark Tower - 1 - The Gunslinger", result);
+            Assert.DoesNotContain(" 01 ", result);
+        }
     }
 }
