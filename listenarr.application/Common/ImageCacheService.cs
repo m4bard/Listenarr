@@ -17,12 +17,12 @@
  */
 
 using AsyncKeyedLock;
+using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using System.Net;
 using System.Net.Sockets;
-using Listenarr.Domain.Services;
 
 namespace Listenarr.Application.Common
 {

@@ -22,7 +22,6 @@ using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
-using Listenarr.Domain.Services;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Platform

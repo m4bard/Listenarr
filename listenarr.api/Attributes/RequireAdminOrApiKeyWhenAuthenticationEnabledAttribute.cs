@@ -22,7 +22,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace Listenarr.Api.Filters
+namespace Listenarr.Api.Attributes
 {
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public sealed class RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute : TypeFilterAttribute

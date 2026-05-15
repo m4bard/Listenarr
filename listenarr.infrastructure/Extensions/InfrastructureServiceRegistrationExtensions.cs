@@ -17,8 +17,8 @@
  */
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.EntityFrameworkCore;
+using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Domain.Services;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
 using Listenarr.Infrastructure.Services;

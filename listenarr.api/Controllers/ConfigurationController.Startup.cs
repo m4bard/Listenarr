@@ -16,8 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Api.Converters;
 using Listenarr.Api.Dtos;
+using Listenarr.Api.Mapping;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Authorization;
@@ -39,7 +39,7 @@ namespace Listenarr.Api.Controllers
         public async Task<ActionResult<StartupConfigDto>> GetBootstrapConfig()
         {
             var config = await _configurationService.GetStartupConfigAsync() ?? new StartupConfig();
-            return Ok(StartupConfigDtoConverter.FromStartupConfig(config, GetRequestedApiVersion()));
+            return Ok(StartupConfigDtoMapper.FromStartupConfig(config, GetRequestedApiVersion()));
         }
 
         /// <summary>
@@ -95,8 +95,8 @@ namespace Listenarr.Api.Controllers
         }
 
         private string NormalizeStartupApiVersion(string? configuredApiVersion)
-            => StartupConfigDtoConverter.NormalizeApiVersionString(configuredApiVersion)
-               ?? StartupConfigDtoConverter.NormalizeApiVersionString(GetRequestedApiVersion())
+            => StartupConfigDtoMapper.NormalizeApiVersionString(configuredApiVersion)
+               ?? StartupConfigDtoMapper.NormalizeApiVersionString(GetRequestedApiVersion())
                ?? "1";
 
         private string? GetRequestedApiVersion()

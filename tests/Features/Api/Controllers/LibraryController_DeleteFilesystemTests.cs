@@ -20,7 +20,6 @@ using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
-using Listenarr.Domain.Services;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;

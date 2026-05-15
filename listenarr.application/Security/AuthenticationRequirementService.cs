@@ -16,15 +16,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 
-namespace Listenarr.Application.Interfaces
+namespace Listenarr.Application.Security
 {
-    public interface IAuthenticationRequirementService
-    {
-        bool IsAuthenticationRequired();
-    }
-
     public sealed class AuthenticationRequirementService : IAuthenticationRequirementService
     {
         private readonly IStartupConfigService _startupConfigService;

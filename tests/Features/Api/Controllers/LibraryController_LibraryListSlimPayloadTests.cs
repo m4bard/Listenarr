@@ -20,7 +20,6 @@ using Listenarr.Api.Controllers;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Common;
-using Listenarr.Domain.Services;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

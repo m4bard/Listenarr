@@ -26,7 +26,6 @@ using Microsoft.AspNetCore.SignalR;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Api.Attributes;
-using Listenarr.Api.Filters;
 
 namespace Listenarr.Api.Controllers
 {

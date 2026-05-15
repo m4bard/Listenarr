@@ -17,6 +17,7 @@
  */
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
+using Listenarr.Api.Attributes;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using System.ComponentModel.DataAnnotations;
@@ -217,7 +218,7 @@ namespace Listenarr.Api.Controllers
         /// </summary>
         /// <returns>A collection of admin user summaries (id, username, email, creation date).</returns>
         [HttpGet("admins")]
-        [Listenarr.Api.Filters.RequireAdminOrApiKeyWhenAuthenticationEnabled]
+        [RequireAdminOrApiKeyWhenAuthenticationEnabled]
         public async Task<IActionResult> GetAdminUsers()
         {
             var admins = await _userService.GetAdminUsersAsync();
@@ -260,4 +261,3 @@ namespace Listenarr.Api.Controllers
     }
 
 }
-

@@ -30,7 +30,6 @@ using Listenarr.Domain.Common;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Application.Common;
 using Listenarr.Application.Notification;
-using Listenarr.Domain.Services;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {

@@ -19,7 +19,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Listenarr.Domain.Models;
-using Listenarr.Domain.Services;
 using System.Text.Json;
 using System.Reflection;
 using System.Text.RegularExpressions;

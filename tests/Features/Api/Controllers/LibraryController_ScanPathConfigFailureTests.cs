@@ -23,7 +23,6 @@ using Moq;
 using Xunit;
 using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
-using Listenarr.Domain.Services;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Persistence;

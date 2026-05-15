@@ -16,17 +16,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-namespace Listenarr.Domain.Services
+namespace Listenarr.Application.Interfaces
 {
-    public interface IApplicationPathService
+    public interface IAuthenticationRequirementService
     {
-        string ContentRootPath { get; }
-        string ConfigRootPath { get; }
-        string LogsRootPath { get; }
-        string FfmpegRootPath { get; }
-        string ToolsRootPath { get; }
-        string WwwRootPath { get; }
-        string ResolveFromContentRoot(params string[] segments);
-        string ResolveFromConfig(params string[] segments);
+        bool IsAuthenticationRequired();
     }
 }

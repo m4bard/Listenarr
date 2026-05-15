@@ -21,22 +21,22 @@ using Listenarr.Application.Security;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
-namespace Listenarr.Api.Filters
+namespace Listenarr.Api.Attributes
 {
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-    public sealed class RequireApiKeyWhenAuthenticationEnabledAttribute : TypeFilterAttribute
+    public sealed class RequireAdministratorSessionWhenAuthenticationEnabledAttribute : TypeFilterAttribute
     {
-        public RequireApiKeyWhenAuthenticationEnabledAttribute()
-            : base(typeof(RequireApiKeyWhenAuthenticationEnabledFilter))
+        public RequireAdministratorSessionWhenAuthenticationEnabledAttribute()
+            : base(typeof(RequireAdministratorSessionWhenAuthenticationEnabledFilter))
         {
         }
     }
 
-    public sealed class RequireApiKeyWhenAuthenticationEnabledFilter : IAsyncActionFilter
+    public sealed class RequireAdministratorSessionWhenAuthenticationEnabledFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;
 
-        public RequireApiKeyWhenAuthenticationEnabledFilter(IAuthenticationRequirementService authenticationRequirementService)
+        public RequireAdministratorSessionWhenAuthenticationEnabledFilter(IAuthenticationRequirementService authenticationRequirementService)
         {
             _authenticationRequirementService = authenticationRequirementService;
         }
@@ -49,13 +49,16 @@ namespace Listenarr.Api.Filters
                 return;
             }
 
-            if (SecurityRequestUtils.IsApiKeyAuthenticated(context.HttpContext))
+            var user = context.HttpContext.User;
+            if (user?.Identity?.IsAuthenticated == true &&
+                user.IsInRole("Administrator") &&
+                !SecurityRequestUtils.IsApiKeyAuthenticated(context.HttpContext))
             {
                 await next();
                 return;
             }
 
-            context.Result = context.HttpContext.User?.Identity?.IsAuthenticated == true
+            context.Result = user?.Identity?.IsAuthenticated == true
                 ? new StatusCodeResult(StatusCodes.Status403Forbidden)
                 : new UnauthorizedResult();
         }

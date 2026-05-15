@@ -24,7 +24,6 @@ using Listenarr.Application.Interfaces.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models.Configurations;
-using Listenarr.Domain.Services;
 using Listenarr.Application.Common;
 using Listenarr.Application.Notification;
 

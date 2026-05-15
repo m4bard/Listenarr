@@ -19,9 +19,9 @@
 using Listenarr.Api.Dtos;
 using Listenarr.Domain.Models;
 
-namespace Listenarr.Api.Converters
+namespace Listenarr.Api.Mapping
 {
-    public static class StartupConfigDtoConverter
+    public static class StartupConfigDtoMapper
     {
         public static StartupConfigDto FromStartupConfig(StartupConfig? config, string? requestedApiVersion)
             => new()

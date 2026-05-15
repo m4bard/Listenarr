@@ -32,7 +32,6 @@ using Listenarr.Domain.Models.Configurations;
 using Listenarr.Domain.Common;
 using Listenarr.Application.Common;
 using Listenarr.Infrastructure.Persistence.Repositories;
-using Listenarr.Domain.Services;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {

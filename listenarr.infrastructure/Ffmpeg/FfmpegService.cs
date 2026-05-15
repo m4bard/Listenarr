@@ -25,7 +25,6 @@ using System.Text.Json;
 using Listenarr.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 using Listenarr.Domain.Models;
-using Listenarr.Domain.Services;
 using Listenarr.Application.Security;
 
 namespace Listenarr.Infrastructure.Ffmpeg

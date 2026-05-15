@@ -17,7 +17,7 @@
  */
 using System.Net;
 using Listenarr.Api.Controllers;
-using Listenarr.Api.Filters;
+using Listenarr.Api.Attributes;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
