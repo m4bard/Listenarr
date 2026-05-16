@@ -81,7 +81,7 @@ namespace Listenarr.Tests.Features.Api.Services.Adapters
                 AudiobookId = audiobook.Id,
                 TotalSize = (long)(100 * 1024 * 1024) // 100 MB
             };
-            download.SetClientDownloadId("SABnzbd_nzo_20f9svw_");
+            download.SetExternalId("SABnzbd_nzo_20f9svw_");
             await _downloadRepository.AddAsync(download);
 
             var monitor = _provider.GetRequiredService<DownloadMonitorService>();

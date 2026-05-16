@@ -91,10 +91,10 @@ namespace Listenarr.Application.Interfaces
         /// Default implementation is a no-op for clients that don't support this feature.
         /// </summary>
         /// <param name="client">Download client configuration</param>
-        /// <param name="downloadId">The client-specific download ID (torrent hash, NZB ID, etc.)</param>
+        /// <param name="id">The client-specific download ID (torrent hash, NZB ID, etc.)</param>
         /// <param name="ct">Cancellation token</param>
         /// <returns>True if the operation succeeded or was a no-op</returns>
-        Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, string downloadId, CancellationToken ct = default)
+        Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, string id, CancellationToken ct = default)
             => Task.FromResult(true); // Default no-op
 
         /// <summary>

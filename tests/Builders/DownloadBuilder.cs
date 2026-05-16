@@ -119,7 +119,7 @@ namespace Listenarr.Tests.Builders
 
         public DownloadBuilder WithClientDownloadId(string value)
         {
-            _download.SetClientDownloadId(value);
+            _download.SetExternalId(value);
             return this;
         }
 

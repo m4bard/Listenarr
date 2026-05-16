@@ -301,7 +301,7 @@ namespace Listenarr.Application.Downloads
             }
 
             // Remove from client queue/history when handling is enabled
-            var clientItemId = download.GetClientDownloadItemId();
+            var clientItemId = download.GetExternalId();
             if (!string.IsNullOrWhiteSpace(clientItemId))
             {
                 await downloadClientGateway.RemoveAsync(client, clientItemId, deleteFiles: false, cancellationToken);

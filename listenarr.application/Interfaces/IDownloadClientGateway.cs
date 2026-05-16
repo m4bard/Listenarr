@@ -42,7 +42,7 @@ namespace Listenarr.Application.Interfaces
             QueueItem queueItem,
             CancellationToken ct = default);
 
-        Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, string downloadId, CancellationToken ct = default);
+        Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default);
 
         Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken cancellationToken = default);
     }

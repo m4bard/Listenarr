@@ -39,7 +39,7 @@ namespace Listenarr.Application.Downloads
             // FIXME: Queue item responsability should not be here
             var queueItem = new QueueItem
             {
-                Id = download.GetClientDownloadItemId() ?? download.Id,
+                Id = download.GetExternalId() ?? download.Id,
                 Title = download.Title ?? "Unknown",
                 Status = "completed",
                 DownloadClientId = client.Id,

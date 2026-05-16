@@ -29,39 +29,54 @@ namespace Listenarr.Tests.Mocks
     public class DownloadClientGatewayMock : IDownloadClientGateway
     {
         public List<string> SourceFiles { get; set; } = [];
+        private readonly Dictionary<string, int> MethodCalls = [];
 
         public Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
+            RegisterMethodCall(nameof(TestConnectionAsync));
+
             return Task.FromResult((true, "ok"));
         }
 
         public Task<string?> AddAsync(DownloadClientConfiguration client, SearchResult result, CancellationToken ct = default)
         {
+            RegisterMethodCall(nameof(AddAsync));
+
             return Task.FromResult<string?>(null);
         }
 
         public Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)
         {
+            RegisterMethodCall(nameof(RemoveAsync));
+
             return Task.FromResult(false);
         }
 
         public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
+            RegisterMethodCall(nameof(GetQueueAsync));
+
             return [];
         }
 
         public async Task<List<(string Id, string Name)>> GetRecentHistoryAsync(DownloadClientConfiguration client, int limit = 100, CancellationToken ct = default)
         {
+            RegisterMethodCall(nameof(GetRecentHistoryAsync));
+
             return [];
         }
 
-        public Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, string downloadId, CancellationToken ct = default)
+        public Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default)
         {
+            RegisterMethodCall(nameof(MarkItemAsImportedAsync));
+
             return Task.FromResult(true);
         }
 
         public Task<QueueItem> GetQueueItemAsync(DownloadClientConfiguration client, Download download, QueueItem queueItem, CancellationToken ct = default)
         {
+            RegisterMethodCall(nameof(GetQueueItemAsync));
+
             queueItem.SourceFiles = SourceFiles;
             queueItem.LocalPath = download.DownloadPath;
 
@@ -70,7 +85,21 @@ namespace Listenarr.Tests.Mocks
 
         public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken cancellationToken = default)
         {
+            RegisterMethodCall(nameof(FetchDownloadsAsync));
+
             return [];
+        }
+
+        private void RegisterMethodCall(string methodName)
+        {
+            MethodCalls.TryGetValue(methodName, out int calls);
+            MethodCalls[methodName] = calls + 1;
+        }
+
+        public int GetCallCount(string methodName)
+        {
+            MethodCalls.TryGetValue(methodName, out int calls);
+            return calls;
         }
     }
 }

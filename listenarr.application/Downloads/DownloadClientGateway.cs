@@ -107,10 +107,16 @@ namespace Listenarr.Application.Downloads
             return adapter.GetRecentHistoryAsync(client, limit, ct);
         }
 
-        public Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, string downloadId, CancellationToken ct = default)
+        public async Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default)
         {
             var adapter = ResolveAdapter(client);
-            return adapter.MarkItemAsImportedAsync(client, downloadId, ct);
+            var externalId = download.GetExternalId();
+            if (string.IsNullOrEmpty(externalId))
+            {
+                return true;
+            }
+
+            return await adapter.MarkItemAsImportedAsync(client, externalId, ct);
         }
 
         public async Task<QueueItem> GetQueueItemAsync(
