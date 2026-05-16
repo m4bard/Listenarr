@@ -37,4 +37,4 @@ package.json                                        @listenarrs/maintainers
 package-lock.json                                   @listenarrs/maintainers
 fe/package.json                                     @listenarrs/maintainers
 fe/package-lock.json                                @listenarrs/maintainers
-listenarr.api/tools/discord-bot/package.json        @listenarrs/maintainers
+tools/discord-bot/package.json                      @listenarrs/maintainers

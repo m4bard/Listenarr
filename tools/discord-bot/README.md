@@ -15,15 +15,15 @@ Requirements
 How to run
 ```powershell
 # From repo root (PowerShell)
-node .\listenarr.api\tools\discord-bot\index.js
+node .\tools\discord-bot\index.js
 
 # Or from the folder
-cd listenarr.api\tools\discord-bot
+cd tools\discord-bot
 node index.js
 ```
 
 How tests / dev use it
-- Tests and some local diagnostic flows may spawn this process (or a similar executable) to emulate a running Discord bot. Removing the file can break those tests or local scripts that expect a long-running process in `listenarr.api/tools/discord-bot`.
+- Tests and some local diagnostic flows may spawn this process (or a similar executable) to emulate a running Discord bot. Removing the file can break those tests or local scripts that expect a long-running process in `tools/discord-bot`.
 
 Notes
 - This stub is not intended for production use. Keep the file present to avoid breaking tests or local diagnostic flows that spawn the bot process.

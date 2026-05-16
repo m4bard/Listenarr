@@ -6,7 +6,7 @@
   - Presents a select menu of search results, then an embed with a quality select and confirm button
 
   Usage: (from repo root)
-    cd listenarr.api/tools/discord-bot
+    cd tools/discord-bot
     npm install
     LISTENARR_URL=http://localhost:4545 node index.js
 
@@ -87,7 +87,7 @@ const SESSION_TIMEOUT_MS = 1000 * 60 * 10 // 10 minutes
 
 // Determine Listenarr base URL with several fallbacks:
 // 1) process.env.LISTENARR_URL
-// 2) listenarr.api/tools/discord-bot/.env (key LISTENARR_URL)
+// 2) tools/discord-bot/.env (key LISTENARR_URL)
 // 3) prompt the user (interactive) and persist to .env
 // 4) fallback to http://localhost:4545
 function readLocalEnvFile(envPath) {
@@ -1205,7 +1205,7 @@ function cleanupSessions() {
 }
 
 async function start() {
-  console.log('Starting Listenarr Discord bot (listenarr.api/tools/discord-bot)')
+  console.log('Starting Listenarr Discord bot (tools/discord-bot)')
   // Resolve the Listenarr URL synchronously from env/.env before making any requests.
   // This avoids a race where the module-level resolver runs async and the initial
   // fetchSettings() call happens with the default 'http://localhost:4545'.

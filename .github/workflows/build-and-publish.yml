@@ -265,8 +265,8 @@ jobs:
         run: |
           echo "Ensuring tools are present in listenarr.api/publish"
           if [ ! -d "listenarr.api/publish/tools" ]; then
-            echo "publish/tools missing — copying from listenarr.api/tools"
-            cp -r listenarr.api/tools listenarr.api/publish/ || true
+            echo "publish/tools missing — copying from tools"
+            cp -r tools listenarr.api/publish/ || true
           else
             echo "publish/tools already present"
           fi
