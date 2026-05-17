@@ -323,7 +323,7 @@ export interface ApplicationSettings {
   allowedFileExtensions: string[]
   importBlacklistExtensions?: string[]
   // Action to perform for completed downloads.
-  completedFileAction?: 'None' | 'Move' | 'Copy' | 'Hardlink/Copy'
+  completedFileAction?: 'none' | 'move' | 'copy' | 'hardlink/copy'
   // Show completed external downloads (torrents/NZBs) in the Activity view
   showCompletedExternalDownloads?: boolean
   // Failed download handling

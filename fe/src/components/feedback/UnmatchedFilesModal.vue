@@ -249,12 +249,12 @@ const destinationFolder = computed(
   () => rootFoldersStore.folders.find((f) => f.id === destinationFolderId.value) ?? null,
 )
 
-const fileAction = computed(() => configStore.applicationSettings?.completedFileAction ?? 'Move')
+const fileAction = computed(() => configStore.applicationSettings?.completedFileAction ?? 'move')
 const fileActionLabel = computed(() =>
-  fileAction.value === 'Hardlink/Copy' ? 'Copy to' : 'Move to',
+  fileAction.value === 'copy' || fileAction.value === 'hardlink/copy' ? 'Copy to' : 'Move to',
 )
-const fileInputMode = computed<'move' | 'hardlink/copy'>(() =>
-  fileAction.value === 'Hardlink/Copy' ? 'hardlink/copy' : 'move',
+const fileInputMode = computed<'move' | 'copy' | 'hardlink/copy'>(() =>
+  fileAction.value === 'copy' || fileAction.value === 'hardlink/copy' ? fileAction.value : 'move',
 )
 
 let jobId = ''

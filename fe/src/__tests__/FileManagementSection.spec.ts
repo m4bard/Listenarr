@@ -31,7 +31,7 @@ describe('FileManagementSection', () => {
         settings: {
           folderNamingPattern: '{Author}/{Series}/{Title}',
           fileNamingPattern: '{Title}',
-          completedFileAction: 'Move',
+          completedFileAction: 'move',
           importBlacklistExtensions: ['.nfo'],
         },
       },

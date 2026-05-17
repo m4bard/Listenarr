@@ -18,9 +18,10 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValue: FileAction.Copy);
 
-            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 1 WHERE CompletedFileAction = 'Move'");
-            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 2 WHERE CompletedFileAction = 'Copy'");
-            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 3 WHERE CompletedFileAction = 'Hardlink/Copy'");
+            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 0 WHERE lower(trim(CompletedFileAction)) IN ('none', '0')");
+            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 1 WHERE lower(trim(CompletedFileAction)) IN ('move', '1')");
+            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 2 WHERE lower(trim(CompletedFileAction)) IN ('copy', '2')");
+            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 3 WHERE lower(trim(CompletedFileAction)) IN ('hardlink/copy', 'hardlinkcopy', '3')");
 
             migrationBuilder.DropColumn(name: "CompletedFileAction", table: "ApplicationSettings");
             migrationBuilder.RenameColumn(name: "TempCompletedFileAction", table: "ApplicationSettings", newName: "CompletedFileAction");
@@ -36,6 +37,7 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValue: "Copy");
 
+            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 'None'          WHERE CompletedFileAction = 0");
             migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 'Move'          WHERE CompletedFileAction = 1");
             migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 'Copy'          WHERE CompletedFileAction = 2");
             migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 'Hardlink/Copy' WHERE CompletedFileAction = 3");
