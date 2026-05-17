@@ -10,7 +10,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace Listenarr.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(ListenArrDbContext))]
-    [Migration("20260503104240_Test")]
+    [Migration("20260503104240_UpdateFileAction")]
     partial class Test
     {
         /// <inheritdoc />

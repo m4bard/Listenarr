@@ -509,7 +509,6 @@ builder.Services.AddHttpClient("DirectDownload")
 // Compute default SQLite DB path (config/database/listenarr.db) relative to content root.
 // Allow tests to override the path via configuration to avoid shared DB state in CI.
 var sqliteDbPathOverride = builder.Configuration["Listenarr:SqliteDbPath"];
-var hasExplicitSqliteDbPathOverride = !string.IsNullOrWhiteSpace(sqliteDbPathOverride);
 var sqliteDbPath = string.IsNullOrWhiteSpace(sqliteDbPathOverride)
     ? Path.Join(builder.Environment.ContentRootPath, "config", "database", "listenarr.db")
     : (Path.IsPathRooted(sqliteDbPathOverride)

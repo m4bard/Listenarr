@@ -43,7 +43,7 @@ namespace Listenarr.Infrastructure
                 string? repoRoot = FindRepoRoot();
                 if (repoRoot != null)
                 {
-                    var relativeDbPath = Path.Join("listenarr.api", "config", "database", "listenarr.db");
+                    var relativeDbPath = Path.Join(".env", "development", "config", "database", "listenarr.db");
                     var candidate = Path.Join(repoRoot, relativeDbPath);
                     dbPath = Path.GetFullPath(candidate);
                 }

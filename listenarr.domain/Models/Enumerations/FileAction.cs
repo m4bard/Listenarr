@@ -9,12 +9,12 @@ namespace Listenarr.Domain.Models.Enumerations
     public enum FileAction
     {
         [JsonStringEnumMemberName("none")]
-        None,
+        None = 0,
         [JsonStringEnumMemberName("move")]
-        Move,
+        Move = 1,
         [JsonStringEnumMemberName("copy")]
-        Copy,
+        Copy = 2,
         [JsonStringEnumMemberName("hardlink/copy")]
-        HardlinkCopy
+        HardlinkCopy = 3
     }
 }
