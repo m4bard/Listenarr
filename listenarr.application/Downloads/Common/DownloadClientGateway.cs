@@ -16,6 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Common;
+using Listenarr.Application.Mapping;
 using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 
@@ -31,6 +32,7 @@ namespace Listenarr.Application.Downloads.Common
         IRemotePathMappingService remotePathMappingService,
         IDownloadClientAdapterFactory factory,
         IFileSystem fileSystem,
+        IDownloadRepository downloadRepository,
         ILogger<DownloadClientGateway> logger) : IDownloadClientGateway
     {
         internal IDownloadClientAdapter ResolveAdapter(DownloadClientConfiguration client)
@@ -98,21 +100,18 @@ namespace Listenarr.Application.Downloads.Common
 
         public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
-            var adapter = ResolveAdapter(client);
-            var results = await adapter.GetQueueAsync(client, ct);
+            var downloads = await downloadRepository.GetByClientAsync(client.Id);
+            var ids = GetExternalIds(downloads);
 
-            List<QueueItem> translatedResults = [];
-            foreach (QueueItem result in results)
+            var adapter = ResolveAdapter(client);
+            var items = await adapter.GetQueueAsync(client, ids, ct);
+            var translatedItems = new List<QueueItem>();
+            foreach (var item in items)
             {
-                translatedResults.Add(await TranslateQueueItemPathsAsync(client, result));
+                translatedItems.Add(await TranslateQueueItemPathsAsync(client, item));
             }
-            return translatedResults;
-        }
 
-        public Task<List<(string Id, string Name)>> GetRecentHistoryAsync(DownloadClientConfiguration client, int limit = 100, CancellationToken ct = default)
-        {
-            var adapter = ResolveAdapter(client);
-            return adapter.GetRecentHistoryAsync(client, limit, ct);
+            return translatedItems;
         }
 
         public async Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default)
@@ -156,6 +155,51 @@ namespace Listenarr.Application.Downloads.Common
             var item = await adapter.GetImportItemAsync(client, download, queueItem, null, ct);
 
             return await TranslateQueueItemPathsAsync(client, item);
+        }
+
+        public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
+        {
+            var ids = GetExternalIds(downloads);
+
+            var adapter = ResolveAdapter(client);
+            var items = await adapter.GetQueueAsync(client, ids!, ct);
+            var translatedItems = new List<QueueItem>();
+            foreach (var item in items)
+            {
+                translatedItems.Add(await TranslateQueueItemPathsAsync(client, item));
+            }
+
+            foreach (QueueItem item in translatedItems)
+            {
+                var download = downloads.FirstOrDefault(d => d.GetExternalId() == item.Id);
+                if (download == null)
+                {
+                    continue;
+                }
+
+                logger.LogDebug($"Found matching qBittorrent torrent for {download.Id}: {item.Title} (Hash: {item.Id}, Status: {item.Status}, Progress: {item.Progress:P2}, LocalPath: {item.LocalPath}, ContentPath: {item.ContentPath})");
+
+                // DIAGNOSTIC: Log detailed completion check values
+                logger.LogInformation($"Completion diagnostic for {download.Id}: Progress={item.Progress:F4} (>= 1.0? {item.Progress >= 1.0}), AmountLeft={item.Size - item.Downloaded} (== 0? {item.Size - item.Downloaded <= 0}), Status={item.Status}");
+
+                download = QueueItemConverter.UpdateFromQueueItem(download, item);
+            }
+
+            return downloads;
+        }
+
+        /// <summary>
+        /// Give the list of external IDs from a list of download
+        /// </summary>
+        /// <param name="downloads"></param>
+        /// <returns></returns>
+        private List<string> GetExternalIds(List<Download> downloads)
+        {
+            return downloads
+                .Select(d => d.GetExternalId())
+                .Where(id => id != null)
+                .ToHashSet()
+                .ToList()!;
         }
 
         /// <summary>
@@ -227,17 +271,6 @@ namespace Listenarr.Application.Downloads.Common
             item.SourceFiles = new HashSet<string>(item.SourceFiles, StringComparer.OrdinalIgnoreCase).ToList();
 
             return item;
-        }
-
-        public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken ct = default)
-        {
-            var adapter = ResolveAdapter(client);
-            downloads = await adapter.FetchDownloadsAsync(client, downloads, ct);
-            foreach (Download download in downloads)
-            {
-                download.DownloadPath = await remotePathMappingService.TranslatePathAsync(client, download.DownloadPath);
-            }
-            return downloads;
         }
     }
 }

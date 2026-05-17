@@ -80,7 +80,7 @@ namespace Listenarr.Domain.Downloads
         public DateTime? CompletedAt { get; set; }
         public string? ErrorMessage { get; set; }
         public string DownloadClientId { get; set; } = string.Empty;
-        public Dictionary<string, object> Metadata { get; set; } = new();
+        public Dictionary<string, object> Metadata { get; set; } = [];
 
         /// <summary>
         /// Tracks why a download is ImportBlocked (error code for categorization)
@@ -111,6 +111,11 @@ namespace Listenarr.Domain.Downloads
         /// Links to DownloadHistory.Id for audit trail
         /// </summary>
         public int? HistoryId { get; set; }
+
+        public void SetMetadata(string key, object value)
+        {
+            Metadata[key] = value;
+        }
 
         public string? GetMetadataString(string key)
         {
