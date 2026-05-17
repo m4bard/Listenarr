@@ -79,10 +79,21 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
         public async Task MonitorDownloadsAsync_DownloadingBecomesCompleted()
         {
             var download = await _downloadRepository.AddAsync(new DownloadBuilder()
-                .WithDownloading(50)
+                .WithDownloading(0)
+                .WithExternalId("1")
                 .WithDownloadClientConfiguration(client)
                 .Build());
 
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+            downloadMonitorService.ScheduleNextClientPoll(client, -100);
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+            downloadMonitorService.ScheduleNextClientPoll(client, -100);
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+            downloadMonitorService.ScheduleNextClientPoll(client, -100);
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+            downloadMonitorService.ScheduleNextClientPoll(client, -100);
+            await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
+            downloadMonitorService.ScheduleNextClientPoll(client, -100);
             await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
 
             download = await _downloadRepository.GetByIdAsync(download.Id);
@@ -123,7 +134,8 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
         public async Task MonitorDownloadsAsync_RespectSchedulingInterval()
         {
             var download = await _downloadRepository.AddAsync(new DownloadBuilder()
-                .WithDownloading(50)
+                .WithDownloading(0)
+                .WithExternalId("1")
                 .WithDownloadClientConfiguration(client)
                 .Build());
 
@@ -132,7 +144,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             download = await _downloadRepository.GetByIdAsync(download.Id);
             Assert.NotNull(download);
             Assert.Equal(DownloadStatus.Downloading, download.Status);
-            Assert.True(download.Progress == 60);
+            Assert.True(download.Progress == 10);
 
             await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
             await downloadMonitorService.MonitorDownloadsAsync(CancellationToken.None);
@@ -141,7 +153,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             download = await _downloadRepository.GetByIdAsync(download.Id);
             Assert.NotNull(download);
             Assert.Equal(DownloadStatus.Downloading, download.Status);
-            Assert.True(download.Progress == 60);
+            Assert.True(download.Progress == 10);
 
             var downloadProcessingJobService = _provider.GetRequiredService<IDownloadProcessingJobService>();
             var job = await downloadProcessingJobService.GetNextJobAsync();
@@ -153,15 +165,18 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
         public async Task MonitorDownloadsAsync_DisabledClientDownload_DoesNotUpdate()
         {
             await _downloadRepository.AddAsync(new DownloadBuilder()
-                .WithDownloading(50)
+                .WithDownloading(0)
+                .WithExternalId("DISABLED_1")
                 .WithDownloadClientConfiguration(disabledClient)
                 .Build());
             await _downloadRepository.AddAsync(new DownloadBuilder()
-                .WithDownloading(50)
+                .WithDownloading(0)
+                .WithExternalId("DISABLED_2")
                 .WithDownloadClientConfiguration(disabledClient)
                 .Build());
             await _downloadRepository.AddAsync(new DownloadBuilder()
-                .WithDownloading(50)
+                .WithDownloading(0)
+                .WithExternalId("1")
                 .WithDownloadClientConfiguration(client)
                 .Build());
 
@@ -174,11 +189,11 @@ namespace Listenarr.Tests.Features.Infrastructure.Downloads.Monitoring
             {
                 if (download.DownloadClientId == client.Id)
                 {
-                    Assert.NotEqual(50, download.Progress);
+                    Assert.Equal(10, download.Progress);
                 }
                 else
                 {
-                    Assert.Equal(50, download.Progress);
+                    Assert.Equal(0, download.Progress);
                     Assert.Equal(DownloadStatus.Downloading, download.Status);
                 }
             }

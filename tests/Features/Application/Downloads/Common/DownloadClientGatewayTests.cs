@@ -81,15 +81,19 @@ namespace Listenarr.Tests.Features.Application.Downloads.Common
 
         [Fact]
         [Trait("Method", "FetchDownloadsAsync")]
-        [Trait("Scenario", "Check updated downloads a path mapped correctly")]
+        [Trait("Scenario", "Check updated downloads path mapped correctly")]
         public async Task FetchDownloadsAsync()
         {
-            var downloads = await downloadClientGateway.FetchDownloadsAsync(client, []);
+            var newDownload = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithExternalId("1")
+                .Build());
+
+            var downloads = await downloadClientGateway.FetchDownloadsAsync(client, [newDownload]);
             Assert.NotEmpty(downloads);
-            foreach (Download download in downloads)
-            {
-                Assert.StartsWith(localPath, download.DownloadPath);
-            }
+            Assert.Single(downloads);
+            var download = downloads.First();
+            Assert.NotNull(download);
+            Assert.StartsWith(localPath, download.DownloadPath);
         }
 
         [Fact]

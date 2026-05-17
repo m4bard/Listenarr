@@ -21,7 +21,14 @@ namespace Listenarr.Application.Downloads.Contracts
     /// <summary>
     /// Encapsulates all download-client specific operations. Implement an adapter per client to keep
     /// protocol details isolated from the orchestration layer.
-    /// Follows IDownloadClient pattern for consistency.
+    /// Regarding QueueItem:
+    /// - Progress is the source of truth for completion and range from 0 to 100 by convention
+    /// - SourceFiles is the source of truth for downloaded files, if it cannot be determined,
+    ///   ContentPath should be used instead (as a path either being a directory or a single file),
+    ///   gateway will transform that as a SourceFiles list
+    /// - Only remote path should be returned, gateway handles the local path mapping
+    /// - The adapter must define an external ID used to link listenarr downloads 1-to-1 with
+    ///   download client entries/items
     /// </summary>
     public interface IDownloadClientAdapter
     {
@@ -52,7 +59,7 @@ namespace Listenarr.Application.Downloads.Contracts
         /// <param name="ids">List of IDs to get updates from</param>
         /// <param name="ct"></param>
         /// <returns>List of updated values for the given IDs</returns>
-        Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids,  CancellationToken ct = default);
+        Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default);
 
         /// <summary>
         /// Retrieves the information about a given download as a queue item

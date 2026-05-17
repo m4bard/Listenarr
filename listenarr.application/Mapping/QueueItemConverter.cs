@@ -18,7 +18,7 @@ namespace Listenarr.Application.Mapping
             download.SetMetadata("CanBeRemoved", item.CanRemove);
 
             var amountLeft = item.Size - item.Downloaded;
-            download = MapDownloadProgress(download, item.Progress * 100, amountLeft, item.Status);
+            download = MapDownloadProgress(download, item.Progress, amountLeft, item.Status);
 
             // Skip finalization/progress logic for downloads that are already
             // being processed, awaiting import, or fully imported. Re-entering
@@ -38,11 +38,7 @@ namespace Listenarr.Application.Mapping
                 return download;
             }
 
-            // Lenient completion detection for qBittorrent
-            // A torrent is complete when progress >= 100% OR amount left is 0
-            // The stability window below ensures we don't immediately import a torrent
-            // that just hit 100% - we wait for the configured delay period
-            if (item.Progress >= 1.0 || amountLeft == 0)
+            if (item.Progress >= 100)
             {
                 download.Completed();
             }
@@ -97,12 +93,9 @@ namespace Listenarr.Application.Mapping
                 _ => DownloadStatus.Queued
             };
 
-            // Calculate downloaded size from progress and total size
-            long downloadedSize = download.TotalSize > 0 ? (long)(download.TotalSize * progress / 100) : 0;
-
             // Update download record
             download.Progress = (decimal)progress;
-            download.DownloadedSize = downloadedSize;
+            download.DownloadedSize = download.TotalSize - amountLeft;
             download.Metadata ??= new Dictionary<string, object>();
             download.Metadata!["ClientState"] = clientState ?? "Unknown";
             download.Metadata!["AmountLeft"] = amountLeft;

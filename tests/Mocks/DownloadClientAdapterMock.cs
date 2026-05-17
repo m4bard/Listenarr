@@ -12,6 +12,7 @@ namespace Listenarr.Tests.Mocks
 
         public DownloadProtocol Protocol => DownloadProtocol.Torrent;
         public QueueItem QueueItemMock { get; set; } = null;
+        private int CurrentProgress = 0;
 
         public async Task<DownloadClientSubmissionResult> AddAsync(
             DownloadClientConfiguration client,
@@ -25,11 +26,6 @@ namespace Listenarr.Tests.Mocks
 
             // FIXME: Currently, the IDownloadClientAdapter returns specific client ID's, this should change to return uniformized Download instead
             return new DownloadClientSubmissionResult(download.Id);
-        }
-
-        public Task<DownloadClientItem> GetImportItemAsync(DownloadClientConfiguration client, DownloadClientItem item, DownloadClientItem? previousAttempt = null, CancellationToken ct = default)
-        {
-            throw new NotImplementedException();
         }
 
         public async Task<QueueItem> GetImportItemAsync(DownloadClientConfiguration client, Download download, QueueItem queueItem, QueueItem? previousAttempt = null, CancellationToken ct = default)
@@ -49,38 +45,40 @@ namespace Listenarr.Tests.Mocks
                 .Build();
         }
 
-        public Task<List<DownloadClientItem>> GetItemsAsync(DownloadClientConfiguration client, CancellationToken ct = default)
-        {
-            throw new NotImplementedException();
-        }
-
-        public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, CancellationToken ct = default)
+        public async Task<List<QueueItem>> GetQueueAsync(DownloadClientConfiguration client, List<string> ids, CancellationToken ct = default)
         {
             var path1 = FileUtils.GetAbsolutePath(RemotePath, "random title");
             var path2 = FileUtils.GetAbsolutePath(RemotePath, "random title two");
 
-            List<QueueItem> result = [
+            // Simulate progress
+            CurrentProgress += 10;
+
+            List<QueueItem> results = [
                 new QueueItemBuilder()
+                    .WithId("1")
                     .WithRemotePath(path1)
+                    .WithContentPath(path1)
                     .WithSourceFile(Path.Join(path1, "file1.mp3"))
                     .WithSourceFile(Path.Join(path1, "file2.mp3"))
                     .WithSourceFile(Path.Join(path1, "file3.mp3"))
+                    .WithProgress(CurrentProgress)
+                    .WithStatus(CurrentProgress >= 100 ? "completed" : "downloading")
                     .Build(),
                 new QueueItemBuilder()
+                    .WithId("2")
                     .WithRemotePath(path2)
+                    .WithContentPath(path2)
                     .WithSourceFile(Path.Join(path2, "file1.mp3"))
                     .WithSourceFile(Path.Join(path2, "file10.mp3"))
                     .WithSourceFile(Path.Join(path2, "file5.mp3"))
                     .WithSourceFile(Path.Join(path2, "file.nfo"))
                     .WithSourceFile(Path.Join(path2, "helloworld.txt"))
+                    .WithProgress(CurrentProgress)
+                    .WithStatus(CurrentProgress >= 100 ? "completed" : "downloading")
                     .Build()
             ];
-            return result;
-        }
 
-        public Task<List<(string Id, string Name)>> GetRecentHistoryAsync(DownloadClientConfiguration client, int limit = 100, CancellationToken ct = default)
-        {
-            throw new NotImplementedException();
+            return results;
         }
 
         public Task<bool> RemoveAsync(DownloadClientConfiguration client, string id, bool deleteFiles = false, CancellationToken ct = default)
@@ -91,44 +89,6 @@ namespace Listenarr.Tests.Mocks
         public async Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default)
         {
             return (true, "mock");
-        }
-
-        public async Task<List<Download>> FetchDownloadsAsync(DownloadClientConfiguration client, List<Download> downloads, CancellationToken cancellationToken = default)
-        {
-            // When no downloads are given, this mock returns hardcoded data
-            if (downloads.Count <= 0)
-            {
-                var path1 = FileUtils.GetAbsolutePath(RemotePath, "random title");
-                var path2 = FileUtils.GetAbsolutePath(RemotePath, "random title two");
-
-                List<Download> results = [
-                    new DownloadBuilder()
-                        .WithPath(path1)
-                        .Build(),
-                    new DownloadBuilder()
-                        .WithPath(path2)
-                        .Build()
-                ];
-
-                foreach (Download download in results)
-                {
-                    await downloadRepository.AddAsync(download);
-                }
-
-                return results;
-            }
-
-            // Otherwise, simulate progress on given downloads
-            foreach (Download download in downloads)
-            {
-                download.Progress += 10;
-                if (download.Progress >= 100)
-                {
-                    download.Completed();
-                }
-            }
-
-            return downloads;
         }
     }
 }

@@ -63,6 +63,11 @@ namespace Listenarr.Domain.Downloads
             get;
             set;
         } = DownloadStatus.Queued;
+
+        /// <summary>
+        /// Progress of the download.
+        /// From 0 to 100 by convention
+        /// </summary>
         public decimal Progress
         {
             get;

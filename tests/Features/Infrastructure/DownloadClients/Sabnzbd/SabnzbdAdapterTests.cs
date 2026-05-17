@@ -115,7 +115,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Sabnzbd
                 .WithDownloadClientConfiguration(_client)
                 .WithDownloading(0)
                 .WithPath(source)
-                .WithClientDownloadId(SabnzbdApiMock.COMPLETED_FILE_SABNZBD)
+                .WithExternalId(SabnzbdApiMock.COMPLETED_FILE_SABNZBD)
                 .Build());
 
             var monitor = _provider.GetRequiredService<DownloadMonitorService>();
@@ -196,7 +196,7 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Sabnzbd
                 .WithDownloadClientConfiguration(_client)
                 .WithAudiobook(audiobook)
                 .WithPath(sourceDirectory)
-                .WithClientDownloadId(SabnzbdApiMock.COMPLETED_FILE_SABNZBD)
+                .WithExternalId(SabnzbdApiMock.COMPLETED_FILE_SABNZBD)
                 .Build());
 
             var downloadProcessingJobService = _provider.GetRequiredService<IDownloadProcessingJobService>();

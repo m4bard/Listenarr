@@ -94,24 +94,6 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
             { NzbgetApiMock.MULTI_FILE_NZBGET, FileUtils.GetAbsolutePath("nzbget", "completed", "Book Folder") }
         };
 
-        [Theory]
-        [Trait("Third-Party", "Transmission")]
-        [Trait("Method", "GetImportItemAsync")]
-        [MemberData(nameof(TransmissionGetImportItemAsyncCases))]
-        public async Task Transmission_GetImportItemAsync_ResolvesPath(int downloadId, string expectedPath)
-        {
-            var item = new DownloadClientItem
-            {
-                DownloadId = downloadId.ToString(),
-                OutputPath = string.Empty
-            };
-
-            var adapter = MockUtils.CreateTransmissionAdapter(_provider);
-            var resolved = await adapter.GetImportItemAsync(_transmissionClient, item);
-
-            Assert.Equal(expectedPath, resolved.OutputPath);
-        }
-
         [Fact]
         [Trait("Third-Party", "Transmission")]
         [Trait("Method", "GetImportItemAsync")]
@@ -139,7 +121,6 @@ namespace Listenarr.Tests.Features.Infrastructure.DownloadClients.Common
                 },
                 resolved.SourceFiles);
         }
-
         [Theory]
         [Trait("Third-Party", "Sabnzbd")]
         [Trait("Method", "GetImportItemAsync")]

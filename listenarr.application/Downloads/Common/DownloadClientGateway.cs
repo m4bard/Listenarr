@@ -105,13 +105,8 @@ namespace Listenarr.Application.Downloads.Common
 
             var adapter = ResolveAdapter(client);
             var items = await adapter.GetQueueAsync(client, ids, ct);
-            var translatedItems = new List<QueueItem>();
-            foreach (var item in items)
-            {
-                translatedItems.Add(await TranslateQueueItemPathsAsync(client, item));
-            }
-
-            return translatedItems;
+            var tasks = items.Select(item => TranslateQueueItemPathsAsync(client, item));
+            return [.. await Task.WhenAll(tasks)];
         }
 
         public async Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default)
@@ -163,13 +158,10 @@ namespace Listenarr.Application.Downloads.Common
 
             var adapter = ResolveAdapter(client);
             var items = await adapter.GetQueueAsync(client, ids!, ct);
-            var translatedItems = new List<QueueItem>();
-            foreach (var item in items)
-            {
-                translatedItems.Add(await TranslateQueueItemPathsAsync(client, item));
-            }
+            var tasks = items.Select(item => TranslateQueueItemPathsAsync(client, item));
+            items = [.. await Task.WhenAll(tasks)];
 
-            foreach (QueueItem item in translatedItems)
+            foreach (QueueItem item in items)
             {
                 var download = downloads.FirstOrDefault(d => d.GetExternalId() == item.Id);
                 if (download == null)
