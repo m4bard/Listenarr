@@ -8,13 +8,13 @@ namespace Listenarr.Domain.Models.Enumerations
     /// </summary>
     public enum FileAction
     {
-        [JsonPropertyName("none")]
+        [JsonStringEnumMemberName("none")]
         None,
-        [JsonPropertyName("move")]
+        [JsonStringEnumMemberName("move")]
         Move,
-        [JsonPropertyName("copy")]
+        [JsonStringEnumMemberName("copy")]
         Copy,
-        [JsonPropertyName("hardlink/copy")]
+        [JsonStringEnumMemberName("hardlink/copy")]
         HardlinkCopy
     }
 }

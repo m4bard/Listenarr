@@ -45,6 +45,7 @@ using Listenarr.Infrastructure.Persistence.Repositories;
 using Microsoft.AspNetCore.SignalR;
 using Listenarr.Api.Middleware;
 using Listenarr.Api.Filters;
+using System.Text.Json.Serialization;
 
 var contentRootPath = AppContext.BaseDirectory;
 var environmentName = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
@@ -218,9 +219,9 @@ builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
         // Serialize enums as strings instead of integers for better frontend compatibility
-        options.JsonSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
         // Only ignore null values (not empty strings or zeros) to reduce payload size while preserving meaningful empty values
-        options.JsonSerializerOptions.DefaultIgnoreCondition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull;
+        options.JsonSerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull;
     });
 
 var defaultApiVersion = new ApiVersion(1, 0);
