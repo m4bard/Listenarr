@@ -129,8 +129,8 @@ namespace Listenarr.Application.Downloads
             {
                 logger.LogDebug(
                     "Skipping mark imported for download {DownloadId}: download client {ClientId} is disabled",
-                    LogRedaction.SanitizeText(download.Id),
-                    LogRedaction.SanitizeText(client.Id));
+                    download.Id,
+                    client.Id);
                 return true;
             }
 
