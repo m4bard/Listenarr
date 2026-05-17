@@ -18,9 +18,8 @@ namespace Listenarr.Infrastructure.Persistence.Migrations
                 nullable: false,
                 defaultValue: FileAction.Copy);
 
-            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 0 WHERE lower(trim(CompletedFileAction)) IN ('none', '0')");
             migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 1 WHERE lower(trim(CompletedFileAction)) IN ('move', '1')");
-            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 2 WHERE lower(trim(CompletedFileAction)) IN ('copy', '2')");
+            migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 2 WHERE lower(trim(CompletedFileAction)) IN ('none', 'copy', '0', '2')");
             migrationBuilder.Sql("UPDATE ApplicationSettings SET TempCompletedFileAction = 3 WHERE lower(trim(CompletedFileAction)) IN ('hardlink/copy', 'hardlinkcopy', '3')");
 
             migrationBuilder.DropColumn(name: "CompletedFileAction", table: "ApplicationSettings");
