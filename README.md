@@ -217,7 +217,7 @@ npm run dev:web      # Start only frontend web
 
 ## Discord bot (optional)
 
-Listenarr includes a small reference Discord bot (in `listenarr.api/tools/discord-bot`) that registers a slash command and forwards requests to the running Listenarr API. The bot is optional — the preferred integration is configuring the Discord settings from the Listenarr UI so the server manages the registration for you. Use the steps below for local development or to run the bot separately.
+Listenarr includes a small reference Discord bot (in `tools/discord-bot`) that registers a slash command and forwards requests to the running Listenarr API. The bot is optional — the preferred integration is configuring the Discord settings from the Listenarr UI so the server manages the registration for you. Use the steps below for local development or to run the bot separately.
 
 Prerequisites:
 - A running Listenarr instance (see steps above)
@@ -243,12 +243,12 @@ The `permissions=27648` value requests the View Channels, Send Messages, Manage 
 - Optionally set **Discord Guild ID** and **Discord Channel ID** so the bot registers commands in a specific guild and limits responses to one channel.
 - Enable the Discord integration and Save.
 
-When the Listenarr server has the bot token and application ID saved, the server will register the slash command and manage the bot. The `listenarr.api/tools/discord-bot` helper is provided for local development or troubleshooting.
+When the Listenarr server has the bot token and application ID saved, the server will register the slash command and manage the bot. The `tools/discord-bot` helper is provided for local development or troubleshooting.
 
 Run the bot standalone (development):
 
 ```bash
-cd listenarr.api/tools/discord-bot
+cd tools/discord-bot
 npm install
 # Point the helper at your running Listenarr instance (defaults to http://localhost:4545)
 LISTENARR_URL=http://localhost:4545 npm start
@@ -257,7 +257,7 @@ LISTENARR_URL=http://localhost:4545 npm start
 Windows (PowerShell):
 
 ```powershell
-cd listenarr.api\tools\discord-bot
+cd tools\discord-bot
 npm install
 $env:LISTENARR_URL = 'http://localhost:4545'
 npm start
@@ -280,11 +280,11 @@ Auto-persist Listenarr URL
 To make the helper easier to run, it will automatically persist the Listenarr base URL when first started interactively. Order of precedence:
 
 1. `LISTENARR_URL` environment variable (explicit)
-2. `listenarr.api/tools/discord-bot/.env` file with `LISTENARR_URL=` (created automatically on first run)
+2. `tools/discord-bot/.env` file with `LISTENARR_URL=` (created automatically on first run)
 3. Interactive prompt on first run (saved to `.env`)
 4. Fallback `http://localhost:4545`
 
-This means you can run the helper once and enter your public domain (for example `https://listenarr.example.com`) when prompted. The URL is saved to `listenarr.api/tools/discord-bot/.env` so you don't need to export environment variables on subsequent runs.
+This means you can run the helper once and enter your public domain (for example `https://listenarr.example.com`) when prompted. The URL is saved to `tools/discord-bot/.env` so you don't need to export environment variables on subsequent runs.
 
 
 ## CI/CD

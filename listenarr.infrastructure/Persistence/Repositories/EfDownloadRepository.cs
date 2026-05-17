@@ -135,12 +135,20 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .ToListAsync();
         }
 
-        public async Task<Download> GetByIdAsync(string id)
+        public async Task<Download?> GetByIdAsync(string id)
         {
             await using var ctx = await _dbFactory.CreateDbContextAsync();
-            return await ctx.Downloads
-                .AsNoTracking()
-                .FirstAsync(d => d.Id == id);
+            try
+            {
+                return await ctx.Downloads
+                    .AsNoTracking()
+                    .FirstAsync(d => d.Id == id);
+            }
+            catch (InvalidOperationException)
+            {
+                _logger.LogError($"Trying to get download {id} but no download has that ID");
+                return null;
+            }
         }
 
         public async Task<List<Download>> GetByIdsAsync(IEnumerable<string> ids)

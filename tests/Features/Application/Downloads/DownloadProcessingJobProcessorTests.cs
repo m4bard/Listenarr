@@ -271,5 +271,38 @@ namespace Listenarr.Tests.Features.Application.Downloads
             Assert.Equal(ProcessingJobStatus.Pending, job.Status);
             Assert.Equal(2, job.RetryCount);
         }
+
+        [Fact]
+        public async Task ProcessJob_MarkItemImported()
+        {
+            var sourceDirectory = FileService.GetTempDirectory("source-directory");
+            var file1 = await FileService.GetFileAsync(sourceDirectory, "Target Book.m4b");
+
+            downloadClientGatewayMock.SourceFiles = [file1];
+
+            var download = await _downloadRepository.AddAsync(new DownloadBuilder()
+                .WithAudiobook(await CreateAudiobook())
+                .WithDownloadClientConfiguration(await CreateDownloadClientConfiguration())
+                .WithPath(sourceDirectory)
+                .WithCompletedStatus(at: DateTime.UtcNow)
+                .Build());
+
+            var job = await _downloadProcessingJobRepository.AddAsync(new DownloadProcessingJobBuilder()
+                .WithDownload(download)
+                .Build());
+
+            Assert.Equal(0, downloadClientGatewayMock.GetCallCount(nameof(downloadClientGatewayMock.MarkItemAsImportedAsync)));
+
+            // Process the job
+            var downloadProcessingJobProcessor = _provider.GetRequiredService<DownloadProcessingJobProcessor>();
+            await downloadProcessingJobProcessor.ProcessQueueAsync(CancellationToken.None);
+
+            // Job is retried (and refailed)
+            job = await _downloadProcessingJobRepository.GetByIdAsync(job.Id);
+            Assert.NotNull(job);
+            Assert.Equal(ProcessingJobStatus.Completed, job.Status);
+
+            Assert.Equal(1, downloadClientGatewayMock.GetCallCount(nameof(downloadClientGatewayMock.MarkItemAsImportedAsync)));
+        }
     }
 }

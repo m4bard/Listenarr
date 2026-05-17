@@ -31,7 +31,7 @@ describe('FileManagementSection', () => {
         settings: {
           folderNamingPattern: '{Author}/{Series}/{Title}',
           fileNamingPattern: '{Title}',
-          completedFileAction: 'Move',
+          completedFileAction: 'move',
           importBlacklistExtensions: ['.nfo'],
         },
       },
@@ -50,10 +50,10 @@ describe('FileManagementSection', () => {
     expect(last.fileNamingPattern).toBe('{Title}-{DiskNumber}')
 
     const sel = wrapper.find('select')
-    await sel.setValue('Hardlink/Copy')
+    await sel.setValue('hardlink/copy')
     last =
       wrapper.emitted()['update:settings']![wrapper.emitted()['update:settings']!.length - 1][0]
-    expect(last.completedFileAction).toBe('Hardlink/Copy')
+    expect(last.completedFileAction).toBe('hardlink/copy')
 
     const textarea = wrapper.find('textarea')
     await textarea.setValue('.nfo\njpg')

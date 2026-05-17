@@ -1188,7 +1188,7 @@ namespace Listenarr.Infrastructure.Adapters
                                         // Find matching download by NZB ID
                                         var matchingDownload = downloads.FirstOrDefault(dl =>
                                         {
-                                            var clientItemId = dl.GetClientDownloadItemId();
+                                            var clientItemId = dl.GetExternalId();
                                             return !string.IsNullOrEmpty(clientItemId) &&
                                                     clientItemId.Equals(nzbId.ToString(), StringComparison.OrdinalIgnoreCase);
                                         });

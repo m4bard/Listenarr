@@ -242,9 +242,9 @@ docker-compose up --build
 ## AI / Copilot Guidance 💡
 
 ### Core Development Principles
-- **Primary edit targets:** Make feature and bug fixes in `listenarr.api/` (backend logic), `listenarr.application/` (application services), `listenarr.domain/` (domain models), and `listenarr.infrastructure/` (persistence/adapters).
+- **Primary edit targets:** Make feature and bug fixes in `listenarr.api/` (controllers), `listenarr.application/` (orchestration services), `listenarr.domain/` (domain models), and `listenarr.infrastructure/` (persistence/adapters).
 - **Tests:** Update or add unit/integration tests under `tests/` when you change public behavior or DI signatures.
-- **Discord bot:** The dev/test Discord stub lives at `listenarr.api/tools/discord-bot` — prefer updating the `README.md` there or the stub only when necessary; tests expect this stub to exist.
+- **Discord bot:** The dev/test Discord stub lives at `tools/discord-bot` — prefer updating the `README.md` there or the stub only when necessary; tests expect this stub to exist.
 - **Dev tools & scripts:** Misc scripts that are not API-specific may live under `tools/`, but major tooling is colocated with the API as shown above.
 - **Runtime notes:** Always run from the **repository root** (e.g., `npm run dev`) so the app uses the canonical DB at `listenarr.api/config/database/listenarr.db` and log paths under `listenarr.api/config/logs/`.
 - **Environment:** Project targets **.NET 8 (net8.0)** and Node.js **20.x+**. Use those versions for local dev and CI to avoid build/test inconsistencies.

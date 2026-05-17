@@ -742,7 +742,16 @@ namespace Listenarr.Infrastructure.Adapters
                     var ratio = torrent.TryGetValue("ratio", out var ratioEl) ? (double?)ratioEl.GetDouble() : null;
                     var savePath = torrent.TryGetValue("save_path", out var savePathEl) ? savePathEl.GetString() ?? string.Empty : string.Empty;
 
+                    List<Dictionary<string, JsonElement>> files = [];
+                    using var filesResp = await httpClient.GetAsync($"{baseUrl}/api/v2/torrents/files?hash={hash}", ct);
+                    if (filesResp.IsSuccessStatusCode)
+                    {
+                        var filesJson = await filesResp.Content.ReadAsStringAsync(ct);
+                        files = JsonSerializer.Deserialize<List<Dictionary<string, JsonElement>>>(filesJson) ?? [];
+                    }
+
                     var localPath = savePath;
+                    var outputPath = ResolveTorrentContentPath(savePath, files);
 
                     var status = state switch
                     {
@@ -793,7 +802,9 @@ namespace Listenarr.Infrastructure.Adapters
                         CanPause = status == "downloading" || status == "queued",
                         CanRemove = true,
                         RemotePath = savePath,
-                        LocalPath = localPath
+                        LocalPath = localPath,
+                        SourceFiles = BuildTorrentSourceFiles(savePath, files),
+                        ContentPath = outputPath
                     });
                 }
             }

@@ -152,13 +152,6 @@ namespace Listenarr.Application.Audiobooks
                 }
             }
 
-            cancellationToken.ThrowIfCancellationRequested();
-            await _repo.AddAsync(audiobook);
-
-            await ResolveAuthorAsinsAsync(audiobook);
-            await SendAddedNotificationAsync(audiobook);
-            await AddHistoryEntryAsync(audiobook, request, cancellationToken);
-
             var settings = await _configurationService.GetApplicationSettingsAsync();
 
             // Check validity of given path
@@ -186,6 +179,13 @@ namespace Listenarr.Application.Audiobooks
             {
                 audiobook.BasePath = baseDirectory;
             }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await _repo.AddAsync(audiobook);
+
+            await ResolveAuthorAsinsAsync(audiobook);
+            await SendAddedNotificationAsync(audiobook);
+            await AddHistoryEntryAsync(audiobook, request, cancellationToken);
 
             _logger.LogInformation(
                 "Added audiobook '{Title}' (ASIN: {Asin}) to library with Monitored={Monitored}, QualityProfileId={QualityProfileId}, AutoSearch={AutoSearch}",

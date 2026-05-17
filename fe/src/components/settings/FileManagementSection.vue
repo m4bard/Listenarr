@@ -103,8 +103,9 @@
           :value="settings.completedFileAction"
           @change="(e) => updateField('completedFileAction', (e.target as HTMLSelectElement).value)"
         >
-          <option value="Move">Move</option>
-          <option value="Hardlink/Copy">Hardlink/Copy</option>
+          <option value="move">Move</option>
+          <option value="copy">Copy</option>
+          <option value="hardlink/copy">Hardlink/Copy</option>
         </select>
       </FormRow>
 

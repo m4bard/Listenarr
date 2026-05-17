@@ -1080,7 +1080,7 @@ namespace Listenarr.Infrastructure.Adapters
                     {
                         foreach (Download download in downloads)
                         {
-                            var clientDownloadId = download.GetClientDownloadItemId();
+                            var clientDownloadId = download.GetExternalId();
 
                             foreach (var slot in queueSlots.EnumerateArray())
                             {
@@ -1221,8 +1221,8 @@ namespace Listenarr.Infrastructure.Adapters
                     try
                     {
                         var failedMatch = failedItems.FirstOrDefault(item =>
-                            (!string.IsNullOrEmpty(item.NzoId) && !string.IsNullOrEmpty(dl.GetClientDownloadItemId()) &&
-                                string.Equals(item.NzoId, dl.GetClientDownloadItemId(), StringComparison.OrdinalIgnoreCase)) ||
+                            (!string.IsNullOrEmpty(item.NzoId) && !string.IsNullOrEmpty(dl.GetExternalId()) &&
+                                string.Equals(item.NzoId, dl.GetExternalId(), StringComparison.OrdinalIgnoreCase)) ||
                             string.Equals(item.Name, dl.Title, StringComparison.OrdinalIgnoreCase) ||
                             (!string.IsNullOrEmpty(dl.Title) && item.Name.Contains(dl.Title, StringComparison.OrdinalIgnoreCase))
                         );
@@ -1235,8 +1235,8 @@ namespace Listenarr.Infrastructure.Adapters
                         // Find matching active download by NZO ID
                         var matchingItem = completedItems.FirstOrDefault(item =>
                             // Match by NZO ID (strongest) or fall back to name/title matching
-                            (!string.IsNullOrEmpty(item.NzoId) && !string.IsNullOrEmpty(dl.GetClientDownloadItemId()) &&
-                                string.Equals(item.NzoId, dl.GetClientDownloadItemId(), StringComparison.OrdinalIgnoreCase)) ||
+                            (!string.IsNullOrEmpty(item.NzoId) && !string.IsNullOrEmpty(dl.GetExternalId()) &&
+                                string.Equals(item.NzoId, dl.GetExternalId(), StringComparison.OrdinalIgnoreCase)) ||
                             string.Equals(item.Name, dl.Title, StringComparison.OrdinalIgnoreCase) ||
                             (!string.IsNullOrEmpty(dl.Title) && item.Name.Contains(dl.Title, StringComparison.OrdinalIgnoreCase))
                         );
@@ -1248,7 +1248,7 @@ namespace Listenarr.Infrastructure.Adapters
                             // Record match type metrics
                             try
                             {
-                                if (!string.IsNullOrEmpty(matchingItem.NzoId) && !string.IsNullOrEmpty(dl.GetClientDownloadItemId()) && string.Equals(matchingItem.NzoId, dl.GetClientDownloadItemId(), StringComparison.OrdinalIgnoreCase))
+                                if (!string.IsNullOrEmpty(matchingItem.NzoId) && !string.IsNullOrEmpty(dl.GetExternalId()) && string.Equals(matchingItem.NzoId, dl.GetExternalId(), StringComparison.OrdinalIgnoreCase))
                                 {
                                     _appMetricsService.Increment("sabnzbd.history.match.nzo");
                                 }

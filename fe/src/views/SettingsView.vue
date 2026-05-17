@@ -1185,7 +1185,7 @@ async function loadTabContents(tab: string) {
           await configStore.loadApplicationSettings()
           // Ensure sensible default
           if (settings.value && !settings.value.completedFileAction)
-            settings.value.completedFileAction = 'Move'
+            settings.value.completedFileAction = 'copy'
           // Ensure new settings have sensible defaults when not present
           if (
             settings.value &&

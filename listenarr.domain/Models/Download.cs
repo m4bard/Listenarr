@@ -38,6 +38,7 @@ namespace Listenarr.Domain.Models
 
     public class Download
     {
+        public static string METADATA_EXTERNAL_ID_KEY = "ClientDownloadId";
         public static int MaxImportAttempts = 3;
 
         public string Id { get; set; } = Guid.NewGuid().ToString();
@@ -130,9 +131,9 @@ namespace Listenarr.Domain.Models
             return value.ToString();
         }
 
-        public string? GetClientDownloadItemId()
+        public string? GetExternalId()
         {
-            if (Metadata.TryGetValue("ClientDownloadId", out var clientIdObj))
+            if (Metadata.TryGetValue(METADATA_EXTERNAL_ID_KEY, out var clientIdObj))
             {
                 var clientId = clientIdObj?.ToString();
                 if (!string.IsNullOrWhiteSpace(clientId))
@@ -141,6 +142,7 @@ namespace Listenarr.Domain.Models
                 }
             }
 
+            // FIXME: Legacy specific for torrent client
             if (Metadata.TryGetValue("TorrentHash", out var torrentHashObj))
             {
                 var torrentHash = torrentHashObj?.ToString();
@@ -153,9 +155,9 @@ namespace Listenarr.Domain.Models
             return null;
         }
 
-        public void SetClientDownloadId(string value)
+        public void SetExternalId(string value)
         {
-            Metadata["ClientDownloadId"] = value;
+            Metadata[METADATA_EXTERNAL_ID_KEY] = value;
         }
 
         public Download SetStatus(DownloadStatus value)
