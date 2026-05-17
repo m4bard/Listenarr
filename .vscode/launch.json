@@ -10,7 +10,7 @@
             "request": "launch",
             "preLaunchTask": "build",
             // If you have changed target frameworks, make sure to update the program path.
-            "program": "${workspaceFolder}/ListenArr.Api/bin/Debug/net7.0/ListenArr.Api.dll",
+            "program": "${workspaceFolder}/ListenArr.Api/bin/Debug/net10.0/ListenArr.Api.dll",
             "args": [],
             "cwd": "${workspaceFolder}/listenarr.api",
             "stopAtEntry": false,
