@@ -37,27 +37,16 @@ namespace Listenarr.Application.Downloads.Common
     {
         internal IDownloadClientAdapter ResolveAdapter(DownloadClientConfiguration client)
         {
-            if (client == null)
-            {
-                throw new ArgumentNullException(nameof(client));
-            }
+            ArgumentNullException.ThrowIfNull(client);
 
-            var attemptedKeys = new List<string?> { client.Id, client.Type };
-            foreach (var key in attemptedKeys)
+            if (!string.IsNullOrWhiteSpace(client.Type))
             {
-                if (string.IsNullOrWhiteSpace(key))
-                {
-                    continue;
-                }
-
                 try
                 {
-                    return factory.GetByIdOrType(key);
+                    return factory.GetByType(client.Type);
                 }
                 catch (InvalidOperationException)
                 {
-                    // Try the next key.
-                    continue;
                 }
             }
 
@@ -82,7 +71,7 @@ namespace Listenarr.Application.Downloads.Common
             CancellationToken ct = default)
         {
             var adapter = ResolveAdapter(client);
-            if (adapter.Protocol != submission.Protocol)
+            if (!adapter.Protocols.Contains(submission.Protocol))
             {
                 throw new DownloadClientSubmissionException(
                     $"Download client {client.Name ?? client.Type} does not support the prepared {submission.Protocol} submission.");

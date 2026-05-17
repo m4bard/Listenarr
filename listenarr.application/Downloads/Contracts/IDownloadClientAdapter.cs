@@ -32,9 +32,9 @@ namespace Listenarr.Application.Downloads.Contracts
     /// </summary>
     public interface IDownloadClientAdapter
     {
-        string ClientId { get; }
         string ClientType { get; }
-        DownloadProtocol Protocol { get; }
+
+        List<DownloadProtocol> Protocols { get; }
 
         Task<(bool Success, string Message)> TestConnectionAsync(DownloadClientConfiguration client, CancellationToken ct = default);
 

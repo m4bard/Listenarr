@@ -6,11 +6,14 @@ namespace Listenarr.Tests.Mocks
         IDownloadRepository downloadRepository) : IDownloadClientAdapter
     {
         public static readonly string RemotePath = FileUtils.GetAbsolutePath("downloads", "complete", "audiobooks");
-        public string ClientId => "mock";
 
         public string ClientType => "mock";
 
-        public DownloadProtocol Protocol => DownloadProtocol.Torrent;
+        public List<DownloadProtocol> Protocols => [
+            DownloadProtocol.Torrent,
+            DownloadProtocol.Usenet
+        ];
+
         public QueueItem QueueItemMock { get; set; } = null;
         private int CurrentProgress = 0;
 
