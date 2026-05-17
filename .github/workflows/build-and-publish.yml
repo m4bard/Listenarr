@@ -225,6 +225,8 @@ jobs:
       # ── Docker build + push ───────────────────────────────────────────────────
 
       - name: Login to Docker Hub
+        id: login_dockerhub
+        continue-on-error: true
         uses: docker/login-action@v2
         with:
           registry: docker.io
@@ -239,6 +241,8 @@ jobs:
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Login to ATCR
+        id: login_atcr
+        continue-on-error: true
         uses: docker/login-action@v2
         with:
           registry: atcr.io
@@ -291,14 +295,72 @@ jobs:
           name: ${{ inputs.channel }}-listenarr-publish-folder
           path: listenarr.api/publish
 
-      - name: Build and push Docker image
+      - name: Split Docker tags by registry
+        id: docker_tags
+        shell: bash
+        env:
+          DOCKER_TAGS: ${{ inputs.docker_tags }}
+        run: |
+          set -euo pipefail
+
+          all_tags="$(printf '%s\n' "$DOCKER_TAGS" | sed '/^[[:space:]]*$/d')"
+          dockerhub_tags="$(printf '%s\n' "$all_tags" | grep -E '^(docker\.io/|therobbiedavis/)' || true)"
+          ghcr_tags="$(printf '%s\n' "$all_tags" | grep '^ghcr\.io/' || true)"
+          atcr_tags="$(printf '%s\n' "$all_tags" | grep '^atcr\.io/' || true)"
+          unknown_tags="$(printf '%s\n' "$all_tags" | grep -Ev '^(docker\.io/|therobbiedavis/|ghcr\.io/|atcr\.io/)' || true)"
+
+          if [ -n "$unknown_tags" ]; then
+            echo "::warning::Ignoring Docker tags for unknown registry:"
+            printf '%s\n' "$unknown_tags"
+          fi
+
+          if [ -z "$ghcr_tags" ]; then
+            echo "::error::No ghcr.io Docker tags were provided. GHCR is the required Docker publish target."
+            exit 1
+          fi
+
+          {
+            echo "dockerhub_tags<<EOF"
+            echo "$dockerhub_tags"
+            echo "EOF"
+            echo "ghcr_tags<<EOF"
+            echo "$ghcr_tags"
+            echo "EOF"
+            echo "atcr_tags<<EOF"
+            echo "$atcr_tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image to GHCR
         uses: docker/build-push-action@v4
         with:
           context: .
           file: listenarr.api/Dockerfile.runtime
           platforms: linux/amd64,linux/arm64
           push: true
-          tags: ${{ inputs.docker_tags }}
+          tags: ${{ steps.docker_tags.outputs.ghcr_tags }}
+
+      - name: Build and push Docker image to Docker Hub
+        if: steps.docker_tags.outputs.dockerhub_tags != '' && steps.login_dockerhub.outcome == 'success'
+        continue-on-error: true
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: listenarr.api/Dockerfile.runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.docker_tags.outputs.dockerhub_tags }}
+
+      - name: Build and push Docker image to ATCR
+        if: steps.docker_tags.outputs.atcr_tags != '' && steps.login_atcr.outcome == 'success'
+        continue-on-error: true
+        uses: docker/build-push-action@v4
+        with:
+          context: .
+          file: listenarr.api/Dockerfile.runtime
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.docker_tags.outputs.atcr_tags }}
 
       # ── Discord notification ──────────────────────────────────────────────────
 
