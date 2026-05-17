@@ -283,13 +283,10 @@ namespace Listenarr.Application.Downloads
 
             await downloadService.UpdateAsync(download.Imported());
 
-            if (client.IsEnabled)
+            var downloadClientGateway = scope.ServiceProvider.GetRequiredService<IDownloadClientGateway>();
+            if (!await downloadClientGateway.MarkItemAsImportedAsync(client, download))
             {
-                var downloadClientGateway = scope.ServiceProvider.GetRequiredService<IDownloadClientGateway>();
-                if (!await downloadClientGateway.MarkItemAsImportedAsync(client, download))
-                {
-                    logger.LogWarning($"Unable to mark download {download.Id} as imported in the client {client.Id}");
-                }
+                logger.LogWarning($"Unable to mark download {download.Id} as imported in the client {client.Id}");
             }
 
             // Enqueue a scan using the audiobook's configured library path. The import process already
@@ -304,4 +301,3 @@ namespace Listenarr.Application.Downloads
         }
     }
 }
-

@@ -109,13 +109,32 @@ namespace Listenarr.Application.Downloads
 
         public async Task<bool> MarkItemAsImportedAsync(DownloadClientConfiguration client, Download download, CancellationToken ct = default)
         {
-            var adapter = ResolveAdapter(client);
+            if (client == null)
+            {
+                throw new ArgumentNullException(nameof(client));
+            }
+
+            if (download == null)
+            {
+                throw new ArgumentNullException(nameof(download));
+            }
+
             var externalId = download.GetExternalId();
             if (string.IsNullOrEmpty(externalId))
             {
                 return true;
             }
 
+            if (!client.IsEnabled)
+            {
+                logger.LogDebug(
+                    "Skipping mark imported for download {DownloadId}: download client {ClientId} is disabled",
+                    LogRedaction.SanitizeText(download.Id),
+                    LogRedaction.SanitizeText(client.Id));
+                return true;
+            }
+
+            var adapter = ResolveAdapter(client);
             return await adapter.MarkItemAsImportedAsync(client, externalId, ct);
         }
 
