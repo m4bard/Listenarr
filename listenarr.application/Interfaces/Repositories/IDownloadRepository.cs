@@ -31,7 +31,7 @@ namespace Listenarr.Application.Interfaces.Repositories
         Task<List<Download>> GetQueueMatchingCandidatesAsync();
         Task<List<string>> GetKnownClientItemIdsAsync();
         Task<List<Download>> GetByClientAsync(string clientId);
-        Task<Download> GetByIdAsync(string id);
+        Task<Download?> GetByIdAsync(string id);
         Task<List<Download>> GetByIdsAsync(IEnumerable<string> ids);
         Task<List<Download>> GetByAudiobookIdAsync(int audiobookId, CancellationToken ct = default);
         /// <summary>Returns downloads in Completed/ImportPending/Processing status ordered by CompletedAt, for processing job creation.</summary>
