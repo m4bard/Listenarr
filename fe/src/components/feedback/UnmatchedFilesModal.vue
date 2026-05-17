@@ -250,13 +250,13 @@ const destinationFolder = computed(
 )
 
 const fileAction = computed(() => configStore.applicationSettings?.completedFileAction ?? 'copy')
-const fileActionLabel = computed(() =>
-  fileAction.value === 'copy' || fileAction.value === 'hardlink/copy' ? 'Copy to' : 'Move to',
-)
 const fileInputMode = computed<'move' | 'copy' | 'hardlink/copy'>(() =>
   fileAction.value === 'move' || fileAction.value === 'copy' || fileAction.value === 'hardlink/copy'
     ? fileAction.value
     : 'copy',
+)
+const fileActionLabel = computed(() =>
+  fileInputMode.value === 'copy' || fileInputMode.value === 'hardlink/copy' ? 'Copy to' : 'Move to',
 )
 
 let jobId = ''
