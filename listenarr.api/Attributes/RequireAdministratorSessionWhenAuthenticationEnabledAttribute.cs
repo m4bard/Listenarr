@@ -23,15 +23,23 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Listenarr.Api.Attributes
 {
+    /// <summary>
+    /// Requires the caller to hold an active administrator session (not an API key) when
+    /// authentication is enabled. Used to protect endpoints that must only be accessible
+    /// via interactive login — for example, account management and API key CRUD operations.
+    /// When authentication is disabled, all requests are allowed.
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public sealed class RequireAdministratorSessionWhenAuthenticationEnabledAttribute : TypeFilterAttribute
     {
+        /// <summary>Initialises a new instance of <see cref="RequireAdministratorSessionWhenAuthenticationEnabledAttribute"/>.</summary>
         public RequireAdministratorSessionWhenAuthenticationEnabledAttribute()
             : base(typeof(RequireAdministratorSessionWhenAuthenticationEnabledFilter))
         {
         }
     }
 
+    /// <summary>Action filter that backs <see cref="RequireAdministratorSessionWhenAuthenticationEnabledAttribute"/>.</summary>
     public sealed class RequireAdministratorSessionWhenAuthenticationEnabledFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;

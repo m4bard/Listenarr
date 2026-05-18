@@ -20,15 +20,34 @@ using Listenarr.Application.Interfaces;
 
 namespace Listenarr.Infrastructure.Services
 {
+    /// <summary>
+    /// Default implementation of <see cref="IApplicationPathService"/> that derives all
+    /// well-known paths from a single content root, falling back to
+    /// <see cref="AppContext.BaseDirectory"/> when no explicit root is supplied.
+    /// All returned paths are fully qualified and normalised via <see cref="Path.GetFullPath(string)"/>.
+    /// </summary>
     public sealed class ApplicationPathService : IApplicationPathService
     {
+        /// <inheritdoc/>
         public string ContentRootPath { get; }
+        /// <inheritdoc/>
         public string ConfigRootPath { get; }
+        /// <inheritdoc/>
         public string LogsRootPath { get; }
+        /// <inheritdoc/>
         public string FfmpegRootPath { get; }
+        /// <inheritdoc/>
         public string ToolsRootPath { get; }
+        /// <inheritdoc/>
         public string WwwRootPath { get; }
 
+        /// <summary>
+        /// Initialises a new instance of <see cref="ApplicationPathService"/>.
+        /// </summary>
+        /// <param name="contentRootPath">
+        /// The absolute path to use as the content root.
+        /// When <see langword="null"/> or whitespace, <see cref="AppContext.BaseDirectory"/> is used.
+        /// </param>
         public ApplicationPathService(string? contentRootPath)
         {
             var contentRoot = string.IsNullOrWhiteSpace(contentRootPath)
@@ -43,9 +62,11 @@ namespace Listenarr.Infrastructure.Services
             WwwRootPath = ResolveFromContentRoot("wwwroot");
         }
 
+        /// <inheritdoc/>
         public string ResolveFromContentRoot(params string[] segments)
             => Combine(ContentRootPath, segments);
 
+        /// <inheritdoc/>
         public string ResolveFromConfig(params string[] segments)
             => Combine(ConfigRootPath, segments);
 

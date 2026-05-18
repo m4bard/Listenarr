@@ -18,8 +18,18 @@
 
 namespace Listenarr.Application.Interfaces
 {
+    /// <summary>
+    /// Determines whether authentication is required for the current application configuration.
+    /// Implementations must fail closed — returning <see langword="true"/> — whenever the
+    /// configuration cannot be read, rather than accidentally opening an unauthenticated surface.
+    /// </summary>
     public interface IAuthenticationRequirementService
     {
+        /// <summary>
+        /// Returns <see langword="true"/> if authentication is enabled in the startup configuration;
+        /// <see langword="false"/> if authentication has been explicitly disabled.
+        /// Fails closed (returns <see langword="true"/>) when the configuration is unavailable.
+        /// </summary>
         bool IsAuthenticationRequired();
     }
 }

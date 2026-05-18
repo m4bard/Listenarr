@@ -18,15 +18,42 @@
 
 namespace Listenarr.Application.Interfaces
 {
+    /// <summary>
+    /// Provides resolved, fully-qualified paths to well-known application directories.
+    /// Implementations must return absolute paths and must not include trailing directory separators.
+    /// </summary>
     public interface IApplicationPathService
     {
+        /// <summary>Gets the absolute path to the application content root (the directory that contains the binary or the configured override).</summary>
         string ContentRootPath { get; }
+
+        /// <summary>Gets the absolute path to the configuration root directory (<c>ContentRootPath/config</c>).</summary>
         string ConfigRootPath { get; }
+
+        /// <summary>Gets the absolute path to the logs directory (<c>ConfigRootPath/logs</c>).</summary>
         string LogsRootPath { get; }
+
+        /// <summary>Gets the absolute path to the bundled FFmpeg directory (<c>ConfigRootPath/ffmpeg</c>).</summary>
         string FfmpegRootPath { get; }
+
+        /// <summary>Gets the absolute path to the bundled tools directory (<c>ContentRootPath/tools</c>).</summary>
         string ToolsRootPath { get; }
+
+        /// <summary>Gets the absolute path to the static web assets directory (<c>ContentRootPath/wwwroot</c>).</summary>
         string WwwRootPath { get; }
+
+        /// <summary>
+        /// Resolves a path by joining one or more relative <paramref name="segments"/> under <see cref="ContentRootPath"/>.
+        /// </summary>
+        /// <param name="segments">Relative path segments to append. Must not be rooted.</param>
+        /// <returns>A normalised, absolute path.</returns>
         string ResolveFromContentRoot(params string[] segments);
+
+        /// <summary>
+        /// Resolves a path by joining one or more relative <paramref name="segments"/> under <see cref="ConfigRootPath"/>.
+        /// </summary>
+        /// <param name="segments">Relative path segments to append. Must not be rooted.</param>
+        /// <returns>A normalised, absolute path.</returns>
         string ResolveFromConfig(params string[] segments);
     }
 }

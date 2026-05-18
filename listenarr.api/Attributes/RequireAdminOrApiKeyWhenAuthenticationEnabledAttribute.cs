@@ -24,15 +24,22 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Listenarr.Api.Attributes
 {
+    /// <summary>
+    /// Requires the caller to be an authenticated administrator or API-key principal when
+    /// authentication is enabled. Requests to endpoints decorated with <see cref="Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute"/>
+    /// are always passed through. When authentication is disabled, all requests are allowed.
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public sealed class RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute : TypeFilterAttribute
     {
+        /// <summary>Initialises a new instance of <see cref="RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute"/>.</summary>
         public RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute()
             : base(typeof(RequireAdminOrApiKeyWhenAuthenticationEnabledFilter))
         {
         }
     }
 
+    /// <summary>Action filter that backs <see cref="RequireAdminOrApiKeyWhenAuthenticationEnabledAttribute"/>.</summary>
     public sealed class RequireAdminOrApiKeyWhenAuthenticationEnabledFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;

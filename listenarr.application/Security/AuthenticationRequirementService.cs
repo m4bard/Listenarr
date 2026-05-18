@@ -21,6 +21,11 @@ using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Security
 {
+    /// <summary>
+    /// Reads the startup configuration to determine whether authentication is currently required.
+    /// Fails closed — returns <see langword="true"/> — whenever the configuration cannot be read,
+    /// to avoid accidentally exposing an unauthenticated API surface.
+    /// </summary>
     public sealed class AuthenticationRequirementService : IAuthenticationRequirementService
     {
         private readonly IStartupConfigService _startupConfigService;

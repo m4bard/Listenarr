@@ -23,15 +23,22 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Listenarr.Api.Attributes
 {
+    /// <summary>
+    /// Requires the caller to present a valid API key when authentication is enabled.
+    /// When authentication is disabled, all requests are allowed through.
+    /// Use this attribute on machine-to-machine endpoints that do not require an interactive session.
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public sealed class RequireApiKeyWhenAuthenticationEnabledAttribute : TypeFilterAttribute
     {
+        /// <summary>Initialises a new instance of <see cref="RequireApiKeyWhenAuthenticationEnabledAttribute"/>.</summary>
         public RequireApiKeyWhenAuthenticationEnabledAttribute()
             : base(typeof(RequireApiKeyWhenAuthenticationEnabledFilter))
         {
         }
     }
 
+    /// <summary>Action filter that backs <see cref="RequireApiKeyWhenAuthenticationEnabledAttribute"/>.</summary>
     public sealed class RequireApiKeyWhenAuthenticationEnabledFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;

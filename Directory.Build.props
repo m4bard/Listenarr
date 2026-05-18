@@ -5,6 +5,8 @@
 		<ImplicitUsings>enable</ImplicitUsings>
 		<Nullable>enable</Nullable>
 		<LangVersion>latest</LangVersion>
+		<GenerateDocumentationFile>true</GenerateDocumentationFile>
+		<NoWarn>$(NoWarn);CS1591</NoWarn>
 		<DefaultItemExcludes>$(DefaultItemExcludes);**\artifacts\**;**\.tmp\**;**\obj2\**</DefaultItemExcludes>
 	</PropertyGroup>
 

@@ -1773,6 +1773,9 @@ namespace Listenarr.Application.Downloads
             var previous = await downloadRepository.GetByIdAsync(download.Id);
             await downloadRepository.UpdateAsync(download);
 
+            if (previous is null)
+                return;
+
             switch (previous.Status, download.Status)
             {
                 case var (old, next) when old == next:

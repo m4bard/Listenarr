@@ -23,15 +23,22 @@ using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Listenarr.Api.Attributes
 {
+    /// <summary>
+    /// Controls access to API key management endpoints.
+    /// When authentication is enabled, requires an authenticated administrator session (not an API key).
+    /// When authentication is disabled, restricts access to local or private-network callers only.
+    /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
     public sealed class RequireApiKeyManagementAccessAttribute : TypeFilterAttribute
     {
+        /// <summary>Initialises a new instance of <see cref="RequireApiKeyManagementAccessAttribute"/>.</summary>
         public RequireApiKeyManagementAccessAttribute()
             : base(typeof(RequireApiKeyManagementAccessFilter))
         {
         }
     }
 
+    /// <summary>Action filter that backs <see cref="RequireApiKeyManagementAccessAttribute"/>.</summary>
     public sealed class RequireApiKeyManagementAccessFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;
