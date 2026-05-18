@@ -21,6 +21,8 @@ namespace Listenarr.Domain.Models
 {
     public class StartupConfig
     {
+        public const string DefaultApiVersion = "1";
+
         // Minimal set of keys from the user's requested config.json. Keep names flexible.
         public string? LogLevel { get; set; }
         public bool? EnableSsl { get; set; }
@@ -50,6 +52,11 @@ namespace Listenarr.Domain.Models
         public bool IsAuthenticationEnabled()
             => IsAuthenticationRequiredValue(AuthenticationRequired);
 
+        public string GetEffectiveApiVersion(string? requestedApiVersion = null)
+            => NormalizeApiVersionString(ApiVersion)
+               ?? NormalizeApiVersionString(requestedApiVersion)
+               ?? DefaultApiVersion;
+
         public static bool IsAuthenticationRequiredValue(string? value)
         {
             if (string.IsNullOrWhiteSpace(value))
@@ -63,6 +70,70 @@ namespace Listenarr.Domain.Models
             }
 
             return value.Trim().ToLowerInvariant() is "enabled" or "true" or "yes" or "1";
+        }
+
+        public static string? NormalizeApiVersionString(string? version)
+        {
+            if (string.IsNullOrWhiteSpace(version)) return null;
+            var trimmed = version.Trim();
+            if (trimmed.StartsWith('v') || trimmed.StartsWith('V'))
+            {
+                trimmed = trimmed[1..];
+            }
+
+            return TryNormalizeNumericApiVersion(trimmed, out var normalized) ? normalized : null;
+        }
+
+        private static bool TryNormalizeNumericApiVersion(string value, out string normalized)
+        {
+            normalized = string.Empty;
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                return false;
+            }
+
+            var segments = new List<string>();
+            var segmentStart = 0;
+
+            for (var i = 0; i <= value.Length; i++)
+            {
+                if (i < value.Length && value[i] != '.')
+                {
+                    continue;
+                }
+
+                var segmentLength = i - segmentStart;
+                if (segmentLength <= 0)
+                {
+                    return false;
+                }
+
+                var segment = value.Substring(segmentStart, segmentLength);
+                for (var j = 0; j < segment.Length; j++)
+                {
+                    if (!char.IsDigit(segment[j]))
+                    {
+                        return false;
+                    }
+                }
+
+                var nonZeroIndex = 0;
+                while (nonZeroIndex < segment.Length - 1 && segment[nonZeroIndex] == '0')
+                {
+                    nonZeroIndex++;
+                }
+
+                segments.Add(segment[nonZeroIndex..]);
+                segmentStart = i + 1;
+            }
+
+            while (segments.Count > 1 && segments[^1] == "0")
+            {
+                segments.RemoveAt(segments.Count - 1);
+            }
+
+            normalized = string.Join('.', segments);
+            return !string.IsNullOrWhiteSpace(normalized);
         }
     }
 

@@ -15,10 +15,9 @@
  * You should have received a copy of the GNU Affero General Public License
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
-using System.Diagnostics;
-using System.Reflection;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
+using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
 using Listenarr.Application.Interfaces.Repositories;
@@ -118,20 +117,7 @@ namespace Listenarr.Api.Controllers
 
         private static string GetApplicationVersion()
         {
-            try
-            {
-                var asm = Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
-                var ver = asm?.GetName()?.Version?.ToString();
-                if (!string.IsNullOrEmpty(ver))
-                    return ver;
-
-                var fi = FileVersionInfo.GetVersionInfo(asm?.Location ?? string.Empty);
-                return fi?.ProductVersion ?? fi?.FileVersion ?? "unknown";
-            }
-            catch (Exception caughtEx_3) when (caughtEx_3 is not OperationCanceledException && caughtEx_3 is not OutOfMemoryException && caughtEx_3 is not StackOverflowException)
-            {
-                return "unknown";
-            }
+            return ApplicationVersionResolver.Resolve(typeof(ProwlarrCompatController).Assembly.GetName().Name);
         }
 
         /// <summary>

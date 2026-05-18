@@ -63,12 +63,12 @@ namespace Listenarr.Api.Middleware
                         _logger.LogError(ex, "[SessionAuth] Error during session authentication for {Path}", path);
                     }
                 }
-                else if (IsStartupConfigPath(path))
+                else if (IsStartupConfigurationPath(path))
                 {
                     _logger.LogDebug("[SessionAuth] No session token found for {Path}. HeaderCount={HeaderCount}", path, context.Request.Headers.Count);
                 }
             }
-            else if (IsStartupConfigPath(path))
+            else if (IsStartupConfigurationPath(path))
             {
                 _logger.LogDebug("[SessionAuth] User already authenticated for {Path}. Identity: {Identity}, Name: {Name}", path, context.User.Identity?.AuthenticationType, context.User.Identity?.Name);
             }
@@ -89,7 +89,8 @@ namespace Listenarr.Api.Middleware
             return null;
         }
 
-        private static bool IsStartupConfigPath(string path)
-            => path.Contains("startupconfig", StringComparison.OrdinalIgnoreCase);
+        private static bool IsStartupConfigurationPath(string path)
+            => path.Contains("/configuration/startupconfig", StringComparison.OrdinalIgnoreCase)
+               || path.Contains("/configuration/bootstrap", StringComparison.OrdinalIgnoreCase);
     }
 }

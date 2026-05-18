@@ -17,11 +17,12 @@
  */
 
 using System.Diagnostics;
-using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Platform
@@ -31,17 +32,20 @@ namespace Listenarr.Infrastructure.Platform
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SystemService> _logger;
         private readonly IApplicationPathService _applicationPathService;
+        private readonly IHostEnvironment _hostEnvironment;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
         public SystemService(
             IConfigurationService configurationService,
             ILogger<SystemService> logger,
-            IApplicationPathService applicationPathService)
+            IApplicationPathService applicationPathService,
+            IHostEnvironment hostEnvironment)
         {
             _configurationService = configurationService;
             _logger = logger;
             _applicationPathService = applicationPathService;
+            _hostEnvironment = hostEnvironment;
             _startTime = DateTime.UtcNow;
         }
 
@@ -62,8 +66,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var assembly = Assembly.GetExecutingAssembly();
-                var version = assembly.GetName().Version?.ToString() ?? "1.0.0";
+                var version = ApplicationVersionResolver.Resolve(_hostEnvironment.ApplicationName);
 
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
@@ -134,8 +137,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var assembly = Assembly.GetExecutingAssembly();
-                var version = assembly.GetName().Version?.ToString() ?? "1.0.0";
+                var version = ApplicationVersionResolver.Resolve(_hostEnvironment.ApplicationName);
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
 

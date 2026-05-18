@@ -29,20 +29,20 @@ namespace Listenarr.Api.Controllers
     [Tags("Account")]
     public class AccountController : ControllerBase
     {
-        private readonly IStartupConfigService _startupConfigService;
+        private readonly IAuthenticationRequirementService _authenticationRequirementService;
         private readonly ILogger<AccountController> _logger;
         private readonly IUserService _userService;
         private readonly ILoginRateLimiter _rateLimiter;
         private readonly ISessionService _sessionService;
 
         public AccountController(
-            IStartupConfigService startupConfigService,
+            IAuthenticationRequirementService authenticationRequirementService,
             ILogger<AccountController> logger,
             IUserService userService,
             ILoginRateLimiter rateLimiter,
             ISessionService sessionService)
         {
-            _startupConfigService = startupConfigService;
+            _authenticationRequirementService = authenticationRequirementService;
             _logger = logger;
             _userService = userService;
             _rateLimiter = rateLimiter;
@@ -97,33 +97,29 @@ namespace Listenarr.Api.Controllers
             var user = await _userService.GetByUsernameAsync(req.Username);
             _rateLimiter.RecordSuccess(key);
 
-            // Try to create session token - this will fail if authentication is not enabled
-            try
+            if (!_authenticationRequirementService.IsAuthenticationRequired())
             {
-                var sessionToken = await _sessionService.CreateSessionAsync(req.Username, user?.IsAdmin == true, req.RememberMe);
-
-                // Set HttpOnly session cookie so browsers can authenticate resource
-                // requests (images, etc.) without JavaScript intervention.
-                Response.Cookies.Append("listenarr_session", sessionToken, new CookieOptions
-                {
-                    HttpOnly = true,
-                    Secure = HttpContext.Request.IsHttps,
-                    SameSite = SameSiteMode.Strict,
-                    Path = "/",
-                    MaxAge = req.RememberMe ? SessionService.RememberMeExpiration : SessionService.DefaultExpiration,
-                });
-
-                return Ok(new
-                {
-                    message = "Logged in",
-                    authType = "session",
-                });
-            }
-            catch (InvalidOperationException)
-            {
-                // Authentication not required - login succeeds but no session token
                 return Ok(new { message = "Logged in", authType = "none" });
             }
+
+            var sessionToken = await _sessionService.CreateSessionAsync(req.Username, user?.IsAdmin == true, req.RememberMe);
+
+            // Set HttpOnly session cookie so browsers can authenticate resource
+            // requests (images, etc.) without JavaScript intervention.
+            Response.Cookies.Append("listenarr_session", sessionToken, new CookieOptions
+            {
+                HttpOnly = true,
+                Secure = HttpContext.Request.IsHttps,
+                SameSite = SameSiteMode.Strict,
+                Path = "/",
+                MaxAge = req.RememberMe ? SessionService.RememberMeExpiration : SessionService.DefaultExpiration,
+            });
+
+            return Ok(new
+            {
+                message = "Logged in",
+                authType = "session",
+            });
         }
 
         /// <summary>
@@ -174,10 +170,7 @@ namespace Listenarr.Api.Controllers
                     }
                 }
 
-                // Determine response auth type based on configuration
-                var config = _startupConfigService.GetConfig();
-                var authEnabled = config?.IsAuthenticationEnabled() == true;
-                var responseAuthType = authEnabled ? "session" : "none";
+                var responseAuthType = _authenticationRequirementService.IsAuthenticationRequired() ? "session" : "none";
                 return Ok(new { message = "Logged out successfully", authType = responseAuthType });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

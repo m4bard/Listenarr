@@ -205,13 +205,18 @@ namespace Listenarr.Tests.Features.Api
             rateLimiter.Setup(x => x.IsBlocked(It.IsAny<string>())).Returns(false);
             rateLimiter.Setup(x => x.RecordSuccess(It.IsAny<string>()));
 
+            var authenticationRequirementService = new Mock<IAuthenticationRequirementService>(MockBehavior.Strict);
+            authenticationRequirementService
+                .Setup(x => x.IsAuthenticationRequired())
+                .Returns(true);
+
             var sessionService = new Mock<ISessionService>(MockBehavior.Strict);
             sessionService
                 .Setup(x => x.CreateSessionAsync(username, true, false))
                 .ReturnsAsync(sessionToken);
 
             var controller = new AccountController(
-                Mock.Of<IStartupConfigService>(),
+                authenticationRequirementService.Object,
                 NullLogger<AccountController>.Instance,
                 userService.Object,
                 rateLimiter.Object,
@@ -239,6 +244,7 @@ namespace Listenarr.Tests.Features.Api
 
             userService.VerifyAll();
             rateLimiter.VerifyAll();
+            authenticationRequirementService.VerifyAll();
             sessionService.VerifyAll();
         }
 

@@ -44,6 +44,7 @@ namespace Listenarr.Tests.Features.Api
             var doc = await JsonDocument.ParseAsync(stream);
             Assert.True(doc.RootElement.TryGetProperty("version", out var versionProp));
             Assert.False(string.IsNullOrEmpty(versionProp.GetString()));
+            Assert.NotEqual("1.0.0.0", versionProp.GetString());
         }
 
         [Fact]
@@ -70,6 +71,7 @@ namespace Listenarr.Tests.Features.Api
             Assert.True(resp.Headers.Contains("X-Application-Version"));
             var header = resp.Headers.GetValues("X-Application-Version").FirstOrDefault();
             Assert.False(string.IsNullOrEmpty(header));
+            Assert.NotEqual("1.0.0.0", header);
 
             // JSON body contains success and version
             using var stream = new System.IO.MemoryStream(System.Text.Encoding.UTF8.GetBytes(body ?? ""));
@@ -78,6 +80,7 @@ namespace Listenarr.Tests.Features.Api
             Assert.True(successProp.GetBoolean());
             Assert.True(doc.RootElement.TryGetProperty("version", out var v2));
             Assert.False(string.IsNullOrEmpty(v2.GetString()));
+            Assert.NotEqual("1.0.0.0", v2.GetString());
         }
 
         [Fact]

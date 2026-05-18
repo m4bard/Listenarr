@@ -86,34 +86,70 @@ namespace Listenarr.Application.Common
         private readonly bool _disposeNoRedirectClient;
         private readonly AsyncKeyedLocker<string> _downloadLocks = new();
 
+        private readonly record struct ImageCachePaths(
+            string ContentRootPath,
+            string TempCachePath,
+            string LibraryImagePath,
+            string AuthorImagePath,
+            string SeriesImagePath);
+
         public ImageCacheService(
             ILogger<ImageCacheService> logger,
             ImageCacheNoRedirectHttpClient noRedirectHttpClient,
             IApplicationPathService applicationPathService)
-            : this(logger, noRedirectHttpClient.Client, applicationPathService.ContentRootPath, disposeNoRedirectClient: false)
+            : this(
+                  logger,
+                  noRedirectHttpClient.Client,
+                  applicationPathService.ContentRootPath,
+                  applicationPathService.ResolveFromConfig("cache", "images", "temp"),
+                  applicationPathService.ResolveFromConfig("cache", "images", "library"),
+                  applicationPathService.ResolveFromConfig("cache", "images", "authors"),
+                  applicationPathService.ResolveFromConfig("cache", "images", "series"),
+                  disposeNoRedirectClient: false)
         {
         }
 
         public ImageCacheService(ILogger<ImageCacheService> logger, IHttpClientFactory httpClientFactory, string contentRootPath)
-            : this(logger, CreateNoRedirectClient(httpClientFactory), contentRootPath, disposeNoRedirectClient: true)
+            : this(logger, CreateNoRedirectClient(httpClientFactory), CreateLegacyCachePaths(logger, contentRootPath), disposeNoRedirectClient: true)
         {
         }
 
-        private ImageCacheService(ILogger<ImageCacheService> logger, HttpClient noRedirectHttpClient, string contentRootPath, bool disposeNoRedirectClient)
+        private ImageCacheService(
+            ILogger<ImageCacheService> logger,
+            HttpClient noRedirectHttpClient,
+            ImageCachePaths paths,
+            bool disposeNoRedirectClient)
+            : this(
+                  logger,
+                  noRedirectHttpClient,
+                  paths.ContentRootPath,
+                  paths.TempCachePath,
+                  paths.LibraryImagePath,
+                  paths.AuthorImagePath,
+                  paths.SeriesImagePath,
+                  disposeNoRedirectClient)
+        {
+        }
+
+        private ImageCacheService(
+            ILogger<ImageCacheService> logger,
+            HttpClient noRedirectHttpClient,
+            string contentRootPath,
+            string tempCachePath,
+            string libraryImagePath,
+            string authorImagePath,
+            string seriesImagePath,
+            bool disposeNoRedirectClient)
         {
             _logger = logger;
             _httpClientNoRedirect = noRedirectHttpClient;
             _disposeNoRedirectClient = disposeNoRedirectClient;
-            _contentRootPath = ResolveEffectiveContentRoot(contentRootPath);
+            _contentRootPath = contentRootPath;
+            _tempCachePath = tempCachePath;
+            _libraryImagePath = libraryImagePath;
+            _authorImagePath = authorImagePath;
+            _seriesImagePath = seriesImagePath;
 
-            // Set up cache directories relative to content root
-            var baseDir = CombineRelativePath(_contentRootPath, "config");
-            _tempCachePath = CombineRelativePath(baseDir, "cache", "images", "temp");
-            _libraryImagePath = CombineRelativePath(baseDir, "cache", "images", "library");
-            _authorImagePath = CombineRelativePath(baseDir, "cache", "images", "authors");
-            _seriesImagePath = CombineRelativePath(baseDir, "cache", "images", "series");
-
-            // Ensure directories exist
             Directory.CreateDirectory(_tempCachePath);
             Directory.CreateDirectory(_libraryImagePath);
             Directory.CreateDirectory(_authorImagePath);
@@ -132,7 +168,20 @@ namespace Listenarr.Application.Common
             };
         }
 
-        private string ResolveEffectiveContentRoot(string? contentRootPath)
+        private static ImageCachePaths CreateLegacyCachePaths(ILogger<ImageCacheService> logger, string contentRootPath)
+        {
+            var effectiveContentRoot = ResolveEffectiveContentRoot(logger, contentRootPath);
+            var baseDir = CombineRelativePath(effectiveContentRoot, "config");
+
+            return new ImageCachePaths(
+                effectiveContentRoot,
+                CombineRelativePath(baseDir, "cache", "images", "temp"),
+                CombineRelativePath(baseDir, "cache", "images", "library"),
+                CombineRelativePath(baseDir, "cache", "images", "authors"),
+                CombineRelativePath(baseDir, "cache", "images", "series"));
+        }
+
+        private static string ResolveEffectiveContentRoot(ILogger<ImageCacheService> logger, string? contentRootPath)
         {
             var fallbackRoot = string.IsNullOrWhiteSpace(contentRootPath)
                 ? AppContext.BaseDirectory
@@ -142,7 +191,7 @@ namespace Listenarr.Application.Common
             if (!string.IsNullOrWhiteSpace(resolvedRoot) &&
                 !string.Equals(resolvedRoot, fallbackRoot, StringComparison.OrdinalIgnoreCase))
             {
-                _logger.LogInformation(
+                logger.LogInformation(
                     "Resolved image cache content root to repo path: {ResolvedRoot}",
                     resolvedRoot);
                 return resolvedRoot;
