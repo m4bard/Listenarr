@@ -233,7 +233,7 @@ namespace Listenarr.Api.Controllers
 
                 var (success, message) = await _downloadClientGateway.TestConnectionAsync(config);
                 var clientResponse = config;
-                if (clientResponse != null && SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
+                if (SecurityRequestUtils.ShouldRedactSecretsForCaller(HttpContext))
                 {
                     clientResponse = ApiResponseRedactor.RedactDownloadClientConfiguration(clientResponse);
                 }
