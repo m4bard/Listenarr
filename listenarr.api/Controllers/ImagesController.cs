@@ -38,7 +38,7 @@ namespace Listenarr.Api.Controllers
         private readonly IAudiobookRepository _audiobookRepository;
         private readonly IOpenLibraryService? _openLibraryService;
         private readonly ILogger<ImagesController> _logger;
-        private readonly IWebHostEnvironment _environment;
+        private readonly IApplicationPathService _applicationPathService;
         private readonly string _effectiveContentRootPath;
 
         [ActivatorUtilitiesConstructor]
@@ -49,7 +49,7 @@ namespace Listenarr.Api.Controllers
             IAudnexusService audnexusService,
             IAudiobookRepository audiobookRepository,
             ILogger<ImagesController> logger,
-            IWebHostEnvironment environment)
+            IApplicationPathService applicationPathService)
             : this(
                 imageCacheService,
                 audiobookMetadataService,
@@ -58,7 +58,7 @@ namespace Listenarr.Api.Controllers
                 audiobookRepository,
                 openLibraryService: null,
                 logger,
-                environment)
+                applicationPathService)
         {
         }
 
@@ -70,7 +70,7 @@ namespace Listenarr.Api.Controllers
             IAudiobookRepository audiobookRepository,
             IOpenLibraryService? openLibraryService,
             ILogger<ImagesController> logger,
-            IWebHostEnvironment environment)
+            IApplicationPathService applicationPathService)
         {
             _imageCacheService = imageCacheService;
             _audiobookMetadataService = audiobookMetadataService;
@@ -79,8 +79,8 @@ namespace Listenarr.Api.Controllers
             _audiobookRepository = audiobookRepository;
             _openLibraryService = openLibraryService;
             _logger = logger;
-            _environment = environment;
-            _effectiveContentRootPath = ResolveEffectiveContentRoot(environment.ContentRootPath);
+            _applicationPathService = applicationPathService;
+            _effectiveContentRootPath = applicationPathService.ContentRootPath;
         }
 
         /// <summary>
@@ -1153,83 +1153,6 @@ namespace Listenarr.Api.Controllers
             }
 
             return null;
-        }
-
-        private string ResolveEffectiveContentRoot(string? contentRootPath)
-        {
-            var fallbackRoot = string.IsNullOrWhiteSpace(contentRootPath)
-                ? AppContext.BaseDirectory
-                : contentRootPath;
-
-            var resolvedRoot = TryResolveListenarrApiRoot(fallbackRoot);
-            if (!string.IsNullOrWhiteSpace(resolvedRoot) &&
-                !string.Equals(resolvedRoot, fallbackRoot, StringComparison.OrdinalIgnoreCase))
-            {
-                _logger.LogInformation(
-                    "Resolved image controller content root to repo path: {ResolvedRoot}",
-                    LogRedaction.SanitizeText(resolvedRoot));
-                return resolvedRoot;
-            }
-
-            return fallbackRoot;
-        }
-
-        private static string? TryResolveListenarrApiRoot(string? startingPath)
-        {
-            if (string.IsNullOrWhiteSpace(startingPath))
-            {
-                return null;
-            }
-
-            try
-            {
-                var dir = new DirectoryInfo(Path.GetFullPath(startingPath));
-                const int maxDepth = 8;
-                var depth = 0;
-
-                while (dir != null && depth++ < maxDepth)
-                {
-                    if (LooksLikeListenarrApiRoot(dir.FullName))
-                    {
-                        return dir.FullName;
-                    }
-
-                    var nestedApiRoot = CombineRelativePath(dir.FullName, "listenarr.api");
-                    if (LooksLikeListenarrApiRoot(nestedApiRoot))
-                    {
-                        return nestedApiRoot;
-                    }
-
-                    dir = dir.Parent;
-                }
-            }
-            catch (Exception ex) when (
-                ex is IOException or
-                UnauthorizedAccessException or
-                ArgumentException or
-                System.Security.SecurityException or
-                NotSupportedException or
-                PathTooLongException)
-            {
-                return null;
-            }
-
-            return null;
-        }
-
-        private static bool LooksLikeListenarrApiRoot(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path) || !Directory.Exists(path))
-            {
-                return false;
-            }
-
-            var hasConfigDirectory = Directory.Exists(CombineRelativePath(path, "config"));
-            var hasProjectMarkers =
-                System.IO.File.Exists(CombineRelativePath(path, "listenarr.api.csproj")) ||
-                Directory.Exists(CombineRelativePath(path, "wwwroot"));
-
-            return hasConfigDirectory && hasProjectMarkers;
         }
 
         private IEnumerable<string> EnumeratePlaceholderCandidates()

@@ -78,8 +78,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var fullPath = Path.Join(tempRoot, relativePath);
             File.WriteAllText(fullPath, "fake image data");
 
-            var mockEnv = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
-            mockEnv.SetupGet(e => e.ContentRootPath).Returns(tempRoot);
+            var mockPathService = new Mock<IApplicationPathService>();
+            mockPathService.SetupGet(p => p.ContentRootPath).Returns(tempRoot);
 
             var controller = new ImagesController(
                 mockImageCache.Object,
@@ -89,7 +89,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 repoMock.Object,
                 openLibraryMock.Object,
                 Mock.Of<ILogger<ImagesController>>(),
-                mockEnv.Object);
+                mockPathService.Object);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext
             {
                 HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext()

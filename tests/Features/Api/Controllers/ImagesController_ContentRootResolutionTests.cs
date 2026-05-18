@@ -16,7 +16,6 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Api.Controllers;
-using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Logging;
@@ -33,25 +32,17 @@ namespace Listenarr.Tests.Features.Api.Controllers
     public class ImagesController_ContentRootResolutionTests
     {
         [Fact]
-        public async Task GetImage_UsesRepoRoot_WhenEnvironmentContentRootPointsToBinOutput()
+        public async Task GetImage_UsesApplicationPathServiceContentRoot()
         {
-            var originalEnvironment = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT");
             var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-images-controller-tests", Guid.NewGuid().ToString("N"));
             const string identifier = "ZZTEST1234";
 
             try
             {
-                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", "Development");
-
-                var repoApiRoot = Path.Join(tempRoot, "listenarr.api");
-                var binRoot = Path.Join(repoApiRoot, "bin", "Debug", "net8.0");
-                Directory.CreateDirectory(Path.Join(repoApiRoot, "config", "cache", "images", "authors"));
-                Directory.CreateDirectory(Path.Join(repoApiRoot, "wwwroot"));
-                Directory.CreateDirectory(binRoot);
-                File.WriteAllText(Path.Join(repoApiRoot, "listenarr.api.csproj"), "<Project />");
+                Directory.CreateDirectory(Path.Join(tempRoot, "config", "cache", "images", "authors"));
 
                 var relativePath = $"config/cache/images/authors/{identifier}.jpg";
-                var expectedPath = Path.Join(repoApiRoot, "config", "cache", "images", "authors", $"{identifier}.jpg");
+                var expectedPath = Path.Join(tempRoot, "config", "cache", "images", "authors", $"{identifier}.jpg");
                 await File.WriteAllBytesAsync(expectedPath, new byte[] { 1, 2, 3, 4 });
 
                 var imageCache = new Mock<IImageCacheService>();
@@ -59,8 +50,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                     .Setup(service => service.GetCachedImagePathAsync(identifier))
                     .ReturnsAsync(relativePath);
 
-                var env = new Mock<IWebHostEnvironment>();
-                env.SetupGet(environment => environment.ContentRootPath).Returns(binRoot);
+                var mockPathService = new Mock<IApplicationPathService>();
+                mockPathService.SetupGet(p => p.ContentRootPath).Returns(tempRoot);
 
                 using var httpClientForAudible = new System.Net.Http.HttpClient();
                 var controller = new ImagesController(
@@ -70,7 +61,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                     Mock.Of<IAudnexusService>(),
                     Mock.Of<IAudiobookRepository>(),
                     Mock.Of<ILogger<ImagesController>>(),
-                    env.Object);
+                    mockPathService.Object);
                 controller.ControllerContext = new ControllerContext
                 {
                     HttpContext = new DefaultHttpContext()
@@ -78,7 +69,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
 
                 var effectiveRootField = typeof(ImagesController).GetField("_effectiveContentRootPath", BindingFlags.Instance | BindingFlags.NonPublic);
                 Assert.NotNull(effectiveRootField);
-                Assert.Equal(repoApiRoot, effectiveRootField!.GetValue(controller));
+                Assert.Equal(tempRoot, effectiveRootField!.GetValue(controller));
 
                 var result = await controller.GetImage(identifier);
 
@@ -88,7 +79,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
             }
             finally
             {
-                Environment.SetEnvironmentVariable("ASPNETCORE_ENVIRONMENT", originalEnvironment);
                 if (Directory.Exists(tempRoot))
                 {
                     Directory.Delete(tempRoot, recursive: true);

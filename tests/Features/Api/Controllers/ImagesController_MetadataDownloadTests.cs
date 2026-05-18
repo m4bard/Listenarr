@@ -55,13 +55,13 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var fullPath = Path.Join(tempRoot, relativePath);
             File.WriteAllText(fullPath, "fake image data");
 
-            var mockEnv = new Mock<Microsoft.AspNetCore.Hosting.IWebHostEnvironment>();
-            mockEnv.SetupGet(e => e.ContentRootPath).Returns(tempRoot);
+            var mockPathService = new Mock<IApplicationPathService>();
+            mockPathService.SetupGet(p => p.ContentRootPath).Returns(tempRoot);
 
             using var httpClientForAudible = new System.Net.Http.HttpClient();
             var audibleMock = new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>());
             var audnexusMock = Mock.Of<IAudnexusService>();
-            var controller = new ImagesController(mockImageCache.Object, mockMetadata.Object, audibleMock.Object, audnexusMock, Mock.Of<IAudiobookRepository>(), Mock.Of<ILogger<ImagesController>>(), mockEnv.Object);
+            var controller = new ImagesController(mockImageCache.Object, mockMetadata.Object, audibleMock.Object, audnexusMock, Mock.Of<IAudiobookRepository>(), Mock.Of<ILogger<ImagesController>>(), mockPathService.Object);
             controller.ControllerContext = new Microsoft.AspNetCore.Mvc.ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
 
             // Act

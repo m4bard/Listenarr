@@ -17,8 +17,8 @@
  */
 
 using AsyncKeyedLock;
-using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
+using Listenarr.Application.Interfaces;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using System.Net;
