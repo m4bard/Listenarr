@@ -25,6 +25,7 @@ namespace Listenarr.Tests.Common
         /// Returns a 200 HTTP reply with the given content
         /// </summary>
         /// <param name="content">Content to use as a response body</param>
+        /// <param name="mediaType">Content media type for the response body</param>
         /// <returns>HttpResponseMessage with status 200 and body</returns>
         public static HttpResponseMessage GetCannedResponse(string content, string mediaType = "application/json")
         {
