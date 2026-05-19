@@ -23,41 +23,35 @@ namespace Listenarr.Application.Common
 {
     public static class ApplicationVersionResolver
     {
-        public static string Resolve(string? preferredAssemblyName = null)
+        public static string Resolve()
         {
-            var assembly = ResolveAssembly(preferredAssemblyName);
+            var assembly = ResolveAssembly();
             return GetInformationalVersion(assembly)
                 ?? GetProductVersion(assembly)
                 ?? assembly?.GetName().Version?.ToString()
                 ?? "unknown";
         }
 
-        private static Assembly? ResolveAssembly(string? preferredAssemblyName)
+        private static Assembly? ResolveAssembly()
         {
-            if (!string.IsNullOrWhiteSpace(preferredAssemblyName))
+            var entryAssembly = Assembly.GetEntryAssembly();
+            if (IsApplicationAssembly(entryAssembly))
             {
-                var loadedAssembly = AppDomain.CurrentDomain.GetAssemblies()
-                    .FirstOrDefault(assembly => string.Equals(
-                        assembly.GetName().Name,
-                        preferredAssemblyName,
-                        StringComparison.OrdinalIgnoreCase));
-
-                if (loadedAssembly != null)
-                {
-                    return loadedAssembly;
-                }
-
-                try
-                {
-                    return Assembly.Load(new AssemblyName(preferredAssemblyName));
-                }
-                catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or BadImageFormatException)
-                {
-                    // Fall through to the entry assembly fallback below.
-                }
+                return entryAssembly;
             }
 
-            return Assembly.GetEntryAssembly() ?? Assembly.GetExecutingAssembly();
+            return AppDomain.CurrentDomain.GetAssemblies()
+                .FirstOrDefault(IsApplicationAssembly)
+                ?? entryAssembly
+                ?? Assembly.GetExecutingAssembly();
+        }
+
+        private static bool IsApplicationAssembly(Assembly? assembly)
+        {
+            return string.Equals(
+                assembly?.GetName().Name,
+                "Listenarr.Api",
+                StringComparison.OrdinalIgnoreCase);
         }
 
         private static string? GetInformationalVersion(Assembly? assembly)

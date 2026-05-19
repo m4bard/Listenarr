@@ -117,7 +117,7 @@ namespace Listenarr.Api.Controllers
 
         private static string GetApplicationVersion()
         {
-            return ApplicationVersionResolver.Resolve(typeof(ProwlarrCompatController).Assembly.GetName().Name);
+            return ApplicationVersionResolver.Resolve();
         }
 
         /// <summary>

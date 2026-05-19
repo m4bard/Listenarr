@@ -20,6 +20,7 @@ using Listenarr.Api.Controllers;
 using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
+using Listenarr.Application.Metadata;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Mvc;
@@ -68,7 +69,15 @@ namespace Listenarr.Tests.Features.Api.Controllers
             mockRepo.Setup(r => r.GetAllNoFilesAsync()).ReturnsAsync(allBooks);
 
             var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
-            mockAudioFileRepo.Setup(r => r.GetFormatSummariesAsync(default)).ReturnsAsync(allFiles);
+            mockAudioFileRepo.Setup(r => r.GetFormatSummariesAsync(default)).ReturnsAsync(allFiles.Select(f => new AudiobookFileStatusInfo
+            {
+                AudiobookId = f.AudiobookId,
+                Path = f.Path,
+                Format = f.Format,
+                Container = f.Container,
+                Codec = f.Codec,
+                Bitrate = f.Bitrate,
+            }).ToList());
             mockAudioFileRepo.Setup(r => r.GetCountsByAudiobookIdAsync(default)).ReturnsAsync(allFiles
                 .GroupBy(f => f.AudiobookId)
                 .ToDictionary(g => g.Key, g => g.Count()));
@@ -131,7 +140,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             mockRepo.Setup(r => r.GetAllNoFilesAsync()).ReturnsAsync(allBooks);
 
             var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
-            mockAudioFileRepo.Setup(r => r.GetFormatSummariesAsync(default)).ReturnsAsync(new List<AudiobookFile>());
+            mockAudioFileRepo.Setup(r => r.GetFormatSummariesAsync(default)).ReturnsAsync(new List<AudiobookFileStatusInfo>());
             mockAudioFileRepo.Setup(r => r.GetCountsByAudiobookIdAsync(default)).ReturnsAsync(new Dictionary<int, int>());
 
             var mockDownloadRepo = new Mock<IDownloadRepository>();

@@ -66,7 +66,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var version = ApplicationVersionResolver.Resolve(_hostEnvironment.ApplicationName);
+                var version = ApplicationVersionResolver.Resolve();
 
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
@@ -137,7 +137,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var version = ApplicationVersionResolver.Resolve(_hostEnvironment.ApplicationName);
+                var version = ApplicationVersionResolver.Resolve();
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
 

@@ -146,9 +146,7 @@ if (parseFailures.length > 0) {
 
 if (failures.length > 0) {
   console.error('Found multi-line Vue event handlers that are not single expressions.')
-  console.error(
-    'Wrap multi-statement handlers in an arrow function or move them into named methods.',
-  )
+  console.error('Wrap multi-statement handlers in an arrow function or move them into named methods.')
 
   for (const failure of failures) {
     const relative = path.relative(root, failure.file)

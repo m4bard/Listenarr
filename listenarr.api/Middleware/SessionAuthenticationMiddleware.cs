@@ -41,7 +41,7 @@ namespace Listenarr.Api.Middleware
             if (!isAlreadyAuthenticated)
             {
                 var sessionToken = ExtractSessionToken(context);
-                if (sessionToken is { Length: > 0 })
+                if (!string.IsNullOrEmpty(sessionToken))
                 {
                     var tokenHash = SecurityRequestUtils.HashSecretForLog(sessionToken);
                     _logger.LogDebug("[SessionAuth] Incoming session token for {Path} ({TokenHash})", path, tokenHash);

@@ -827,8 +827,6 @@ if (app.Environment.IsDevelopment())
     });
 }
 
-// Use forwarded headers middleware (must be early in pipeline).
-// Options are configured in DI to trust common private proxy networks.
 app.UseExceptionHandler(exceptionApp =>
 {
     exceptionApp.Run(async context =>
@@ -852,6 +850,8 @@ app.UseExceptionHandler(exceptionApp =>
     });
 });
 
+// Use forwarded headers middleware early in the pipeline.
+// Options are configured in DI to trust common private proxy networks.
 app.UseForwardedHeaders();
 
 // Note: HTTPS redirection is handled by the reverse proxy, not by this application

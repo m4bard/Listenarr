@@ -25,10 +25,10 @@ namespace Listenarr.Tests.Features.Application.Common
     public class ApplicationVersionResolverTests
     {
         [Fact]
-        public void Resolve_UsesPreferredAssemblyInformationalVersion()
+        public void Resolve_UsesApplicationAssemblyInformationalVersion()
         {
             var expectedVersion = GetExpectedApiVersion();
-            var version = ApplicationVersionResolver.Resolve(typeof(global::Program).Assembly.GetName().Name);
+            var version = ApplicationVersionResolver.Resolve();
 
             Assert.Equal(expectedVersion, version);
             Assert.NotEqual("1.0.0.0", version);
