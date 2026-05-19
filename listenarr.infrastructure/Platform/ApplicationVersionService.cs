@@ -18,12 +18,21 @@
 
 using System.Diagnostics;
 using System.Reflection;
+using Listenarr.Application.Interfaces;
+using Microsoft.Extensions.Hosting;
 
-namespace Listenarr.Application.Common
+namespace Listenarr.Infrastructure.Platform
 {
-    public static class ApplicationVersionResolver
+    public sealed class ApplicationVersionService : IApplicationVersionService
     {
-        public static string Resolve()
+        private readonly IHostEnvironment _hostEnvironment;
+
+        public ApplicationVersionService(IHostEnvironment hostEnvironment)
+        {
+            _hostEnvironment = hostEnvironment;
+        }
+
+        public string Resolve()
         {
             var assembly = ResolveAssembly();
             return GetInformationalVersion(assembly)
@@ -32,26 +41,34 @@ namespace Listenarr.Application.Common
                 ?? "unknown";
         }
 
-        private static Assembly? ResolveAssembly()
+        private Assembly? ResolveAssembly()
         {
-            var entryAssembly = Assembly.GetEntryAssembly();
-            if (IsApplicationAssembly(entryAssembly))
+            var applicationName = _hostEnvironment.ApplicationName;
+            if (!string.IsNullOrWhiteSpace(applicationName))
             {
-                return entryAssembly;
+                var loadedAssembly = AppDomain.CurrentDomain.GetAssemblies()
+                    .FirstOrDefault(assembly => string.Equals(
+                        assembly.GetName().Name,
+                        applicationName,
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (loadedAssembly != null)
+                {
+                    return loadedAssembly;
+                }
+
+                try
+                {
+                    return Assembly.Load(new AssemblyName(applicationName));
+                }
+                catch (Exception ex) when (ex is FileNotFoundException or FileLoadException or BadImageFormatException)
+                {
+                    // Fall through to entry assembly resolution.
+                }
             }
 
-            return AppDomain.CurrentDomain.GetAssemblies()
-                .FirstOrDefault(IsApplicationAssembly)
-                ?? entryAssembly
+            return Assembly.GetEntryAssembly()
                 ?? Assembly.GetExecutingAssembly();
-        }
-
-        private static bool IsApplicationAssembly(Assembly? assembly)
-        {
-            return string.Equals(
-                assembly?.GetName().Name,
-                "Listenarr.Api",
-                StringComparison.OrdinalIgnoreCase);
         }
 
         private static string? GetInformationalVersion(Assembly? assembly)

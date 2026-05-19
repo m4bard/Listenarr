@@ -16,6 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Api.Attributes;
+using Listenarr.Application.Interfaces;
+using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Models.Configurations;
@@ -23,10 +26,27 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using System.Text.Json;
 
-namespace Listenarr.Api.Controllers
+namespace Listenarr.Api.Controllers.Configurations
 {
-    public partial class ConfigurationController
+    [ApiController]
+    [Route("api/v{version:apiVersion}/configuration")]
+    [RequireAdminOrApiKey]
+    public class SettingsController : ControllerBase
     {
+        private readonly IConfigurationService _configurationService;
+        private readonly ILogger<SettingsController> _logger;
+        private readonly IHubContext<SettingsHub> _settingsHub;
+
+        public SettingsController(
+            IConfigurationService configurationService,
+            ILogger<SettingsController> logger,
+            IHubContext<SettingsHub> settingsHub)
+        {
+            _configurationService = configurationService;
+            _logger = logger;
+            _settingsHub = settingsHub;
+        }
+
         /// <summary>
         /// Get the current application settings (output paths, naming patterns, webhook URLs, etc.).
         /// </summary>

@@ -19,23 +19,14 @@
 using AsyncKeyedLock;
 using Listenarr.Application.Security;
 using Listenarr.Application.Interfaces;
+using Listenarr.Domain.Common;
 using Microsoft.Extensions.Logging;
 using SixLabors.ImageSharp;
 using System.Net;
 using System.Net.Sockets;
 
-namespace Listenarr.Application.Common
+namespace Listenarr.Infrastructure.Services
 {
-    public interface IImageCacheService
-    {
-        Task<string?> DownloadAndCacheImageAsync(string imageUrl, string identifier);
-        Task<string?> MoveToLibraryStorageAsync(string identifier, string? imageUrl = null);
-        Task<string?> MoveToAuthorLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false);
-        Task<string?> MoveToSeriesLibraryStorageAsync(string identifier, string? imageUrl = null, bool forceRefresh = false);
-        Task<string?> GetCachedImagePathAsync(string identifier);
-        Task ClearTempCacheAsync();
-    }
-
     public sealed class ImageCacheNoRedirectHttpClient
     {
         public ImageCacheNoRedirectHttpClient(HttpClient client)
@@ -171,14 +162,14 @@ namespace Listenarr.Application.Common
         private static ImageCachePaths CreateLegacyCachePaths(ILogger<ImageCacheService> logger, string contentRootPath)
         {
             var effectiveContentRoot = ResolveEffectiveContentRoot(logger, contentRootPath);
-            var baseDir = CombineRelativePath(effectiveContentRoot, "config");
+            var baseDir = FileUtils.CombineRelativePath(effectiveContentRoot, "config");
 
             return new ImageCachePaths(
                 effectiveContentRoot,
-                CombineRelativePath(baseDir, "cache", "images", "temp"),
-                CombineRelativePath(baseDir, "cache", "images", "library"),
-                CombineRelativePath(baseDir, "cache", "images", "authors"),
-                CombineRelativePath(baseDir, "cache", "images", "series"));
+                FileUtils.CombineRelativePath(baseDir, "cache", "images", "temp"),
+                FileUtils.CombineRelativePath(baseDir, "cache", "images", "library"),
+                FileUtils.CombineRelativePath(baseDir, "cache", "images", "authors"),
+                FileUtils.CombineRelativePath(baseDir, "cache", "images", "series"));
         }
 
         private static string ResolveEffectiveContentRoot(ILogger<ImageCacheService> logger, string? contentRootPath)
@@ -220,7 +211,7 @@ namespace Listenarr.Application.Common
                         return dir.FullName;
                     }
 
-                    var nestedApiRoot = CombineRelativePath(dir.FullName, "listenarr.api");
+                    var nestedApiRoot = FileUtils.CombineRelativePath(dir.FullName, "listenarr.api");
                     if (LooksLikeListenarrApiRoot(nestedApiRoot))
                     {
                         return nestedApiRoot;
@@ -250,41 +241,12 @@ namespace Listenarr.Application.Common
                 return false;
             }
 
-            var hasConfigDirectory = Directory.Exists(CombineRelativePath(path, "config"));
+            var hasConfigDirectory = Directory.Exists(FileUtils.CombineRelativePath(path, "config"));
             var hasProjectMarkers =
-                File.Exists(CombineRelativePath(path, "listenarr.api.csproj")) ||
-                Directory.Exists(CombineRelativePath(path, "wwwroot"));
+                File.Exists(FileUtils.CombineRelativePath(path, "listenarr.api.csproj")) ||
+                Directory.Exists(FileUtils.CombineRelativePath(path, "wwwroot"));
 
             return hasConfigDirectory && hasProjectMarkers;
-        }
-
-        private static string CombineRelativePath(string basePath, params string[] segments)
-        {
-            if (string.IsNullOrWhiteSpace(basePath))
-            {
-                throw new ArgumentException("Base path is required.", nameof(basePath));
-            }
-
-            var combined = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            foreach (var segment in segments)
-            {
-                if (string.IsNullOrWhiteSpace(segment))
-                {
-                    continue;
-                }
-
-                var relativeSegment = segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (Path.IsPathRooted(relativeSegment))
-                {
-                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
-                }
-
-                combined = string.IsNullOrEmpty(combined)
-                    ? relativeSegment
-                    : combined + Path.DirectorySeparatorChar + relativeSegment;
-            }
-
-            return combined;
         }
 
         /// <summary>
@@ -418,7 +380,7 @@ namespace Listenarr.Application.Common
                 // Determine file extension from content type or URL
                 var extension = GetImageExtension(finalUri.ToString(), mediaType);
                 var fileName = NormalizeRelativeFileName($"{SanitizeFileName(identifier)}{extension}");
-                var filePath = CombineRelativePath(_tempCachePath, fileName);
+                var filePath = FileUtils.CombineRelativePath(_tempCachePath, fileName);
 
                 // Save to temp cache
                 await File.WriteAllBytesAsync(filePath, imageBytes);
@@ -754,7 +716,7 @@ namespace Listenarr.Application.Common
 
             foreach (var ext in extensions)
             {
-                var path = CombineRelativePath(_tempCachePath, NormalizeRelativeFileName(sanitized + ext));
+                var path = FileUtils.CombineRelativePath(_tempCachePath, NormalizeRelativeFileName(sanitized + ext));
                 if (!File.Exists(path)) continue;
 
                 // Remove placeholder images (e.g. 1x1) from temp cache so fallback can continue.
@@ -811,13 +773,13 @@ namespace Listenarr.Application.Common
 
             foreach (var ext in extensions)
             {
-                var path = CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ext));
+                var path = FileUtils.CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ext));
                 if (File.Exists(path))
                     return path;
             }
 
             // Default to .jpg if not found
-            return CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ".jpg"));
+            return FileUtils.CombineRelativePath(basePath, NormalizeRelativeFileName(sanitized + ".jpg"));
         }
 
         private string GetRelativePath(string fullPath)

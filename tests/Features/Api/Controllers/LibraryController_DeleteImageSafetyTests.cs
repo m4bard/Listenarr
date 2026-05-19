@@ -24,7 +24,6 @@ using Listenarr.Application.Interfaces.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models.Configurations;
-using Listenarr.Application.Common;
 using Listenarr.Application.Notification;
 
 namespace Listenarr.Tests.Features.Api.Controllers
@@ -72,7 +71,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 fileNaming,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                libraryListService: Mock.Of<ILibraryListService>());
 
             // Act
             var result = await controller.DeleteAudiobook(audiobook.Id);

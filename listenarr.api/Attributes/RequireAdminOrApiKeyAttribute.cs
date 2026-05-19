@@ -18,45 +18,48 @@
 
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Mvc.Filters;
 
 namespace Listenarr.Api.Attributes
 {
     /// <summary>
-    /// Requires the caller to present a valid API key when authentication is enabled.
-    /// When authentication is disabled, all requests are allowed through.
-    /// Use this attribute on machine-to-machine endpoints that do not require an interactive session.
+    /// Requires the caller to be an authenticated administrator or API-key principal when
+    /// authentication is enabled. Requests to endpoints decorated with <see cref="Microsoft.AspNetCore.Authorization.AllowAnonymousAttribute"/>
+    /// are always passed through. When authentication is disabled, all requests are allowed.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-    public sealed class RequireApiKeyWhenAuthenticationEnabledAttribute : TypeFilterAttribute
+    public sealed class RequireAdminOrApiKeyAttribute : TypeFilterAttribute
     {
-        /// <summary>Initialises a new instance of <see cref="RequireApiKeyWhenAuthenticationEnabledAttribute"/>.</summary>
-        public RequireApiKeyWhenAuthenticationEnabledAttribute()
-            : base(typeof(RequireApiKeyWhenAuthenticationEnabledFilter))
+        /// <summary>Initialises a new instance of <see cref="RequireAdminOrApiKeyAttribute"/>.</summary>
+        public RequireAdminOrApiKeyAttribute()
+            : base(typeof(RequireAdminOrApiKeyFilter))
         {
         }
     }
 
-    /// <summary>Action filter that backs <see cref="RequireApiKeyWhenAuthenticationEnabledAttribute"/>.</summary>
-    public sealed class RequireApiKeyWhenAuthenticationEnabledFilter : IAsyncActionFilter
+    /// <summary>Action filter that backs <see cref="RequireAdminOrApiKeyAttribute"/>.</summary>
+    public sealed class RequireAdminOrApiKeyFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;
 
-        public RequireApiKeyWhenAuthenticationEnabledFilter(IAuthenticationRequirementService authenticationRequirementService)
+        public RequireAdminOrApiKeyFilter(IAuthenticationRequirementService authenticationRequirementService)
         {
             _authenticationRequirementService = authenticationRequirementService;
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            var endpoint = context.HttpContext.GetEndpoint();
+            if (endpoint?.Metadata?.GetMetadata<AllowAnonymousAttribute>() != null)
             {
                 await next();
                 return;
             }
 
-            if (SecurityRequestUtils.IsApiKeyAuthenticated(context.HttpContext))
+            if (!_authenticationRequirementService.IsAuthenticationRequired() ||
+                SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context.HttpContext))
             {
                 await next();
                 return;

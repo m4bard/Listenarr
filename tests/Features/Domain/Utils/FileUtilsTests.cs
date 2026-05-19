@@ -292,5 +292,36 @@ namespace Listenarr.Tests.Features.Domain.Utils
                 @"C:\Books\Files\Track 01.mp3",
                 normalized);
         }
+
+        [Fact]
+        public void CombineRelativePath_JoinsRelativeSegmentsAndTrimsLeadingSeparators()
+        {
+            var result = FileUtils.CombineRelativePath(
+                "root",
+                "/config",
+                "\\cache",
+                "images");
+
+            Assert.Equal(
+                string.Join(Path.DirectorySeparatorChar, "root", "config", "cache", "images"),
+                result);
+        }
+
+        [Fact]
+        public void CombineRelativePath_ThrowsWhenBasePathMissing()
+        {
+            Assert.Throws<ArgumentException>(() => FileUtils.CombineRelativePath("", "config"));
+        }
+
+        [Fact]
+        public void CombineRelativePath_RejectsWindowsRootedSegments()
+        {
+            if (!OperatingSystem.IsWindows())
+            {
+                return;
+            }
+
+            Assert.Throws<ArgumentException>(() => FileUtils.CombineRelativePath("root", @"C:\escape"));
+        }
     }
 }

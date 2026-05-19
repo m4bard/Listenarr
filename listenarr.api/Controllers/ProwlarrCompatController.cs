@@ -17,7 +17,6 @@
  */
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Authorization;
-using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
 using Listenarr.Application.Interfaces.Repositories;
@@ -32,7 +31,7 @@ namespace Listenarr.Api.Controllers
     [Route("api/v1/prowlarr")]
     [Tags("Prowlarr Compatibility")]
     [ApiExplorerSettings(IgnoreApi = true)]
-    [RequireApiKeyWhenAuthenticationEnabled]
+    [RequireApiKey]
     public class ProwlarrCompatController : ControllerBase
     {
         private StartupConfig GetStartupConfig()
@@ -55,6 +54,7 @@ namespace Listenarr.Api.Controllers
         private readonly IHubContext<SettingsHub> _settingsHub;
         private readonly IToastService _toastService;
         private readonly IStartupConfigService _startupConfigService;
+        private readonly IApplicationVersionService _applicationVersionService;
 
         // Suppress update toasts for indexers that were created within this window (in seconds)
         private const int NotificationSuppressionSeconds = 5;
@@ -106,18 +106,25 @@ namespace Listenarr.Api.Controllers
             }
         }
 
-        public ProwlarrCompatController(ILogger<ProwlarrCompatController> logger, IIndexerRepository indexerRepository, IHubContext<SettingsHub> settingsHub, IToastService toastService, IStartupConfigService startupConfigService)
+        public ProwlarrCompatController(
+            ILogger<ProwlarrCompatController> logger,
+            IIndexerRepository indexerRepository,
+            IHubContext<SettingsHub> settingsHub,
+            IToastService toastService,
+            IStartupConfigService startupConfigService,
+            IApplicationVersionService applicationVersionService)
         {
             _logger = logger;
             _indexerRepository = indexerRepository;
             _settingsHub = settingsHub;
             _toastService = toastService;
             _startupConfigService = startupConfigService;
+            _applicationVersionService = applicationVersionService;
         }
 
-        private static string GetApplicationVersion()
+        private string GetApplicationVersion()
         {
-            return ApplicationVersionResolver.Resolve();
+            return _applicationVersionService.Resolve();
         }
 
         /// <summary>

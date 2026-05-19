@@ -23,7 +23,7 @@ using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
 using Listenarr.Tests.Common;
 using Listenarr.Tests.Builders;
-using Listenarr.Application.Common;
+using Listenarr.Application.Interfaces;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {

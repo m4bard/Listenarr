@@ -27,7 +27,6 @@ using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Domain.Models.Configurations;
-using Listenarr.Application.Common;
 using Listenarr.Application.Notification;
 
 namespace Listenarr.Tests.Features.Api.Controllers
@@ -92,6 +91,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
                 applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                libraryListService: Mock.Of<ILibraryListService>(),
                 rootFolderService: mockRootFolderSvc.Object);
 
             var request = new LibraryController.ScanRequest { Path = tempRoot };
@@ -162,6 +162,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
                 applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                libraryListService: Mock.Of<ILibraryListService>(),
                 rootFolderService: mockRootFolderSvc.Object);
 
             var request = new LibraryController.ScanRequest { Path = other };

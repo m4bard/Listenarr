@@ -64,6 +64,7 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IAuthorCatalogService, AuthorCatalogService>();
             services.AddScoped<ISeriesCatalogService, SeriesCatalogService>();
             services.AddScoped<ILibraryAddService, LibraryAddService>();
+            services.AddScoped<ILibraryListService, LibraryListService>();
             services.AddScoped<IAuthorMonitoringService, AuthorMonitoringService>();
             services.AddScoped<ISeriesMonitoringService, SeriesMonitoringService>();
             // Metadata extraction limiter to bound concurrent ffprobe calls
@@ -91,12 +92,6 @@ namespace Listenarr.Infrastructure.Extensions
             // Queue service extracted from DownloadService to encapsulate queue-building and filtering
             services.AddScoped<IDownloadQueueService, DownloadQueueService>();
             services.AddScoped<IOpenLibraryService, OpenLibraryService>();
-            services.AddHttpClient<ImageCacheNoRedirectHttpClient>()
-                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
-                {
-                    AllowAutoRedirect = false
-                });
-            services.AddSingleton<IImageCacheService, ImageCacheService>();
             services.AddScoped<IFileNamingService, FileNamingService>();
             services.AddScoped<IRenameService, RenameService>();
             // Centralized import service: handles moving/copying, naming and audiobook registration

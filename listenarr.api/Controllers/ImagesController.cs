@@ -16,11 +16,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Metadata;
 using Listenarr.Application.Security;
+using Listenarr.Domain.Common;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 
@@ -186,17 +186,8 @@ namespace Listenarr.Api.Controllers
                         try
                         {
                             var candidateFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, relativePath));
-                            var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
-                            var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
-                            var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
 
-                            // Use Path.GetRelativePath to reliably determine whether candidateFull
-                            // is inside one of the allowed roots. This works across separator styles.
-                            bool insideImagesRoot = !Path.GetRelativePath(imagesRoot, candidateFull).StartsWith("..", StringComparison.Ordinal);
-                            bool insideImagesRootConfig = !Path.GetRelativePath(imagesRootConfig, candidateFull).StartsWith("..", StringComparison.Ordinal);
-                            bool insideWwwroot = !Path.GetRelativePath(wwwroot, candidateFull).StartsWith("..", StringComparison.Ordinal);
-
-                            if (!insideImagesRoot && !insideImagesRootConfig && !insideWwwroot)
+                            if (!IsInsidePermittedImageRoot(candidateFull))
                             {
                                 _logger.LogWarning("Resolved image path outside permitted directories for identifier {Identifier}: {Path}", LogRedaction.SanitizeText(identifier), LogRedaction.SanitizeText(candidateFull));
                                 relativePath = null;
@@ -253,11 +244,8 @@ namespace Listenarr.Api.Controllers
                                     try
                                     {
                                         var movedFull = Path.GetFullPath(ResolvePathWithOptionalBase(_effectiveContentRootPath, moved));
-                                        var imagesRoot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
-                                        var imagesRootConfig = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
-                                        var wwwroot = Path.GetFullPath(CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
 
-                                        if (movedFull.StartsWith(imagesRoot, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(imagesRootConfig, StringComparison.OrdinalIgnoreCase) || movedFull.StartsWith(wwwroot, StringComparison.OrdinalIgnoreCase))
+                                        if (IsInsidePermittedImageRoot(movedFull))
                                         {
                                             try
                                             {
@@ -1046,57 +1034,36 @@ namespace Listenarr.Api.Controllers
 
         private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
         {
-            var normalizedPath = candidatePath.Trim();
-
-            if (string.IsNullOrEmpty(normalizedPath))
-            {
-                return normalizedPath;
-            }
-
-            if (Path.IsPathRooted(normalizedPath) || string.IsNullOrWhiteSpace(basePath))
-            {
-                return normalizedPath;
-            }
-
-            var relativePath = normalizedPath.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            if (Path.IsPathRooted(relativePath))
-            {
-                return relativePath;
-            }
-
-            var normalizedBasePath = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            return string.IsNullOrEmpty(normalizedBasePath)
-                ? relativePath
-                : normalizedBasePath + Path.DirectorySeparatorChar + relativePath;
+            return FileUtils.CombineWithOptionalBase(basePath, candidatePath.Trim());
         }
 
-        private static string CombineRelativePath(string basePath, params string[] segments)
+        private bool IsInsidePermittedImageRoot(string fullPath)
         {
-            if (string.IsNullOrWhiteSpace(basePath))
+            var candidateFull = Path.GetFullPath(fullPath);
+            foreach (var root in GetPermittedImageRoots())
             {
-                throw new ArgumentException("Base path is required.", nameof(basePath));
+                if (IsSamePathOrInside(candidateFull, root))
+                {
+                    return true;
+                }
             }
 
-            var combined = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-            foreach (var segment in segments)
-            {
-                if (string.IsNullOrWhiteSpace(segment))
-                {
-                    continue;
-                }
+            return false;
+        }
 
-                var relativeSegment = segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (Path.IsPathRooted(relativeSegment))
-                {
-                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
-                }
+        private IEnumerable<string> GetPermittedImageRoots()
+        {
+            yield return Path.GetFullPath(FileUtils.CombineRelativePath(_effectiveContentRootPath, "cache", "images"));
+            yield return Path.GetFullPath(FileUtils.CombineRelativePath(_effectiveContentRootPath, "config", "cache", "images"));
+            yield return Path.GetFullPath(FileUtils.CombineRelativePath(_effectiveContentRootPath, "wwwroot"));
+        }
 
-                combined = string.IsNullOrEmpty(combined)
-                    ? relativeSegment
-                    : combined + Path.DirectorySeparatorChar + relativeSegment;
-            }
-
-            return combined;
+        private static bool IsSamePathOrInside(string candidateFullPath, string rootFullPath)
+        {
+            var relativePath = Path.GetRelativePath(rootFullPath, candidateFullPath);
+            return relativePath == "." ||
+                (!relativePath.StartsWith("..", StringComparison.Ordinal) &&
+                 !Path.IsPathRooted(relativePath));
         }
 
         private IActionResult CreatePlaceholderResult(string logContext, string? logValue, string notFoundMessage)
@@ -1203,9 +1170,9 @@ namespace Listenarr.Api.Controllers
                 var depth = 0;
                 while (current != null && depth++ < 8)
                 {
-                    yield return CombineRelativePath(current.FullName, "wwwroot", "placeholder.svg");
-                    yield return CombineRelativePath(current.FullName, "fe", "public", "placeholder.svg");
-                    yield return CombineRelativePath(current.FullName, "listenarr.api", "wwwroot", "placeholder.svg");
+                    yield return FileUtils.CombineRelativePath(current.FullName, "wwwroot", "placeholder.svg");
+                    yield return FileUtils.CombineRelativePath(current.FullName, "fe", "public", "placeholder.svg");
+                    yield return FileUtils.CombineRelativePath(current.FullName, "listenarr.api", "wwwroot", "placeholder.svg");
 
                     current = current.Parent;
                 }

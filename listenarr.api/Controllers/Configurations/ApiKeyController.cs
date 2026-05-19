@@ -17,14 +17,32 @@
  */
 
 using Listenarr.Api.Attributes;
+using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Listenarr.Api.Controllers
+namespace Listenarr.Api.Controllers.Configurations
 {
-    public partial class ConfigurationController
+    [ApiController]
+    [Route("api/v{version:apiVersion}/configuration")]
+    [RequireAdminOrApiKey]
+    public class ApiKeyController : ControllerBase
     {
+        private readonly IConfigurationService _configurationService;
+        private readonly IUserService _userService;
+        private readonly ILogger<ApiKeyController> _logger;
+
+        public ApiKeyController(
+            IConfigurationService configurationService,
+            IUserService userService,
+            ILogger<ApiKeyController> logger)
+        {
+            _configurationService = configurationService;
+            _userService = userService;
+            _logger = logger;
+        }
+
         /// <summary>
         /// Get the current server API key.
         /// </summary>

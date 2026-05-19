@@ -16,14 +16,30 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Api.Attributes;
+using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models.Configurations;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Listenarr.Api.Controllers
+namespace Listenarr.Api.Controllers.Configurations
 {
-    public partial class ConfigurationController
+    [ApiController]
+    [Route("api/v{version:apiVersion}/configuration")]
+    [RequireAdminOrApiKey]
+    public class ApiSourcesController : ControllerBase
     {
+        private readonly IConfigurationService _configurationService;
+        private readonly ILogger<ApiSourcesController> _logger;
+
+        public ApiSourcesController(
+            IConfigurationService configurationService,
+            ILogger<ApiSourcesController> logger)
+        {
+            _configurationService = configurationService;
+            _logger = logger;
+        }
+
         /// <summary>
         /// Get all API configurations.
         /// </summary>

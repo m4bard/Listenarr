@@ -16,14 +16,33 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Api.Attributes;
+using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Listenarr.Api.Controllers
+namespace Listenarr.Api.Controllers.Configurations
 {
-    public partial class ConfigurationController
+    [ApiController]
+    [Route("api/v{version:apiVersion}/configuration")]
+    [RequireAdminOrApiKey]
+    public class DownloadClientsController : ControllerBase
     {
+        private readonly IConfigurationService _configurationService;
+        private readonly IDownloadClientGateway _downloadClientGateway;
+        private readonly ILogger<DownloadClientsController> _logger;
+
+        public DownloadClientsController(
+            IConfigurationService configurationService,
+            IDownloadClientGateway downloadClientGateway,
+            ILogger<DownloadClientsController> logger)
+        {
+            _configurationService = configurationService;
+            _downloadClientGateway = downloadClientGateway;
+            _logger = logger;
+        }
+
         /// <summary>
         /// Get all download client configurations.
         /// </summary>

@@ -19,10 +19,8 @@
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
-using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Infrastructure.Platform
@@ -32,7 +30,7 @@ namespace Listenarr.Infrastructure.Platform
         private readonly IConfigurationService _configurationService;
         private readonly ILogger<SystemService> _logger;
         private readonly IApplicationPathService _applicationPathService;
-        private readonly IHostEnvironment _hostEnvironment;
+        private readonly IApplicationVersionService _applicationVersionService;
         private readonly DateTime _startTime;
         private static readonly Process _currentProcess = Process.GetCurrentProcess();
 
@@ -40,12 +38,12 @@ namespace Listenarr.Infrastructure.Platform
             IConfigurationService configurationService,
             ILogger<SystemService> logger,
             IApplicationPathService applicationPathService,
-            IHostEnvironment hostEnvironment)
+            IApplicationVersionService applicationVersionService)
         {
             _configurationService = configurationService;
             _logger = logger;
             _applicationPathService = applicationPathService;
-            _hostEnvironment = hostEnvironment;
+            _applicationVersionService = applicationVersionService;
             _startTime = DateTime.UtcNow;
         }
 
@@ -66,7 +64,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var version = ApplicationVersionResolver.Resolve();
+                var version = _applicationVersionService.Resolve();
 
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
@@ -137,7 +135,7 @@ namespace Listenarr.Infrastructure.Platform
         {
             try
             {
-                var version = ApplicationVersionResolver.Resolve();
+                var version = _applicationVersionService.Resolve();
                 var uptime = DateTime.UtcNow - _startTime;
                 var uptimeFormatted = FormatUptime(uptime);
 

@@ -17,7 +17,6 @@
  */
 using System.Reflection;
 using Listenarr.Api.Controllers;
-using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Domain.Models;
@@ -73,7 +72,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 downloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
                 Mock.Of<IFileNamingService>(),
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                libraryListService: Mock.Of<ILibraryListService>());
 
             var method = typeof(LibraryController).GetMethod(
                 "IsQualityCutoffMetAsync",

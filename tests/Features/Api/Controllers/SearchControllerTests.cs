@@ -26,7 +26,6 @@ using Listenarr.Domain.Models.Configurations;
 using Listenarr.Application.Metadata;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Search;
-using Listenarr.Application.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {

@@ -30,7 +30,6 @@ using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Domain.Common;
-using Listenarr.Application.Common;
 using Listenarr.Infrastructure.Persistence.Repositories;
 
 namespace Listenarr.Tests.Features.Api.Controllers
@@ -141,7 +140,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                libraryListService: Mock.Of<ILibraryListService>());
 
             // Build request: update monitored + qualityProfileId + rootFolder (include a non-existent id)
             var request = new LibraryController.BulkUpdateRequest

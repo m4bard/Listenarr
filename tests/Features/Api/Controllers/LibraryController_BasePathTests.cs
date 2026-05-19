@@ -24,7 +24,6 @@ using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
-using Listenarr.Application.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -82,6 +81,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNamingService.Object,
                 applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                libraryListService: Mock.Of<ILibraryListService>(),
                 scanQueueService: mockScanQueue.Object);
 
             // Get the private method using reflection
@@ -148,6 +148,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNamingService.Object,
                 applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                libraryListService: Mock.Of<ILibraryListService>(),
                 scanQueueService: mockScanQueue.Object);
 
             // Get the private method using reflection

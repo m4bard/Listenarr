@@ -16,10 +16,9 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using System.Net;
-using Listenarr.Api.Controllers;
 using Listenarr.Api.Attributes;
+using Listenarr.Api.Controllers.Configurations;
 using Listenarr.Application.Interfaces;
-using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Listenarr.Tests.Mocks;
@@ -28,7 +27,6 @@ using Microsoft.AspNetCore.Mvc.Abstractions;
 using Microsoft.AspNetCore.Mvc.Filters;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
@@ -44,9 +42,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Arrange
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
-            var logger = NullLogger<ConfigurationController>.Instance;
-            var userService = Mock.Of<IUserService>();
-            var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
+            var logger = NullLogger<DownloadClientsController>.Instance;
 
             var testedClient = new DownloadClientConfiguration
             {
@@ -69,13 +65,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .Setup(x => x.TestConnectionAsync(It.IsAny<DownloadClientConfiguration>()))
                 .ReturnsAsync((true, "Connection successful"));
 
-            var controller = new ConfigurationController(
+            var controller = new DownloadClientsController(
                 configurationService.Object,
-                logger,
-                userService,
-                settingsHub,
                 downloadClientGateway.Object,
-                null!);
+                logger);
 
             var httpContext = new DefaultHttpContext();
             httpContext.Connection.RemoteIpAddress = IPAddress.Parse("8.8.8.8");
@@ -135,9 +128,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Arrange
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
-            var logger = NullLogger<ConfigurationController>.Instance;
-            var userService = Mock.Of<IUserService>();
-            var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
+            var logger = NullLogger<DownloadClientsController>.Instance;
 
             var testedClient = new DownloadClientConfiguration
             {
@@ -160,13 +151,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .Setup(x => x.TestConnectionAsync(It.IsAny<DownloadClientConfiguration>()))
                 .ReturnsAsync((true, "Connection successful"));
 
-            var controller = new ConfigurationController(
+            var controller = new DownloadClientsController(
                 configurationService.Object,
-                logger,
-                userService,
-                settingsHub,
                 downloadClientGateway.Object,
-                null!);
+                logger);
 
             var httpContext = new DefaultHttpContext();
             // Simulate a trusted LAN/Synology-Docker caller.
@@ -251,21 +239,17 @@ namespace Listenarr.Tests.Features.Api.Controllers
         {
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
             var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
-            var logger = NullLogger<ConfigurationController>.Instance;
+            var logger = NullLogger<ApiKeyController>.Instance;
             var userService = Mock.Of<IUserService>();
-            var settingsHub = Mock.Of<IHubContext<SettingsHub>>();
 
             configurationService
                 .Setup(x => x.GetStartupConfigAsync())
                 .ReturnsAsync(new StartupConfig { ApiKey = "server-api-key" });
 
-            var controller = new ConfigurationController(
+            var controller = new ApiKeyController(
                 configurationService.Object,
-                logger,
                 userService,
-                settingsHub,
-                downloadClientGateway.Object,
-                null!);
+                logger);
 
             var httpContext = new DefaultHttpContext();
             httpContext.Connection.RemoteIpAddress = IPAddress.Parse("192.168.1.23");
@@ -283,7 +267,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
             Assert.Equal("server-api-key", apiKeyProp!.GetValue(ok.Value)?.ToString());
             configurationService.Verify(x => x.GetStartupConfigAsync(), Times.Once);
             configurationService.VerifyNoOtherCalls();
-            downloadClientGateway.VerifyNoOtherCalls();
         }
     }
 }

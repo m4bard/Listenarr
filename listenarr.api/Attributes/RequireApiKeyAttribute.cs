@@ -24,27 +24,26 @@ using Microsoft.AspNetCore.Mvc.Filters;
 namespace Listenarr.Api.Attributes
 {
     /// <summary>
-    /// Requires the caller to hold an active administrator session (not an API key) when
-    /// authentication is enabled. Used to protect endpoints that must only be accessible
-    /// via interactive login — for example, account management and API key CRUD operations.
-    /// When authentication is disabled, all requests are allowed.
+    /// Requires the caller to present a valid API key when authentication is enabled.
+    /// When authentication is disabled, all requests are allowed through.
+    /// Use this attribute on machine-to-machine endpoints that do not require an interactive session.
     /// </summary>
     [AttributeUsage(AttributeTargets.Class | AttributeTargets.Method)]
-    public sealed class RequireAdministratorSessionWhenAuthenticationEnabledAttribute : TypeFilterAttribute
+    public sealed class RequireApiKeyAttribute : TypeFilterAttribute
     {
-        /// <summary>Initialises a new instance of <see cref="RequireAdministratorSessionWhenAuthenticationEnabledAttribute"/>.</summary>
-        public RequireAdministratorSessionWhenAuthenticationEnabledAttribute()
-            : base(typeof(RequireAdministratorSessionWhenAuthenticationEnabledFilter))
+        /// <summary>Initialises a new instance of <see cref="RequireApiKeyAttribute"/>.</summary>
+        public RequireApiKeyAttribute()
+            : base(typeof(RequireApiKeyFilter))
         {
         }
     }
 
-    /// <summary>Action filter that backs <see cref="RequireAdministratorSessionWhenAuthenticationEnabledAttribute"/>.</summary>
-    public sealed class RequireAdministratorSessionWhenAuthenticationEnabledFilter : IAsyncActionFilter
+    /// <summary>Action filter that backs <see cref="RequireApiKeyAttribute"/>.</summary>
+    public sealed class RequireApiKeyFilter : IAsyncActionFilter
     {
         private readonly IAuthenticationRequirementService _authenticationRequirementService;
 
-        public RequireAdministratorSessionWhenAuthenticationEnabledFilter(IAuthenticationRequirementService authenticationRequirementService)
+        public RequireApiKeyFilter(IAuthenticationRequirementService authenticationRequirementService)
         {
             _authenticationRequirementService = authenticationRequirementService;
         }
@@ -57,16 +56,13 @@ namespace Listenarr.Api.Attributes
                 return;
             }
 
-            var user = context.HttpContext.User;
-            if (user?.Identity?.IsAuthenticated == true &&
-                user.IsInRole("Administrator") &&
-                !SecurityRequestUtils.IsApiKeyAuthenticated(context.HttpContext))
+            if (SecurityRequestUtils.IsApiKeyAuthenticated(context.HttpContext))
             {
                 await next();
                 return;
             }
 
-            context.Result = user?.Identity?.IsAuthenticated == true
+            context.Result = context.HttpContext.User?.Identity?.IsAuthenticated == true
                 ? new StatusCodeResult(StatusCodes.Status403Forbidden)
                 : new UnauthorizedResult();
         }

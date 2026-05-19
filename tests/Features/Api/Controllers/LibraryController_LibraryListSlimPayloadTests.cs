@@ -17,6 +17,7 @@
  */
 using System.Text.Json;
 using Listenarr.Api.Controllers;
+using Listenarr.Application.Audiobooks;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Metadata;
 using Listenarr.Domain.Models;
@@ -29,7 +30,6 @@ using Moq;
 using Xunit;
 using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Persistence;
-using Listenarr.Application.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -122,6 +122,9 @@ namespace Listenarr.Tests.Features.Api.Controllers
                         .ToList());
                 });
 
+            var mockQualityProfileRepo = new Mock<IQualityProfileRepository>();
+            mockQualityProfileRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<QualityProfile>());
+
             using var provider = new ServiceCollection().BuildServiceProvider();
             var controller = new LibraryController(
                 mockRepo.Object,
@@ -130,11 +133,12 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 provider.GetRequiredService<IServiceScopeFactory>(),
                 Mock.Of<IHistoryRepository>(),
                 mockAudioFileRepo.Object,
-                Mock.Of<IQualityProfileRepository>(),
+                mockQualityProfileRepo.Object,
                 mockDownloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
                 Mock.Of<IFileNamingService>(),
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()));
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                libraryListService: new LibraryListService(mockRepo.Object, mockAudioFileRepo.Object, mockQualityProfileRepo.Object, mockDownloadRepo.Object));
 
             var actionResult = await controller.GetAll();
             var ok = Assert.IsType<OkObjectResult>(actionResult);

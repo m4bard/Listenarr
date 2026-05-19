@@ -21,7 +21,6 @@ using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Infrastructure.Platform;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -64,16 +63,16 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
 
             var applicationPathService = new Mock<IApplicationPathService>();
 
-            var hostEnvironment = new Mock<IHostEnvironment>();
-            hostEnvironment
-                .SetupGet(environment => environment.ApplicationName)
-                .Returns(typeof(global::Program).Assembly.GetName().Name!);
+            var applicationVersionService = new Mock<IApplicationVersionService>();
+            applicationVersionService
+                .Setup(service => service.Resolve())
+                .Returns(GetExpectedApiVersion());
 
             return new SystemService(
                 configurationService.Object,
                 NullLogger<SystemService>.Instance,
                 applicationPathService.Object,
-                hostEnvironment.Object);
+                applicationVersionService.Object);
         }
 
         private static string GetExpectedApiVersion()

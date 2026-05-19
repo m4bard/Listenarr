@@ -211,7 +211,7 @@ namespace Listenarr.Api.Controllers
         /// </summary>
         /// <returns>A collection of admin user summaries (id, username, email, creation date).</returns>
         [HttpGet("admins")]
-        [RequireAdminOrApiKeyWhenAuthenticationEnabled]
+        [RequireAdminOrApiKey]
         public async Task<IActionResult> GetAdminUsers()
         {
             var admins = await _userService.GetAdminUsersAsync();

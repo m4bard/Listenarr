@@ -16,12 +16,32 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Api.Attributes;
+using Listenarr.Application.Interfaces;
+using Listenarr.Application.Notification;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Listenarr.Api.Controllers
+namespace Listenarr.Api.Controllers.Configurations
 {
-    public partial class ConfigurationController
+    [ApiController]
+    [Route("api/v{version:apiVersion}/configuration")]
+    [RequireAdminOrApiKey]
+    public class NotificationsController : ControllerBase
     {
+        private readonly IConfigurationService _configurationService;
+        private readonly ILogger<NotificationsController> _logger;
+        private readonly NotificationService _notificationService;
+
+        public NotificationsController(
+            IConfigurationService configurationService,
+            ILogger<NotificationsController> logger,
+            NotificationService notificationService)
+        {
+            _configurationService = configurationService;
+            _logger = logger;
+            _notificationService = notificationService;
+        }
+
         /// <summary>
         /// Send a test notification to the configured webhook URL.
         /// </summary>

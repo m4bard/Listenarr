@@ -21,6 +21,7 @@ using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Infrastructure.Platform;
 using Listenarr.Infrastructure.Services;
 
 namespace Listenarr.Infrastructure.Extensions
@@ -72,6 +73,13 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();
             services.AddScoped<IDownloadHistoryRepository, DownloadHistoryRepository>();
             services.AddSingleton<IApplicationPathService>(_ => new ApplicationPathService(contentRootPath));
+            services.AddHttpClient<ImageCacheNoRedirectHttpClient>()
+                .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+                {
+                    AllowAutoRedirect = false
+                });
+            services.AddSingleton<IImageCacheService, ImageCacheService>();
+            services.AddScoped<IApplicationVersionService, ApplicationVersionService>();
 
             return services;
         }

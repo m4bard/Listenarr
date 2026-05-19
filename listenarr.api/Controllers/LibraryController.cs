@@ -26,13 +26,11 @@ using System.Security.Cryptography;
 using System.Text;
 using Listenarr.Domain.Common;
 using Listenarr.Application.Interfaces;
-using Listenarr.Application.Common;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Notification;
 using Listenarr.Application.Security;
 using Listenarr.Application.Metadata;
-using Listenarr.Api.Dtos;
 using Listenarr.Application.Search;
 using Microsoft.AspNetCore.SignalR;
 using Listenarr.Application.Audiobooks;
@@ -50,14 +48,6 @@ namespace Listenarr.Api.Controllers
         private const int MetadataRescanMaxRequestsPerWindow = 5;
         private const int MetadataRescanMaxAsinLookupAttempts = 8;
         private const int MetadataRescanMaxIsbnConversionAttempts = 5;
-        private static readonly DownloadStatus[] ActiveLibraryDownloadStatuses =
-        {
-            DownloadStatus.Queued,
-            DownloadStatus.Downloading,
-            DownloadStatus.Paused,
-            DownloadStatus.Processing,
-            DownloadStatus.ImportPending
-        };
         private readonly IAudiobookRepository _repo;
         private readonly IImageCacheService _imageCacheService;
         private readonly ILogger<LibraryController> _logger;
@@ -74,6 +64,7 @@ namespace Listenarr.Api.Controllers
         private readonly IRootFolderService? _rootFolderService;
         private readonly ILibraryAddService? _libraryAddService;
         private readonly IRenameService? _renameService;
+        private readonly ILibraryListService _libraryListService;
         private readonly string _contentRootPath;
         /// <summary>Initializes a new instance of <see cref="LibraryController"/>.</summary>
         /// <param name="repo">Repository for audiobook persistence and queries.</param>
@@ -93,6 +84,7 @@ namespace Listenarr.Api.Controllers
         /// <param name="libraryAddService">Optional shared add-to-library service used by runtime requests and background syncs.</param>
         /// <param name="renameService">Optional organize/rename service used for previewing and executing library file organization.</param>
         /// <param name="applicationPathService">Application path service used to resolve content-root-relative cache files.</param>
+        /// <param name="libraryListService">Application service that builds the slim library list payload.</param>
         public LibraryController(
             IAudiobookRepository repo,
             IImageCacheService imageCacheService,
@@ -105,6 +97,7 @@ namespace Listenarr.Api.Controllers
             IRootFolderRepository rootFolderRepository,
             IFileNamingService fileNamingService,
             IApplicationPathService applicationPathService,
+            ILibraryListService libraryListService,
             IScanQueueService? scanQueueService = null,
             IMoveQueueService? moveQueueService = null,
             NotificationService? notificationService = null,
@@ -128,28 +121,8 @@ namespace Listenarr.Api.Controllers
             _rootFolderService = rootFolderService;
             _libraryAddService = libraryAddService;
             _renameService = renameService;
+            _libraryListService = libraryListService ?? throw new ArgumentNullException(nameof(libraryListService));
             _contentRootPath = (applicationPathService ?? throw new ArgumentNullException(nameof(applicationPathService))).ContentRootPath;
-        }
-
-        private static bool ComputeWantedFlag(Audiobook audiobook)
-        {
-            var files = audiobook.Files;
-            var hasTrackedFiles = files != null && files.Count > 0;
-            return ComputeWantedFlag(audiobook.Monitored, hasTrackedFiles, audiobook.FilePath);
-        }
-
-        private static bool ComputeWantedFlag(bool monitored, bool hasTrackedFiles, string? legacyFilePath)
-        {
-            if (!monitored)
-            {
-                return false;
-            }
-
-            // The library list endpoint should not hit the filesystem for every book.
-            // Use AudiobookFiles as the primary source of truth, but honor the legacy
-            // primary FilePath during the upgrade window so existing installs do not
-            // suddenly flip back to Wanted before file rows are backfilled.
-            return !hasTrackedFiles && string.IsNullOrWhiteSpace(legacyFilePath);
         }
 
         private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)
@@ -622,92 +595,7 @@ namespace Listenarr.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll()
         {
-            var allAudiobooks = await _repo.GetAllNoFilesAsync();
-            var audiobooks = allAudiobooks
-                .OrderBy(a => a.Title)
-                .ToList();
-
-            if (audiobooks.Count == 0)
-            {
-                return Ok(Array.Empty<LibraryAudiobookListItemDto>());
-            }
-
-            var fileSummaryTask = _audioFileRepository.GetFormatSummariesAsync();
-            var fileCountTask = _audioFileRepository.GetCountsByAudiobookIdAsync();
-            var activeDownloadTask = _downloadRepository.GetActiveAudiobookIdsAsync(ActiveLibraryDownloadStatuses);
-
-            var fileSummaryRows = await fileSummaryTask;
-            var fileCountById = await fileCountTask;
-            var filesByAudiobookId = fileSummaryRows
-                .GroupBy(f => f.AudiobookId)
-                .ToDictionary(g => g.Key, g => (IReadOnlyList<AudiobookFileStatusInfo>)g.ToList());
-
-            var qualityProfileIds = audiobooks
-                .Where(a => a.QualityProfileId.HasValue)
-                .Select(a => a.QualityProfileId!.Value)
-                .Distinct()
-                .ToArray();
-
-            var allQualityProfiles = await _qualityProfileRepository.GetAllAsync();
-            var qualityProfiles = qualityProfileIds.Length == 0
-                ? new List<QualityProfile>()
-                : allQualityProfiles.Where(q => qualityProfileIds.Contains(q.Id)).ToList();
-
-            var qualityProfilesById = qualityProfiles.ToDictionary(q => q.Id);
-
-            var activeDownloadAudiobookIds = await activeDownloadTask;
-            var activeDownloadAudiobookIdSet = activeDownloadAudiobookIds.ToHashSet();
-
-            var dto = audiobooks.Select(a =>
-            {
-                filesByAudiobookId.TryGetValue(a.Id, out var files);
-                var hasTrackedFiles = files != null && files.Count > 0;
-                var hasLegacyFileSummary = !string.IsNullOrWhiteSpace(a.FilePath);
-                var hasAnyFile = hasTrackedFiles || hasLegacyFileSummary;
-                var wanted = ComputeWantedFlag(a.Monitored, hasTrackedFiles, a.FilePath);
-                QualityProfile? qualityProfile = null;
-                if (a.QualityProfileId.HasValue)
-                {
-                    qualityProfilesById.TryGetValue(a.QualityProfileId.Value, out qualityProfile);
-                }
-
-                return new LibraryAudiobookListItemDto
-                {
-                    Id = a.Id,
-                    Title = a.Title,
-                    Authors = a.Authors?.ToArray(),
-                    Narrators = a.Narrators?.ToArray(),
-                    PublishYear = a.PublishYear,
-                    PublishedDate = a.PublishedDate,
-                    Series = a.Series,
-                    SeriesNumber = a.SeriesNumber,
-                    Genres = a.Genres?.ToArray(),
-                    Asin = a.Asin,
-                    OpenLibraryId = a.OpenLibraryId,
-                    Publisher = a.Publisher,
-                    Language = a.Language,
-                    Runtime = a.Runtime,
-                    Edition = a.Edition,
-                    ImageUrl = a.ImageUrl,
-                    Monitored = a.Monitored,
-                    BasePath = a.BasePath,
-                    FilePath = a.FilePath,
-                    FileSize = a.FileSize,
-                    FileCount = fileCountById.TryGetValue(a.Id, out var trueCount) ? trueCount : 0,
-                    Quality = a.Quality,
-                    QualityProfileId = a.QualityProfileId,
-                    AuthorAsins = a.AuthorAsins?.ToArray(),
-                    Wanted = wanted,
-                    Status = AudiobookStatusEvaluator.ComputeStatus(
-                         activeDownloadAudiobookIdSet.Contains(a.Id),
-                         hasAnyFile,
-                         a.Quality,
-                         qualityProfile,
-                         files)
-                };
-            }).ToList();
-
-            return Ok(dto);
+            return Ok(await _libraryListService.GetAllAsync());
         }
 
         /// <summary>
@@ -808,7 +696,7 @@ namespace Listenarr.Api.Controllers
                     source = f.Source,
                     createdAt = f.CreatedAt
                 }).ToList(),
-                wanted = ComputeWantedFlag(updated)
+                wanted = AudiobookWantedEvaluator.Compute(updated)
             };
 
             return Ok(audiobookDto);

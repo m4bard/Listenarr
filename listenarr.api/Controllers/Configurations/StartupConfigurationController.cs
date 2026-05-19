@@ -16,16 +16,32 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
+using Listenarr.Api.Attributes;
 using Listenarr.Api.Dtos;
+using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Listenarr.Domain.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
-namespace Listenarr.Api.Controllers
+namespace Listenarr.Api.Controllers.Configurations
 {
-    public partial class ConfigurationController
+    [ApiController]
+    [Route("api/v{version:apiVersion}/configuration")]
+    [RequireAdminOrApiKey]
+    public class StartupConfigurationController : ControllerBase
     {
+        private readonly IConfigurationService _configurationService;
+        private readonly ILogger<StartupConfigurationController> _logger;
+
+        public StartupConfigurationController(
+            IConfigurationService configurationService,
+            ILogger<StartupConfigurationController> logger)
+        {
+            _configurationService = configurationService;
+            _logger = logger;
+        }
+
         /// <summary>
         /// Get the public bootstrap configuration used by the SPA.
         /// </summary>

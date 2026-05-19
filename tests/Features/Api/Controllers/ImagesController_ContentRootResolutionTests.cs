@@ -23,7 +23,6 @@ using Moq;
 using Xunit;
 using System.Reflection;
 using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Application.Common;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Metadata;
 

@@ -17,18 +17,25 @@
  */
 
 using System.Reflection;
-using Listenarr.Application.Common;
+using Listenarr.Infrastructure.Platform;
+using Microsoft.Extensions.Hosting;
+using Moq;
 using Xunit;
 
-namespace Listenarr.Tests.Features.Application.Common
+namespace Listenarr.Tests.Features.Infrastructure.Platform
 {
-    public class ApplicationVersionResolverTests
+    public class ApplicationVersionServiceTests
     {
         [Fact]
-        public void Resolve_UsesApplicationAssemblyInformationalVersion()
+        public void Resolve_UsesHostApplicationAssemblyInformationalVersion()
         {
             var expectedVersion = GetExpectedApiVersion();
-            var version = ApplicationVersionResolver.Resolve();
+            var hostEnvironment = new Mock<IHostEnvironment>();
+            hostEnvironment
+                .SetupGet(environment => environment.ApplicationName)
+                .Returns(typeof(global::Program).Assembly.GetName().Name!);
+
+            var version = new ApplicationVersionService(hostEnvironment.Object).Resolve();
 
             Assert.Equal(expectedVersion, version);
             Assert.NotEqual("1.0.0.0", version);
