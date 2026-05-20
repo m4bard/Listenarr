@@ -674,7 +674,7 @@ namespace Listenarr.Domain.Common
                 throw new ArgumentException("Base path is required.", nameof(basePath));
             }
 
-            var combined = basePath.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var combined = TrimTrailingPathSeparators(basePath);
             foreach (var segment in segments)
             {
                 if (string.IsNullOrWhiteSpace(segment))
@@ -682,8 +682,8 @@ namespace Listenarr.Domain.Common
                     continue;
                 }
 
-                var relativeSegment = segment.TrimStart(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-                if (Path.IsPathRooted(relativeSegment))
+                var relativeSegment = NormalizePathSegmentForCombine(segment);
+                if (Path.IsPathRooted(relativeSegment) || IsWindowsDriveRootedPath(relativeSegment))
                 {
                     throw new ArgumentException("Path segments must be relative.", nameof(segments));
                 }
@@ -695,6 +695,26 @@ namespace Listenarr.Domain.Common
 
             return combined;
         }
+
+        private static string NormalizePathSegmentForCombine(string segment)
+        {
+            var normalized = TrimLeadingPathSeparators(segment);
+            return normalized
+                .Replace('/', Path.DirectorySeparatorChar)
+                .Replace('\\', Path.DirectorySeparatorChar);
+        }
+
+        private static string TrimLeadingPathSeparators(string path)
+            => path.TrimStart('/', '\\');
+
+        private static string TrimTrailingPathSeparators(string path)
+            => path.TrimEnd('/', '\\');
+
+        private static bool IsWindowsDriveRootedPath(string path)
+            => path.Length >= 3
+               && char.IsLetter(path[0])
+               && path[1] == ':'
+               && (path[2] == '/' || path[2] == '\\' || path[2] == Path.DirectorySeparatorChar);
 
         /// <summary>
         /// Create a filesystem-safe name from arbitrary text by removing invalid path characters
