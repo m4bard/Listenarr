@@ -42,16 +42,16 @@ namespace Listenarr.Api.Attributes
     /// <summary>Action filter that backs <see cref="RequireAdministratorSessionAttribute"/>.</summary>
     public sealed class RequireAdministratorSessionFilter : IAsyncActionFilter
     {
-        private readonly IAuthenticationRequirementService _authenticationRequirementService;
+        private readonly IStartupConfigService _startupConfigService;
 
-        public RequireAdministratorSessionFilter(IAuthenticationRequirementService authenticationRequirementService)
+        public RequireAdministratorSessionFilter(IStartupConfigService startupConfigService)
         {
-            _authenticationRequirementService = authenticationRequirementService;
+            _startupConfigService = startupConfigService;
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 await next();
                 return;

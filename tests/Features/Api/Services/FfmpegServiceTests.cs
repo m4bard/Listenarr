@@ -18,7 +18,7 @@ namespace Listenarr.Tests.Features.Api.Services
         [Trait("Category", "Release")]
         public async Task EnsureFfprobeInstalledAsync()
         {
-            var ffmpegDirectory = Path.Join(AppContext.BaseDirectory, "config", "ffmpeg");
+            var ffmpegDirectory = FileService.GetTempDirectory("ffmpeg");
 
             try
             {

@@ -260,14 +260,14 @@ public class MetadataConverters
                 var cachedPath = await _imageCacheService.GetCachedImagePathAsync(asin);
                 if (!string.IsNullOrWhiteSpace(cachedPath))
                 {
-                    imageUrl = ApiVersionPathBuilder.BuildImagePath(asin, _httpContextAccessor?.HttpContext);
+                    imageUrl = ApiVersionUtils.BuildImagePath(asin, _httpContextAccessor?.HttpContext);
                     _logger.LogInformation("Using cached image for ASIN {Asin}: {ImageUrl}", asin, imageUrl);
                 }
                 else
                 {
                     // Even if not cached, map to API endpoint to ensure consistent serving
                     // and avoid external URL failures. Background download will populate cache.
-                    imageUrl = ApiVersionPathBuilder.BuildImagePath(asin, _httpContextAccessor?.HttpContext);
+                    imageUrl = ApiVersionUtils.BuildImagePath(asin, _httpContextAccessor?.HttpContext);
                     _logger.LogDebug("Mapping to API endpoint for ASIN {Asin} (not yet cached): {ImageUrl}", asin, imageUrl);
                     _logger.LogDebug("Initiating background image cache for ASIN {Asin} with URL: {OriginalUrl}", asin, metadata.ImageUrl ?? imageUrl);
                     _ = _imageCacheService.DownloadAndCacheImageAsync(metadata.ImageUrl ?? imageUrl, asin);
@@ -407,14 +407,14 @@ public class MetadataConverters
                 var cachedPath = await _imageCacheService.GetCachedImagePathAsync(asin);
                 if (!string.IsNullOrWhiteSpace(cachedPath))
                 {
-                    imageUrl = ApiVersionPathBuilder.BuildImagePath(asin, _httpContextAccessor?.HttpContext);
+                    imageUrl = ApiVersionUtils.BuildImagePath(asin, _httpContextAccessor?.HttpContext);
                     _logger.LogInformation("Using cached image for ASIN {Asin}: {ImageUrl}", asin, imageUrl);
                 }
                 else
                 {
                     // Even if not cached, map to API endpoint to ensure consistent serving
                     // and avoid external URL failures. Background download will populate cache.
-                    imageUrl = ApiVersionPathBuilder.BuildImagePath(asin, _httpContextAccessor?.HttpContext);
+                    imageUrl = ApiVersionUtils.BuildImagePath(asin, _httpContextAccessor?.HttpContext);
                     _logger.LogDebug("Mapping to API endpoint for ASIN {Asin} (not yet cached): {ImageUrl}", asin, imageUrl);
                     _logger.LogDebug("Initiating background image cache for ASIN {Asin} with URL: {OriginalUrl}", asin, metadata.ImageUrl ?? imageUrl);
                     _ = _imageCacheService.DownloadAndCacheImageAsync(metadata.ImageUrl ?? imageUrl, asin);
@@ -488,4 +488,3 @@ public class MetadataConverters
         return result;
     }
 }
-

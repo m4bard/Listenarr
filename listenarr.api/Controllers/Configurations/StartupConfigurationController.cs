@@ -32,13 +32,16 @@ namespace Listenarr.Api.Controllers.Configurations
     public class StartupConfigurationController : ControllerBase
     {
         private readonly IConfigurationService _configurationService;
+        private readonly IStartupConfigService _startupConfigService;
         private readonly ILogger<StartupConfigurationController> _logger;
 
         public StartupConfigurationController(
             IConfigurationService configurationService,
+            IStartupConfigService startupConfigService,
             ILogger<StartupConfigurationController> logger)
         {
             _configurationService = configurationService;
+            _startupConfigService = startupConfigService;
             _logger = logger;
         }
 
@@ -110,9 +113,7 @@ namespace Listenarr.Api.Controllers.Configurations
         }
 
         private string NormalizeStartupApiVersion(string? configuredApiVersion)
-            => StartupConfig.NormalizeApiVersionString(configuredApiVersion)
-               ?? StartupConfig.NormalizeApiVersionString(GetRequestedApiVersion())
-               ?? StartupConfig.DefaultApiVersion;
+            => _startupConfigService.NormalizeApiVersion(configuredApiVersion, GetRequestedApiVersion());
 
         private string? GetRequestedApiVersion()
         {

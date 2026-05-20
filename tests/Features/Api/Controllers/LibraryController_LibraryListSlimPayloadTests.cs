@@ -89,12 +89,12 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var allDownloads = db.Downloads.ToList();
 
             var mockRepo = new Mock<IAudiobookRepository>();
-            mockRepo.Setup(r => r.GetAllNoFilesAsync()).ReturnsAsync(allBooks);
+            mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allBooks);
 
             var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
             mockAudioFileRepo
                 .Setup(r => r.GetFormatSummariesAsync(default))
-                .ReturnsAsync(allFiles.Select(f => new AudiobookFileStatusInfo
+                .ReturnsAsync(allFiles.Select(f => new AudiobookStatusInfo
                 {
                     AudiobookId = f.AudiobookId,
                     Path = f.Path,

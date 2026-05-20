@@ -42,11 +42,11 @@ namespace Listenarr.Api.Attributes
     /// <summary>Action filter that backs <see cref="RequireAdminOrApiKeyAttribute"/>.</summary>
     public sealed class RequireAdminOrApiKeyFilter : IAsyncActionFilter
     {
-        private readonly IAuthenticationRequirementService _authenticationRequirementService;
+        private readonly IStartupConfigService _startupConfigService;
 
-        public RequireAdminOrApiKeyFilter(IAuthenticationRequirementService authenticationRequirementService)
+        public RequireAdminOrApiKeyFilter(IStartupConfigService startupConfigService)
         {
-            _authenticationRequirementService = authenticationRequirementService;
+            _startupConfigService = startupConfigService;
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
@@ -58,7 +58,7 @@ namespace Listenarr.Api.Attributes
                 return;
             }
 
-            if (!_authenticationRequirementService.IsAuthenticationRequired() ||
+            if (!_startupConfigService.IsAuthenticationRequired() ||
                 SecurityRequestUtils.IsAuthenticatedAdminOrApiKey(context.HttpContext))
             {
                 await next();

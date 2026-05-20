@@ -29,6 +29,7 @@ using Listenarr.Domain.Models.Configurations;
 using Listenarr.Domain.Common;
 using Listenarr.Infrastructure.Persistence;
 using Listenarr.Application.Notification;
+using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
@@ -102,8 +103,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
-                libraryListService: Mock.Of<ILibraryListService>(),
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
+                libraryListService: LibraryControllerMockFactory.CreateLibraryListService(),
                 moveQueueService: mockMoveQueue.Object);
 
             var request = new LibraryController.MoveRequest { DestinationPath = Path.Join(Path.GetTempPath(), "target") };
@@ -173,8 +174,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
-                libraryListService: Mock.Of<ILibraryListService>(),
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
+                libraryListService: LibraryControllerMockFactory.CreateLibraryListService(),
                 moveQueueService: mockMoveQueue.Object);
 
             var target = Path.Join(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));
@@ -242,8 +243,8 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
-                libraryListService: Mock.Of<ILibraryListService>(),
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
+                libraryListService: LibraryControllerMockFactory.CreateLibraryListService(),
                 moveQueueService: mockMoveQueue.Object);
 
             var target = Path.Join(Path.GetTempPath(), "listenarr-move-dst-" + Guid.NewGuid().ToString("N"));

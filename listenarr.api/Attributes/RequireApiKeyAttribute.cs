@@ -41,16 +41,16 @@ namespace Listenarr.Api.Attributes
     /// <summary>Action filter that backs <see cref="RequireApiKeyAttribute"/>.</summary>
     public sealed class RequireApiKeyFilter : IAsyncActionFilter
     {
-        private readonly IAuthenticationRequirementService _authenticationRequirementService;
+        private readonly IStartupConfigService _startupConfigService;
 
-        public RequireApiKeyFilter(IAuthenticationRequirementService authenticationRequirementService)
+        public RequireApiKeyFilter(IStartupConfigService startupConfigService)
         {
-            _authenticationRequirementService = authenticationRequirementService;
+            _startupConfigService = startupConfigService;
         }
 
         public async Task OnActionExecutionAsync(ActionExecutingContext context, ActionExecutionDelegate next)
         {
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 await next();
                 return;

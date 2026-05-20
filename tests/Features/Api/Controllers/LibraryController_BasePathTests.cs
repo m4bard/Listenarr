@@ -24,10 +24,11 @@ using Listenarr.Api.Controllers;
 using Listenarr.Domain.Models;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_BasePathTests
+    public class LibraryController_BasePathTests : BaseTests
     {
         [Fact]
         public void ComputeAudiobookBaseDirectoryFromPattern_NonSeriesBook_ReturnsCorrectPath()
@@ -80,7 +81,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNamingService.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == FileService.GetTempPath()),
                 libraryListService: Mock.Of<ILibraryListService>(),
                 scanQueueService: mockScanQueue.Object);
 
@@ -147,7 +148,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNamingService.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == FileService.GetTempPath()),
                 libraryListService: Mock.Of<ILibraryListService>(),
                 scanQueueService: mockScanQueue.Object);
 

@@ -17,6 +17,7 @@
  */
 using System.Text.Json;
 using Listenarr.Application.Interfaces;
+using Listenarr.Domain.Common;
 using Listenarr.Domain.Models;
 using Microsoft.Extensions.Logging;
 
@@ -201,6 +202,17 @@ namespace Listenarr.Application.Common
 
         public StartupConfig? GetConfig() => _config;
 
+        public bool IsAuthenticationRequired()
+            => (_config ?? new StartupConfig()).IsAuthenticationEnabled();
+
+        public string GetEffectiveApiVersion(string? requestedApiVersion = null)
+            => (_config ?? new StartupConfig()).GetEffectiveApiVersion(requestedApiVersion);
+
+        public string NormalizeApiVersion(string? configuredApiVersion, string? requestedApiVersion = null)
+            => ApiVersionNormalizer.NormalizeApiVersionString(configuredApiVersion)
+               ?? ApiVersionNormalizer.NormalizeApiVersionString(requestedApiVersion)
+               ?? ApiVersionNormalizer.DefaultApiVersion;
+
         public Task ReloadAsync()
         {
             Load();
@@ -337,6 +349,4 @@ namespace Listenarr.Application.Common
         }
     }
 }
-
-
 

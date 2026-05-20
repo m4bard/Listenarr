@@ -218,10 +218,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 controller: null);
 
             var nextWasCalled = false;
-            var authenticationRequirementService = Mock.Of<IAuthenticationRequirementService>(service =>
+            var startupConfigService = Mock.Of<IStartupConfigService>(service =>
                 !service.IsAuthenticationRequired());
 
-            await new RequireApiKeyManagementAccessFilter(authenticationRequirementService).OnActionExecutionAsync(
+            await new RequireApiKeyManagementAccessFilter(startupConfigService).OnActionExecutionAsync(
                 filterContext,
                 () =>
                 {
@@ -238,7 +238,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
         public async Task GetApiKey_PrivateNetworkCaller_WhenAuthenticationDisabled_ReturnsApiKey()
         {
             var configurationService = new Mock<IConfigurationService>(MockBehavior.Strict);
-            var downloadClientGateway = new Mock<IDownloadClientGateway>(MockBehavior.Strict);
             var logger = NullLogger<ApiKeyController>.Instance;
             var userService = Mock.Of<IUserService>();
 

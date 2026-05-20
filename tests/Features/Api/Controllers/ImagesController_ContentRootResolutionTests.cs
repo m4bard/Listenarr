@@ -25,64 +25,55 @@ using System.Reflection;
 using Listenarr.Application.Interfaces.Repositories;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Metadata;
+using Listenarr.Tests.Common;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class ImagesController_ContentRootResolutionTests
+    public class ImagesController_ContentRootResolutionTests : BaseTests
     {
         [Fact]
         public async Task GetImage_UsesApplicationPathServiceContentRoot()
         {
-            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-images-controller-tests", Guid.NewGuid().ToString("N"));
+            var tempRoot = FileService.GetTempDirectory("images-controller-content-root");
             const string identifier = "ZZTEST1234";
 
-            try
+            Directory.CreateDirectory(Path.Join(tempRoot, "config", "cache", "images", "authors"));
+
+            var relativePath = $"config/cache/images/authors/{identifier}.jpg";
+            var expectedPath = Path.Join(tempRoot, "config", "cache", "images", "authors", $"{identifier}.jpg");
+            await File.WriteAllBytesAsync(expectedPath, new byte[] { 1, 2, 3, 4 });
+
+            var imageCache = new Mock<IImageCacheService>();
+            imageCache
+                .Setup(service => service.GetCachedImagePathAsync(identifier))
+                .ReturnsAsync(relativePath);
+
+            var mockPathService = new Mock<IApplicationPathService>();
+            mockPathService.SetupGet(p => p.ContentRootPath).Returns(tempRoot);
+
+            using var httpClientForAudible = new System.Net.Http.HttpClient();
+            var controller = new ImagesController(
+                imageCache.Object,
+                Mock.Of<IAudiobookMetadataService>(),
+                new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>()) { CallBase = false }.Object,
+                Mock.Of<IAudnexusService>(),
+                Mock.Of<IAudiobookRepository>(),
+                Mock.Of<ILogger<ImagesController>>(),
+                mockPathService.Object);
+            controller.ControllerContext = new ControllerContext
             {
-                Directory.CreateDirectory(Path.Join(tempRoot, "config", "cache", "images", "authors"));
+                HttpContext = new DefaultHttpContext()
+            };
 
-                var relativePath = $"config/cache/images/authors/{identifier}.jpg";
-                var expectedPath = Path.Join(tempRoot, "config", "cache", "images", "authors", $"{identifier}.jpg");
-                await File.WriteAllBytesAsync(expectedPath, new byte[] { 1, 2, 3, 4 });
+            var effectiveRootField = typeof(ImagesController).GetField("_effectiveContentRootPath", BindingFlags.Instance | BindingFlags.NonPublic);
+            Assert.NotNull(effectiveRootField);
+            Assert.Equal(tempRoot, effectiveRootField!.GetValue(controller));
 
-                var imageCache = new Mock<IImageCacheService>();
-                imageCache
-                    .Setup(service => service.GetCachedImagePathAsync(identifier))
-                    .ReturnsAsync(relativePath);
+            var result = await controller.GetImage(identifier);
 
-                var mockPathService = new Mock<IApplicationPathService>();
-                mockPathService.SetupGet(p => p.ContentRootPath).Returns(tempRoot);
-
-                using var httpClientForAudible = new System.Net.Http.HttpClient();
-                var controller = new ImagesController(
-                    imageCache.Object,
-                    Mock.Of<IAudiobookMetadataService>(),
-                    new Mock<AudibleService>(httpClientForAudible, Mock.Of<ILogger<AudibleService>>()) { CallBase = false }.Object,
-                    Mock.Of<IAudnexusService>(),
-                    Mock.Of<IAudiobookRepository>(),
-                    Mock.Of<ILogger<ImagesController>>(),
-                    mockPathService.Object);
-                controller.ControllerContext = new ControllerContext
-                {
-                    HttpContext = new DefaultHttpContext()
-                };
-
-                var effectiveRootField = typeof(ImagesController).GetField("_effectiveContentRootPath", BindingFlags.Instance | BindingFlags.NonPublic);
-                Assert.NotNull(effectiveRootField);
-                Assert.Equal(tempRoot, effectiveRootField!.GetValue(controller));
-
-                var result = await controller.GetImage(identifier);
-
-                var fileResult = Assert.IsType<PhysicalFileResult>(result);
-                var normalizedActualPath = fileResult.FileName.Replace('/', Path.DirectorySeparatorChar);
-                Assert.Equal(expectedPath, normalizedActualPath);
-            }
-            finally
-            {
-                if (Directory.Exists(tempRoot))
-                {
-                    Directory.Delete(tempRoot, recursive: true);
-                }
-            }
+            var fileResult = Assert.IsType<PhysicalFileResult>(result);
+            var normalizedActualPath = fileResult.FileName.Replace('/', Path.DirectorySeparatorChar);
+            Assert.Equal(expectedPath, normalizedActualPath);
         }
     }
 }

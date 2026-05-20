@@ -1040,15 +1040,7 @@ namespace Listenarr.Api.Controllers
         private bool IsInsidePermittedImageRoot(string fullPath)
         {
             var candidateFull = Path.GetFullPath(fullPath);
-            foreach (var root in GetPermittedImageRoots())
-            {
-                if (IsSamePathOrInside(candidateFull, root))
-                {
-                    return true;
-                }
-            }
-
-            return false;
+            return GetPermittedImageRoots().Any(root => IsSamePathOrInside(candidateFull, root));
         }
 
         private IEnumerable<string> GetPermittedImageRoots()

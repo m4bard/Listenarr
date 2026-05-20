@@ -19,7 +19,7 @@ using Listenarr.Domain.Models;
 
 namespace Listenarr.Application.Metadata
 {
-    public sealed class AudiobookFileStatusInfo
+    public sealed class AudiobookStatusInfo
     {
         public int AudiobookId { get; set; }
         public string? Path { get; set; }
@@ -41,7 +41,7 @@ namespace Listenarr.Application.Metadata
             bool hasAnyFile,
             string? audiobookQuality,
             QualityProfile? qualityProfile,
-            IReadOnlyList<AudiobookFileStatusInfo>? files)
+            IReadOnlyList<AudiobookStatusInfo>? files)
         {
             if (isDownloading)
             {
@@ -63,7 +63,7 @@ namespace Listenarr.Application.Metadata
                 .Where(v => v.Length > 0)
                 .ToList();
 
-            var candidateFiles = (files ?? Array.Empty<AudiobookFileStatusInfo>())
+            var candidateFiles = (files ?? Array.Empty<AudiobookStatusInfo>())
                 .Where(f =>
                 {
                     var fileFormat = Normalize(f.Format);
@@ -135,7 +135,7 @@ namespace Listenarr.Application.Metadata
             return QualityMismatch;
         }
 
-        private static string DeriveQualityLabel(AudiobookFileStatusInfo? file, string? audiobookQuality)
+        private static string DeriveQualityLabel(AudiobookStatusInfo? file, string? audiobookQuality)
         {
             var normalizedAudiobookQuality = Normalize(audiobookQuality);
             if (normalizedAudiobookQuality.Length > 0)

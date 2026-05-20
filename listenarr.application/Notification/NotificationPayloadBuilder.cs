@@ -110,7 +110,7 @@ namespace Listenarr.Application.Notification
             string? thumbnailUrl = null;
             if (!string.IsNullOrWhiteSpace(asin) && !string.IsNullOrWhiteSpace(startupBaseUrl))
             {
-                thumbnailUrl = startupBaseUrl.TrimEnd('/') + ApiVersionPathBuilder.BuildImagePath(asin, fallbackVersion: apiVersion);
+                thumbnailUrl = startupBaseUrl.TrimEnd('/') + ApiVersionUtils.BuildImagePath(asin, fallbackVersion: apiVersion);
             }
 
             if (!string.IsNullOrWhiteSpace(imageUrl))
@@ -325,7 +325,7 @@ namespace Listenarr.Application.Notification
             string? thumbnailUrl = null;
             if (!string.IsNullOrWhiteSpace(asin) && !string.IsNullOrWhiteSpace(startupBaseUrl))
             {
-                thumbnailUrl = startupBaseUrl.TrimEnd('/') + ApiVersionPathBuilder.BuildImagePath(asin, fallbackVersion: apiVersion);
+                thumbnailUrl = startupBaseUrl.TrimEnd('/') + ApiVersionUtils.BuildImagePath(asin, fallbackVersion: apiVersion);
             }
 
             if (!string.IsNullOrWhiteSpace(imageUrl))
@@ -581,4 +581,3 @@ namespace Listenarr.Application.Notification
         }
     }
 }
-

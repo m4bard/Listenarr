@@ -31,10 +31,12 @@ using Listenarr.Infrastructure.Persistence;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Domain.Common;
 using Listenarr.Infrastructure.Persistence.Repositories;
+using Listenarr.Tests.Common;
+using Listenarr.Tests.Mocks.Api;
 
 namespace Listenarr.Tests.Features.Api.Controllers
 {
-    public class LibraryController_BulkUpdateTests : IDisposable
+    public class LibraryController_BulkUpdateTests : BaseTests, IDisposable
     {
         private readonly SqliteConnection _connection;
         private readonly ListenArrDbContext _dbContext;
@@ -116,8 +118,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 });
 
             // Configuration service providing a FileNamingPattern (not strictly used by our mock but kept consistent)
-            var tempRoot = Path.Join(Path.GetTempPath(), "listenarr-bulk-" + Guid.NewGuid().ToString("N"));
-            Directory.CreateDirectory(tempRoot);
+            var tempRoot = FileService.GetTempDirectory("bulk-update");
 
             var mockConfigService = new Mock<IConfigurationService>();
             mockConfigService.Setup(c => c.GetApplicationSettingsAsync())
@@ -140,7 +141,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 new Mock<IDownloadRepository>().Object,
                 new Mock<IRootFolderRepository>().Object,
                 mockFileNaming.Object,
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(FileService.GetTempPath()),
                 libraryListService: Mock.Of<ILibraryListService>());
 
             // Build request: update monitored + qualityProfileId + rootFolder (include a non-existent id)
@@ -193,9 +194,6 @@ namespace Listenarr.Tests.Features.Api.Controllers
             // Verify history entry exists for the change
             var histories = dbContext.History.Where(h => h.AudiobookId == a1.Id).ToList();
             Assert.True(histories.Count >= 1);
-
-            // Cleanup
-            try { Directory.Delete(tempRoot, true); } catch (IOException ex) { _ = ex; } catch (UnauthorizedAccessException ex) { _ = ex; }
         }
     }
 }

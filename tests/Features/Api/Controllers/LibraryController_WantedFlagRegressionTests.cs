@@ -20,9 +20,9 @@ using Listenarr.Api.Controllers;
 using Listenarr.Application.Audiobooks;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Application.Metadata;
 using Listenarr.Domain.Models;
 using Listenarr.Infrastructure.Persistence;
+using Listenarr.Tests.Mocks.Api;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -66,21 +66,9 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var allDownloads = new List<Download>();
 
             var mockRepo = new Mock<IAudiobookRepository>();
-            mockRepo.Setup(r => r.GetAllNoFilesAsync()).ReturnsAsync(allBooks);
+            mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allBooks);
 
-            var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
-            mockAudioFileRepo.Setup(r => r.GetFormatSummariesAsync(default)).ReturnsAsync(allFiles.Select(f => new AudiobookFileStatusInfo
-            {
-                AudiobookId = f.AudiobookId,
-                Path = f.Path,
-                Format = f.Format,
-                Container = f.Container,
-                Codec = f.Codec,
-                Bitrate = f.Bitrate,
-            }).ToList());
-            mockAudioFileRepo.Setup(r => r.GetCountsByAudiobookIdAsync(default)).ReturnsAsync(allFiles
-                .GroupBy(f => f.AudiobookId)
-                .ToDictionary(g => g.Key, g => g.Count()));
+            var mockAudioFileRepo = LibraryControllerMockFactory.CreateAudiobookFileRepository(allFiles);
 
             var mockDownloadRepo = new Mock<IDownloadRepository>();
             mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allDownloads);
@@ -102,7 +90,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 mockDownloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
                 Mock.Of<IFileNamingService>(),
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
                 libraryListService: new LibraryListService(mockRepo.Object, mockAudioFileRepo.Object, mockQualityProfileRepo.Object, mockDownloadRepo.Object));
 
             var actionResult = await controller.GetAll();
@@ -141,11 +129,9 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var allBooks = db.Audiobooks.ToList();
 
             var mockRepo = new Mock<IAudiobookRepository>();
-            mockRepo.Setup(r => r.GetAllNoFilesAsync()).ReturnsAsync(allBooks);
+            mockRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(allBooks);
 
-            var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
-            mockAudioFileRepo.Setup(r => r.GetFormatSummariesAsync(default)).ReturnsAsync(new List<AudiobookFileStatusInfo>());
-            mockAudioFileRepo.Setup(r => r.GetCountsByAudiobookIdAsync(default)).ReturnsAsync(new Dictionary<int, int>());
+            var mockAudioFileRepo = LibraryControllerMockFactory.CreateEmptyAudiobookFileRepository();
 
             var mockDownloadRepo = new Mock<IDownloadRepository>();
             mockDownloadRepo.Setup(r => r.GetAllAsync()).ReturnsAsync(new List<Download>());
@@ -167,7 +153,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 mockDownloadRepo.Object,
                 Mock.Of<IRootFolderRepository>(),
                 Mock.Of<IFileNamingService>(),
-                applicationPathService: Mock.Of<IApplicationPathService>(service => service.ContentRootPath == System.IO.Directory.GetCurrentDirectory()),
+                applicationPathService: LibraryControllerMockFactory.CreateApplicationPathService(Path.GetTempPath()),
                 libraryListService: new LibraryListService(mockRepo.Object, mockAudioFileRepo.Object, mockQualityProfileRepo.Object, mockDownloadRepo.Object));
 
             var actionResult = await controller.GetAll();

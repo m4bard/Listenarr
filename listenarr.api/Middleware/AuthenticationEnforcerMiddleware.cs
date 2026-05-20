@@ -22,16 +22,16 @@ namespace Listenarr.Api.Middleware
     public class AuthenticationEnforcerMiddleware
     {
         private readonly RequestDelegate _next;
-        private readonly IAuthenticationRequirementService _authenticationRequirementService;
+        private readonly IStartupConfigService _startupConfigService;
         private readonly ILogger<AuthenticationEnforcerMiddleware> _logger;
 
         public AuthenticationEnforcerMiddleware(
             RequestDelegate next,
-            IAuthenticationRequirementService authenticationRequirementService,
+            IStartupConfigService startupConfigService,
             ILogger<AuthenticationEnforcerMiddleware> logger)
         {
             _next = next;
-            _authenticationRequirementService = authenticationRequirementService;
+            _startupConfigService = startupConfigService;
             _logger = logger;
         }
 
@@ -42,7 +42,7 @@ namespace Listenarr.Api.Middleware
             var normalizedApiPath = NormalizeApiVersionedPath(path);
             _logger?.LogDebug("AuthenticationEnforcer: incoming request {Method} {Path}", method, path);
 
-            var authRequired = _authenticationRequirementService.IsAuthenticationRequired();
+            var authRequired = _startupConfigService.IsAuthenticationRequired();
 
             // Log logout requests specifically and include masked principal diagnostics
             if (normalizedApiPath.StartsWith("/api/account/logout", StringComparison.OrdinalIgnoreCase))

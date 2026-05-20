@@ -17,6 +17,7 @@
  */
 
 using Listenarr.Application.Interfaces;
+using Listenarr.Domain.Common;
 
 namespace Listenarr.Infrastructure.Services
 {
@@ -64,31 +65,10 @@ namespace Listenarr.Infrastructure.Services
 
         /// <inheritdoc/>
         public string ResolveFromContentRoot(params string[] segments)
-            => Combine(ContentRootPath, segments);
+            => Path.GetFullPath(FileUtils.CombineRelativePath(ContentRootPath, segments));
 
         /// <inheritdoc/>
         public string ResolveFromConfig(params string[] segments)
-            => Combine(ConfigRootPath, segments);
-
-        private static string Combine(string basePath, params string[] segments)
-        {
-            var current = Path.GetFullPath(basePath);
-            foreach (var segment in segments)
-            {
-                if (string.IsNullOrWhiteSpace(segment))
-                {
-                    continue;
-                }
-
-                if (Path.IsPathRooted(segment))
-                {
-                    throw new ArgumentException("Path segments must be relative.", nameof(segments));
-                }
-
-                current = Path.Join(current, segment);
-            }
-
-            return Path.GetFullPath(current);
-        }
+            => Path.GetFullPath(FileUtils.CombineRelativePath(ConfigRootPath, segments));
     }
 }

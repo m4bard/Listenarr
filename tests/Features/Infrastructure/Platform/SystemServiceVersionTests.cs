@@ -16,11 +16,11 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using System.Reflection;
 using Listenarr.Application.Interfaces;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Models.Configurations;
 using Listenarr.Infrastructure.Platform;
+using Listenarr.Tests.Common;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
 using Xunit;
@@ -36,7 +36,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
 
             var systemInfo = systemService.GetSystemInfo();
 
-            Assert.Equal(GetExpectedApiVersion(), systemInfo.Version);
+            Assert.Equal(ApplicationVersionTestUtils.GetExpectedApiVersion(), systemInfo.Version);
             Assert.NotEqual("1.0.0.0", systemInfo.Version);
         }
 
@@ -47,7 +47,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
 
             var serviceHealth = await systemService.GetServiceHealthAsync();
 
-            Assert.Equal(GetExpectedApiVersion(), serviceHealth.Version);
+            Assert.Equal(ApplicationVersionTestUtils.GetExpectedApiVersion(), serviceHealth.Version);
             Assert.NotEqual("1.0.0.0", serviceHealth.Version);
         }
 
@@ -66,7 +66,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
             var applicationVersionService = new Mock<IApplicationVersionService>();
             applicationVersionService
                 .Setup(service => service.Resolve())
-                .Returns(GetExpectedApiVersion());
+                .Returns(ApplicationVersionTestUtils.GetExpectedApiVersion());
 
             return new SystemService(
                 configurationService.Object,
@@ -75,18 +75,5 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
                 applicationVersionService.Object);
         }
 
-        private static string GetExpectedApiVersion()
-        {
-            var version = typeof(global::Program).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-                .InformationalVersion;
-
-            Assert.False(string.IsNullOrWhiteSpace(version));
-
-            var metadataIndex = version.IndexOf('+');
-            return metadataIndex > 0
-                ? version[..metadataIndex]
-                : version;
-        }
     }
 }

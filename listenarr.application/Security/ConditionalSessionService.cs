@@ -27,18 +27,18 @@ namespace Listenarr.Application.Security
     /// </summary>
     public class ConditionalSessionService : ISessionService
     {
-        private readonly IAuthenticationRequirementService _authenticationRequirementService;
+        private readonly IStartupConfigService _startupConfigService;
         private readonly SessionService _sessionService;
 
-        public ConditionalSessionService(IAuthenticationRequirementService authenticationRequirementService, SessionService sessionService)
+        public ConditionalSessionService(IStartupConfigService startupConfigService, SessionService sessionService)
         {
-            _authenticationRequirementService = authenticationRequirementService;
+            _startupConfigService = startupConfigService;
             _sessionService = sessionService;
         }
 
         public Task<string> CreateSessionAsync(string username, bool isAdmin, bool rememberMe = false)
         {
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 throw new InvalidOperationException("Authentication is not enabled. Set AuthenticationRequired to 'true' in configuration.");
             }
@@ -48,7 +48,7 @@ namespace Listenarr.Application.Security
 
         public Task<ClaimsPrincipal?> GetSessionUserAsync(string sessionToken)
         {
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Task.FromResult<ClaimsPrincipal?>(null);
             }
@@ -58,7 +58,7 @@ namespace Listenarr.Application.Security
 
         public Task<bool> InvalidateSessionAsync(string sessionToken)
         {
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Task.FromResult(false);
             }
@@ -68,7 +68,7 @@ namespace Listenarr.Application.Security
 
         public Task InvalidateAllSessionsForUserAsync(string username)
         {
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Task.CompletedTask;
             }
@@ -78,7 +78,7 @@ namespace Listenarr.Application.Security
 
         public Task<int> GetActiveSessionCountAsync(string username)
         {
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Task.FromResult(0);
             }

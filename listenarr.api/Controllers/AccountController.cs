@@ -29,20 +29,20 @@ namespace Listenarr.Api.Controllers
     [Tags("Account")]
     public class AccountController : ControllerBase
     {
-        private readonly IAuthenticationRequirementService _authenticationRequirementService;
+        private readonly IStartupConfigService _startupConfigService;
         private readonly ILogger<AccountController> _logger;
         private readonly IUserService _userService;
         private readonly ILoginRateLimiter _rateLimiter;
         private readonly ISessionService _sessionService;
 
         public AccountController(
-            IAuthenticationRequirementService authenticationRequirementService,
+            IStartupConfigService startupConfigService,
             ILogger<AccountController> logger,
             IUserService userService,
             ILoginRateLimiter rateLimiter,
             ISessionService sessionService)
         {
-            _authenticationRequirementService = authenticationRequirementService;
+            _startupConfigService = startupConfigService;
             _logger = logger;
             _userService = userService;
             _rateLimiter = rateLimiter;
@@ -97,7 +97,7 @@ namespace Listenarr.Api.Controllers
             var user = await _userService.GetByUsernameAsync(req.Username);
             _rateLimiter.RecordSuccess(key);
 
-            if (!_authenticationRequirementService.IsAuthenticationRequired())
+            if (!_startupConfigService.IsAuthenticationRequired())
             {
                 return Ok(new { message = "Logged in", authType = "none" });
             }
@@ -170,7 +170,7 @@ namespace Listenarr.Api.Controllers
                     }
                 }
 
-                var responseAuthType = _authenticationRequirementService.IsAuthenticationRequired() ? "session" : "none";
+                var responseAuthType = _startupConfigService.IsAuthenticationRequired() ? "session" : "none";
                 return Ok(new { message = "Logged out successfully", authType = responseAuthType });
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)

@@ -33,7 +33,7 @@ namespace Listenarr.Application.Interfaces.Repositories
         Task<bool> IsPathUsedByOtherAsync(int audiobookId, string path, CancellationToken ct = default);
         Task<List<string>> GetAllFilePathsAsync(CancellationToken ct = default);
         Task<List<AudiobookFile>> GetAllAsync(CancellationToken ct = default);
-        Task<List<AudiobookFileStatusInfo>> GetFormatSummariesAsync(CancellationToken ct = default);
+        Task<List<AudiobookStatusInfo>> GetFormatSummariesAsync(CancellationToken ct = default);
         Task<Dictionary<int, int>> GetCountsByAudiobookIdAsync(CancellationToken ct = default);
     }
 }

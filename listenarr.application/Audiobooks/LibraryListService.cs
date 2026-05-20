@@ -53,7 +53,7 @@ namespace Listenarr.Application.Audiobooks
 
         public async Task<IReadOnlyList<LibraryAudiobookListItem>> GetAllAsync()
         {
-            var allAudiobooks = await _audiobookRepository.GetAllNoFilesAsync();
+            var allAudiobooks = await _audiobookRepository.GetAllAsync();
             var audiobooks = allAudiobooks
                 .OrderBy(a => a.Title)
                 .ToList();
@@ -71,7 +71,7 @@ namespace Listenarr.Application.Audiobooks
             var fileCountById = await fileCountTask;
             var filesByAudiobookId = fileSummaryRows
                 .GroupBy(f => f.AudiobookId)
-                .ToDictionary(g => g.Key, g => (IReadOnlyList<AudiobookFileStatusInfo>)g.ToList());
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<AudiobookStatusInfo>)g.ToList());
 
             var qualityProfileIds = audiobooks
                 .Where(a => a.QualityProfileId.HasValue)

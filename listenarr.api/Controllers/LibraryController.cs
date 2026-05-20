@@ -108,7 +108,7 @@ namespace Listenarr.Api.Controllers
             _repo = repo;
             _imageCacheService = imageCacheService;
             _logger = logger;
-            _scopeFactory = scopeFactory ?? throw new ArgumentNullException(nameof(scopeFactory));
+            _scopeFactory = scopeFactory;
             _historyRepository = historyRepository;
             _audioFileRepository = audioFileRepository;
             _qualityProfileRepository = qualityProfileRepository;
@@ -121,8 +121,8 @@ namespace Listenarr.Api.Controllers
             _rootFolderService = rootFolderService;
             _libraryAddService = libraryAddService;
             _renameService = renameService;
-            _libraryListService = libraryListService ?? throw new ArgumentNullException(nameof(libraryListService));
-            _contentRootPath = (applicationPathService ?? throw new ArgumentNullException(nameof(applicationPathService))).ContentRootPath;
+            _libraryListService = libraryListService;
+            _contentRootPath = applicationPathService.ContentRootPath;
         }
 
         private static string ResolvePathWithOptionalBase(string? basePath, string candidatePath)

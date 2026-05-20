@@ -205,10 +205,7 @@ namespace Listenarr.Tests.Features.Api
             rateLimiter.Setup(x => x.IsBlocked(It.IsAny<string>())).Returns(false);
             rateLimiter.Setup(x => x.RecordSuccess(It.IsAny<string>()));
 
-            var authenticationRequirementService = new Mock<IAuthenticationRequirementService>(MockBehavior.Strict);
-            authenticationRequirementService
-                .Setup(x => x.IsAuthenticationRequired())
-                .Returns(true);
+            var startupConfigService = new StartupConfigServiceMock(new StartupConfig { AuthenticationRequired = "true" });
 
             var sessionService = new Mock<ISessionService>(MockBehavior.Strict);
             sessionService
@@ -216,7 +213,7 @@ namespace Listenarr.Tests.Features.Api
                 .ReturnsAsync(sessionToken);
 
             var controller = new AccountController(
-                authenticationRequirementService.Object,
+                startupConfigService,
                 NullLogger<AccountController>.Instance,
                 userService.Object,
                 rateLimiter.Object,
@@ -244,7 +241,6 @@ namespace Listenarr.Tests.Features.Api
 
             userService.VerifyAll();
             rateLimiter.VerifyAll();
-            authenticationRequirementService.VerifyAll();
             sessionService.VerifyAll();
         }
 
@@ -349,7 +345,7 @@ namespace Listenarr.Tests.Features.Api
         }
 
         [Fact]
-        public async Task ApiKeyMiddleware_DoesNotOverride_AuthenticatedSessionPrincipal()
+        public async Task ApiKeyMiddleware_OverridesAuthenticatedSessionPrincipal_WhenValidApiKeyProvided()
         {
             var apiKey = "test-api-key-12345";
             using var factory = CreateAuthEnabledFactory("true", apiKey);
@@ -377,7 +373,7 @@ namespace Listenarr.Tests.Features.Api
             Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
             var payload = JsonDocument.Parse(await resp.Content.ReadAsStringAsync());
             Assert.True(payload.RootElement.GetProperty("authenticated").GetBoolean());
-            Assert.Equal(username, payload.RootElement.GetProperty("name").GetString());
+            Assert.Equal("ApiKey", payload.RootElement.GetProperty("name").GetString());
         }
 
         [Fact]

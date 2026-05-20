@@ -16,8 +16,8 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 
-using System.Reflection;
 using Listenarr.Infrastructure.Platform;
+using Listenarr.Tests.Common;
 using Microsoft.Extensions.Hosting;
 using Moq;
 using Xunit;
@@ -29,7 +29,7 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
         [Fact]
         public void Resolve_UsesHostApplicationAssemblyInformationalVersion()
         {
-            var expectedVersion = GetExpectedApiVersion();
+            var expectedVersion = ApplicationVersionTestUtils.GetExpectedApiVersion();
             var hostEnvironment = new Mock<IHostEnvironment>();
             hostEnvironment
                 .SetupGet(environment => environment.ApplicationName)
@@ -41,18 +41,5 @@ namespace Listenarr.Tests.Features.Infrastructure.Platform
             Assert.NotEqual("1.0.0.0", version);
         }
 
-        private static string GetExpectedApiVersion()
-        {
-            var version = typeof(global::Program).Assembly
-                .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?
-                .InformationalVersion;
-
-            Assert.False(string.IsNullOrWhiteSpace(version));
-
-            var metadataIndex = version.IndexOf('+');
-            return metadataIndex > 0
-                ? version[..metadataIndex]
-                : version;
-        }
     }
 }
