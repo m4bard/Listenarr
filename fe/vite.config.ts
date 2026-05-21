@@ -21,11 +21,16 @@ export default defineConfig(({ mode }) => ({
   build: {
     // Generate sourcemaps for bundle analysis tools (source-map-explorer)
     sourcemap: true,
+    ...(mode === 'production' ? { minify: 'esbuild' as const } : {}),
   },
-  esbuild: {
-    // Remove console.log and debugger statements from production builds
-    drop: mode === 'production' ? ['console', 'debugger'] : [],
-  },
+  ...(mode === 'production'
+    ? {
+        esbuild: {
+          // Remove console.log and debugger statements from production builds
+          drop: ['console', 'debugger'],
+        },
+      }
+    : {}),
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))

@@ -128,7 +128,7 @@ coverage/
 /cypress/videos/
 /cypress/screenshots/
 test-results/
-playwright-report/
+eslint-report.json
 .codeql-db*/
 
 # Vite
