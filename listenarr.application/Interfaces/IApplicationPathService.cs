@@ -39,6 +39,9 @@ namespace Listenarr.Application.Interfaces
         /// <summary>Gets the absolute path to the bundled tools directory (<c>ContentRootPath/tools</c>).</summary>
         string ToolsRootPath { get; }
 
+        /// <summary>Gets the absolute path to the bundled Discord bot directory (<c>ToolsRootPath/discord-bot</c>).</summary>
+        string DiscordBotRootPath { get; }
+
         /// <summary>Gets the absolute path to the static web assets directory (<c>ContentRootPath/wwwroot</c>).</summary>
         string WwwRootPath { get; }
 

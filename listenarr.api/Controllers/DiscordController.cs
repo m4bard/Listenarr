@@ -399,7 +399,7 @@ namespace Listenarr.Api.Controllers
             try
             {
                 var contentRoot = _applicationPathService.ContentRootPath;
-                var botDirectory = _applicationPathService.ResolveFromContentRoot("tools", "discord-bot");
+                var botDirectory = _applicationPathService.DiscordBotRootPath;
                 var indexJsPath = System.IO.Path.Join(botDirectory, "index.js");
 
                 var botDirExists = System.IO.Directory.Exists(botDirectory);

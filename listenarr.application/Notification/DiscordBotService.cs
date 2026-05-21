@@ -20,7 +20,6 @@ using System.Runtime.InteropServices;
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Security;
 using Microsoft.AspNetCore.Http;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
 
 namespace Listenarr.Application.Notification
@@ -37,7 +36,7 @@ namespace Listenarr.Application.Notification
     {
         private readonly ILogger<DiscordBotService> _logger;
         private readonly IStartupConfigService _startupConfigService;
-        private readonly IHostEnvironment _hostEnvironment;
+        private readonly IApplicationPathService _applicationPathService;
         private readonly IHttpContextAccessor _httpContextAccessor;
         private readonly IProcessRunner? _processRunner;
         private string? _botApiKey;
@@ -47,13 +46,13 @@ namespace Listenarr.Application.Notification
         public DiscordBotService(
             ILogger<DiscordBotService> logger,
             IStartupConfigService startupConfigService,
-            IHostEnvironment hostEnvironment,
+            IApplicationPathService applicationPathService,
             IHttpContextAccessor httpContextAccessor,
             IProcessRunner? processRunner = null)
         {
             _logger = logger;
             _startupConfigService = startupConfigService;
-            _hostEnvironment = hostEnvironment;
+            _applicationPathService = applicationPathService;
             _httpContextAccessor = httpContextAccessor;
             _processRunner = processRunner;
         }
@@ -77,7 +76,7 @@ namespace Listenarr.Application.Notification
 
             try
             {
-                var botDirectory = Path.Join(_hostEnvironment.ContentRootPath, "tools", "discord-bot");
+                var botDirectory = _applicationPathService.DiscordBotRootPath;
                 if (!Directory.Exists(botDirectory))
                 {
                     _logger.LogError("Discord bot directory not found at {Path}", botDirectory);
@@ -455,4 +454,3 @@ namespace Listenarr.Application.Notification
 
     }
 }
-

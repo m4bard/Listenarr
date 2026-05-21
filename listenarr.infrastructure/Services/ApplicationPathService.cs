@@ -40,6 +40,8 @@ namespace Listenarr.Infrastructure.Services
         /// <inheritdoc/>
         public string ToolsRootPath { get; }
         /// <inheritdoc/>
+        public string DiscordBotRootPath { get; }
+        /// <inheritdoc/>
         public string WwwRootPath { get; }
 
         /// <summary>
@@ -60,6 +62,7 @@ namespace Listenarr.Infrastructure.Services
             LogsRootPath = ResolveFromConfig("logs");
             FfmpegRootPath = ResolveFromConfig("ffmpeg");
             ToolsRootPath = ResolveFromContentRoot("tools");
+            DiscordBotRootPath = Path.GetFullPath(FileUtils.CombineRelativePath(ToolsRootPath, "discord-bot"));
             WwwRootPath = ResolveFromContentRoot("wwwroot");
         }
 
