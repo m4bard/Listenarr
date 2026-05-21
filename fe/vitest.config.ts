@@ -14,6 +14,7 @@ export default defineConfig((configEnv) =>
       },
       test: {
         execArgv: ['--no-warnings'],
+        setupFiles: ['src/test/setup/signalr.ts'],
         projects: testProjects,
         // Increase global test timeout to reduce flaky timeouts in CI/local runs
         testTimeout: 10000,

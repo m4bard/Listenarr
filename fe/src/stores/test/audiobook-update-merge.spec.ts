@@ -16,25 +16,18 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 import { setActivePinia, createPinia } from 'pinia'
-import { useLibraryStore } from '@/stores/library'
 import { describe, test, expect, beforeEach, vi } from 'vitest'
-import { signalRService } from '@/services/signalr'
+import { useLibraryStore } from '@/stores/library'
+import { signalRServiceMock } from '@/test/mocks/signalr'
 import type { Audiobook } from '@/types'
 
 describe('AudiobookUpdate SignalR merge', () => {
   beforeEach(() => {
     setActivePinia(createPinia())
+    vi.clearAllMocks()
   })
 
-  test('merges server-provided audiobook DTO into store item', async () => {
-    const callbacks: Array<(a: Audiobook) => void> = []
-    const spy = vi
-      .spyOn(signalRService, 'onAudiobookUpdate')
-      .mockImplementation((cb?: (...args: unknown[]) => void) => {
-        if (cb) callbacks.push(cb as (a: Audiobook) => void)
-        return () => {}
-      })
-
+  test('merges server-provided audiobook DTO into store item', () => {
     const store = useLibraryStore()
     store.audiobooks = [
       {
@@ -54,8 +47,8 @@ describe('AudiobookUpdate SignalR merge', () => {
     }
 
     // Call the registered callback
-    expect(callbacks.length).toBeGreaterThan(0)
-    callbacks[0](serverDto as Audiobook)
+    expect(signalRServiceMock.callbacks.audiobookUpdate.size).toBeGreaterThan(0)
+    signalRServiceMock.emit('audiobookUpdate', serverDto)
 
     // Assert store was merged correctly
     const merged = store.audiobooks.find((b) => b.id === 1) as Audiobook
@@ -65,7 +58,5 @@ describe('AudiobookUpdate SignalR merge', () => {
     // Files replaced since server provided non-empty array
     expect(merged.files).toHaveLength(1)
     expect(merged.files![0].path).toBe('/new/path/file.m4b')
-
-    spy.mockRestore()
   })
 })

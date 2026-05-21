@@ -24,13 +24,23 @@ const files = walk(srcRoot)
 const testFilePattern = /\.(spec|test)\.(ts|tsx|js|jsx)$/
 const sharedTestBuckets = new Set(['app', 'framework', 'smoke'])
 const vitestConfigPattern = /^vitest(?:\..+)?\.config\.ts$/
+const allowedSetupFile = 'src/test/setup/signalr.ts'
+const allowedSetupFiles = new Set([allowedSetupFile])
 
 if (fs.existsSync(path.join(srcRoot, '__tests__'))) {
   failures.push('src/__tests__ must not exist; colocate tests in src/**/test/.')
 }
 
 if (fs.existsSync(path.join(srcRoot, 'test', 'setup.ts'))) {
-  failures.push('src/test/setup.ts must not exist; Vitest setup is opt-in per spec.')
+  failures.push('src/test/setup.ts must not exist; use explicit setup files under src/test/setup/.')
+}
+
+const setupRoot = path.join(srcRoot, 'test', 'setup')
+for (const setupFile of walk(setupRoot)) {
+  const relative = rel(setupFile)
+  if (!allowedSetupFiles.has(relative)) {
+    failures.push(`${relative} is not an allowed Vitest setup file.`)
+  }
 }
 
 for (const file of files) {
@@ -68,8 +78,11 @@ const vitestConfigFiles = fs
 for (const configName of vitestConfigFiles) {
   const configPath = path.join(root, configName)
   const content = fs.readFileSync(configPath, 'utf8')
-  if (content.includes('setupFiles')) {
-    failures.push(`${configName} must not configure setupFiles.`)
+  if (
+    content.includes('setupFiles') &&
+    !/setupFiles:\s*\[\s*['"]src\/test\/setup\/signalr\.ts['"]\s*\]/.test(content)
+  ) {
+    failures.push(`${configName} may only configure setupFiles for ${allowedSetupFile}.`)
   }
 }
 
