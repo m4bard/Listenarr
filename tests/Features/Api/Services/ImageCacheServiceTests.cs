@@ -43,7 +43,7 @@ namespace Listenarr.Tests.Features.Api.Services
                 using var httpClientForFactory = new HttpClient();
                 var httpClientFactory = new Mock<IHttpClientFactory>();
                 httpClientFactory
-                    .Setup(factory => factory.CreateClient(It.IsAny<string>()))
+                    .Setup(factory => factory.CreateClient(ImageCacheHttpClientNames.ImageCache))
                     .Returns(httpClientForFactory);
 
                 var service = new ImageCacheService(
@@ -63,6 +63,7 @@ namespace Listenarr.Tests.Features.Api.Services
                 Assert.Equal("config/cache/images/authors/AUTHOR123.jpg", relativePath);
                 Assert.True(File.Exists(expectedAuthorImage));
                 Assert.False(File.Exists(wrongAuthorImage));
+                httpClientFactory.Verify(factory => factory.CreateClient(ImageCacheHttpClientNames.ImageCache), Times.Once);
             }
             finally
             {

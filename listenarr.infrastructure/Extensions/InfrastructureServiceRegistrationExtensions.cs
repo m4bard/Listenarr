@@ -73,10 +73,11 @@ namespace Listenarr.Infrastructure.Extensions
             services.AddScoped<IRootFolderRepository, EfRootFolderRepository>();
             services.AddScoped<IDownloadHistoryRepository, DownloadHistoryRepository>();
             services.AddSingleton<IApplicationPathService>(_ => new ApplicationPathService(contentRootPath));
-            services.AddHttpClient<ImageCacheNoRedirectHttpClient>()
+            services.AddHttpClient(ImageCacheHttpClientNames.ImageCache)
                 .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
                 {
-                    AllowAutoRedirect = false
+                    AllowAutoRedirect = false,
+                    AutomaticDecompression = System.Net.DecompressionMethods.All
                 });
             services.AddSingleton<IImageCacheService, ImageCacheService>();
             services.AddScoped<IApplicationVersionService, ApplicationVersionService>();

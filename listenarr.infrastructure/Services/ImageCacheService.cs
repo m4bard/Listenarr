@@ -27,14 +27,9 @@ using System.Net.Sockets;
 
 namespace Listenarr.Infrastructure.Services
 {
-    public sealed class ImageCacheNoRedirectHttpClient
+    public static class ImageCacheHttpClientNames
     {
-        public ImageCacheNoRedirectHttpClient(HttpClient client)
-        {
-            Client = client;
-        }
-
-        public HttpClient Client { get; }
+        public const string ImageCache = "ImageCache";
     }
 
     public class ImageCacheService : IImageCacheService, IDisposable
@@ -68,13 +63,12 @@ namespace Listenarr.Infrastructure.Services
             };
 
         private readonly ILogger<ImageCacheService> _logger;
-        private readonly HttpClient _httpClientNoRedirect;
+        private readonly HttpClient _httpClient;
         private readonly string _tempCachePath;
         private readonly string _libraryImagePath;
         private readonly string _authorImagePath;
         private readonly string _seriesImagePath;
         private readonly string _contentRootPath;
-        private readonly bool _disposeNoRedirectClient;
         private readonly AsyncKeyedLocker<string> _downloadLocks = new();
 
         private readonly record struct ImageCachePaths(
@@ -86,55 +80,53 @@ namespace Listenarr.Infrastructure.Services
 
         public ImageCacheService(
             ILogger<ImageCacheService> logger,
-            ImageCacheNoRedirectHttpClient noRedirectHttpClient,
+            IHttpClientFactory httpClientFactory,
             IApplicationPathService applicationPathService)
             : this(
                   logger,
-                  noRedirectHttpClient.Client,
+                  httpClientFactory.CreateClient(ImageCacheHttpClientNames.ImageCache),
                   applicationPathService.ContentRootPath,
                   applicationPathService.ResolveFromConfig("cache", "images", "temp"),
                   applicationPathService.ResolveFromConfig("cache", "images", "library"),
                   applicationPathService.ResolveFromConfig("cache", "images", "authors"),
-                  applicationPathService.ResolveFromConfig("cache", "images", "series"),
-                  disposeNoRedirectClient: false)
+                  applicationPathService.ResolveFromConfig("cache", "images", "series"))
         {
         }
 
         public ImageCacheService(ILogger<ImageCacheService> logger, IHttpClientFactory httpClientFactory, string contentRootPath)
-            : this(logger, CreateNoRedirectClient(httpClientFactory), CreateLegacyCachePaths(logger, contentRootPath), disposeNoRedirectClient: true)
+            : this(
+                  logger,
+                  httpClientFactory.CreateClient(ImageCacheHttpClientNames.ImageCache),
+                  CreateLegacyCachePaths(logger, contentRootPath))
         {
         }
 
         private ImageCacheService(
             ILogger<ImageCacheService> logger,
-            HttpClient noRedirectHttpClient,
-            ImageCachePaths paths,
-            bool disposeNoRedirectClient)
+            HttpClient httpClient,
+            ImageCachePaths paths)
             : this(
                   logger,
-                  noRedirectHttpClient,
+                  httpClient,
                   paths.ContentRootPath,
                   paths.TempCachePath,
                   paths.LibraryImagePath,
                   paths.AuthorImagePath,
-                  paths.SeriesImagePath,
-                  disposeNoRedirectClient)
+                  paths.SeriesImagePath)
         {
         }
 
         private ImageCacheService(
             ILogger<ImageCacheService> logger,
-            HttpClient noRedirectHttpClient,
+            HttpClient httpClient,
             string contentRootPath,
             string tempCachePath,
             string libraryImagePath,
             string authorImagePath,
-            string seriesImagePath,
-            bool disposeNoRedirectClient)
+            string seriesImagePath)
         {
             _logger = logger;
-            _httpClientNoRedirect = noRedirectHttpClient;
-            _disposeNoRedirectClient = disposeNoRedirectClient;
+            _httpClient = httpClient;
             _contentRootPath = contentRootPath;
             _tempCachePath = tempCachePath;
             _libraryImagePath = libraryImagePath;
@@ -145,18 +137,6 @@ namespace Listenarr.Infrastructure.Services
             Directory.CreateDirectory(_libraryImagePath);
             Directory.CreateDirectory(_authorImagePath);
             Directory.CreateDirectory(_seriesImagePath);
-        }
-
-        private static HttpClient CreateNoRedirectClient(IHttpClientFactory httpClientFactory)
-        {
-            using var httpClient = httpClientFactory.CreateClient();
-            return new HttpClient(new HttpClientHandler
-            {
-                AllowAutoRedirect = false
-            })
-            {
-                Timeout = httpClient.Timeout
-            };
         }
 
         private static ImageCachePaths CreateLegacyCachePaths(ILogger<ImageCacheService> logger, string contentRootPath)
@@ -900,7 +880,7 @@ namespace Listenarr.Infrastructure.Services
 
                 response?.Dispose();
                 using var request = new HttpRequestMessage(HttpMethod.Get, currentUri);
-                response = await _httpClientNoRedirect.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
+                response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead);
 
                 if (IsRedirectStatusCode(response.StatusCode))
                 {
@@ -1144,18 +1124,13 @@ namespace Listenarr.Infrastructure.Services
 
         public void Dispose()
         {
-            if (!_disposeNoRedirectClient)
-            {
-                return;
-            }
-
             try
             {
-                _httpClientNoRedirect.Dispose();
+                _httpClient.Dispose();
             }
             catch (Exception ex) when (ex is not OperationCanceledException && ex is not OutOfMemoryException && ex is not StackOverflowException)
             {
-                _logger.LogWarning(ex, "Failed disposing no-redirect HttpClient in ImageCacheService");
+                _logger.LogWarning(ex, "Failed disposing HttpClient in ImageCacheService");
             }
         }
     }

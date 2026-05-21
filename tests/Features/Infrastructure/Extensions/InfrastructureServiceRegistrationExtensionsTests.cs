@@ -21,6 +21,8 @@ using Listenarr.Infrastructure.Extensions;
 using Listenarr.Application.Interfaces;
 using Listenarr.Infrastructure.Platform;
 using Listenarr.Infrastructure.Services;
+using Microsoft.Extensions.Http;
+using Microsoft.Extensions.Options;
 
 namespace Listenarr.Tests.Features.Infrastructure.Extensions
 {
@@ -48,6 +50,13 @@ namespace Listenarr.Tests.Features.Infrastructure.Extensions
                     descriptor.ServiceType == typeof(IApplicationVersionService) &&
                     descriptor.ImplementationType == typeof(ApplicationVersionService) &&
                     descriptor.Lifetime == ServiceLifetime.Scoped);
+
+            using var serviceProvider = services.BuildServiceProvider();
+            var httpClientOptions = serviceProvider
+                .GetRequiredService<IOptionsMonitor<HttpClientFactoryOptions>>()
+                .Get(ImageCacheHttpClientNames.ImageCache);
+
+            Assert.NotEmpty(httpClientOptions.HttpMessageHandlerBuilderActions);
         }
     }
 }
