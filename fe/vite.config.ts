@@ -4,33 +4,38 @@ import type { ServerResponse } from 'node:http'
 import { defineConfig } from 'vite'
 import type { PluginOption } from 'vite'
 import vue from '@vitejs/plugin-vue'
-// Visualizer for bundle analysis. We cast to any when injecting to avoid
-// TypeScript plugin signature mismatches between rollup and vite types.
+// Visualizer for bundle analysis. We cast when injecting to avoid TypeScript
+// plugin signature mismatches between Rollup and Vite types.
 import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => ({
   plugins: [
     vue(),
-    // Generate a static treemap report after build
-    // cast to any to satisfy TypeScript when mixing rollup plugin types with Vite
-  // cast plugin to any to avoid Vite/TS signature issues
-  // Visualizer returns a Rollup plugin. Cast via unknown -> Plugin to avoid explicit `any`.
-  (visualizer({ filename: 'dist/stats.html', title: 'Listenarr bundle analysis', open: false }) as unknown as PluginOption),
+    // Visualizer returns a Rollup plugin. Cast via unknown to avoid explicit `any`.
+    (visualizer({ filename: 'dist/stats.html', title: 'Listenarr bundle analysis', open: false }) as unknown as PluginOption),
   ],
   build: {
     // Generate sourcemaps for bundle analysis tools (source-map-explorer)
     sourcemap: true,
-    ...(mode === 'production' ? { minify: 'esbuild' as const } : {}),
+    minify: 'oxc',
+    ...(mode === 'production'
+      ? {
+          rolldownOptions: {
+            output: {
+              minify: {
+                compress: {
+                  dropConsole: true,
+                  dropDebugger: true,
+                },
+                mangle: true,
+                codegen: true,
+              },
+            },
+          },
+        }
+      : {}),
   },
-  ...(mode === 'production'
-    ? {
-        esbuild: {
-          // Remove console.log and debugger statements from production builds
-          drop: ['console', 'debugger'],
-        },
-      }
-    : {}),
   resolve: {
     alias: {
       '@': fileURLToPath(new URL('./src', import.meta.url))
