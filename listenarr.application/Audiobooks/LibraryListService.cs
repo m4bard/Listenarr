@@ -71,7 +71,7 @@ namespace Listenarr.Application.Audiobooks
             var fileCountById = await fileCountTask;
             var filesByAudiobookId = fileSummaryRows
                 .GroupBy(f => f.AudiobookId)
-                .ToDictionary(g => g.Key, g => (IReadOnlyList<AudiobookStatusInfo>)g.ToList());
+                .ToDictionary(g => g.Key, g => (IReadOnlyList<AudiobookFileFormatSummary>)g.ToList());
 
             var qualityProfileIds = audiobooks
                 .Where(a => a.QualityProfileId.HasValue)

@@ -1,6 +1,6 @@
 using Listenarr.Application.Interfaces;
 using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Application.Metadata;
+using Listenarr.Application.Audiobooks;
 using Listenarr.Domain.Models;
 using Moq;
 
@@ -20,7 +20,7 @@ namespace Listenarr.Tests.Mocks.Api
             var repository = new Mock<IAudiobookFileRepository>();
             repository
                 .Setup(r => r.GetFormatSummariesAsync(default))
-                .ReturnsAsync(fileList.Select(f => new AudiobookStatusInfo
+                .ReturnsAsync(fileList.Select(f => new AudiobookFileFormatSummary
                 {
                     AudiobookId = f.AudiobookId,
                     Path = f.Path,

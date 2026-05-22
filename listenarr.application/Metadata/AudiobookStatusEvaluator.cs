@@ -16,19 +16,10 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Domain.Models;
+using Listenarr.Application.Audiobooks;
 
 namespace Listenarr.Application.Metadata
 {
-    public sealed class AudiobookStatusInfo
-    {
-        public int AudiobookId { get; set; }
-        public string? Path { get; set; }
-        public string? Format { get; set; }
-        public string? Container { get; set; }
-        public string? Codec { get; set; }
-        public int? Bitrate { get; set; }
-    }
-
     public static class AudiobookStatusEvaluator
     {
         public const string Downloading = "downloading";
@@ -41,7 +32,7 @@ namespace Listenarr.Application.Metadata
             bool hasAnyFile,
             string? audiobookQuality,
             QualityProfile? qualityProfile,
-            IReadOnlyList<AudiobookStatusInfo>? files)
+            IReadOnlyList<AudiobookFileFormatSummary>? files)
         {
             if (isDownloading)
             {
@@ -63,7 +54,7 @@ namespace Listenarr.Application.Metadata
                 .Where(v => v.Length > 0)
                 .ToList();
 
-            var candidateFiles = (files ?? Array.Empty<AudiobookStatusInfo>())
+            var candidateFiles = (files ?? Array.Empty<AudiobookFileFormatSummary>())
                 .Where(f =>
                 {
                     var fileFormat = Normalize(f.Format);
@@ -135,7 +126,7 @@ namespace Listenarr.Application.Metadata
             return QualityMismatch;
         }
 
-        private static string DeriveQualityLabel(AudiobookStatusInfo? file, string? audiobookQuality)
+        private static string DeriveQualityLabel(AudiobookFileFormatSummary? file, string? audiobookQuality)
         {
             var normalizedAudiobookQuality = Normalize(audiobookQuality);
             if (normalizedAudiobookQuality.Length > 0)

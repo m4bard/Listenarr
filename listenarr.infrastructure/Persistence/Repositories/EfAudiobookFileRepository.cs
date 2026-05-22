@@ -16,7 +16,7 @@
  * along with this program. If not, see <https://www.gnu.org/licenses/>.
  */
 using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Application.Metadata;
+using Listenarr.Application.Audiobooks;
 using Listenarr.Domain.Models;
 using Microsoft.EntityFrameworkCore;
 
@@ -109,7 +109,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 .ToListAsync(ct);
         }
 
-        public async Task<List<AudiobookStatusInfo>> GetFormatSummariesAsync(CancellationToken ct = default)
+        public async Task<List<AudiobookFileFormatSummary>> GetFormatSummariesAsync(CancellationToken ct = default)
         {
             // One row per (AudiobookId, Format, Codec, Container) — avoids materialising chapter-level rows
             var rows = await _db.AudiobookFiles
@@ -126,7 +126,7 @@ namespace Listenarr.Infrastructure.Persistence.Repositories
                 })
                 .ToListAsync(ct);
 
-            return rows.Select(r => new AudiobookStatusInfo
+            return rows.Select(r => new AudiobookFileFormatSummary
             {
                 AudiobookId = r.AudiobookId,
                 Format = r.Format,

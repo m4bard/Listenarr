@@ -19,7 +19,6 @@ using System.Text.Json;
 using Listenarr.Api.Controllers;
 using Listenarr.Application.Audiobooks;
 using Listenarr.Application.Interfaces.Repositories;
-using Listenarr.Application.Metadata;
 using Listenarr.Domain.Models;
 using Listenarr.Domain.Common;
 using Microsoft.AspNetCore.Mvc;
@@ -94,7 +93,7 @@ namespace Listenarr.Tests.Features.Api.Controllers
             var mockAudioFileRepo = new Mock<IAudiobookFileRepository>();
             mockAudioFileRepo
                 .Setup(r => r.GetFormatSummariesAsync(default))
-                .ReturnsAsync(allFiles.Select(f => new AudiobookStatusInfo
+                .ReturnsAsync(allFiles.Select(f => new AudiobookFileFormatSummary
                 {
                     AudiobookId = f.AudiobookId,
                     Path = f.Path,
