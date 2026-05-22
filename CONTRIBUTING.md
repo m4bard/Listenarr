@@ -120,25 +120,25 @@ This project follows a layered pattern: domain models in `listenarr.domain`, EF 
 
 - DbContext registration:
   - Use `AddDbContextFactory<ListenArrDbContext>` for hosted/background services that need DbContext outside of HTTP request scope.
-  - Also keep `AddDbContext<ListenArrDbContext>` for compatibility with controllers/endpoints that use scoped DbContext.
-  - The helper extension `Listenarr.Api.Extensions.ServiceRegistrationExtensions.AddListenarrPersistence` centralizes these registrations. Call it from `Program.cs` to ensure consistent setup.
+  - `AddListenarrInfrastructure` centralizes DbContext/IDbContextFactory registration and scoped `ListenArrDbContext` access. Add separate DbContext registrations only for explicit test overrides.
 
 - Pattern for hosted services:
   - Inject `IDbContextFactory<ListenArrDbContext>` into hosted/background services and create contexts with `await factory.CreateDbContextAsync(cancellationToken)`.
   - Dispose contexts promptly and avoid storing DbContext as a field.
 
 - Test host behavior:
-  - Integration tests use a test partial of Program. To patch the test host, implement `Program.Testing.cs` (or the `ApplyTestHostPatches` hook) to call `AddListenarrPersistence` and any test-specific overrides (e.g. a test SQLite path).
-  - Disable or mock heavy external installers (Playwright) in the test host by overriding configuration with an in-memory setting: `builder.Configuration.AddInMemoryCollection(new Dictionary<string,string>{{ "Playwright:Enabled","false"}})`.
+  - Integration tests use `ListenarrWebApplicationFactory` and `Program.Testing.cs` / `ApplyTestHostPatches` for isolated test-host setup and test-specific overrides (e.g. a test SQLite path).
+  - Disable or mock heavy external installers/services in the test host by overriding DI or configuration.
   - This prevents CI/tests from spawning external processes while keeping DI consistent.
 
 - New adapters / HttpClients:
-  - Register typed or named HttpClients in `listenarr.api` using the `AddListenarrHttpClients` extension or directly in `Program.cs`.
-  - Register adapter interfaces in the adapters module (see `listenarr.api/Extensions/ServiceRegistrationExtensions.cs`).
-  - If a factory delegate is required (resolve adapter by id), register a `Func<string, IDownloadClientAdapter>` as a singleton that resolves registered adapters.
+  - Register typed or named HttpClients directly in `listenarr.api/Program.cs`, or centralize them in `AddListenarrHttpClients` (`listenarr.infrastructure/Extensions/ServiceRegistrationExtensions.cs`).
+  - Register adapter interfaces in the adapters module (see `listenarr.infrastructure/Extensions/ServiceRegistrationExtensions.cs`).
+  - If adapter resolution by id/type is required, use `IDownloadClientAdapterFactory`.
 
 - Testing tips:
   - Add unit tests for ValueConverters and ValueComparers to ensure JSON behavior is stable (null handling, empty JSON).
+  - Follow `tests/README.md`; backend tests should default to `BaseTests`, repository helpers, DI-resolved services/controllers, and builders such as `AudiobookBuilder` and `ApplicationSettingsBuilder`. Hand-wire setup only for test-specific overrides.
   - Use `WebApplicationFactory<Program>` for integration tests and apply `WithWebHostBuilder` when you need to override services.
   - Use the test-host patching approach to keep tests hermetic (no external network or process calls).
 

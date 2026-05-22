@@ -277,11 +277,10 @@ namespace Listenarr.Tests.Features.Api.Controllers
                 .WithOutputPath(outputPath)
                 .Build());
 
-            var audiobook = await _audiobookRepository.AddAsync(new Audiobook
-            {
-                Title = "Test",
-                BasePath = FileService.GetTempDirectory("listenarr-move-src")
-            });
+            var audiobook = await _audiobookRepository.AddAsync(new AudiobookBuilder()
+                .WithTitle("Test")
+                .WithBasePath(FileService.GetTempDirectory("listenarr-move-src"))
+                .Build());
 
             var controller = _provider.GetRequiredService<LibraryController>();
 
